@@ -12,15 +12,11 @@ final class TokenStatusTests: XCTestCase {
     // MARK: - Helpers
 
     private func fixtureData(_ name: String) throws -> Data {
-        let candidates: [URL] = [
-            URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .appendingPathComponent("Fixtures/\(name)"),
-        ]
-        for url in candidates {
-            if let data = try? Data(contentsOf: url) { return data }
+        let url = TestFixtures.dir(name)
+        guard let data = try? Data(contentsOf: url) else {
+            throw XCTSkip("Fixture not found: \(name)")
         }
-        throw XCTSkip("Fixture not found: \(name) — run from app/ directory")
+        return data
     }
 
     private func makeBridge() -> CLIBridge { CLIBridge() }

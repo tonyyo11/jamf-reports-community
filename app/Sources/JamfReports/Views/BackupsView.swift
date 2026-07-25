@@ -86,35 +86,37 @@ struct BackupsView: View {
             subtitle: "~/Jamf-Reports/\(workspace.profile)/backups/"
         ) {
             AnyView(
-                HStack(spacing: 8) {
-                    backupLabelField
-                    PNPButton(title: "Reveal in Finder", icon: "folder") {
-                        SystemActions.openFolder(backupsDirectory)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        backupLabelField
+                        PNPButton(title: "Reveal in Finder", icon: "folder") {
+                            SystemActions.openFolder(backupsDirectory)
+                        }
+                        .help("Open the backups directory for this workspace in Finder.")
+                        Mono(
+                            text: diffSelectionHint,
+                            size: 10.5,
+                            color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
+                        )
+                        PNPButton(
+                            title: isRunningDiff ? "Diffing..." : "Diff Selected",
+                            icon: "arrow.left.arrow.right",
+                            style: .neutral
+                        ) {
+                            diffSelected()
+                        }
+                        .disabled(workspace.demoMode || isRunningBackup || isRunningDiff || selectedBackups.count != 2)
+                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        PNPButton(
+                            title: isRunningBackup ? "Backing Up..." : "New Backup",
+                            icon: "externaldrive.badge.plus",
+                            style: .gold
+                        ) {
+                            runBackup()
+                        }
+                        .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
+                        .help(workspace.demoMode ? "Available in live mode only" : "")
                     }
-                    .help("Open the backups directory for this workspace in Finder.")
-                    Mono(
-                        text: diffSelectionHint,
-                        size: 10.5,
-                        color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
-                    )
-                    PNPButton(
-                        title: isRunningDiff ? "Diffing..." : "Diff Selected",
-                        icon: "arrow.left.arrow.right",
-                        style: .neutral
-                    ) {
-                        diffSelected()
-                    }
-                    .disabled(workspace.demoMode || isRunningBackup || isRunningDiff || selectedBackups.count != 2)
-                    .help(workspace.demoMode ? "Available in live mode only" : "")
-                    PNPButton(
-                        title: isRunningBackup ? "Backing Up..." : "New Backup",
-                        icon: "externaldrive.badge.plus",
-                        style: .gold
-                    ) {
-                        runBackup()
-                    }
-                    .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
-                    .help(workspace.demoMode ? "Available in live mode only" : "")
                 }
             )
         }
@@ -142,20 +144,11 @@ struct BackupsView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let errorMessage {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
+            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
                 Text(errorMessage)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
-                Spacer()
             }
-            .padding(12)
-            .background(Theme.Colors.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-            )
         }
     }
 

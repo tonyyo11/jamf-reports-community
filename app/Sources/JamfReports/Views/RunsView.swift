@@ -64,17 +64,19 @@ struct RunsView: View {
             subtitle: "\(runs.count) log\(runs.count == 1 ? "" : "s") · \(workspace.profile)"
         ) {
             AnyView(
-                HStack(spacing: 8) {
-                    PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
-                        .help("Reload run logs from disk")
-                    PNPButton(title: "Reveal", icon: "folder") { revealLog() }
-                        .help("Reveal the selected log in Finder, or open the run history folder")
-                    PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
-                        .disabled(selectedRun == nil)
-                        .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
-                    PNPButton(title: "Export", icon: "arrow.down.circle") { exportLog() }
-                        .disabled(selectedRun == nil)
-                        .help(selectedRun == nil ? "Select a run to export its log" : "Save log file to a chosen location")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
+                            .help("Reload run logs from disk")
+                        PNPButton(title: "Reveal", icon: "folder") { revealLog() }
+                            .help("Reveal the selected log in Finder, or open the run history folder")
+                        PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
+                            .disabled(selectedRun == nil)
+                            .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
+                        PNPButton(title: "Export", icon: "arrow.down.circle") { exportLog() }
+                            .disabled(selectedRun == nil)
+                            .help(selectedRun == nil ? "Select a run to export its log" : "Save log file to a chosen location")
+                    }
                 }
             )
         }

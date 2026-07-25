@@ -124,7 +124,10 @@ extension Provenance {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
                ) {
-                result.append(contentsOf: files.filter { $0.pathExtension == "json" })
+                result.append(contentsOf: files.filter {
+                    $0.pathExtension == "json"
+                    && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
+                })
             }
             return result
         }()

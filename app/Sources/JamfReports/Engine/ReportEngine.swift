@@ -367,10 +367,13 @@ struct ReportEngine: Sendable {
     /// "Better" means at least one of:
     /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
     ///   (real mSCP data is now available where before only the 4-control proxy was), OR
-    /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`.
+    /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`, OR
+    /// - `existing.staleCount`/`mobileDeviceCount` is nil (unmeasured) AND `fresh` measured it,
+    ///   or `existing.staleCount == 0` on a non-empty fleet AND `fresh` measures a real value.
     ///
-    /// Never returns true when the fresh run would downgrade (real→proxy, or bands dropped),
-    /// preserving the PR-18 protection against partial-collect clobbering a good summary.
+    /// Never returns true when the fresh run would downgrade (real→proxy, bands dropped, or a
+    /// measured value replaced by nil), preserving the PR-18 protection against a partial
+    /// collect clobbering a good summary.
     static func freshSummaryIsBetter(existing: DailySummary, fresh: DailySummary) -> Bool {
         if existing.complianceIsProxy == true && fresh.complianceIsProxy == false { return true }
         let existingHasBands = !(existing.mscpBands?.isEmpty ?? true)
@@ -384,6 +387,12 @@ struct ReportEngine: Sendable {
         if existing.staleCount == nil, fresh.staleCount != nil { return true }
         if existing.staleCount == 0, existing.totalDevices > 0,
            let freshStale = fresh.staleCount, freshStale > 0 { return true }
+        // Same pattern for mobileDeviceCount: a same-day summary written before
+        // a mobile-devices collect landed (or by a prior build that predates
+        // the field) must not freeze mobileDeviceCount at nil all day once a
+        // later collect measures it. Upgrade only; a measured count is never
+        // replaced by nil.
+        if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
         return false
     }
 
@@ -428,15 +437,29 @@ struct ReportEngine: Sendable {
                 ? (liveKinds.contains(kind) ? "live" : "cache")
                 : "absent"
         }
+        // max_cache_age_hours enforcement: an over-age snapshot is treated as
+        // ABSENT (skipped + warned, named by kind/age/key) so the daily digest
+        // and the freshness signal it feeds never silently absorb ancient cache.
+        let maxCacheAgeHours = config.jamfCli?.resolvedMaxCacheAgeHours ?? 168
         func cachedData(kind: String) -> Data? {
             if let hit = snapshotCache[kind] { return hit }
-            if let d = try? Self.loadLatestSnapshotData(kind: kind, dataDir: dataDir) {
+            do {
+                let d = try Self.loadLatestSnapshotData(
+                    kind: kind, dataDir: dataDir, maxCacheAgeHours: maxCacheAgeHours
+                )
                 snapshotCache[kind] = d
                 recordSource(kind: kind, present: true)
                 return d
+            } catch let expired as SnapshotCacheExpired {
+                AppLogger.collect.warning(
+                    "\(expired.kind, privacy: .public): cached snapshot \(expired.ageHours)h old exceeds max_cache_age_hours=\(expired.limitHours) — treating as absent"
+                )
+                recordSource(kind: kind, present: false)
+                return nil
+            } catch {
+                recordSource(kind: kind, present: false)
+                return nil
             }
-            recordSource(kind: kind, present: false)
-            return nil
         }
 
         var totalDevices = 0
@@ -499,21 +522,32 @@ struct ReportEngine: Sendable {
 
         guard totalDevices > 0 else { return nil }
 
-        // Stale count from device-compliance, using `daysSinceCheckin >= resolvedStaleDays`
-        // with the config threshold (default 30 days). The server-side `stale` flag uses a
-        // ~90-100d cadence and is intentionally avoided here. Note: this path only unified
-        // the summary-writer threshold (#176); DeviceInventoryService and StaleDeviceService
-        // still hardcode 30 and use `daysSinceContact` — counts agree at the default config
-        // but diverge with a non-default threshold (follow-up: parameterize those services).
+        // Mobile device count for the "Managed Devices" trend/tile — nil (not
+        // 0) when the mobile-devices-list snapshot is absent or undecodable;
+        // most tenants that only manage Macs will never populate this.
+        var mobileDeviceCount: Int? = nil
+        if let mobileData = cachedData(kind: "mobile-devices-list") {
+            mobileDeviceCount = MobileFleetService.deviceCount(fromMobileDevicesListData: mobileData)
+        }
+
+        // Stale count from device-compliance, using the row's resolved day count
+        // (`days_since_contact`, falling back to legacy `days_since_checkin`)
+        // `>= resolvedStaleDays` with the config threshold (default 30 days).
+        // Current jamf-cli emits `days_since_contact` (a String), not the legacy
+        // `days_since_checkin`, so the old checkin-only filter always read nil and
+        // reported 0 stale. When no day count is emitted at all, `isStale` falls
+        // back to the server-side `stale` flag. Note: this path unified the
+        // summary-writer threshold (#176); DeviceInventoryService and
+        // StaleDeviceService still hardcode 30 and use `daysSinceContact` — counts
+        // agree at the default config but diverge with a non-default threshold
+        // (follow-up: parameterize those services).
         let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
         // nil (not 0) when device-compliance was never collected — unknown is
         // not zero, and a 0 here renders as a measured "0 stale devices".
         var staleCount: Int? = nil
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
-            staleCount = rows.filter {
-                ($0.daysSinceCheckin ?? 0) >= staleDaysThreshold
-            }.count
+            staleCount = rows.filter { $0.isStale(atDays: staleDaysThreshold) }.count
         }
 
         // OS current % — SOFA-driven: a device is "current" when its OS version is
@@ -544,7 +578,11 @@ struct ReportEngine: Sendable {
         var patchPct: Double? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
-            let values = rows.compactMap { parsePercentString($0.compliancePct) }
+            // total > 0 guard matches PatchVelocityBuilder: a 0-device title
+            // carries no compliance signal, and some jamf-cli builds emit a
+            // parseable "0%" for it that would drag the unweighted mean down.
+            let values = rows.filter { $0.total > 0 }
+                .compactMap { parsePercentString($0.compliancePct) }
             if !values.isEmpty {
                 patchPct = values.reduce(0, +) / Double(values.count)
             }
@@ -648,7 +686,8 @@ struct ReportEngine: Sendable {
             complianceIsProxy: complianceIsProxy,
             mscpBands: mscpBandsSnapshot,
             mscpBandColumns: mscpBandColumnsSnapshot,
-            collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil
+            collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil,
+            mobileDeviceCount: mobileDeviceCount
         )
     }
 
@@ -1217,6 +1256,8 @@ struct ReportEngine: Sendable {
         "mobile-device-inventory-details",
         // Health audit — cheap single call; see collect command matrix entry above.
         "audit",
+        // Duplicate-serial records (v1.23.0+) — data-integrity aggregate query.
+        "duplicate-serials",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
         "sofa",
         "patch-release-dates",
@@ -1275,8 +1316,7 @@ struct ReportEngine: Sendable {
     }
 
     /// Whether a collect's per-command outcomes represent a total outage where live
-    /// calls were attempted but ALL failed (any non-zero exit code) with zero successes
-    /// and no HTTP 401 signals.
+    /// calls were attempted but ALL failed with zero successes and no HTTP 401 signals.
     ///
     /// This catches the case where the server is unreachable, jamf-cli is broken, or
     /// every call exits non-zero for reasons unrelated to auth (exit 1 network error,
@@ -1286,13 +1326,104 @@ struct ReportEngine: Sendable {
     /// success. Auth-dead (`isCollectAuthDead`) is checked first at the call site, so
     /// this function is only reached when no 401 was present.
     ///
-    /// Returns false for an empty outcome set (no live calls were attempted) and for any
-    /// outcome set that includes at least one `exit 0` or `exit 7` (partial failure) success.
-    static func isCollectDead(_ outcomes: [CollectOutcome]) -> Bool {
+    /// Field defect (production, jamf-cli 1.21.1, 2026-07): a freshness collect that
+    /// skipped every healthy kind as "not due" (fresh cache from a prior run) and then
+    /// only attempted the chronically-failing residue — Platform-API 404s (exit 1) plus
+    /// `duplicate-serials` on a pre-1.23 binary (exit 2, unrecognized subcommand) — was
+    /// misdiagnosed as a total outage even though the server was demonstrably reachable
+    /// a minute earlier. Two refinements fix that without weakening the real-outage case:
+    ///
+    /// - `skippedNotDueCount`: a cadence "not due" skip is recent proof the server and
+    ///   jamf-cli both work, so any skip at all vetoes the dead verdict for this run.
+    /// - exit 2 (`CLIBridge.exitCodeUsage` — bad flags / unrecognized subcommand, e.g. a
+    ///   too-new command on an old binary) says nothing about server reachability and is
+    ///   excluded from the "failure" evidence; an all-exit-2 run is a broken invocation,
+    ///   not an outage, and only warns per-kind.
+    ///
+    /// Returns false for an empty outcome set, for any outcome set that includes at least
+    /// one `exit 0` or `exit 7` (partial failure) success, for any run where at least one
+    /// kind was skipped as not-due, and for a failure set that is exit-2-only.
+    static func isCollectDead(_ outcomes: [CollectOutcome], skippedNotDueCount: Int = 0) -> Bool {
         guard !outcomes.isEmpty else { return false }
-        return !outcomes.contains {
+        let anySuccess = outcomes.contains {
             $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
         }
+        guard !anySuccess else { return false }
+        guard skippedNotDueCount == 0 else { return false }
+        return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
+    }
+
+    /// Confirmation probe run before honoring an `isCollectAuthDead` verdict — one
+    /// cheap `pro auth token` call, checked for exit 0. Injectable for tests; defaults
+    /// to `defaultAuthConfirmationProbe`, which spawns the real jamf-cli.
+    ///
+    /// Field defect (production, jamf-cli 1.21.1, 2026-07): a scan-tier run made
+    /// exactly ONE live call — `patch-device-failures`, the most API-expensive
+    /// command — which 401'd, while the same morning's freshness run had already
+    /// collected six other kinds successfully on the same profile and a direct
+    /// `jamf-cli doctor` HEAD probe passed. `isCollectAuthDead` correctly reads
+    /// "zero successes + a 401 in this run's outcomes" — but that single endpoint's
+    /// 401 is not proof the credentials themselves are dead; a long-running
+    /// per-device command can 401 mid-flight (token expiry inside the call, or a
+    /// server-side token quirk on that endpoint) while the stored credentials
+    /// remain valid. This probe disproves the "dead" hypothesis before the app
+    /// aborts a run — and, on a weekly schedule, sticks a Failing banner for a week.
+    ///
+    /// Pro-only by construction: `CollectRouter` routes Jamf School profiles to
+    /// `schoolCollect` exclusively and never calls `collect`, so this probe (a
+    /// `pro auth token` call) never runs against a School profile in normal
+    /// production use. It runs unconditionally here rather than gating a second
+    /// time on product type — School's API-key auth has no equivalent to gate on.
+    typealias AuthConfirmationProbe = @Sendable (
+        _ profile: String,
+        _ bin: URL
+    ) async -> Bool
+
+    /// Production `AuthConfirmationProbe`: runs `pro auth token` and treats exit 0
+    /// as confirmed-alive. A launch failure or non-zero exit is treated as
+    /// "could not confirm" (false), which preserves today's throw behavior.
+    static let defaultAuthConfirmationProbe: AuthConfirmationProbe = { profile, bin in
+        let probeBridge = CLIBridge()
+        guard let (exitCode, _) = try? await probeBridge.runAndCapture(
+            executable: bin,
+            arguments: ["-p", profile, "pro", "auth", "token", "--output", "json", "--no-input"],
+            environment: CLIBridge.environmentForJamfCLI(),
+            onLine: { _ in }
+        ) else {
+            return false
+        }
+        return exitCode == 0
+    }
+
+    /// What `collect` must do once an `isCollectAuthDead(outcomes)` verdict has
+    /// been resolved with the confirmation probe.
+    enum AuthDeadDecision: Equatable {
+        /// The probe confirmed credentials are alive — warn (naming the 401'd
+        /// kinds) and let the run continue as an ordinary partial failure.
+        case confirmedAlive(warnedKinds: [String])
+        /// The probe could not confirm auth is alive — abort as before.
+        case confirmedDead(failedCount: Int)
+    }
+
+    /// Resolves the auth-dead branch: runs the confirmation `probe` ONLY when
+    /// `isCollectAuthDead(outcomes)` is true (never for a healthy run or one with
+    /// no 401 evidence), and returns `nil` when there is nothing to resolve.
+    /// Isolated from the process-spawning `collect` loop so it is directly
+    /// testable with a spy probe — no jamf-cli binary required.
+    static func evaluateAuthDead(
+        outcomes: [CollectOutcome],
+        profile: String,
+        bin: URL,
+        probe: AuthConfirmationProbe
+    ) async -> AuthDeadDecision? {
+        guard Self.isCollectAuthDead(outcomes) else { return nil }
+        let authFailedKinds = outcomes
+            .filter { $0.exitCode == CLIBridge.exitCodeUnauthorized }
+            .map(\.kind)
+        if await probe(profile, bin) {
+            return .confirmedAlive(warnedKinds: authFailedKinds)
+        }
+        return .confirmedDead(failedCount: authFailedKinds.count)
     }
 
     static func collect(
@@ -1301,6 +1432,7 @@ struct ReportEngine: Sendable {
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         skipExpensive: Bool = false,
         force: Bool = false,
+        authConfirmationProbe: AuthConfirmationProbe = defaultAuthConfirmationProbe,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         guard ProfileService.isValid(profile) else {
@@ -1368,6 +1500,11 @@ struct ReportEngine: Sendable {
             loadedConfig = nil
         }
 
+        // 2.6 accuracy track: when jamf_cli.require_manifest is set, stamp each
+        // saved snapshot's sibling manifest.json so the strict-mode gate
+        // (preflightStrictManifestCheck) has something to verify against.
+        let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
+
         // Commands to collect and their snapshot kind names.
         let commands: [(args: [String], kind: String)] = [
             (["-p", profile, "pro", "overview", "--output", "json"], "overview"),
@@ -1434,6 +1571,15 @@ struct ReportEngine: Sendable {
             // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
             (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
+            // v1.23.0+ only. Observed behavior on jamf-cli 1.21.1 (production, 2026-07):
+            // an older binary exits 2 (usage — unrecognized subcommand), NOT Cobra's
+            // exit-0-with-parent-help; exit 2 falls through the exit-0/exit-7 success
+            // check below and is never saved. The isJSONSnapshot guard is kept as
+            // defense-in-depth for any jamf-cli build that does print help at exit 0
+            // (see the classic-macos-profiles rename comment), but the real-world
+            // failure mode on old binaries is a clean non-zero exit.
+            (["-p", profile, "pro", "report", "duplicate-serials", "--output", "json"],
+             "duplicate-serials"),
         ]
 
         let plannedCommands: [(args: [String], kind: String)]
@@ -1474,6 +1620,10 @@ struct ReportEngine: Sendable {
         // Used to build liveKinds for R4 provenance — exit-0 non-JSON output
         // (Cobra help) passes the exitCode==0 filter but must NOT be "live".
         var savedKinds: Set<String> = []
+        // Cadence "not due" skips only — NOT tier-filter skips, which say nothing
+        // about server reachability. Feeds isCollectDead's veto: a run that skipped
+        // fresh-cache kinds and failed only the chronic residue is not an outage.
+        var skippedNotDueCount = 0
         for (args, kind) in plannedCommands {
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
@@ -1491,6 +1641,7 @@ struct ReportEngine: Sendable {
             let cadence = CadenceResolver.cadence(forReport: kind)
             let lastRun = stateStore?.lastRun(report: kind)
             if !force, !CadenceResolver.isDue(lastRun: lastRun, cadence: cadence, now: collectStart) {
+                skippedNotDueCount += 1
                 onLine(.init(
                     timestamp: Date(), level: .info,
                     text: "[skip] \(kind): not due (last: \(lastRunLabel(lastRun)), cadence: \(cadence.label))"
@@ -1549,7 +1700,10 @@ struct ReportEngine: Sendable {
                             + "command on this jamf-cli?) — snapshot not saved"))
                     continue
                 }
-                try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                try saveSnapshot(
+                    data: data, kind: kind, dataDir: dataDir,
+                    recordManifest: recordManifest, onLine: onLine
+                )
                 savedKinds.insert(kind)
                 // T-8: record success so the cadence boundary advances.
                 // Use try? rather than try — a state-write failure should
@@ -1561,9 +1715,16 @@ struct ReportEngine: Sendable {
                                  text: "[ok] \(kind): \(data.count) bytes"))
                 }
             } else if useCachedData {
-                // use_cached_data=true: warn and skip; cached snapshot (if any) used at generate time.
+                // use_cached_data=true: warn and skip. Only claim "using cached" when a
+                // cached snapshot for this kind actually exists on disk — otherwise the
+                // generate step has nothing to fall back to and the copy would mislead.
+                let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
+                let hasCachedSnapshot = FileManager.newestJSONFile(in: kindDir) != nil
+                let cacheNote = hasCachedSnapshot
+                    ? "skipped (using cached)"
+                    : "no cached snapshot available"
                 onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] \(kind): exit \(exitCode) — skipped (using cached)"))
+                             text: "[warn] \(kind): exit \(exitCode) — \(cacheNote)"))
             } else {
                 // use_cached_data=false: treat collect failure as fatal for this kind.
                 onLine(.init(timestamp: Date(), level: .fail,
@@ -1581,24 +1742,40 @@ struct ReportEngine: Sendable {
         // successes does not reach here — it took the cache-fallback branch above.
         // Skipped when use_cached_data=false (that path already threw collectFailed on
         // the first failure).
-        if Self.isCollectAuthDead(outcomes) {
-            let authFailures = outcomes.filter {
-                $0.exitCode == CLIBridge.exitCodeUnauthorized
-            }.count
-            let msg = "[error] auth failed for '\(profile)': \(authFailures) live call(s) " +
-                "returned 401 and none succeeded — re-authenticate " +
-                "(jamf-cli -p \(profile) pro auth token). No snapshot written."
-            AppLogger.collect.error("\(msg, privacy: .public)")
-            onLine(.init(timestamp: Date(), level: .fail, text: msg))
-            throw ReportEngineError.authExpired(profile: profile, failedCount: authFailures)
+        // Confirmation probe (see AuthConfirmationProbe's doc comment for the field
+        // defect this fixes): one endpoint's 401 is not proof credentials are dead.
+        // evaluateAuthDead only calls the probe when isCollectAuthDead is true.
+        if let decision = await Self.evaluateAuthDead(
+            outcomes: outcomes, profile: profile, bin: bin, probe: authConfirmationProbe
+        ) {
+            switch decision {
+            case .confirmedAlive(let warnedKinds):
+                let msg = "[warn] auth confirmation probe succeeded for '\(profile)' — " +
+                    "credentials are valid. \(warnedKinds.joined(separator: ", ")) " +
+                    "returned 401, but a direct `pro auth token` check passed, so this " +
+                    "reads as endpoint-specific (a mid-command token expiry or a " +
+                    "server-side token quirk on that command) rather than dead " +
+                    "credentials. Updating jamf-cli may resolve it. Continuing."
+                AppLogger.collect.warning("\(msg, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            case .confirmedDead(let failedCount):
+                let msg = "[error] auth failed for '\(profile)': \(failedCount) live call(s) " +
+                    "returned 401 and none succeeded — re-authenticate " +
+                    "(jamf-cli -p \(profile) pro auth token). No snapshot written."
+                AppLogger.collect.error("\(msg, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .fail, text: msg))
+                throw ReportEngineError.authExpired(profile: profile, failedCount: failedCount)
+            }
         }
 
-        // Total-outage guard: all live calls failed (any non-zero exit), no 401 signals
-        // and no successes → server unreachable or jamf-cli broken. Without this guard
-        // the run falls through to SOFA + emitSummaryJSON and records Success while
-        // serving entirely stale cache. Abort BEFORE SOFA/summary for the same reason
-        // as auth-dead: no degraded snapshot should be promoted as fresh data.
-        if Self.isCollectDead(outcomes) {
+        // Total-outage guard: all live calls failed, no 401 signals, no successes, no
+        // "not due" cadence skips this run, and at least one failure isn't a bare exit-2
+        // usage error → server unreachable or jamf-cli broken. Without this guard the run
+        // falls through to SOFA + emitSummaryJSON and records Success while serving
+        // entirely stale cache. Abort BEFORE SOFA/summary for the same reason as
+        // auth-dead: no degraded snapshot should be promoted as fresh data. See
+        // isCollectDead's doc comment for the field defect this veto set fixes.
+        if Self.isCollectDead(outcomes, skippedNotDueCount: skippedNotDueCount) {
             let failedCount = outcomes.count
             let msg = "[error] all \(failedCount) live jamf-cli call(s) failed for '\(profile)' " +
                 "(server unreachable or jamf-cli broken) — no snapshot written."
@@ -2316,7 +2493,13 @@ struct ReportEngine: Sendable {
         (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil
     }
 
-    private static func saveSnapshot(data: Data, kind: String, dataDir: URL) throws {
+    private static func saveSnapshot(
+        data: Data,
+        kind: String,
+        dataDir: URL,
+        recordManifest: Bool = false,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
+    ) throws {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         try FileManager.default.createDirectory(
             at: dir,
@@ -2339,9 +2522,49 @@ struct ReportEngine: Sendable {
                 "saveSnapshot: setAttributes failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
         }
+        // 2.6 accuracy track: stamp the sibling manifest.json so strict-mode
+        // verification (SnapshotManifest.verify) becomes reachable for
+        // app-collected snapshots. Gated on jamf_cli.require_manifest by the
+        // caller. Best-effort — a manifest-write failure must NOT fail the
+        // collect (worst case: verify() reads .absent/.omitted, never .verified).
+        if recordManifest {
+            do {
+                try SnapshotManifest.record(snapshotFile: file, data: data)
+            } catch {
+                // .error, not .warning — under require_manifest this snapshot will
+                // now verify as .omitted instead of .verified, quietly degrading
+                // the "no unverified data" promise. Also surfaced on the collect
+                // stream (onLine) so it lands in Run History, not just Console.app.
+                AppLogger.collect.error(
+                    "saveSnapshot: manifest write failed for \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .private)"
+                )
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] snapshot manifest write failed for \(kind) — verify will report this snapshot as unverified"
+                ))
+            }
+        }
     }
 
-    private static func loadLatestSnapshotData(kind: String, dataDir: URL) throws -> Data {
+    /// Thrown by `loadLatestSnapshotData` when the newest snapshot for `kind`
+    /// is older than the `max_cache_age_hours` limit. Callers treat this like
+    /// ABSENT data (skip the kind, warn) — never a hard failure.
+    struct SnapshotCacheExpired: Error { let kind: String; let ageHours: Int; let limitHours: Int }
+
+    /// Load the newest snapshot for `kind`. When `maxCacheAgeHours > 0` and the
+    /// newest file is older than the limit, throws `SnapshotCacheExpired` so the
+    /// caller can treat stale cache as absent instead of silently serving it.
+    /// `maxCacheAgeHours <= 0` disables the age check (keep-forever).
+    ///
+    /// The age gate is deliberately asymmetric: only the daily summary/digest
+    /// path passes a non-zero `maxCacheAgeHours`. Report sheets pass 0 and render
+    /// whatever cache exists, carrying their own "data as of" subtitles — a stale
+    /// but complete report is more useful than an empty one.
+    private static func loadLatestSnapshotData(
+        kind: String,
+        dataDir: URL,
+        maxCacheAgeHours: Int = 0
+    ) throws -> Data {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
@@ -2351,17 +2574,33 @@ struct ReportEngine: Sendable {
         ), !files.isEmpty else {
             throw ReportEngineError.snapshotParseError(kind)
         }
+        // Order and age snapshots by the timestamp encoded in the FILENAME
+        // (mtime fallback for non-canonical names), matching newestSnapshotFile
+        // and the chart/drift builders. On synced storage (iCloud/SharePoint)
+        // mtimes lie — the file provider re-stamps them on sync — so an
+        // mtime-ordered pick here would disagree with every filename-ordered
+        // reader: the digest could report a kind absent (or serve older
+        // content) while Compliance Posture shows full data from the same dir.
+        func snapshotDate(_ url: URL) -> Date {
+            // Non-optional: falls back to mtime internally for non-canonical names.
+            MSCPChartDataBuilder.dateFromSnapshotFilename(url)
+        }
         let newest = files
             .filter { $0.pathExtension == "json" }
-            .max {
-                let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate) ?? .distantPast
-                let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate) ?? .distantPast
-                return a < b
-            }
+            // Exclude the sibling manifest.json (2.6 SnapshotManifest.record
+            // writer). It is integrity metadata, always newest-by-mtime after a
+            // collect, and would otherwise be returned as "the snapshot" and fail
+            // the caller's decode.
+            .filter { $0.lastPathComponent.lowercased() != SnapshotManifest.fileName }
+            .max { snapshotDate($0) < snapshotDate($1) }
         guard let url = newest else {
             throw ReportEngineError.snapshotParseError(kind)
+        }
+        if maxCacheAgeHours > 0 {
+            let ageHours = Int(Date().timeIntervalSince(snapshotDate(url)) / 3600)
+            if ageHours > maxCacheAgeHours {
+                throw SnapshotCacheExpired(kind: kind, ageHours: ageHours, limitHours: maxCacheAgeHours)
+            }
         }
         return try Data(contentsOf: url)
     }
@@ -2429,6 +2668,20 @@ struct ReportEngine: Sendable {
     /// Internal entry point for injection-guard testing — mirrors `testableScaffoldMappings`.
     static func testableCSVEscape(_ value: String) -> String {
         csvEscape(value)
+    }
+
+    /// Test-only exposure of `saveSnapshot` — mirrors `testableScaffoldMappings`.
+    static func testableSaveSnapshot(
+        data: Data,
+        kind: String,
+        dataDir: URL,
+        recordManifest: Bool,
+        onLine: @escaping @Sendable (CLIBridge.LogLine) -> Void
+    ) throws {
+        try saveSnapshot(
+            data: data, kind: kind, dataDir: dataDir,
+            recordManifest: recordManifest, onLine: onLine
+        )
     }
 
     // MARK: - Column scaffold helpers

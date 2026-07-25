@@ -50,7 +50,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
              mscpBandColumns,
              // R4: which of the digest's input kinds came from this collect
              // (live), an older snapshot (cache), or nowhere (absent).
-             collectionSources
+             collectionSources,
+             // Mobile device count for the "Managed Devices" trend/tile.
+             mobileDeviceCount
     }
 
     var id: String { date }
@@ -112,6 +114,13 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Per-input-kind provenance of this digest: kind -> "live" | "cache" |
     /// "absent". Absent in legacy summaries and generate-time rewrites.
     let collectionSources: [String: String]?
+    /// Device count from the newest `mobile-devices-list` snapshot at collect
+    /// time. Omitted when the mobile-devices snapshot is absent or fails to
+    /// decode — unknown is not zero, and every summary already records the
+    /// computer count (`totalDevices`) retroactively, so this field is the
+    /// only piece needed to answer "how many managed Macs/mobile devices did
+    /// we have on <past date>" from history.
+    let mobileDeviceCount: Int?
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
@@ -144,7 +153,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         complianceIsProxy: Bool? = nil,
         mscpBands: [String: MSCPBandCounts]? = nil,
         mscpBandColumns: [String: String]? = nil,
-        collectionSources: [String: String]? = nil
+        collectionSources: [String: String]? = nil,
+        mobileDeviceCount: Int? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -173,6 +183,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.mscpBands = mscpBands
         self.mscpBandColumns = mscpBandColumns
         self.collectionSources = collectionSources
+        self.mobileDeviceCount = mobileDeviceCount
     }
 
     init(from decoder: Decoder) throws {
@@ -207,6 +218,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
             [String: String].self, forKey: .mscpBandColumns)
         collectionSources = try container.decodeIfPresent(
             [String: String].self, forKey: .collectionSources)
+        mobileDeviceCount = try container.decodeIfPresent(Int.self, forKey: .mobileDeviceCount)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -238,6 +250,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(mscpBands, forKey: .mscpBands)
         try container.encodeIfPresent(mscpBandColumns, forKey: .mscpBandColumns)
         try container.encodeIfPresent(collectionSources, forKey: .collectionSources)
+        try container.encodeIfPresent(mobileDeviceCount, forKey: .mobileDeviceCount)
     }
 }
 

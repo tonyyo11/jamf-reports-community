@@ -1467,6 +1467,21 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
+        // The guard root here is deliberately the UNRESOLVED workspace URL, unlike
+        // every other WorkspacePathGuard caller, which passes the resolved
+        // `WorkspacePathGuard.root(for:)`. The difference is that those callers
+        // validate paths that already exist, while backup validates two paths it is
+        // about to create.
+        //
+        // `resolvingSymlinksInPath()` only follows symlinks for a path that fully
+        // exists; for a not-yet-created path it returns the path with symlinks
+        // intact (verified empirically). So for the staging and final directories
+        // the candidate stays unresolved, and comparing it against a RESOLVED root
+        // fails on any workspace behind a symlink — iCloud/OneDrive/SharePoint, an
+        // external volume, a symlinked home. Both sides must be unresolved here.
+        // Do not "fix" this to `WorkspacePathGuard.root(for:)`; that inverts it and
+        // breaks backup on exactly those workspaces. Pinned by
+        // CLIBridgeBackupTests.test_pathGuardAcceptsNotYetCreatedPathUnderSymlinkedWorkspace.
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
@@ -1503,7 +1518,17 @@ final class CLIBridge {
             throw CLIBridgeError.directoryOperationFailed(path: validatedTemp.path)
         }
 
-        let args = ["-p", profile, "--no-input", "pro", "backup",
+        // jamf-cli's `-p` names the CLI profile, which is not necessarily the
+        // workspace slug: `jamf_cli.profile` exists "for multi-tenant use" and can
+        // point elsewhere. ScaffoldService writes the two equal at onboarding, so
+        // they diverge only on a hand-edited config — but backup is the one call
+        // site here wired to an unattended scheduled job, where a wrong `-p` pins a
+        // permanently red automation-health row instead of an error the operator
+        // sees and reacts to immediately. Same idiom as the config-validate path.
+        // ONLY the -p value changes — every path below still derives from the
+        // workspace slug, and an absent/unreadable config keeps today's behavior.
+        let cliProfile = Self.resolvedCLIProfile(forWorkspace: profile)
+        let args = ["-p", cliProfile, "--no-input", "pro", "backup",
                     "--format", "json", "--output", validatedTemp.path]
         let exit = try await run(
             executable: bin,
@@ -1512,7 +1537,12 @@ final class CLIBridge {
             onLine: onLine
         )
 
-        guard exit == 0 else {
+        // Exit 7 is jamf-cli's documented partial failure: some config-object types
+        // failed (e.g. one type 403s under a reporting-scoped API role) but valid
+        // data was returned for the rest. Keeping that staging dir is the whole
+        // point of the code — deleting it here would destroy the partial export.
+        let isPartial = exit == Self.exitCodePartialFailure
+        guard exit == 0 || isPartial else {
             if (try? fm.removeItem(at: validatedTemp)) == nil {
                 AppLogger.cli.warning(
                     "backup: failed to remove temp dir after CLI error: \(validatedTemp.path, privacy: .private)"
@@ -1520,8 +1550,20 @@ final class CLIBridge {
                 onLine(.init(timestamp: Date(), level: .warn,
                     text: "[warn] backup temp dir could not be removed — delete manually: \(validatedTemp.lastPathComponent)"))
             }
+            // Every other failure branch names its cause; this one used to return a
+            // bare exit code with no log line at all.
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] " + Self.explainExit(exit, operation: "Backup")))
             tightenOnSuccess(exit, profile: profile)
             return exit
+        }
+
+        if isPartial {
+            onLine(.init(timestamp: Date(), level: .warn,
+                text: "[warn] backup is PARTIAL — jamf-cli reported exit 7: some configuration "
+                    + "object types failed and are missing from this backup. The data that was "
+                    + "returned has been kept. Check the lines above for the failing types before "
+                    + "relying on this as a restore point."))
         }
 
         // Rename temp dir to a timestamped final name.
@@ -1529,8 +1571,8 @@ final class CLIBridge {
             .replacingOccurrences(of: ":", with: "")
             .replacingOccurrences(of: "-", with: "")
             .prefix(15)
-        let finalName = "\(ts)"
-        let finalDir = backupsRoot.appendingPathComponent(String(finalName), isDirectory: true)
+        let finalName = Self.uniqueBackupDirectoryName(base: String(ts), in: backupsRoot, fileManager: fm)
+        let finalDir = backupsRoot.appendingPathComponent(finalName, isDirectory: true)
         guard let validatedFinal = WorkspacePathGuard.validate(finalDir, under: workspace) else {
             if (try? fm.removeItem(at: validatedTemp)) == nil {
                 AppLogger.cli.warning(
@@ -1586,10 +1628,60 @@ final class CLIBridge {
                          text: "[warn] backup manifest write failed — backup was created but BackupsView may show no label or stats"))
         }
 
-        onLine(.init(timestamp: Date(), level: .ok,
-                     text: "[ok] backup written: \(validatedFinal.lastPathComponent)"))
-        tightenOnSuccess(0, profile: profile)
-        return 0
+        onLine(.init(
+            timestamp: Date(),
+            level: isPartial ? .warn : .ok,
+            text: isPartial
+                ? "[warn] partial backup written: \(validatedFinal.lastPathComponent)"
+                : "[ok] backup written: \(validatedFinal.lastPathComponent)"
+        ))
+        tightenOnSuccess(exit, profile: profile)
+        return exit
+    }
+
+    /// The jamf-cli profile to pass as `-p` for a workspace: `jamf_cli.profile`
+    /// when the config sets a usable one, otherwise the workspace slug.
+    ///
+    /// Best-effort by design — a missing, unreadable, or profile-less config falls
+    /// back to the slug, which is the pre-existing behavior. Empty and leading-dash
+    /// values are rejected: `-p ""` and `-p --foo` (re-read by jamf-cli as a flag)
+    /// are both worse than the fallback. Never used for path construction.
+    nonisolated static func resolvedCLIProfile(forWorkspace profile: String) -> String {
+        guard let workspace = ProfileService.workspaceURL(for: profile),
+              let config = try? ConfigLoader.load(
+                  from: workspace.appendingPathComponent("config.yaml")
+              ),
+              let candidate = config.jamfCli?.resolvedProfile,
+              !candidate.isEmpty,
+              !candidate.hasPrefix("-") else {
+            return profile
+        }
+        return candidate
+    }
+
+    /// Backup directory name for `base`, appending `-2`, `-3`, … when a directory
+    /// with that name already exists.
+    ///
+    /// The name is a 1-second-resolution timestamp, so two backups finishing in the
+    /// same second collide: `moveItem` throws EEXIST, the catch deletes the
+    /// just-completed staging dir, and a good backup is lost while the user sees a
+    /// failure. Non-colliding names are returned verbatim — `BackupsView` and
+    /// `BackupMaintenance` read these directories, so the format must not shift for
+    /// the normal case.
+    nonisolated static func uniqueBackupDirectoryName(
+        base: String,
+        in directory: URL,
+        fileManager: FileManager = .default
+    ) -> String {
+        var candidate = base
+        var suffix = 2
+        while fileManager.fileExists(
+            atPath: directory.appendingPathComponent(candidate, isDirectory: true).path
+        ) {
+            candidate = "\(base)-\(suffix)"
+            suffix += 1
+        }
+        return candidate
     }
 
     private func directoryStats(_ url: URL) -> (fileCount: Int, sizeBytes: Int64) {
@@ -1713,12 +1805,26 @@ final class CLIBridge {
         return 0
     }
 
+    /// - Parameter applyToRunningJob: When `false`, only the plist FILE is
+    ///   written — `launchctl bootout`/`bootstrap` are skipped entirely. Used
+    ///   exclusively when `schedule`'s own label is the LaunchAgent label of
+    ///   the CURRENTLY-RUNNING scheduled-run process: a bootout of your own
+    ///   label kills the process mid-run. launchd re-reads `RunAtLoad` /
+    ///   `StartCalendarInterval` from the plist at job LOAD time (next
+    ///   login/reload), so the in-memory job keeps running on its old
+    ///   schedule until then — sufficient for a policy edit or migration to
+    ///   apply on the schedule's NEXT fire without killing this one.
     func setupLaunchAgent(
         _ schedule: Schedule,
         load: Bool,
+        applyToRunningJob: Bool = true,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
-        if schedule.isMulti { return try await setupMultiLaunchAgent(schedule, load: load, onLine: onLine) }
+        if schedule.isMulti {
+            return try await setupMultiLaunchAgent(
+                schedule, load: load, applyToRunningJob: applyToRunningJob, onLine: onLine
+            )
+        }
 
         guard await ensureWorkspace(profile: schedule.profile, onLine: onLine) != nil else {
             throw CLIBridgeError.workspaceMissing(profile: schedule.profile)
@@ -1734,6 +1840,11 @@ final class CLIBridge {
 
         let action = load ? "writing and loading" : "writing disabled"
         onLine(.init(timestamp: Date(), level: .info, text: "[info] \(action) LaunchAgent \(plan.label)"))
+        guard applyToRunningJob else {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] wrote \(plan.label) file-only — running job untouched"))
+            return 0
+        }
         _ = await LaunchAgentWriter.unload(plan.label)
         if load {
             let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)
@@ -1749,6 +1860,7 @@ final class CLIBridge {
     private func setupMultiLaunchAgent(
         _ schedule: Schedule,
         load: Bool,
+        applyToRunningJob: Bool = true,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard LaunchAgentWriter.label(for: schedule) != nil else {
@@ -1772,6 +1884,11 @@ final class CLIBridge {
             let action = load ? "writing and loading" : "writing disabled"
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] \(action) multi-profile LaunchAgent \(plan.label)"))
+            guard applyToRunningJob else {
+                onLine(.init(timestamp: Date(), level: .info,
+                             text: "[info] file-only write for \(plan.label) — not reloading the running job"))
+                return 0
+            }
             _ = await LaunchAgentWriter.unload(plan.label)
             if load {
                 let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)

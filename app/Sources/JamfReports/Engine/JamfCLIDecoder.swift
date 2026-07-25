@@ -317,11 +317,42 @@ struct DeviceComplianceRow: Decodable, Sendable {
     let serial: String?
     let managed: Bool?
     let stale: Bool?
+    /// Legacy key. Current jamf-cli emits `days_since_contact` instead; kept as
+    /// a fallback for older snapshots.
     let daysSinceCheckin: Int?
+    /// Current jamf-cli key: days since the device last contacted Jamf. Arrives
+    /// as a String ("4160") in production but tolerated as a number too (matches
+    /// CoreDashboard's `days_since_contact` precedence).
+    let daysSinceContact: Int?
 
     private enum CodingKeys: String, CodingKey {
         case name, serial, managed, stale
         case daysSinceCheckin = "days_since_checkin"
+        case daysSinceContact = "days_since_contact"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        serial = try c.decodeIfPresent(String.self, forKey: .serial)
+        managed = try c.decodeIfPresent(Bool.self, forKey: .managed)
+        stale = try c.decodeIfPresent(Bool.self, forKey: .stale)
+        // Tolerant int decode: both keys can arrive as String or number across
+        // jamf-cli versions (reuses AnyCodable.intValue like other decoders here).
+        daysSinceCheckin = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceCheckin)?.intValue
+        daysSinceContact = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceContact)?.intValue
+    }
+
+    /// Resolved day count, preferring the current `days_since_contact` key and
+    /// falling back to the legacy `days_since_checkin`.
+    var resolvedDaysSinceContact: Int? { daysSinceContact ?? daysSinceCheckin }
+
+    /// Whether the device is stale at `>= threshold` days. Uses the resolved day
+    /// count when present; otherwise falls back to the server-side `stale` flag
+    /// (coarser ~90-100d cadence, but honest when no day count is emitted).
+    func isStale(atDays threshold: Int) -> Bool {
+        if let days = resolvedDaysSinceContact { return days >= threshold }
+        return stale == true
     }
 }
 
@@ -354,10 +385,11 @@ struct EAResultRow: Decodable, Sendable {
 extension EAResultRow {
     /// Decode an `ea-results` snapshot, tolerating the shapes jamf-cli has emitted
     /// across versions: a bare `[EAResultRow]` array, or an envelope object with a
-    /// `results` / `nodes` / `data` array. On no match, `rows` is nil and `reason`
-    /// carries a PII-SAFE structural summary (top-level kind + first-element KEYS,
-    /// never values) so a new shape shows up in the log instead of silently
-    /// producing an empty/garbled compliance chart.
+    /// `results` / `nodes` / `data` array. Both shapes are salvaged when truncated
+    /// mid-record (see `salvageTruncatedArray` / `salvageTruncatedEnvelope`). On no
+    /// match, `rows` is nil and `reason` carries a PII-SAFE structural summary
+    /// (top-level kind + first-element KEYS, never values) so a new shape shows up
+    /// in the log instead of silently producing an empty/garbled compliance chart.
     static func decodeSnapshot(_ data: Data) -> (rows: [EAResultRow]?, reason: String) {
         let decoder = JSONDecoder()
         if let rows = try? decoder.decode([EAResultRow].self, from: data) {
@@ -372,9 +404,13 @@ extension EAResultRow {
            let r = env.results ?? env.nodes ?? env.data {
             return (r, "envelope")
         }
-        // Bare arrays truncated mid-record at 16KB pipe boundaries (old reader bug)
-        // fail whole-array decode; salvage everything up to the last complete element.
+        // Truncated mid-record at 16KB pipe boundaries (old reader bug) fails
+        // whole-payload decode; salvage everything up to the last complete
+        // top-level row, whichever shape (bare array or envelope) it is.
         if let salvaged = salvageTruncatedArray(data) {
+            return salvaged
+        }
+        if let salvaged = salvageTruncatedEnvelope(data) {
             return salvaged
         }
         return (nil, structuralSummary(data))
@@ -397,6 +433,95 @@ extension EAResultRow {
         return (rows, "salvaged \(rows.count) rows from truncated array (\(data.count) bytes)")
     }
 
+    /// Recovers rows from an envelope object (`{"results": [...]}` / `"nodes"` /
+    /// `"data"`, matching the intact-envelope decode above) truncated mid-element
+    /// or missing its closing brace. Locates the array opened by whichever known
+    /// envelope key appears at the object's top level, then re-runs the SAME
+    /// last-complete-element scan `salvageTruncatedArray` uses — starting the scan
+    /// at that array's own opening `[` re-bases the depth count so the "depth == 1
+    /// closes a top-level element" invariant `lastDepth1ObjectEnd` assumes holds
+    /// exactly as it does for a bare array, even though the array here sits one
+    /// level deeper than the document root. Envelope shapes only; nil if the
+    /// payload isn't an object, or none of the known keys' arrays were reached
+    /// before truncation.
+    private static func salvageTruncatedEnvelope(_ data: Data) -> (rows: [EAResultRow]?, reason: String)? {
+        guard firstNonWhitespaceByte(data) == UInt8(ascii: "{") else { return nil }
+        guard let (key, arrayStart) = envelopeArrayStart(data) else { return nil }
+        let arraySlice = data.subdata(in: (data.startIndex + arrayStart) ..< data.endIndex)
+        guard let lastEnd = lastDepth1ObjectEnd(arraySlice) else { return nil }
+        var slice = arraySlice.subdata(in: arraySlice.startIndex ..< (arraySlice.startIndex + lastEnd + 1))
+        slice.append(UInt8(ascii: "]"))
+        guard let rows = try? JSONDecoder().decode([EAResultRow].self, from: slice) else { return nil }
+        AppLogger.platform.notice(
+            "EAResultRow.decodeSnapshot: salvaged \(rows.count, privacy: .public) rows from truncated envelope (\(key, privacy: .public)) (\(data.count, privacy: .public) bytes) — partial snapshot, counts may understate the fleet"
+        )
+        return (rows, "salvaged \(rows.count) rows from truncated envelope (\(key)) (\(data.count) bytes)")
+    }
+
+    /// Locates the array value of whichever known envelope key (`results` /
+    /// `nodes` / `data`) appears at the top level of an object payload, tracking
+    /// string/escape state the same way `lastDepth1ObjectEnd` does. A string that
+    /// closes while `depth == 1` (directly inside the outer `{}`) is checked
+    /// against the key set; if the next non-whitespace bytes are `:` then `[`,
+    /// that `[`'s offset is recorded for the matching key. Priority mirrors the
+    /// intact-envelope decode (`results` over `nodes` over `data`); nil if none of
+    /// the keys' arrays were reached before the payload ends.
+    private static func envelopeArrayStart(_ data: Data) -> (key: String, index: Int)? {
+        let keys: Set<String> = ["results", "nodes", "data"]
+        var found: [String: Int] = [:]
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var stringStart = 0
+        data.withUnsafeBytes { (buf: UnsafeRawBufferPointer) in
+            func isWhitespace(_ b: UInt8) -> Bool {
+                b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D
+            }
+            var i = 0
+            while i < buf.count {
+                let b = buf[i]
+                if inString {
+                    if escaped {
+                        escaped = false
+                    } else if b == UInt8(ascii: "\\") {
+                        escaped = true
+                    } else if b == UInt8(ascii: "\"") {
+                        inString = false
+                        if depth == 1 {
+                            let content = String(decoding: buf[(stringStart + 1) ..< i], as: UTF8.self)
+                            if keys.contains(content), found[content] == nil {
+                                var j = i + 1
+                                while j < buf.count, isWhitespace(buf[j]) { j += 1 }
+                                if j < buf.count, buf[j] == UInt8(ascii: ":") {
+                                    j += 1
+                                    while j < buf.count, isWhitespace(buf[j]) { j += 1 }
+                                    if j < buf.count, buf[j] == UInt8(ascii: "[") {
+                                        found[content] = j
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    i += 1
+                    continue
+                }
+                switch b {
+                case UInt8(ascii: "\""):
+                    inString = true
+                    stringStart = i
+                case UInt8(ascii: "["), UInt8(ascii: "{"): depth += 1
+                case UInt8(ascii: "]"), UInt8(ascii: "}"): depth -= 1
+                default: break
+                }
+                i += 1
+            }
+        }
+        if let idx = found["results"] { return ("results", idx) }
+        if let idx = found["nodes"] { return ("nodes", idx) }
+        if let idx = found["data"] { return ("data", idx) }
+        return nil
+    }
+
     /// True when a `decodeSnapshot` reason denotes a salvaged partial snapshot —
     /// the seam consumers use to flag understated counts without string-matching.
     static func isSalvageReason(_ reason: String) -> Bool { reason.hasPrefix("salvaged") }
@@ -411,6 +536,10 @@ extension EAResultRow {
 
     /// O(n), allocation-light byte scan (string/escape aware) returning the offset
     /// of the last `}` that closes a depth-1 top-level array element, or nil.
+    /// Depth is always measured from the START of `data`, which must be (or begin
+    /// at) an array's opening `[` — this is what lets `salvageTruncatedEnvelope`
+    /// reuse this unmodified by handing it a slice re-based at the envelope
+    /// array's `[`, rather than requiring a document-root offset.
     private static func lastDepth1ObjectEnd(_ data: Data) -> Int? {
         var depth = 0
         var inString = false
@@ -618,6 +747,32 @@ struct HardwareModelRow: Decodable, Sendable {
     let pct: String?
 }
 
+// MARK: - Duplicate serials
+// `jamf-cli pro report duplicate-serials --output json` (v1.23.0+)
+// Shape (bare array, flat, pre-grouped by serial + ordered by numeric id):
+// [ { "serial": String, "id": String, "name": String, "last_contact": String } ]
+// Source: internal/commands/pro_report_serials.go — runReportDuplicateSerials
+// returns `[]map[string]any` with exactly these four keys, and
+// output.Formatter.printJSON does a plain `json.NewEncoder(w).Encode(data)` on
+// that slice — no envelope, matching the classic-computer-groups convention.
+
+/// Not Identifiable on purpose — a per-access computed id would abort SwiftUI
+/// Table (#185). `id` is `AnyCodable` because jamf-cli has emitted record ids
+/// as both JSON string and number across versions/commands (the exact
+/// ambiguity `SmartGroupRow` was hardened against) — a strict `String?` would
+/// invalidate the whole snapshot on one number-typed row.
+struct DuplicateSerialRow: Decodable, Sendable {
+    let serial: String?
+    let id: AnyCodable?
+    let name: String?
+    let lastContact: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case serial, id, name
+        case lastContact = "last_contact"
+    }
+}
+
 // MARK: - Audit
 // `jamf-cli pro audit --output json`
 
@@ -708,13 +863,43 @@ struct GroupAnalysisRow: Decodable, Sendable {
 struct MobileDeviceInventoryItem: Decodable, Sendable {
     let mobileDeviceId: String?
     let deviceType: String?
+    let hardware: MobileDeviceHardware?
     let general: MobileDeviceGeneral?
     let userAndLocation: MobileDeviceUserLocation?
     let applications: [MobileDeviceApplication]?
 
     private enum CodingKeys: String, CodingKey {
-        case mobileDeviceId, deviceType, general, userAndLocation, applications
+        case mobileDeviceId, deviceType, hardware, general, userAndLocation, applications
     }
+
+    /// Explicit memberwise init with `hardware` defaulted, so demo/preview call
+    /// sites that predate the `hardware` field keep compiling. `Decodable`
+    /// synthesis is unaffected (no custom `init(from:)`).
+    init(
+        mobileDeviceId: String? = nil,
+        deviceType: String? = nil,
+        hardware: MobileDeviceHardware? = nil,
+        general: MobileDeviceGeneral? = nil,
+        userAndLocation: MobileDeviceUserLocation? = nil,
+        applications: [MobileDeviceApplication]? = nil
+    ) {
+        self.mobileDeviceId = mobileDeviceId
+        self.deviceType = deviceType
+        self.hardware = hardware
+        self.general = general
+        self.userAndLocation = userAndLocation
+        self.applications = applications
+    }
+}
+
+/// Hardware section of a mobile device. Only the form-factor fields are decoded:
+/// jamf-cli's `deviceType` is the OS family ("iOS"), so the iPad-vs-iPhone
+/// distinction lives here in `model` ("iPhone 5 (CDMA)") / `modelIdentifier`
+/// ("iPhone5,2"). Can arrive as `null` when the hardware section wasn't
+/// requested/collected.
+struct MobileDeviceHardware: Decodable, Sendable {
+    let model: String?
+    let modelIdentifier: String?
 }
 
 struct MobileDeviceGeneral: Decodable, Sendable {
@@ -765,6 +950,12 @@ struct MobileDeviceListRow: Decodable, Sendable {
     let serialNumber: String?
     let username: String?
     let type: String?
+    /// Current jamf-cli list shape mirrors the inventory shape: form factor
+    /// lives in `hardware.model` and the OS family in `deviceType`. Decoded
+    /// additively so both the older flat shape (top-level `model`/`type`) and
+    /// the current nested shape classify. Optional — nil for the older shape.
+    let hardware: MobileDeviceHardware?
+    let deviceType: String?
 }
 
 // MARK: - Classic iOS/mobile config profiles
@@ -1042,7 +1233,16 @@ struct AnyCodable: Codable, Sendable, CustomStringConvertible {
         switch value {
         case let n as Int: return n
         case let d as Double: return Int(d)
-        case let s as String: return Int(s)
+        case let s as String:
+            if let i = Int(s) { return i }
+            // Audit EAs sometimes print counts float-formatted ("3.0"). Accept
+            // a whole-number Double string; a fractional one ("3.9") stays nil
+            // rather than silently truncating to a different count.
+            if let d = Double(s), d.truncatingRemainder(dividingBy: 1) == 0,
+               d >= -2_147_483_648, d <= 2_147_483_647 {
+                return Int(d)
+            }
+            return nil
         default: return nil
         }
     }

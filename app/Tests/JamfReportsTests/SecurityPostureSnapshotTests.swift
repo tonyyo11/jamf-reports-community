@@ -14,9 +14,7 @@ final class SecurityPostureSnapshotTests: XCTestCase {
     // MARK: - Helpers
 
     private func fixtureURL(named name: String) -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/security_posture/\(name)")
+        TestFixtures.dir("security_posture/\(name)")
     }
 
     private func decode(_ json: String) throws -> [SecurityReportItem] {

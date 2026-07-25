@@ -26,6 +26,18 @@ struct MobileFleetView: View {
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                // A Mac-only tenant has no mobile devices at all, so no
+                // expected kinds — every one of them would render a
+                // false-alarm "never" chip. Only assert expectations once
+                // mobile data is detected; present-kind chips still show
+                // either way.
+                FreshnessChipRow(
+                    sourceDates: snapshot.sourceDates,
+                    expectedKinds: snapshot.isDetected ? [
+                        "mobile-devices-list", "mobile-device-inventory-details",
+                        "classic-ios-profiles",
+                    ] : []
+                )
             }
 
             if !snapshot.isDetected {

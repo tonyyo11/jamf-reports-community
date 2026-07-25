@@ -12,7 +12,13 @@ struct Backup: AsyncParsableCommand {
         // the same "keep newest 10" retention instead of growing unbounded.
         let label = "scheduled-\(BackupMaintenance.dateStamp())"
         let code = try await bridge.backup(profile: profile, label: label, onLine: CLIRun.printLogLine)
-        if code != 0 { CLIRun.fail("backup failed (exit \(code))", code: code) }
+        // Explain the exit code (cause + remediation) rather than printing a bare
+        // integer — same translation the GUI and the scheduled path use.
+        if code != 0 {
+            CLIRun.fail(
+                CLIBridge.explainExit(code, operation: "Backup for '\(profile)'"), code: code
+            )
+        }
         // Third caller of the shared housekeeping (GUI + scheduled are the others):
         // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
         BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: CLIRun.printLogLine)
@@ -20,9 +26,14 @@ struct Backup: AsyncParsableCommand {
 }
 
 struct Scaffold: AsyncParsableCommand {
-    static let configuration =
-        CommandConfiguration(abstract: "Scaffold a config.yaml from a Jamf Pro CSV export.")
-    @Option(help: "Path to a Jamf Pro CSV export.") var csv: String
+    static let configuration = CommandConfiguration(
+        abstract: "Scaffold a config.yaml, from a Jamf Pro CSV export or as a minimal "
+            + "jamf-cli-only config.")
+    @Option(help: ArgumentHelp(
+        "Path to a Jamf Pro CSV export. Omit to write a minimal jamf-cli-only config "
+            + "(no column mapping) — the same starting point the GUI's \"Skip for now\" "
+            + "onboarding path writes."
+    )) var csv: String?
     @Option(help: "Output config.yaml path.") var out: String
 
     func run() async throws {
@@ -34,6 +45,13 @@ struct Scaffold: AsyncParsableCommand {
         // Python `scaffold`; the user sets the profile when they wire it up). Like
         // Python's `scaffold`, this OVERWRITES `--out` if it exists — it's an
         // initial-setup command; the GUI re-scaffold does a non-destructive merge.
+        guard let csv else {
+            // Same shape the GUI onboarding "Skip for now" path writes, and the
+            // same unconditional-overwrite semantics as the CSV branch below.
+            try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
+            print(outURL.path)
+            return
+        }
         let result = try ScaffoldService.matchColumns(from: URL(fileURLWithPath: csv), profile: "")
         try ScaffoldService.writeConfig(to: outURL, result: result, profile: "")
         print(outURL.path)

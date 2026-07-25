@@ -38,22 +38,13 @@ final class CoreDashboardParityTests: XCTestCase {
         try json.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures/jamf-cli-data")
-    }
+    private var fixturesDir: URL { TestFixtures.dir("jamf-cli-data") }
 
     /// Copy a named fixture subdirectory into a temp dir.
     private func copyFixture(_ name: String, into dir: URL) {
         let src = fixturesDir.appendingPathComponent(name)
         let dst = dir.appendingPathComponent(name)
-        guard FileManager.default.fileExists(atPath: src.path) else { return }
-        try? FileManager.default.copyItem(at: src, to: dst)
+        try? TestFixtures.copyDir(src, to: dst)
     }
 
     // MARK: - sheetPlan registration
@@ -375,7 +366,7 @@ final class CoreDashboardParityTests: XCTestCase {
         else { throw XCTSkip("plans_happy.json fixture not available") }
         let subdirURL = dir.appendingPathComponent("protect-plans", isDirectory: true)
         try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: src, to: subdirURL.appendingPathComponent("plans.json"))
+        try TestFixtures.copyFile(src, to: subdirURL.appendingPathComponent("plans.json"))
 
         let dash = makeDashboard(dataDir: dir)
         XCTAssertNoThrow(try dash.writeProtectPlans())
@@ -463,7 +454,7 @@ final class CoreDashboardParityTests: XCTestCase {
         else { throw XCTSkip("alerts_happy.json fixture not available") }
         let subdirURL = dir.appendingPathComponent("protect-alerts", isDirectory: true)
         try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(at: src, to: subdirURL.appendingPathComponent("alerts.json"))
+        try TestFixtures.copyFile(src, to: subdirURL.appendingPathComponent("alerts.json"))
 
         let dash = makeDashboard(dataDir: dir)
         XCTAssertNoThrow(try dash.writeProtectThreatOverview())

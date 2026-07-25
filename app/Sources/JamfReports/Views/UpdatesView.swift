@@ -13,23 +13,6 @@ struct UpdatesView: View {
     /// fetches SOFA — view renders nothing new when empty.
     @State private var sofaRows: [SOFAFeedService.OSFamilyRow] = []
 
-    /// `pro sg` templates the Updates dashboard offers as actionable
-    /// remediations. Loaded once per profile. `nil` until the feature-detect
-    /// completes; if jamf-cli doesn't include PR #205 yet or `pro sg` errors out the
-    /// menu stays hidden so older installs see no regression.
-    @State private var updateTemplates: [SmartGroupTemplate] = []
-    @State private var selectedTemplate: SmartGroupTemplate?
-    @State private var bridge = CLIBridge()
-
-    /// Stable order of templates in the menu — matches the operational priority
-    /// from the design plan, not alphabetical.
-    private static let templateOrder: [String] = [
-        "updates/os-version-below",
-        "updates/major-version-behind",
-        "updates/rsr-not-applied",
-        "updates/beta-os",
-    ]
-
     var body: some View {
         PageScaffold {
             PageHeader(
@@ -43,14 +26,17 @@ struct UpdatesView: View {
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
+                // Per-kind file dates are the honest per-screen signal here;
+                // digest-level collectionSources belongs on summary screens only.
+                FreshnessChipRow(
+                    sourceDates: snapshot.sourceDates,
+                    expectedKinds: ["update-status", "update-device-failures"]
+                )
             }
             if snapshot.total == 0 {
                 emptyState
             } else {
                 kpiGrid
-                if !updateTemplates.isEmpty {
-                    smartGroupActionBar
-                }
                 planStateCard
                 statusSummaryCard
                 if !snapshot.failedPlans.isEmpty {
@@ -66,84 +52,9 @@ struct UpdatesView: View {
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
-        .task(id: workspace.profile) { await loadSmartGroupTemplates() }
         .onChange(of: workspace.profile) { _, _ in reload() }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
-        }
-        .sheet(item: $selectedTemplate) { template in
-            SmartGroupApplySheet(
-                viewModel: SmartGroupApplySheetViewModel(
-                    template: template,
-                    profile: workspace.profile,
-                    templateService: SmartGroupTemplateService(
-                        executor: DefaultCLIExecutor(bridge: bridge)
-                    ),
-                    applyService: SmartGroupApplyService(
-                        executor: DefaultCLIExecutor(bridge: bridge)
-                    )
-                )
-            )
-            .environment(workspace)
-        }
-    }
-
-    /// Single-button menu surface: avoids cluttering the cards row with four
-    /// loose buttons, keeps discovery in one place, and aligns with the read
-    /// flow (operator sees a problem in a card, then chooses which template
-    /// fits from a focused list).
-    private var smartGroupActionBar: some View {
-        Card(padding: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "rectangle.stack.badge.plus")
-                    .foregroundStyle(Theme.Colors.gold)
-                Text("Create smart group")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg)
-                Spacer()
-                Menu("Select template") {
-                    ForEach(updateTemplates) { template in
-                        Button {
-                            selectedTemplate = template
-                        } label: {
-                            Text(Self.menuLabel(for: template))
-                        }
-                    }
-                }
-                .controlSize(.regular)
-                .help("Open a template-driven sheet to create a smart group for this update gap")
-            }
-        }
-    }
-
-    /// Short, scannable label for the menu — falls back to the slug when the
-    /// template description is empty.
-    private static func menuLabel(for template: SmartGroupTemplate) -> String {
-        switch template.slug {
-        case "updates/os-version-below":    return "Devices below an OS version…"
-        case "updates/major-version-behind": return "A major OS version behind"
-        case "updates/rsr-not-applied":     return "Rapid Security Response not applied"
-        case "updates/beta-os":             return "Running a beta OS"
-        default:                    return template.description.isEmpty ? template.slug : template.description
-        }
-    }
-
-    /// Loads the 4 update-category templates once per profile. Errors leave the
-    /// list empty, which hides the action bar — older jamf-cli installs see no
-    /// regression.
-    private func loadSmartGroupTemplates() async {
-        let service = SmartGroupTemplateService(executor: DefaultCLIExecutor(bridge: bridge))
-        do {
-            let all = try await service.listTemplates(profile: workspace.profile)
-            let bySlug = Dictionary(uniqueKeysWithValues: all.map { ($0.slug, $0) })
-            updateTemplates = Self.templateOrder.compactMap { bySlug[$0] }
-        } catch SmartGroupTemplateServiceError.featureNotAvailable {
-            updateTemplates = []
-        } catch {
-            AppLogger.cli.error(
-                "UpdatesView smart-group templates load failed: \(String(describing: error), privacy: .private)"
-            )
-            updateTemplates = []
         }
     }
 

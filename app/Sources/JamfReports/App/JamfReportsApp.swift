@@ -28,7 +28,7 @@ struct JamfReportsApp: App {
                     // to `.regular` and key the first window. No-op for
                     // Launch-Services-launched .app bundles.
                     NSApplication.shared.setActivationPolicy(.regular)
-                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    NSApplication.shared.activate()
                     NSApp.windows.first?.makeKeyAndOrderFront(nil)
                 }
         }

@@ -272,6 +272,85 @@ final class EAParseHealthServiceTests: XCTestCase {
         XCTAssertEqual(Service.coverageDrift(dataDir: dir), [])
     }
 
+    // MARK: - coverageDriftOutcome (S3 security review)
+
+    func testCoverageDriftOutcomeComputedWithTwoCleanDays() throws {
+        let dir = try makeTempDataDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try writeSnapshot(
+            in: dir, name: "ea-results_20260601T080000.json",
+            rows: [("Mac1", "FileVault", "Encrypted"), ("Mac2", "FileVault", "Encrypted")]
+        )
+        try writeSnapshot(
+            in: dir, name: "ea-results_20260602T080000.json",
+            rows: [("Mac1", "FileVault", "Encrypted"), ("Mac2", "FileVault", "")]
+        )
+
+        let outcome = Service.coverageDriftOutcome(dataDir: dir)
+        guard case .computed(let drift) = outcome else {
+            return XCTFail("expected .computed with two clean decodable days")
+        }
+        XCTAssertFalse(drift.isEmpty)
+    }
+
+    func testCoverageDriftOutcomeInsufficientDataWithZeroDays() {
+        let dir = URL(fileURLWithPath: "/nonexistent-\(UUID().uuidString)")
+        let outcome = Service.coverageDriftOutcome(dataDir: dir)
+        guard case .insufficientData(let reason) = outcome else {
+            return XCTFail("expected .insufficientData for a missing directory")
+        }
+        XCTAssertFalse(reason.isEmpty)
+    }
+
+    func testCoverageDriftOutcomeInsufficientDataWithOneDay() throws {
+        let dir = try makeTempDataDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try writeSnapshot(
+            in: dir, name: "ea-results_20260601T080000.json",
+            rows: [("Mac1", "FileVault", "Encrypted")]
+        )
+
+        let outcome = Service.coverageDriftOutcome(dataDir: dir)
+        guard case .insufficientData(let reason) = outcome else {
+            return XCTFail("expected .insufficientData with only one decodable day")
+        }
+        XCTAssertTrue(reason.contains("two"))
+    }
+
+    /// The reason must name salvage specifically when the newest day(s) were
+    /// recovered from a truncated file — reusing the salvage-fixture recipe
+    /// from `SalvageAnnotationTests` (self-contained here, not shared state).
+    func testCoverageDriftOutcomeInsufficientDataNamesSalvageReason() throws {
+        let dir = try makeTempDataDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Only ONE clean day plus a salvaged newest day — after skipping the
+        // salvaged day, just one decodable day remains → insufficient, and the
+        // reason must call out the salvage (not the generic "fewer than two").
+        try writeSnapshot(
+            in: dir, name: "ea-results_20260601T080000.json",
+            rows: [("Mac1", "FileVault", "Encrypted")]
+        )
+        let intact = intactSalvageFixture(column: "FileVault", count: 6)
+        let truncated = truncateMidRecord(intact, keepRecords: 4)
+        // Confirm precondition: this file salvages, not decodes cleanly.
+        let precheck = EAResultRow.decodeSnapshot(truncated)
+        XCTAssertTrue(EAResultRow.isSalvageReason(precheck.reason))
+        let salvagedURL = dir
+            .appendingPathComponent("ea-results", isDirectory: true)
+            .appendingPathComponent("ea-results_20260602T080000.json")
+        try truncated.write(to: salvagedURL)
+
+        let outcome = Service.coverageDriftOutcome(dataDir: dir)
+        guard case .insufficientData(let reason) = outcome else {
+            return XCTFail("expected .insufficientData when the newest day is salvaged")
+        }
+        XCTAssertTrue(reason.lowercased().contains("salvag"),
+                      "reason must call out salvage, got: \(reason)")
+    }
+
     // MARK: - fixtures
 
     private func makeTempDataDir() throws -> URL {
@@ -298,5 +377,41 @@ final class EAParseHealthServiceTests: XCTestCase {
             .appendingPathComponent("ea-results", isDirectory: true)
             .appendingPathComponent(name)
         try json.data(using: .utf8)!.write(to: url)
+    }
+
+    /// A valid bare-array `[EAResultRow]` payload for `count` devices, all
+    /// carrying `ea_name: column` with a non-empty value — used with
+    /// `truncateMidRecord` to build a salvage-path fixture. Self-contained
+    /// copy of the recipe in `SalvageAnnotationTests` (not shared state).
+    private func intactSalvageFixture(column: String, count: Int) -> Data {
+        let rows = (0..<count).map { i in
+            #"{"device":"mac-\#(i)","ea_name":"\#(column)","value":"Encrypted"}"#
+        }
+        let json = "[" + rows.joined(separator: ",") + "]"
+        return Data(json.utf8)
+    }
+
+    /// Truncate a valid bare-array payload mid-record: cut after the LAST
+    /// complete top-level object, then append a partial (unterminated) next
+    /// object — reproducing the real 16KB pipe-boundary truncation bug so the
+    /// result decodes ONLY via `EAResultRow.decodeSnapshot`'s salvage path.
+    private func truncateMidRecord(_ intact: Data, keepRecords: Int) -> Data {
+        let json = String(data: intact, encoding: .utf8)!
+        var depth = 0
+        var closeIndices: [String.Index] = []
+        var idx = json.startIndex
+        while idx < json.endIndex {
+            let ch = json[idx]
+            if ch == "[" || ch == "{" { depth += 1 }
+            if ch == "]" || ch == "}" {
+                depth -= 1
+                if ch == "}" && depth == 1 { closeIndices.append(idx) }
+            }
+            idx = json.index(after: idx)
+        }
+        precondition(closeIndices.count >= keepRecords, "fixture must have enough records")
+        let cutAfter = closeIndices[keepRecords - 1]
+        let kept = String(json[json.startIndex...cutAfter])
+        return Data((kept + #","{"device":"mac-cut"#).utf8)
     }
 }

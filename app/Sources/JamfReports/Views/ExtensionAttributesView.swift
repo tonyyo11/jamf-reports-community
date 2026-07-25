@@ -44,6 +44,12 @@ struct ExtensionAttributesView: View {
             )
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                // Per-kind file dates are the honest per-screen signal here;
+                // digest-level collectionSources belongs on summary screens only.
+                FreshnessChipRow(
+                    sourceDates: snapshot.sourceDates,
+                    expectedKinds: ["ea-results", "computer-extension-attributes"]
+                )
             }
             if snapshot.totalEAs == 0 {
                 emptyState
@@ -250,7 +256,7 @@ struct ExtensionAttributesView: View {
                         Image(systemName: "arrow.down.right.circle.fill")
                             .foregroundStyle(Theme.Colors.warn)
                             .accessibilityHidden(true)
-                        SectionHeader(title: "Coverage drift")
+                        SectionHeader(title: "Coverage Drift")
                         Spacer()
                     }
                     Text("Fleet coverage dropped sharply for these Extension Attributes since "

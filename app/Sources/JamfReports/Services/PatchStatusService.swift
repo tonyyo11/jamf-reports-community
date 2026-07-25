@@ -17,6 +17,10 @@ struct PatchStatusService: Sendable {
         let failures: [PatchFailureRow]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Keys are the
+        /// on-disk kind names (`patch-status`, `patch-device-failures`); a kind
+        /// absent from disk is absent from the map.
+        var sourceDates: [String: Date] = [:]
 
         // MARK: - Computed aggregates
 
@@ -77,7 +81,8 @@ struct PatchStatusService: Sendable {
             lhs.titles == rhs.titles &&
             lhs.failures == rhs.failures &&
             lhs.sourceFile == rhs.sourceFile &&
-            lhs.snapshotDate == rhs.snapshotDate
+            lhs.snapshotDate == rhs.snapshotDate &&
+            lhs.sourceDates == rhs.sourceDates
         }
     }
 
@@ -142,11 +147,22 @@ struct PatchStatusService: Sendable {
         let mtime = (try? titlesURL.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate
 
+        var sourceDates: [String: Date] = [:]
+        if let mtime { sourceDates["patch-status"] = mtime }
+        if let failuresURL,
+           FileManager.default.fileExists(atPath: failuresURL.path),
+           let fmtime = (try? failuresURL.resourceValues(
+               forKeys: [.contentModificationDateKey]
+           ))?.contentModificationDate {
+            sourceDates["patch-device-failures"] = fmtime
+        }
+
         return Snapshot(
             titles: titles,
             failures: failures,
             sourceFile: titlesURL,
-            snapshotDate: mtime
+            snapshotDate: mtime,
+            sourceDates: sourceDates
         )
     }
 

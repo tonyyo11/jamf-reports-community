@@ -1661,7 +1661,10 @@ struct HtmlReport: Sendable {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
            ) {
-            candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
+            candidates.append(contentsOf: files.filter {
+                $0.pathExtension == "json"
+                && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
+            })
         }
         // Also check flat pattern under dataDir
         if let files = try? fm.contentsOfDirectory(

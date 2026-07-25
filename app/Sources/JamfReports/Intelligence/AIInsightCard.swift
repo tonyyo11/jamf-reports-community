@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// Card rendering the macOS-27 opt-in fleet insight. Ungated — compiles and
-/// renders on every OS version: below macOS 27 (or off the beta toolchain) it
-/// resolves to `.requiresMacOS27` and shows the same messaging a disabled/
-/// unavailable model would, all through the `ModelAvailability`/
+/// Card rendering the macOS-27 opt-in fleet insight. Ungated — compiles on
+/// every OS version and toolchain, through the `ModelAvailability`/
 /// `FleetInsightGenerator` seam. Never imports FoundationModels directly.
+/// Callers gate rendering on `ModelAvailability.platformSupported` (see
+/// `OverviewView`) so a macOS 26 host never instantiates this card at all —
+/// there is no impossible-feature placeholder to show. Below `.available`
+/// but on a supported host (config disabled, model not ready, PCC not
+/// entitled, …), this card DOES render with the matching `.message`.
 struct AIInsightCard: View {
     let profile: String
     let current: DailySummary?
@@ -136,7 +139,14 @@ struct AIInsightCard: View {
     }
 
     private var tierLabel: String {
-        config.resolvedTier == .pcc ? "Private Cloud Compute" : "on-device intelligence"
+        // Resolve through GeneratorKind so lock_on_device is honored — a locked
+        // config runs on-device even when tier == pcc, and the card must say so
+        // rather than claiming Private Cloud Compute it will never use.
+        switch GeneratorKind.select(config: config) {
+        case .privateCloudCompute: "Private Cloud Compute"
+        case .external: "external provider"
+        case .onDevice: "on-device intelligence"
+        }
     }
 
     private func generate() {

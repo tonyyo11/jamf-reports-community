@@ -4,7 +4,7 @@ import XCTest
 
 /// `CLIBridge.explainExit` turns a raw jamf-cli exit code into a plain-language
 /// cause + remediation, prefixed by the operation — replacing bare "… exit N"
-/// strings across ReportsView / AuditView / BackupsView / SmartGroupApplySheet.
+/// strings across ReportsView / AuditView / BackupsView.
 final class CLIBridgeExplainExitTests: XCTestCase {
 
     func testAlwaysLeadsWithOperation() {

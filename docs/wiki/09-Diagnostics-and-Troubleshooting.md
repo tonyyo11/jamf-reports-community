@@ -2,7 +2,11 @@
 
 Most likely failure modes, what they mean, and the recovery path. Walk this list before
 opening an issue. The app's **Run History** screen streams full `jamf-cli` output for any
-run — copy that into an issue if a failure is not listed here.
+run the app itself scheduled or ran — a schedule built in the Automation screen, or a
+manual Collect/Generate from the GUI. A run you triggered yourself through the
+`jamf-reports` CLI (your own cron/launchd job, or an interactive terminal run) does not
+appear there; use `log stream` (below) for those. Copy whichever output applies into an
+issue if a failure is not listed here.
 
 ## Diagnostic bundle
 
@@ -14,6 +18,9 @@ workspace tree listing, and version metadata into a zip under the workspace's
 `diagnostics/` folder, and reveals it in Finder. Credentials are always redacted; PII
 (hostnames, serials, emails, device names) is redacted by default with stable hash
 placeholders.
+
+The headless equivalent is `jamf-reports diagnostic-bundle --profile <profile>` (see
+[Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line)) — same redaction, no GUI required.
 
 ## Logging
 
@@ -53,6 +60,32 @@ example, a `401` surfaces as "authentication failed (401) — re-authenticate th
 from Data Sources." Dashboards that read a snapshot which exists but cannot be parsed show a
 distinct **error state with a Retry**, separate from the normal "no data collected yet"
 empty state.
+
+## Config Doctor
+
+The Health Audit screen runs the **Config Doctor** — checks that surface
+misconfiguration and data-quality issues that would otherwise fail silently.
+
+**Alerts.** When `alerts:` is present in `config.yaml`:
+
+- A malformed rule (unknown metric, unknown comparison, or a missing/non-finite/negative
+  threshold) shows as an error naming the rule; the rule is dropped from evaluation rather
+  than breaking the whole config.
+- `alerts.enabled: true` with no usable webhook (`notify.enabled: true` and an `https://`
+  `notify.url`) shows a warning — alerts are configured but cannot be delivered.
+
+**Data accuracy.** A family of checks that runs whenever the relevant inputs are present:
+
+- **EA parse health** — flags a custom EA column whose values parse below 90% against its
+  configured type, and shows the most common unparseable value shape (letters and digits
+  masked, never the real value).
+- **CSV/device-count reconciliation** — compares device counts across the CSV export, the
+  cached `computers` snapshot, and `ea-results`, and warns when two sources disagree by
+  more than 10%.
+- **EA coverage drift** — compares each EA's device-coverage percentage between the two
+  newest `ea-results` snapshot days and warns when one drops more than 15 points. When
+  fewer than two comparable days have been collected, the doctor reports "EA coverage
+  drift unavailable" rather than a false "stable" result.
 
 ## Common failure modes
 
@@ -119,6 +152,7 @@ remembers the choice.
 | 4 | Not found (HTTP 404) | Warn; use cached data |
 | 5 | Permission denied (HTTP 403) | Warn; use cached data |
 | 6 | Rate limited (HTTP 429) | Warn; use cached data |
+| 7 | Partial failure (jamf-cli v1.19+) | Some sub-operations failed but the successful subset's JSON is saved, with a warning |
 
 Only an unauthorized result (3) aborts a run. Everything else falls back to the most
 recent cached snapshot.
@@ -134,3 +168,14 @@ was not altered after generation.
   footer; the footer documents how to recompute and check the digest.
 
 In the app, the fingerprint appears in the Reports screen's "report ready" notice.
+
+**Cached snapshots.** Separately, when `jamf_cli.require_manifest: true`, each raw
+jamf-cli JSON snapshot the app collects gets a sibling SHA-256 `manifest.json` in its kind
+folder. Health Audit's snapshot verification reports one of five states per snapshot:
+`verified` (hash matches), `mismatch` (hash does not match — the likely-tampered case),
+`omitted` (the manifest exists but does not list this file — a partial collect),
+`corrupt` (the manifest itself is unparseable), or `absent` (no manifest exists — legacy
+snapshots, or the file was collected before `require_manifest` was turned on). A manifest
+write failure does not fail the collect — it appears as a `[warn]` line in Run History
+naming the affected kind, and that snapshot subsequently verifies as unverified rather
+than `verified`.

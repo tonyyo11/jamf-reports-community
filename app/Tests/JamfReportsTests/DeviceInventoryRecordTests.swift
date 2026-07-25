@@ -98,4 +98,60 @@ final class DeviceInventoryRecordTests: XCTestCase {
         XCTAssertEqual(record2.id, "jamf:102")
         XCTAssertNotEqual(record1.id, record2.id)
     }
+
+    // MARK: - jamf-cli underscore enum classification (FileVault misclassification bug)
+
+    private func goodDevice(id: String) -> DeviceInventoryRecord {
+        var device = DeviceInventoryRecord.empty(id: id, source: "computers")
+        device.fileVault = "ALL_ENCRYPTED"
+        device.sip = "ENABLED"
+        device.firewall = "ENABLED"
+        device.gatekeeper = "ENABLED"
+        device.bootstrapToken = "ESCROWED"
+        return device
+    }
+
+    func testNotEncryptedUnderscoreEnumCountsAsSecurityGap() {
+        let good = goodDevice(id: "serial:good")
+        XCTAssertEqual(good.securityGapCount, 0)
+
+        var bad = goodDevice(id: "serial:bad")
+        bad.fileVault = "NOT_ENCRYPTED"
+        XCTAssertEqual(bad.securityGapCount, 1)
+    }
+
+    func testNotEnabledUnderscoreEnumCountsAsSecurityGap() {
+        var bad = goodDevice(id: "serial:bad")
+        bad.sip = "NOT_ENABLED"
+        XCTAssertEqual(bad.securityGapCount, 1)
+    }
+
+    func testAllEncryptedUnderscoreEnumIsNotFlaggedAsBad() {
+        // Regression guard: a generic "not " substring check must not fire on
+        // ALL_ENCRYPTED/ENCRYPTED/ENABLED — only on genuine "not X" values.
+        let good = goodDevice(id: "serial:good")
+        XCTAssertEqual(good.securityGapCount, 0)
+    }
+
+    func testFileVaultPercentReflectsRealFleetSplitNotAllOrNothing() {
+        // Regression for the 101-device fleet (100 ALL_ENCRYPTED, 1 NOT_ENCRYPTED)
+        // that previously rounded to a false 100%/0-gap reading.
+        var devices: [DeviceInventoryRecord] = (0..<100).map { goodDevice(id: "serial:good\($0)") }
+        var bad = goodDevice(id: "serial:bad")
+        bad.fileVault = "NOT_ENCRYPTED"
+        devices.append(bad)
+
+        let snapshot = DeviceInventorySnapshot(
+            devices: devices,
+            patchTitles: [],
+            sourceFiles: [],
+            warnings: [],
+            generatedAt: "",
+            generatedDate: nil,
+            isDemo: false
+        )
+
+        XCTAssertEqual(snapshot.fileVaultPercent, 100.0 * 100.0 / 101.0, accuracy: 0.01)
+        XCTAssertEqual(snapshot.securityGapCount, 1)
+    }
 }

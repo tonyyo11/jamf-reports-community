@@ -137,6 +137,9 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "device-compliance":              .inventory,
         "ea-results":                     .inventory,
         "profile-status":                 .inventory,
+        // Cheap aggregate query (one fleet-wide inventory fetch, no per-device
+        // fan-out) — daily-safe, same class as the four rows above.
+        "duplicate-serials":              .inventory,
 
         // Scan — the two --scan-failures per-device fan-outs only.
         // These enumerate every failing device in detail and are the only

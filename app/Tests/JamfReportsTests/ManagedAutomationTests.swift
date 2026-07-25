@@ -293,6 +293,114 @@ final class ManagedAutomationTests: XCTestCase {
         XCTAssertTrue(outcomes.allSatisfy { !$0.succeeded })
         XCTAssertTrue(outcomes.allSatisfy { $0.failureReason == "bootout failed" })
     }
+
+    // MARK: - Self-skip (never bootout the currently-running job's own label)
+
+    func testReconcileRoutesCurrentLabelInstallThroughFileOnly() async {
+        var p = AutomationPolicy(); p.isManaged = true
+        let normalInstalls = CallBox()
+        let fileOnlyInstalls = CallBox()
+        let currentLabel = ManagedAutomation.label(for: .scan)
+
+        let outcomes = await ManagedAutomation.reconcile(
+            policy: p,
+            currentLabel: currentLabel,
+            discover: { [JamfCLIProfile(name: "alpha", url: "(local)", schedules: 0, status: .idle)] },
+            installed: { [] },
+            install: { schedule in
+                normalInstalls.add(schedule.launchAgentLabel ?? schedule.name)
+                return (0, nil)
+            },
+            installFileOnly: { schedule in
+                fileOnlyInstalls.add(schedule.launchAgentLabel ?? schedule.name)
+                return (0, nil)
+            },
+            remove: { _ in return nil }
+        )
+
+        // freshness + scan + reports installed (backups off by default) — only
+        // the current-label (scan) agent goes through installFileOnly.
+        XCTAssertEqual(fileOnlyInstalls.count, 1)
+        XCTAssertEqual(normalInstalls.count, 2)
+        XCTAssertTrue(outcomes.allSatisfy(\.succeeded))
+    }
+
+    func testReconcileRoutesCurrentLabelRemoveThroughFileOnly() async {
+        var on = AutomationPolicy(); on.isManaged = true
+        let installed = ManagedAutomation.desiredSchedules(for: on, baseProfile: "alpha")
+        let currentLabel = ManagedAutomation.label(for: .freshness)
+        let normalRemoves = CallBox()
+        let fileOnlyRemoves = CallBox()
+
+        // Turn managed off → plan removes every installed managed agent,
+        // including (hypothetically) the one this process is itself running.
+        let outcomes = await ManagedAutomation.reconcile(
+            policy: AutomationPolicy(),
+            currentLabel: currentLabel,
+            discover: { [JamfCLIProfile(name: "alpha", url: "(local)", schedules: 0, status: .idle)] },
+            installed: { installed },
+            install: { _ in return (0, nil) },
+            remove: { label in normalRemoves.add(label); return nil },
+            removeFileOnly: { label in fileOnlyRemoves.add(label); return nil }
+        )
+
+        XCTAssertEqual(fileOnlyRemoves.count, 1)
+        XCTAssertEqual(normalRemoves.count, installed.count - 1,
+                       "sibling managed agents still use the normal path")
+        XCTAssertTrue(outcomes.allSatisfy(\.succeeded))
+    }
+
+    func testReconcileNoCurrentLabelUsesNormalPathForEveryAction() async {
+        var p = AutomationPolicy(); p.isManaged = true
+        let normalInstalls = CallBox()
+        let fileOnlyInstalls = CallBox()
+
+        let outcomes = await ManagedAutomation.reconcile(
+            policy: p,
+            currentLabel: nil,
+            discover: { [JamfCLIProfile(name: "alpha", url: "(local)", schedules: 0, status: .idle)] },
+            installed: { [] },
+            install: { schedule in normalInstalls.add(schedule.name); return (0, nil) },
+            installFileOnly: { schedule in fileOnlyInstalls.add(schedule.name); return (0, nil) },
+            remove: { _ in return nil }
+        )
+
+        XCTAssertEqual(normalInstalls.count, 3)
+        XCTAssertEqual(fileOnlyInstalls.count, 0)
+        XCTAssertTrue(outcomes.allSatisfy(\.succeeded))
+    }
+
+    // MARK: - One-shot migration flag (only set on verified success)
+
+    func testMigrationShouldCompleteOnEmptyPlan() {
+        XCTAssertTrue(
+            ManagedAutomation.migrationShouldComplete(outcomes: []),
+            "nothing needed doing — an empty forced pass still counts as migrated"
+        )
+    }
+
+    func testMigrationShouldCompleteWhenEveryActionSucceeds() {
+        let outcomes = [
+            ManagedAutomation.ActionOutcome(
+                action: .remove(label: "a"), succeeded: true, failureReason: nil),
+            ManagedAutomation.ActionOutcome(
+                action: .remove(label: "b"), succeeded: true, failureReason: nil),
+        ]
+        XCTAssertTrue(ManagedAutomation.migrationShouldComplete(outcomes: outcomes))
+    }
+
+    func testMigrationShouldNotCompleteWhenAnyActionFails() {
+        let outcomes = [
+            ManagedAutomation.ActionOutcome(
+                action: .remove(label: "a"), succeeded: true, failureReason: nil),
+            ManagedAutomation.ActionOutcome(
+                action: .remove(label: "b"), succeeded: false, failureReason: "disk full"),
+        ]
+        XCTAssertFalse(
+            ManagedAutomation.migrationShouldComplete(outcomes: outcomes),
+            "a single failure must leave the flag unset so the next pass retries"
+        )
+    }
 }
 
 /// Thread-safe call recorder for the `@Sendable` reconcile spies (the lock-box

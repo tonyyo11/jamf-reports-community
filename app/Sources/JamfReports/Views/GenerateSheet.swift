@@ -613,9 +613,13 @@ struct GenerateSheet: View {
     }
 
     private var authWarningBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "key.slash")
-                .foregroundStyle(Theme.Colors.warn)
+        InlineBanner(
+            icon: "key.slash",
+            tone: .warn,
+            action: InlineBannerAction(label: "Re-check") {
+                Task { await workspace.refreshAuthStatus() }
+            }
+        ) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Auth may be expired for profile '\(profile)'")
                     .font(Theme.Fonts.label.weight(.medium))
@@ -624,32 +628,17 @@ struct GenerateSheet: View {
                     .font(Theme.Fonts.label)
                     .foregroundStyle(Theme.Text.secondary)
             }
-            Spacer()
-            PNPButton(title: "Re-check", size: .sm) {
-                Task { await workspace.refreshAuthStatus() }
-            }
         }
-        .padding(12)
-        .background(Theme.Colors.warn.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius)
-                .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Warning: auth may be expired for profile '\(profile)'. Re-authenticate or disable collect fresh data.")
     }
 
     private func errorBanner(_ message: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Theme.Colors.danger)
+        InlineBanner(icon: "exclamationmark.triangle.fill", tone: .danger) {
             Text(message)
                 .font(Theme.Fonts.label)
                 .foregroundStyle(Theme.Colors.danger)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.Colors.danger.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.Metrics.fieldRadius))
     }
 
     private var completionBanner: some View {
@@ -734,6 +723,7 @@ struct GenerateSheet: View {
                 dismiss()
             }
             .disabled(state.isRunning)
+            .keyboardShortcut(.cancelAction)
 
             PNPButton(
                 title: state.isRunning ? "Running\u{2026}" : "Generate",
@@ -744,6 +734,7 @@ struct GenerateSheet: View {
                 Task { await runGenerate() }
             }
             .disabled(!state.canGenerate)
+            .keyboardShortcut(.defaultAction)
             .accessibilityLabel(state.isRunning ? "Running" : "Generate selected report formats")
         }
         .padding(14)

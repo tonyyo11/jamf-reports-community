@@ -22,15 +22,7 @@ final class CompliancePostureTests: XCTestCase {
         super.tearDown()
     }
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 
     /// Build a temp dataDir seeded with the given fixture subdirectories.
     /// Tracked for cleanup in `tearDown`.
@@ -43,9 +35,7 @@ final class CompliancePostureTests: XCTestCase {
         for name in names {
             let from = src.appendingPathComponent(name, isDirectory: true)
             let to = tmp.appendingPathComponent(name, isDirectory: true)
-            if FileManager.default.fileExists(atPath: from.path) {
-                try FileManager.default.copyItem(at: from, to: to)
-            }
+            try? TestFixtures.copyDir(from, to: to)
         }
         return tmp
     }

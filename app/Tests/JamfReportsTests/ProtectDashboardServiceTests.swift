@@ -487,4 +487,35 @@ final class ProtectDashboardServiceTests: XCTestCase {
             ProtectDashboardService.alertTimeline(for: "nonexistent", in: []).isEmpty
         )
     }
+
+    // MARK: - sourceDates (freshness chip row)
+
+    func testSourceDatesPopulatedForPresentKinds() throws {
+        let tempDir = FileManager.default.temporaryDirectory
+        let alertsFile = tempDir.appendingPathComponent("sourcedates-alerts-\(UUID().uuidString).json")
+        let computersFile = tempDir.appendingPathComponent("sourcedates-computers-\(UUID().uuidString).json")
+        try "[]".write(to: alertsFile, atomically: true, encoding: .utf8)
+        try "[]".write(to: computersFile, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: alertsFile)
+            try? FileManager.default.removeItem(at: computersFile)
+        }
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: alertsFile, computersURL: computersFile, insightsURL: nil
+        )
+
+        XCTAssertNotNil(snapshot.sourceDates["protect-alerts"])
+        XCTAssertNotNil(snapshot.sourceDates["protect-computers"])
+        XCTAssertNil(snapshot.sourceDates["protect-overview"])
+        XCTAssertNil(snapshot.sourceDates["protect-insights"])
+        XCTAssertNil(snapshot.sourceDates["protect-plans"])
+    }
+
+    func testSourceDatesEmptyWhenAllURLsNil() {
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: nil, computersURL: nil, insightsURL: nil
+        )
+        XCTAssertTrue(snapshot.sourceDates.isEmpty)
+    }
 }

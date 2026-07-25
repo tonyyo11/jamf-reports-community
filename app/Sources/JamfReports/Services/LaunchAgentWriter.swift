@@ -109,7 +109,11 @@ enum LaunchAgentWriter {
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
             "StartCalendarInterval": cadence.startCalendarIntervals,
-            "RunAtLoad": false,
+            // Collect modes run at login to catch up a run missed while the Mac
+            // was asleep/logged-out (idempotent via ReportEngine.collect's
+            // cadence guard); re-render/backup modes stay false. See
+            // Schedule.RunMode.runsAtLoad.
+            "RunAtLoad": schedule.mode.runsAtLoad,
             "Disabled": !load,
         ]
 
@@ -449,7 +453,11 @@ enum LaunchAgentWriter {
             "StandardOutPath": logDir.appendingPathComponent("stdout.log").path,
             "StandardErrorPath": logDir.appendingPathComponent("stderr.log").path,
             "StartCalendarInterval": cadence.startCalendarIntervals,
-            "RunAtLoad": false,
+            // Collect modes run at login to catch up a run missed while the Mac
+            // was asleep/logged-out (idempotent via ReportEngine.collect's
+            // cadence guard); re-render/backup modes stay false. See
+            // Schedule.RunMode.runsAtLoad.
+            "RunAtLoad": schedule.mode.runsAtLoad,
             "Disabled": !load,
         ]
 

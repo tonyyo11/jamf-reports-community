@@ -24,15 +24,7 @@ final class CoreDashboardTests: XCTestCase {
         super.tearDown()
     }
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 
     /// Copy a fixture directory into a temp dataDir and return the temp URL.
     /// Tracked for cleanup in `tearDown`.
@@ -45,9 +37,7 @@ final class CoreDashboardTests: XCTestCase {
         for name in names {
             let from = src.appendingPathComponent(name, isDirectory: true)
             let to = tmp.appendingPathComponent(name, isDirectory: true)
-            if FileManager.default.fileExists(atPath: from.path) {
-                try FileManager.default.copyItem(at: from, to: to)
-            }
+            try? TestFixtures.copyDir(from, to: to)
         }
         return tmp
     }
@@ -65,9 +55,7 @@ final class CoreDashboardTests: XCTestCase {
         for pair in map {
             let from = src.appendingPathComponent(pair.src, isDirectory: true)
             let to = tmp.appendingPathComponent(pair.dst, isDirectory: true)
-            if FileManager.default.fileExists(atPath: from.path) {
-                try FileManager.default.copyItem(at: from, to: to)
-            }
+            try? TestFixtures.copyDir(from, to: to)
         }
         return tmp
     }
@@ -97,8 +85,8 @@ final class CoreDashboardTests: XCTestCase {
         }
         let subdirURL = tmp.appendingPathComponent(subdir, isDirectory: true)
         try FileManager.default.createDirectory(at: subdirURL, withIntermediateDirectories: true)
-        try FileManager.default.copyItem(
-            at: src,
+        try TestFixtures.copyFile(
+            src,
             to: subdirURL.appendingPathComponent(src.lastPathComponent)
         )
         return tmp
@@ -259,6 +247,95 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertNoThrow(try dash.writePackageLifecycle())
     }
 
+    // MARK: - Patch Velocity note row (2.6 Fix 2)
+
+    /// Seed one dated `patch-status` snapshot into `dataDir/patch-status/`.
+    private func writePatchStatusSnapshot(
+        dataDir: URL, stamp: String,
+        rows: [(id: String, title: String, onLatest: Int, total: Int)]
+    ) throws {
+        let dir = dataDir.appendingPathComponent("patch-status", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let objects: [[String: Any]] = rows.map { r in
+            [
+                "title": r.title, "id": r.id,
+                "on_latest": r.onLatest, "on_other": max(0, r.total - r.onLatest),
+                "total": r.total, "latest": "1.0", "compliance_pct": "0%",
+            ]
+        }
+        let data = try JSONSerialization.data(withJSONObject: objects)
+        try data.write(to: dir.appendingPathComponent("patch-status_\(stamp).json"))
+    }
+
+    /// Seed a merged `patch-release-dates` snapshot into `dataDir`.
+    private func writePatchReleaseDates(
+        dataDir: URL, rows: [(id: String, title: String, iso: String)]
+    ) throws {
+        let dir = dataDir.appendingPathComponent("patch-release-dates", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let objects: [[String: Any]] = rows.map {
+            ["title_id": $0.id, "title": $0.title, "latest_version": "1.0", "release_date": $0.iso]
+        }
+        let data = try JSONSerialization.data(withJSONObject: objects)
+        try data.write(to: dir.appendingPathComponent("patch-release-dates_20260101T000000.json"))
+    }
+
+    private func noteRowText(_ ws: Worksheet) -> String? {
+        ws.dedupedCells.compactMap { cell -> String? in
+            guard case let .string(s) = cell.value else { return nil }
+            return s.contains("Release dates unavailable") ? s : nil
+        }.first
+    }
+
+    /// Velocity rows present but every title lacks a release date (no
+    /// `patch-release-dates` snapshot has ever been collected) — the sheet
+    /// must call that out rather than render a silent "—" that reads as
+    /// "everyone's on time".
+    func testWritePatchVelocityShowsNoteRowWhenReleaseDatesUnavailable() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-velocity-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try writePatchStatusSnapshot(
+            dataDir: tmp, stamp: "20260101T100000",
+            rows: [(id: "1", title: "Firefox", onLatest: 80, total: 100)]
+        )
+
+        let workbook = Workbook()
+        let dash = CoreDashboard(config: ReportConfig(), dataDir: tmp, workbook: workbook)
+        try dash.writePatchVelocity()
+
+        let ws = try XCTUnwrap(workbook.sheet(named: "Patch Velocity"))
+        XCTAssertNotNil(noteRowText(ws),
+                        "Missing release dates must be called out, not rendered as silent dashes")
+    }
+
+    /// Same velocity data, but with a matching `patch-release-dates` snapshot —
+    /// the note row must not appear.
+    func testWritePatchVelocityOmitsNoteRowWhenReleaseDatesPresent() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-velocity-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try writePatchStatusSnapshot(
+            dataDir: tmp, stamp: "20260101T100000",
+            rows: [(id: "1", title: "Firefox", onLatest: 80, total: 100)]
+        )
+        try writePatchReleaseDates(
+            dataDir: tmp, rows: [(id: "1", title: "Firefox", iso: "2026-01-01T00:00:00Z")]
+        )
+
+        let workbook = Workbook()
+        let dash = CoreDashboard(config: ReportConfig(), dataDir: tmp, workbook: workbook)
+        try dash.writePatchVelocity()
+
+        let ws = try XCTUnwrap(workbook.sheet(named: "Patch Velocity"))
+        XCTAssertNil(noteRowText(ws),
+                     "Note row must not appear once release dates are available")
+    }
+
     // MARK: - Environment Stats (no fixture — expected to throw)
 
     func testWriteEnvironmentStatsThrowsWhenNoFixture() throws {
@@ -305,7 +382,7 @@ final class CoreDashboardTests: XCTestCase {
             "Check-in Health", "Active Devices", "Group Hygiene",
             // Update & patch details
             "Patch Failures", "Update Status", "Update Failures", "Smart Groups",
-            "Patch Summary Dashboard",
+            "Patch Summary Dashboard", "Patch Velocity",
             // Device security & supervision detail
             "Device Security State", "Mobile Supervision Status",
             // Platform / DDM (optional)
@@ -399,9 +476,7 @@ final class CoreDashboardTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
             throw XCTSkip("Fixture not available")
         }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureURL, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" }
+        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         XCTAssertNoThrow(try JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data))
@@ -412,9 +487,7 @@ final class CoreDashboardTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
             throw XCTSkip("Fixture not available")
         }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureURL, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" }
+        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         let rows = try JSONDecoder().decode([GroupRow].self, from: data)
@@ -427,9 +500,7 @@ final class CoreDashboardTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
             throw XCTSkip("Fixture not available")
         }
-        let files = try FileManager.default.contentsOfDirectory(
-            at: fixtureURL, includingPropertiesForKeys: nil
-        ).filter { $0.pathExtension == "json" }
+        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         let rows = try JSONDecoder().decode([PackageRow].self, from: data)

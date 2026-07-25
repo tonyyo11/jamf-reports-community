@@ -268,7 +268,10 @@ struct PNPButton: View {
                         .font(.system(fontStyle, weight: .semibold))
                         .imageScale(.small)
                 }
-                Text(title).font(.system(fontStyle, weight: style == .gold ? .semibold : .medium))
+                Text(title)
+                    .font(.system(fontStyle, weight: style == .gold ? .semibold : .medium))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, hPad)
             .frame(minHeight: height)
@@ -377,7 +380,10 @@ struct SegmentedControl<Value: Hashable>: View {
                 } label: {
                     HStack(spacing: 5) {
                         if let icon = opt.icon { Image(systemName: icon).font(.system(size: 10, weight: .semibold)) }
-                        Text(opt.label).font(.callout.weight(.medium))
+                        Text(opt.label)
+                            .font(.callout.weight(.medium))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
@@ -432,8 +438,10 @@ struct StatTile: View {
                     .monospacedDigit()
                 if let delta {
                     HStack(spacing: 3) {
-                        if deltaTrend == .up   { Image(systemName: "arrow.up").font(.system(size: 10, weight: .bold)) }
-                        if deltaTrend == .down { Image(systemName: "arrow.down").font(.system(size: 10, weight: .bold)) }
+                        if deltaTrend != .flat {
+                            Image(systemName: deltaPointsUp(delta) ? "arrow.up" : "arrow.down")
+                                .font(.system(size: 10, weight: .bold))
+                        }
                         Text(delta)
                     }
                     .font(Theme.Fonts.mono(11, weight: .semibold))
@@ -496,6 +504,17 @@ struct StatTile: View {
         case .down: Theme.Colors.danger
         case .flat: Theme.Colors.fgMuted
         }
+    }
+
+    /// Arrow glyph reflects the delta's literal numeric sign ("+"/"−" prefix),
+    /// independent of `deltaTrend`'s good/bad color. A metric like Stale
+    /// Devices can trend "bad" (red, `deltaTrend == .down`) while the raw
+    /// count still went up — the arrow must say up, matching the number,
+    /// while the color still says bad.
+    private func deltaPointsUp(_ delta: String) -> Bool {
+        if delta.hasPrefix("+") { return true }
+        if delta.hasPrefix("−") || delta.hasPrefix("-") { return false }
+        return deltaTrend == .up
     }
 
     private var defaultSparklineColor: Color {

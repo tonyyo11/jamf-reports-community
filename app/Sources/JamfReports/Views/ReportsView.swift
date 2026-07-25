@@ -167,54 +167,56 @@ struct ReportsView: View {
             PageHeader(
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
-                title: "\(reports.count) reports archived",
+                title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
                 subtitle: "~/Jamf-Reports/\(workspace.profile)/Generated Reports/"
             ) {
                 AnyView(
-                    HStack(spacing: 8) {
-                        PNPButton(title: "Reveal in Finder", icon: "folder") {
-                            SystemActions.openFolder(reportsDirectory)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            PNPButton(title: "Reveal in Finder", icon: "folder") {
+                                SystemActions.openFolder(reportsDirectory)
+                            }
+                            .help("Open the Generated Reports folder in Finder")
+                            PNPButton(
+                                title: isGeneratingHTML ? "Generating..." : "Generate HTML",
+                                icon: "safari",
+                                style: .gold
+                            ) {
+                                generateHTMLReport()
+                            }
+                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
+                            .help(
+                                workspace.demoMode
+                                ? "Available in live mode only"
+                                : "Generate a self-contained HTML instance report"
+                            )
+                            PNPButton(
+                                title: isGeneratingPDF ? "Generating..." : "Export PDF",
+                                icon: "doc.richtext",
+                                style: .neutral
+                            ) {
+                                generatePDFReport()
+                            }
+                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
+                            .help(
+                                workspace.demoMode
+                                ? "Available in live mode only"
+                                : "Render the HTML report to PDF via WKWebView"
+                            )
+                            PNPButton(
+                                title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
+                                icon: "doc.text",
+                                style: .neutral
+                            ) {
+                                runExportInventoryCSV()
+                            }
+                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
+                            .help(
+                                workspace.demoMode
+                                ? "Available in live mode only"
+                                : "Export a wide CSV of all computer inventory"
+                            )
                         }
-                        .help("Open the Generated Reports folder in Finder")
-                        PNPButton(
-                            title: isGeneratingHTML ? "Generating..." : "Generate HTML",
-                            icon: "safari",
-                            style: .gold
-                        ) {
-                            generateHTMLReport()
-                        }
-                        .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
-                        .help(
-                            workspace.demoMode
-                            ? "Available in live mode only"
-                            : "Generate a self-contained HTML instance report"
-                        )
-                        PNPButton(
-                            title: isGeneratingPDF ? "Generating..." : "Export PDF",
-                            icon: "doc.richtext",
-                            style: .neutral
-                        ) {
-                            generatePDFReport()
-                        }
-                        .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
-                        .help(
-                            workspace.demoMode
-                            ? "Available in live mode only"
-                            : "Render the HTML report to PDF via WKWebView"
-                        )
-                        PNPButton(
-                            title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
-                            icon: "doc.text",
-                            style: .neutral
-                        ) {
-                            runExportInventoryCSV()
-                        }
-                        .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
-                        .help(
-                            workspace.demoMode
-                            ? "Available in live mode only"
-                            : "Export a wide CSV of all computer inventory"
-                        )
                     }
                 )
             }

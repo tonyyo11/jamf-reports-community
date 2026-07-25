@@ -1,8 +1,153 @@
 import Foundation
 
+// MARK: - Automation health (dead-man switch, 2.6 trust trio #2)
+
+/// One thing wrong with a scheduled agent. Absence of a run becomes signal:
+/// a schedule that SHOULD have fired but produced no artifact is `.overdue`,
+/// and a schedule whose latest artifact reports failure is `.failing`.
+struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
+    enum Kind: String, Sendable {
+        case overdue
+        case failing
+    }
+
+    /// Stable per-agent id (the LaunchAgent label) so SwiftUI keeps row identity.
+    var id: String { label }
+    let label: String
+    let displayName: String
+    let kind: Kind
+    /// True for the global all-profiles managed agents — the banner labels these
+    /// as fleet-wide so a fresh per-profile operator doesn't read a managed
+    /// backup/collect as their own workspace's. Defaults false for callers that
+    /// don't distinguish (e.g. the overdue-digest fact builder).
+    let isMulti: Bool
+    /// When the schedule should have last fired (`.overdue`) — nil is not
+    /// expected for a produced issue but kept optional for the model's purity.
+    let expectedFire: Date?
+    /// When the last recorded run finished, if any (`.failing`, or last success).
+    let lastRunFinishedAt: Date?
+    /// The failing run's process exit code, when its status record carried a
+    /// numeric one. Lets the row explain WHY (401 / 403 / 429 / network) via
+    /// `CLIBridge.explainExit` instead of only "reported failure". nil for
+    /// `.overdue` (nothing ran, so there is no code) and for older status
+    /// records written without one.
+    let lastRunExitCode: Int32?
+
+    init(
+        label: String,
+        displayName: String,
+        kind: Kind,
+        isMulti: Bool = false,
+        expectedFire: Date?,
+        lastRunFinishedAt: Date?,
+        lastRunExitCode: Int32? = nil
+    ) {
+        self.label = label
+        self.displayName = displayName
+        self.kind = kind
+        self.isMulti = isMulti
+        self.expectedFire = expectedFire
+        self.lastRunFinishedAt = lastRunFinishedAt
+        self.lastRunExitCode = lastRunExitCode
+    }
+
+    /// True when `label` belongs to the reserved managed-automation label set
+    /// (`ManagedAutomation.owns`). Only managed rows get the health card's
+    /// one-click "Run now" — a hand-built agent's label was never reserved
+    /// by the managed policy, so kickstarting it here would be surprising;
+    /// that agent's own "Run now" lives on the Schedules screen instead.
+    var isManagedAgent: Bool {
+        ManagedAutomation.owns(label)
+    }
+}
+
+/// Pure evaluator for the scheduled-run dead-man switch. Given the raw
+/// per-schedule inputs, returns the issues an operator needs to see. No I/O,
+/// no launchctl, no real LaunchAgents dir — unit-tested directly.
+enum AutomationHealth {
+
+    /// Grace after the expected fire before a run is called overdue. Scheduled
+    /// runs take a few minutes; 60 min absorbs launchd jitter, a slow collect,
+    /// and clock skew without hiding a genuinely-missed run.
+    static let graceSeconds: TimeInterval = 60 * 60
+
+    /// Evaluate one probe pass. `now` is injected for deterministic tests.
+    ///
+    /// - `.overdue`: the schedule is enabled, has an expected past fire, that
+    ///   fire plus the grace window has elapsed, and there is no run artifact
+    ///   finishing at or after the expected fire.
+    /// - `.failing`: a run artifact exists and its success flag is `false`
+    ///   (independent of overdue — a run that fired but failed still needs
+    ///   attention). A schedule can be both; overdue takes precedence so the
+    ///   operator sees the more urgent "nothing ran" state first.
+    ///
+    /// Disabled schedules never produce an issue.
+    static func evaluate(
+        inputs: [LaunchAgentService.ScheduleHealthInput],
+        now: Date = Date()
+    ) -> [AutomationHealthIssue] {
+        inputs.compactMap { input in
+            guard input.enabled else { return nil }
+
+            if let expected = input.expectedFire,
+               now.timeIntervalSince(expected) >= graceSeconds,
+               !ranAtOrAfter(input.lastRunFinishedAt, expected) {
+                return AutomationHealthIssue(
+                    label: input.label,
+                    displayName: input.displayName,
+                    kind: .overdue,
+                    isMulti: input.isMulti,
+                    expectedFire: expected,
+                    lastRunFinishedAt: input.lastRunFinishedAt
+                )
+            }
+
+            if input.lastRunSuccess == false {
+                return AutomationHealthIssue(
+                    label: input.label,
+                    displayName: input.displayName,
+                    kind: .failing,
+                    isMulti: input.isMulti,
+                    expectedFire: input.expectedFire,
+                    lastRunFinishedAt: input.lastRunFinishedAt,
+                    lastRunExitCode: input.lastRunExitCode
+                )
+            }
+
+            return nil
+        }
+    }
+
+    /// True when a run artifact finished at or after the expected fire — i.e.
+    /// the scheduled run for this cycle is accounted for.
+    private static func ranAtOrAfter(_ finished: Date?, _ expected: Date) -> Bool {
+        guard let finished else { return false }
+        return finished >= expected
+    }
+}
+
+/// Observable holder for the current automation-health issues. Kept as a shared
+/// `@Observable` model (read in a view body → Observation tracks it) because the
+/// primary `WorkspaceStore` declaration cannot gain a stored property from this
+/// extension. Recomputed at app launch via the reconcile chain.
+@MainActor
+@Observable
+final class AutomationHealthModel {
+    static let shared = AutomationHealthModel()
+    private init() {}
+
+    var issues: [AutomationHealthIssue] = []
+}
+
 // MARK: - Managed automation wiring
 
 extension WorkspaceStore {
+
+    /// Current automation-health issues (overdue / failing schedules). Reads
+    /// the shared observable so any view that references it re-renders on change.
+    var automationHealthIssues: [AutomationHealthIssue] {
+        AutomationHealthModel.shared.issues
+    }
 
     /// Reconcile the managed-automation LaunchAgents from the saved
     /// `AutomationPolicy`. Called from the root view's `.task` at launch AND
@@ -15,10 +160,137 @@ extension WorkspaceStore {
     /// down any leftover managed agents if the operator turned the policy off.
     /// Returns the install/remove actions it applied (empty when nothing
     /// changed) so callers can surface confirmation.
+    ///
+    /// The one-time RunAtLoad migration (agents installed before that change
+    /// were written with RunAtLoad:false; the reconcile signature ignores
+    /// RunAtLoad so only a forced pass rewrites them) is shared with the
+    /// headless `--scheduled-run` self-heal via
+    /// `ManagedAutomation.reconcileWithMigration` — see its doc.
     @discardableResult
     func reconcileManagedAutomation() async -> [ManagedAutomation.ActionOutcome] {
         guard !demoMode else { return [] }
-        return await ManagedAutomation.reconcile(policy: AutomationPolicy.current())
+        let outcomes = await ManagedAutomation.reconcileWithMigration(
+            policy: AutomationPolicy.current()
+        )
+        // The install/remove above can change what "should have fired" — recompute
+        // the dead-man state on the same chain so the banner reflects it at once.
+        await refreshAutomationHealth()
+        return outcomes
+    }
+
+    // MARK: - Dead-man switch compute
+
+    /// Scan the JRC LaunchAgents, evaluate the overdue/failing model, publish the
+    /// issues to the shared health model, and (once per day) post an overdue
+    /// webhook digest when `notify:` is usable. No-op in demo mode. Cheap enough
+    /// to call on every reconcile / launch.
+    func refreshAutomationHealth() async {
+        guard !demoMode else {
+            AutomationHealthModel.shared.issues = []
+            return
+        }
+        let profile = self.profile
+        // Scan + evaluate off the main actor; both are pure file reads. Scope to
+        // THIS profile's agents plus the global managed (isMulti) agents so a
+        // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
+        let issues = await Task.detached(priority: .utility) {
+            AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs(for: profile))
+        }.value
+        AutomationHealthModel.shared.issues = issues
+
+        await maybeNotifyOverdue(issues: issues, profile: profile)
+    }
+
+    /// One-click "Run now" for a failing/overdue managed row on the
+    /// Automation Health card. Kickstarts the agent's own LaunchAgent job
+    /// off the main actor so the run records under its real label (see
+    /// `LaunchAgentService.kickstartNow`). Returns whether the kickstart
+    /// itself was accepted — NOT whether the collect/generate it triggers
+    /// ultimately succeeds, since that finishes asynchronously.
+    ///
+    /// No dedicated re-eval timer here: `refreshAutomationHealth` already
+    /// runs on the next reconcile, app-foreground (`willBecomeActive`), and
+    /// manual reconcile, any of which will pick up the kicked-off job's
+    /// status file once it finishes and clear the row.
+    func runNowFromHealthRow(label: String) async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            await LaunchAgentService.kickstartNow(label: label)
+        }.value.succeeded
+    }
+
+    /// Post ONE overdue digest per day when any schedule is overdue AND the
+    /// workspace's `notify:` webhook is usable. Reuses the attention-styled
+    /// `sendFailed` path (an overdue run is a run-health failure). Skips entirely
+    /// when the config can't be loaded or the webhook is off.
+    private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
+        let overdue = issues.filter { $0.kind == .overdue }
+        guard !overdue.isEmpty else { return }
+        guard let notify = Self.loadNotifyConfig(profile: profile), notify.isUsable,
+              let workspace = ProfileService.workspaceURL(for: profile) else { return }
+        // Persisted day marker (not an in-memory static): survives relaunch and
+        // is visible to a headless process, so the digest fires at most once per
+        // calendar day across both.
+        let today = Self.dayKeyFormatter.string(from: Date())
+        let marker = DayMarker(name: "overdue-notify")
+        guard marker.lastStampedDay(in: workspace) != today else { return }
+
+        let facts = Self.overdueFacts(
+            detail: notify.resolvedDetail, profile: profile, overdue: overdue
+        )
+        let delivered = await WebhookNotifier.sendFailed(
+            config: notify,
+            title: "Scheduled run overdue — \(overdue.count) schedule"
+                + (overdue.count == 1 ? "" : "s"),
+            facts: facts
+        )
+        // Claim the day only after a confirmed send, so a failed post retries
+        // on the next pass instead of silently swallowing the whole day.
+        if delivered {
+            marker.stamp(day: today, in: workspace)
+        } else {
+            AppLogger.webhook.warning(
+                "Overdue dead-man digest failed to send for \(profile, privacy: .public) — day not claimed, will retry (distinct from a routine run digest failure)"
+            )
+        }
+    }
+
+    /// Facts for the overdue dead-man digest. `full` mode lists each overdue
+    /// schedule (display name → expected-fire date). `minimal` collapses to a
+    /// Profile fact plus a single count with no schedule names or dates — the
+    /// digest becomes a doorbell for headless high-security deployments.
+    nonisolated static func overdueFacts(
+        detail: NotifyConfig.Detail,
+        profile: String,
+        overdue: [AutomationHealthIssue]
+    ) -> [WebhookNotifier.Fact] {
+        guard detail == .full else {
+            let word = overdue.count == 1 ? "schedule" : "schedules"
+            return [
+                .init(label: "Profile", value: profile),
+                .init(label: "Overdue", value: "\(overdue.count) \(word) missed their run"),
+            ]
+        }
+        return overdue.prefix(10).map { issue in
+            WebhookNotifier.Fact(
+                label: issue.displayName,
+                value: issue.expectedFire.map {
+                    "expected \(ISO8601DateFormatter().string(from: $0)); no run recorded"
+                } ?? "no run recorded"
+            )
+        }
+    }
+
+    /// Load just the `notify:` block for a profile's config.yaml. Best-effort —
+    /// returns nil when the workspace has no config or it fails to decode.
+    nonisolated private static func loadNotifyConfig(profile: String) -> NotifyConfig? {
+        guard ProfileService.isValid(profile),
+              let url = ProfileService.workspaceURL(for: profile)?
+                .appendingPathComponent("config.yaml"),
+              FileManager.default.fileExists(atPath: url.path),
+              let config = try? ConfigLoader.load(from: url) else {
+            return nil
+        }
+        return config.notify
     }
 
     // MARK: - Catch-up-on-wake

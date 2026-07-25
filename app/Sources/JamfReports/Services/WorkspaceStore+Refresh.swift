@@ -377,6 +377,10 @@ extension WorkspaceStore {
                 // freshness run, collect today's snapshot now. Once-per-day
                 // guarded; no-op unless managed freshness is on.
                 await self.catchUpCollectIfNeeded()
+                // Re-evaluate the dead-man switch on wake so a schedule that
+                // went overdue while the app was open/asleep surfaces without
+                // a relaunch. Self-guards on demo mode.
+                await self.refreshAutomationHealth()
             }
         }
         objc_setAssociatedObject(

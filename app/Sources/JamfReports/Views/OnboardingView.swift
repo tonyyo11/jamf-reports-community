@@ -50,23 +50,27 @@ struct OnboardingView: View {
     }
 
     private var progressStrip: some View {
-        HStack(spacing: 10) {
-            ForEach(Array(OnboardingFlow.Step.allCases.enumerated()), id: \.element.id) { idx, step in
-                stepPill(step)
-                if idx < OnboardingFlow.Step.allCases.count - 1 {
-                    Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
+        let sequence = flow.stepSequence
+        let currentIndex = sequence.firstIndex(of: flow.currentStep) ?? 0
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(Array(sequence.enumerated()), id: \.element.id) { idx, step in
+                    stepPill(step, index: idx, currentIndex: currentIndex)
+                    if idx < sequence.count - 1 {
+                        Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
+                    }
                 }
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "Step \(flow.currentStep.number) of \(OnboardingFlow.Step.allCases.count): \(flow.currentStep.label)"
+            "Step \(flow.stepPosition) of \(flow.stepCount): \(flow.currentStep.label)"
         )
     }
 
-    private func stepPill(_ step: OnboardingFlow.Step) -> some View {
-        let done = step.rawValue < flow.currentStep.rawValue
-        let current = step == flow.currentStep
+    private func stepPill(_ step: OnboardingFlow.Step, index: Int, currentIndex: Int) -> some View {
+        let done = index < currentIndex
+        let current = index == currentIndex
 
         return HStack(spacing: 8) {
             if done {
@@ -74,12 +78,14 @@ struct OnboardingView: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Theme.Chart.tealLight)
             } else {
-                Text("\(step.number)")
+                Text("\(index + 1)")
                     .font(Theme.Fonts.mono(10, weight: .semibold))
                     .foregroundStyle(current ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
             }
             Text(step.label)
                 .font(.caption)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(current ? Theme.Colors.fg :
                                  done ? Theme.Colors.fg2 : Theme.Text.tertiary(contrast))
         }
@@ -103,7 +109,7 @@ struct OnboardingView: View {
     private var stepHeader: some View {
         VStack(alignment: .leading, spacing: 10) {
             Kicker(
-                text: "Step \(flow.currentStep.number) of \(OnboardingFlow.Step.allCases.count) - \(flow.currentStep.label)",
+                text: "Step \(flow.stepPosition) of \(flow.stepCount) - \(flow.currentStep.label)",
                 tone: .gold
             )
             Text(headerTitle)
@@ -129,6 +135,7 @@ struct OnboardingView: View {
         case .addProducts: "Add more products."
         case .csvMapping: "Map your first CSV export."
         case .firstReport: "Generate the first report."
+        case .schoolConnect: "Connect Jamf School."
         }
     }
 
@@ -152,6 +159,8 @@ struct OnboardingView: View {
             "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop. The app's scaffold tool reads the CSV headers and writes the workspace config."
         case .firstReport:
             "The final step runs generate for the new profile and streams output here."
+        case .schoolConnect:
+            "Registers a jamf-cli Jamf School profile with your Network ID and API key over stdin, then wires school_cli into this workspace's config so reports route to the Jamf School engine."
         }
     }
 
@@ -174,6 +183,8 @@ struct OnboardingView: View {
             csvMappingStep
         case .firstReport:
             firstReportStep
+        case .schoolConnect:
+            schoolConnectStep
         }
     }
 
@@ -311,7 +322,7 @@ struct OnboardingView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.radioGroup)
-                    .popoverTip(OnboardingTips.connectionType)
+                    TipView(OnboardingTips.connectionType)
                 }
             }
 
@@ -348,7 +359,7 @@ struct OnboardingView: View {
                             flow.setClientSecret(data)
                         }
                         .frame(height: 28)
-                        .popoverTip(OnboardingTips.secretField)
+                        TipView(OnboardingTips.secretField)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -638,6 +649,108 @@ struct OnboardingView: View {
         }
     }
 
+    /// Jamf School-only connect step (School product path).
+    ///
+    /// Reuses the exact Connect School machinery from the Add-products step —
+    /// same `school setup` PTY call, same fields, same redaction — but connects
+    /// School as the workspace's primary product via `connectSchoolAsPrimary`
+    /// (the workspace profile name is the School jamf-cli profile; there is no
+    /// separate profile-name field here).
+    private var schoolConnectStep: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Card(padding: 22) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "graduationcap.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.goldBright)
+                            .frame(width: 38, height: 38)
+                            .background(
+                                Theme.Colors.gold.opacity(0.14),
+                                in: RoundedRectangle(cornerRadius: 8)
+                            )
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Connect Jamf School")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Text("Registers this workspace as a Jamf School profile.")
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                        Spacer()
+                        if flow.schoolConnected {
+                            Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+                        }
+                    }
+
+                    InlineBanner(icon: "info.circle.fill", tone: .info) {
+                        Text("Jamf School support ships community-validated — the maintainer has no Jamf School tenant to test against. If something looks off, please open an issue or pull request.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if !flow.schoolConnected {
+                        Divider().background(Theme.Colors.hairline)
+
+                        Text("Find your Network ID at Devices → Enroll Device(s). Generate an API key at Organization → Settings → API.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            FieldLabel(label: "School URL")
+                            PNPTextField(
+                                value: binding(\.schoolURL),
+                                placeholder: "https://yourorg.jamfcloud.com"
+                            )
+                            validationLine(ok: flow.isSchoolURLValid, text: "Must use https:// and include a host")
+                        }
+
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                FieldLabel(label: "Network ID")
+                                PNPTextField(value: binding(\.schoolNetworkID), mono: true)
+                            }
+                            .frame(maxWidth: .infinity)
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                FieldLabel(label: "API Key")
+                                SecureSecretField(
+                                    placeholder: "School API key",
+                                    onTextChange: { flow.schoolAPIKeyFieldHasText = $0 }
+                                ) { data in
+                                    flow.setSchoolAPIKey(data)
+                                }
+                                .frame(height: 28)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        if let err = flow.schoolConnectionError {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundStyle(Theme.Colors.danger)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        HStack(spacing: 10) {
+                            PNPButton(
+                                title: flow.isConnectingSchool ? "Connecting…" : "Connect School",
+                                icon: "graduationcap.fill",
+                                style: .gold,
+                                size: .sm
+                            ) {
+                                NSApp.keyWindow?.makeFirstResponder(nil)
+                                Task { await flow.connectSchoolAsPrimary() }
+                            }
+                            .disabled(!flow.canAttemptSchoolConnect)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private var csvMappingStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             Card(padding: 22) {
@@ -813,20 +926,11 @@ struct OnboardingView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let error = flow.lastError {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
+            InlineBanner(icon: "exclamationmark.triangle.fill", tone: .warn) {
                 Text(error)
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
-                Spacer()
             }
-            .padding(12)
-            .background(Theme.Colors.warn.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-            )
         }
     }
 
@@ -840,7 +944,7 @@ struct OnboardingView: View {
                       flow.isSkippingCSVMapping || flow.isRunningFirstReport ||
                       flow.isConnectingProtect || flow.isConnectingSchool)
             .opacity(flow.currentStep == .welcome ? 0.45 : 1)
-            .accessibilityLabel("Back to step \(max(1, flow.currentStep.number - 1))")
+            .accessibilityLabel("Back to step \(max(1, flow.stepPosition - 1))")
 
             Spacer()
 
@@ -872,6 +976,7 @@ struct OnboardingView: View {
             else if flow.isSkippingCSVMapping { "Seeding" }
             else { "Continue" }
         case .firstReport: flow.isRunningFirstReport ? "Running" : "Run now"
+        case .schoolConnect: flow.schoolConnected ? "Continue" : "Connect School to continue"
         }
     }
 
@@ -885,6 +990,7 @@ struct OnboardingView: View {
         case .addProducts: "arrow.right"
         case .csvMapping: "arrow.right"
         case .firstReport: "play.fill"
+        case .schoolConnect: flow.schoolConnected ? "arrow.right" : "graduationcap.fill"
         }
     }
 
@@ -924,6 +1030,11 @@ struct OnboardingView: View {
         case .addProducts:
             flow.nextStep()
         case .csvMapping:
+            flow.nextStep()
+        case .schoolConnect:
+            // The connection itself is driven by the in-card Connect button;
+            // the primary button only advances once schoolConnected is true
+            // (enforced by canAdvance).
             flow.nextStep()
         case .firstReport:
             Task {

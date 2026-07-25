@@ -24,6 +24,7 @@ struct ReportConfig: Decodable, Sendable {
     var protect: ProtectConfig?
     var schoolCli: SchoolCLIConfig?
     var notify: NotifyConfig?
+    var alerts: AlertsConfig?
     var retention: RetentionConfig?
     var ai: AIConfig?
     var html: HTMLReportConfig?
@@ -45,6 +46,7 @@ struct ReportConfig: Decodable, Sendable {
         case protect
         case schoolCli = "school_cli"
         case notify
+        case alerts
         case retention
         case ai
         case html
@@ -248,6 +250,10 @@ struct JamfCLIConfig: Decodable, Sendable {
     var useCachedData: Bool?
     var allowLiveOverview: Bool?
     var requireManifest: Bool?       // PR-10 / threat-model T-11
+    /// Age limit (hours) past which a cached jamf-cli snapshot is treated as
+    /// ABSENT rather than silently served as current. `nil` → default 168h
+    /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
+    var maxCacheAgeHours: Int?
     /// Legacy list of jamf-cli report kinds to skip during collect.
     /// Still read so existing config.yaml files continue to work;
     /// the GUI no longer emits this key.
@@ -260,6 +266,7 @@ struct JamfCLIConfig: Decodable, Sendable {
         case useCachedData = "use_cached_data"
         case allowLiveOverview = "allow_live_overview"
         case requireManifest = "require_manifest"
+        case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
     }
 
@@ -275,6 +282,12 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// users who upgrade without re-scaffolding their config.yaml; new
     /// workspaces seeded by `workspace-init` get `true`.
     var isManifestRequired: Bool { requireManifest ?? false }
+
+    /// Resolved cache age limit in hours. Absent key → 168h (7 days) so
+    /// ancient cache surfaces as absent instead of rendering as current.
+    /// `0` or negative preserves the keep-forever escape hatch (returned
+    /// verbatim; downstream treats `<= 0` as unlimited).
+    var resolvedMaxCacheAgeHours: Int { maxCacheAgeHours ?? 168 }
 }
 
 // MARK: - ComplianceFramework
@@ -729,22 +742,154 @@ struct SchoolCLIConfig: Decodable, Sendable {
 struct NotifyConfig: Decodable, Sendable {
     enum Provider: String, Decodable, Sendable, CaseIterable { case teams, slack }
 
+    /// Payload verbosity. `full` (default) sends metric names/values, error text,
+    /// and schedule names; `minimal` sends event facts only (counts and statuses,
+    /// no values or free text) — for headless deployments that want the webhook
+    /// as a doorbell, not a data channel.
+    enum Detail: String, Decodable, Sendable { case full, minimal }
+
     var enabled: Bool?
     var provider: String?
     var url: String?
+    var detail: String?
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, provider, url
+        case enabled, provider, url, detail
     }
 
     var isEnabled: Bool { enabled ?? false }
     var resolvedProvider: Provider {
         Provider(rawValue: (provider ?? "teams").lowercased()) ?? .teams
     }
+    var resolvedDetail: Detail {
+        Detail(rawValue: (detail ?? "full").lowercased()) ?? .full
+    }
     var resolvedURL: String { url?.trimmingCharacters(in: .whitespaces) ?? "" }
     /// Usable only when enabled AND a usable https URL is present — the gate
     /// every send path checks so an off/misconfigured block silently no-ops.
     var isUsable: Bool { isEnabled && resolvedURL.lowercased().hasPrefix("https://") }
+}
+
+// MARK: - alerts (metric-threshold webhook alerting)
+
+/// `alerts:` block — opt-in metric-threshold alerting (2.6 "trust trio" #1).
+/// OFF by default. When enabled AND `notify:` is usable, a scheduled run that
+/// COLLECTED evaluates its rules against the fresh `DailySummary` and posts one
+/// webhook attention card if any rule trips. Alerts reuse the `notify:` webhook
+/// — they add no URL of their own.
+struct AlertsConfig: Decodable, Sendable {
+    var enabled: Bool?
+    var rules: [AlertRule]?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled, rules
+    }
+
+    var isEnabled: Bool { enabled ?? false }
+
+    /// Rules that are complete enough to evaluate. A rule is dropped if it has
+    /// no metric, no operator, an unknown metric/operator, or no usable
+    /// threshold — so a half-edited rule silently no-ops rather than mis-firing.
+    /// A threshold must be finite (rejects a "nan"/"inf" string that parsed to a
+    /// non-finite Double) and non-negative (a negative threshold is meaningless
+    /// for every operator: below/above on 0–100 metrics and drops_more_than
+    /// expects a positive drop).
+    var resolvedRules: [AlertRule] {
+        (rules ?? []).filter { rule in
+            guard let metric = rule.metric, AlertMetric(rawValue: metric) != nil,
+                  let when = rule.when, AlertRule.Comparison(rawValue: when) != nil,
+                  let threshold = rule.threshold,
+                  threshold.isFinite, threshold >= 0 else { return false }
+            return true
+        }
+    }
+}
+
+/// A single alert rule. `when` is one of "below" | "above" | "drops_more_than";
+/// `lookback_days` is only meaningful for `drops_more_than` (compares the fresh
+/// value against a prior summary at least that many days older).
+struct AlertRule: Decodable, Sendable, Equatable {
+    enum Comparison: String, Decodable, Sendable, CaseIterable {
+        case below, above
+        case dropsMoreThan = "drops_more_than"
+    }
+
+    var metric: String?
+    var when: String?
+    var threshold: Double?
+    var lookbackDays: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case metric, when, threshold
+        case lookbackDays = "lookback_days"
+    }
+
+    /// Memberwise-style init retained for tests and programmatic construction
+    /// (a custom `init(from:)` would otherwise suppress the synthesized one).
+    init(metric: String? = nil, when: String? = nil,
+         threshold: Double? = nil, lookbackDays: Int? = nil) {
+        self.metric = metric
+        self.when = when
+        self.threshold = threshold
+        self.lookbackDays = lookbackDays
+    }
+
+    /// Tolerant decode. The `alerts:` block is the only place a `Double`
+    /// (`threshold`) reaches the config schema, and `YAMLCodec` has no float
+    /// branch — a fractional YAML scalar (`threshold: 90.5`) arrives here as the
+    /// JSON STRING "90.5" while an integer scalar (`threshold: 90`) arrives as a
+    /// JSON number. Both shapes must decode, and NOTHING malformed in an alerts
+    /// rule may throw out of init (a thrown error kills the WHOLE config decode
+    /// → every collect/generate aborts). Every field degrades to nil; a rule
+    /// with a nil/garbage threshold is dropped later by `resolvedRules`.
+    init(from decoder: Decoder) throws {
+        // A malformed rule may not even be a keyed mapping (e.g. a bare scalar
+        // or a nested object where a scalar was expected). Fail soft to all-nil.
+        guard let c = try? decoder.container(keyedBy: CodingKeys.self) else {
+            self.init()
+            return
+        }
+        // Delegating initializer: one branch calls self.init(), so every branch
+        // must delegate — compute locals, then delegate once.
+        let metric = (try? c.decodeIfPresent(String.self, forKey: .metric)) ?? nil
+        let when = (try? c.decodeIfPresent(String.self, forKey: .when)) ?? nil
+        self.init(
+            metric: metric,
+            when: when,
+            threshold: AlertRule.tolerantDouble(c, .threshold),
+            lookbackDays: AlertRule.tolerantInt(c, .lookbackDays)
+        )
+    }
+
+    /// Decode a numeric field that may arrive as a JSON number OR a string
+    /// (the YAMLCodec fractional/quoted-scalar case). Number → string(Double)
+    /// → nil; never throws. A non-parseable string yields nil so the rule drops.
+    private static func tolerantDouble(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> Double? {
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) {
+            return Double(s.trimmingCharacters(in: .whitespaces))
+        }
+        return nil
+    }
+
+    /// Same tolerance for `lookback_days` — a quoted "7" would otherwise throw.
+    private static func tolerantInt(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> Int? {
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return i }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) {
+            return Int(s.trimmingCharacters(in: .whitespaces))
+        }
+        return nil
+    }
+
+    /// Default 7 — only consulted by `drops_more_than`.
+    var resolvedLookbackDays: Int { lookbackDays ?? 7 }
+    var resolvedComparison: Comparison? { when.flatMap(Comparison.init(rawValue:)) }
+    var resolvedMetric: AlertMetric? { metric.flatMap(AlertMetric.init(rawValue:)) }
 }
 
 // MARK: - ai (macOS 27 opt-in intelligence layer)

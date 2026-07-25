@@ -7,6 +7,336 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-25
+
+### Added
+
+- Managed-device count history: Trends gains a "Managed Devices" metric
+  charting the fleet's total computer and mobile-device counts over time, and
+  Overview gains a matching tile with the computer/mobile split — so you can
+  answer "how many managed Macs did we have on a given date?" from the app's
+  own archived daily summaries (something Jamf Pro itself can't report).
+  Computer counts are already present in every summary the app has ever
+  written, so that history appears retroactively; mobile counts start
+  recording with the first collect on this version.
+- Duplicate-serial detection (jamf-cli 1.23+): collection now gathers the new
+  `pro report duplicate-serials` data, and the Health Audit screen gains a
+  "Duplicate serials" section listing the affected records (serial, record IDs,
+  names, last contact). Duplicated serial numbers silently corrupt any report
+  that joins device records by serial, so surfacing them is a data-integrity
+  check. On older jamf-cli versions the section explains what it needs instead
+  of rendering empty. jamf-cli's own `pro audit` duplicate-serials check also
+  appears among audit findings automatically once the binary is updated.
+- Metric-threshold webhook alerting (opt-in): a new `alerts:` config block defines
+  rules like "FileVault below 90%" or "patch compliance drops more than 5 points
+  week-over-week", evaluated against each scheduled run's daily summary. When a
+  rule trips, an attention card posts to the existing `notify:` webhook — no rule
+  tripped, no message. Off by default; requires the notify webhook.
+- Scheduled-run dead-man switch: the app now notices when a scheduled run *should*
+  have fired but didn't. Overview shows an "overdue" banner naming the schedule and
+  when it last succeeded, the Automation screen gains an Automation Health section,
+  and (when the notify webhook is configured) one overdue digest posts per day.
+- Per-kind data freshness on operational screens: Patch, Security Posture, Updates,
+  and Devices show compact chips with the age of each underlying data source, so a
+  screen mixing fresh and week-old inputs no longer reads as uniformly current.
+  Devices previously had no freshness surface at all and now also gets the
+  "Collect now" banner.
+- Snapshot integrity manifests are now written by the app: with
+  `jamf_cli.require_manifest: true`, every collected snapshot is recorded in a
+  per-kind `manifest.json` (SHA-256), making tamper detection in the Health Audit
+  fully functional end-to-end.
+- Webhook notifications are now configurable in the app: the Automation screen
+  gains a Notifications section (per profile) with the enable toggle, Teams/Slack
+  picker, webhook URL, payload-detail level, and a "Send test notification"
+  button — no more hand-editing `notify:` in config.yaml (which still works).
+- Patch velocity: adoption measured against release dates. The Patch screen
+  gains a "Days Behind" column and a velocity card charting the five
+  slowest-adopting titles' adoption curves with "days to 50% / 90%" figures,
+  and reports gain a "Patch Velocity" sheet. Computed entirely from the dated
+  patch history the app already collects — curves fill in as history
+  accumulates; velocity figures are only shown when the crossing was actually
+  observed, never estimated.
+
+### Fixed
+
+- A failing scheduled backup now says why. The exit code was recorded to disk on
+  every run and never read back, so the Automation Health row could only ever say
+  "Last run reported failure" — the cause was reachable only by finding the right
+  log in Run History. The row now names the cause and its remedy in plain language
+  (expired credentials, missing privileges, throttling), shows when the run
+  failed, and offers a Run History button. The scheduled and command-line backup
+  paths get the same plain-language explanation the Backups screen already showed.
+- Scheduled backups no longer run against profiles that can't be backed up.
+  `pro backup` is a Jamf Pro command, but the all-profiles backup schedule ran it
+  for every profile including Jamf School ones, which failed every week and left a
+  warning no action could clear — re-running produced the identical failure. Those
+  profiles are now skipped with an explanation, and a skip is not a failure.
+- A partial backup is no longer discarded. When jamf-cli reports partial success
+  (some configuration object types exported, others refused), the exported subset
+  is now kept and flagged as partial instead of being deleted and reported purely
+  as a failure. Retention counts these, so they can't accumulate unpruned.
+- Two backups finishing in the same second no longer collide, which previously
+  deleted the completed backup and reported a failure.
+- A failing scheduled backup now posts to the configured notification webhook.
+  Backups returned before the notification step, so operators watching a webhook
+  for unattended failures saw every collect failure and silence for every backup
+  failure — silence that reads as success.
+- The Automation Health row now says that a manual backup won't clear a managed
+  schedule's failure, and to use Run now instead. The behavior was already
+  deliberate; it just wasn't explained, so the obvious remedy looked broken.
+
+- A single endpoint returning 401 can no longer be misread as expired
+  credentials: before declaring authentication dead (the hard-fail that
+  raises the Failing banner and asks you to re-authenticate), the collect now
+  runs one `pro auth token` confirmation probe. If credentials are valid, the
+  run completes with a clear warning naming the affected data kinds instead —
+  the 401 is endpoint-specific (commonly a token expiring inside jamf-cli's
+  long per-device commands on older versions). Genuine credential death
+  behaves exactly as before. Failing scheduled runs are also now recoverable
+  on the spot: failing or overdue managed schedules in Automation Health gain
+  a "Run now" button that re-runs the real agent under its own identity, so a
+  success genuinely clears the health state — previously a failed weekly
+  schedule stayed red for a week with no way to retry it.
+- Scheduled collects no longer report "server unreachable" — with a failing
+  banner and a webhook alert — when the only data kinds that were actually due
+  are ones that chronically fail (for example Platform-API kinds a tenant's
+  API role can't access, or a command the installed jamf-cli doesn't have
+  yet). If healthy kinds were skipped because their data was already fresh,
+  that freshness is proof the server was recently reachable, so the run now
+  completes as a normal partial outcome; and a "command doesn't exist"
+  failure never counts toward an unreachable verdict at all.
+- Automation Health no longer lets one profile's successful run hide another
+  profile's failure of the same managed schedule: on multi-profile
+  installations, each profile's screens now read that profile's own run
+  status, so a genuine failure stays visible until that profile's next run
+  succeeds. (The fleet-wide overdue digest keeps its across-profiles view.)
+- Managed automation now repairs itself without the app: every scheduled run
+  finishes by reconciling the managed LaunchAgents, so a machine whose agents
+  were written by an older build (or deleted) is healed by the next run
+  instead of waiting for someone to open the app. A running agent never
+  reloads its own job (its plist is updated on disk and takes effect at next
+  login), and the one-time RunAtLoad migration is now only marked complete
+  when the rewrite verifiably succeeded, so a failed attempt retries.
+- A batch of layout and copy fixes from field screenshots: the Devices filter
+  control and the Generated / Run History / Backups header buttons no longer
+  wrap letter-by-letter at narrow window widths; the Trends compliance
+  headline no longer overlaps its delta badge; the compliance band legend
+  only appears under the compliance band chart; stat-tile arrows now match
+  the sign of their delta; Device Lookup no longer claims "no cached
+  inventory" while inventory exists (its cache probe never refreshed after
+  first render); and the workbook preview footer dropped a Python-era
+  "matplotlib" mention and a wildly wrong size estimate.
+- Buttons inside the Fleet Overview per-profile drill-down ("Open Trends",
+  "Open Patch Compliance", and the other issue and Summary Details actions) did
+  nothing since v2.3.0 (#203). The Overview screen's metric drill-downs had the
+  same defect. Both pages kept their own navigation stack from before the
+  v2.3.0 toolbar rework, which left it nested inside the app shell's stack —
+  unsupported in SwiftUI — so the target screen rendered underneath the
+  drill-down page instead of replacing it. Drill-downs are now plain
+  state-driven pages; the breadcrumb returns to the parent screen as before.
+- Fixed a crash that could take down the whole Patch screen (and the velocity
+  report sheet) when the patch-release-dates snapshot contained two entries for
+  the same title id — possible with duplicated patch title configurations or a
+  sync-merged file.
+- The daily digest now picks and ages cached snapshots by the timestamp in the
+  snapshot's filename instead of the file's modification time, matching every
+  other reader. On cloud-synced storage (iCloud/SharePoint), sync re-stamps
+  modification times, which could make the digest report a data kind as absent
+  — or serve older content — while the posture screens showed full data from
+  the same folder.
+- mSCP failure counts arriving as float-formatted strings ("3.0") from an audit
+  EA now band correctly instead of being dropped to No Data; genuinely
+  fractional counts ("3.9") are still rejected rather than silently truncated.
+- The fleet patch-compliance average no longer counts titles with zero enrolled
+  devices (some jamf-cli builds report those as a parseable "0%", dragging the
+  average down).
+- Patch adoption can no longer chart above 100% when jamf-cli double-counts
+  devices across patch policies.
+- A "drops more than" alert now compares against a summary genuinely as old as
+  its lookback window. Previously, with sparse history it silently fell back to
+  the most recent prior summary — firing a "7-day drop" rule on a 1-day wobble,
+  or on a month-old baseline. With no old-enough summary the rule simply
+  doesn't fire.
+- Managed automation schedules no longer read as permanently overdue: the
+  dead-man switch now finds the per-profile run records the all-profiles
+  scheduled runs actually write, so a healthy managed setup stops producing a
+  daily false "overdue" banner and webhook.
+- A mistyped alert rule (unknown metric or operator, bad threshold) is no longer
+  silently ignored: it's flagged in the Config Doctor's new Alerts checks, logged,
+  and recorded in Run History. The doctor also warns when alerts are enabled
+  without a usable webhook — previously that combination was total silence.
+- Alert cards are no longer duplicated when two scheduled runs collect on the
+  same day; each tripped rule now cards at most once per day (a rule tripping
+  for the first time later the same day still alerts).
+- A compliance "drops more than" alert no longer false-fires when the compliance
+  measurement changes basis (the built-in proxy vs. real mSCP baselines) between
+  the compared days.
+- Headless deployments now get dead-man coverage: scheduled runs themselves check
+  sibling schedules for overdue runs and post the once-daily overdue digest, so
+  the switch no longer requires the app window to be opened. The once-per-day
+  gate is shared with the app, and the day is only marked sent after a successful
+  delivery (a failed send retries instead of silently skipping the day).
+- Automation health re-evaluates when the Mac wakes or the app returns to the
+  foreground, not just at launch — an ops console left open for days now notices
+  a dead schedule.
+- Freshness chips now show an explicit red "never" chip for a data kind the
+  screen expects but that has never been collected, instead of the kind silently
+  vanishing from the row (kinds intentionally skipped via "Skip expensive
+  collections" are excluded). The chip row also wraps instead of overflowing at
+  narrow widths.
+- The Patch screen's velocity card and the "Patch Velocity" report sheet now say
+  when release dates are unavailable (the `patch-release-dates` snapshot hasn't
+  been collected) instead of showing bare "—" everywhere.
+- A snapshot-manifest write failure under `require_manifest` is now an error in
+  Run History naming the affected kind, instead of a buried log warning.
+- Retention no longer counts `manifest.json` as a snapshot: it can't occupy a
+  keep-count slot or be archived/deleted out from under integrity verification.
+- A webhook URL typed just before closing the Automation screen is now saved
+  (the debounced save flushes on dismissal).
+
+- Update Jamf Pro credentials without Terminal: the Data Sources screen's
+  Connection health card gains an "Update credentials" sheet (OAuth2 or
+  Platform Gateway) for the active profile — for rotated secrets, expired API
+  clients, or profiles first created with placeholder values. Secrets follow
+  the same discipline as onboarding: entered into the system via jamf-cli
+  only, never persisted or logged by the app, wiped on cancel.
+- Jamf School-only districts get a real front door: the Welcome screen gains
+  a "Connect Jamf School" card with its own onboarding path (no Jamf Pro
+  credentials involved) ending in a first School workbook. Like the School
+  CLI commands, this path ships community-validated — the maintainer has no
+  Jamf School tenant to test against.
+- Per-kind freshness chips now cover the remaining data screens — Policies &
+  Profiles, Extension Attributes, Protect, and Mobile Fleet — completing the
+  rollout that started with Patch, Security Posture, Updates, and Devices.
+  Protect and Mobile Fleet only expect their kinds when the product is
+  actually detected, so a Pro-only or Mac-only tenant never sees a false
+  "never" chip.
+- The webhook Notifications editor is now available in unmanaged mode too:
+  the Schedules screen gains the same card the Automation screen has, so
+  hand-built-schedule operators no longer have to edit the notify: block by
+  hand.
+- The `jamf-reports` command-line tool now participates in automation trust:
+  `collect` evaluates metric alerts and posts the webhook digest like a
+  scheduled snapshot run, `generate` posts its digest, both record into Run
+  History, and failures post the failure card — so a self-managed cron or
+  launchd job is no longer invisible. Exit codes and output are unchanged;
+  the dead-man switch still tracks only app-written schedules (a cron job has
+  no schedule for it to compare against).
+- `jamf-reports scaffold` no longer requires a CSV: omit `--csv` to write the
+  same minimal jamf-cli-only config the app's onboarding "Skip for now" path
+  creates — a pure-CLI setup can now bootstrap a workspace headlessly.
+- Truncated snapshot files in the `{"results": [...]}` envelope shape are now
+  salvaged like bare-array files (complete rows recovered, day marked
+  salvaged) instead of vanishing from charts entirely.
+- A "drops more than" alert comparing against sparse history now prefers a
+  prior summary that actually carries the rule's metric, so a data-absent day
+  at the lookback boundary can't silently disarm the rule.
+- Text no longer renders one character per line: the packaged app now bundles
+  its monospace fonts correctly, so tracked headers, status chips, segmented
+  controls, and timestamps render crisply instead of falling back to a wider
+  system font that overflowed fixed-width controls.
+- In-app guidance tips no longer render as an oversized empty box — each tip now
+  appears inline beside the control it describes.
+- Stale-device counts now agree across Overview, Fleet Overview, Devices, and
+  Offline Outreach, and honor `thresholds.stale_device_days` everywhere
+  (previously the Devices and Offline Outreach screens used a fixed 30 days, and
+  the summary counted 0 when jamf-cli reported staleness under a newer field).
+- The Devices FileVault tile now reports the true encryption rate instead of
+  rounding a single unencrypted device away as 100% / "0 security gaps".
+- Mobile Fleet classifies iPad vs iPhone by hardware model rather than OS
+  family, so the per-device-type breakdown is no longer 0/0 on an iOS fleet.
+- The mSCP compliance tile no longer wraps a long baseline label mid-word.
+- The Trends relative-change figure no longer shows an absurd percentage (e.g.
+  8200%) when the comparison baseline is at or near zero — it omits the
+  parenthetical and shows the absolute change.
+- The Generated screen header now reads "N reports" instead of "N reports
+  archived" (these are generated outputs, not archives).
+- The AI Insights card now names the model it will actually use — a config
+  locked to on-device no longer claims Private Cloud Compute.
+- The Overview automation-health banner and Getting-Started checklist no longer
+  present fleet-wide or another profile's state as the active profile's own: the
+  banner labels fleet-wide managed automation as "Managed automation (all
+  profiles)", and "Set up a schedule" reflects a schedule for the current
+  profile rather than the global managed-automation switch.
+- The onboarding step progress no longer wraps step labels one character per
+  line — the strip scrolls horizontally when the steps don't fit.
+
+### Security
+
+- Webhook cards can now be minimized for high-security deployments: new
+  `notify.detail: minimal` sends event facts only ("2 alert rules tripped",
+  "run failed", "1 schedule overdue") with no metric values, error text, or
+  schedule names — the webhook becomes a doorbell, not a data channel. The
+  default (`full`) is unchanged.
+- The failure webhook's error text is now redacted (secrets and PII, including
+  server hostnames) before it leaves the machine — previously a network error
+  could embed the Jamf server address in the card.
+- Webhook titles and facts are sanitized against Slack mention/link injection
+  (`<!channel>`, `<@user>`, disguised links) across all card types.
+- Hardened the new `alerts:` config parsing: a malformed rule (fractional,
+  quoted, negative, or garbage threshold) can no longer break loading of the
+  whole `config.yaml` — bad rules are dropped individually and decimal
+  thresholds like `90.5` now work.
+- Snapshot integrity manifests are excluded from every "newest snapshot"
+  reader, so enabling `jamf_cli.require_manifest` can't cause the manifest
+  file itself to be read as data.
+- The Config Doctor now reports "EA coverage drift unavailable" (naming the
+  reason, e.g. truncated snapshots) instead of a green "stable" row when it
+  lacks the data to actually check.
+
+### Changed
+
+- "Active Devices" now means truly active: the Overview tile and Trends metric
+  report managed devices minus stale ones (per your configured
+  `thresholds.stale_device_days`), instead of duplicating the total. The tile
+  says what it counts ("Checked in within Nd"); when staleness has never been
+  measured the value honestly shows as unknown rather than overstating.
+  Alongside the new Managed Devices tile, the pair now distinguishes "how many
+  devices we manage" from "how many are actually checking in." A summary
+  written earlier in the day also picks up the mobile-device count on the next
+  collect instead of waiting for tomorrow.
+- Tracks jamf-cli v1.25.1 (was v1.22.0). Updating the binary also enriches
+  device drill-downs for free: MDM-command and policy history rows now carry
+  completion dates and accurate command states (jamf-cli 1.23+). One upstream
+  behavior change to be aware of: `--serial`-based lookups on a duplicated
+  serial now error instead of silently picking an arbitrary record (the app
+  itself resolves devices by ID and is unaffected). Everything added in 1.24
+  and 1.25 is additive — new commands and flags this app doesn't call — so
+  older binaries down to the 1.18 floor keep working.
+- On macOS 26 and earlier the AI Insights surfaces (Overview card, Settings
+  panel) are now hidden entirely instead of explaining that they need
+  macOS 27 — the feature can never run there, so the app no longer
+  advertises it. Nothing changes on macOS 27.
+- Private Cloud Compute is no longer offered in Settings: it requires an
+  Apple-granted entitlement tied to App Store distribution that official
+  builds can't carry, so the model picker is replaced by a plain
+  "On-device" row. Builds that do carry the entitlement (e.g. a qualifying
+  fork) get the picker back automatically. On-device AI is unaffected.
+- Cached data now has a shelf life: new `jamf_cli.max_cache_age_hours` (default
+  168 — 7 days). When live collection fails and the newest cached snapshot is older
+  than the limit, the daily digest reports that kind as absent (with a log line
+  naming the age) instead of silently presenting week-old data as current. Set to
+  `0` to keep the previous keep-forever behavior.
+- Days recovered from truncated snapshot files ("salvaged") are now marked on the
+  compliance band trend chart with a warning marker and excluded from EA
+  coverage-drift comparisons, so a partially-recovered day never reads as a real
+  fleet change.
+- Managed data-collection schedules now catch up at login: the collect agents run
+  when you log in, so a Mac that was asleep or logged out at the scheduled time
+  gathers its data as soon as you're back — repeated logins do no redundant work
+  (a collect that isn't due is skipped). Report and backup schedules stay on their
+  calendar. These remain user LaunchAgents, so they still don't run while no user
+  is logged in.
+
+### Removed
+
+- The dormant smart-group creation feature (the "Create smart group" affordances
+  wired into the Outreach, Security Posture, Compliance Posture, and Updates
+  screens). It depended on a jamf-cli smart-group-templates command that was
+  proposed upstream but never shipped, so the buttons could never appear on any
+  real installation. Removed entirely rather than left as dead weight; smart-group
+  *reporting* (the read-only group inventory surfaces) is unaffected.
+
 ## [2.5.0] - 2026-07-06
 
 ### Added

@@ -6,10 +6,10 @@ import Foundation
 struct StaleDeviceService: Sendable {
 
     enum Tier: String, CaseIterable, Sendable {
-        case recent   // 0-30 days
-        case offline  // 31-90 days
-        case inactive // 91-180 days
-        case dormant  // 180+ days
+        case recent   // 0 … staleDays (default 0-30)
+        case offline  // staleDays … 3× (default 31-90)
+        case inactive // 3× … 6× (default 91-180)
+        case dormant  // > 6× (default 180+)
 
         var label: String {
             switch self {
@@ -29,19 +29,23 @@ struct StaleDeviceService: Sendable {
             }
         }
 
-        func contains(_ days: Int) -> Bool {
+        /// Tier boundaries as multiples of the configured stale threshold.
+        /// At the default `staleDays == 30` these reduce exactly to the historical
+        /// 30 / 90 / 180 boundaries (recent 0-30, offline 31-90, inactive 91-180,
+        /// dormant 181+); at any other threshold they scale as 1× / 3× / 6×.
+        func contains(_ days: Int, staleDays: Int = 30) -> Bool {
             switch self {
-            case .recent:  return days <= 30
-            case .offline: return days >= 31 && days <= 90
-            case .inactive: return days >= 91 && days <= 180
-            case .dormant:  return days > 180
+            case .recent:   return days <= staleDays
+            case .offline:  return days > staleDays && days <= 3 * staleDays
+            case .inactive: return days > 3 * staleDays && days <= 6 * staleDays
+            case .dormant:  return days > 6 * staleDays
             }
         }
 
-        static func tier(for days: Int?) -> Tier {
+        static func tier(for days: Int?, staleDays: Int = 30) -> Tier {
             guard let days else { return .recent }
             for tier in Self.allCases {
-                if tier.contains(days) { return tier }
+                if tier.contains(days, staleDays: staleDays) { return tier }
             }
             return .recent
         }
@@ -86,15 +90,25 @@ struct StaleDeviceService: Sendable {
 
     /// Load devices for the profile and build stale device tiers.
     /// Returns `.empty` when no device data is available.
-    static func snapshot(profile: String, demoMode: Bool) -> Snapshot {
+    static func snapshot(profile: String, demoMode: Bool, staleDays: Int = 30) -> Snapshot {
         let deviceSnapshot = DeviceInventoryService.load(profile: profile, demoMode: demoMode)
-        return snapshot(from: deviceSnapshot.devices, dataCollectedDate: deviceSnapshot.generatedDate)
+        return snapshot(
+            from: deviceSnapshot.devices,
+            staleDays: staleDays,
+            dataCollectedDate: deviceSnapshot.generatedDate
+        )
     }
 
     /// Pure function test seam: build snapshot from device records.
-    /// `dataCollectedDate` should be the source-file mtime from `DeviceInventoryService`
-    /// so that `cacheSource` reflects collection time, not device activity time.
-    static func snapshot(from records: [DeviceInventoryRecord], dataCollectedDate: Date? = nil) -> Snapshot {
+    /// `staleDays` is the configured `thresholds.stale_device_days` (default 30);
+    /// tier boundaries scale from it. `dataCollectedDate` should be the source-file
+    /// mtime from `DeviceInventoryService` so that `cacheSource` reflects collection
+    /// time, not device activity time.
+    static func snapshot(
+        from records: [DeviceInventoryRecord],
+        staleDays: Int = 30,
+        dataCollectedDate: Date? = nil
+    ) -> Snapshot {
         guard !records.isEmpty else {
             // Preserve dataCollectedDate so cacheSource reflects collection time
             // even when no devices have been inventoried yet.
@@ -121,7 +135,7 @@ struct StaleDeviceService: Sendable {
 
         // Bucket devices by tier
         for record in records {
-            let tier = Tier.tier(for: record.daysSinceContact)
+            let tier = Tier.tier(for: record.daysSinceContact, staleDays: staleDays)
             tierCounts[tier, default: 0] += 1
             devicesByTier[tier, default: []].append(record)
         }

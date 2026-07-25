@@ -242,13 +242,7 @@ final class SOFAFeedServiceTests: XCTestCase {
     // MARK: - Helpers
 
     private func fixtureURL(named filename: String) -> URL {
-        // Match the pattern from CoreDashboardTests.swift.
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures/sofa")
+        TestFixtures.dir("sofa")
             .appendingPathComponent(filename)
     }
 

@@ -374,4 +374,40 @@ final class PolicyHealthServiceTests: XCTestCase {
         )
         XCTAssertEqual(snapshot.cacheSource, .stale(at: stale))
     }
+
+    // MARK: - sourceDates (freshness chip row)
+
+    func testSourceDatesPopulatedForBothKinds() throws {
+        let policyJSON = """
+        [{"summary": {"total_policies": 1, "enabled": 1, "disabled": 0,
+                       "config_findings": 0, "warnings": 0, "info": 0},
+          "config_findings": []}]
+        """
+        let profileJSON = """
+        [{"summary": {"total_errors": 0, "unique_profiles": 0,
+                       "unique_devices": 0, "days": 30},
+          "failures": [], "device_failures": [], "device_pending": []}]
+        """
+
+        let tmp = FileManager.default.temporaryDirectory
+        let policyURL = tmp.appendingPathComponent("sourcedates-policy-\(UUID().uuidString).json")
+        let profileURL = tmp.appendingPathComponent("sourcedates-profile-\(UUID().uuidString).json")
+
+        try Data(policyJSON.utf8).write(to: policyURL)
+        try Data(profileJSON.utf8).write(to: profileURL)
+        defer {
+            try? FileManager.default.removeItem(at: policyURL)
+            try? FileManager.default.removeItem(at: profileURL)
+        }
+
+        let snapshot = try XCTUnwrap(PolicyHealthService.load(policyURL: policyURL, profileURL: profileURL))
+
+        XCTAssertNotNil(snapshot.sourceDates["policy-status"])
+        XCTAssertNotNil(snapshot.sourceDates["profile-status"])
+    }
+
+    func testSourceDatesEmptyWhenDataDirMissing() {
+        let snapshot = PolicyHealthService.load(profile: "no-such-profile-\(UUID().uuidString)")
+        XCTAssertTrue(snapshot.sourceDates.isEmpty)
+    }
 }

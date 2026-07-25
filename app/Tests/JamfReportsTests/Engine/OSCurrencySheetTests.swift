@@ -127,17 +127,11 @@ final class OSCurrencySheetTests: XCTestCase {
     // MARK: - Helpers
 
     private func copyMacOSFixture() throws {
-        let fixtureURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures/sofa/macos_data_feed.json")
+        let fixtureURL = TestFixtures.dir("sofa/macos_data_feed.json")
         let sofaDir = tmpDir.appendingPathComponent("sofa", isDirectory: true)
         try FileManager.default.createDirectory(at: sofaDir, withIntermediateDirectories: true)
         let dest = sofaDir.appendingPathComponent("macos_data_feed.json")
-        try FileManager.default.copyItem(at: fixtureURL, to: dest)
+        try TestFixtures.copyFile(fixtureURL, to: dest)
     }
 
     /// Write a minimal security snapshot containing macOS 13 devices (EOL).

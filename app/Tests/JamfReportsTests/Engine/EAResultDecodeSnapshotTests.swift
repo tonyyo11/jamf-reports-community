@@ -116,12 +116,84 @@ final class EAResultDecodeSnapshotTests: XCTestCase {
         XCTAssertFalse(EAResultRow.isSalvageReason("envelope"))
     }
 
-    /// A truncated OBJECT payload (leading `{`) is not an array — no salvage;
-    /// falls through to the PII-safe structural summary.
-    func testTruncatedObjectPayloadNotSalvaged() {
-        let json = #"{"results":[{"device":"Mac0","value":"1"}"#
+    // MARK: - Envelope truncation salvage
+
+    /// `count` complete row objects, comma-joined, with no enclosing brackets —
+    /// callers wrap this in whichever envelope/array shape they're testing.
+    private func validRowsPrefix(count: Int) -> String {
+        (0 ..< count).map {
+            #"{"device":"Mac\#($0)","ea_name":"mSCP Failures","value":"\#($0)"}"#
+        }.joined(separator: ",")
+    }
+
+    /// A truncated `{"results":[...]}` envelope mid-record salvages the exact
+    /// prefix of complete rows, with a salvaged-prefix reason naming the key.
+    func testSalvageEnvelopeResultsMidRecord() {
+        let json = #"{"totalCount":11,"results":["#
+            + validRowsPrefix(count: 10)
+            + #",{"device":"Mac10","ea_name":"mSCP Failures","value":"partial-val"#
+        let d = EAResultRow.decodeSnapshot(json.data(using: .utf8)!)
+        XCTAssertEqual(d.rows?.count, 10)
+        XCTAssertTrue(EAResultRow.isSalvageReason(d.reason))
+        XCTAssertTrue(d.reason.contains("envelope"))
+        XCTAssertTrue(d.reason.contains("results"))
+    }
+
+    /// Same as above for the `"nodes"` envelope key.
+    func testSalvageEnvelopeNodesMidRecord() {
+        let json = #"{"nodes":["#
+            + validRowsPrefix(count: 4)
+            + #",{"device":"Mac4","ea_name":"x","value":"partial"#
+        let d = EAResultRow.decodeSnapshot(json.data(using: .utf8)!)
+        XCTAssertEqual(d.rows?.count, 4)
+        XCTAssertTrue(EAResultRow.isSalvageReason(d.reason))
+        XCTAssertTrue(d.reason.contains("nodes"))
+    }
+
+    /// Truncation before the envelope's array ever opens (still mid-key, so the
+    /// `results`/`nodes`/`data` string never closes) can't locate an array to
+    /// salvage — falls through to the PII-safe structural summary, same as any
+    /// other undecodable payload.
+    func testEnvelopeTruncatedBeforeArrayOpensReturnsNil() {
+        let json = #"{"totalCount":5,"resu"#
         let d = EAResultRow.decodeSnapshot(json.data(using: .utf8)!)
         XCTAssertNil(d.rows)
         XCTAssertFalse(d.reason.contains("salvaged"))
+    }
+
+    /// The array itself closes cleanly but the outer envelope object's closing
+    /// `}` is missing — the whole array is recovered (nothing to trim).
+    func testEnvelopeArrayClosesButOuterBraceMissingRecoversWhole() {
+        let json = #"{"results":[{"device":"Mac0","ea_name":"x","value":"1"},"#
+            + #"{"device":"Mac1","ea_name":"x","value":"2"}]"#
+        let d = EAResultRow.decodeSnapshot(json.data(using: .utf8)!)
+        XCTAssertEqual(d.rows?.count, 2)
+        XCTAssertTrue(EAResultRow.isSalvageReason(d.reason))
+    }
+
+    /// Adversarial: two complete rows whose values contain escaped quotes,
+    /// braces, and a lone `]`, followed by a truncated third row — the envelope
+    /// scanner must not be fooled by any of that punctuation living inside a
+    /// string, in either the key-locating pass or the last-element scan.
+    func testSalvageEnvelopeWithEscapedQuotesAndBracesInValues() {
+        let obj = #"{"device":"Mac0","ea_name":"path","value":"path\\with \"quote\" and {brace} and ] bracket"}"#
+        let json = #"{"results":["# + obj + "," + obj
+            + #",{"device":"Mac2","ea_name":"n","value":"partial"#
+        let d = EAResultRow.decodeSnapshot(json.data(using: .utf8)!)
+        XCTAssertEqual(d.rows?.count, 2)
+        XCTAssertTrue(EAResultRow.isSalvageReason(d.reason))
+        XCTAssertEqual(d.rows?.first?.value?.stringValue, "path\\with \"quote\" and {brace} and ] bracket")
+    }
+
+    /// Regression pin: bare-array salvage behavior is untouched by the new
+    /// envelope path — a truncated bare array still salvages exactly as before,
+    /// with the "array" reason family (not "envelope").
+    func testBareArraySalvageUnchangedByEnvelopeSupport() {
+        let json = validArrayJSON(count: 6).dropLast() + #",{"dev"#
+        let d = EAResultRow.decodeSnapshot(json.data(using: .utf8)!)
+        XCTAssertEqual(d.rows?.count, 6)
+        XCTAssertTrue(EAResultRow.isSalvageReason(d.reason))
+        XCTAssertTrue(d.reason.contains("truncated array"))
+        XCTAssertFalse(d.reason.contains("envelope"))
     }
 }

@@ -87,6 +87,7 @@ struct AuditView: View {
 
     @State private var findings: [AuditFinding] = []
     @State private var unusedGroups: [UnusedGroup] = []
+    @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
@@ -472,7 +473,90 @@ struct AuditView: View {
                 }
                 resolvedSection
             }
+            duplicateSerialsSection
         }
+    }
+
+    /// v1.23.0+ data-integrity check: computer records sharing a serial number.
+    /// A logic-board swap re-enrolls as a fresh record, so the old and new
+    /// records collide on serial — which breaks serial-joined lookups
+    /// everywhere (jamf-cli's own `--serial` resolution and any of this app's
+    /// serial-keyed correlation). Independent of the `pro audit` findings
+    /// table above: it renders from its own `duplicate-serials` collect kind,
+    /// so it's visible even before the operator has run an audit this
+    /// session. DRAFT — needs visual verification at
+    /// `PageScaffold.minSupportedWidth`.
+    @ViewBuilder
+    private var duplicateSerialsSection: some View {
+        if duplicateSerials.readFailed {
+            Text("A duplicate-serials snapshot exists but couldn't be read — " +
+                 "see Settings → Logging for the collect warning.")
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+        } else if !duplicateSerials.isDetected {
+            Text("Duplicate-serial detection needs jamf-cli 1.23.0 or later and a " +
+                 "collect run — not yet available for this workspace.")
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+        } else if duplicateSerials.groups.isEmpty {
+            Card(padding: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.callout)
+                        .foregroundStyle(Theme.Colors.ok)
+                    Text("No duplicate serials detected.")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Spacer()
+                }
+            }
+        } else {
+            Card(padding: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        SectionHeader(title: "Duplicate Serials")
+                        Spacer()
+                        Pill(
+                            text: "\(duplicateSerials.affectedRecordCount) records affected",
+                            tone: .warn
+                        )
+                    }
+                    .padding(16)
+                    Divider().background(Theme.Colors.hairline)
+                    Table(duplicateSerials.groups) {
+                        TableColumn("Serial") { group in
+                            Mono(text: group.serial)
+                        }
+                        .width(min: 110, ideal: 140)
+                        TableColumn("Record IDs") { group in
+                            Text(group.records.map(\.recordId).joined(separator: ", "))
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.fg)
+                        }
+                        .width(min: 90, ideal: 120)
+                        TableColumn("Names") { group in
+                            Text(group.records.map(\.name).joined(separator: ", "))
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Colors.fg)
+                                .lineLimit(1)
+                        }
+                        TableColumn("Last Contact") { group in
+                            Text(duplicateLastContactDisplay(group))
+                                .font(.footnote)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(height: tableHeight(rowCount: duplicateSerials.groups.count, maxHeight: 320))
+                }
+            }
+        }
+    }
+
+    private func duplicateLastContactDisplay(_ group: DuplicateSerialService.SerialGroup) -> String {
+        group.records
+            .map { $0.lastContact.isEmpty ? "—" : $0.lastContact }
+            .joined(separator: ", ")
     }
 
     @ViewBuilder
@@ -536,13 +620,12 @@ struct AuditView: View {
     /// JSON could not be verified against its sibling `manifest.json`. Renders
     /// nothing when the workspace is clean — additive, no layout cost.
     ///
-    /// The manifest *writer* doesn't exist yet (planned 2.6) — nothing
-    /// currently writes a `manifest.json` for a collected snapshot, so every
-    /// snapshot verifies `.absent` today and would otherwise show a
-    /// permanent warning card. A warning that can never clear trains the
-    /// operator to ignore it, which would mask a real `.mismatch`/`.corrupt`
-    /// finding. So an absent-only (or absent+omitted) result renders as a
-    /// single neutral status line, not a warning card. `.mismatch`/`.corrupt`
+    /// Snapshots collected before `require_manifest` was enabled (or by
+    /// pre-2.6 builds, before the manifest writer existed) verify `.absent`
+    /// and would otherwise show a permanent warning card. A warning that can
+    /// never clear trains the operator to ignore it, which would mask a real
+    /// `.mismatch`/`.corrupt` finding. So an absent-only (or absent+omitted)
+    /// result renders as a single neutral status line, not a warning card. `.mismatch`/`.corrupt`
     /// (possible tampering or bit-rot) still render the full warning/danger
     /// card with the shield icon and count pill.
     @ViewBuilder
@@ -820,6 +903,7 @@ struct AuditView: View {
             newFindingKeys = []
             resolvedFindings = []
             integritySummary = nil
+            duplicateSerials = .empty
             return
         }
 
@@ -830,6 +914,7 @@ struct AuditView: View {
         newFindingKeys = []
         resolvedFindings = []
         await loadIntegritySummary()
+        duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)

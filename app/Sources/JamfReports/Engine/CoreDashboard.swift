@@ -105,6 +105,7 @@ struct CoreDashboard: Sendable {
             ("Protect Threat Overview", writeProtectThreatOverview),
             // --- Parity / detail sheets (sheets 38–41) ---
             ("Patch Summary Dashboard", writePatchSummaryDashboard),
+            ("Patch Velocity", writePatchVelocity),
             ("Device Security State", writeDeviceSecurityState),
             ("Mobile Supervision Status", writeMobileSupervisionStatus),
             // --- OS currency (sheet 42) ---
@@ -350,6 +351,115 @@ struct CoreDashboard: Sendable {
             }
             row += 1
         }
+    }
+
+    // MARK: - Patch Velocity
+    // Source: dated `patch-status` snapshots + merged `patch-release-dates`.
+
+    /// Patch adoption velocity — how fast each title reaches 50% / 90% adoption
+    /// measured from its release date, built from dated `patch-status` history.
+    ///
+    /// Always writes (never `SheetSkippable`): when no dated history exists yet the
+    /// sheet carries a single "No dated patch history yet" note row so the tab is
+    /// present but honest. nils render "—" (never fabricated zeros). The top-titles
+    /// trend chart embeds below the table when charts are enabled.
+    func writePatchVelocity() throws {
+        let releaseRows = PatchReleaseDateService.load(dataDir: dataDir)
+        let velocities = PatchVelocityBuilder.compute(dataDir: dataDir, releaseRows: releaseRows)
+
+        let ws = workbook.addSheet("Patch Velocity")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(
+            title: t("Patch Velocity"),
+            subtitle: "Adoption speed vs. release date — Generated: \(ts)",
+            ncols: 7
+        )
+        ws.setColumnWidth(0, 0, 36)
+        ws.setColumnWidth(1, 1, 16)
+        ws.setColumnWidth(2, 2, 12)
+        ws.setColumnWidth(3, 3, 18)
+        ws.setColumnWidth(4, 4, 12)
+        ws.setColumnWidth(5, 5, 12)
+        ws.setColumnWidth(6, 6, 12)
+
+        guard !velocities.isEmpty else {
+            ws.write("No dated patch history yet", row: row, col: 0, format: .cell)
+            return
+        }
+
+        let headers = ["Title", "Released", "Days Behind", "Current Adoption %",
+                       "Days to 50%", "Days to 90%", "Data Points"]
+        for (col, header) in headers.enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+
+        // Every row nil release date is indistinguishable from "everyone's on
+        // time" — call it out so it isn't read as a clean bill of health.
+        if velocities.allSatisfy({ $0.releaseDate == nil }) {
+            ws.write(
+                "Release dates unavailable — collect patch-release-dates to compute "
+                    + "days-behind and adoption speed.",
+                row: row, col: 0, format: .cell
+            )
+            row += 1
+        }
+
+        let dash = "\u{2014}"
+        for v in velocities {
+            ws.write(v.title, row: row, col: 0, format: .cell)
+            ws.write(v.releaseDate.map { patchVelocityDateFormatter.string(from: $0) } ?? dash,
+                     row: row, col: 1, format: .cell)
+            ws.write(v.daysBehind.map { "\($0)" } ?? dash, row: row, col: 2, format: .cell)
+            ws.write(v.adoptionPct.map { String(format: "%.1f%%", $0) } ?? dash,
+                     row: row, col: 3, format: .cell)
+            ws.write(v.daysTo50.map { "\($0)" } ?? dash, row: row, col: 4, format: .cell)
+            ws.write(v.daysTo90.map { "\($0)" } ?? dash, row: row, col: 5, format: .cell)
+            ws.write("\(v.series.count)", row: row, col: 6, format: .cell)
+            row += 1
+        }
+
+        embedPatchVelocityChart(ws: ws, row: &row, velocities: velocities)
+    }
+
+    /// Embed a line chart of the five lowest-adoption titles' series below the table.
+    /// Skipped when charts are disabled or embedding is off, or when no chart renders.
+    private func embedPatchVelocityChart(
+        ws: Worksheet, row: inout Int, velocities: [TitleVelocity]
+    ) {
+        let charts = config.charts
+        guard charts?.enabled != false, charts?.embedInXlsx != false else { return }
+
+        // Lowest current adoption first; only titles with a measured adoption + points.
+        let ranked = velocities
+            .filter { $0.adoptionPct != nil && !$0.series.isEmpty }
+            .sorted { ($0.adoptionPct ?? 0) < ($1.adoptionPct ?? 0) }
+            .prefix(5)
+        guard ranked.count >= 1 else { return }
+
+        let series: [ChartSeries] = ranked.enumerated().map { (idx, v) in
+            let points = v.series.map { (date: $0.date, value: $0.adoptionPct) }
+            return ChartSeries(label: v.title, color: ChartPalette.color(for: idx), points: points)
+        }
+        guard let png = ChartRenderer.lineChart(
+            series: series,
+            title: "Lowest-Adoption Titles — Adoption %",
+            yLabel: "Adoption %"
+        ) else { return }
+
+        row += 1
+        ws.insertImage(row: row, col: 0, data: png, filename: "patch_velocity.png")
+        row += 20
+    }
+
+    /// Release-date display formatter for the Patch Velocity sheet (date-only, UTC).
+    private var patchVelocityDateFormatter: DateFormatter {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .iso8601)
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
     }
 
     // MARK: - Patch Failures
@@ -2593,7 +2703,10 @@ struct CoreDashboard: Sendable {
         for tier in StaleDeviceService.Tier.allCases { tierCounts[tier] = 0 }
         for item in items {
             let days = asInt(item["days_since_contact"]) ?? asInt(item["days_since_checkin"])
-            tierCounts[StaleDeviceService.Tier.tier(for: days), default: 0] += 1
+            let tier = StaleDeviceService.Tier.tier(
+                for: days, staleDays: config.thresholds?.resolvedStaleDays ?? 30
+            )
+            tierCounts[tier, default: 0] += 1
         }
         m.recentCount = tierCounts[.recent]
         m.offlineCount = tierCounts[.offline]

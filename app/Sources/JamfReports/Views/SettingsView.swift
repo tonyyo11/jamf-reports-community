@@ -61,7 +61,11 @@ struct SettingsView: View {
                 dataAndChartsCard
                 diagnosticsCard
                 loggingCard
-                aiInsightsCard
+                // Config-free, synchronous: macOS 26 hosts never see this
+                // panel at all — the config still round-trips for CLI/parity.
+                if ModelAvailability.platformSupported {
+                    aiInsightsCard
+                }
                 sidebarVisibilityCard
                 experimentalFeaturesCard
                 aboutCard
@@ -778,20 +782,33 @@ struct SettingsView: View {
                     set: { aiConfig.enabled = $0; saveAIConfig() }))
 
                 if aiConfig.isEnabled {
-                    Picker("Model", selection: Binding(
-                        get: { aiConfig.resolvedTier },
-                        set: { aiConfig.tier = $0.rawValue; saveAIConfig() })) {
-                        Text("On-device").tag(AIConfig.Tier.onDevice)
-                        Text("Private Cloud Compute").tag(AIConfig.Tier.pcc)
+                    // Official builds lack the Apple-granted PCC entitlement (App Store-only
+                    // program) — offering a tier that traps on construction would be wrong.
+                    if PCCEntitlement.isPresent {
+                        Picker("Model", selection: Binding(
+                            get: { aiConfig.resolvedTier },
+                            set: { aiConfig.tier = $0.rawValue; saveAIConfig() })) {
+                            Text("On-device").tag(AIConfig.Tier.onDevice)
+                            Text("Private Cloud Compute").tag(AIConfig.Tier.pcc)
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(maxWidth: 260, alignment: .leading)
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Model — On-device")
+                                .font(.callout.weight(.medium))
+                                .foregroundStyle(Theme.Text.primary)
+                            Text("Runs entirely on this Mac. No fleet data leaves the device.")
+                                .font(.caption)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(maxWidth: 260, alignment: .leading)
 
                     Toggle("Lock to on-device (high security)", isOn: Binding(
                         get: { aiConfig.isLockedOnDevice },
                         set: { aiConfig.lockOnDevice = $0; saveAIConfig() }))
-                    Text("Ignores the model selection above and never uses Private Cloud Compute.")
+                    Text("Ignores any configured tier and never uses Private Cloud Compute.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .padding(.leading, 2)

@@ -30,7 +30,8 @@ jamf-reports --help
 
 Every command operates on a workspace **profile** (the same profiles the app
 manages under `~/Jamf-Reports/<profile>/`), except `scaffold` and
-`school-scaffold`, which work on standalone CSV files.
+`school-scaffold`, which work on standalone CSV files (`scaffold`'s `--csv` is
+optional — see below).
 
 | Command | What it does | Key options |
 |---------|--------------|-------------|
@@ -38,7 +39,7 @@ manages under `~/Jamf-Reports/<profile>/`), except `scaffold` and
 | `collect` | Collect fresh `jamf-cli` snapshots | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
 | `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
-| `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export | `--csv <path>`, `--out <path>` |
+| `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export, or a minimal jamf-cli-only config with no CSV | `--csv <path>` (optional), `--out <path>` |
 | `check` | Validate a profile's `config.yaml` and `jamf-cli` auth | `--profile` |
 | `capabilities` | Report which `jamf-cli` commands are available | `--json` |
 | `diagnostic-bundle` | Build a redacted diagnostic zip | `--profile` |
@@ -55,7 +56,20 @@ A few behaviors worth knowing:
   exits successfully without re-collecting. Pass `--force` to override.
 - `scaffold` **overwrites** the `--out` file if it already exists — it's an
   initial-setup command. To safely update an existing `config.yaml`, use the
-  app's re-scaffold (which merges non-destructively) instead.
+  app's re-scaffold (which merges non-destructively) instead. This applies whether
+  or not `--csv` is given.
+- `collect` tolerates a missing `config.yaml` and proceeds with defaults; `generate`
+  and `html` require one to exist and fail without it. `scaffold --out <path>` with
+  `--csv` omitted writes a minimal jamf-cli-only `config.yaml` — the same starting
+  point the GUI onboarding's **Skip for now** step writes — so a `config.yaml` can
+  be created headlessly with no CSV export at all.
+- `collect` and `generate` surface the app's automation-trust signals. A successful
+  `collect` evaluates metric alerts and posts the `notify:` webhook digest (just like a
+  snapshot-only scheduled run); `generate` posts its digest like a jamf-cli-only run (from
+  cache, so no alerts). Both record to Run History under a `cli-collect` / `cli-generate`
+  label, and a failure posts the failure card. These signals are best-effort and additive —
+  a webhook or recording failure never changes the exit code or the command's stdout. `html`
+  does not emit these signals.
 
 ### Templates
 
@@ -108,8 +122,18 @@ jamf-reports collect --profile prod && jamf-reports generate --profile prod
 ## Scheduling
 
 The app's built-in **Automation** still schedules unattended runs through
-LaunchAgents (see [Scheduling & Automation](05-Scheduling-and-Automation)) — that
+LaunchAgents (see [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation)) — that
 path is unchanged. The CLI is for interactive use and for building your own
 automation. To schedule the CLI yourself, point a `launchd` job or `cron` entry
 at the installed `jamf-reports` command. PDF output is GUI-only; the CLI produces
 `.xlsx` and HTML.
+
+A schedule you build yourself around the CLI **does** get most of the app's automation-trust
+machinery: `collect` and `generate` evaluate metric alerts (collect only), post the `notify:`
+webhook digests, and record to Run History under a `cli-collect` / `cli-generate` label. The
+one exception is the **dead-man switch** — it can only measure "overdue" against a LaunchAgent
+`StartCalendarInterval`, which a cron/launchd job you write yourself does not expose, so it
+cannot tell that your own timer stopped. See
+[Automation Trust → What counts as a scheduled run](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust#what-counts-as-a-scheduled-run)
+for the exact boundary. If you want dead-man coverage too, let the app's Automation screen
+manage the LaunchAgent instead of a self-written cron/launchd job.

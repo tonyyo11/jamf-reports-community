@@ -5,6 +5,18 @@ import CryptoKit
 
 final class ReportEngineTests: XCTestCase {
 
+    /// Filename stamp 1h ago for snapshots feeding the DIGEST path: its
+    /// cache-age gate reads the FILENAME timestamp (2.6, synced-storage mtimes
+    /// lie), so a pinned old stamp reads as expired cache and the summary is
+    /// silently suppressed. Sheet-path snapshots (audit, update-status) pass
+    /// maxCacheAgeHours 0 and can keep pinned stamps.
+    private var recentStamp: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd'T'HHmmss"
+        return f.string(from: Date().addingTimeInterval(-3600))
+    }
+
     // MARK: - resolveOutputURL
 
     func testResolveOutputURLAddsTimestampWhenEnabled() {
@@ -236,6 +248,59 @@ final class ReportEngineTests: XCTestCase {
                       "Permissive mode must not abort on mismatch")
     }
 
+    // MARK: - saveSnapshot: manifest write failure must be observable (2.6 Fix 1)
+
+    /// A `SnapshotManifest.record` failure under `require_manifest` must not be
+    /// near-invisible: the snapshot itself still saves (collect keeps going),
+    /// but the failure now surfaces on the collect stream (Run History), not
+    /// just a `.warning`-level Console.app line. Simulated by marking an
+    /// existing `manifest.json` user-immutable (uchg) — `replaceItemAt` then
+    /// throws even for the owner, while sibling writes in the same folder
+    /// (the snapshot itself, the temp manifest file) are unaffected. (A
+    /// directory at the manifest path does NOT work: `replaceItemAt` replaces
+    /// an empty directory without error.)
+    func testSaveSnapshotSurfacesManifestWriteFailureOnCollectStream() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("manifest-write-fail-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let kind = "audit"
+        let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        let manifestPath = kindDir.appendingPathComponent(SnapshotManifest.fileName)
+        try Data("junk".utf8).write(to: manifestPath)
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: manifestPath.path)
+        defer {
+            try? FileManager.default.setAttributes(
+                [.immutable: false], ofItemAtPath: manifestPath.path
+            )
+        }
+
+        let capture = LogCapture()
+        try ReportEngine.testableSaveSnapshot(
+            data: Data(#"{"ok":true}"#.utf8), kind: kind, dataDir: dataDir,
+            recordManifest: true, onLine: { capture.append($0) }
+        )
+
+        let savedSnapshots = try FileManager.default.contentsOfDirectory(
+            at: kindDir, includingPropertiesForKeys: nil
+        ).filter {
+            $0.pathExtension == "json" && $0.lastPathComponent != SnapshotManifest.fileName
+        }
+        XCTAssertEqual(savedSnapshots.count, 1,
+                       "The snapshot itself must still be saved despite the manifest failure")
+
+        let lines = capture.snapshot()
+        XCTAssertTrue(
+            lines.contains {
+                $0.level == .warn
+                    && $0.text.contains("manifest write failed")
+                    && $0.text.contains(kind)
+            },
+            "Manifest write failure must be observable on the collect stream, not just Console.app"
+        )
+    }
+
     // MARK: - generate() — no cached data, no CSV → throws
 
     func testGenerateProducesDiagnosticWorkbookWhenNoCachedDataAndNoCSV() async throws {
@@ -333,7 +398,7 @@ final class ReportEngineTests: XCTestCase {
           "sip_enabled":3,"firewall_enabled":3,"gatekeeper_enabled":3}}]
         """
         try Data(secPayload.utf8).write(
-            to: secDir.appendingPathComponent("security_20260101T000000.json"))
+            to: secDir.appendingPathComponent("security_\(recentStamp).json"))
 
         // Write device-compliance with:
         //   - device A: server flag stale=true, but only 10 days since checkin → NOT stale at 30d
@@ -349,7 +414,7 @@ final class ReportEngineTests: XCTestCase {
         ]
         """
         try Data(compPayload.utf8).write(
-            to: compDir.appendingPathComponent("device-compliance_20260101T000000.json"))
+            to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
 
         // Config with default stale_device_days = 30.
         let config = ReportConfig()
@@ -372,6 +437,63 @@ final class ReportEngineTests: XCTestCase {
         // even though its server-side `stale` flag is true.
         XCTAssertEqual(staleCount, 2,
             "staleCount must be 2 (B+C exceed 30d) — A has stale=true but only 10 days")
+    }
+
+    /// Regression for the always-0 staleCount bug: current jamf-cli emits
+    /// `days_since_contact` (a String), NOT the legacy `days_since_checkin`, so
+    /// the old checkin-only filter read nil for every row and reported 0 stale.
+    /// The summary must count real stale devices from the production shape, and
+    /// fall back to the `stale` flag only when no day count is present.
+    func testSummaryStaleCountUsesDaysSinceContactProdShape() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stale-count-contact-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        let secPayload = """
+        [{"section":"summary","data":{"total_devices":5,"filevault_encrypted":5,
+          "sip_enabled":5,"firewall_enabled":5,"gatekeeper_enabled":5}}]
+        """
+        try Data(secPayload.utf8).write(
+            to: secDir.appendingPathComponent("security_\(recentStamp).json"))
+
+        // Production shape: `days_since_contact` is a STRING; no `days_since_checkin`.
+        //   A: "10" fresh, stale flag true  → NOT stale at 30 (day count wins over flag)
+        //   B: "45"                          → stale
+        //   C: "4160" (real prod value)      → stale
+        //   D: no day count, stale=true      → stale via `stale` fallback
+        //   E: no day count, stale=false     → NOT stale
+        let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: compDir, withIntermediateDirectories: true)
+        let compPayload = """
+        [
+          {"name":"A","serial":"","managed":true,"stale":true,"days_since_contact":"10","last_contact":"2026-07-01T00:00:00Z"},
+          {"name":"B","serial":"","managed":true,"stale":false,"days_since_contact":"45"},
+          {"name":"C","serial":"","managed":true,"stale":true,"days_since_contact":"4160"},
+          {"name":"D","serial":"","managed":true,"stale":true},
+          {"name":"E","serial":"","managed":true,"stale":false}
+        ]
+        """
+        try Data(compPayload.utf8).write(
+            to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
+
+        let engine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        engine.emitSummaryJSON(summariesDir: summariesDir)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = summariesDir.appendingPathComponent("summary_\(today).json")
+        let obj = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(contentsOf: summaryFile)) as? [String: Any])
+        let staleCount = try XCTUnwrap(obj["staleCount"] as? Int)
+
+        // B (45d) + C (4160d) + D (stale flag, no day count) = 3. The old
+        // days_since_checkin-only filter would have reported 0.
+        XCTAssertEqual(staleCount, 3,
+            "staleCount must count B+C (days_since_contact) and D (stale fallback)")
     }
 
     /// staleCount must agree with DeviceInventorySnapshot.staleCount(thresholdDays:) —
@@ -607,15 +729,7 @@ final class ReportEngineTests: XCTestCase {
         }
     }
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 
     // MARK: - Snapshot JSON gate
 
@@ -700,7 +814,7 @@ final class ReportEngineTests: XCTestCase {
           "sip_enabled":10,"firewall_enabled":9,"gatekeeper_enabled":10}}]
         """
         try Data(secPayload.utf8).write(
-            to: secDir.appendingPathComponent("security_20260101T000000.json"))
+            to: secDir.appendingPathComponent("security_\(recentStamp).json"))
 
         // Write a device-compliance snapshot for the "cache" case.
         let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
@@ -708,7 +822,7 @@ final class ReportEngineTests: XCTestCase {
         try Data("""
         [{"name":"A","serial":"AA","managed":true,"stale":false,"days_since_checkin":5}]
         """.utf8).write(
-            to: compDir.appendingPathComponent("device-compliance_20260101T000000.json"))
+            to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
 
         // liveKinds: "security" was fetched live; "device-compliance" was NOT (cache);
         // "patch-status" has no snapshot at all (absent).

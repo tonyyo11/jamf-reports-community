@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import JamfReports
@@ -528,6 +529,221 @@ final class LaunchAgentServiceTests: XCTestCase {
         )
     }
 
+    // MARK: - Managed multi health-input fallback (2.6 dead-man switch FIX 1)
+    //
+    // Managed all-profiles agents (`<prefix>.multi.managed-*`) carry no
+    // `--status-file`; their run status lives per profile at
+    // `<workspace>/automation/<label>_status.json`. `healthInput` must fall
+    // back to that, else every managed agent reads as perpetually overdue.
+
+    func testMultiHealthInputFallsBackToPerProfileStatusFile() throws {
+        let root = try makeHealthWorkspacesRoot()
+        let label = "\(prefix).multi.managed-freshness"
+        let finished = try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: label,
+            success: true, finishedAt: "2026-07-06T13:00:00Z"
+        )
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T14:30:00Z"))
+        let inputs = LaunchAgentService.healthInputs(in: agentsDir, now: now)
+        let input = try XCTUnwrap(inputs.first { $0.label == label })
+        XCTAssertEqual(
+            input.lastRunFinishedAt, finished,
+            "managed multi agent with no --status-file must read the per-profile status file"
+        )
+        XCTAssertEqual(input.lastRunSuccess, true)
+        XCTAssertTrue(input.isMulti,
+                      "a multi.managed-* plist must populate isMulti so it surfaces fleet-wide")
+        XCTAssertEqual(input.profile, "",
+                       "multi agents carry no owning profile slug")
+    }
+
+    func testMultiHealthInputPicksNewestProfileStatus() throws {
+        let root = try makeHealthWorkspacesRoot()
+        let label = "\(prefix).multi.managed-scan"
+        try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: label,
+            success: true, finishedAt: "2026-07-06T09:00:00Z"
+        )
+        let newer = try writeProfileRunStatus(
+            root: root, profile: "healthbeta", label: label,
+            success: true, finishedAt: "2026-07-06T13:00:00Z"
+        )
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T14:30:00Z"))
+        let input = try XCTUnwrap(
+            LaunchAgentService.healthInputs(in: agentsDir, now: now).first { $0.label == label })
+        XCTAssertEqual(input.lastRunFinishedAt, newer,
+                       "the newest finished_at across profiles must win")
+    }
+
+    func testMultiHealthInputNilWhenNoStatusFilesAnywhere() throws {
+        _ = try makeHealthWorkspacesRoot()  // empty workspaces root, no status files
+        let label = "\(prefix).multi.managed-reports"
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T14:30:00Z"))
+        let input = try XCTUnwrap(
+            LaunchAgentService.healthInputs(in: agentsDir, now: now).first { $0.label == label })
+        XCTAssertNil(input.lastRunFinishedAt,
+                     "no per-profile status file anywhere → nil, as before")
+    }
+
+    // MARK: - Per-profile scoping of multi-agent status (2.6 field incident:
+    // a failing "Managed Freshness" row flipped to healthy on the Automation
+    // screen while its own status file still said success:false).
+    //
+    // `healthInputs(in:)` (profile-less, headless overdue digest only) is
+    // ALLOWED to pick the newest status across every local profile —
+    // `testMultiHealthInputPicksNewestProfileStatus` above pins that. But
+    // `healthInputs(for:)` (the per-profile Overview/Automation screen path)
+    // must resolve a multi agent's status from THAT profile's own record —
+    // never a different profile's — else one profile's later success masks
+    // another profile's genuine failure.
+
+    func testHealthInputsForProfileScopesMultiStatusToRequestingProfileNotNewestAcrossProfiles() throws {
+        let root = try makeHealthWorkspacesRoot()
+        let label = "\(prefix).multi.managed-freshness"
+        let failedFinish = try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: label,
+            success: false, finishedAt: "2026-07-06T14:54:42Z"
+        )
+        // A DIFFERENT profile's run of the SAME shared managed agent finishes
+        // LATER and succeeds — this must never surface on healthalpha's screen.
+        try writeProfileRunStatus(
+            root: root, profile: "healthbeta", label: label,
+            success: true, finishedAt: "2026-07-06T15:00:00Z"
+        )
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T15:01:00Z"))
+
+        let alphaInput = try XCTUnwrap(
+            LaunchAgentService.healthInputs(for: "healthalpha", in: agentsDir, now: now)
+                .first { $0.label == label })
+        XCTAssertEqual(alphaInput.lastRunSuccess, false,
+                       "healthalpha's own failing run must not be masked by healthbeta's later success")
+        XCTAssertEqual(alphaInput.lastRunFinishedAt, failedFinish)
+
+        // Evaluated end-to-end, healthalpha must still surface a .failing issue —
+        // this is the exact "Automation screen shows green" field symptom.
+        let issues = AutomationHealth.evaluate(
+            inputs: LaunchAgentService.healthInputs(for: "healthalpha", in: agentsDir, now: now),
+            now: now
+        )
+        XCTAssertTrue(issues.contains { $0.label == label && $0.kind == .failing },
+                      "a failing managed agent must stay failing until ITS OWN profile's next run succeeds")
+    }
+
+    func testHealthInputsForProfileShowsThatProfilesOwnSuccessIndependently() throws {
+        let root = try makeHealthWorkspacesRoot()
+        let label = "\(prefix).multi.managed-freshness"
+        try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: label,
+            success: false, finishedAt: "2026-07-06T14:54:42Z"
+        )
+        let betaFinish = try writeProfileRunStatus(
+            root: root, profile: "healthbeta", label: label,
+            success: true, finishedAt: "2026-07-06T15:00:00Z"
+        )
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T15:01:00Z"))
+        let betaInput = try XCTUnwrap(
+            LaunchAgentService.healthInputs(for: "healthbeta", in: agentsDir, now: now)
+                .first { $0.label == label })
+        XCTAssertEqual(betaInput.lastRunSuccess, true)
+        XCTAssertEqual(betaInput.lastRunFinishedAt, betaFinish,
+                       "healthbeta's own success is unaffected by healthalpha's independent failure")
+    }
+
+    func testHealthInputsForProfileIgnoresNewerStatusFromADifferentLabel() throws {
+        // Refutes the "matches the newest status file regardless of label"
+        // framing directly: a newer, successful run recorded under a
+        // DIFFERENT label (e.g. a manual "Collect now") in the SAME profile's
+        // automation/ directory must never be read as evidence for this
+        // managed multi agent's own health.
+        let root = try makeHealthWorkspacesRoot()
+        let label = "\(prefix).multi.managed-freshness"
+        let failedFinish = try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: label,
+            success: false, finishedAt: "2026-07-06T14:54:42Z"
+        )
+        try writeProfileRunStatus(
+            root: root, profile: "healthalpha", label: "\(prefix).manual-collect",
+            success: true, finishedAt: "2026-07-06T15:00:00Z"
+        )
+        let agentsDir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: agentsDir, label: label, hour: 6, minute: 0)
+
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-07-06T15:01:00Z"))
+        let input = try XCTUnwrap(
+            LaunchAgentService.healthInputs(for: "healthalpha", in: agentsDir, now: now)
+                .first { $0.label == label })
+        XCTAssertEqual(input.lastRunSuccess, false,
+                       "a different label's status file must never be read for this agent")
+        XCTAssertEqual(input.lastRunFinishedAt, failedFinish)
+    }
+
+    /// Temp `JRC_TEST_WORKSPACES_ROOT` so profile discovery + status reads stay
+    /// off the user's real `~/Jamf-Reports/`.
+    private func makeHealthWorkspacesRoot() throws -> URL {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Health-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        return root
+    }
+
+    /// Create `<root>/<profile>/` with a config.yaml (so
+    /// `ProfileService.discoverLocal` includes it) plus
+    /// `automation/<label>_status.json`. Returns the parsed finish Date.
+    @discardableResult
+    private func writeProfileRunStatus(
+        root: URL, profile: String, label: String, success: Bool, finishedAt: String
+    ) throws -> Date {
+        let workspace = root.appendingPathComponent(profile, isDirectory: true)
+        let automation = workspace.appendingPathComponent("automation", isDirectory: true)
+        try FileManager.default.createDirectory(at: automation, withIntermediateDirectories: true)
+        try "jamf_cli:\n  profile: \"\(profile)\"\n".write(
+            to: workspace.appendingPathComponent("config.yaml"),
+            atomically: true, encoding: .utf8
+        )
+        let status: [String: Any] = ["success": success, "finished_at": finishedAt]
+        let data = try JSONSerialization.data(withJSONObject: status)
+        try data.write(to: automation.appendingPathComponent("\(label)_status.json"))
+        return try XCTUnwrap(ISO8601DateFormatter().date(from: finishedAt))
+    }
+
+    private func writeMultiHealthPlist(
+        in dir: URL, label: String, hour: Int, minute: Int
+    ) throws {
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run", "--all-profiles",
+                "--mode", "snapshot-only",
+            ],
+            "StartCalendarInterval": ["Hour": hour, "Minute": minute],
+            "Disabled": false,
+        ]
+        let url = dir.appendingPathComponent("\(label).plist")
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: url)
+    }
+
     private func makeAgentsDir() throws -> URL {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("staleAgents-\(UUID().uuidString)", isDirectory: true)
@@ -556,5 +772,115 @@ final class LaunchAgentServiceTests: XCTestCase {
         try text.write(to: url, atomically: true, encoding: .utf8)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return url
+    }
+
+    // MARK: - kickstartNow (Automation Health "Run now")
+
+    func testKickstartNowSucceedsOnFirstAttemptNoFallback() async throws {
+        let label = "\(prefix).multi.managed-scan"
+        let dir = try makeAgentsDir()
+        let recorder = ArgvRecorder(exitCodes: [0])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertTrue(outcome.succeeded)
+        XCTAssertFalse(outcome.usedBootstrapFallback)
+        XCTAssertEqual(recorder.calls, [
+            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
+        ])
+    }
+
+    func testKickstartNowFallsBackToBootstrapThenRetriesKickstart() async throws {
+        let label = "\(prefix).multi.managed-freshness"
+        let dir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: dir, label: label, hour: 6, minute: 0)
+        let plistURL = dir.appendingPathComponent("\(label).plist")
+        // kickstart fails (job not loaded) → bootstrap the plist → kickstart again.
+        let recorder = ArgvRecorder(exitCodes: [1, 0, 0])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertTrue(outcome.succeeded)
+        XCTAssertTrue(outcome.usedBootstrapFallback)
+        XCTAssertEqual(recorder.calls, [
+            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
+            ["bootstrap", "gui/\(getuid())", plistURL.path],
+            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
+        ])
+    }
+
+    func testKickstartNowFailsWhenBootstrapFallbackAlsoFails() async throws {
+        let label = "\(prefix).multi.managed-reports"
+        let dir = try makeAgentsDir()
+        try writeMultiHealthPlist(in: dir, label: label, hour: 6, minute: 20)
+        let recorder = ArgvRecorder(exitCodes: [1, 1])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertFalse(outcome.succeeded)
+        XCTAssertTrue(outcome.usedBootstrapFallback,
+                      "bootstrap was attempted even though it too failed")
+        XCTAssertEqual(
+            recorder.calls.count, 2, "no second kickstart retry after a failed bootstrap")
+    }
+
+    func testKickstartNowFailsWithoutFallbackWhenPlistNotFound() async throws {
+        // No plist written for this label in `dir` — the bootstrap fallback
+        // has nothing to bootstrap, so it must not be attempted.
+        let label = "\(prefix).multi.managed-backup"
+        let dir = try makeAgentsDir()
+        let recorder = ArgvRecorder(exitCodes: [1])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: label, in: dir, runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertFalse(outcome.succeeded)
+        XCTAssertFalse(outcome.usedBootstrapFallback)
+        XCTAssertEqual(recorder.calls.count, 1, "only the initial kickstart attempt runs")
+    }
+
+    func testKickstartNowRejectsInvalidLabelBeforeRunningLaunchctl() async {
+        let recorder = ArgvRecorder(exitCodes: [])
+
+        let outcome = await LaunchAgentService.kickstartNow(
+            label: "com.evil.example", runLaunchctl: { recorder.record($0) }
+        )
+
+        XCTAssertFalse(outcome.succeeded)
+        XCTAssertEqual(recorder.calls.count, 0, "an invalid label must never reach launchctl")
+    }
+}
+
+/// Records the exact argv of each injected `runLaunchctl` call and replays a
+/// scripted sequence of exit codes — `kickstartNow`'s only source of test
+/// truth, since production launchctl is never invoked in tests.
+private final class ArgvRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedCalls: [[String]] = []
+    private var exitCodes: [Int32]
+
+    init(exitCodes: [Int32]) {
+        self.exitCodes = exitCodes
+    }
+
+    func record(_ args: [String]) -> Int32 {
+        lock.lock()
+        defer { lock.unlock() }
+        recordedCalls.append(args)
+        guard !exitCodes.isEmpty else { return 0 }
+        return exitCodes.removeFirst()
+    }
+
+    var calls: [[String]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCalls
     }
 }

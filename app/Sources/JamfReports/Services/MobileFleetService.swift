@@ -15,6 +15,46 @@ struct MobileFleetService: Sendable {
         case supervised, unsupervised, unmanaged
     }
 
+    /// Coarse device form factor. jamf-cli's `deviceType` is the OS family
+    /// ("iOS") and cannot separate iPad from iPhone — that lives in the
+    /// hardware model — so form factor is its own axis.
+    enum FormFactor: Sendable, Equatable {
+        case iPad, iPhone, appleTV, other
+    }
+
+    /// Classify a device by hardware model, preferring the precise
+    /// `modelIdentifier` ("iPhone5,2" / "iPad13,1" / "AppleTV5,3"), then the
+    /// marketing `model` string ("iPhone 5 (CDMA)"), then the OS-family
+    /// `deviceType` (only useful for distinguishing tvOS, and for legacy/list
+    /// shapes that put the form factor there).
+    static func classifyFormFactor(
+        model: String?, modelIdentifier: String?, deviceType: String?
+    ) -> FormFactor {
+        let ident = (modelIdentifier ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if ident.hasPrefix("iPad") { return .iPad }
+        if ident.hasPrefix("iPhone") { return .iPhone }
+        if ident.hasPrefix("AppleTV") { return .appleTV }
+
+        if let m = model?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !m.isEmpty {
+            if m.localizedCaseInsensitiveContains("iPad") { return .iPad }
+            if m.localizedCaseInsensitiveContains("iPhone") { return .iPhone }
+            if m.localizedCaseInsensitiveContains("Apple TV") ||
+               m.localizedCaseInsensitiveContains("AppleTV") { return .appleTV }
+        }
+
+        if let t = deviceType?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !t.isEmpty {
+            if t.localizedCaseInsensitiveContains("tvOS") ||
+               t.localizedCaseInsensitiveContains("AppleTV") ||
+               t.localizedCaseInsensitiveContains("TV") { return .appleTV }
+            if t.localizedCaseInsensitiveContains("iPad") { return .iPad }
+            if t.localizedCaseInsensitiveContains("iPhone") { return .iPhone }
+        }
+        return .other
+    }
+
     /// Everything the MobileFleetView needs from mobile device snapshots.
     /// Provides both light and rich device data sources, with computed KPIs
     /// preferring rich data when available.
@@ -25,6 +65,11 @@ struct MobileFleetService: Sendable {
         let profiles: [MobileConfigProfileRow]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Keys are the
+        /// on-disk kind names (`mobile-devices-list`,
+        /// `mobile-device-inventory-details`, `classic-ios-profiles`); a kind
+        /// absent from disk is absent from the map.
+        var sourceDates: [String: Date] = [:]
 
         // MARK: - Computed properties
 
@@ -32,43 +77,50 @@ struct MobileFleetService: Sendable {
             richDevices.isEmpty ? lightDevices.count : richDevices.count
         }
 
-        var iPadCount: Int {
-            if !richDevices.isEmpty {
-                return richDevices.filter { device in
-                    (device.deviceType?.localizedCaseInsensitiveContains("iPad") == true)
-                }.count
-            } else {
-                return lightDevices.filter { device in
-                    (device.type?.localizedCaseInsensitiveContains("iPad") == true)
-                }.count
+        /// (model, modelIdentifier, deviceType) tuples for form-factor counting,
+        /// drawn from whichever snapshot actually carries hardware model data.
+        /// The richer `mobile-device-inventory-details` can arrive with a null
+        /// `hardware` section while the lighter `mobile-devices-list` carries it
+        /// (the dummy tenant is exactly this), so prefer the populated source
+        /// rather than collapsing iPad/iPhone counts to 0 by classifying on the
+        /// OS-family `deviceType` alone.
+        private var formFactorInputs: [(model: String?, modelIdentifier: String?, deviceType: String?)] {
+            let rich: [(String?, String?, String?)] = richDevices.map {
+                ($0.hardware?.model, $0.hardware?.modelIdentifier, $0.deviceType)
             }
+            if rich.contains(where: { $0.0 != nil || $0.1 != nil }) {
+                return rich.map { (model: $0.0, modelIdentifier: $0.1, deviceType: $0.2) }
+            }
+            let light: [(String?, String?, String?)] = lightDevices.map {
+                // Older flat list shape put the marketing name in top-level
+                // `model` and the form factor in `type`; the current shape uses
+                // `hardware.model` / `deviceType`. Coalesce so both classify.
+                ($0.hardware?.model ?? $0.model, $0.hardware?.modelIdentifier, $0.deviceType ?? $0.type)
+            }
+            if light.contains(where: { $0.0 != nil || $0.1 != nil }) {
+                return light.map { (model: $0.0, modelIdentifier: $0.1, deviceType: $0.2) }
+            }
+            // Neither snapshot carries a hardware model — fall back to the source
+            // that drives `totalDevices` so form-factor + total stay aligned.
+            let fallback = richDevices.isEmpty ? light : rich
+            return fallback.map { (model: $0.0, modelIdentifier: $0.1, deviceType: $0.2) }
         }
 
-        var iPhoneCount: Int {
-            if !richDevices.isEmpty {
-                return richDevices.filter { device in
-                    (device.deviceType?.localizedCaseInsensitiveContains("iPhone") == true)
-                }.count
-            } else {
-                return lightDevices.filter { device in
-                    (device.type?.localizedCaseInsensitiveContains("iPhone") == true)
-                }.count
-            }
+        private func formFactorCount(_ factor: FormFactor) -> Int {
+            formFactorInputs.filter {
+                MobileFleetService.classifyFormFactor(
+                    model: $0.model,
+                    modelIdentifier: $0.modelIdentifier,
+                    deviceType: $0.deviceType
+                ) == factor
+            }.count
         }
 
-        var appleTVCount: Int {
-            if !richDevices.isEmpty {
-                return richDevices.filter { device in
-                    (device.deviceType?.localizedCaseInsensitiveContains("TV") == true) ||
-                    (device.deviceType?.localizedCaseInsensitiveContains("AppleTV") == true)
-                }.count
-            } else {
-                return lightDevices.filter { device in
-                    (device.type?.localizedCaseInsensitiveContains("TV") == true) ||
-                    (device.type?.localizedCaseInsensitiveContains("AppleTV") == true)
-                }.count
-            }
-        }
+        var iPadCount: Int { formFactorCount(.iPad) }
+
+        var iPhoneCount: Int { formFactorCount(.iPhone) }
+
+        var appleTVCount: Int { formFactorCount(.appleTV) }
 
         var managedCount: Int {
             richDevices.filter { $0.general?.managed == true }.count
@@ -193,7 +245,8 @@ struct MobileFleetService: Sendable {
             lhs.richDevices.count == rhs.richDevices.count &&
             lhs.profiles.count == rhs.profiles.count &&
             lhs.sourceFile == rhs.sourceFile &&
-            lhs.snapshotDate == rhs.snapshotDate
+            lhs.snapshotDate == rhs.snapshotDate &&
+            lhs.sourceDates == rhs.sourceDates
         }
     }
 
@@ -246,14 +299,54 @@ struct MobileFleetService: Sendable {
                 .contentModificationDate
         }
 
+        // Per-kind freshness for the chip row, based on file presence — honest
+        // even when a kind's own decode failed (see PatchStatusService).
+        var sourceDates: [String: Date] = [:]
+        for (kind, url) in [
+            ("mobile-devices-list", listURL),
+            ("mobile-device-inventory-details", inventoryURL),
+            ("classic-ios-profiles", profilesURL),
+        ] {
+            guard let url, FileManager.default.fileExists(atPath: url.path),
+                  let d = (try? url.resourceValues(
+                      forKeys: [.contentModificationDateKey]
+                  ))?.contentModificationDate
+            else { continue }
+            sourceDates[kind] = d
+        }
+
         return Snapshot(
             isDetected: readSomething,
             lightDevices: lightDevices,
             richDevices: richDevices,
             profiles: profiles,
             sourceFile: sourceFile,
-            snapshotDate: snapshotDate
+            snapshotDate: snapshotDate,
+            sourceDates: sourceDates
         )
+    }
+
+    // MARK: - Summary count derivation
+
+    /// Device count from a raw `mobile-devices-list` snapshot's bytes, for the
+    /// "Managed Devices" summary/trend field. Tries the current bare-array
+    /// shape first (mirrors `loadDeviceList`'s decode), then a
+    /// `{totalCount, results}` envelope (preferring `totalCount` when
+    /// present, falling back to `results.count`). Returns nil when the data
+    /// decodes as neither — absence is never reported as 0.
+    static func deviceCount(fromMobileDevicesListData data: Data) -> Int? {
+        if let devices = try? JSONDecoder().decode([MobileDeviceListRow].self, from: data) {
+            return devices.count
+        }
+        if let envelope = try? JSONDecoder().decode(MobileDevicesListEnvelope.self, from: data) {
+            return envelope.totalCount ?? envelope.results?.count
+        }
+        return nil
+    }
+
+    private struct MobileDevicesListEnvelope: Decodable, Sendable {
+        let totalCount: Int?
+        let results: [MobileDeviceListRow]?
     }
 
     // MARK: - Internals

@@ -29,6 +29,11 @@ struct ProtectDashboardService: Sendable {
 
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Keys are the
+        /// on-disk kind names (`protect-overview`, `protect-alerts`,
+        /// `protect-computers`, `protect-insights`, `protect-plans`); a kind
+        /// absent from disk is absent from the map.
+        var sourceDates: [String: Date] = [:]
 
         /// Freshness signal for `StaleDataBanner` consumers. Uses the same 36-hour
         /// threshold as TrendStore to align with the standard daily-schedule cadence.
@@ -71,7 +76,8 @@ struct ProtectDashboardService: Sendable {
             lhs.failingInsights == rhs.failingInsights &&
             lhs.plans.count == rhs.plans.count &&
             lhs.sourceFile == rhs.sourceFile &&
-            lhs.snapshotDate == rhs.snapshotDate
+            lhs.snapshotDate == rhs.snapshotDate &&
+            lhs.sourceDates == rhs.sourceDates
         }
     }
 
@@ -133,6 +139,22 @@ struct ProtectDashboardService: Sendable {
         let (critical, high, medium, low) = alertSeverityCounts(alerts)
         let failingInsights = insights.filter { ($0.totalFail ?? 0) > 0 }.count
 
+        // Per-kind freshness for the chip row, based on file presence — honest
+        // even when a kind's own decode failed (see PatchStatusService).
+        var sourceDates: [String: Date] = [:]
+        for (kind, url) in [
+            ("protect-overview", overviewURL), ("protect-alerts", alertsURL),
+            ("protect-computers", computersURL), ("protect-insights", insightsURL),
+            ("protect-plans", plansURL),
+        ] {
+            guard let url, FileManager.default.fileExists(atPath: url.path),
+                  let d = (try? url.resourceValues(
+                      forKeys: [.contentModificationDateKey]
+                  ))?.contentModificationDate
+            else { continue }
+            sourceDates[kind] = d
+        }
+
         return Snapshot(
             isDetected: hasData,
             overviewItems: overview,
@@ -150,7 +172,8 @@ struct ProtectDashboardService: Sendable {
             lowAlerts: low,
             failingInsights: failingInsights,
             sourceFile: sourceFile,
-            snapshotDate: snapshotDate
+            snapshotDate: snapshotDate,
+            sourceDates: sourceDates
         )
     }
 

@@ -48,14 +48,23 @@ struct TrendsView: View {
         return trendStore.chartDomain
     }
 
+    /// Values driving `chartYDomain`. `.managedDevices` renders TWO series
+    /// (Computers, Mobile devices) — the domain must bound both, not just the
+    /// single headline value `value(for:in:)` returns for the pill/hero
+    /// display, or a larger mobile-device line could clip off the chart.
+    private var chartYDomainValues: [Double] {
+        guard metric == .managedDevices else { return values }
+        return trendStore.managedDeviceSeries().flatMap { $0.points.map(\.value) }
+    }
+
     /// Y-axis domain that respects the metric's preferred "good frame" but
     /// always expands to fit actual data. Without this, a Stability Index of
     /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
     /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
     /// non-negative by construction (validated in the data layer).
     private var chartYDomain: ClosedRange<Double> {
-        let dataMin = values.min()
-        let dataMax = values.max()
+        let dataMin = chartYDomainValues.min()
+        let dataMax = chartYDomainValues.max()
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
         let hi = max(metric.maxY, dataMax ?? metric.maxY)
         return lo...hi
@@ -80,7 +89,29 @@ struct TrendsView: View {
     private var startVal: Double { values.first ?? 0 }
     private var endVal: Double { values.last ?? 0 }
     private var delta: Double { endVal - startVal }
-    private var pctDelta: Double { startVal == 0 ? 0 : (delta / startVal) * 100 }
+
+    /// Below this baseline (in the metric's own units), a relative-change
+    /// percentage is not meaningful — a tiny absolute move off a near-zero
+    /// baseline reads as an absurd swing (e.g. 0.2% → 16.2% renders as
+    /// "+8200%"). Chosen as "under one unit of the metric" rather than a
+    /// stricter zero check, since 0.2 is already visually indistinguishable
+    /// from zero for a percentage/count metric.
+    // nonisolated: pure math with no MainActor need. TrendsView is a View, so
+    // on Swift 6.1 its statics inherit MainActor isolation and can't be called
+    // from a nonisolated test context — nonisolated keeps them callable anywhere.
+    nonisolated static let relativeChangeBaselineFloor: Double = 1.0
+
+    /// Relative change as a percentage of `baseline`, or `nil` when the
+    /// baseline is too close to zero for the ratio to be meaningful. Pure
+    /// and unit-testable independent of SwiftUI state.
+    nonisolated static func relativeChangePercent(delta: Double, baseline: Double) -> Double? {
+        guard abs(baseline) >= relativeChangeBaselineFloor else { return nil }
+        return (delta / baseline) * 100
+    }
+
+    private var pctDelta: Double? {
+        Self.relativeChangePercent(delta: delta, baseline: startVal)
+    }
 
     /// "good" trend for stale-devices is *down*; everything else is *up*.
     private var deltaIsPositive: Bool {
@@ -257,6 +288,8 @@ struct TrendsView: View {
     /// Filter available metrics based on data availability.
     /// .mscpBandTrend only appears when mSCP band history exists.
     /// .securityScore only appears when security score data exists.
+    /// .managedDevices is live-only — demo mode has no dated mobile-count
+    /// series to split the two-line chart against.
     private var availableMetrics: [TrendSeries.Metric] {
         TrendSeries.Metric.allCases.filter { metric in
             switch metric {
@@ -265,6 +298,8 @@ struct TrendsView: View {
             case .securityScore:
                 // Keep existing logic for security score availability
                 return trendStore.points(metric: .securityScore).count > 0
+            case .managedDevices:
+                return !workspaceStore.demoMode
             default:
                 return true
             }
@@ -372,20 +407,29 @@ struct TrendsView: View {
                                 .monospacedDigit()
                                 .contentTransition(.numericText(countsDown: delta < 0))
                                 .animation(.snappy(duration: 0.35), value: displayVal)
+                                .lineLimit(1)
+                                .layoutPriority(1)
 
                             if selectedPoint == nil {
                                 HStack(spacing: 4) {
                                     Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
                                         .font(.system(size: 11, weight: .bold))
-                                    Text("\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", pctDelta))%)")
+                                    Text(
+                                        pctDelta.map {
+                                            "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
+                                        } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
+                                    )
+                                    .lineLimit(1)
                                 }
                                 .font(Theme.Fonts.mono(14, weight: .semibold))
                                 .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+                                .fixedSize(horizontal: true, vertical: false)
                                 Pill(text: rangeBadgeText, tone: .muted)
                             } else {
                                 Text("at \(displayDate)")
                                     .font(Theme.Fonts.mono(14, weight: .semibold))
                                     .foregroundStyle(Theme.Colors.goldBright)
+                                    .lineLimit(1)
                             }
                         }
                     }
@@ -429,6 +473,31 @@ struct TrendsView: View {
                                     .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
                                 }
                             }
+                        } else if metric == .managedDevices {
+                            // Two-line chart: Computers vs. Mobile devices.
+                            // Series identity (`by:`) is what lets Charts render
+                            // and legend them distinctly — a constant
+                            // foregroundStyle would collapse both into one line.
+                            let deviceSeries = trendStore.managedDeviceSeries()
+                            ForEach(deviceSeries, id: \.label) { series in
+                                ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
+                                    LineMark(
+                                        x: .value("Date", point.date),
+                                        y: .value("Count", point.value)
+                                    )
+                                    .foregroundStyle(by: .value("Type", series.label))
+                                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                                    .interpolationMethod(.monotone)
+
+                                    PointMark(
+                                        x: .value("Date", point.date),
+                                        y: .value("Count", point.value)
+                                    )
+                                    .foregroundStyle(by: .value("Type", series.label))
+                                    .symbolSize(30)
+                                    .accessibilityLabel("\(series.label): \(Int(point.value)) on \(SummaryJSONParser.dateFormatter.string(from: point.date))")
+                                }
+                            }
                         } else {
                             // Standard line + area chart for other metrics
                             ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
@@ -459,8 +528,10 @@ struct TrendsView: View {
                             }
                         }
 
-                        // Selection indicator (only for non-mSCP metrics)
-                        if metric != .mscpBandTrend {
+                        // Selection indicator (single-series metrics only —
+                        // .mscpBandTrend and .managedDevices render multiple
+                        // series and have no one "the" value to highlight)
+                        if metric != .mscpBandTrend, metric != .managedDevices {
                             if let selectedPoint {
                                 RuleMark(x: .value("Selected", selectedPoint.date))
                                     .foregroundStyle(Theme.Colors.hairlineStrong)
@@ -503,8 +574,8 @@ struct TrendsView: View {
                         }
                     }
                     .chartForegroundStyleScale(
-                        domain: mscpBandChartScale.labels,
-                        range: mscpBandChartScale.colors
+                        domain: heroChartForegroundScale.labels,
+                        range: heroChartForegroundScale.colors
                     )
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
@@ -547,14 +618,25 @@ struct TrendsView: View {
 
     // MARK: Comparison row (stacked bands + multi-line)
 
+    /// `complianceBandCard` (and its "Pass (0) · Low (1–10) · …" band legend)
+    /// only makes sense while the mSCP band metric is the hero selection —
+    /// showing it under Stability Index or Active Devices reads as a leftover
+    /// legend for an unrelated chart. `securityPostureCard` is a general
+    /// comparison reference and stays visible regardless of hero selection.
     private var comparisonRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 12) {
-                complianceBandCard
-                securityPostureCard
-            }
-            VStack(spacing: 16) {
-                complianceBandCard
+        Group {
+            if metric == .mscpBandTrend {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 12) {
+                        complianceBandCard
+                        securityPostureCard
+                    }
+                    VStack(spacing: 16) {
+                        complianceBandCard
+                        securityPostureCard
+                    }
+                }
+            } else {
                 securityPostureCard
             }
         }
@@ -581,6 +663,9 @@ struct TrendsView: View {
                 } else if trendStore.hasMSCPBandHistory {
                     liveBandsChart
                     liveBandsLegend
+                    if !trendStore.salvagedBandDates.isEmpty {
+                        salvagedDataCaption
+                    }
                 } else {
                     complianceBandUnavailable
                 }
@@ -678,6 +763,23 @@ struct TrendsView: View {
         }
     }
 
+    /// Salvaged-day markers for `liveBandsChart` — a small triangle above the
+    /// stack at each date recovered from a truncated ea-results file, so a
+    /// partial-fleet day is never mistaken for real fleet change. Y-position is
+    /// the summed stack height (banded total) at that date, from `stackedSeries`
+    /// so it never falls out of sync with what's actually plotted.
+    private func salvageMarkers(stackedSeries: [ChartSeries]) -> [(date: Date, stackTop: Double)] {
+        let salvaged = trendStore.salvagedBandDates
+        guard !salvaged.isEmpty else { return [] }
+        var totals: [Date: Double] = [:]
+        for series in stackedSeries {
+            for point in series.points where salvaged.contains(point.date) {
+                totals[point.date, default: 0] += point.value
+            }
+        }
+        return totals.map { (date: $0.key, stackTop: $0.value) }
+    }
+
     /// Live stacked-area chart built from `trendStore.mscpStackedSeries()`.
     /// Mirrors the hero chart's mSCP band rendering (AreaMark, stacking: .standard).
     private var liveBandsChart: some View {
@@ -695,6 +797,19 @@ struct TrendsView: View {
                             .foregroundStyle(by: .value("Band", series.label))
                             .interpolationMethod(.monotone)
                             .accessibilityLabel("\(series.label): \(Int(point.value)) devices")
+                        }
+                    }
+                    ForEach(salvageMarkers(stackedSeries: stackedSeries), id: \.date) { marker in
+                        PointMark(
+                            x: .value("Date", marker.date),
+                            y: .value("Count", marker.stackTop)
+                        )
+                        .symbolSize(0)
+                        .annotation(position: .top, spacing: 2) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9))
+                                .foregroundStyle(Theme.Colors.warn)
+                                .accessibilityLabel("Partial data (salvaged snapshot)")
                         }
                     }
                 }
@@ -731,6 +846,22 @@ struct TrendsView: View {
         return (series.map(\.label), series.map { Color(cgColor: $0.color) })
     }
 
+    /// Label/color scale for the `.managedDevices` two-line chart, same
+    /// derivation as `mscpBandChartScale`.
+    private var managedDevicesChartScale: (labels: [String], colors: [Color]) {
+        let series = trendStore.managedDeviceSeries()
+        guard !series.isEmpty else { return (["Computers"], [Theme.Colors.info]) }
+        return (series.map(\.label), series.map { Color(cgColor: $0.color) })
+    }
+
+    /// The `.chartForegroundStyleScale` the hero chart applies. Only
+    /// `.mscpBandTrend` and `.managedDevices` marks use `.foregroundStyle(by:)`
+    /// — every other metric styles its mark directly, so the scale is inert
+    /// for them and picking the right one here only matters for those two.
+    private var heroChartForegroundScale: (labels: [String], colors: [Color]) {
+        metric == .managedDevices ? managedDevicesChartScale : mscpBandChartScale
+    }
+
     /// Band legend for the live stacked-area chart.
     private var liveBandsLegend: some View {
         let series = trendStore.mscpStackedSeries()
@@ -744,6 +875,15 @@ struct TrendsView: View {
                 }
             }
         }
+    }
+
+    /// Footnote shown only when `liveBandsChart` has at least one salvaged
+    /// (truncated-snapshot) day — explains the ⚠ marker without requiring the
+    /// user to hover/inspect the chart.
+    private var salvagedDataCaption: some View {
+        Text("⚠ marked days recovered from truncated snapshots — counts may be low")
+            .font(.caption2)
+            .foregroundStyle(Theme.Colors.warn)
     }
 
     private func legendDot(color: Color, label: String) -> some View {

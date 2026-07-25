@@ -40,6 +40,7 @@ enum SheetID: String, Sendable, CaseIterable {
     case updateFailures      = "Update Failures"
     case smartGroups         = "Smart Groups"
     case patchSummaryDashboard = "Patch Summary Dashboard"
+    case patchVelocity       = "Patch Velocity"
     // Device security & supervision detail
     case deviceSecurityState = "Device Security State"
     case mobileSupervisionStatus = "Mobile Supervision Status"

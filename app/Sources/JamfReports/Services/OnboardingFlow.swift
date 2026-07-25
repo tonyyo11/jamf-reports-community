@@ -14,6 +14,9 @@ final class OnboardingFlow {
         case csvMapping
         case addProducts
         case firstReport
+        // Jamf School-only path step. Added at the end so the Jamf Pro path's
+        // rawValues (and everything keyed off them) stay byte-identical.
+        case schoolConnect
 
         var id: Int { rawValue }
         var number: Int { rawValue + 1 }
@@ -28,9 +31,30 @@ final class OnboardingFlow {
             case .addProducts: "Add products"
             case .csvMapping: "CSV mapping"
             case .firstReport: "First report"
+            case .schoolConnect: "Connect School"
             }
         }
     }
+
+    /// Which product this onboarding run is setting up.
+    ///
+    /// `.pro` is the default and lenient fallback — every existing entry point
+    /// (Settings "Add connection", the sidebar "Add workspace…", and every test
+    /// that constructs `OnboardingFlow()`) resolves to `.pro`, so the Jamf Pro
+    /// flow is unchanged. `.school` is chosen only from the first-launch chooser's
+    /// "Connect Jamf School" card, which sets `pendingProductPath` before the
+    /// view constructs the flow.
+    enum ProductPath: String, Sendable {
+        case pro
+        case school
+    }
+
+    /// Handoff from `FirstLaunchChooserView` to a freshly-constructed
+    /// `OnboardingFlow`. The chooser and the flow's `init` both run on the main
+    /// actor, so this MainActor-isolated static is a race-free one-shot: the
+    /// chooser sets it, `init()` consumes and clears it. Nil (the default) means
+    /// the Jamf Pro path, so nothing existing changes.
+    static var pendingProductPath: ProductPath?
 
     // MARK: - Connection types
 
@@ -74,6 +98,11 @@ final class OnboardingFlow {
     }
 
     var currentStep: Step = .welcome
+
+    /// The product this run is setting up. Drives `stepSequence` and the
+    /// firstReport routing. Defaults to `.pro`; set from `pendingProductPath`
+    /// in `init`.
+    var productPath: ProductPath = .pro
 
     // MARK: - Jamf Pro fields
 
@@ -154,8 +183,38 @@ final class OnboardingFlow {
     }
 
     init() {
+        if let pending = Self.pendingProductPath {
+            productPath = pending
+            Self.pendingProductPath = nil
+        }
         refreshJamfCLIStatus()
     }
+
+    /// The ordered steps for the active `productPath`.
+    ///
+    /// The Jamf Pro sequence is exactly the pre-existing rawValue order, so
+    /// sequence-indexed navigation is byte-identical to the old rawValue+1
+    /// stepping. The Jamf School sequence skips the Pro-only Authenticate /
+    /// Validate / Add-products steps and inserts `.schoolConnect` AFTER
+    /// `.csvMapping` — the same reason `.addProducts` follows `.csvMapping` on
+    /// the Pro path: the CSV step rewrites `config.yaml`, so the product-connect
+    /// step (which merges `school_cli` into it) must run last of the two, or its
+    /// keys would be clobbered.
+    var stepSequence: [Step] {
+        switch productPath {
+        case .pro:
+            [.welcome, .installCLI, .workspace, .authenticate, .validate,
+             .csvMapping, .addProducts, .firstReport]
+        case .school:
+            [.welcome, .installCLI, .workspace, .csvMapping, .schoolConnect, .firstReport]
+        }
+    }
+
+    /// 1-based position of `currentStep` within `stepSequence`.
+    var stepPosition: Int { (stepSequence.firstIndex(of: currentStep) ?? 0) + 1 }
+
+    /// Total number of steps in the active path.
+    var stepCount: Int { stepSequence.count }
 
     var canAdvance: Bool {
         switch currentStep {
@@ -181,11 +240,27 @@ final class OnboardingFlow {
         case .addProducts:
             // Both products are optional — always advanceable.
             !isConnectingProtect && !isConnectingSchool
+        case .schoolConnect:
+            // A School-only workspace needs a real, successful School
+            // connection: only then is `school_cli` written and detection
+            // resolves to Jamf School. Advancing without it would leave a
+            // Pro-detected empty config.
+            schoolConnected && !isConnectingSchool
         case .csvMapping:
             (csvScaffolded || csvMappingSkipped) && !isScaffoldingCSV && !isSkippingCSVMapping
         case .firstReport:
             !isRunningFirstReport
         }
+    }
+
+    /// Whether the School connect fields are complete enough to attempt a
+    /// connection (used by the Connect button; canAdvance requires the
+    /// connection to have actually succeeded).
+    var canAttemptSchoolConnect: Bool {
+        isSchoolURLValid
+            && !schoolNetworkID.trimmed.isEmpty
+            && (!schoolAPIKey.isEmpty || schoolAPIKeyFieldHasText)
+            && !isConnectingSchool
     }
 
     var isProfileNameValid: Bool {
@@ -215,13 +290,17 @@ final class OnboardingFlow {
     }
 
     func nextStep() {
-        guard let next = Step(rawValue: currentStep.rawValue + 1) else { return }
-        currentStep = next
+        let sequence = stepSequence
+        guard let idx = sequence.firstIndex(of: currentStep), idx + 1 < sequence.count else {
+            return
+        }
+        currentStep = sequence[idx + 1]
         lastError = nil
     }
 
     func previousStep() {
-        guard let previous = Step(rawValue: currentStep.rawValue - 1) else { return }
+        let sequence = stepSequence
+        guard let idx = sequence.firstIndex(of: currentStep), idx > 0 else { return }
         if currentStep == .authenticate {
             clearClientSecret()
             clearPlatformSecrets()
@@ -229,7 +308,15 @@ final class OnboardingFlow {
         if currentStep == .addProducts {
             clearProductSecrets()
         }
-        currentStep = previous
+        if currentStep == .schoolConnect {
+            clearSchoolAPIKey()
+            // Backing into csvMapping re-runs scaffold/skip, which rewrites
+            // config.yaml and clobbers the school_cli block — require the
+            // connect step to be redone so the block is rewritten too.
+            schoolConnected = false
+            schoolConnectionError = nil
+        }
+        currentStep = sequence[idx - 1]
         lastError = nil
     }
 
@@ -513,6 +600,20 @@ final class OnboardingFlow {
         schoolEnabled = true
     }
 
+    /// Connect Jamf School as the workspace's PRIMARY product (School-only path).
+    ///
+    /// On the Jamf School path the workspace profile itself is the School
+    /// jamf-cli profile — there is no separate Pro profile — so the School
+    /// setup uses `profileName` and `writeSchoolConfig` wires
+    /// `school_cli.enabled/profile = <profileName>` into that workspace's
+    /// config.yaml, which is exactly what `ProfileProductType.detect` reads to
+    /// route the workspace to Jamf School. Reuses the same PTY machinery,
+    /// fields, and redaction as the Add-products Connect School button.
+    func connectSchoolAsPrimary() async {
+        schoolProfileName = profileName.trimmed
+        await registerSchoolProfile()
+    }
+
     // MARK: - Pure argument builders (testable without PTY)
 
     /// Arguments for `jamf-cli config add-profile` using OAuth2 auth.
@@ -768,8 +869,19 @@ final class OnboardingFlow {
 
         let exit: Int32
         do {
-            exit = try await bridge.generate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
-                Task { @MainActor in self?.firstReportOutput.append(line) }
+            // Route by product: a School-only workspace generates the standalone
+            // Jamf School workbook (schoolGenerate), not the Jamf Pro workbook.
+            // `bridge.generate` is Pro-only; schoolGenerate loads the same
+            // workspace config (school_cli.profile) and skips the OAuth2 auth
+            // probe for API-key profiles.
+            if productPath == .school {
+                exit = try await bridge.schoolGenerate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
+                    Task { @MainActor in self?.firstReportOutput.append(line) }
+                }
+            } else {
+                exit = try await bridge.generate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
+                    Task { @MainActor in self?.firstReportOutput.append(line) }
+                }
             }
         } catch {
             firstReportExitCode = -1
@@ -917,6 +1029,15 @@ final class OnboardingFlow {
     private func clearProductSecrets() {
         clearProtectSecret()
         clearSchoolAPIKey()
+    }
+
+    /// Wipe every typed-but-unsubmitted secret. Credential sheets call this on
+    /// dismissal: the per-register defers only run when a register was
+    /// attempted, so a cancel would otherwise release plaintext un-zeroed.
+    func clearAllSecrets() {
+        clearClientSecret()
+        clearPlatformSecrets()
+        clearProductSecrets()
     }
 
     // MARK: - Config wiring helpers

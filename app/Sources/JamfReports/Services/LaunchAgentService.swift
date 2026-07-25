@@ -232,13 +232,20 @@ enum LaunchAgentService {
 
     /// Resolve the on-disk plist URL whose `Label` matches `label`. Prefers the
     /// `<label>.plist` filename convention, then falls back to scanning.
-    private static func agentURL(forLabel label: String) -> URL? {
-        let direct = agentsDir.appendingPathComponent("\(label).plist")
+    ///
+    /// - Parameter dir: Directory to search. Defaults to the real
+    ///   `~/Library/LaunchAgents`; `kickstartNow` tests pass a temp dir.
+    private static func agentURL(forLabel label: String, in dir: URL = agentsDir) -> URL? {
+        let direct = dir.appendingPathComponent("\(label).plist")
         if FileManager.default.fileExists(atPath: direct.path), plistLabel(direct) == label {
             return direct
         }
-        return launchAgentEntries()
-            .first { $0.pathExtension == "plist" && plistLabel($0) == label }
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return entries.first { $0.pathExtension == "plist" && plistLabel($0) == label }
     }
 
     private static let archiveTimestampFormatter: DateFormatter = {
@@ -367,6 +374,267 @@ enum LaunchAgentService {
             multiTarget: labelParts.isMulti ? (multiTarget(from: args) ?? MultiTarget(scope: .all)) : nil,
             tiers: tiers(from: args)
         )
+    }
+
+    // MARK: - Dead-man switch (2.6 trust trio #2)
+
+    /// The raw fields the overdue evaluator needs for one scheduled agent —
+    /// deliberately smaller than `Schedule` (which carries only display strings
+    /// for last/next and so can't answer "should it have fired by now?").
+    struct ScheduleHealthInput: Sendable, Equatable {
+        let label: String
+        let displayName: String
+        let enabled: Bool
+        /// Owning profile slug for a per-profile (non-multi) agent; "" for multi.
+        /// Used to scope the dead-man banner so a DIFFERENT profile's agent
+        /// doesn't surface as this workspace's own.
+        let profile: String
+        /// True for the global all-profiles managed/multi agents, which cover
+        /// every profile and so surface on each profile's Overview.
+        let isMulti: Bool
+        /// Most recent time this schedule should have fired at/before the probe.
+        let expectedFire: Date?
+        /// Newest run artifact's finish time, if any run has ever recorded one.
+        let lastRunFinishedAt: Date?
+        /// Newest run artifact's success flag (nil when no artifact recorded).
+        let lastRunSuccess: Bool?
+        /// Newest run artifact's process exit code, when the record carries a
+        /// numeric one. Drives the plain-language cause on a failing row;
+        /// nil falls back to the generic "reported failure" wording.
+        let lastRunExitCode: Int32?
+
+        init(
+            label: String,
+            displayName: String,
+            enabled: Bool,
+            profile: String = "",
+            isMulti: Bool = false,
+            expectedFire: Date?,
+            lastRunFinishedAt: Date?,
+            lastRunSuccess: Bool?,
+            lastRunExitCode: Int32? = nil
+        ) {
+            self.label = label
+            self.displayName = displayName
+            self.enabled = enabled
+            self.profile = profile
+            self.isMulti = isMulti
+            self.expectedFire = expectedFire
+            self.lastRunFinishedAt = lastRunFinishedAt
+            self.lastRunSuccess = lastRunSuccess
+            self.lastRunExitCode = lastRunExitCode
+        }
+    }
+
+    /// Lightweight per-agent inputs for the overdue/failing evaluator. Reuses the
+    /// same plist + status-JSON parsing as `parse`, but returns the RAW expected
+    /// fire and last-run finish/success instead of formatted strings, without
+    /// changing `Schedule`'s public shape. `now` is injected so the "expected
+    /// fire" is deterministic under test.
+    ///
+    /// - Parameter dir: directory to scan (tests pass a temp dir).
+    static func healthInputs(in dir: URL = agentsDir, now: Date = Date()) -> [ScheduleHealthInput] {
+        scannedHealthInputs(in: dir, now: now, statusProfile: nil)
+    }
+
+    /// Shared plist scan behind both `healthInputs(in:)` and `healthInputs(for:)`.
+    ///
+    /// `statusProfile` controls how a MULTI (managed, all-profiles) agent's run
+    /// status is resolved:
+    /// - `nil` (the fleet-wide/profile-less caller, `healthInputs(in:)`):
+    ///   preserves the pre-existing cross-profile "newest finish wins" fallback
+    ///   (`newestMultiRunStatus`) — used only for `.overdue` detection by the
+    ///   headless dead-man digest, where "did this schedule fire recently
+    ///   ANYWHERE" is the correct question.
+    /// - non-nil (`healthInputs(for:)`): scopes the fallback to THAT profile's
+    ///   own `<workspace>/automation/<label>_status.json` — never another
+    ///   profile's. A multi agent's `.failing` state must reflect what
+    ///   happened for the profile being evaluated; otherwise a different
+    ///   profile's later (successful) run of the same shared schedule can mask
+    ///   this profile's genuine failure on its own Overview/Automation screen.
+    private static func scannedHealthInputs(
+        in dir: URL, now: Date, statusProfile: String?
+    ) -> [ScheduleHealthInput] {
+        let prefix = "\(LaunchAgentWriter.labelPrefix)."
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        return entries
+            .filter { $0.pathExtension == "plist" }
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+            .compactMap { healthInput(for: $0, now: now, statusProfile: statusProfile) }
+            .sorted { $0.displayName < $1.displayName }
+    }
+
+    private static func healthInput(
+        for url: URL, now: Date, statusProfile: String?
+    ) -> ScheduleHealthInput? {
+        guard let data = try? Data(contentsOf: url),
+              let plist = try? PropertyListSerialization
+                .propertyList(from: data, format: nil) as? [String: Any],
+              let label = plist["Label"] as? String,
+              LaunchAgentWriter.isValidLabel(label),
+              let parts = profileAndSlug(from: label) else {
+            return nil
+        }
+        let args = plist["ProgramArguments"] as? [String] ?? []
+        let enabled = !((plist["Disabled"] as? Bool) ?? false)
+        let mode = runMode(from: args) ?? .jamfCLIOnly
+        let expectedFire = lastScheduledFireDate(from: plist["StartCalendarInterval"], before: now)
+        let runStatus: ParsedRunStatus?
+        if parts.isMulti {
+            runStatus = multiRunStatus(label: label, args: args, statusProfile: statusProfile)
+        } else {
+            let statusURL = statusFileURL(from: args, profile: parts.profile, label: label)
+            runStatus = readRunStatus(from: statusURL, profile: parts.profile)
+        }
+        return ScheduleHealthInput(
+            label: label,
+            displayName: humanName(from: parts.slug, mode: mode),
+            enabled: enabled,
+            profile: parts.profile,
+            isMulti: parts.isMulti,
+            expectedFire: expectedFire,
+            lastRunFinishedAt: runStatus?.finishedAt,
+            lastRunSuccess: runStatus?.success,
+            lastRunExitCode: runStatus?.exitCode
+        )
+    }
+
+    /// Resolve a MULTI (managed, all-profiles) agent's run status.
+    ///
+    /// Managed all-profiles agents carry no `--status-file`, so
+    /// `readMultiRunStatus` (which requires one) always yields nil for them;
+    /// the run instead records status per profile at
+    /// `<workspace>/automation/<label>_status.json`.
+    ///
+    /// - `statusProfile` provided: read ONLY that profile's own record —
+    ///   label-exact AND profile-exact, never a different profile's file for
+    ///   the same label. A failing agent stays failing until this profile's
+    ///   own next run of it succeeds (or the overdue branch takes over).
+    /// - `statusProfile` nil: fall back to scanning every local profile's
+    ///   record for this label and take the newest finish (`newestMultiRunStatus`)
+    ///   — pinned by `testMultiHealthInputPicksNewestProfileStatus` — so a
+    ///   managed agent isn't read as perpetually overdue by the fleet-wide,
+    ///   profile-less caller.
+    private static func multiRunStatus(
+        label: String, args: [String], statusProfile: String?
+    ) -> ParsedRunStatus? {
+        let statusURL = multiStatusFileURL(from: args, label: label)
+        if let status = readMultiRunStatus(from: statusURL, label: label) {
+            return status
+        }
+        if let statusProfile {
+            return readRunStatus(
+                from: statusFileURL(from: [], profile: statusProfile, label: label),
+                profile: statusProfile
+            )
+        }
+        return newestMultiRunStatus(label: label)
+    }
+
+    /// Health inputs relevant to `profile`'s Overview: the global managed
+    /// (`isMulti`) agents surface on every profile (managed collection covers
+    /// this profile too), PLUS this profile's own user-built agents. A
+    /// DIFFERENT profile's hand-built agents are dropped so they don't bleed
+    /// onto this workspace's Overview as if they were its own.
+    ///
+    /// A multi agent's run status here is resolved from `profile`'s OWN
+    /// status file only (see `multiRunStatus`) — never a different local
+    /// profile's — so e.g. "Managed Freshness" failing for this profile can
+    /// never be masked by another profile's later successful run of the same
+    /// shared schedule.
+    static func healthInputs(
+        for profile: String, in dir: URL = agentsDir, now: Date = Date()
+    ) -> [ScheduleHealthInput] {
+        filterHealthInputs(
+            scannedHealthInputs(in: dir, now: now, statusProfile: profile),
+            forProfile: profile
+        )
+    }
+
+    /// Pure filter behind `healthInputs(for:)` — unit-tested directly.
+    static func filterHealthInputs(
+        _ inputs: [ScheduleHealthInput], forProfile profile: String
+    ) -> [ScheduleHealthInput] {
+        inputs.filter { $0.isMulti || $0.profile == profile }
+    }
+
+    // MARK: - Run now (health-row kickstart)
+
+    /// Outcome of `kickstartNow`, including whether the bootstrap fallback was
+    /// needed — surfaced for logging without changing the simple success Bool
+    /// the UI acts on.
+    struct KickstartOutcome: Sendable, Equatable {
+        let succeeded: Bool
+        let usedBootstrapFallback: Bool
+    }
+
+    /// One-click "Run now" for a failing/overdue Automation Health row:
+    /// immediately re-executes an INSTALLED agent's job via
+    /// `launchctl kickstart -k gui/<uid>/<label>`. launchd runs the real job
+    /// with its exact plist arguments, so the run records under the correct
+    /// label and writes the correct status file — a success genuinely clears
+    /// the row's health state.
+    ///
+    /// If kickstart fails — commonly because the plist is on disk but was
+    /// never `launchctl bootstrap`ed (e.g. after a file-only self-heal
+    /// write) — falls back to bootstrapping the plist first, then retries
+    /// kickstart once. Never throws; a failure is just a `false` the caller
+    /// surfaces as a toast.
+    ///
+    /// `runLaunchctl` is injectable so tests can assert the exact argv
+    /// without touching real launchctl; production uses `defaultRunLaunchctl`.
+    ///
+    /// - Parameter dir: Directory to locate the agent's plist in for the
+    ///   bootstrap fallback. Defaults to the real `~/Library/LaunchAgents`;
+    ///   tests pass a temp dir.
+    static func kickstartNow(
+        label: String,
+        in dir: URL = agentsDir,
+        runLaunchctl: @Sendable ([String]) async -> Int32 = defaultRunLaunchctl
+    ) async -> KickstartOutcome {
+        guard LaunchAgentWriter.isValidLabel(label) else {
+            return KickstartOutcome(succeeded: false, usedBootstrapFallback: false)
+        }
+        let target = "gui/\(getuid())/\(label)"
+        if await runLaunchctl(["kickstart", "-k", target]) == 0 {
+            return KickstartOutcome(succeeded: true, usedBootstrapFallback: false)
+        }
+        guard let url = agentURL(forLabel: label, in: dir) else {
+            return KickstartOutcome(succeeded: false, usedBootstrapFallback: false)
+        }
+        guard await runLaunchctl(["bootstrap", "gui/\(getuid())", url.path]) == 0 else {
+            return KickstartOutcome(succeeded: false, usedBootstrapFallback: true)
+        }
+        let succeeded = await runLaunchctl(["kickstart", "-k", target]) == 0
+        return KickstartOutcome(succeeded: succeeded, usedBootstrapFallback: true)
+    }
+
+    /// Production launchctl invocation for `kickstartNow` — mirrors
+    /// `LaunchAgentWriter`'s private async launchctl helper.
+    static let defaultRunLaunchctl: @Sendable ([String]) async -> Int32 = { args in
+        await withCheckedContinuation { cont in
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            p.arguments = args
+            p.standardOutput = Pipe()
+            p.standardError = Pipe()
+            p.terminationHandler = { proc in cont.resume(returning: proc.terminationStatus) }
+            do {
+                try p.run()
+            } catch {
+                AppLogger.cli.error(
+                    """
+                    launchctl \(args.first ?? "", privacy: .public) launch failed: \
+                    \(error.localizedDescription, privacy: .private)
+                    """
+                )
+                cont.resume(returning: -1)
+            }
+        }
     }
 
     private static func plistLabel(_ url: URL) -> String? {
@@ -529,6 +797,44 @@ enum LaunchAgentService {
             .min()
     }
 
+    /// How far back to search for the most recent past fire. A monthly schedule
+    /// (Day-of-month entry) still resolves within this window; a malformed plist
+    /// can't loop `nextDate` forward past `now` more than this many steps.
+    private static let lastFireSearchWindowDays = 35
+
+    /// The most recent time a `StartCalendarInterval` schedule SHOULD have fired
+    /// at or before `now`, across all its entries — the past-looking counterpart
+    /// of `nextRunDate`. Returns nil for a manual/empty/garbage interval.
+    ///
+    /// Implementation note: rather than `Calendar.nextDate(direction: .backward)`
+    /// — whose `matchingPolicy` semantics differ subtly going backward — this
+    /// steps the SAME forward `nextDate(for:after:)` used by `nextRunDate`
+    /// (proven correct forward) from `now - window`, keeping the last fire that
+    /// is still `<= now`. Identical matching logic, no backward edge cases. The
+    /// `<=` (not `<`) means a fire exactly at `now` counts as "already fired".
+    static func lastScheduledFireDate(from raw: Any?, before now: Date = Date()) -> Date? {
+        let entries = calendarEntries(from: raw)
+        guard !entries.isEmpty else { return nil }
+        let windowStart = now.addingTimeInterval(
+            -Double(lastFireSearchWindowDays) * 86_400
+        )
+        var latest: Date?
+        // Cap the outer loop too: real schedules have a handful of calendar
+        // entries (launchd itself struggles with large arrays), so 64 is far
+        // beyond any legitimate plist while bounding attacker-chosen work.
+        for entry in entries.prefix(64) {
+            var cursor = windowStart
+            // Cap iterations defensively so a pathological entry can't spin.
+            for _ in 0..<(lastFireSearchWindowDays * 24 + 8) {
+                guard let next = nextDate(for: entry, after: cursor),
+                      next <= now else { break }
+                if latest == nil || next > latest! { latest = next }
+                cursor = next
+            }
+        }
+        return latest
+    }
+
     private static func nextDate(for entry: [String: Int], after now: Date) -> Date? {
         let cal = Calendar.current
         var components = DateComponents()
@@ -617,6 +923,10 @@ enum LaunchAgentService {
     private struct ParsedRunStatus {
         let finishedAt: Date?
         let success: Bool?
+        /// The run's process exit code as recorded by `ScheduledRunRecorder`
+        /// (`exit_code`). Carried so a failing row can name the CAUSE
+        /// (auth / privileges / throttling) instead of only "reported failure".
+        let exitCode: Int32?
         let artifacts: [String]
     }
 
@@ -668,6 +978,7 @@ enum LaunchAgentService {
         return ParsedRunStatus(
             finishedAt: dateValue(payload["finished_at"]),
             success: payload["success"] as? Bool,
+            exitCode: exitCodeValue(payload["exit_code"]),
             artifacts: artifactLabels(from: payload, root: root)
         )
     }
@@ -684,8 +995,25 @@ enum LaunchAgentService {
         return ParsedRunStatus(
             finishedAt: dateValue(payload["finished_at"]),
             success: payload["success"] as? Bool,
+            exitCode: exitCodeValue(payload["exit_code"]),
             artifacts: []
         )
+    }
+
+    /// Fallback run status for a multi (all-profiles) agent whose plist has no
+    /// `--status-file`: the managed scheduled run records status per profile at
+    /// `<workspace>/automation/<label>_status.json`. Scan every local profile
+    /// for that label and return the record with the newest `finishedAt`.
+    private static func newestMultiRunStatus(label: String) -> ParsedRunStatus? {
+        var best: ParsedRunStatus?
+        for profile in ProfileService.discoverLocal().map(\.name) {
+            let url = statusFileURL(from: [], profile: profile, label: label)
+            guard let status = readRunStatus(from: url, profile: profile),
+                  let finished = status.finishedAt else { continue }
+            if let bestFinished = best?.finishedAt, finished <= bestFinished { continue }
+            best = status
+        }
+        return best
     }
 
     private static func readLogSummary(
@@ -852,6 +1180,33 @@ enum LaunchAgentService {
         let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
         guard let safeURL = WorkspacePathGuard.validate(url, under: root) else { return false }
         return FileManager.default.fileExists(atPath: safeURL.path)
+    }
+
+    /// Decode the run-status JSON's `exit_code` defensively.
+    ///
+    /// A missing, boolean, or non-numeric value yields nil — NEVER 0, which
+    /// would read as "succeeded" and misreport the cause of a failure. JSON
+    /// booleans bridge to `NSNumber` too, so they're rejected by CoreFoundation
+    /// type id rather than by an `as? Bool` cast (which also matches 0/1
+    /// numbers and would swallow the real `exit 1`).
+    ///
+    /// Internal (not private) purely so `AutomationHealthTests` can pin the
+    /// missing/garbage-yields-nil contract without a real workspace on disk.
+    static func exitCodeValue(_ raw: Any?) -> Int32? {
+        guard let raw else { return nil }
+        if let number = raw as? NSNumber {
+            guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            // NaN/infinity have no meaningful `int64Value`; reject before
+            // narrowing so a malformed record can't yield a plausible code.
+            guard number.doubleValue.isFinite else { return nil }
+            let value = number.int64Value
+            guard value >= Int64(Int32.min), value <= Int64(Int32.max) else { return nil }
+            return Int32(value)
+        }
+        if let text = raw as? String {
+            return Int32(text.trimmingCharacters(in: .whitespaces))
+        }
+        return nil
     }
 
     private static func dateValue(_ raw: Any?) -> Date? {

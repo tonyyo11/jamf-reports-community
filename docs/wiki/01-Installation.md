@@ -7,7 +7,7 @@ This page covers installing the macOS app and `jamf-cli`.
 | Component | Requirement |
 |---|---|
 | macOS | 14 (Sonoma) or later — to run the app |
-| jamf-cli | v1.16.1 or later — optional; powers live collection |
+| jamf-cli | v1.18.0 or later — optional; powers live collection (v1.19.0+ recommended for partial-failure handling; the project tracks v1.22.0) |
 | Xcode | 16 or later — only needed to build the app from source |
 
 `jamf-cli` is optional. The app works from a Jamf Pro CSV export
@@ -83,6 +83,10 @@ publish a canonical required-privileges list — Jamf's
 reference is the authoritative privilege catalog. Do not use a full-administrator API
 client for scheduled reporting.
 
+On newer jamf-cli releases, a `403 Forbidden` response names the specific missing
+privilege in its error text rather than only the generic exit code — check the app's
+Run History output for that detail before guessing from the table above.
+
 **Exception: the `patch-managed` command.** The `patch-managed` CLI command issues PATCH
 writes to bulk-update managed/unmanaged status on computers. It requires additional
 privilege: **Computers → Update**. This is the only write-path command in the project; it
@@ -104,4 +108,4 @@ dashboards are simply skipped.
 
 ## Next
 
-- Continue to [App Onboarding](02-App-Onboarding).
+- Continue to [App Onboarding](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding).

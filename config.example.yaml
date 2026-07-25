@@ -217,15 +217,21 @@ jamf_cli:
   # This helps generate/check keep working from cached report data, but
   # inventory-csv still requires live jamf-cli auth.
   use_cached_data: true
+  # Age limit (hours) past which a cached snapshot is treated as ABSENT rather
+  # than served as if current. Default 168 (7 days): a kind whose newest
+  # snapshot is older than this is skipped with a warning naming its age, so an
+  # ancient cache surfaces as "no data" instead of rendering stale-forever.
+  # Set 0 (or any value <= 0) to keep cache forever (legacy behavior).
+  max_cache_age_hours: 168
   # Fetch Fleet Overview live by default. Set false if you want overview to use
   # cached JSON only for a specific tenant or troubleshooting scenario.
   allow_live_overview: true
-  # Hard-fail on snapshot integrity violations (missing manifest entry, SHA-256
-  # mismatch). NOTE: currently inert — the snapshot SHA-256 manifests were
-  # written only by the removed Python collector, so until a Swift
-  # snapshot-manifest writer exists this gate never fires (see
-  # SnapshotManifest.swift). The Swift app still surfaces an "Unverified
-  # snapshot" pill in AuditView regardless of this setting. Threat-model T-11.
+  # Hard-fail on snapshot integrity violations (SHA-256 mismatch or corrupt
+  # manifest). When true, every collected snapshot is also recorded in a
+  # per-kind manifest.json (2.6), so tamper detection works end-to-end:
+  # generate aborts on .mismatch/.corrupt; legacy snapshots with no manifest
+  # (.absent/.omitted) are tolerated. AuditView surfaces verify results
+  # regardless of this setting. Threat-model T-11.
   require_manifest: false
 
 
@@ -348,6 +354,50 @@ notify:
   enabled: false
   provider: "teams"   # teams | slack
   url: ""             # https:// incoming webhook URL
+  # Payload verbosity: "full" (default) includes metric names/values, error
+  # text, and schedule names in cards; "minimal" sends event facts only
+  # ("2 alert rules tripped", "run failed", "1 schedule overdue" — no values,
+  # no free text). Use minimal for headless/high-security deployments where
+  # the webhook is a doorbell, not a data channel.
+  detail: "full"      # full | minimal
+
+# =============================================================================
+# METRIC ALERTS (opt-in threshold alerting)
+# =============================================================================
+# After a scheduled run collects fresh data, evaluate these rules against the
+# day's summary and post ONE attention card to the notify: webhook above if any
+# rule trips. OFF by default; requires notify: to be enabled with an https URL
+# (alerts add no webhook of their own). A rule whose metric has no data that day
+# never fires — absent data is not an alert.
+#
+# metric — one of:
+#   filevault_pct, compliance_pct, os_current_pct, patch_pct, sip_pct,
+#   firewall_pct, gatekeeper_pct, secure_boot_pct, bootstrap_pct, xprotect_pct,
+#   cve_pct, mscp_score_pct, security_score   (all 0–100 percentages/scores)
+#   stale_count, action_items_p0, total_devices   (whole-number counts)
+# when — one of:
+#   below            fires when the value is below threshold
+#   above            fires when the value is above threshold
+#   drops_more_than  fires when the value fell by more than threshold vs a prior
+#                    summary (percentage points for %-metrics); needs history
+# threshold — the number to compare against (a positive drop for drops_more_than)
+# lookback_days — how far back drops_more_than looks for the prior summary
+#                 (default 7; ignored by below/above)
+#
+# Alerts are evaluated only on schedule modes that COLLECT fresh data
+# (snapshot-only, jamf-cli-full, csv-assisted) — a jamf-cli-only schedule
+# generates from cache and never evaluates alerts.
+#
+# A rule with an unknown metric or 'when', or a missing/invalid threshold, is
+# ignored rather than failing the whole config — it also shows as a warning in
+# the in-app Config Doctor.
+alerts:
+  enabled: false
+  rules: []
+  # rules:
+  #   - {metric: "filevault_pct", when: "below", threshold: 90}
+  #   - {metric: "patch_pct", when: "drops_more_than", threshold: 5, lookback_days: 7}
+  #   - {metric: "stale_count", when: "above", threshold: 50}
 
 # =============================================================================
 # SNAPSHOT RETENTION (admin-controlled; OFF by default)
@@ -376,9 +426,13 @@ retention:
 # insight card using Apple's on-device Foundation Model. OFF by default and
 # inert on any macOS below 27 — set enabled: true to opt in per profile.
 #
-# tier: "on_device" runs entirely on-device (no data leaves the Mac).
-#   "pcc" uses Apple Private Cloud Compute (still Apple-private, but off-device).
-#   "external" is RESERVED — not yet built.
+# tier: "on_device" runs entirely on-device (no data leaves the Mac) — the only
+#   tier supported by official builds. "pcc" uses Apple Private Cloud Compute
+#   (still Apple-private, but off-device); it requires an Apple-granted
+#   `private-cloud-compute` entitlement, gated behind the App Store distribution
+#   program, which official (Developer ID) builds don't carry — the Settings
+#   picker only offers pcc when the running binary is entitled. "external" is
+#   RESERVED — not yet built.
 # lock_on_device: true refuses any non-on-device model even if tier says pcc —
 #   a defense-in-depth switch for high-security or regulated environments.
 ai:

@@ -50,6 +50,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .updateFailures,
             .smartGroups,
             .patchSummaryDashboard,
+            .patchVelocity,
             // Device security & supervision detail
             .deviceSecurityState,
             .mobileSupervisionStatus,

@@ -116,6 +116,54 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertEqual(provDict?["operatorUserHost"] as? String, "user@host")
     }
 
+    // MARK: - mobileDeviceCount round-trip
+
+    func testMobileDeviceCountRoundTrips() throws {
+        let original = DailySummary(
+            date: "2026-07-20",
+            totalDevices: 500,
+            fileVaultPct: nil,
+            compliancePct: nil,
+            staleCount: nil,
+            osCurrentPct: nil,
+            crowdstrikePct: nil,
+            patchPct: nil,
+            source: "jamf-cli",
+            mobileDeviceCount: 42
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: data)
+        XCTAssertEqual(decoded.mobileDeviceCount, 42)
+    }
+
+    func testMobileDeviceCountOmittedWhenNil() throws {
+        let summary = DailySummary(
+            date: "2026-07-20",
+            totalDevices: 500,
+            fileVaultPct: nil,
+            compliancePct: nil,
+            staleCount: nil,
+            osCurrentPct: nil,
+            crowdstrikePct: nil,
+            patchPct: nil,
+            source: "jamf-cli"
+        )
+        let data = try JSONEncoder().encode(summary)
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertNil(json?["mobileDeviceCount"], "mobileDeviceCount must be absent when nil")
+
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: data)
+        XCTAssertNil(decoded.mobileDeviceCount)
+    }
+
+    func testLegacySummaryJSONDecodesWithoutMobileDeviceCount() throws {
+        let json = """
+        {"date":"2025-01-01","totalDevices":200,"source":"csv"}
+        """
+        let decoded = try JSONDecoder().decode(DailySummary.self, from: Data(json.utf8))
+        XCTAssertNil(decoded.mobileDeviceCount)
+    }
+
     func testLegacySummaryJSONDecodesWithoutProvenance() throws {
         // Old Python-generated summary.json files have no "provenance" key.
         // DailySummary must still decode cleanly.
@@ -249,6 +297,46 @@ final class SummaryJSONEmitTests: XCTestCase {
                         "Proxy compliancePct must be populated when device security data is present")
     }
 
+    // MARK: - mobileDeviceCount derivation wiring
+
+    /// A mobile-devices-list snapshot on disk at collect time is reflected in
+    /// the emitted summary's mobileDeviceCount.
+    func testEmitIncludesMobileDeviceCountWhenSnapshotPresent() throws {
+        let dataDir = tmpDir.appendingPathComponent("mobile-data", isDirectory: true)
+        let localEngine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+
+        try writeMinimalSecuritySnapshot(to: dataDir)
+        try writeMobileDevicesListSnapshot(to: dataDir, count: 7)
+
+        let localSummaries = tmpDir.appendingPathComponent("mobile-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let summaries = SummaryJSONParser.parseDirectory(localSummaries)
+        let s = try XCTUnwrap(summaries.first)
+        XCTAssertEqual(s.mobileDeviceCount, 7)
+    }
+
+    /// No mobile-devices-list snapshot on disk — mobileDeviceCount is nil,
+    /// never a fabricated 0.
+    func testEmitOmitsMobileDeviceCountWhenSnapshotAbsent() throws {
+        try writeMinimalSecuritySnapshot()
+        engine.emitSummaryJSON(summariesDir: summariesDir)
+        let summaries = SummaryJSONParser.parseDirectory(summariesDir)
+        guard let s = summaries.first else { return }
+        XCTAssertNil(s.mobileDeviceCount)
+    }
+
+    private func writeMobileDevicesListSnapshot(to dataDir: URL, count: Int) throws {
+        let listDir = dataDir.appendingPathComponent("mobile-devices-list", isDirectory: true)
+        try FileManager.default.createDirectory(at: listDir, withIntermediateDirectories: true)
+        let rows: [[String: Any]] = (0..<count).map { i in
+            ["id": "\(i)", "name": "iPad-\(i)", "model": "iPad", "type": "iPad"]
+        }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        let file = listDir.appendingPathComponent("mobile-devices-list_\(recentStamp).json")
+        try data.write(to: file)
+    }
+
     // MARK: - freshSummaryIsBetter unit tests
 
     /// Direct unit test of all four quadrants of the downgrade-guard logic.
@@ -335,6 +423,43 @@ final class SummaryJSONEmitTests: XCTestCase {
         let fresh = makeSummary(complianceIsProxy: false, hasBands: true, staleCount: nil)
         XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
                        "nil → nil staleCount is not an upgrade")
+    }
+
+    // MARK: - freshSummaryIsBetter mobileDeviceCount upgrade rules
+
+    /// nil → measured: a summary written before the mobile-devices snapshot
+    /// existed (or by a prior build) is upgraded once a later collect measures it.
+    func testFreshSummaryIsBetter_mobileCountNilToMeasured_returnsTrue() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 42)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                      "nil → measured mobileDeviceCount is an upgrade: the unknown becomes known")
+    }
+
+    /// measured → nil: a fresh run that couldn't determine the mobile count must
+    /// not overwrite an existing run that did.
+    func testFreshSummaryIsBetter_mobileCountMeasuredToNil_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 42)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "measured → nil mobileDeviceCount is a downgrade: must not clobber it")
+    }
+
+    /// both measured: no upgrade, even if the values differ — the digest
+    /// keeps the first same-day measurement rather than churning on every run.
+    func testFreshSummaryIsBetter_mobileCountMeasuredToMeasured_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 42)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: 50)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "measured → measured mobileDeviceCount is not an upgrade")
+    }
+
+    /// both nil: neither run measured mobile devices; no upgrade.
+    func testFreshSummaryIsBetter_bothMobileCountNil_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, mobileDeviceCount: nil)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh),
+                       "nil → nil mobileDeviceCount is not an upgrade")
     }
 
     // MARK: - emitSummaryJSON upgrade behavior (integration)
@@ -456,7 +581,8 @@ final class SummaryJSONEmitTests: XCTestCase {
         hasBands: Bool,
         date: String = "2026-06-05",
         totalDevices: Int = 100,
-        staleCount: Int? = 5
+        staleCount: Int? = 5,
+        mobileDeviceCount: Int? = nil
     ) -> DailySummary {
         let bands: [String: MSCPBandCounts]? = hasBands
             ? ["NIST": MSCPBandCounts(pass: 80, low: 10, medLow: 5, medium: 3, high: 2, noData: 0)]
@@ -472,12 +598,23 @@ final class SummaryJSONEmitTests: XCTestCase {
             patchPct: 85.0,
             source: "jamf-cli",
             complianceIsProxy: complianceIsProxy,
-            mscpBands: bands
+            mscpBands: bands,
+            mobileDeviceCount: mobileDeviceCount
         )
     }
 
     private func writeMinimalSecuritySnapshot() throws {
         try writeMinimalSecuritySnapshot(to: engine.dataDir)
+    }
+
+    /// Filename stamp 1h ago: the digest's cache-age gate reads the FILENAME
+    /// timestamp (2.6, synced-storage mtimes lie), so a pinned 2024 stamp
+    /// would read as expired cache and suppress the summary entirely.
+    private var recentStamp: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd'T'HHmmss"
+        return f.string(from: Date().addingTimeInterval(-3600))
     }
 
     private func writeMinimalSecuritySnapshot(to dataDir: URL) throws {
@@ -497,7 +634,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             ]
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
-        let file = secDir.appendingPathComponent("security_20240615T120000.json")
+        let file = secDir.appendingPathComponent("security_\(recentStamp).json")
         try data.write(to: file)
     }
 
@@ -530,7 +667,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             ])
         }
         let data = try JSONSerialization.data(withJSONObject: rows)
-        let file = secDir.appendingPathComponent("security_20240615T120000.json")
+        let file = secDir.appendingPathComponent("security_\(recentStamp).json")
         try data.write(to: file)
     }
 
@@ -553,7 +690,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             rows.append(["device": "mac-fail-\(i)", "ea_name": eaColumn, "value": 60])
         }
         let data = try JSONSerialization.data(withJSONObject: rows)
-        let file = eaDir.appendingPathComponent("ea-results_20240615T120000.json")
+        let file = eaDir.appendingPathComponent("ea-results_\(recentStamp).json")
         try data.write(to: file)
     }
 }

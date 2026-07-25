@@ -384,4 +384,177 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.managedAppCount(for: device), 0)
         XCTAssertNil(device.applications)
     }
+
+    // MARK: - sourceDates (freshness chip row)
+
+    func testSourceDatesPopulatedForPresentKinds() throws {
+        let tmp = FileManager.default.temporaryDirectory
+        let listURL = tmp.appendingPathComponent("sourcedates-mobile-list-\(UUID().uuidString).json")
+        let inventoryURL = tmp.appendingPathComponent("sourcedates-mobile-inventory-\(UUID().uuidString).json")
+        try "[]".write(to: listURL, atomically: true, encoding: .utf8)
+        try "[]".write(to: inventoryURL, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: listURL)
+            try? FileManager.default.removeItem(at: inventoryURL)
+        }
+
+        let snapshot = MobileFleetService.load(
+            listURL: listURL, inventoryURL: inventoryURL, profilesURL: nil
+        )
+
+        XCTAssertNotNil(snapshot.sourceDates["mobile-devices-list"])
+        XCTAssertNotNil(snapshot.sourceDates["mobile-device-inventory-details"])
+        XCTAssertNil(snapshot.sourceDates["classic-ios-profiles"])
+    }
+
+    func testSourceDatesEmptyWhenAllURLsNil() {
+        let snapshot = MobileFleetService.load(listURL: nil, inventoryURL: nil, profilesURL: nil)
+        XCTAssertTrue(snapshot.sourceDates.isEmpty)
+    }
+
+    // MARK: - Form factor classification (iPad/iPhone bug)
+
+    func testClassifyFormFactorPrefersModelIdentifier() {
+        XCTAssertEqual(
+            MobileFleetService.classifyFormFactor(
+                model: "iPhone 5 (CDMA)", modelIdentifier: "iPhone5,2", deviceType: "iOS"),
+            .iPhone)
+        XCTAssertEqual(
+            MobileFleetService.classifyFormFactor(
+                model: "iPad Air", modelIdentifier: "iPad13,1", deviceType: "iOS"),
+            .iPad)
+        XCTAssertEqual(
+            MobileFleetService.classifyFormFactor(
+                model: "Apple TV 4K", modelIdentifier: "AppleTV5,3", deviceType: "tvOS"),
+            .appleTV)
+    }
+
+    func testClassifyFormFactorDeviceTypeIsOnlyOSFamily() {
+        // deviceType "iOS" alone carries no form factor → other.
+        XCTAssertEqual(
+            MobileFleetService.classifyFormFactor(
+                model: nil, modelIdentifier: nil, deviceType: "iOS"),
+            .other)
+        // Legacy/list shapes that put the form factor in deviceType still classify.
+        XCTAssertEqual(
+            MobileFleetService.classifyFormFactor(
+                model: nil, modelIdentifier: nil, deviceType: "iPad"),
+            .iPad)
+        XCTAssertEqual(
+            MobileFleetService.classifyFormFactor(
+                model: nil, modelIdentifier: nil, deviceType: "tvOS"),
+            .appleTV)
+    }
+
+    /// The production/dummy shape: rich `mobile-device-inventory-details` arrives
+    /// with `hardware: null` and `deviceType: "iOS"`, while the lighter
+    /// `mobile-devices-list` carries `hardware.model`. Counts must classify from
+    /// the populated source, not collapse to 0.
+    func testCountsClassifyFromListWhenInventoryHardwareNull() throws {
+        let inventoryJSON = """
+        [
+          {"mobileDeviceId":"1","deviceType":"iOS","hardware":null},
+          {"mobileDeviceId":"2","deviceType":"iOS","hardware":null},
+          {"mobileDeviceId":"3","deviceType":"iOS","hardware":null}
+        ]
+        """
+        let listJSON = """
+        [
+          {"mobileDeviceId":"1","deviceType":"iOS",
+           "hardware":{"model":"iPhone 5 (CDMA)","modelIdentifier":"iPhone5,2"}},
+          {"mobileDeviceId":"2","deviceType":"iOS",
+           "hardware":{"model":"iPad Air","modelIdentifier":"iPad13,1"}},
+          {"mobileDeviceId":"3","deviceType":"tvOS",
+           "hardware":{"model":"Apple TV 4K","modelIdentifier":"AppleTV5,3"}}
+        ]
+        """
+        let tmp = FileManager.default.temporaryDirectory
+        let listURL = tmp.appendingPathComponent("ff-list-\(UUID().uuidString).json")
+        let inventoryURL = tmp.appendingPathComponent("ff-inv-\(UUID().uuidString).json")
+        try listJSON.write(to: listURL, atomically: true, encoding: .utf8)
+        try inventoryJSON.write(to: inventoryURL, atomically: true, encoding: .utf8)
+        defer {
+            try? FileManager.default.removeItem(at: listURL)
+            try? FileManager.default.removeItem(at: inventoryURL)
+        }
+
+        let snapshot = MobileFleetService.load(
+            listURL: listURL, inventoryURL: inventoryURL, profilesURL: nil)
+
+        // total stays richDevices.count (inventory-details wins), but form factor
+        // is read from the list, which carries the model data.
+        XCTAssertEqual(snapshot.totalDevices, 3)
+        XCTAssertEqual(snapshot.iPhoneCount, 1)
+        XCTAssertEqual(snapshot.iPadCount, 1)
+        XCTAssertEqual(snapshot.appleTVCount, 1)
+    }
+
+    /// When rich inventory-details DOES carry hardware, counts classify from it.
+    func testCountsClassifyFromInventoryHardwareWhenPresent() throws {
+        let inventoryJSON = """
+        [
+          {"mobileDeviceId":"1","deviceType":"iOS",
+           "hardware":{"model":"iPhone 15","modelIdentifier":"iPhone16,1"}},
+          {"mobileDeviceId":"2","deviceType":"iOS",
+           "hardware":{"model":"iPad Pro","modelIdentifier":"iPad14,3"}}
+        ]
+        """
+        let tmp = FileManager.default.temporaryDirectory
+        let inventoryURL = tmp.appendingPathComponent("ff-inv2-\(UUID().uuidString).json")
+        try inventoryJSON.write(to: inventoryURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: inventoryURL) }
+
+        let snapshot = MobileFleetService.load(
+            listURL: nil, inventoryURL: inventoryURL, profilesURL: nil)
+
+        XCTAssertEqual(snapshot.totalDevices, 2)
+        XCTAssertEqual(snapshot.iPhoneCount, 1)
+        XCTAssertEqual(snapshot.iPadCount, 1)
+        XCTAssertEqual(snapshot.appleTVCount, 0)
+    }
+
+    // MARK: - deviceCount(fromMobileDevicesListData:) — Managed Devices summary field
+
+    /// Real jamf-cli shape: a bare array, no envelope. Mirrors `loadDeviceList`.
+    func testDeviceCountFromBareArrayFixture() throws {
+        let url = TestFixtures.dir("jamf-cli-data/mobile-devices-list/mobile-devices-list.json")
+        let data = try Data(contentsOf: url)
+
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: data)
+
+        // Fixture is decoded elsewhere against this same file; assert only
+        // that the bare-array path decodes and returns a positive count —
+        // avoids pinning the fixture's exact row count in two places.
+        XCTAssertNotNil(count)
+        XCTAssertGreaterThan(count ?? 0, 0)
+    }
+
+    func testDeviceCountFromEnvelopePrefersTotalCount() throws {
+        let json = """
+        {"totalCount": 42, "results": [{"id": "1", "name": "iPad-1"}]}
+        """
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data(json.utf8))
+        XCTAssertEqual(count, 42, "totalCount must win over results.count when both are present")
+    }
+
+    func testDeviceCountFromEnvelopeFallsBackToResultsCountWhenTotalCountAbsent() throws {
+        let json = """
+        {"results": [{"id": "1", "name": "iPad-1"}, {"id": "2", "name": "iPad-2"}]}
+        """
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data(json.utf8))
+        XCTAssertEqual(count, 2)
+    }
+
+    func testDeviceCountFromBareArrayCountsRows() throws {
+        let json = """
+        [{"id": "1", "name": "iPad-1"}, {"id": "2", "name": "iPad-2"}, {"id": "3", "name": "iPad-3"}]
+        """
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data(json.utf8))
+        XCTAssertEqual(count, 3)
+    }
+
+    func testDeviceCountReturnsNilForUndecodableData() throws {
+        let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data("not json".utf8))
+        XCTAssertNil(count, "undecodable data must be nil, never a fabricated 0")
+    }
 }

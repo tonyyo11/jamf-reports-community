@@ -39,7 +39,12 @@ let package = Package(
             ],
             path: "Tests/JamfReportsTests",
             resources: [
-                .process("Fixtures")
+                // .copy (not .process) preserves the nested directory layout —
+                // e.g. jamf-cli-data/<kind>/... — that fixture-consuming tests
+                // navigate by relative path. Resolved at runtime via Bundle.module
+                // (see FixtureSupport.swift), so lookup works from any checkout
+                // location, including nested git worktrees.
+                .copy("Fixtures")
             ]
         )
     ]

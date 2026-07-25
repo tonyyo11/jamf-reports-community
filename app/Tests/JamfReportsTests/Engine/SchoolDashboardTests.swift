@@ -22,15 +22,7 @@ final class SchoolDashboardTests: XCTestCase {
         super.tearDown()
     }
 
-    private var fixturesDir: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-            .appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 
     private func tempDataDir(copying names: [String]) throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
@@ -41,9 +33,7 @@ final class SchoolDashboardTests: XCTestCase {
         for name in names {
             let from = src.appendingPathComponent(name, isDirectory: true)
             let to = tmp.appendingPathComponent(name, isDirectory: true)
-            if FileManager.default.fileExists(atPath: from.path) {
-                try FileManager.default.copyItem(at: from, to: to)
-            }
+            try? TestFixtures.copyDir(from, to: to)
         }
         return tmp
     }

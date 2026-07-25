@@ -7,9 +7,12 @@ import SwiftUI
 /// only shown when both `workspace.profiles.isEmpty` and `workspace.demoMode`
 /// is false — i.e. a fresh install where the user has not yet picked a path.
 ///
-/// Two side-by-side cards:
+/// Three cards:
 /// - "Connect Jamf Pro" hands off to `OnboardingView` via the existing
 ///   `.navigateToTab(.onboarding)` notification path.
+/// - "Connect Jamf School" hands off to the SAME `OnboardingView`, but first
+///   sets `OnboardingFlow.pendingProductPath = .school` so the flow runs the
+///   School-only step sequence (no Jamf Pro auth/validate/add-products steps).
 /// - "Try the demo first" flips `WorkspaceStore.demoMode` to true (which
 ///   persists `forceDemoModeKey` so subsequent launches skip the chooser).
 ///
@@ -48,7 +51,7 @@ struct FirstLaunchChooserView: View {
             Text("Welcome to Jamf Reports.")
                 .font(Theme.Fonts.serif(36, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
-            Text("Connect a Jamf Pro tenant to build your first workspace, or open the app with demo data to see every screen first.")
+            Text("Connect a Jamf Pro or Jamf School tenant to build your first workspace, or open the app with demo data to see every screen first.")
                 .font(.body)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .frame(maxWidth: 700, alignment: .leading)
@@ -74,7 +77,27 @@ struct FirstLaunchChooserView: View {
                 cta: "Get started",
                 ctaIcon: "arrow.right",
                 ctaStyle: .gold,
-                action: onStartOnboarding
+                action: {
+                    OnboardingFlow.pendingProductPath = .pro
+                    onStartOnboarding()
+                }
+            )
+
+            chooserCard(
+                icon: "graduationcap.fill",
+                title: "Connect Jamf School",
+                body: "Sets up a Jamf School-only workspace — jamf-cli auth with your Network ID and API key, then reports from Jamf School data. Ships community-validated.",
+                pills: [
+                    ("API key", "key.fill", Pill.Tone.teal),
+                    ("K-12 / EDU", "building.columns", Pill.Tone.muted),
+                ],
+                cta: "Set up School",
+                ctaIcon: "arrow.right",
+                ctaStyle: .neutral,
+                action: {
+                    OnboardingFlow.pendingProductPath = .school
+                    onStartOnboarding()
+                }
             )
 
             chooserCard(

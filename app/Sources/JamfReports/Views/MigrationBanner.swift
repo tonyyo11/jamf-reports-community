@@ -30,7 +30,7 @@ struct MigrationBanner: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Image(systemName: "exclamationmark.triangle")
+            Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(Theme.Colors.warn)
                 .frame(width: 52, height: 52)

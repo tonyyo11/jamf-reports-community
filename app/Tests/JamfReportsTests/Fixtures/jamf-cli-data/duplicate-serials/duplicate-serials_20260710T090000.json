@@ -1,0 +1,26 @@
+[
+  {
+    "serial": "C02X1234",
+    "id": "2",
+    "name": "Mac-old",
+    "last_contact": "2025-01-01T00:00:00Z"
+  },
+  {
+    "serial": "C02X1234",
+    "id": "10",
+    "name": "Mac-new",
+    "last_contact": "2026-06-01T00:00:00Z"
+  },
+  {
+    "serial": "C02Z9999",
+    "id": "5",
+    "name": "Lab-iMac-05",
+    "last_contact": "2025-11-14T08:22:10Z"
+  },
+  {
+    "serial": "C02Z9999",
+    "id": "41",
+    "name": "Lab-iMac-05-Replacement",
+    "last_contact": "2026-07-02T13:45:00Z"
+  }
+]

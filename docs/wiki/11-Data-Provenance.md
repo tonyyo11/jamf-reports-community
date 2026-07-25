@@ -72,6 +72,16 @@ Feeds these screens:
 Do not expect these screens to update immediately when a device changes. They reflect the
 most recent collection run, which may be hours or days old depending on your schedule.
 
+## CSV-only workspaces
+
+None of the three tiers above populate without a jamf-cli connection. A workspace running
+on a CSV export alone (no jamf-cli, or jamf-cli installed but never authenticated) only
+populates **Devices** and **Offline Outreach** — both render from CSV columns plus
+`custom_eas` / `security_agents`, not from any jamf-cli tier. Every other screen in this
+document stays empty until jamf-cli is connected and collecting. See
+[App Onboarding → Running without jamf-cli credentials](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding) for how a CSV-only setup
+gets through onboarding in the first place.
+
 ## Summary field derivations
 
 This table shows where each Overview KPI number comes from:
@@ -103,13 +113,39 @@ Examples:
 This is intentional: missing data does not drag down your health scores. When you add that
 data source to your collection schedule, the metric appears and the index recalculates.
 
+## Freshness
+
+**Patch Compliance, Security Posture, OS Updates, and Devices** each show a row of
+per-kind freshness chips — one per raw jamf-cli kind that screen reads, showing the age of
+the newest on-disk snapshot for that kind. A kind the screen expects but has never
+collected renders a distinct red "never" chip rather than silently omitting it, so a
+data source that stopped being collected is visible rather than invisible. A kind you have
+turned off via Settings' **Skip expensive collections** toggle is not "expected" and does
+not get a "never" chip.
+
+**`jamf_cli.max_cache_age_hours`** (default `168`, i.e. 7 days) governs how the Tier 3
+digest treats old cache: past this age, the daily digest reports the kind as absent
+instead of serving the old snapshot as if it were current. This only applies to the
+digest — the xlsx/HTML report sheets still render whatever cache exists, with their own
+"data as of" subtitles, because a stale-but-complete report is more useful than an empty
+one. Set the value to `0` or below to disable the age check and keep cache forever.
+
+Both the digest's age check and its "which file is newest" pick are based on the
+**timestamp encoded in the snapshot's filename**, not the file's modification time on
+disk — so a cloud-sync provider (iCloud, SharePoint) re-stamping mtimes on sync cannot
+make a fresh snapshot look old, or vice versa.
+
+A snapshot recovered from a truncated file (a "salvaged" day) is excluded from the EA
+coverage-drift comparison in Config Doctor — a partial day would otherwise be
+misread as a real coverage change.
+
 ## Collection tiers and the "Collect now" button
 
 Collection is split into three API-cost tiers. The per-device kinds (ea-results,
 patch/update device failures, device-compliance) are expensive, so the app gates them
 behind collection-tier prompts.
 
-See [Scheduling & Automation](05-Scheduling-and-Automation) for the full collection
+See [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) for the full collection
 mechanics and presets.
 
 The **Collect now** button in the app (visible in **Data Sources**) runs a full, forced
@@ -134,5 +170,5 @@ audit trails and app inventories are report outputs, not interactive screens.
 ## Cross-reference: Historical Trends
 
 The **Trends** screen reads `summary.json` snapshots. See
-[Historical Trends](06-Historical-Trends) for details on how these files are managed and
+[Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) for details on how these files are managed and
 how the trend timeline is built from them.

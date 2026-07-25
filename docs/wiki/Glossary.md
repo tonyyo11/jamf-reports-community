@@ -264,9 +264,7 @@ metadata fields on a device record).
 expression (e.g. "FileVault Status = Encrypted AND OS Version >= 15"). New
 devices that match the criteria join automatically. **Static groups** are
 manual lists of devices. JamfReports surfaces smart-group membership in
-several dashboards. Smart-group apply actions depend on jamf-cli's
-`pro sg` namespace and are available only when the installed jamf-cli
-provides it.
+several dashboards.
 
 ---
 
@@ -297,18 +295,25 @@ slug. Lives in jamf-cli's own keychain entry. JamfReports' "profile" maps
 jamf-cli's subcommand groups: `pro` (Jamf Pro), `protect` (Jamf Protect),
 `school` (Jamf School), `classic` (legacy classic-API endpoints).
 JamfReports' `CoreDashboard` consumes `pro` and `protect`;
-`SchoolDashboard` consumes `school`.
+`SchoolDashboard` consumes `school` (both are internal engine modules, not sidebar
+screens).
 
 ---
 
 ## jamf-reports-community
 
+### AI Fleet Insight
+The Overview card that turns the current daily-summary digest into a plain-language
+headline and severity-tagged findings using Apple's on-device Foundation Model. Opt-in,
+off by default, and hidden entirely below macOS 27 — one of three AI Insights surfaces
+alongside the Run History failure explainer and the report executive-summary narrative.
+
 ### Collection tier
 One of three per-report cadence tiers — **Refresh**, **Inventory**, and
-**Scan** — modeled by `CollectionTier`. Each report is assigned a tier,
-and the tier sets how often it is re-fetched. On-prem / Cloud / Custom
-presets (Settings → Performance) pick the per-tier cadences. *see also:
-Refresh tier, Inventory tier, Scan tier.*
+**Scan** — modeled by `CollectionTier`. Each report is assigned a tier, and the tier
+sets how often it is re-fetched: Refresh every 12 hours, Inventory every 2 days, Scan
+every 7 days. These are fixed cloud cadences — the On-prem/Cloud/Custom preset picker was
+removed in 2.3.0. *see also: Refresh tier, Inventory tier, Scan tier.*
 
 ### Custom EA
 A `custom_eas:` config entry that drives a dedicated sheet in generated
@@ -321,6 +326,25 @@ Operations, Fleet, Automation, Configuration, and System. Each non-core
 screen is toggleable in Settings → Sidebar Visibility; the core screens
 (Overview, Devices, Data Sources, Settings) cannot be hidden.
 
+### Days-to-50 / Days-to-90
+For a patch title, the number of days from its release date to the first day its
+adoption was actually observed crossing 50% / 90% in the fleet's `patch-status` history.
+Nil, never estimated, when the recorded series never crossed the threshold or started
+above it already. *see also: Patch velocity.*
+
+### Dead-man switch
+The automation-health check that treats a missing scheduled run as the signal, not just
+a failed one. A schedule that should have fired (past its expected time plus a 60-minute
+grace window) with no recorded run is flagged overdue; a schedule that ran but reported
+failure is flagged failing. Surfaces on the Overview banner and the Automation screen's
+Automation Health section.
+
+### Freshness chip
+A per-kind indicator (Patch Compliance, Security Posture, OS Updates, Devices) showing
+the age of the newest on-disk snapshot for a raw jamf-cli kind that screen reads. A kind
+the screen expects but has never collected shows a distinct red "never" chip rather than
+silently vanishing.
+
 ### Inventory tier
 The mid-cost collection tier — device lists, configuration profiles,
 apps, and EA coverage. Pageable bulk queries; tens of seconds per run.
@@ -331,6 +355,29 @@ A macOS user-scoped scheduled job at
 `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist`.
 JamfReports manages these via `LaunchAgentService` / `LaunchAgentWriter`.
 Never installs system-wide LaunchDaemons or requests `sudo`.
+
+### Metric alert
+An opt-in `alerts:` config rule that compares a daily-summary metric (e.g. `patch_pct`,
+`stale_count`) against a threshold using `below`, `above`, or `drops_more_than`, and
+posts a webhook card the first time it trips in a day. A malformed rule is dropped and
+flagged in Config Doctor rather than breaking the config.
+
+### Multi-baseline (compliance)
+Support for charting more than one mSCP/STIG `compliance.baselines` entry
+independently — one compliance-band series per baseline, never summed across
+frameworks. The Trends screen shows a baseline picker only when more than one baseline
+is configured. *see also: mSCP, Compliance Band.*
+
+### Notify detail
+The `notify.detail` config setting (`full` | `minimal`) controlling how much a webhook
+card reveals. `full` (default) includes metric names/values, error text, and schedule
+names; `minimal` reduces every card to event facts — counts and statuses only — for
+headless or high-security deployments.
+
+### Patch velocity
+Per-title patch-adoption speed, built from every dated `patch-status` snapshot on disk:
+an adoption-over-time series, days-behind-latest, and the observed days-to-50/90-percent
+crossings. *see also: Days-to-50 / Days-to-90.*
 
 ### Profile (workspace profile)
 A logical tenant within JamfReports. Each profile gets its own
@@ -357,12 +404,23 @@ A per-device multi-factor weighted score producing a Critical / High /
 Medium / Low / Clean band. Factors configurable in Config → Scoring. *see
 also: Security Score, Stability Index, Compliance Band.*
 
+### Salvaged
+A snapshot recovered from a truncated jamf-cli JSON file by keeping only its last
+complete top-level array element. A salvaged day is excluded from EA coverage-drift
+comparisons in Config Doctor so a partial day is never misread as a real coverage change.
+
 ### Security Score
 A fleet-level 0–100 weighted score across FileVault, SIP, Firewall,
 CrowdStrike (or equivalent EDR), mSCP, XProtect, CVE, Secure Boot. Missing
 metrics drop from the denominator and the result is renormalized.
 Configurable in Config → Scoring. *see also: Risk Score, Stability
 Index.*
+
+### Snapshot manifest
+The sibling `manifest.json` SHA-256 file written next to each collected snapshot when
+`jamf_cli.require_manifest: true`, used to detect tampering between collect and
+generate. Verification states are `verified`, `mismatch`, `omitted`, `corrupt`, and
+`absent`.
 
 ### Stability Index
 A management-level health score derived from compliance, patch posture,
@@ -458,7 +516,7 @@ compliance UI.
 
 ## See also
 
-- [App Onboarding](02-App-Onboarding) — the guided first run.
-- [Dashboards](03-App-Dashboards) — every screen in the app.
+- [App Onboarding](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding) — the guided first run.
+- [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards) — every screen in the app.
 - `docs/architecture/` in the repository — design decisions and the
   threat model.

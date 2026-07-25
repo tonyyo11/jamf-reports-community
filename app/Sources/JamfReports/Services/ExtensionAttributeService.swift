@@ -29,6 +29,10 @@ struct ExtensionAttributeService: Sendable {
         let valueDistributions: [ValueDistribution]
         let sourceFile: URL?
         let snapshotDate: Date?
+        /// Per-kind newest-file dates for the freshness chip row. Keys are the
+        /// on-disk kind names (`ea-results`, `computer-extension-attributes`);
+        /// a kind absent from disk is absent from the map.
+        var sourceDates: [String: Date] = [:]
 
         var cacheSource: CacheSource {
             CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
@@ -84,7 +88,8 @@ struct ExtensionAttributeService: Sendable {
             lhs.totalRowCount == rhs.totalRowCount &&
             lhs.valueDistributions == rhs.valueDistributions &&
             lhs.sourceFile == rhs.sourceFile &&
-            lhs.snapshotDate == rhs.snapshotDate
+            lhs.snapshotDate == rhs.snapshotDate &&
+            lhs.sourceDates == rhs.sourceDates
         }
     }
 
@@ -161,6 +166,22 @@ struct ExtensionAttributeService: Sendable {
 
         guard readSomething else { return nil }
 
+        // Per-kind freshness for the chip row, based on file presence — honest
+        // even when a kind's own decode failed (see PatchStatusService).
+        var sourceDates: [String: Date] = [:]
+        if let definitionsURL, FileManager.default.fileExists(atPath: definitionsURL.path),
+           let d = (try? definitionsURL.resourceValues(
+               forKeys: [.contentModificationDateKey]
+           ))?.contentModificationDate {
+            sourceDates["computer-extension-attributes"] = d
+        }
+        if let resultsURL, FileManager.default.fileExists(atPath: resultsURL.path),
+           let d = (try? resultsURL.resourceValues(
+               forKeys: [.contentModificationDateKey]
+           ))?.contentModificationDate {
+            sourceDates["ea-results"] = d
+        }
+
         if definitions.isEmpty && results.isEmpty {
             return Snapshot(
                 definitions: [],
@@ -170,7 +191,8 @@ struct ExtensionAttributeService: Sendable {
                 totalRowCount: 0,
                 valueDistributions: [],
                 sourceFile: sourceFile,
-                snapshotDate: snapshotDate
+                snapshotDate: snapshotDate,
+                sourceDates: sourceDates
             )
         }
 
@@ -178,7 +200,8 @@ struct ExtensionAttributeService: Sendable {
             results: results,
             definitions: definitions,
             sourceFile: sourceFile,
-            snapshotDate: snapshotDate
+            snapshotDate: snapshotDate,
+            sourceDates: sourceDates
         )
     }
 
@@ -199,7 +222,8 @@ struct ExtensionAttributeService: Sendable {
         results: [EAResultRow],
         definitions: [ExtensionAttribute],
         sourceFile: URL?,
-        snapshotDate: Date?
+        snapshotDate: Date?,
+        sourceDates: [String: Date] = [:]
     ) -> Snapshot {
         var accumulators: [String: Accumulator] = [:]
         var allDeviceIds: Set<String> = []
@@ -256,7 +280,8 @@ struct ExtensionAttributeService: Sendable {
             totalRowCount: results.count,
             valueDistributions: distributions,
             sourceFile: sourceFile,
-            snapshotDate: snapshotDate
+            snapshotDate: snapshotDate,
+            sourceDates: sourceDates
         )
     }
 

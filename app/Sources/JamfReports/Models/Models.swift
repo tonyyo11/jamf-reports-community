@@ -168,6 +168,26 @@ struct Schedule: Identifiable, Sendable {
                 return []
             }
         }
+
+        /// Whether the LaunchAgent for this mode should set `RunAtLoad`.
+        ///
+        /// The collect modes (which gather jamf-cli data) run at login so a Mac
+        /// that was asleep or logged out at the scheduled time catches up its
+        /// missed collection as soon as the user logs in. This is safe because
+        /// `ReportEngine.collect` is idempotent per its cadence — a non-forced
+        /// collect skips every kind that isn't due, so repeated logins on the
+        /// same day do no redundant work; only a genuinely-missed collect runs.
+        ///
+        /// `jamf-cli-only` (re-render from cache) and `backup` return false —
+        /// regenerating a workbook or cutting a `pro backup` at every login is
+        /// pure churn with no freshness benefit; a missed one simply runs on its
+        /// next scheduled fire.
+        var runsAtLoad: Bool {
+            switch self {
+            case .snapshotOnly, .jamfCLIFull, .csvAssisted: true
+            case .jamfCLIOnly, .backup: false
+            }
+        }
     }
     enum LastStatus: String, Sendable, CaseIterable {
         case ok, warn, fail, partial
@@ -533,9 +553,11 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     }
 
     private static func statusLooksBad(_ value: String) -> Bool {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
         guard !text.isEmpty else { return false }
-        if text.contains("not enabled") || text.contains("disabled") || text.contains("not collected") {
+        if text.contains("not ") || text.contains("disabled") {
             return true
         }
         return ["false", "no", "0", "unencrypted", "not escrowed"].contains(text)
@@ -813,12 +835,11 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
 }
 
 private func valueLooksGood(_ value: String) -> Bool {
-    let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+        .replacingOccurrences(of: "_", with: " ")
     guard !text.isEmpty else { return false }
-    if text.contains("not enabled")
-        || text.contains("disabled")
-        || text.contains("unencrypted")
-        || text.contains("not escrowed") {
+    if text.contains("not ") || text.contains("disabled") || text.contains("unencrypted") {
         return false
     }
     return text.contains("enabled")
@@ -907,6 +928,12 @@ struct TrendSeries: Identifiable, Sendable {
         /// of device counts by compliance band (Pass/Low/Medium/High) over time.
         /// Only appears in TrendsView metric picker when mscpBands history exists.
         case mscpBandTrend
+        /// Historical computers-vs-mobile device count, split into two series
+        /// in the chart (`TrendStore.managedDeviceSeries()`) while this single
+        /// case drives the pill/hero headline number via `value(for:in:)`
+        /// (computer count — Jamf Pro itself can't answer "how many managed
+        /// Macs did we have on <past date>", but every archived summary can).
+        case managedDevices
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
@@ -920,6 +947,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
             case .mscpBandTrend: return "mSCP Compliance Bands"
+            case .managedDevices: return "Managed Devices"
             }
         }
 
@@ -934,13 +962,13 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var unit: String {
             switch self {
-            case .stale, .activeDevices, .mscpBandTrend: return ""
+            case .stale, .activeDevices, .mscpBandTrend, .managedDevices: return ""
             default: return "%"
             }
         }
         var minY: Double {
             switch self {
-            case .activeDevices, .mscpBandTrend: return 0
+            case .activeDevices, .mscpBandTrend, .managedDevices: return 0
             case .stability:     return 40
             case .compliance:    return 40
             case .fileVault:     return 60
@@ -953,7 +981,7 @@ struct TrendSeries: Identifiable, Sendable {
         }
         var maxY: Double {
             switch self {
-            case .activeDevices: return 1000
+            case .activeDevices, .managedDevices: return 1000
             case .stale:         return 60
             case .mscpBandTrend: return 500  // Per-band device count max
             default:             return 100
@@ -971,6 +999,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .patch:         return 0xBF5AF2
             case .securityScore: return 0xFF453A
             case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
+            case .managedDevices: return 0x4472C4  // Matches the Computers series line
             }
         }
     }
@@ -1049,6 +1078,16 @@ extension DailySummary {
             staleCount: staleCount,
             totalDevices: totalDevices
         )
+    }
+
+    /// `totalDevices` minus `staleCount` — devices that checked in within the
+    /// configured stale threshold. Nil when staleness is unmeasured
+    /// (device-compliance never collected); never falls back to `totalDevices`,
+    /// which would overstate. Clamped at zero to guard against mixed-day
+    /// snapshots where `staleCount` briefly exceeds `totalDevices`.
+    var activeDeviceCount: Int? {
+        guard let staleCount else { return nil }
+        return max(totalDevices - staleCount, 0)
     }
 }
 

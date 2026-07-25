@@ -11,6 +11,10 @@ enum DeviceInventoryService {
         var jamfCLIDataDir: URL
         var outputDir: URL
         var historicalCSVDir: URL
+        /// `thresholds.stale_device_days` (default 30). Drives `record.stale`
+        /// so the Devices/Outreach screens agree with the Overview/Fleet tiles
+        /// and the summary writer at any configured threshold.
+        var staleDeviceDays: Int
     }
 
     static func load(profile: String, demoMode: Bool) -> DeviceInventorySnapshot {
@@ -28,7 +32,8 @@ enum DeviceInventoryService {
         var newestSourceDate: Date?
 
         if let csv = latestInventoryCSV(config: config, root: root) {
-            loadCSVInventory(csv, root: root, into: &merger, warnings: &warnings)
+            loadCSVInventory(csv, root: root, into: &merger, warnings: &warnings,
+                             staleThresholdDays: config.staleDeviceDays)
             sourceFiles.append(displayPath(csv, root: root))
             newestSourceDate = maxDate(newestSourceDate, modificationDate(csv))
         }
@@ -38,7 +43,8 @@ enum DeviceInventoryService {
             names: ["computers-list", "computers_list", "computers"],
             root: root
         ) {
-            loadComputersList(computers, root: root, into: &merger, warnings: &warnings)
+            loadComputersList(computers, root: root, into: &merger, warnings: &warnings,
+                              staleThresholdDays: config.staleDeviceDays)
             sourceFiles.append(displayPath(computers, root: root))
             newestSourceDate = maxDate(newestSourceDate, modificationDate(computers))
         }
@@ -48,7 +54,8 @@ enum DeviceInventoryService {
             names: ["device-compliance", "device_compliance"],
             root: root
         ) {
-            loadDeviceCompliance(compliance, root: root, into: &merger, warnings: &warnings)
+            loadDeviceCompliance(compliance, root: root, into: &merger, warnings: &warnings,
+                                 staleThresholdDays: config.staleDeviceDays)
             sourceFiles.append(displayPath(compliance, root: root))
             newestSourceDate = maxDate(newestSourceDate, modificationDate(compliance))
         }
@@ -100,6 +107,36 @@ enum DeviceInventoryService {
             generatedDate: nil,
             isDemo: false
         )
+    }
+
+    /// Per-kind newest-file dates for the Devices freshness chip row. Keyed by
+    /// on-disk kind name — computed separately from `load` because
+    /// `DeviceInventorySnapshot` collapses every source to one `generatedDate`.
+    /// Returns an empty map in demo mode or when the workspace is missing.
+    static func sourceDates(profile: String, demoMode: Bool) -> [String: Date] {
+        if demoMode { return [:] }
+        guard let root = validatedWorkspaceRoot(profile: profile) else { return [:] }
+        var warnings: [String] = []
+        let config = loadConfigHints(root: root, warnings: &warnings)
+        var dates: [String: Date] = [:]
+
+        if let csv = latestInventoryCSV(config: config, root: root),
+           let d = modificationDate(csv) {
+            dates["inventory-csv"] = d
+        }
+        let jsonKinds: [(kind: String, names: [String])] = [
+            ("computers", ["computers-list", "computers_list", "computers"]),
+            ("device-compliance", ["device-compliance", "device_compliance"]),
+            ("patch-device-failures", ["patch-device-failures", "patch_device_failures"]),
+            ("patch-status", ["patch-status", "patch_status"]),
+        ]
+        for entry in jsonKinds {
+            if let url = latestCachedJSON(dataDir: config.jamfCLIDataDir, names: entry.names, root: root),
+               let d = modificationDate(url) {
+                dates[entry.kind] = d
+            }
+        }
+        return dates
     }
 }
 
@@ -187,7 +224,8 @@ fileprivate extension DeviceInventoryService {
                 fallback: "Generated Reports",
                 root: root
             ),
-            historicalCSVDir: historicalCSVDir
+            historicalCSVDir: historicalCSVDir,
+            staleDeviceDays: Int(values["thresholds"]?["stale_device_days"] ?? "") ?? 30
         )
     }
 
@@ -315,14 +353,16 @@ private extension DeviceInventoryService {
         _ url: URL,
         root: URL,
         into merger: inout DeviceRecordMerger,
-        warnings: inout [String]
+        warnings: inout [String],
+        staleThresholdDays: Int = 30
     ) {
         guard let text = readText(url, root: root, maxBytes: 40 * 1024 * 1024, warnings: &warnings) else {
             return
         }
         let rows = parseCSVRows(text)
         for row in rows.prefix(10_000) {
-            merger.upsert(recordFromCSV(row, source: url.lastPathComponent))
+            merger.upsert(recordFromCSV(row, source: url.lastPathComponent,
+                                        staleThresholdDays: staleThresholdDays))
         }
     }
 
@@ -330,10 +370,12 @@ private extension DeviceInventoryService {
         _ url: URL,
         root: URL,
         into merger: inout DeviceRecordMerger,
-        warnings: inout [String]
+        warnings: inout [String],
+        staleThresholdDays: Int = 30
     ) {
         for item in jsonArray(from: url, root: root, warnings: &warnings) {
-            merger.upsert(recordFromComputer(item, source: url.lastPathComponent))
+            merger.upsert(recordFromComputer(item, source: url.lastPathComponent,
+                                             staleThresholdDays: staleThresholdDays))
         }
     }
 
@@ -341,10 +383,12 @@ private extension DeviceInventoryService {
         _ url: URL,
         root: URL,
         into merger: inout DeviceRecordMerger,
-        warnings: inout [String]
+        warnings: inout [String],
+        staleThresholdDays: Int = 30
     ) {
         for item in jsonArray(from: url, root: root, warnings: &warnings) {
-            merger.upsert(recordFromCompliance(item, source: url.lastPathComponent))
+            merger.upsert(recordFromCompliance(item, source: url.lastPathComponent,
+                                               staleThresholdDays: staleThresholdDays))
         }
     }
 
@@ -364,7 +408,11 @@ private extension DeviceInventoryService {
 
 extension DeviceInventoryService {
 
-    static func recordFromCSV(_ row: [String: String], source: String) -> DeviceInventoryRecord {
+    static func recordFromCSV(
+        _ row: [String: String],
+        source: String,
+        staleThresholdDays: Int = 30
+    ) -> DeviceInventoryRecord {
         let name = cell(row, ["Computer Name", "Device Name", "Name"])
         let serial = cell(row, ["Serial Number", "Serial"])
         let jamfID = cell(row, ["Jamf ID", "Computer ID", "ID"])
@@ -385,7 +433,7 @@ extension DeviceInventoryService {
         record.lastContact = cell(row, ["Last Check-in", "Last Contact", "Last Contact Date"])
         record.lastInventory = cell(row, ["Last Inventory Update", "Last Report", "Report Date"])
         record.daysSinceContact = daysSince(row: row, dateLabel: record.lastContact)
-        record.stale = (record.daysSinceContact ?? 0) >= 30
+        record.stale = (record.daysSinceContact ?? 0) >= staleThresholdDays
         record.fileVault = cell(row, ["FileVault Status", "FileVault 2 Status", "FileVault 2 Enabled"])
         record.sip = cell(row, ["System Integrity Protection", "SIP"])
         record.firewall = cell(row, ["Firewall Enabled", "Firewall"])
@@ -396,7 +444,11 @@ extension DeviceInventoryService {
         return record
     }
 
-    static func recordFromComputer(_ item: [String: Any], source: String) -> DeviceInventoryRecord {
+    static func recordFromComputer(
+        _ item: [String: Any],
+        source: String,
+        staleThresholdDays: Int = 30
+    ) -> DeviceInventoryRecord {
         let flat = flattened(item)
         let name = first(flat, ["general.name", "name", "general.displayName"])
         let serial = first(flat, ["hardware.serialNumber", "serialNumber", "general.serialNumber"])
@@ -421,7 +473,7 @@ extension DeviceInventoryService {
         record.lastContact = first(flat, ["general.lastContactTime", "general.lastContactDate", "lastContactDate"])
         record.lastInventory = first(flat, ["general.reportDate", "general.lastReportDate", "lastReportDate"])
         record.daysSinceContact = daysSince(label: record.lastContact)
-        record.stale = (record.daysSinceContact ?? 0) >= 30
+        record.stale = (record.daysSinceContact ?? 0) >= staleThresholdDays
         record.fileVault = first(flat, ["diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State", "operatingSystem.fileVault2Status", "diskEncryption.fileVault2Enabled"])
         record.sip = first(flat, ["security.sipStatus", "security.systemIntegrityProtection"])
         record.firewall = first(flat, ["security.firewallEnabled", "operatingSystem.activeDirectoryStatus.firewallEnabled"])
@@ -430,7 +482,11 @@ extension DeviceInventoryService {
         return record
     }
 
-    static func recordFromCompliance(_ item: [String: Any], source: String) -> DeviceInventoryRecord {
+    static func recordFromCompliance(
+        _ item: [String: Any],
+        source: String,
+        staleThresholdDays: Int = 30
+    ) -> DeviceInventoryRecord {
         let name = clean(item["name"]) ?? clean(item["device"]) ?? ""
         let serial = clean(item["serial"]) ?? clean(item["serial_number"]) ?? ""
         let jamfID = firstNumericID(item, ["id", "jamf_id", "device_id"])
@@ -442,7 +498,7 @@ extension DeviceInventoryService {
         record.lastContact = clean(item["last_contact"]) ?? clean(item["last_checkin"]) ?? ""
         record.daysSinceContact = intValue(item["days_since_contact"]) ?? daysSince(label: record.lastContact)
         record.managedState = managedLabel(clean(item["managed"]) ?? "")
-        record.stale = boolValue(item["stale"]) || (record.daysSinceContact ?? 0) >= 30
+        record.stale = boolValue(item["stale"]) || (record.daysSinceContact ?? 0) >= staleThresholdDays
         return record
     }
 

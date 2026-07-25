@@ -26,11 +26,14 @@ struct OverviewView: View {
     /// after each run completes. PR-15.
     @State private var generatedHashes: [String: String] = [:]
     @State private var activitySelection: DeviceInventoryRecord.ID? = nil
-    @State private var navigationPath = NavigationPath()
+    /// State-driven drill-down instead of a NavigationStack — this view is
+    /// hosted inside ContentView.shell's own NavigationStack, and nested
+    /// stacks are unsupported (the pushed page layers over the outer stack's
+    /// root, silently swallowing tab-switch actions fired from inside it).
+    @State private var drill: OverviewDrillDown?
     @State private var legacyWorkspaces: [String] = []
     @State private var legacySchedules: [String] = []
     @State private var checklist: GettingStartedChecklist?
-    @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
 
     private var defaultTrendRange: TrendRange {
         TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
@@ -58,76 +61,11 @@ struct OverviewView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header
-                    if !workspace.demoMode, !workspace.isWorkspaceInitialized {
-                        workspaceInitBanner
-                    }
-                    migrationBanner
-                    if !workspace.demoMode, let cl = checklist, !cl.isComplete {
-                        gettingStartedCard(cl)
-                    }
-                    // PR-13: shared StaleDataBanner surfaces freshness above
-                    // the KPI grid. Suppressed in demo mode (canonical demo
-                    // dataset is intentionally static). Renders nothing when
-                    // source is .fresh. #181: never-fetched gains a "Collect
-                    // now" action that runs the full first collect.
-                    if !workspace.demoMode {
-                        StaleDataBanner(
-                            source: trendStore.cacheSource,
-                            onCollect: { runFirstCollect() },
-                            isCollecting: isRunningFirstCollect
-                        )
-                    }
-                    // v2.2.0: heavy-tier (per-device) data missing or older
-                    // than a week. Never auto-collected — the button is the
-                    // only trigger. Hidden while the never-fetched banner is
-                    // up: its "Collect now" already runs every tier, so a
-                    // second prompt would be a redundant warn surface.
-                    if !workspace.demoMode, !workspace.staleHeavyTiers.isEmpty,
-                       trendStore.cacheSource != .neverFetchedLive {
-                        heavyTierStalePrompt
-                    }
-                    // R1: these KPI cards render the daily digest, not live
-                    // inventory — say so, and flag cached/missing inputs (R4).
-                    if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
-                        ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
-                    }
-                    // v2.5 (macOS 27, opt-in): turns the same daily digest into a
-                    // plain-language insight card. Renders on every OS version —
-                    // resolves to "Requires macOS 27" below that.
-                    if !workspace.demoMode {
-                        AIInsightCard(
-                            profile: workspace.profile,
-                            current: trendStore.filteredSummaries.last,
-                            previous: trendStore.filteredSummaries.count >= 2
-                                ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
-                                : nil
-                        )
-                    }
-                    statRow
-                    if workspace.demoMode {
-                        osAndRules
-                        securityAgents
-                        recentActivity
-                    } else {
-                        liveWorkspaceState
-                    }
-                }
-                .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
-                                    leading: Theme.Metrics.pagePadH,
-                                    bottom: Theme.Metrics.pagePadBottom,
-                                    trailing: Theme.Metrics.pagePadH))
-            }
-            .overlay {
-                if !workspace.demoMode, trendStore.isLoading, trendStore.filteredSummaries.isEmpty {
-                    trendsLoadingOverlay
-                }
-            }
-            .navigationDestination(for: OverviewDrillDown.self) { destination in
-                overviewDetail(destination)
+        Group {
+            if let drill {
+                overviewDetail(drill)
+            } else {
+                overviewRoot
             }
         }
         .tint(Theme.Colors.goldBright)
@@ -138,7 +76,12 @@ struct OverviewView: View {
             Task { await loadTrendsOffMain() }
         }
         .onChange(of: workspace.profile) { _, _ in
-            Task { await loadTrendsOffMain() }
+            Task {
+                await loadTrendsOffMain()
+                // Health inputs are now per-profile-filtered — recompute on
+                // switch so the banner reflects the newly-active workspace.
+                await workspace.refreshAutomationHealth()
+            }
         }
         .onChange(of: defaultTrendRangeRaw) { _, _ in
             // Range change only re-filters cached data — no disk read.
@@ -153,11 +96,95 @@ struct OverviewView: View {
             Task {
                 await loadTrendsOffMain()
                 await reloadChecklist()
+                await workspace.refreshAutomationHealth()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .popToRootNavigation)) { _ in
-            if !navigationPath.isEmpty {
-                navigationPath = NavigationPath()
+            drill = nil
+        }
+    }
+
+    private var overviewRoot: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                if !workspace.demoMode, !workspace.isWorkspaceInitialized {
+                    workspaceInitBanner
+                }
+                migrationBanner
+                if !workspace.demoMode, let cl = checklist, !cl.isComplete {
+                    gettingStartedCard(cl)
+                }
+                // PR-13: shared StaleDataBanner surfaces freshness above
+                // the KPI grid. Suppressed in demo mode (canonical demo
+                // dataset is intentionally static). Renders nothing when
+                // source is .fresh. #181: never-fetched gains a "Collect
+                // now" action that runs the full first collect.
+                if !workspace.demoMode {
+                    StaleDataBanner(
+                        source: trendStore.cacheSource,
+                        onCollect: { runFirstCollect() },
+                        isCollecting: isRunningFirstCollect
+                    )
+                }
+                // v2.2.0: heavy-tier (per-device) data missing or older
+                // than a week. Never auto-collected — the button is the
+                // only trigger. Hidden while the never-fetched banner is
+                // up: its "Collect now" already runs every tier, so a
+                // second prompt would be a redundant warn surface.
+                if !workspace.demoMode, !workspace.staleHeavyTiers.isEmpty,
+                   trendStore.cacheSource != .neverFetchedLive {
+                    heavyTierStalePrompt
+                }
+                // 2.6 dead-man switch: a scheduled run that should have
+                // fired but produced no artifact surfaces here instead of
+                // silence. One banner summarizing all issues, not N banners.
+                if !workspace.demoMode, !workspace.automationHealthIssues.isEmpty {
+                    automationHealthBanner
+                }
+                // R1: these KPI cards render the daily digest, not live
+                // inventory — say so, and flag cached/missing inputs (R4).
+                if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
+                    ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
+                }
+                // v2.5 (macOS 27, opt-in): turns the same daily digest into a
+                // plain-language insight card. `platformSupported` is a
+                // synchronous, config-free check — macOS 26 hosts never see
+                // this card at all (no "requires macOS 27" placeholder).
+                if !workspace.demoMode, ModelAvailability.platformSupported {
+                    AIInsightCard(
+                        profile: workspace.profile,
+                        current: trendStore.filteredSummaries.last,
+                        previous: trendStore.filteredSummaries.count >= 2
+                            ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
+                            : nil
+                    )
+                }
+                // DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
+                // Historical computers-vs-mobile split, straight off the archived
+                // daily summary — Jamf Pro itself has no "how many managed Macs
+                // did we have on <past date>" answer. Live-only: demo mode has no
+                // dated mobile-count series to split a caption against.
+                if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
+                    managedDevicesTile(latest)
+                }
+                statRow
+                if workspace.demoMode {
+                    osAndRules
+                    securityAgents
+                    recentActivity
+                } else {
+                    liveWorkspaceState
+                }
+            }
+            .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
+                                leading: Theme.Metrics.pagePadH,
+                                bottom: Theme.Metrics.pagePadBottom,
+                                trailing: Theme.Metrics.pagePadH))
+        }
+        .overlay {
+            if !workspace.demoMode, trendStore.isLoading, trendStore.filteredSummaries.isEmpty {
+                trendsLoadingOverlay
             }
         }
     }
@@ -166,17 +193,13 @@ struct OverviewView: View {
     /// Mirrors StaleDataBanner's visual language but adds the action button —
     /// heavy collections only ever run when the operator asks.
     private var heavyTierStalePrompt: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "clock.badge.exclamationmark")
-                .foregroundStyle(Theme.Colors.warn)
-                .accessibilityHidden(true)
-            Text(heavyTierStaleMessage)
-                .font(.footnote)
-                .foregroundStyle(Theme.Colors.warn)
-            Spacer(minLength: 8)
-            PNPButton(
-                title: isRefreshingHeavyTiers ? "Refreshing…" : "Refresh now",
-                icon: isRefreshingHeavyTiers ? "hourglass" : "arrow.clockwise"
+        InlineBanner(
+            icon: "clock.badge.exclamationmark",
+            tone: .warn,
+            action: InlineBannerAction(
+                label: isRefreshingHeavyTiers ? "Refreshing…" : "Refresh now",
+                icon: isRefreshingHeavyTiers ? "hourglass" : "arrow.clockwise",
+                help: "Run the per-device collections now. Can take several minutes on on-prem servers."
             ) {
                 guard !isRefreshingHeavyTiers else { return }
                 Task {
@@ -186,18 +209,11 @@ struct OverviewView: View {
                     await loadTrendsOffMain()
                 }
             }
-            .help("Run the per-device collections now. Can take several minutes on on-prem servers.")
+        ) {
+            Text(heavyTierStaleMessage)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.warn)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Theme.Colors.warn.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(Theme.Colors.warn.opacity(0.35), lineWidth: 0.5)
-                )
-        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(heavyTierStaleMessage)
     }
@@ -213,6 +229,90 @@ struct OverviewView: View {
         }
         return "\(names) data is missing or more than a week old — "
             + "Patch, Updates, and EA dashboards show stale values."
+    }
+
+    /// 2.6 dead-man switch banner — one summary of overdue/failing scheduled
+    /// runs, with a jump to the Automation screen. Only rendered when
+    /// `automationHealthIssues` is non-empty (gated in `body`).
+    private var automationHealthBanner: some View {
+        InlineBanner(
+            icon: "clock.badge.xmark",
+            tone: .warn,
+            action: InlineBannerAction(
+                label: "Open Automation",
+                icon: "gearshape.2",
+                help: "Review scheduled runs that are overdue or failing."
+            ) {
+                navigate(to: .schedules)
+            }
+        ) {
+            Text(automationHealthMessage)
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.warn)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(automationHealthMessage)
+    }
+
+    private var automationHealthMessage: String {
+        let issues = workspace.automationHealthIssues
+        let overdue = issues.filter { $0.kind == .overdue }
+        let failing = issues.filter { $0.kind == .failing }
+        // Shared by BOTH branches: the failing branch used to show no timestamp
+        // at all while its overdue sibling did (#213).
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        if let first = overdue.first {
+            let when = first.expectedFire.map {
+                formatter.localizedString(for: $0, relativeTo: Date())
+            } ?? "on schedule"
+            let last = first.lastRunFinishedAt.map {
+                formatter.localizedString(for: $0, relativeTo: Date())
+            } ?? "never"
+            let more = overdue.count > 1 ? " (+\(overdue.count - 1) more)" : ""
+            if first.isMulti {
+                // Global all-profiles managed agent — label it fleet-wide so a
+                // fresh per-profile operator doesn't read it as this workspace's
+                // own backup/collect.
+                return "Managed automation (all profiles) — "
+                    + "\(fleetWideName(first.displayName)) should have run "
+                    + "\(when); last success \(last)\(more)."
+            }
+            return "Scheduled run overdue — \(first.displayName) should have run "
+                + "\(when); last success \(last)\(more)."
+        }
+        let more = failing.count > 1 ? " (+\(failing.count - 1) more)" : ""
+        guard let firstFailing = failing.first else {
+            return "A scheduled run failed on its last run\(more) — check Automation."
+        }
+        // Global all-profiles managed agent — same fleet-wide framing the
+        // overdue branch uses.
+        let name: String
+        if firstFailing.isMulti {
+            name = "Managed automation (all profiles) — "
+                + fleetWideName(firstFailing.displayName)
+        } else {
+            name = firstFailing.displayName
+        }
+        let last = firstFailing.lastRunFinishedAt.map {
+            formatter.localizedString(for: $0, relativeTo: Date())
+        } ?? "never"
+        // Name the cause when the run recorded an exit code, so the banner
+        // says WHY (401 / 403 / 429 / network) rather than just "failed".
+        if let code = firstFailing.lastRunExitCode {
+            return "\(name) failed \(last)\(more). "
+                + CLIBridge.explainExit(code, operation: "Last run")
+        }
+        return "\(name) failed on its last run \(last)\(more) — check Automation."
+    }
+
+    /// Strip a leading "Managed " from a managed agent's display name so the
+    /// fleet-wide banner reads "Managed automation … — Backup …" rather than
+    /// the redundant "… — Managed Backup …".
+    private func fleetWideName(_ displayName: String) -> String {
+        displayName.hasPrefix("Managed ")
+            ? String(displayName.dropFirst("Managed ".count))
+            : displayName
     }
 
     /// Run the trend-store disk scan (summaries + ea-results) OFF the main
@@ -260,14 +360,13 @@ struct OverviewView: View {
         }
     }
 
-    /// Pops the current drill-down off the NavigationStack. Called by breadcrumb
-    /// "Overview" links inside drill-down detail views. We can't use
-    /// `@Environment(\.dismiss)` here because the property is read on the root
-    /// `OverviewView`; closures captured at that scope dismiss the root, which
-    /// on a top-level macOS window closes the window itself.
+    /// Clears the current drill-down, returning to the Overview root. Called
+    /// by breadcrumb "Overview" links inside drill-down detail views. We
+    /// don't use `@Environment(\.dismiss)` here because the property is read
+    /// on the root `OverviewView`; closures captured at that scope dismiss
+    /// the root, which on a top-level macOS window closes the window itself.
     private func popDrillDown() {
-        guard !navigationPath.isEmpty else { return }
-        navigationPath.removeLast()
+        drill = nil
     }
 
     private var workspaceInitBanner: some View {
@@ -554,6 +653,28 @@ struct OverviewView: View {
         return "sha256: \(short)…"
     }
 
+    /// Fixed (non-togglable) tile pairing the always-present computer count
+    /// with the optional mobile-device count. Unlike `statRow`'s customizable
+    /// score cards, this always renders when a summary exists — computers and
+    /// mobile devices are the app's most basic "how big is the fleet" answer.
+    private func managedDevicesTile(_ latest: DailySummary) -> some View {
+        let computers = latest.totalDevices
+        let mobile = latest.mobileDeviceCount
+        let total = computers + (mobile ?? 0)
+        let computerLabel = "\(computers) computer\(computers == 1 ? "" : "s")"
+        let caption = mobile.map { "\(computerLabel) · \($0) mobile" } ?? computerLabel
+
+        return StatTile(
+            label: "Managed Devices",
+            value: "\(total)",
+            sub: caption,
+            sparkValues: trendStore.values(metric: .managedDevices),
+            sparkColor: Color(hex: TrendSeries.Metric.managedDevices.colorHex)
+        )
+        .lineLimit(1)
+        .truncationMode(.tail)
+    }
+
     private var statRow: some View {
         // Adaptive grid that collapses to fewer columns at narrow widths rather
         // than cramming tiles into unreadable strips.
@@ -566,7 +687,9 @@ struct OverviewView: View {
         ) {
             ForEach(workspace.selectedScoreCards) { metric in
                 let isDanger = scoreCardTrend(for: metric) == .down && metric != .stale
-                NavigationLink(value: OverviewDrillDown.metric(metric.rawValue)) {
+                Button {
+                    drill = .metric(metric.rawValue)
+                } label: {
                     scoreCard(for: metric)
                         .modifier(StatTileHealthModifier(isDanger: isDanger))
                         .drillDownChrome()
@@ -629,24 +752,45 @@ struct OverviewView: View {
             return diff > 0 ? .up : .down
         }()
 
+        // DRAFT — needs visual verification. Clarifies that Active Devices
+        // (redefined 2.6 to exclude stale devices) is not the same count as
+        // Managed Devices.
+        let subText: String? = {
+            guard metric == .activeDevices else { return nil }
+            let days = Int(workspace.configState.staleDeviceDays) ?? 30
+            return "Checked in within \(days)d"
+        }()
+
         return StatTile(
             label: metric.displayLabel(
                 benchmarkLabel: workspace.complianceBenchmarkLabel,
                 edrAgentName: workspace.edrAgentName
             ),
             value: valueStr,
+            sub: subText,
             delta: values.count >= 2 ? deltaStr : nil,
             deltaTrend: trend,
             sparkValues: values,
             sparkColor: Color(hex: metric.colorHex)
         )
+        // The label can be an operator-configured string (compliance baseline
+        // name, EDR agent name) with no length guarantee — some CBP configs
+        // set it to a raw audit-plist filename. StatTile's Kicker doesn't cap
+        // line count, so a long value wraps mid-word onto a second line.
+        // `.lineLimit`/`.truncationMode` are environment modifiers that
+        // cascade into the Kicker's Text without touching the shared
+        // component — constrain to a single elided line here instead.
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
 
     // MARK: OS distribution donut + Top failing rules
 
     private var osAndRules: some View {
         HStack(alignment: .top, spacing: 12) {
-            NavigationLink(value: OverviewDrillDown.osDistribution) {
+            Button {
+                drill = .osDistribution
+            } label: {
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack {
@@ -683,7 +827,9 @@ struct OverviewView: View {
             .help("Open macOS distribution details")
             .frame(maxWidth: .infinity)
 
-            NavigationLink(value: OverviewDrillDown.failingRules) {
+            Button {
+                drill = .failingRules
+            } label: {
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top) {
@@ -778,7 +924,9 @@ struct OverviewView: View {
                 }
                 HStack(spacing: 10) {
                     ForEach(DemoData.securityAgents) { a in
-                        NavigationLink(value: OverviewDrillDown.securityAgent(a.name)) {
+                        Button {
+                            drill = .securityAgent(a.name)
+                        } label: {
                             agentCard(a)
                                 .drillDownChrome()
                         }
@@ -803,7 +951,9 @@ struct OverviewView: View {
                     SectionHeader(title: "Recent Activity")
                     Spacer()
                     Pill(text: "8 of 524", tone: .muted)
-                    NavigationLink(value: OverviewDrillDown.recentActivity) {
+                    Button {
+                        drill = .recentActivity
+                    } label: {
                         Text("View all")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(Theme.Colors.fg)
@@ -1161,6 +1311,7 @@ struct OverviewView: View {
                 staleMeasured: latest?.staleCount != nil
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
+            "Excludes devices stale beyond \(Int(workspace.configState.staleDeviceDays) ?? 30)d. " +
             "Open Devices to inspect records contributing to this count."
         case .compliance:
             latest?.complianceIsProxy == true
@@ -1180,6 +1331,8 @@ struct OverviewView: View {
             "Weighted composite from Security Posture. Open that tab to see the breakdown."
         case .mscpBandTrend:
             "Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution."
+        case .managedDevices:
+            "Historical computers-vs-mobile split. Open Devices or Mobile Fleet to inspect current records."
         }
         return Text(text)
             .font(.footnote)
@@ -1196,6 +1349,8 @@ struct OverviewView: View {
             return [.securityPosture, .compliancePosture]
         case .edrAgent:
             return [.devices, .config]
+        case .managedDevices:
+            return [.devices, .mobileFleet]
         }
     }
 
@@ -1247,11 +1402,14 @@ struct OverviewView: View {
         let collected = await Task.detached(priority: .utility) {
             TrendStore.readLatestSnapshotMTime(profile: profile) != nil
         }.value
-        let policyRaw = automationPolicyRaw
-
+        // Per-profile only: a real LaunchAgent owned by THIS profile. The
+        // app-global `AutomationPolicy.isManaged` disjunct was dropped —
+        // managed automation being enabled elsewhere must not tick a fresh
+        // profile's "set up a schedule" ✓. (Tradeoff: under managed-only
+        // automation, with no per-profile agent, this step never ticks — which
+        // matches the per-profile intent of the getting-started flow.)
         let scheduled = await Task.detached(priority: .utility) {
-            AutomationPolicy.parse(policyRaw).isManaged
-                || LaunchAgentService.list().contains { $0.profile == profile }
+            LaunchAgentService.list().contains { $0.profile == profile }
         }.value
 
         let customized = await Task.detached(priority: .utility) {

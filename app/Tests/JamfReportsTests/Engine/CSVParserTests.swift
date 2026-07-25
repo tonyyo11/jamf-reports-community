@@ -90,14 +90,5 @@ final class CSVParserTests: XCTestCase {
 
     // MARK: - Helper
 
-    private var fixturesDir: URL {
-        // Resolve relative to the package root: app/ is one level below repo root.
-        let here = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // Engine/
-            .deletingLastPathComponent()   // JamfReportsTests/
-            .deletingLastPathComponent()   // Tests/
-            .deletingLastPathComponent()   // app/
-            .deletingLastPathComponent()   // worktree root
-        return here.appendingPathComponent("tests/fixtures")
-    }
+    private var fixturesDir: URL { TestFixtures.root }
 }

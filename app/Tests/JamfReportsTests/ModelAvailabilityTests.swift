@@ -52,4 +52,18 @@ final class ModelAvailabilityTests: XCTestCase {
         XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "external")), .requiresMacOS27)
         #endif
     }
+
+    /// `platformSupported` is the config-free mirror of the check above — it
+    /// must agree with whatever `current(for:)` collapses to on this
+    /// toolchain/host, since it's what views use to decide whether to
+    /// instantiate an AI surface at all (macOS 26 hosts must hide entirely).
+    func testPlatformSupportedMatchesDefaultToolchainBehavior() {
+        #if canImport(FoundationModels) && compiler(>=6.4)
+        if #unavailable(macOS 27) {
+            XCTAssertFalse(ModelAvailability.platformSupported)
+        }
+        #else
+        XCTAssertFalse(ModelAvailability.platformSupported)
+        #endif
+    }
 }

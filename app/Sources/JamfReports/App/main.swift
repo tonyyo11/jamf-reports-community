@@ -93,71 +93,98 @@ private func appendFleetLog(_ message: String) {
     }
 }
 
-/// Post the opt-in scheduled-run webhook digest. No-op unless `config.notify`
-/// is enabled with a usable https URL. Best-effort — never affects the run.
-///
-/// `sheetFailures` > 0 sets Status to "Partial" and appends a "Sheets failed"
-/// fact so degraded runs are not misreported as successes.
-/// `recorder` receives a `[warn]` line when the post fails, making the failure
-/// visible in Run History rather than only in `~/Library/Logs`.
-@Sendable
-private func notifyScheduledRun(
-    config: ReportConfig?,
-    profile: String,
-    mode: Schedule.RunMode,
-    artifact: String?,
-    sheetFailures: Int = 0,
-    recorder: ScheduledRunRecorder?
-) async {
-    guard let notify = config?.notify, notify.isUsable else { return }
-    let statusValue = sheetFailures > 0 ? "Partial" : "Success"
-    var facts: [WebhookNotifier.Fact] = [
-        .init(label: "Profile", value: profile),
-        .init(label: "Run", value: mode.displayTitle),
-        .init(label: "Status", value: statusValue),
-    ]
-    if sheetFailures > 0 {
-        facts.append(.init(label: "Sheets failed", value: "\(sheetFailures)"))
-    }
-    if let artifact { facts.append(.init(label: "Report", value: artifact)) }
-    let sent = await WebhookNotifier.send(
-        config: notify, title: "Jamf Report — \(profile)", facts: facts
-    )
-    if !sent {
-        let message = "[warn] webhook notification failed for '\(profile)'"
-        fputs(message + "\n", stderr)
-        recorder?.record(message)
-    }
+// Webhook fact assembly, the scheduled-run digest/alert senders, and the
+// metric-aware strict-prior selection now live in
+// `Services/ScheduledRunSignals.swift` (shared with the included CLI). This
+// file's scheduled path calls `ScheduledRunSignals.notifyScheduledRun` /
+// `.notifyMetricAlerts` / `.notifyScheduledRunFailure`; the fleet dead-man
+// overdue digest below stays here — it has no single-run CLI meaning.
+
+/// Pure guard behind `reconcileManagedAutomationHeadless` — extracted so the
+/// "unmanaged → no profile discovery, no filesystem I/O" contract is
+/// unit-testable without touching `AutomationPolicy.current()` or `UserDefaults`.
+func shouldReconcileManagedAutomationHeadless(policy: AutomationPolicy) -> Bool {
+    policy.isManaged
 }
 
-/// Post a failure webhook digest for a run that threw before generating a
-/// report. Only the error's localizedDescription is sent — never URLs,
-/// tokens, credentials, or device/user PII (ReportEngine errors carry
-/// operational strings only, not secret material).
-/// Best-effort — never throws.
+/// Headless managed-automation self-heal (2.6 field-incident fix). Before
+/// this, `ManagedAutomation.reconcile` — including the one-shot RunAtLoad
+/// migration and any policy edit (cadence, exclusions, report grouping) —
+/// only ever ran from a GUI launch or the Automation screen. A host that
+/// never opens the GUI (the whole point of "managed" automation) could sit
+/// on stale plists indefinitely; a fleet Mac was found with a weekend-old
+/// RunAtLoad:false migration that had never applied. Call EXACTLY ONCE per
+/// `--scheduled-run` process, after all per-profile data collection, so
+/// reconcile can never delay or fail the run itself.
+///
+/// No-op when automation isn't managed — bails before any profile discovery
+/// or filesystem I/O, matching `WorkspaceStore.catchUpCollectIfNeeded`'s
+/// early-exit shape. `currentLabel` is this process's OWN LaunchAgent label
+/// (threaded from `--label`); reconcile self-skips bootout/bootstrap for it —
+/// see `ManagedAutomation.reconcile(currentLabel:)`. Best-effort: reconcile
+/// never throws, and every action failure is logged + captured in the
+/// returned outcomes rather than surfaced to the caller.
 @Sendable
-private func notifyScheduledRunFailure(
-    config: ReportConfig?,
-    profile: String,
-    mode: Schedule.RunMode,
-    errorDescription: String,
-    recorder: ScheduledRunRecorder?
+func reconcileManagedAutomationHeadless(
+    currentLabel: String?,
+    policy: AutomationPolicy = AutomationPolicy.current()
 ) async {
-    guard let notify = config?.notify, notify.isUsable else { return }
-    let facts: [WebhookNotifier.Fact] = [
-        .init(label: "Profile", value: profile),
-        .init(label: "Run", value: mode.displayTitle),
-        .init(label: "Status", value: "Failed"),
-        .init(label: "Error", value: errorDescription),
-    ]
-    let sent = await WebhookNotifier.sendFailed(
-        config: notify, title: "Jamf Report — \(profile)", facts: facts
+    guard shouldReconcileManagedAutomationHeadless(policy: policy) else { return }
+    _ = await ManagedAutomation.reconcileWithMigration(policy: policy, currentLabel: currentLabel)
+}
+
+/// Headless dead-man overdue digest (2.6 "trust trio" #2). The GUI publishes
+/// overdue schedules and posts a once-per-day digest at launch; a host that only
+/// ever runs the LaunchAgent (GUI never opened) would otherwise get zero
+/// overdue coverage. Call EXACTLY ONCE per `--scheduled-run` process, after all
+/// per-profile work, so a fleet-wide missed run still reaches the operator.
+///
+/// The overdue evaluation is fleet-wide (all JRC LaunchAgents); the notify
+/// webhook is resolved from the first non-excluded profile whose `notify:` is
+/// usable. The `DayMarker(name: "overdue-notify")` once-per-day gate is SHARED
+/// with the GUI path so the two never double-fire. Best-effort — never throws.
+@Sendable
+private func notifyOverdueSchedulesHeadless(profiles: [String]) async {
+    let overdue = AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs())
+        .filter { $0.kind == .overdue }
+    guard !overdue.isEmpty else { return }
+    guard let resolved = firstUsableNotify(in: profiles) else { return }
+    let marker = DayMarker(name: "overdue-notify")
+    let today = SummaryJSONParser.dateFormatter.string(from: Date())
+    guard marker.lastStampedDay(in: resolved.workspace) != today else { return }
+
+    // Reuse the GUI's fact builder so the two paths emit byte-identical cards
+    // (and honor notify.detail minimal/full the same way).
+    let facts = WorkspaceStore.overdueFacts(
+        detail: resolved.notify.resolvedDetail, profile: resolved.profile, overdue: overdue
     )
-    if !sent {
-        let message = "[warn] failure webhook notification failed for '\(profile)'"
-        fputs(message + "\n", stderr)
-        recorder?.record(message)
+    let sent = await WebhookNotifier.sendFailed(
+        config: resolved.notify,
+        title: "Scheduled run overdue — \(overdue.count) schedule" + (overdue.count == 1 ? "" : "s"),
+        facts: facts
+    )
+    guard sent else { return }
+    // Stamp only on a successful send so a transient webhook failure retries next run.
+    marker.stamp(day: today, in: resolved.workspace)
+    print("[info] overdue schedule digest posted headlessly (\(overdue.count) overdue)")
+}
+
+/// First profile in `profiles` (discovery order) whose `config.yaml` `notify:`
+/// block is usable, with its notify config and workspace URL. nil when none
+/// qualifies. Best-effort per profile — an unreadable/undecodable config skips.
+private func firstUsableNotify(
+    in profiles: [String]
+) -> (profile: String, notify: NotifyConfig, workspace: URL)? {
+    for profile in profiles {
+        guard ProfileService.isValid(profile),
+              let workspace = ProfileService.workspaceURL(for: profile) else { continue }
+        let url = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: url.path),
+              let config = try? ConfigLoader.load(from: url),
+              let notify = config.notify, notify.isUsable else { continue }
+        return (profile, notify, workspace)
     }
+    return nil
 }
 
 /// The installed jamf-cli version when it is present but below the supported
@@ -238,10 +265,42 @@ private func scheduledRunSingle(
         return 1
     }
 
+    // Load config once, before the backup branch (product-type routing needs
+    // it), before collect (routing needs it) and before generate. Failure
+    // degrades routing to Jamf Pro and still fails generate with the real error
+    // (ConfigLoader.LoadError) so the recorded run shows a meaningful message.
+    // nil config in routing logs loudly and uses Pro.
+    let configURL = workspace.appendingPathComponent("config.yaml")
+    let routingConfig: ReportConfig? = {
+        guard let loaded = try? ConfigLoader.load(from: configURL) else {
+            AppLogger.schedule.warning(
+                "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+            )
+            return nil
+        }
+        return loaded
+    }()
+
     // Backup mode (v2.2.0): export configuration objects; no collect, no
     // generate. Retention prunes scheduled backups beyond the newest 10 and
     // sweeps abandoned .tmp-* staging dirs.
     if mode == .backup {
+        // `pro backup` is a Jamf Pro-namespace command, so it can only ever
+        // succeed for a Jamf Pro profile. Running it against a Jamf School
+        // profile fails identically on every retry, which pins a permanent
+        // "Backup failed" health row the operator has no way to clear (#213).
+        // A schedule that has nothing to do for a profile is not a failed
+        // schedule — log why and return success.
+        guard ProfileProductType.detect(from: routingConfig).type == .jamfPro else {
+            let message = "[skip] scheduled backup skipped for '\(profile)': `pro backup` is a "
+                + "Jamf Pro command and this profile is configured for Jamf School "
+                + "(school_cli.enabled in config.yaml). Nothing to back up — not a failure. "
+                + "Exclude this profile from the backup schedule to stop scheduling it."
+            print(message)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 0)
+            return 0
+        }
         do {
             let bridge = CLIBridge()
             let exit = try await bridge.backup(
@@ -249,21 +308,46 @@ private func scheduledRunSingle(
                 label: "scheduled-\(BackupMaintenance.dateStamp())",
                 onLine: onLine
             )
-            if exit == 0 {
+            // Exit 7 keeps its partial export on disk, so retention has to see
+            // it — otherwise partial backups accumulate unpruned forever. The
+            // run itself still reports non-success: an incomplete backup is not
+            // a restore point, and the row should stay red until it's fixed.
+            if exit == 0 || exit == CLIBridge.exitCodePartialFailure {
                 BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
             }
-            let message = exit == 0
-                ? "[ok] scheduled backup complete for '\(profile)'"
-                : "[error] scheduled backup failed for '\(profile)': exit \(exit)"
-            if exit == 0 { print(message) } else { fputs(message + "\n", stderr) }
+            // Explain the exit code (cause + remediation) instead of a bare
+            // integer — same translation the GUI's Backups screen already shows
+            // for this identical failure.
+            let failureDetail: String? = exit == 0 ? nil : CLIBridge.explainExit(
+                exit, operation: "Scheduled backup for '\(profile)'"
+            )
+            let message = failureDetail.map { "[error] " + $0 }
+                ?? "[ok] scheduled backup complete for '\(profile)'"
+            if failureDetail == nil { print(message) } else { fputs(message + "\n", stderr) }
             recorder?.record(message)
             recorder?.finish(exitCode: exit)
+            // Post the failure digest — backup returns before the outer catch, so
+            // without this an operator watching the notify webhook gets silence
+            // for every unattended backup failure and reads it as success.
+            // Best-effort, after the recorder is finished so webhook latency
+            // never blocks the exit path.
+            if let failureDetail {
+                await ScheduledRunSignals.notifyScheduledRunFailure(
+                    config: routingConfig, profile: profile, mode: mode,
+                    errorDescription: failureDetail, recorder: nil
+                )
+            }
             return exit
         } catch {
-            let message = "[error] scheduled backup failed for '\(profile)': \(error.localizedDescription)"
+            let errorDesc = error.localizedDescription
+            let message = "[error] scheduled backup failed for '\(profile)': \(errorDesc)"
             fputs(message + "\n", stderr)
             recorder?.record(message)
             recorder?.finish(exitCode: 1)
+            await ScheduledRunSignals.notifyScheduledRunFailure(
+                config: routingConfig, profile: profile, mode: mode,
+                errorDescription: errorDesc, recorder: nil
+            )
             return 1
         }
     }
@@ -285,21 +369,6 @@ private func scheduledRunSingle(
     } else {
         resolvedCSV = nil
     }
-
-    // Load config once, before collect (routing needs it) and before generate.
-    // Failure degrades collect routing to Jamf Pro and still fails generate
-    // with the real error (ConfigLoader.LoadError) so the recorded run shows
-    // a meaningful message. nil config in routing logs loudly and uses Pro.
-    let configURL = workspace.appendingPathComponent("config.yaml")
-    let routingConfig: ReportConfig? = {
-        guard let loaded = try? ConfigLoader.load(from: configURL) else {
-            AppLogger.schedule.warning(
-                "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
-            )
-            return nil
-        }
-        return loaded
-    }()
 
     do {
         // jamf-cli-only generates from cache only — no collect, no fresh API calls.
@@ -334,9 +403,12 @@ private func scheduledRunSingle(
             let message = "[ok] scheduled snapshot complete for '\(profile)'\(trendsSuffix)"
             print(message)
             recorder?.record(message)
-            await notifyScheduledRun(
+            await ScheduledRunSignals.notifyScheduledRun(
                 config: routingConfig, profile: profile, mode: mode,
                 artifact: nil, recorder: recorder
+            )
+            await ScheduledRunSignals.notifyMetricAlerts(
+                config: routingConfig, profile: profile, workspace: workspace, recorder: recorder
             )
             recorder?.finish(exitCode: 0)
             return 0
@@ -363,12 +435,19 @@ private func scheduledRunSingle(
         recorder?.record(message)
         // Tighten permissions on generated report and any newly written files.
         await WorkspacePermissionHardener.tighten(profile: profile)
-        await notifyScheduledRun(
+        await ScheduledRunSignals.notifyScheduledRun(
             config: config, profile: profile, mode: mode,
             artifact: outputURL.lastPathComponent,
             sheetFailures: failures.count,
             recorder: recorder
         )
+        // jamf-cli-only generates from cache without a fresh collect, so its
+        // summary isn't "just produced" — skip alerting for it.
+        if mode != .jamfCLIOnly {
+            await ScheduledRunSignals.notifyMetricAlerts(
+                config: config, profile: profile, workspace: workspace, recorder: recorder
+            )
+        }
         recorder?.finish(exitCode: 0, sheetFailures: failures.count, artifacts: [outputURL])
         return 0
     } catch {
@@ -379,7 +458,7 @@ private func scheduledRunSingle(
         recorder?.finish(exitCode: 1)
         // Post failure digest — best-effort, after recorder is finished so the
         // webhook send latency never blocks the exit path.
-        await notifyScheduledRunFailure(
+        await ScheduledRunSignals.notifyScheduledRunFailure(
             config: routingConfig, profile: profile, mode: mode,
             errorDescription: errorDesc, recorder: nil
         )
@@ -462,12 +541,24 @@ private func scheduledRun(profile: String) async -> Int32 {
         if mode == .jamfCLIOnly || mode == .jamfCLIFull || mode == .csvAssisted {
             emitConsolidatedReports()
         }
+        // Managed-automation self-heal — once per process, after all
+        // per-profile data collection, so a policy edit or the RunAtLoad
+        // migration applies on hosts that never open the GUI.
+        await reconcileManagedAutomationHeadless(currentLabel: label)
+        // Dead-man overdue digest for headless hosts — once per process, after
+        // all per-profile work.
+        await notifyOverdueSchedulesHeadless(profiles: profiles.map(\.name))
         return anyFailed ? 1 : 0
     }
 
-    return await scheduledRunSingle(
+    let code = await scheduledRunSingle(
         profile: profile, mode: mode, tiers: tiers, verbose: verbose, label: label
     )
+    // Managed-automation self-heal — once per process, before the overdue digest
+    // so a reconciled agent's next-fire time is reflected in that same pass.
+    await reconcileManagedAutomationHeadless(currentLabel: label)
+    await notifyOverdueSchedulesHeadless(profiles: [profile])
+    return code
 }
 
 // MARK: - check subcommand
