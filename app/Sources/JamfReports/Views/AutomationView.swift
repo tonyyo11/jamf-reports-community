@@ -448,8 +448,8 @@ private struct HealthCard: View {
     }
 
     private func healthRow(_ issue: AutomationHealthIssue) -> some View {
-        // The button sits OUTSIDE the combined-accessibility group below so
-        // VoiceOver still exposes it as its own tappable element — nesting a
+        // The buttons sit OUTSIDE the combined-accessibility group below so
+        // VoiceOver still exposes each as its own tappable element — nesting a
         // Button inside `.accessibilityElement(children: .combine)` would
         // fold it into the row's summary label and lose its action.
         HStack(alignment: .top, spacing: 8) {
@@ -459,7 +459,30 @@ private struct HealthCard: View {
             if issue.isManagedAgent {
                 runNowButton(issue)
             }
+            // A failing row now has somewhere to GO: the run log that explains
+            // the failure. Overdue rows have no log to read (nothing ran).
+            if issue.kind == .failing {
+                runHistoryButton
+            }
         }
+    }
+
+    /// Secondary action on a failing row — jumps to Run History via the app's
+    /// `.navigateToTab` notification (same shape the other views post).
+    private var runHistoryButton: some View {
+        PNPButton(
+            title: "Run History",
+            icon: "list.bullet.rectangle",
+            style: .ghost,
+            size: .sm
+        ) {
+            NotificationCenter.default.post(
+                name: .navigateToTab,
+                object: nil,
+                userInfo: ["tab": Tab.runs.rawValue]
+            )
+        }
+        .help("Open Run History to read this schedule's run log.")
     }
 
     private func healthSummary(_ issue: AutomationHealthIssue) -> some View {
@@ -469,13 +492,19 @@ private struct HealthCard: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(issue.displayName).font(.callout.weight(.semibold))
+                // The detail string is now multi-sentence (cause + remediation),
+                // so let it wrap onto as many lines as it needs instead of being
+                // squeezed by the trailing status label and buttons.
                 Text(healthDetail(issue))
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Text(issue.kind == .overdue ? "Overdue" : "Failing")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.Colors.warn)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(healthAccessibilityLabel(issue))
@@ -525,8 +554,25 @@ private struct HealthCard: View {
             } ?? "on schedule"
             return "Should have run \(when) — \(last)."
         case .failing:
-            return "Last run reported failure — \(last)."
+            // Name the CAUSE when the run recorded an exit code (#213: the row
+            // could previously only ever say "reported failure", leaving the
+            // operator with nowhere to go). Falls back to the original wording
+            // for status records written without a numeric code.
+            let cause = issue.lastRunExitCode.map {
+                "\(CLIBridge.explainExit($0, operation: "Last run")) (\(last))."
+            } ?? "Last run reported failure — \(last)."
+            return cause + managedRerunHint(issue)
         }
+    }
+
+    /// One sentence for a MANAGED failing row: a manual backup/report run from
+    /// another screen writes no status artifact under this schedule's label, so
+    /// it deliberately does not clear the failing state (that anti-masking
+    /// behavior is correct). Users try it anyway — point them at "Run now".
+    /// Omitted for hand-built agents, whose "Run now" lives on Schedules.
+    private func managedRerunHint(_ issue: AutomationHealthIssue) -> String {
+        guard issue.isManagedAgent else { return "" }
+        return " Use Run now here — a manual run from another screen won't clear this."
     }
 }
 

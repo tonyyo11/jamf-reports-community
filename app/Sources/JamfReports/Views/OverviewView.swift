@@ -258,9 +258,11 @@ struct OverviewView: View {
         let issues = workspace.automationHealthIssues
         let overdue = issues.filter { $0.kind == .overdue }
         let failing = issues.filter { $0.kind == .failing }
+        // Shared by BOTH branches: the failing branch used to show no timestamp
+        // at all while its overdue sibling did (#213).
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
         if let first = overdue.first {
-            let formatter = RelativeDateTimeFormatter()
-            formatter.dateTimeStyle = .named
             let when = first.expectedFire.map {
                 formatter.localizedString(for: $0, relativeTo: Date())
             } ?? "on schedule"
@@ -280,13 +282,28 @@ struct OverviewView: View {
                 + "\(when); last success \(last)\(more)."
         }
         let more = failing.count > 1 ? " (+\(failing.count - 1) more)" : ""
-        if let firstFailing = failing.first, firstFailing.isMulti {
-            return "Managed automation (all profiles) — "
-                + "\(fleetWideName(firstFailing.displayName)) failed on its last "
-                + "run\(more) — check Automation."
+        guard let firstFailing = failing.first else {
+            return "A scheduled run failed on its last run\(more) — check Automation."
         }
-        let name = failing.first?.displayName ?? "A scheduled run"
-        return "\(name) failed on its last run\(more) — check Automation."
+        // Global all-profiles managed agent — same fleet-wide framing the
+        // overdue branch uses.
+        let name: String
+        if firstFailing.isMulti {
+            name = "Managed automation (all profiles) — "
+                + fleetWideName(firstFailing.displayName)
+        } else {
+            name = firstFailing.displayName
+        }
+        let last = firstFailing.lastRunFinishedAt.map {
+            formatter.localizedString(for: $0, relativeTo: Date())
+        } ?? "never"
+        // Name the cause when the run recorded an exit code, so the banner
+        // says WHY (401 / 403 / 429 / network) rather than just "failed".
+        if let code = firstFailing.lastRunExitCode {
+            return "\(name) failed \(last)\(more). "
+                + CLIBridge.explainExit(code, operation: "Last run")
+        }
+        return "\(name) failed on its last run \(last)\(more) — check Automation."
     }
 
     /// Strip a leading "Managed " from a managed agent's display name so the

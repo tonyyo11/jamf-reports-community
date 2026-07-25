@@ -139,7 +139,8 @@ final class AutomationHealthTests: XCTestCase {
         isMulti: Bool = false,
         expectedFire: Date?,
         lastRunFinishedAt: Date?,
-        lastRunSuccess: Bool?
+        lastRunSuccess: Bool?,
+        lastRunExitCode: Int32? = nil
     ) -> LaunchAgentService.ScheduleHealthInput {
         LaunchAgentService.ScheduleHealthInput(
             label: label,
@@ -149,7 +150,8 @@ final class AutomationHealthTests: XCTestCase {
             isMulti: isMulti,
             expectedFire: expectedFire,
             lastRunFinishedAt: lastRunFinishedAt,
-            lastRunSuccess: lastRunSuccess
+            lastRunSuccess: lastRunSuccess,
+            lastRunExitCode: lastRunExitCode
         )
     }
 
@@ -418,6 +420,115 @@ final class AutomationHealthTests: XCTestCase {
             lastRunFinishedAt: nil
         )
         XCTAssertFalse(issue.isManagedAgent)
+    }
+
+    // MARK: - Exit-code threading (#213: "why did it fail?")
+
+    /// `ScheduledRunRecorder` writes `exit_code` into the per-run status JSON;
+    /// before #213 nothing read it back, so a failing row could only ever say
+    /// "Last run reported failure". Pin the decode boundary: a numeric value
+    /// survives, anything else yields nil — never a bogus 0, which would read
+    /// as "succeeded" and misname the cause.
+    func testExitCodeValueDecodesRecorderIntegerPayload() {
+        // The exact shape `ScheduledRunRecorder.writeStatusJSON` writes
+        // (`Int(exitCode)`), round-tripped through JSONSerialization.
+        let json = #"{"success": false, "exit_code": 3, "label": "x"}"#.data(using: .utf8)!
+        let payload = ((try? JSONSerialization.jsonObject(with: json)) as? [String: Any]) ?? [:]
+        XCTAssertEqual(LaunchAgentService.exitCodeValue(payload["exit_code"]), 3)
+    }
+
+    func testExitCodeValueAcceptsAllRealJamfCLICodes() {
+        for code in Int32(0)...Int32(7) {
+            XCTAssertEqual(LaunchAgentService.exitCodeValue(Int(code)), code)
+        }
+    }
+
+    func testExitCodeValueMissingYieldsNilNotZero() {
+        // An older status record with no `exit_code` key at all.
+        let json = #"{"success": false, "finished_at": "2026-07-06T06:05:00Z"}"#
+            .data(using: .utf8)!
+        let payload = ((try? JSONSerialization.jsonObject(with: json)) as? [String: Any]) ?? [:]
+        XCTAssertNil(LaunchAgentService.exitCodeValue(payload["exit_code"]))
+        XCTAssertNil(LaunchAgentService.exitCodeValue(nil))
+    }
+
+    func testExitCodeValueGarbageYieldsNil() {
+        XCTAssertNil(LaunchAgentService.exitCodeValue("not a number"))
+        XCTAssertNil(LaunchAgentService.exitCodeValue([1, 2, 3]))
+        XCTAssertNil(LaunchAgentService.exitCodeValue(["code": 3]))
+        XCTAssertNil(LaunchAgentService.exitCodeValue(Double.nan))
+        // Out of Int32 range — reject rather than wrap to a plausible-looking code.
+        XCTAssertNil(LaunchAgentService.exitCodeValue(Int64(Int32.max) + 1))
+    }
+
+    /// JSON booleans bridge to `NSNumber`, so a malformed `"exit_code": true`
+    /// must NOT read as 1 (a real jamf-cli network-failure code). Equally, the
+    /// bool rejection must not swallow the genuine numeric 0/1.
+    func testExitCodeValueRejectsBooleanButKeepsZeroAndOne() {
+        let json = #"{"exit_code": true}"#.data(using: .utf8)!
+        let payload = ((try? JSONSerialization.jsonObject(with: json)) as? [String: Any]) ?? [:]
+        XCTAssertNil(LaunchAgentService.exitCodeValue(payload["exit_code"]))
+        XCTAssertNil(LaunchAgentService.exitCodeValue(false))
+        XCTAssertEqual(LaunchAgentService.exitCodeValue(1), 1)
+        XCTAssertEqual(LaunchAgentService.exitCodeValue(0), 0)
+    }
+
+    /// The code must reach the produced issue — that's what lets the failing
+    /// row render `CLIBridge.explainExit` instead of the generic wording.
+    func testEvaluateThreadsExitCodeIntoFailingIssue() {
+        let now = referenceNow()
+        let recorded = date(year: 2026, month: 7, day: 6, hour: 6, minute: 5)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(
+                expectedFire: nil, lastRunFinishedAt: recorded,
+                lastRunSuccess: false, lastRunExitCode: 3
+            )],
+            now: now
+        )
+        XCTAssertEqual(issues.first?.kind, .failing)
+        XCTAssertEqual(issues.first?.lastRunExitCode, 3)
+    }
+
+    /// A status record without a usable code still produces the issue; the row
+    /// falls back to "Last run reported failure".
+    func testEvaluateFailingIssueKeepsNilExitCodeWhenAbsent() {
+        let now = referenceNow()
+        let recorded = date(year: 2026, month: 7, day: 6, hour: 6, minute: 5)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(
+                expectedFire: nil, lastRunFinishedAt: recorded,
+                lastRunSuccess: false, lastRunExitCode: nil
+            )],
+            now: now
+        )
+        XCTAssertEqual(issues.first?.kind, .failing)
+        XCTAssertNil(issues.first?.lastRunExitCode)
+    }
+
+    /// An overdue schedule never ran, so there is no exit code to show even if
+    /// an older (pre-fire) artifact carried one.
+    func testOverdueIssueCarriesNoExitCode() {
+        let now = referenceNow()
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let stale = date(year: 2026, month: 7, day: 5, hour: 6, minute: 5)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(
+                expectedFire: expected, lastRunFinishedAt: stale,
+                lastRunSuccess: false, lastRunExitCode: 5
+            )],
+            now: now
+        )
+        XCTAssertEqual(issues.first?.kind, .overdue)
+        XCTAssertNil(issues.first?.lastRunExitCode)
+    }
+
+    /// The row's copy is view-private; this pins the mapping it renders so a
+    /// change to `explainExit` can't silently turn the cause back into a number.
+    func testExplainExitNamesTheCauseForRecordedCodes() {
+        let auth = CLIBridge.explainExit(3, operation: "Last run")
+        XCTAssertTrue(auth.contains("401"), "auth failure must name the 401 cause")
+        let denied = CLIBridge.explainExit(5, operation: "Last run")
+        XCTAssertTrue(denied.contains("403"))
     }
 
     /// A user's own multi schedule could be named to LOOK managed

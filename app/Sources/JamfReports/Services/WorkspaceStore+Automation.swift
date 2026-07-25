@@ -26,6 +26,12 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
     let expectedFire: Date?
     /// When the last recorded run finished, if any (`.failing`, or last success).
     let lastRunFinishedAt: Date?
+    /// The failing run's process exit code, when its status record carried a
+    /// numeric one. Lets the row explain WHY (401 / 403 / 429 / network) via
+    /// `CLIBridge.explainExit` instead of only "reported failure". nil for
+    /// `.overdue` (nothing ran, so there is no code) and for older status
+    /// records written without one.
+    let lastRunExitCode: Int32?
 
     init(
         label: String,
@@ -33,7 +39,8 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
         kind: Kind,
         isMulti: Bool = false,
         expectedFire: Date?,
-        lastRunFinishedAt: Date?
+        lastRunFinishedAt: Date?,
+        lastRunExitCode: Int32? = nil
     ) {
         self.label = label
         self.displayName = displayName
@@ -41,6 +48,7 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
         self.isMulti = isMulti
         self.expectedFire = expectedFire
         self.lastRunFinishedAt = lastRunFinishedAt
+        self.lastRunExitCode = lastRunExitCode
     }
 
     /// True when `label` belongs to the reserved managed-automation label set
@@ -101,7 +109,8 @@ enum AutomationHealth {
                     kind: .failing,
                     isMulti: input.isMulti,
                     expectedFire: input.expectedFire,
-                    lastRunFinishedAt: input.lastRunFinishedAt
+                    lastRunFinishedAt: input.lastRunFinishedAt,
+                    lastRunExitCode: input.lastRunExitCode
                 )
             }
 

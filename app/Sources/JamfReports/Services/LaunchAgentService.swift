@@ -398,6 +398,10 @@ enum LaunchAgentService {
         let lastRunFinishedAt: Date?
         /// Newest run artifact's success flag (nil when no artifact recorded).
         let lastRunSuccess: Bool?
+        /// Newest run artifact's process exit code, when the record carries a
+        /// numeric one. Drives the plain-language cause on a failing row;
+        /// nil falls back to the generic "reported failure" wording.
+        let lastRunExitCode: Int32?
 
         init(
             label: String,
@@ -407,7 +411,8 @@ enum LaunchAgentService {
             isMulti: Bool = false,
             expectedFire: Date?,
             lastRunFinishedAt: Date?,
-            lastRunSuccess: Bool?
+            lastRunSuccess: Bool?,
+            lastRunExitCode: Int32? = nil
         ) {
             self.label = label
             self.displayName = displayName
@@ -417,6 +422,7 @@ enum LaunchAgentService {
             self.expectedFire = expectedFire
             self.lastRunFinishedAt = lastRunFinishedAt
             self.lastRunSuccess = lastRunSuccess
+            self.lastRunExitCode = lastRunExitCode
         }
     }
 
@@ -492,7 +498,8 @@ enum LaunchAgentService {
             isMulti: parts.isMulti,
             expectedFire: expectedFire,
             lastRunFinishedAt: runStatus?.finishedAt,
-            lastRunSuccess: runStatus?.success
+            lastRunSuccess: runStatus?.success,
+            lastRunExitCode: runStatus?.exitCode
         )
     }
 
@@ -916,6 +923,10 @@ enum LaunchAgentService {
     private struct ParsedRunStatus {
         let finishedAt: Date?
         let success: Bool?
+        /// The run's process exit code as recorded by `ScheduledRunRecorder`
+        /// (`exit_code`). Carried so a failing row can name the CAUSE
+        /// (auth / privileges / throttling) instead of only "reported failure".
+        let exitCode: Int32?
         let artifacts: [String]
     }
 
@@ -967,6 +978,7 @@ enum LaunchAgentService {
         return ParsedRunStatus(
             finishedAt: dateValue(payload["finished_at"]),
             success: payload["success"] as? Bool,
+            exitCode: exitCodeValue(payload["exit_code"]),
             artifacts: artifactLabels(from: payload, root: root)
         )
     }
@@ -983,6 +995,7 @@ enum LaunchAgentService {
         return ParsedRunStatus(
             finishedAt: dateValue(payload["finished_at"]),
             success: payload["success"] as? Bool,
+            exitCode: exitCodeValue(payload["exit_code"]),
             artifacts: []
         )
     }
@@ -1167,6 +1180,33 @@ enum LaunchAgentService {
         let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
         guard let safeURL = WorkspacePathGuard.validate(url, under: root) else { return false }
         return FileManager.default.fileExists(atPath: safeURL.path)
+    }
+
+    /// Decode the run-status JSON's `exit_code` defensively.
+    ///
+    /// A missing, boolean, or non-numeric value yields nil — NEVER 0, which
+    /// would read as "succeeded" and misreport the cause of a failure. JSON
+    /// booleans bridge to `NSNumber` too, so they're rejected by CoreFoundation
+    /// type id rather than by an `as? Bool` cast (which also matches 0/1
+    /// numbers and would swallow the real `exit 1`).
+    ///
+    /// Internal (not private) purely so `AutomationHealthTests` can pin the
+    /// missing/garbage-yields-nil contract without a real workspace on disk.
+    static func exitCodeValue(_ raw: Any?) -> Int32? {
+        guard let raw else { return nil }
+        if let number = raw as? NSNumber {
+            guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+            // NaN/infinity have no meaningful `int64Value`; reject before
+            // narrowing so a malformed record can't yield a plausible code.
+            guard number.doubleValue.isFinite else { return nil }
+            let value = number.int64Value
+            guard value >= Int64(Int32.min), value <= Int64(Int32.max) else { return nil }
+            return Int32(value)
+        }
+        if let text = raw as? String {
+            return Int32(text.trimmingCharacters(in: .whitespaces))
+        }
+        return nil
     }
 
     private static func dateValue(_ raw: Any?) -> Date? {
