@@ -265,10 +265,42 @@ private func scheduledRunSingle(
         return 1
     }
 
+    // Load config once, before the backup branch (product-type routing needs
+    // it), before collect (routing needs it) and before generate. Failure
+    // degrades routing to Jamf Pro and still fails generate with the real error
+    // (ConfigLoader.LoadError) so the recorded run shows a meaningful message.
+    // nil config in routing logs loudly and uses Pro.
+    let configURL = workspace.appendingPathComponent("config.yaml")
+    let routingConfig: ReportConfig? = {
+        guard let loaded = try? ConfigLoader.load(from: configURL) else {
+            AppLogger.schedule.warning(
+                "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
+            )
+            return nil
+        }
+        return loaded
+    }()
+
     // Backup mode (v2.2.0): export configuration objects; no collect, no
     // generate. Retention prunes scheduled backups beyond the newest 10 and
     // sweeps abandoned .tmp-* staging dirs.
     if mode == .backup {
+        // `pro backup` is a Jamf Pro-namespace command, so it can only ever
+        // succeed for a Jamf Pro profile. Running it against a Jamf School
+        // profile fails identically on every retry, which pins a permanent
+        // "Backup failed" health row the operator has no way to clear (#213).
+        // A schedule that has nothing to do for a profile is not a failed
+        // schedule — log why and return success.
+        guard ProfileProductType.detect(from: routingConfig).type == .jamfPro else {
+            let message = "[skip] scheduled backup skipped for '\(profile)': `pro backup` is a "
+                + "Jamf Pro command and this profile is configured for Jamf School "
+                + "(school_cli.enabled in config.yaml). Nothing to back up — not a failure. "
+                + "Exclude this profile from the backup schedule to stop scheduling it."
+            print(message)
+            recorder?.record(message)
+            recorder?.finish(exitCode: 0)
+            return 0
+        }
         do {
             let bridge = CLIBridge()
             let exit = try await bridge.backup(
@@ -276,21 +308,46 @@ private func scheduledRunSingle(
                 label: "scheduled-\(BackupMaintenance.dateStamp())",
                 onLine: onLine
             )
-            if exit == 0 {
+            // Exit 7 keeps its partial export on disk, so retention has to see
+            // it — otherwise partial backups accumulate unpruned forever. The
+            // run itself still reports non-success: an incomplete backup is not
+            // a restore point, and the row should stay red until it's fixed.
+            if exit == 0 || exit == CLIBridge.exitCodePartialFailure {
                 BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
             }
-            let message = exit == 0
-                ? "[ok] scheduled backup complete for '\(profile)'"
-                : "[error] scheduled backup failed for '\(profile)': exit \(exit)"
-            if exit == 0 { print(message) } else { fputs(message + "\n", stderr) }
+            // Explain the exit code (cause + remediation) instead of a bare
+            // integer — same translation the GUI's Backups screen already shows
+            // for this identical failure.
+            let failureDetail: String? = exit == 0 ? nil : CLIBridge.explainExit(
+                exit, operation: "Scheduled backup for '\(profile)'"
+            )
+            let message = failureDetail.map { "[error] " + $0 }
+                ?? "[ok] scheduled backup complete for '\(profile)'"
+            if failureDetail == nil { print(message) } else { fputs(message + "\n", stderr) }
             recorder?.record(message)
             recorder?.finish(exitCode: exit)
+            // Post the failure digest — backup returns before the outer catch, so
+            // without this an operator watching the notify webhook gets silence
+            // for every unattended backup failure and reads it as success.
+            // Best-effort, after the recorder is finished so webhook latency
+            // never blocks the exit path.
+            if let failureDetail {
+                await ScheduledRunSignals.notifyScheduledRunFailure(
+                    config: routingConfig, profile: profile, mode: mode,
+                    errorDescription: failureDetail, recorder: nil
+                )
+            }
             return exit
         } catch {
-            let message = "[error] scheduled backup failed for '\(profile)': \(error.localizedDescription)"
+            let errorDesc = error.localizedDescription
+            let message = "[error] scheduled backup failed for '\(profile)': \(errorDesc)"
             fputs(message + "\n", stderr)
             recorder?.record(message)
             recorder?.finish(exitCode: 1)
+            await ScheduledRunSignals.notifyScheduledRunFailure(
+                config: routingConfig, profile: profile, mode: mode,
+                errorDescription: errorDesc, recorder: nil
+            )
             return 1
         }
     }
@@ -312,21 +369,6 @@ private func scheduledRunSingle(
     } else {
         resolvedCSV = nil
     }
-
-    // Load config once, before collect (routing needs it) and before generate.
-    // Failure degrades collect routing to Jamf Pro and still fails generate
-    // with the real error (ConfigLoader.LoadError) so the recorded run shows
-    // a meaningful message. nil config in routing logs loudly and uses Pro.
-    let configURL = workspace.appendingPathComponent("config.yaml")
-    let routingConfig: ReportConfig? = {
-        guard let loaded = try? ConfigLoader.load(from: configURL) else {
-            AppLogger.schedule.warning(
-                "[routing] could not load config for \(profile, privacy: .public) — defaulting to Jamf Pro"
-            )
-            return nil
-        }
-        return loaded
-    }()
 
     do {
         // jamf-cli-only generates from cache only — no collect, no fresh API calls.
