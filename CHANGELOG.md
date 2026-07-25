@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-07-25
+
 ### Added
 
 - Managed-device count history: Trends gains a "Managed Devices" metric
@@ -56,6 +58,32 @@ versions in this repository map to git tags.
   observed, never estimated.
 
 ### Fixed
+
+- A failing scheduled backup now says why. The exit code was recorded to disk on
+  every run and never read back, so the Automation Health row could only ever say
+  "Last run reported failure" — the cause was reachable only by finding the right
+  log in Run History. The row now names the cause and its remedy in plain language
+  (expired credentials, missing privileges, throttling), shows when the run
+  failed, and offers a Run History button. The scheduled and command-line backup
+  paths get the same plain-language explanation the Backups screen already showed.
+- Scheduled backups no longer run against profiles that can't be backed up.
+  `pro backup` is a Jamf Pro command, but the all-profiles backup schedule ran it
+  for every profile including Jamf School ones, which failed every week and left a
+  warning no action could clear — re-running produced the identical failure. Those
+  profiles are now skipped with an explanation, and a skip is not a failure.
+- A partial backup is no longer discarded. When jamf-cli reports partial success
+  (some configuration object types exported, others refused), the exported subset
+  is now kept and flagged as partial instead of being deleted and reported purely
+  as a failure. Retention counts these, so they can't accumulate unpruned.
+- Two backups finishing in the same second no longer collide, which previously
+  deleted the completed backup and reported a failure.
+- A failing scheduled backup now posts to the configured notification webhook.
+  Backups returned before the notification step, so operators watching a webhook
+  for unattended failures saw every collect failure and silence for every backup
+  failure — silence that reads as success.
+- The Automation Health row now says that a manual backup won't clear a managed
+  schedule's failure, and to use Run now instead. The behavior was already
+  deliberate; it just wasn't explained, so the obvious remedy looked broken.
 
 - A single endpoint returning 401 can no longer be misread as expired
   credentials: before declaring authentication dead (the hard-fail that
@@ -267,12 +295,14 @@ versions in this repository map to git tags.
   devices we manage" from "how many are actually checking in." A summary
   written earlier in the day also picks up the mobile-device count on the next
   collect instead of waiting for tomorrow.
-- Tracks jamf-cli v1.24.0 (was v1.22.0). Updating the binary also enriches
+- Tracks jamf-cli v1.25.1 (was v1.22.0). Updating the binary also enriches
   device drill-downs for free: MDM-command and policy history rows now carry
   completion dates and accurate command states (jamf-cli 1.23+). One upstream
   behavior change to be aware of: `--serial`-based lookups on a duplicated
   serial now error instead of silently picking an arbitrary record (the app
-  itself resolves devices by ID and is unaffected).
+  itself resolves devices by ID and is unaffected). Everything added in 1.24
+  and 1.25 is additive — new commands and flags this app doesn't call — so
+  older binaries down to the 1.18 floor keep working.
 - On macOS 26 and earlier the AI Insights surfaces (Overview card, Settings
   panel) are now hidden entirely instead of explaining that they need
   macOS 27 — the feature can never run there, so the app no longer
