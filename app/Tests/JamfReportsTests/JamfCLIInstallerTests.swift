@@ -148,6 +148,37 @@ final class JamfCLIInstallerTests: XCTestCase {
         XCTAssertNil(JamfCLIInstaller.specProVersion(at: url))
     }
 
+    // MARK: - Download destination containment
+
+    /// The asset name is server-supplied. `appendingPathComponent` keeps `/` and
+    /// `..` as path components and `moveItem` resolves them, so a crafted release
+    /// name could land the body outside the temp directory — before any checksum
+    /// or signature check runs. `validateAsset` bars that for the binary asset;
+    /// the checksums asset deliberately skips that scrub.
+    func test_safeDestination_rejectsTraversingNames() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-dest-\(UUID().uuidString)", isDirectory: true)
+        for name in [
+            "../escaped.txt",
+            "../../../../Library/LaunchAgents/checksums.txt",
+            "sub/checksums.txt",
+            "..",
+        ] {
+            XCTAssertThrowsError(
+                try JamfCLIInstaller.safeDestination(in: dir, name: name),
+                "name must not resolve outside the destination: '\(name)'")
+        }
+    }
+
+    func test_safeDestination_acceptsPlainFilename() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-dest-\(UUID().uuidString)", isDirectory: true)
+        let url = try JamfCLIInstaller.safeDestination(in: dir, name: "checksums.txt")
+        XCTAssertEqual(url.lastPathComponent, "checksums.txt")
+        XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL.path,
+                       dir.standardizedFileURL.path)
+    }
+
     // MARK: - Helpers
 
     private func makeTempFile(contents: Data) throws -> URL {
