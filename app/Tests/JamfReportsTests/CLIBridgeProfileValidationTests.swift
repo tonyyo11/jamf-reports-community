@@ -138,4 +138,35 @@ final class CLIBridgeProfileValidationTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - B-03: device identifier reaching argv as a bare positional
+
+    /// The identifier is fleet data — a device's own name or serial out of the
+    /// inventory snapshot — so whoever holds an enrolled Mac chooses it. A
+    /// leading dash is read by jamf-cli's flag parser as a global flag, not an
+    /// identifier, on a process that carries the tenant credentials.
+    func test_deviceIdentifier_rejectsLeadingDash() {
+        for id in ["--url=https://collector.example.test", "-p", "--output", "-"] {
+            XCTAssertFalse(
+                CLIBridge.isSafeDeviceIdentifier(id),
+                "leading-dash identifier must be refused: '\(id)'")
+        }
+    }
+
+    func test_deviceIdentifier_rejectsEmptyOrWhitespace() {
+        XCTAssertFalse(CLIBridge.isSafeDeviceIdentifier(""))
+        XCTAssertFalse(CLIBridge.isSafeDeviceIdentifier("   "))
+        XCTAssertFalse(CLIBridge.isSafeDeviceIdentifier("  --output  "),
+                       "a dash after trimming is still a flag")
+    }
+
+    /// Real Jamf identifiers, including names with interior dashes, must pass —
+    /// the guard rejects a leading dash, not every dash.
+    func test_deviceIdentifier_acceptsRealIdentifiers() {
+        for id in ["C02ABC123DEF", "123", "MacBook-Pro-of-carol", "asset_tag.9"] {
+            XCTAssertTrue(
+                CLIBridge.isSafeDeviceIdentifier(id),
+                "legitimate identifier must be accepted: '\(id)'")
+        }
+    }
 }

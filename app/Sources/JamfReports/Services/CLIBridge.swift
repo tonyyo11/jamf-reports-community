@@ -992,6 +992,16 @@ final class CLIBridge {
     /// is identical and must stay in lock-step. Returns a `DeviceDetailResult`
     /// so callers can render a staleness banner when the live API call fails
     /// and we silently returned the previous snapshot.
+    /// B-03: a device identifier is fleet data — a device's own name or serial
+    /// out of the inventory snapshot — not operator input, and it lands in a
+    /// bare positional argv slot. A leading dash is parsed by jamf-cli's flag
+    /// layer as a global flag rather than an identifier, so it is refused here
+    /// exactly as `audit --checks` and `backup --label` already refuse one.
+    nonisolated static func isSafeDeviceIdentifier(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !trimmed.hasPrefix("-")
+    }
+
     nonisolated private func singleDeviceDetail(
         profile: String,
         deviceID: String,
@@ -1000,8 +1010,11 @@ final class CLIBridge {
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isSafeDeviceIdentifier(trimmedID) else {
+            AppLogger.cli.warning("device detail: rejecting leading-dash identifier")
+            return nil
+        }
         guard ProfileService.isValid(profile),
-              !trimmedID.isEmpty,
               let workspace = ProfileService.workspaceURL(for: profile) else {
             return nil
         }
