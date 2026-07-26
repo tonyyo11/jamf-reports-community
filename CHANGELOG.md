@@ -7,6 +7,42 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Security
+
+A verified security review of the reporting services found four issues, all
+fixed here. None of them can be triggered remotely on their own, and the two
+worth reading are the webhook one (it needs an action from you) and the risk
+scorer (it was under-reporting devices you'd want to see).
+
+- Diagnostic bundles no longer carry your Teams or Slack notification webhook
+  URL. The bundle exists to be shared, and its redaction pass promised
+  "secrets always removed" — but it looked for a key named `webhook_url`,
+  while the app stores the webhook under `notify:` as `url`. Masking the
+  hostname wasn't enough either: for both providers the secret travels in the
+  URL path. An incoming-webhook URL is a posting credential, so anyone holding
+  an affected bundle could post messages into that channel as your reporting
+  bot. **If you have notifications enabled and have shared a diagnostic bundle,
+  rotate the webhook URL in Teams or Slack.** The same gap in log exports and
+  webhook error text is fixed alongside it.
+- A device's own name or serial can no longer be read as a command-line flag
+  when fetching device details. Those values come from the fleet rather than
+  from you, so a renamed Mac could put a flag where an identifier belonged.
+- The checksums file downloaded during a jamf-cli install or update is now
+  written to a fixed local filename, and every download is confined to its
+  temporary directory, so a name supplied by the release server can't place a
+  file elsewhere before verification runs.
+
+### Fixed
+
+- Devices reporting FileVault, SIP, Gatekeeper or the firewall as "Not
+  Enabled" / "Not Encrypted" are no longer scored as healthy. The risk scorer
+  matched the word "enabled" inside "not enabled", so an unprotected Mac could
+  score Clean and be filtered out of the Devices "Priority" list — the screen
+  meant to surface exactly those devices. Underscore forms (`NOT_ENCRYPTED`)
+  and "Off" are now recognised too. Expect some devices to appear in Priority
+  that previously did not; that is the correction, not a regression. A control
+  the tenant never reported still counts as unknown rather than failing.
+
 ## [2.6.0] - 2026-07-25
 
 ### Added
