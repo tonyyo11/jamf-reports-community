@@ -220,4 +220,32 @@ final class LogRedactorTests: XCTestCase {
     func testEmptyStringReturnsEmpty() {
         XCTAssertEqual(LogRedactor.redact(""), "")
     }
+
+    // MARK: - notify.url (the app's own webhook key)
+
+    /// NotifyConfig stores the webhook at `notify.url`, so the `webhook_url`
+    /// rule never fires on it. The path is the credential, so masking the
+    /// host alone would leave a usable token behind a well-known hostname.
+    func testNotifyURLSlackWebhookIsRedacted() {
+        let secret = "T0ABCDEF/B0GHIJKL/9xQ2fTnotarealtoken"
+        let redacted = LogRedactor.redact("  url: \"https://hooks.slack.com/services/\(secret)\"")
+        XCTAssertFalse(redacted.contains(secret), "webhook path token must not survive")
+        XCTAssertFalse(redacted.contains("hooks.slack.com"))
+    }
+
+    func testNotifyURLTeamsWebhookIsRedacted() {
+        let secret = "IncomingWebhook/0123456789abcdef0123456789abcdef/abc"
+        let redacted = LogRedactor.redact(
+            "url: https://contoso.webhook.office.com/webhookb2/\(secret)")
+        XCTAssertFalse(redacted.contains(secret))
+        XCTAssertFalse(redacted.contains("webhook.office.com"))
+    }
+
+    /// The webhook rules key on the endpoint shape, so an ordinary Jamf URL in
+    /// a log line still passes through — this is a log redactor, not a URL
+    /// stripper, and over-redaction costs diagnostic value.
+    func testOrdinaryURLStillPassesThroughAfterWebhookRules() {
+        let input = "Connecting to https://jamf.example.com/api/v1/policies"
+        XCTAssertEqual(LogRedactor.redact(input), input)
+    }
 }

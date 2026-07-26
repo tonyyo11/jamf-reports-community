@@ -322,6 +322,21 @@ final class DiagnosticRedactor {
         add(#"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}"#, "$1REDACTED_BASIC_CREDENTIAL")
         add(#"(webhook_url\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#,
             "$1REDACTED_WEBHOOK_URL$3")
+        // An incoming-webhook URL is itself a posting credential, and the SECRET
+        // IS THE PATH — the later hostname pass masks only scheme+host, which
+        // leaves the token intact and the URL reconstructable from a well-known
+        // host. This app stores it at `notify.url` (NotifyConfig), which the
+        // `webhook_url` pattern above never matches, so match on the endpoint
+        // shape and replace the whole value. These run before hostname masking.
+        add(#"https?://hooks\.slack\.com/services/[^\s"',}]+"#, "REDACTED_WEBHOOK_URL")
+        add(#"https?://[A-Za-z0-9.\-]+\.webhook\.office\.com/[^\s"',}]+"#,
+            "REDACTED_WEBHOOK_URL")
+        add(#"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/[^\s"',}]+"#,
+            "REDACTED_WEBHOOK_URL")
+        // Any other endpoint an operator configures: a bare `url` key holding an
+        // https value. `\b` keeps this off `webhook_url`/`base_url` (no word
+        // boundary after an underscore), so it lands on `notify.url` and peers.
+        add(#"(\burl\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#, "$1REDACTED_URL$3")
         return patterns
     }
 
