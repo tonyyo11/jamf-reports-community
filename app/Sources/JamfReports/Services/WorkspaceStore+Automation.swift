@@ -21,6 +21,13 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
     /// backup/collect as their own workspace's. Defaults false for callers that
     /// don't distinguish (e.g. the overdue-digest fact builder).
     let isMulti: Bool
+    /// Owning profile slug for a per-profile (non-multi) agent; "" for a
+    /// multi (fleet-wide) agent, which belongs to no single profile. Threaded
+    /// from `LaunchAgentService.ScheduleHealthInput.profile` so a fleet-wide
+    /// digest (e.g. the headless overdue digest, which spans every profile)
+    /// can attribute each listed schedule correctly instead of borrowing
+    /// whichever profile happened to send the card.
+    let profile: String
     /// When the schedule should have last fired (`.overdue`) — nil is not
     /// expected for a produced issue but kept optional for the model's purity.
     let expectedFire: Date?
@@ -38,6 +45,7 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
         displayName: String,
         kind: Kind,
         isMulti: Bool = false,
+        profile: String = "",
         expectedFire: Date?,
         lastRunFinishedAt: Date?,
         lastRunExitCode: Int32? = nil
@@ -46,6 +54,7 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
         self.displayName = displayName
         self.kind = kind
         self.isMulti = isMulti
+        self.profile = profile
         self.expectedFire = expectedFire
         self.lastRunFinishedAt = lastRunFinishedAt
         self.lastRunExitCode = lastRunExitCode
@@ -97,6 +106,7 @@ enum AutomationHealth {
                     displayName: input.displayName,
                     kind: .overdue,
                     isMulti: input.isMulti,
+                    profile: input.profile,
                     expectedFire: expected,
                     lastRunFinishedAt: input.lastRunFinishedAt
                 )
@@ -108,6 +118,7 @@ enum AutomationHealth {
                     displayName: input.displayName,
                     kind: .failing,
                     isMulti: input.isMulti,
+                    profile: input.profile,
                     expectedFire: input.expectedFire,
                     lastRunFinishedAt: input.lastRunFinishedAt,
                     lastRunExitCode: input.lastRunExitCode
@@ -255,8 +266,12 @@ extension WorkspaceStore {
     }
 
     /// Facts for the overdue dead-man digest. `full` mode lists each overdue
-    /// schedule (display name → expected-fire date). `minimal` collapses to a
-    /// Profile fact plus a single count with no schedule names or dates — the
+    /// schedule (owning profile + display name → expected-fire date) — the
+    /// evaluation is fleet-wide, so each entry names its own profile rather
+    /// than the one that happened to send the card; an `isMulti` entry is
+    /// fleet-wide by construction and is labeled as such instead of
+    /// attributed to any single profile. `minimal` collapses to a Profile
+    /// fact plus a single count with no schedule names or dates — the
     /// digest becomes a doorbell for headless high-security deployments.
     nonisolated static func overdueFacts(
         detail: NotifyConfig.Detail,
@@ -271,13 +286,33 @@ extension WorkspaceStore {
             ]
         }
         return overdue.prefix(10).map { issue in
-            WebhookNotifier.Fact(
-                label: issue.displayName,
+            let name: String
+            if issue.isMulti {
+                // Fleet-wide by construction — same framing OverviewView uses
+                // for its banner, so the two never disagree on wording.
+                name = "Managed automation (all profiles) — \(fleetWideDisplayName(issue.displayName))"
+            } else if !issue.profile.isEmpty {
+                name = "\(issue.profile) — \(issue.displayName)"
+            } else {
+                name = issue.displayName
+            }
+            return WebhookNotifier.Fact(
+                label: name,
                 value: issue.expectedFire.map {
                     "expected \(ISO8601DateFormatter().string(from: $0)); no run recorded"
                 } ?? "no run recorded"
             )
         }
+    }
+
+    /// Strip a leading "Managed " from a managed agent's display name so the
+    /// fleet-wide framing reads "Managed automation … — Backup …" rather than
+    /// the redundant "… — Managed Backup …". Shared with `OverviewView`'s
+    /// banner so the two surfaces can't drift on wording.
+    nonisolated static func fleetWideDisplayName(_ displayName: String) -> String {
+        displayName.hasPrefix("Managed ")
+            ? String(displayName.dropFirst("Managed ".count))
+            : displayName
     }
 
     /// Load just the `notify:` block for a profile's config.yaml. Best-effort —
@@ -296,9 +331,11 @@ extension WorkspaceStore {
     // MARK: - Catch-up-on-wake
 
     /// One in-memory guard so the catch-up sweep runs at most once per calendar
-    /// day per app run, no matter how often the app is focused. The engine's
-    /// once-per-day summary guard is the real dedupe; this just avoids
-    /// re-statting every profile on each `willBecomeActive`.
+    /// day per app run, no matter how often the app is focused. Across app
+    /// relaunches the per-kind cadence filter in `ReportEngine.collect` is the
+    /// real dedupe (this call's tiers are never the full set, so the
+    /// once-per-day FULL-collect guard never applies here); this flag just
+    /// avoids re-statting every profile on each `willBecomeActive`.
     @MainActor private static var lastCatchUpDay: String?
 
     private static let dayKeyFormatter: DateFormatter = {
@@ -311,8 +348,8 @@ extension WorkspaceStore {
     /// Backstop for laptops that slept through the scheduled freshness run:
     /// when managed freshness is on, collect today's daily-freshness snapshot
     /// (tiers refresh+inventory) for every non-excluded profile if it hasn't
-    /// happened yet. Uses the Phase-1 `force: false` once-per-day guard, so a
-    /// profile already collected today is a cheap no-op.
+    /// happened yet. Passes `force: false`, so the per-kind cadence filter in
+    /// `ReportEngine.collect` no-ops a kind that already ran today.
     ///
     /// Called from app launch and `willBecomeActive` (Mac wake / app focus).
     /// Runs off the main actor, sequentially per profile (mirroring
@@ -366,7 +403,7 @@ extension WorkspaceStore {
                 profile: profile,
                 tiers: [.refresh, .inventory],
                 skipExpensive: false,
-                force: false,  // once-per-day guard: no-op if already collected today
+                force: false,  // per-kind cadence filter: no-op if this kind already ran today
                 config: config,
                 onLine: CLIBridge.noOpOnLine
             )

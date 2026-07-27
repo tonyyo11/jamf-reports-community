@@ -334,17 +334,47 @@ final class WebhookNotifierTests: XCTestCase {
     func testOverdueFactsFullListsEverySchedule() {
         let issues = [
             AutomationHealthIssue(
-                label: "com.x.managed-freshness", displayName: "Daily freshness",
-                kind: .overdue,
+                label: "com.x.prod.freshness", displayName: "Daily freshness",
+                kind: .overdue, isMulti: false, profile: "prod",
                 expectedFire: Date(timeIntervalSince1970: 1_700_000_000),
                 lastRunFinishedAt: nil),
             AutomationHealthIssue(
-                label: "com.x.managed-reports", displayName: "Weekly reports",
-                kind: .overdue, expectedFire: nil, lastRunFinishedAt: nil),
+                label: "com.x.prod.weekly-report", displayName: "Weekly reports",
+                kind: .overdue, isMulti: false, profile: "prod",
+                expectedFire: nil, lastRunFinishedAt: nil),
         ]
         let full = WorkspaceStore.overdueFacts(detail: .full, profile: "prod", overdue: issues)
-        XCTAssertEqual(full.map { $0.label }, ["Daily freshness", "Weekly reports"])
-        XCTAssertEqual(full.first { $0.label == "Weekly reports" }?.value, "no run recorded")
+        XCTAssertEqual(full.map { $0.label }, ["prod — Daily freshness", "prod — Weekly reports"])
+        XCTAssertEqual(full.first { $0.label == "prod — Weekly reports" }?.value, "no run recorded")
+    }
+
+    /// The evaluation is fleet-wide: an issue's OWN profile must appear on its
+    /// fact, not whichever profile happened to send the digest (the bug: the
+    /// full-detail card previously carried no attribution at all).
+    func testOverdueFactsFullAttributesEachScheduleToItsOwnProfileNotTheSender() {
+        let issues = [
+            AutomationHealthIssue(
+                label: "com.x.prod.freshness", displayName: "Daily freshness",
+                kind: .overdue, isMulti: false, profile: "prod",
+                expectedFire: nil, lastRunFinishedAt: nil),
+        ]
+        // Digest sent via "dev"'s webhook, but the schedule itself belongs to "prod".
+        let full = WorkspaceStore.overdueFacts(detail: .full, profile: "dev", overdue: issues)
+        XCTAssertEqual(full.first?.label, "prod — Daily freshness")
+    }
+
+    /// An `isMulti` (global managed) schedule belongs to no single profile — it
+    /// must be labeled fleet-wide, matching OverviewView's banner wording,
+    /// never attributed to the sending profile or left unattributed.
+    func testOverdueFactsFullLabelsMultiAsFleetWideNotAnyProfile() {
+        let issues = [
+            AutomationHealthIssue(
+                label: "com.x.multi.managed-backup", displayName: "Managed Backup",
+                kind: .overdue, isMulti: true, profile: "",
+                expectedFire: nil, lastRunFinishedAt: nil),
+        ]
+        let full = WorkspaceStore.overdueFacts(detail: .full, profile: "prod", overdue: issues)
+        XCTAssertEqual(full.first?.label, "Managed automation (all profiles) — Backup")
     }
 
     func testOverdueFactsMinimalCollapsesToCount() {

@@ -130,7 +130,21 @@ func reconcileManagedAutomationHeadless(
     policy: AutomationPolicy = AutomationPolicy.current()
 ) async {
     guard shouldReconcileManagedAutomationHeadless(policy: policy) else { return }
-    _ = await ManagedAutomation.reconcileWithMigration(policy: policy, currentLabel: currentLabel)
+    let outcomes = await ManagedAutomation.reconcileWithMigration(
+        policy: policy, currentLabel: currentLabel
+    )
+    // Failures already reach AppLogger.cli.error inside reconcile(); also name
+    // them on stderr so a headless-only host's failure is visible without
+    // pulling Console logs (mirrors the GUI's toast for the same outcomes).
+    for outcome in outcomes where !outcome.succeeded {
+        let name: String
+        switch outcome.action {
+        case .install(let schedule): name = "install '\(schedule.name)'"
+        case .remove(let label): name = "remove '\(label)'"
+        }
+        let detail = outcome.failureReason ?? "unknown error"
+        fputs("[warn] managed automation reconcile: \(name) failed: \(detail)\n", stderr)
+    }
 }
 
 /// Headless dead-man overdue digest (2.6 "trust trio" #2). The GUI publishes
@@ -144,11 +158,26 @@ func reconcileManagedAutomationHeadless(
 /// usable. The `DayMarker(name: "overdue-notify")` once-per-day gate is SHARED
 /// with the GUI path so the two never double-fire. Best-effort — never throws.
 @Sendable
-private func notifyOverdueSchedulesHeadless(profiles: [String]) async {
-    let overdue = AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs())
+private func notifyOverdueSchedulesHeadless(
+    profiles: [String], excluding excluded: Set<String> = []
+) async {
+    // Excluded profiles' own per-profile agents drop out of the fleet digest;
+    // isMulti (fleet-wide) entries are never filtered — they cover every profile.
+    let inputs = LaunchAgentService.healthInputs()
+        .filter { $0.isMulti || !excluded.contains($0.profile) }
+    let overdue = AutomationHealth.evaluate(inputs: inputs)
         .filter { $0.kind == .overdue }
     guard !overdue.isEmpty else { return }
-    guard let resolved = firstUsableNotify(in: profiles) else { return }
+    guard let resolved = firstUsableNotify(in: profiles) else {
+        // No profile has a usable notify webhook = total silence on a real
+        // overdue condition. Warn loudly rather than discover it only by
+        // absence — mirrors notifyMetricAlerts' equivalent guard.
+        let message = "[warn] \(overdue.count) overdue schedule(s) but no profile has a usable "
+            + "notify webhook — overdue digest cannot be delivered"
+        AppLogger.webhook.warning("\(message, privacy: .public)")
+        fputs(message + "\n", stderr)
+        return
+    }
     let marker = DayMarker(name: "overdue-notify")
     let today = SummaryJSONParser.dateFormatter.string(from: Date())
     guard marker.lastStampedDay(in: resolved.workspace) != today else { return }
@@ -199,6 +228,11 @@ private func jamfCLIVersionBelowFloor() -> String? {
     return installed
 }
 
+/// True unless `value` looks like another flag — guards `args[idx + 1]` reads
+/// against silently consuming a missing value's own flag name (e.g.
+/// `--profile --all-profiles` taking "--all-profiles" as the profile).
+private func isFlagValue(_ value: String) -> Bool { !value.hasPrefix("--") }
+
 @Sendable
 private func scheduledRunSingle(
     profile: String,
@@ -227,7 +261,14 @@ private func scheduledRunSingle(
             options: .skipsHiddenFiles
         )) ?? []
         for entry in entries where entry.pathExtension == "log" {
-            try? LaunchAgentLogRotator.rotateIfNeeded(logURL: entry)
+            do {
+                try LaunchAgentLogRotator.rotateIfNeeded(logURL: entry)
+            } catch {
+                fputs(
+                    "[warn] could not rotate \(entry.lastPathComponent): \(error.localizedDescription)\n",
+                    stderr
+                )
+            }
         }
     }
 
@@ -312,7 +353,7 @@ private func scheduledRunSingle(
             // it — otherwise partial backups accumulate unpruned forever. The
             // run itself still reports non-success: an incomplete backup is not
             // a restore point, and the row should stay red until it's fixed.
-            if exit == 0 || exit == CLIBridge.exitCodePartialFailure {
+            if CLIBridge.backupOutputIsPrunable(exit: exit) {
                 BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
             }
             // Explain the exit code (cause + remediation) instead of a bare
@@ -418,16 +459,16 @@ private func scheduledRunSingle(
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
-        // Thread onLine so per-sheet [fail] lines reach the recorder and Run History,
-        // not just the console. The recorder is Sendable (NSLock-backed); the closure
-        // captures it as an optional so the recorder being nil is a no-op.
+        // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
+        // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
+        // and the recorder — they reach the console/launchd log only, not Run History.
         let failures = try await engine.generate(
             csvURL: resolvedCSV,
             outputURL: outputURL,
             onLine: onLine
         )
         if !failures.isEmpty {
-            let partialMsg = "[partial] \(failures.count) sheet failure(s) — see lines above"
+            let partialMsg = partialRunMarker(sheetFailures: failures.count)
             recorder?.record(partialMsg)
         }
         let message = "[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)"
@@ -474,7 +515,8 @@ private func scheduledRun(profile: String) async -> Int32 {
     // Legacy plists (pre-PR-20) omit --mode; fall back to jamf-cli-only so the
     // existing behavior (collect + generate, no CSV) is preserved verbatim.
     let mode: Schedule.RunMode = {
-        guard let idx = args.firstIndex(of: "--mode"), idx + 1 < args.count else {
+        guard let idx = args.firstIndex(of: "--mode"), idx + 1 < args.count,
+              isFlagValue(args[idx + 1]) else {
             return .jamfCLIOnly
         }
         return Schedule.RunMode(rawValue: args[idx + 1]) ?? .jamfCLIOnly
@@ -484,7 +526,8 @@ private func scheduledRun(profile: String) async -> Int32 {
     // plists) → nil, and scheduledRunSingle falls back to the mode default.
     // Unknown tokens are dropped; an all-unknown CSV resolves to nil.
     let tiers: Set<CollectionTier>? = {
-        guard let idx = args.firstIndex(of: "--tiers"), idx + 1 < args.count else {
+        guard let idx = args.firstIndex(of: "--tiers"), idx + 1 < args.count,
+              isFlagValue(args[idx + 1]) else {
             return nil
         }
         var parsed: Set<CollectionTier> = []
@@ -501,6 +544,7 @@ private func scheduledRun(profile: String) async -> Int32 {
     // recorded under a profile+mode fallback label.
     let label: String? = {
         guard let idx = args.firstIndex(of: "--label"), idx + 1 < args.count,
+              isFlagValue(args[idx + 1]),
               LaunchAgentWriter.isValidLabel(args[idx + 1]) else {
             return nil
         }
@@ -512,7 +556,8 @@ private func scheduledRun(profile: String) async -> Int32 {
         // set (run-time exclusion — never a positive --multi-profiles list, so
         // a managed all-profiles agent still picks up profiles added later).
         let excludeArg: String? = {
-            guard let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count else {
+            guard let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count,
+                  isFlagValue(args[idx + 1]) else {
                 return nil
             }
             return args[idx + 1]
@@ -547,7 +592,7 @@ private func scheduledRun(profile: String) async -> Int32 {
         await reconcileManagedAutomationHeadless(currentLabel: label)
         // Dead-man overdue digest for headless hosts — once per process, after
         // all per-profile work.
-        await notifyOverdueSchedulesHeadless(profiles: profiles.map(\.name))
+        await notifyOverdueSchedulesHeadless(profiles: profiles.map(\.name), excluding: excluded)
         return anyFailed ? 1 : 0
     }
 
@@ -766,9 +811,14 @@ func runIncludedCLI(_ arguments: [String]) async {
 CrashReporter.install()
 
 let cliArgs = CommandLine.arguments
-if cliArgs.contains("--scheduled-run"),
+// Anchored to position (not a whole-array `contains`) so an option VALUE that
+// happens to equal "--scheduled-run" can't divert the process — mirrors
+// LaunchAgentWriter's plist parser (`args[1] == "--scheduled-run"`) and the
+// isKnownSubcommand check below (`cliArgs[1]`).
+if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
    let profileIdx = cliArgs.firstIndex(of: "--profile"),
-   profileIdx + 1 < cliArgs.count {
+   profileIdx + 1 < cliArgs.count,
+   isFlagValue(cliArgs[profileIdx + 1]) {
     let profile = cliArgs[profileIdx + 1]
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value

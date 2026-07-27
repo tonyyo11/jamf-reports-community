@@ -1369,11 +1369,14 @@ struct ReportEngine: Sendable {
     /// remain valid. This probe disproves the "dead" hypothesis before the app
     /// aborts a run — and, on a weekly schedule, sticks a Failing banner for a week.
     ///
-    /// Pro-only by construction: `CollectRouter` routes Jamf School profiles to
-    /// `schoolCollect` exclusively and never calls `collect`, so this probe (a
-    /// `pro auth token` call) never runs against a School profile in normal
-    /// production use. It runs unconditionally here rather than gating a second
-    /// time on product type — School's API-key auth has no equivalent to gate on.
+    /// Invariant this probe depends on: `collect` (and therefore this probe)
+    /// must never run for a Jamf School profile — School authenticates with
+    /// an API key, not OAuth2, so `pro auth token` has no School equivalent
+    /// and a probe against one would be meaningless. Callers are responsible
+    /// for keeping that true (e.g. `CollectRouter` dispatches School profiles
+    /// to `schoolCollect` instead). It runs unconditionally here rather than
+    /// gating a second time on product type — there is no School-side
+    /// auth-confirmation call to substitute.
     typealias AuthConfirmationProbe = @Sendable (
         _ profile: String,
         _ bin: URL
@@ -2518,7 +2521,12 @@ struct ReportEngine: Sendable {
         formatter.locale = Locale(identifier: "en_US_POSIX")
         let ts = formatter.string(from: Date())
         let file = dir.appendingPathComponent("\(kind)_\(ts).json")
-        try data.write(to: file)
+        // Atomic (temp file + rename) so a same-second collision, crash, or
+        // full disk mid-write never leaves a torn snapshot on disk — mirrors
+        // CLIBridge.saveJSONSnapshot's S-01 discipline. The 0600 setAttributes
+        // below still runs on the final path regardless, so this does not
+        // change the permission it ends up with.
+        try data.write(to: file, options: .atomic)
         do {
             try FileManager.default.setAttributes(
                 [.posixPermissions: NSNumber(value: Int16(0o600))],

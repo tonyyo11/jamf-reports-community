@@ -142,6 +142,84 @@ final class ScaffoldServiceTests: XCTestCase {
                       "double-quote in column name must be escaped as \\\" in YAML output")
     }
 
+    // MARK: - YAML injection: Unicode line separators are escaped
+
+    /// `CharacterSet.newlines` includes U+2028 LINE SEPARATOR, and
+    /// `YAMLCodec`'s parser tokenizes the whole document on `.newlines`
+    /// *before* it ever unescapes a quoted scalar. An unescaped U+2028 inside
+    /// a matched column name therefore splits the written config into extra
+    /// "lines" at parse time — a crafted CSV header can inject a duplicate,
+    /// attacker-controlled top-level key that shadows the real one
+    /// (`value(for:)` returns the first match). This must be impossible
+    /// regardless of the exact replacement text `yamlEscape` chooses.
+    ///
+    /// Constructs `ScaffoldResult` directly rather than routing the header
+    /// through `matchColumns(from:profile:)` — that CSV reader has its own,
+    /// separate `CharacterSet.newlines`-based line-splitting (out of scope
+    /// here) that would truncate a multi-segment payload before it ever
+    /// reached `yamlEscape`. This isolates the vulnerability under test.
+    func test_writeConfig_unicodeLineSeparator_cannotInjectTopLevelKey() throws {
+        let maliciousHeader = "Computer Name\u{2028}output:\u{2028}  output_dir: pwned"
+        let result = ScaffoldService.ScaffoldResult(
+            family: nil,
+            columns: ["computer_name": maliciousHeader],
+            complianceColumns: [:],
+            mobileColumns: [:]
+        )
+
+        let dest = tempURL(name: "unicode-line-separator-injection")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        try ScaffoldService.writeConfig(to: dest, result: result, profile: "test")
+        let written = try String(contentsOf: dest, encoding: .utf8)
+
+        let document = try YAMLCodec.decode(written)
+        guard case .mapping(let root) = document.root else {
+            return XCTFail("top-level document must decode as a mapping")
+        }
+        let outputEntries = root.entries.filter { $0.key == "output" }
+        XCTAssertEqual(outputEntries.count, 1,
+                       "a U+2028 inside a matched column name must not inject a duplicate "
+                       + "top-level 'output' key")
+        XCTAssertEqual(outputEntries.first?.value.mapping?.value(for: "output_dir")?.stringValue,
+                       "Generated Reports",
+                       "the real output_dir must not be shadowed by injected content")
+    }
+
+    /// Same attack via U+2029 PARAGRAPH SEPARATOR, U+0085 NEXT LINE, U+000B
+    /// VERTICAL TAB, and U+000C FORM FEED — all five are members of
+    /// `CharacterSet.newlines` and must all be neutralized.
+    func test_writeConfig_otherLineSeparatorCharacters_cannotInjectTopLevelKey() throws {
+        let separators: [(name: String, char: String)] = [
+            ("U+2029 PARAGRAPH SEPARATOR", "\u{2029}"),
+            ("U+0085 NEXT LINE", "\u{0085}"),
+            ("U+000B VERTICAL TAB", "\u{000B}"),
+            ("U+000C FORM FEED", "\u{000C}"),
+        ]
+        for (name, separator) in separators {
+            let maliciousHeader = "Computer Name\(separator)output:\(separator)  output_dir: pwned"
+            let result = ScaffoldService.ScaffoldResult(
+                family: nil,
+                columns: ["computer_name": maliciousHeader],
+                complianceColumns: [:],
+                mobileColumns: [:]
+            )
+
+            let dest = tempURL(name: "line-separator-injection")
+            defer { try? FileManager.default.removeItem(at: dest) }
+            try ScaffoldService.writeConfig(to: dest, result: result, profile: "test")
+            let written = try String(contentsOf: dest, encoding: .utf8)
+
+            let document = try YAMLCodec.decode(written)
+            guard case .mapping(let root) = document.root else {
+                XCTFail("top-level document must decode as a mapping")
+                continue
+            }
+            let outputEntries = root.entries.filter { $0.key == "output" }
+            XCTAssertEqual(outputEntries.count, 1,
+                           "\(name) must not inject a duplicate top-level 'output' key")
+        }
+    }
+
     // MARK: - Family detection in ScaffoldResult
 
     func test_matchColumns_computerCSV_familyIsComputers() throws {

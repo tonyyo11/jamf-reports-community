@@ -358,6 +358,15 @@ enum ScaffoldService {
     /// Escape a string for embedding inside a YAML double-quoted scalar.
     /// YAML requires `\` → `\\`, `"` → `\"`, and control chars to be escaped.
     /// Internal (not private) so `runSchoolScaffold` shares the same escaping.
+    ///
+    /// U+2028/U+2029/U+0085/U+000B/U+000C are also neutralized: they are all
+    /// members of `CharacterSet.newlines`, which `YAMLCodec`'s parser splits
+    /// the document on *before* any quote handling — an unescaped one inside
+    /// this scalar would become a real line break at attacker-chosen
+    /// indentation, letting a crafted CSV header inject a sibling top-level
+    /// key. `YAMLCodec` does not decode `\uXXXX`, so (like `\n`/`\r`/`\t`
+    /// above) this is a one-way, structurally-safe escape, not a
+    /// round-trippable one.
     static func yamlEscape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -365,6 +374,11 @@ enum ScaffoldService {
             .replacingOccurrences(of: "\n", with: "\\n")
             .replacingOccurrences(of: "\r", with: "\\r")
             .replacingOccurrences(of: "\t", with: "\\t")
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            .replacingOccurrences(of: "\u{0085}", with: "\\u0085")
+            .replacingOccurrences(of: "\u{000B}", with: "\\u000B")
+            .replacingOccurrences(of: "\u{000C}", with: "\\u000C")
     }
 
     /// Minimal RFC 4180 header parser.
