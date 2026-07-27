@@ -22,8 +22,9 @@ enum HtmlSectionFormatters {
     /// Rejects strings starting with a URL scheme that can execute script (e.g.
     /// `javascript:`, `vbscript:`, or `data:` variants that load HTML/JS) by
     /// returning the literal text `[blocked]`. Control characters (including the
-    /// null-byte bypass `java\0script:`) are stripped before scheme matching so
-    /// `\0`-laced strings cannot slip past the prefix check.
+    /// null-byte bypass `java\0script:`) are stripped before scheme matching, and
+    /// embedded tab/CR/LF are removed for that check too (matching how WHATWG URL
+    /// parsers read a URL) so `java\tscript:` cannot slip past the prefix check.
     ///
     /// Strings destined for a `<script>` block must use `HtmlReport.jsonArray`
     /// instead — HTML escaping is wrong in JavaScript context.
@@ -34,7 +35,14 @@ enum HtmlSectionFormatters {
             !(scalar.value < 0x20 && scalar != "\t" && scalar != "\n" && scalar != "\r")
                 && scalar.value != 0x7F
         })
-        let trimmed = stripped.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        // URL parsers strip tab/CR/LF anywhere, not just at the ends. `stripped`
+        // itself is untouched so ordinary text still renders them.
+        let schemeCheckCandidate = stripped
+            .replacingOccurrences(of: "\t", with: "")
+            .replacingOccurrences(of: "\r", with: "")
+            .replacingOccurrences(of: "\n", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
         let blockedPrefixes = [
             "javascript:",
             "vbscript:",
@@ -43,7 +51,7 @@ enum HtmlSectionFormatters {
             "data:application/javascript",
             "data:application/x-javascript",
         ]
-        if blockedPrefixes.contains(where: { trimmed.hasPrefix($0) }) {
+        if blockedPrefixes.contains(where: { schemeCheckCandidate.hasPrefix($0) }) {
             return "[blocked]"
         }
         return stripped

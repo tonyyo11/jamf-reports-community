@@ -1866,7 +1866,14 @@ struct ReportEngine: Sendable {
 
         for patchItem in patchItems {
             let titleId = patchItem.id.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !titleId.isEmpty else { continue }
+            // titleId is server-supplied and lands in a bare positional argv
+            // slot below — refuse a leading dash exactly like singleDeviceDetail
+            // already refuses one. The rejected value is not echoed.
+            guard CLIBridge.isSafeDeviceIdentifier(titleId) else {
+                onLine(.init(timestamp: Date(), level: .warn,
+                             text: "[warn] patch-definitions: skipping title with an unsafe id"))
+                continue
+            }
             // Sanitize id for filename — mirrors Python's `re.sub(r"[^0-9A-Za-z._-]", "_", id)`.
             let safeId = titleId.unicodeScalars.map { c -> Character in
                 let ch = Character(c)

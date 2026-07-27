@@ -709,6 +709,69 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertEqual(escaped, "MacBook Pro")
     }
 
+    // MARK: - S2: collectPatchReleaseDates rejects an unsafe title id
+
+    /// `titleId` lands in a bare positional argv slot in `collectPatchReleaseDates`;
+    /// it must be refused via the same guard `singleDeviceDetail` already applies
+    /// to device identifiers. `collectPatchReleaseDates` is a private engine
+    /// function that spawns a real jamf-cli process, so it isn't independently
+    /// invokable from a unit test — this pins the exact guard vectors the fix
+    /// now checks before that argv slot is built.
+    func testIsSafeDeviceIdentifierRejectsFlagLikePatchTitleIds() {
+        XCTAssertFalse(CLIBridge.isSafeDeviceIdentifier("-p"))
+        XCTAssertFalse(CLIBridge.isSafeDeviceIdentifier("--url=x"))
+        XCTAssertFalse(CLIBridge.isSafeDeviceIdentifier(""))
+        XCTAssertTrue(CLIBridge.isSafeDeviceIdentifier("123"))
+    }
+
+    // MARK: - P3: why XLSXValidator is not wired into generate()
+
+    /// `XLSXValidator` has no production call sites, and this pins the reason:
+    /// it treats a sheet with no row elements as invalid (deliberately — see
+    /// `testXLSXValidatorDetectsEmptySheetData`), but a real full-instance
+    /// report legitimately contains empty sheets. Wiring it as-is warns on
+    /// every genuine generate. If this test starts failing, either the
+    /// validator's empty-sheet rule or the engine's output changed, and
+    /// whether to wire it becomes a live question again.
+    func testEngineOutputTripsXLSXValidatorEmptySheetRule() async throws {
+        let fixtureCSV = fixturesDir.appendingPathComponent("csv/dummy_all_macs.csv")
+        let fixtureConfig = fixturesDir.appendingPathComponent("config/dummy.yaml")
+
+        guard FileManager.default.fileExists(atPath: fixtureCSV.path),
+              FileManager.default.fileExists(atPath: fixtureConfig.path) else {
+            throw XCTSkip("Fixtures not available")
+        }
+
+        var config = try ConfigLoader.load(from: fixtureConfig)
+        config = config.withDefaults()
+
+        let emptyDataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xlsx-validate-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: emptyDataDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: emptyDataDir) }
+
+        let outDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("xlsx-validate-out-\(UUID().uuidString)")
+        let outURL = outDir.appendingPathComponent("test.xlsx")
+        defer { try? FileManager.default.removeItem(at: outDir) }
+
+        let engine = ReportEngine(config: config, dataDir: emptyDataDir)
+        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
+
+        let report = try XLSXValidator().validate(at: outURL)
+        XCTAssertFalse(
+            report.isValid,
+            "Engine output is expected to trip the empty-sheet rule; if it no longer "
+                + "does, revisit wiring XLSXValidator into generate()"
+        )
+        XCTAssertTrue(
+            report.issues.contains { $0.message.contains("no rows") },
+            "Expected the empty-sheet rule to be the reason: \(report.issues.map(\.message))"
+        )
+    }
+
     // MARK: - Helpers
 
     /// Thread-safe collector for `@Sendable` log-line closures so Swift 6

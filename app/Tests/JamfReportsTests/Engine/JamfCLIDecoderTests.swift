@@ -122,6 +122,31 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(v.description, "")
     }
 
+    /// S1: `Int(_:)` traps for a Double outside Int64 range. A JSON number
+    /// too large for Int64 decodes into the AnyCodable Double branch —
+    /// intValue must return nil there, not crash the process.
+    func testAnyCodableIntValueDoesNotTrapOnOversizedJSONNumber() throws {
+        // Array-wrapped so decoding is unambiguous JSON regardless of
+        // top-level-fragment support: 9223372036854775808 == Int64.max + 1.
+        let decoded = try JSONDecoder().decode(
+            [AnyCodable].self, from: Data("[9223372036854775808]".utf8)
+        )
+        XCTAssertNil(decoded[0].intValue)
+    }
+
+    /// Ordinary whole-number Doubles must still convert.
+    func testAnyCodableIntValueOrdinaryDoubleUnchanged() {
+        XCTAssertEqual(AnyCodable(Double(42)).intValue, 42)
+        XCTAssertEqual(AnyCodable(Double(-7)).intValue, -7)
+    }
+
+    /// The overflow guard must not change rounding: `Int(_:)` truncated toward
+    /// zero, so a fractional count must keep truncating rather than round up.
+    func testAnyCodableIntValueTruncatesTowardZero() {
+        XCTAssertEqual(AnyCodable(2.7).intValue, 2)
+        XCTAssertEqual(AnyCodable(-2.7).intValue, -2)
+    }
+
     // MARK: - ExtensionAttribute
 
     func testExtensionAttributeDecodesBooleanDataType() throws {
