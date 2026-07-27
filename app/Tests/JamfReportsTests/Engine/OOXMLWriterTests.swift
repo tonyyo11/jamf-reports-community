@@ -109,4 +109,30 @@ final class OOXMLWriterTests: XCTestCase {
         let data = try Data(contentsOf: url)
         XCTAssertEqual(data.prefix(2), Data([0x50, 0x4B]))
     }
+
+    // MARK: - Sheet name sanitization
+
+    func testAddSheetStripsControlCharactersFromName() {
+        let workbook = Workbook()
+        let ws = workbook.addSheet("Report\u{0B}Name")
+        XCTAssertFalse(
+            ws.name.unicodeScalars.contains(Unicode.Scalar(0x0B)!),
+            "Sheet name must not contain XML-illegal control characters"
+        )
+        XCTAssertEqual(ws.name, "ReportName")
+    }
+
+    func testAddSheetUniquifiesNamesThatCollideAfterTruncation() {
+        let workbook = Workbook()
+        // Both names share their first 31 characters (40 "A"s), so truncation
+        // to Excel's 31-character sheet-name limit collapses them to the same
+        // base string.
+        let longBase = String(repeating: "A", count: 40)
+        let ws1 = workbook.addSheet("\(longBase)First")
+        let ws2 = workbook.addSheet("\(longBase)Second")
+        XCTAssertNotEqual(ws1.name, ws2.name,
+                          "Names colliding only past the 31-char limit must not collide")
+        XCTAssertLessThanOrEqual(ws1.name.count, 31)
+        XCTAssertLessThanOrEqual(ws2.name.count, 31)
+    }
 }

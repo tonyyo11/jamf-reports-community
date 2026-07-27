@@ -272,7 +272,7 @@ enum SnapshotManifest {
     private static func newestSnapshot(in typeDir: URL, fm: FileManager) -> URL? {
         guard let entries = try? fm.contentsOfDirectory(
             at: typeDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
+            includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         ) else { return nil }
         // PR-10 / security-reviewer SHOULD-FIX: exclude not just `manifest.json`
@@ -283,12 +283,11 @@ enum SnapshotManifest {
             $0.pathExtension.lowercased() == "json"
             && !$0.lastPathComponent.hasSuffix(fileName)
         }
+        // Order by FILENAME timestamp, matching loadLatestSnapshotData — mtime
+        // lies on synced storage, so it could verify a file generate won't read.
         return candidates.max { lhs, rhs in
-            let l = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            let r = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate ?? .distantPast
-            return l < r
+            MSCPChartDataBuilder.dateFromSnapshotFilename(lhs)
+                < MSCPChartDataBuilder.dateFromSnapshotFilename(rhs)
         }
     }
 

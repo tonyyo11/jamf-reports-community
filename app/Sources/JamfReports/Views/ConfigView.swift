@@ -560,40 +560,46 @@ private struct ColumnsTab: View {
                 // overwrite: fill empty mappings, repair mappings whose CSV
                 // column is gone, keep everything else (agents, custom EAs,
                 // thresholds) untouched. ConfigService.save preserves unmanaged keys.
-                let sample = try ScaffoldService.readSample(from: csvURL)
-                let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
-                var loaded = try ConfigService.load(profile: profile)
-                let isMobile = result.family == .mobile
-                let detected = isMobile ? result.mobileColumns : result.columns
-                let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
-                let merge = ScaffoldService.mergeColumns(
-                    existing: existing, detected: detected, csvHeaders: sample.headers)
-                var report = merge.report
-                if isMobile { loaded.state.mobileColumns = merge.merged }
-                else { loaded.state.columns = merge.merged }
+                // File reads + config load/save; keep off the main actor so a
+                // large CSV export never blocks the UI.
+                let (report, familyLabel) = try await Task.detached {
+                    () throws -> (ScaffoldService.ColumnMergeReport, String) in
+                    let sample = try ScaffoldService.readSample(from: csvURL)
+                    let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
+                    var loaded = try ConfigService.load(profile: profile)
+                    let isMobile = result.family == .mobile
+                    let detected = isMobile ? result.mobileColumns : result.columns
+                    let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
+                    let merge = ScaffoldService.mergeColumns(
+                        existing: existing, detected: detected, csvHeaders: sample.headers)
+                    var report = merge.report
+                    if isMobile { loaded.state.mobileColumns = merge.merged }
+                    else { loaded.state.columns = merge.merged }
 
-                // Compliance columns (computer family only) merge the same way —
-                // they live in two scalar fields, not the columns dict.
-                if !isMobile {
-                    let existingCompliance = [
-                        "failures_count_column": loaded.state.failuresCountColumn,
-                        "failures_list_column": loaded.state.failuresListColumn,
-                    ]
-                    let cMerge = ScaffoldService.mergeColumns(
-                        existing: existingCompliance, detected: result.complianceColumns,
-                        csvHeaders: sample.headers)
-                    loaded.state.failuresCountColumn =
-                        cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
-                    loaded.state.failuresListColumn =
-                        cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
-                    report.added += cMerge.report.added
-                    report.repaired += cMerge.report.repaired
-                    report.keptCount += cMerge.report.keptCount
-                    report.staleUnresolved += cMerge.report.staleUnresolved
-                }
-                _ = try ConfigService.save(
-                    profile: profile, state: loaded.state, existingDocument: loaded.document)
-                let familyLabel = isMobile ? "mobile device export" : "computer export"
+                    // Compliance columns (computer family only) merge the same way —
+                    // they live in two scalar fields, not the columns dict.
+                    if !isMobile {
+                        let existingCompliance = [
+                            "failures_count_column": loaded.state.failuresCountColumn,
+                            "failures_list_column": loaded.state.failuresListColumn,
+                        ]
+                        let cMerge = ScaffoldService.mergeColumns(
+                            existing: existingCompliance, detected: result.complianceColumns,
+                            csvHeaders: sample.headers)
+                        loaded.state.failuresCountColumn =
+                            cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
+                        loaded.state.failuresListColumn =
+                            cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
+                        report.added += cMerge.report.added
+                        report.repaired += cMerge.report.repaired
+                        report.keptCount += cMerge.report.keptCount
+                        report.staleUnresolved += cMerge.report.staleUnresolved
+                    }
+                    _ = try ConfigService.save(
+                        profile: profile, state: loaded.state, existingDocument: loaded.document)
+                    let familyLabel = isMobile ? "mobile device export" : "computer export"
+                    return (report, familyLabel)
+                }.value
                 await MainActor.run {
                     workspace.toast = Toast(
                         message: "Merged \(familyLabel) column mappings into \(profile)'s "
@@ -1159,7 +1165,9 @@ private struct OutputTab: View {
                         Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
                         outputToggleRow(
                             title: "Require snapshot manifest",
-                            detail: "jamf_cli.require_manifest — hard-fail on tampered or missing-entry snapshots",
+                            detail: "jamf_cli.require_manifest — hard-fail on tampered "
+                                + "(mismatched or corrupt) snapshots; missing/legacy manifests "
+                                + "are tolerated",
                             isOn: $ws.configState.jamfCLIRequireManifest
                         )
                     }

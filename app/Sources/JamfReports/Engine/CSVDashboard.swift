@@ -39,6 +39,23 @@ enum CSVParser {
         return (columns, records)
     }
 
+    /// Parse only the header row, skipping the full O(rows) scan in `parseText`.
+    /// ponytail: splits on the first raw newline, so a header containing a
+    /// quoted embedded newline would truncate — no Jamf export emits one.
+    static func parseHeader(_ data: Data) -> [String]? {
+        var raw = data
+        let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
+        if raw.prefix(3).elementsEqual(bom) { raw = raw.dropFirst(3) }
+        let headerBytes: Data
+        if let newlineIndex = raw.firstIndex(of: 0x0A) {
+            headerBytes = raw[..<newlineIndex]
+        } else {
+            headerBytes = raw
+        }
+        guard let text = String(data: headerBytes, encoding: .utf8) else { return nil }
+        return parseText(text).first
+    }
+
     static func parseText(_ text: String) -> [[String]] {
         var rows: [[String]] = []
         var fields: [String] = []
@@ -395,11 +412,16 @@ struct CSVDashboard: Sendable {
         }
         row += 1
 
-        let staleRows = rows.filter { isStale($0, days: staleThreshold) }
-            .sorted { daysSince(value($0, .lastCheckin)) ?? 0 > daysSince(value($1, .lastCheckin)) ?? 0 }
+        // Precompute once per row — the comparator would otherwise re-parse
+        // the check-in date O(n log n) times.
+        let staleRows: [(row: CSVRow, days: Int?)] = rows
+            .filter { isStale($0, days: staleThreshold) }
+            .map { csvRow -> (row: CSVRow, days: Int?) in
+                (csvRow, daysSince(value(csvRow, .lastCheckin)))
+            }
+            .sorted { ($0.days ?? 0) > ($1.days ?? 0) }
 
-        for csvRow in staleRows {
-            let days = daysSince(value(csvRow, .lastCheckin))
+        for (csvRow, days) in staleRows {
             let rawManager = col(.manager).flatMap { csvRow[$0] }
             ws.write(value(csvRow, .computerName), row: row, col: 0, format: .yellow)
             ws.write(value(csvRow, .serialNumber), row: row, col: 1, format: .yellow)
@@ -995,6 +1017,12 @@ struct DateParser: Sendable {
         guard !s.isEmpty else { return nil }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        // Jamf CSV timestamps carry no zone, so the same export yields different
+        // day counts on machines in different zones. Pinned to local to match
+        // prior implicit behavior — switching to UTC is the consistent fix but
+        // would shift every existing user's days-since-checkin history, so it
+        // needs a deliberate release decision rather than a silent change.
+        formatter.timeZone = TimeZone.current
         for fmt in Self.formats {
             formatter.dateFormat = fmt
             if let d = formatter.date(from: s) { return d }

@@ -244,4 +244,64 @@ final class CSVDashboardTests: XCTestCase {
         XCTAssertTrue(content.contains("FileVault 2 - Status"),
                       "EA Warnings sheet must name the expected column.")
     }
+
+    // MARK: - DateParser time zone
+
+    func testDateParserResolvesAgainstExplicitLocalTimeZone() {
+        // Pins DateParser's zone-less formats to the local zone explicitly —
+        // if a future change swaps in a different zone, this breaks loudly
+        // rather than silently shifting every user's day counts.
+        let parser = DateParser()
+        let raw = "2024-06-15"
+        let expectedFormatter = DateFormatter()
+        expectedFormatter.locale = Locale(identifier: "en_US_POSIX")
+        expectedFormatter.dateFormat = "yyyy-MM-dd"
+        expectedFormatter.timeZone = TimeZone.current
+        let expected = expectedFormatter.date(from: raw)
+        XCTAssertEqual(parser.parse(raw), expected,
+                       "Zone-less dates must resolve against the local time zone")
+    }
+
+    // MARK: - Stale Devices sort order
+
+    func testStaleDevicesSortedMostStaleFirst() throws {
+        func dateString(daysAgo: Int) -> String {
+            let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date())!
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            return formatter.string(from: date)
+        }
+        let header = "Computer Name,Serial Number,Last Check-in"
+        let rows = [
+            "Mac-Least,AAA,\(dateString(daysAgo: 40))",
+            "Mac-Most,BBB,\(dateString(daysAgo: 90))",
+            "Mac-Mid,CCC,\(dateString(daysAgo: 60))",
+        ]
+        let csvText = ([header] + rows).joined(separator: "\n") + "\n"
+        let csvData = Data(csvText.utf8)
+        let wb = Workbook()
+        var config = ReportConfig()
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        cols.serialNumber = "Serial Number"
+        cols.lastCheckin = "Last Check-in"
+        config.columns = cols
+        var thresholds = ThresholdsConfig()
+        thresholds.staleDeviceDays = 30
+        config.thresholds = thresholds
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csvData, workbook: wb))
+        dashboard.writeStaleDevices()
+        let ws = try XCTUnwrap(wb.sheet(named: "Stale Devices"))
+        // Header row consumes rows 0-3 (2-row title/subtitle merge + the column header row);
+        // data rows start at row 4.
+        let names = ws.cells
+            .filter { $0.col == 0 && $0.row >= 4 }
+            .sorted { $0.row < $1.row }
+            .compactMap { cell -> String? in
+                if case .string(let s) = cell.value { return s }
+                return nil
+            }
+        XCTAssertEqual(names, ["Mac-Most", "Mac-Mid", "Mac-Least"],
+                       "Stale devices must remain sorted most-stale-first")
+    }
 }

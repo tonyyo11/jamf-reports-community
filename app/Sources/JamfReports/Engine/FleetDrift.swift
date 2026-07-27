@@ -20,7 +20,7 @@ enum PriorCSVLoader {
     static func load(historicalDir: URL, currentCSVURL: URL) -> Result? {
         let fm = FileManager.default
         guard let currentData = try? Data(contentsOf: currentCSVURL),
-              let (currentHeaders, _) = try? CSVParser.parse(currentData) else {
+              let currentHeaders = CSVParser.parseHeader(currentData) else {
             return nil
         }
         let currentSize = currentData.count
@@ -61,8 +61,9 @@ enum PriorCSVLoader {
                 if candidateHash == currentHash { continue }
             }
 
-            // Skip if column schema differs.
-            guard let (candidateHeaders, _) = try? CSVParser.parse(candidateData) else { continue }
+            // Skip if column schema differs — a cheap header-only parse avoids a
+            // full row parse for candidates that will be rejected anyway.
+            guard let candidateHeaders = CSVParser.parseHeader(candidateData) else { continue }
             guard candidateHeaders == currentHeaders else {
                 print("[skip] \(url.lastPathComponent): column schema differs")
                 continue
