@@ -9,11 +9,18 @@ versions in this repository map to git tags.
 
 ### Security
 
-A verified security review covered the reporting services and then the report
-engine, and everything either review turned up is fixed here. None of it can be
-triggered remotely on its own, and the two worth reading are the webhook one (it
-needs an action from you) and the risk scorer (it was under-reporting devices
-you'd want to see).
+A verified security review covered the reporting services, then the report
+engine, and then the app's scheduled-run entry point and command-line tool.
+Everything those reviews turned up is fixed here. None of it can be triggered
+remotely on its own, and the two worth reading are the webhook one (it needs an
+action from you) and the risk scorer (it was under-reporting devices you'd want
+to see).
+
+The third review — covering the unattended scheduled-run path, every webhook
+the app sends, and the bundled `jamf-reports` command-line tool — found **no
+new security issues**. What it did find was a set of accuracy and reliability
+problems, several of which caused a run that had not done its job to look like
+one that had; those are under Fixed below.
 
 - Diagnostic bundles no longer carry your Teams or Slack notification webhook
   URL. The bundle exists to be shared, and its redaction pass promised
@@ -69,6 +76,53 @@ you'd want to see).
 - Re-detecting column mappings from a CSV export no longer freezes the window
   while the file is read, and building the trend comparison no longer parses
   the same export three times.
+- A scheduled run that crashed, was killed, or lost power partway through no
+  longer appears in Run History as a successful run. Such a run never gets to
+  write its closing line, and the missing line was being read as "exited
+  cleanly" — so the row showed OK and EXIT 0 for a run that never finished. It
+  now shows a warning and no exit code. The overdue banner already caught this
+  case about an hour later; the run list was the surface still claiming success.
+- A report that failed to write some of its sheets no longer shows as fully
+  healthy. The Schedules "Last Run" column and Automation Health read only a
+  success flag and ignored the failed-sheet count sitting beside it, so a
+  workbook missing sheets reported the same green state as a complete one. Both
+  now show the run as partial, and the command-line `generate` records the same
+  partial marker the scheduled path always has.
+- A fleet-health alert whose webhook post fails is now retried on the next run.
+  The app was marking the alert as sent before knowing whether it had been, so
+  a brief network problem silenced that alert for the rest of the day. This is
+  the same "only claim it once it's delivered" rule the overdue digest already
+  followed.
+- `jamf-reports collect` now collects Jamf Protect data. The bundled
+  command-line tool skipped the Protect step that the app and its scheduled
+  runs perform, then reported success — so anyone collecting via their own cron
+  job had Protect dashboards quietly going stale with nothing to indicate it.
+  Jamf School profiles invoked this way are now routed correctly too.
+- A column name containing an invisible line-break character can no longer
+  corrupt `config.yaml` when mappings are scaffolded from a CSV export. Certain
+  Unicode separators were written through unescaped and were later read as real
+  line breaks, which could silently add settings nobody typed. This affects both
+  the Jamf Pro and Jamf School scaffolders.
+- A monthly report schedule no longer tears itself down and reinstalls on every
+  single run. The app wrote the schedule's date one way and read it back
+  another, so it never recognised its own agent as unchanged.
+- Changing the excluded-profiles list in Automation now takes effect. The app
+  compared schedules by settings that did not include exclusions, so an
+  exclusions-only change was accepted in the UI and never reached disk.
+  Excluded profiles are also no longer listed in the overdue notification.
+- The overdue notification now names which profile each late schedule belongs
+  to. It evaluates every profile on the machine, but the detailed card listed
+  bare schedule names — so on a multi-profile Mac there was no way to tell whose
+  schedule was late. Fleet-wide schedules are labelled as such.
+- Backups that finish with a partial export are now pruned by retention instead
+  of accumulating, from both the app and the command line.
+- Cached collection data is now written atomically, so a crash or a full disk
+  mid-write cannot leave a half-written file behind for the next report to read.
+- Unattended runs now report problems they previously swallowed: a failure to
+  apply an automation change, a failure to rotate a log, and the case where a
+  schedule is overdue but no profile has a webhook configured to say so.
+- Error messages no longer tell you to check Run History for failures that
+  never reach it — the command-line tool does not record there.
 
 ## [2.6.0] - 2026-07-25
 
