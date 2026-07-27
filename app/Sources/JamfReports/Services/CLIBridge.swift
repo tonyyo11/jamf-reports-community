@@ -666,9 +666,13 @@ final class CLIBridge {
     /// that's due. `RefreshCoordinator` passes `[.refresh]` for its
     /// profile-switch backfill so it doesn't pull every list endpoint.
     ///
-    /// `force: true` bypasses the once-per-day guard in `ReportEngine.collect`
-    /// so ad-hoc Refresh calls always fetch fresh data. Scheduled collects
-    /// (via `main.swift --scheduled-run`) pass `force: false` (the default).
+    /// `force: true` bypasses the once-per-day FULL-collect guard in
+    /// `ReportEngine.collect` when `tiers` is left at its default (full) set.
+    /// For a narrower set — e.g. `RefreshCoordinator`'s `[.refresh]` — that
+    /// guard never applies regardless; what `force: true` bypasses there is
+    /// the per-kind cadence filter, so ad-hoc Refresh calls still always
+    /// fetch fresh data. Scheduled collects (via `main.swift --scheduled-run`)
+    /// pass `force: false` (the default).
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
@@ -758,6 +762,15 @@ final class CLIBridge {
     /// - Parameters:
     ///   - code: the process exit code.
     ///   - operation: human phrase for what failed, e.g. "HTML report generation".
+    /// True for the exit codes after which `pro backup` has left output on
+    /// disk that retention must prune: `0`, and `exitCodePartialFailure` (7 — a
+    /// partial export is still finalized to `backups/<timestamp>/`). All three
+    /// backup call sites (scheduled, GUI, CLI) share this one rule; they used
+    /// to spell it out separately and drifted apart.
+    nonisolated static func backupOutputIsPrunable(exit code: Int32) -> Bool {
+        code == 0 || code == exitCodePartialFailure
+    }
+
     nonisolated static func explainExit(_ code: Int32, operation: String) -> String {
         let detail: String
         switch code {
@@ -774,15 +787,16 @@ final class CLIBridge {
                 + "then try again."
         case exitCodePartialFailure:
             detail = "partial failure (exit 7) — some sub-operations failed but partial data "
-                + "was returned and saved. Check Run History for the specific failures."
+                + "was returned and saved. Review this run's log output for the specific "
+                + "failures."
         case exitCodeUsage:
-            detail = "internal argument error (exit 2) — please report this with the Run "
-                + "History log."
+            detail = "internal argument error (exit 2) — please report this along with this "
+                + "run's log output."
         case 1:
-            detail = "exit 1 — usually a network error or a per-command failure. Check Run "
-                + "History for the failing command."
+            detail = "exit 1 — usually a network error or a per-command failure. Review this "
+                + "run's log output for the failing command."
         default:
-            detail = "exit \(code) — check Run History for details."
+            detail = "exit \(code) — review this run's log output for details."
         }
         return "\(operation) failed: \(detail)"
     }

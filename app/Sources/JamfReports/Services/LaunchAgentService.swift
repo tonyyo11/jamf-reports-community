@@ -372,7 +372,8 @@ enum LaunchAgentService {
             enabled: enabled,
             launchAgentLabel: label,
             multiTarget: labelParts.isMulti ? (multiTarget(from: args) ?? MultiTarget(scope: .all)) : nil,
-            tiers: tiers(from: args)
+            tiers: tiers(from: args),
+            excludedProfiles: excludedProfiles(from: args)
         )
     }
 
@@ -767,6 +768,25 @@ enum LaunchAgentService {
         return result.isEmpty ? nil : result
     }
 
+    /// Parse `--exclude-profiles <csv>` back into a sorted, validated profile
+    /// list — the read-side counterpart of `LaunchAgentWriter.excludeArguments`.
+    ///
+    /// Returns `nil` when the flag is absent (mirrors `tiers(from:)`). An
+    /// all-invalid CSV also collapses to `nil` rather than an empty-but-non-nil
+    /// array, so "no exclusions" has one representation for `signature()`.
+    private static func excludedProfiles(from args: [String]) -> [String]? {
+        guard let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count else {
+            return nil
+        }
+        let profiles = Set(
+            args[idx + 1]
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter(ProfileService.isValid)
+        ).sorted()
+        return profiles.isEmpty ? nil : profiles
+    }
+
     // MARK: - Cadence / Next Run
 
     /// Convert a `StartCalendarInterval` value (dict or array of dicts) into a
@@ -927,6 +947,10 @@ enum LaunchAgentService {
         /// (`exit_code`). Carried so a failing row can name the CAUSE
         /// (auth / privileges / throttling) instead of only "reported failure".
         let exitCode: Int32?
+        /// `sheet_failures` — count of xlsx/HTML sheets that failed to render
+        /// on an otherwise-successful run. nil for status files written
+        /// before this field existed (back-compat, reads as "no failures").
+        let sheetFailures: Int?
         let artifacts: [String]
     }
 
@@ -979,6 +1003,7 @@ enum LaunchAgentService {
             finishedAt: dateValue(payload["finished_at"]),
             success: payload["success"] as? Bool,
             exitCode: exitCodeValue(payload["exit_code"]),
+            sheetFailures: payload["sheet_failures"] as? Int,
             artifacts: artifactLabels(from: payload, root: root)
         )
     }
@@ -996,6 +1021,7 @@ enum LaunchAgentService {
             finishedAt: dateValue(payload["finished_at"]),
             success: payload["success"] as? Bool,
             exitCode: exitCodeValue(payload["exit_code"]),
+            sheetFailures: payload["sheet_failures"] as? Int,
             artifacts: []
         )
     }
@@ -1065,6 +1091,11 @@ enum LaunchAgentService {
         logSummary: ParsedLogSummary
     ) -> Schedule.LastStatus {
         if let success = runStatus?.success {
+            // A successful run can still have failed to render some sheets —
+            // check that BEFORE the ok/fail split so `.partial` is reachable.
+            if success, let sheetFailures = runStatus?.sheetFailures, sheetFailures > 0 {
+                return .partial
+            }
             return success ? .ok : .fail
         }
         if let exitCode = logSummary.exitCode {

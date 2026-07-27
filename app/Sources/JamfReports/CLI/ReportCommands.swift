@@ -1,6 +1,16 @@
 import ArgumentParser
 import Foundation
 
+/// Load `profile`'s config tolerantly for `CollectRouter`'s product-type
+/// routing: a missing workspace or unparseable `config.yaml` degrades to nil
+/// (which `CollectRouter` treats as Jamf Pro) rather than failing the command,
+/// mirroring `CLIBridge.collect`'s identical fallback.
+func collectRoutingConfig(profile: String) -> ReportConfig? {
+    ProfileService.workspaceURL(for: profile).flatMap {
+        try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+    }
+}
+
 struct Generate: AsyncParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Generate an xlsx workbook for a profile.")
     @Option(help: "Workspace profile slug.") var profile: String
@@ -27,6 +37,12 @@ struct Generate: AsyncParsableCommand {
             // the path (scripts can still find the artifact); exit non-zero to
             // flag partial.
             print(outputURL.path)
+            if !failures.isEmpty {
+                // Same marker text the scheduled path records (main.swift), so
+                // RunHistoryService.isPartialRun recognizes a partially-failed
+                // CLI generate the same way it does a scheduled one.
+                signals.recorder?.record(partialRunMarker(sheetFailures: failures.count))
+            }
             await signals.finishSuccess(artifact: outputURL, sheetFailures: failures.count)
             if !failures.isEmpty {
                 CLIRun.fail(
@@ -47,16 +63,22 @@ struct Collect: AsyncParsableCommand {
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
+        let config = collectRoutingConfig(profile: profile)
         // Trust signals — a CLI collect now records to Run History, evaluates
         // metric alerts, and posts the notify digest exactly like a snapshot-only
         // scheduled run. All best-effort; the exit code and stdout are unchanged.
-        let signals = CLIRunSignals.begin(profile: profile, kind: .collect)
+        let signals = CLIRunSignals.begin(profile: profile, kind: .collect, config: config)
         do {
-            try await ReportEngine.collect(
+            // Route through CollectRouter — not ReportEngine.collect directly —
+            // so a Jamf School profile collects via schoolCollect and a
+            // Protect-enabled Pro profile also runs protectCollect, matching
+            // every other production collect entry point.
+            try await CollectRouter.run(
                 profile: profile,
-                workspacePaths: WorkspacePaths.self,
                 tiers: CLIRun.parseTiers(tiers),
                 force: force,
+                config: config,
+                workspacePaths: WorkspacePaths.self,
                 onLine: signals.teeing(CLIRun.printLogLine)
             )
             print("[ok] collect complete for \(profile)")

@@ -195,6 +195,62 @@ final class LaunchAgentServiceTests: XCTestCase {
                        "Tier set must survive the write → parse round trip")
     }
 
+    // MARK: - --exclude-profiles round trip (was write-only; parse dropped it)
+
+    func testExcludeProfilesRoundTripThroughWriteAndParse() throws {
+        var sched = Schedule(
+            name: "Exclude Round Trip",
+            profile: "alpha",
+            schedule: "Daily 07:00",
+            cadence: "daily",
+            mode: .jamfCLIFull,
+            next: "-", last: "-", lastStatus: .ok,
+            artifacts: [], enabled: true,
+            multiTarget: MultiTarget(scope: .all)
+        )
+        sched.excludedProfiles = ["dummy", "sandbox"]
+        let agentLabel = try XCTUnwrap(LaunchAgentWriter.label(for: sched))
+
+        let tempExec = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fake-jamf-reports-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempExec.path, contents: Data("#!/bin/sh\nexit 0\n".utf8))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: tempExec.path
+        )
+        defer { try? FileManager.default.removeItem(at: tempExec) }
+
+        let plan = try LaunchAgentWriter.nativeMultiWrite(for: sched, executableURL: tempExec, load: false)
+        defer {
+            try? FileManager.default.removeItem(at: plan.plistURL)
+            let logDir = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
+            try? FileManager.default.removeItem(at: logDir)
+        }
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plan.plistURL))
+        XCTAssertEqual(parsed.excludedProfiles, ["dummy", "sandbox"],
+                       "--exclude-profiles must survive the write → parse round trip")
+    }
+
+    func testExcludeProfilesAbsentFlagYieldsNil() throws {
+        let label = "\(prefix).multi.no-exclusions"
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", "alpha",
+                "--mode", "jamf-cli-full",
+                "--all-profiles",
+            ],
+            "StartCalendarInterval": ["Hour": 6, "Minute": 0],
+            "Disabled": false,
+        ])
+
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
+        XCTAssertNil(parsed.excludedProfiles, "Absent --exclude-profiles must parse to nil, not an empty array")
+    }
+
     func testScheduleFormKeepsBaseProfileForMultiTarget() {
         var form = ScheduleFormState(defaultProfile: "alpha")
         form.name = "Weekly Multi"
@@ -416,6 +472,89 @@ final class LaunchAgentServiceTests: XCTestCase {
         ])
 
         return PartialStatusScaffold(plistURL: plistURL) {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: workspacesRoot)
+        }
+    }
+
+    // MARK: - sheet_failures → .partial (the `.partial` branch used to be dead
+    // code because `runStatus?.success` short-circuited before it could run)
+
+    func testLastStatusIsPartialWhenSuccessTrueWithSheetFailures() throws {
+        let scaffold = try writeSheetFailuresStatusScaffold(success: true, sheetFailures: 2)
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .partial)
+    }
+
+    func testLastStatusIsOkWhenSuccessTrueWithZeroSheetFailures() throws {
+        let scaffold = try writeSheetFailuresStatusScaffold(success: true, sheetFailures: 0)
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .ok)
+    }
+
+    func testLastStatusIsFailWhenSuccessFalseRegardlessOfSheetFailures() throws {
+        let scaffold = try writeSheetFailuresStatusScaffold(success: false, sheetFailures: 3)
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .fail)
+    }
+
+    func testLastStatusIsOkWhenSheetFailuresKeyAbsent() throws {
+        // Status files written before `sheet_failures` existed — back-compat.
+        let scaffold = try writeSheetFailuresStatusScaffold(success: true, sheetFailures: nil)
+        defer { scaffold.cleanup() }
+
+        let schedule = try XCTUnwrap(LaunchAgentService.parse(scaffold.plistURL))
+        XCTAssertEqual(schedule.lastStatus, .ok)
+    }
+
+    private struct SheetFailuresScaffold {
+        let plistURL: URL
+        let cleanup: () -> Void
+    }
+
+    /// Writes a single-profile `status.json` at the DEFAULT
+    /// `<workspace>/automation/<label>_status.json` path (no `--status-file`
+    /// override), so `lastStatus` is exercised through the real production
+    /// path rather than the private function directly.
+    private func writeSheetFailuresStatusScaffold(
+        success: Bool,
+        sheetFailures: Int?
+    ) throws -> SheetFailuresScaffold {
+        let profile = "dummy"
+        let workspacesRoot = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-SheetFailures-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspacesRoot, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+
+        let automation = workspacesRoot
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("automation", isDirectory: true)
+        try FileManager.default.createDirectory(at: automation, withIntermediateDirectories: true)
+
+        let label = "\(prefix).\(profile).sheet-failures-\(UUID().uuidString.lowercased())"
+        var status: [String: Any] = ["success": success, "finished_at": "2026-07-27T12:00:00Z"]
+        if let sheetFailures { status["sheet_failures"] = sheetFailures }
+        let statusData = try JSONSerialization.data(withJSONObject: status)
+        try statusData.write(to: automation.appendingPathComponent("\(label)_status.json"))
+
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", profile,
+            ],
+            "StartCalendarInterval": ["Hour": 6, "Minute": 0],
+            "Disabled": false,
+        ])
+
+        return SheetFailuresScaffold(plistURL: plistURL) {
             unsetenv("JRC_TEST_WORKSPACES_ROOT")
             try? FileManager.default.removeItem(at: workspacesRoot)
         }

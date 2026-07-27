@@ -26,21 +26,28 @@ struct MetricAlertLedger: Sendable {
         var keys: [String]
     }
 
-    /// Return the subset of `keys` not yet recorded for `day` (a new `day`
-    /// resets the ledger), recording the surviving set before returning. On any
-    /// read/write failure returns `keys` unchanged so a ledger problem never
-    /// silences an alert.
-    func filterAndRecord(day: String, keys: [String]) -> [String] {
+    /// Return the subset of `keys` not yet carded for `day`, WITHOUT persisting.
+    /// A stale record from a prior day resets: today's keys are all new. On a
+    /// read failure returns `keys` unchanged so a ledger problem never silences
+    /// an alert.
+    func pendingKeys(day: String, keys: [String]) -> [String] {
         guard !keys.isEmpty else { return [] }
         let existing = load()
-        // A stale record from a prior day resets: today's keys are all new.
         let already: Set<String> = existing?.day == day ? Set(existing?.keys ?? []) : []
-        let fresh = keys.filter { !already.contains($0) }
-        guard !fresh.isEmpty else { return [] }
-        // Persist already-carded + newly-carded so a later same-day run dedups
-        // against the full set, not just this run's hits.
-        save(Record(day: day, keys: Array(already.union(fresh))))
-        return fresh
+        return keys.filter { !already.contains($0) }
+    }
+
+    /// Mark `keys` as carded for `day`, merged with anything already carded
+    /// today so a later same-day run dedups against the full set.
+    ///
+    /// Call this ONLY after a confirmed send. Recording first would let a
+    /// transient webhook failure silence that rule for the rest of the day —
+    /// the same discipline `DayMarker` uses for the overdue digest.
+    func record(day: String, keys: [String]) {
+        guard !keys.isEmpty else { return }
+        let existing = load()
+        let already: Set<String> = existing?.day == day ? Set(existing?.keys ?? []) : []
+        save(Record(day: day, keys: Array(already.union(keys))))
     }
 
     private func load() -> Record? {

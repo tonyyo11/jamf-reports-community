@@ -46,4 +46,20 @@ final class CLIBridgeExplainExitTests: XCTestCase {
         XCTAssertTrue(msg.lowercased().contains("network")
             || msg.lowercased().contains("run history"))
     }
+
+    /// `backup` is a caller of `explainExit` (both the GUI and the CLI) and
+    /// never writes to Run History — that surface is scoped to collect/generate
+    /// by design. The remediation must not promise a screen a given caller
+    /// doesn't have; every code's text must hold for every caller.
+    func testNoCodeNamesRunHistoryAsARemediationSurface() {
+        for code: Int32 in [
+            CLIBridge.exitCodePartialFailure, CLIBridge.exitCodeUsage, 1, 42,
+        ] {
+            let msg = CLIBridge.explainExit(code, operation: "Backup")
+            XCTAssertFalse(
+                msg.contains("Run History"),
+                "exit \(code) remediation must not name Run History: \(msg)"
+            )
+        }
+    }
 }

@@ -196,7 +196,7 @@ enum ScheduledRunSignals {
         // Dedup per-day per-rule: a second same-day run (managed freshness + scan)
         // doesn't re-card, but a rule that trips for the first time later today does.
         let ledger = MetricAlertLedger(workspace: workspace)
-        let newKeys = Set(ledger.filterAndRecord(
+        let newKeys = Set(ledger.pendingKeys(
             day: today, keys: hits.map(MetricAlertEvaluator.dedupKey(for:))
         ))
         let newHits = hits.filter { newKeys.contains(MetricAlertEvaluator.dedupKey(for: $0)) }
@@ -205,11 +205,15 @@ enum ScheduledRunSignals {
         let sent = await WebhookNotifier.sendAlert(
             config: notify, title: "Jamf Reports alert — \(profile)", facts: facts
         )
-        if !sent {
+        guard sent else {
             let message = "[warn] metric-alert webhook failed for '\(profile)'"
             fputs(message + "\n", stderr)
             recorder?.record(message)
+            return
         }
+        // Claim the day only after a confirmed send, so a transient webhook
+        // failure retries on the next run instead of silencing the rule.
+        ledger.record(day: today, keys: Array(newKeys))
     }
 
     /// Pure hit computation: group the resolved rules by lookback, pick a strict
@@ -284,6 +288,14 @@ enum ScheduledRunSignals {
             recorder?.record(message)
         }
     }
+}
+
+/// The "[partial] N sheet failure(s)…" marker text kept byte-identical to the
+/// scheduled path's (main.swift), so `RunHistoryService.isPartialRun`'s
+/// `contains("[partial]")` scan recognizes a partially-failed CLI `generate`
+/// the same way it does a scheduled one.
+func partialRunMarker(sheetFailures: Int) -> String {
+    "[partial] \(sheetFailures) sheet failure(s) — see lines above"
 }
 
 // MARK: - Included-CLI run signals
