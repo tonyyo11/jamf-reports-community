@@ -9,10 +9,11 @@ versions in this repository map to git tags.
 
 ### Security
 
-A verified security review of the reporting services found four issues, all
-fixed here. None of them can be triggered remotely on their own, and the two
-worth reading are the webhook one (it needs an action from you) and the risk
-scorer (it was under-reporting devices you'd want to see).
+A verified security review covered the reporting services and then the report
+engine, and everything either review turned up is fixed here. None of it can be
+triggered remotely on its own, and the two worth reading are the webhook one (it
+needs an action from you) and the risk scorer (it was under-reporting devices
+you'd want to see).
 
 - Diagnostic bundles no longer carry your Teams or Slack notification webhook
   URL. The bundle exists to be shared, and its redaction pass promised
@@ -31,6 +32,15 @@ scorer (it was under-reporting devices you'd want to see).
   written to a fixed local filename, and every download is confined to its
   temporary directory, so a name supplied by the release server can't place a
   file elsewhere before verification runs.
+- An unusually large number arriving in Jamf data can no longer stop the app
+  mid-run. Two places converted such a number in a way that aborted the process
+  outright, and because the data is cached, a single bad value could keep
+  ending every later run until the cached copy was deleted by hand. The most
+  likely cause was always a misbehaving Extension Attribute script rather than
+  anything deliberate.
+- A patch title identifier supplied by your Jamf Pro server can no longer be
+  read as a command-line flag when release dates are collected, matching the
+  guard already applied to device names.
 
 ### Fixed
 
@@ -42,6 +52,23 @@ scorer (it was under-reporting devices you'd want to see).
   and "Off" are now recognised too. Expect some devices to appear in Priority
   that previously did not; that is the correction, not a regression. A control
   the tenant never reported still counts as unknown rather than failing.
+- The "Require snapshot manifest" setting description (Configuration →
+  jamf-cli Cache) overstated what it does. It now says what actually happens:
+  only tampered snapshots (a hash mismatch or a corrupt manifest) are
+  hard-failed. Missing or legacy manifests are tolerated, not blocked.
+- Workbooks can no longer be produced in a state Excel refuses to open. A
+  custom Extension Attribute whose name contained an invisible control
+  character, or two whose names matched over their first 31 characters, would
+  produce a sheet name Excel rejects — and because the workbook is what gets
+  emailed or put on a shared drive, the failure landed on everyone who opened
+  it, not just whoever generated it.
+- With the snapshot manifest check enabled, it now verifies the same snapshot
+  the report actually renders. It picked the newest file by modification time
+  while the report picked by the date in the filename, and on synced storage
+  those two disagree.
+- Re-detecting column mappings from a CSV export no longer freezes the window
+  while the file is read, and building the trend comparison no longer parses
+  the same export three times.
 
 ## [2.6.0] - 2026-07-25
 
@@ -1338,7 +1365,7 @@ HTML instance report (Python CLI and macOS app):
   shows the per-artifact fingerprint with a click-to-copy button for the
   full 64-character digest. Python and Swift emitters produce identical
   envelope structure.
-- **`jamf_cli.require_manifest` config option + AuditView "Unverified snapshot" warning card** (PR-10, threat-model T-11): Set `jamf_cli.require_manifest: true` in `config.yaml` (or toggle "Require snapshot manifest" in Configuration → jamf-cli Cache) to hard-fail on snapshot integrity violations — missing manifest entries, SHA-256 mismatches, or absent `manifest.json` files. Equivalent to passing `--strict-manifest` on every invocation. The macOS app's AuditView now surfaces a warning card listing the count and breakdown of unverified snapshot directories regardless of the config setting, closing the "manifest absence = silent pass" gap from PR-7.
+- **`jamf_cli.require_manifest` config option + AuditView "Unverified snapshot" warning card** (PR-10, threat-model T-11): Set `jamf_cli.require_manifest: true` in `config.yaml` (or toggle "Require snapshot manifest" in Configuration → jamf-cli Cache) to hard-fail on tampered snapshots — SHA-256 mismatches or corrupt manifests. Missing or legacy manifests are tolerated, not hard-failed. Equivalent to passing `--strict-manifest` on every invocation. The macOS app's AuditView now surfaces a warning card listing the count and breakdown of unverified snapshot directories regardless of the config setting, closing the "manifest absence = silent pass" gap from PR-7.
 - **`LICENSE`** (MIT), **`NOTICE.md`** (Jamf/Apple trademark and non-affiliation notice), **`THIRD_PARTY_NOTICES.md`** (ZIPFoundation, jamf-cli, Chart.js, Python deps): canonical files at the repo root; mirrored copies in `app/Sources/JamfReports/Resources/` for in-app loading.
 - **`BACKLOG.md`**: project-visible backlog of deferred review findings. Items are added when valid but out of scope for the current change, removed in the same commit that fixes them. Pointer notes added to `CLAUDE.md` and `AGENTS.md`.
 - **`Acknowledgements…` menu item** (macOS app, application menu): opens a window with three tabs — License, Trademark Notice, Third-Party Notices — driven by `Bundle.module`-loaded resource files. Selectable, accessibility-labeled text.
