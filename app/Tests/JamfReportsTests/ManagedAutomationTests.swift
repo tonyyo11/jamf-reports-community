@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import JamfReports
 
@@ -121,6 +122,49 @@ final class ManagedAutomationTests: XCTestCase {
         XCTAssertEqual(ManagedAutomation.staggeredTime(base: "06:55", offsetMinutes: 10), "07:05")
     }
 
+    /// The writer must emit the same string shape
+    /// `LaunchAgentService.formatCalendar` renders on read-back ("Day N HH:mm"),
+    /// not the ordinal form — otherwise a monthly reports agent's signature
+    /// never converges and it reinstalls on every reconcile.
+    func testMonthlyReportsCadenceStringMatchesReaderFormat() {
+        var p = AutomationPolicy(); p.isManaged = true
+        p.reportsCadence = .monthly
+        p.reportsDayOfMonth = 15
+        let reports = ManagedAutomation.desiredSchedules(for: p, baseProfile: "alpha")
+            .first { $0.launchAgentLabel == ManagedAutomation.label(for: .reports) }
+        XCTAssertEqual(reports?.schedule, "Day 15 06:20", "reports staggered +20")
+    }
+
+    /// Real round trip through `LaunchAgentWriter.nativeMultiWrite` (the
+    /// writer that consumes this string) and `LaunchAgentService.parse` (the
+    /// reader that renders it back) — proves the strings agree end to end,
+    /// not just that both sides independently produce "Day N".
+    func testMonthlyReportsScheduleRoundTripsWithoutReinstallLoop() throws {
+        var p = AutomationPolicy(); p.isManaged = true
+        p.reportsCadence = .monthly
+        p.reportsDayOfMonth = 15
+        let desired = try XCTUnwrap(
+            ManagedAutomation.desiredSchedules(for: p, baseProfile: "alpha")
+                .first { $0.launchAgentLabel == ManagedAutomation.label(for: .reports) }
+        )
+
+        let plan = try writeFakeMultiPlist(for: desired)
+        defer { removeFakeMultiPlist(plan) }
+
+        let installedBack = try XCTUnwrap(LaunchAgentService.parse(plan.plistURL))
+        XCTAssertEqual(installedBack.schedule, desired.schedule,
+                       "writer and reader must agree on the monthly cadence string")
+
+        let actions = ManagedAutomation.plan(for: p, installed: [installedBack], baseProfile: "alpha")
+        XCTAssertFalse(
+            actions.contains {
+                if case .install(let s) = $0 { return s.launchAgentLabel == desired.launchAgentLabel }
+                return false
+            },
+            "a monthly reports agent whose real on-disk schedule already matches must not be reinstalled"
+        )
+    }
+
     // MARK: - Plan
 
     func testPlanInstallsAllWhenNothingInstalled() {
@@ -198,6 +242,82 @@ final class ManagedAutomationTests: XCTestCase {
         // Only the stray managed backup is removed; the user's agent is never touched.
         XCTAssertEqual(removes, [ManagedAutomation.label(for: .backup)])
         XCTAssertFalse(removes.contains(userAgent.launchAgentLabel ?? ""))
+    }
+
+    // MARK: - Plan (exclusions in the signature)
+
+    /// Two schedules that agree on everything but exclusions must now be
+    /// treated as changed (`signature()` includes them); two that agree on
+    /// exclusions too must still be treated as unchanged (no reinstall loop).
+    func testPlanReinstallsOnlyWhenExclusionsActuallyDiffer() {
+        var p = AutomationPolicy(); p.isManaged = true
+        p.excludedProfiles = ["dummy"]
+        let installed = ManagedAutomation.desiredSchedules(for: p, baseProfile: "alpha")
+
+        // Identical exclusions → identical signature → no actions.
+        XCTAssertTrue(
+            ManagedAutomation.plan(for: p, installed: installed, baseProfile: "alpha").isEmpty,
+            "matching exclusions must not produce a reinstall loop"
+        )
+
+        // Exclusions-only edit → every desired agent's signature now differs.
+        var changed = p
+        changed.excludedProfiles = ["dummy", "sandbox"]
+        let actions = ManagedAutomation.plan(for: changed, installed: installed, baseProfile: "alpha")
+        XCTAssertFalse(actions.isEmpty, "an exclusions-only policy edit must now be detected")
+        XCTAssertTrue(actions.allSatisfy { if case .install = $0 { return true }; return false })
+    }
+
+    /// The trap this fix avoids: before `LaunchAgentService.parse` read
+    /// `--exclude-profiles` back, an installed agent's `excludedProfiles`
+    /// was always nil, so once exclusions were included in the signature a
+    /// non-empty exclusion set would have mismatched FOREVER. Round-trips a
+    /// real plist to prove that no longer happens.
+    func testPlanNoReinstallLoopWhenExclusionsRoundTripThroughRealPlist() throws {
+        var p = AutomationPolicy(); p.isManaged = true
+        p.excludedProfiles = ["dummy", "sandbox"]
+        let desired = try XCTUnwrap(
+            ManagedAutomation.desiredSchedules(for: p, baseProfile: "alpha")
+                .first { $0.launchAgentLabel == ManagedAutomation.label(for: .freshness) }
+        )
+
+        let plan = try writeFakeMultiPlist(for: desired)
+        defer { removeFakeMultiPlist(plan) }
+
+        let installedBack = try XCTUnwrap(LaunchAgentService.parse(plan.plistURL))
+        XCTAssertEqual(installedBack.excludedProfiles, ["dummy", "sandbox"],
+                       "--exclude-profiles must round-trip so the signature check can see them")
+
+        let actions = ManagedAutomation.plan(for: p, installed: [installedBack], baseProfile: "alpha")
+        XCTAssertFalse(
+            actions.contains {
+                if case .install(let s) = $0 { return s.launchAgentLabel == desired.launchAgentLabel }
+                return false
+            },
+            "an agent whose real on-disk exclusions already match the policy must not be reinstalled"
+        )
+    }
+
+    /// Writes `schedule` via the real `nativeMultiWrite` using a throwaway
+    /// fake executable, so tests can round-trip through the actual writer +
+    /// `LaunchAgentService.parse` reader instead of comparing in-memory
+    /// values computed by the same function on both sides.
+    private func writeFakeMultiPlist(for schedule: Schedule) throws -> LaunchAgentWriter.SetupPlan {
+        let tempExec = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fake-jamf-reports-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: tempExec.path, contents: Data("#!/bin/sh\nexit 0\n".utf8))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: tempExec.path
+        )
+        defer { try? FileManager.default.removeItem(at: tempExec) }
+        return try LaunchAgentWriter.nativeMultiWrite(for: schedule, executableURL: tempExec, load: false)
+    }
+
+    private func removeFakeMultiPlist(_ plan: LaunchAgentWriter.SetupPlan) {
+        try? FileManager.default.removeItem(at: plan.plistURL)
+        let logDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/JamfReports/\(plan.label)", isDirectory: true)
+        try? FileManager.default.removeItem(at: logDir)
     }
 
     // MARK: - Reconcile (spied execution)
