@@ -726,51 +726,20 @@ final class ReportEngineTests: XCTestCase {
 
     // MARK: - P3: why XLSXValidator is not wired into generate()
 
-    /// `XLSXValidator` has no production call sites, and this pins the reason:
-    /// it treats a sheet with no row elements as invalid (deliberately — see
-    /// `testXLSXValidatorDetectsEmptySheetData`), but a real full-instance
-    /// report legitimately contains empty sheets. Wiring it as-is warns on
-    /// every genuine generate. If this test starts failing, either the
-    /// validator's empty-sheet rule or the engine's output changed, and
-    /// whether to wire it becomes a live question again.
-    func testEngineOutputTripsXLSXValidatorEmptySheetRule() async throws {
-        let fixtureCSV = fixturesDir.appendingPathComponent("csv/dummy_all_macs.csv")
-        let fixtureConfig = fixturesDir.appendingPathComponent("config/dummy.yaml")
-
-        guard FileManager.default.fileExists(atPath: fixtureCSV.path),
-              FileManager.default.fileExists(atPath: fixtureConfig.path) else {
-            throw XCTSkip("Fixtures not available")
-        }
-
-        var config = try ConfigLoader.load(from: fixtureConfig)
-        config = config.withDefaults()
-
-        let emptyDataDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("xlsx-validate-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: emptyDataDir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: emptyDataDir) }
-
-        let outDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("xlsx-validate-out-\(UUID().uuidString)")
-        let outURL = outDir.appendingPathComponent("test.xlsx")
-        defer { try? FileManager.default.removeItem(at: outDir) }
-
-        let engine = ReportEngine(config: config, dataDir: emptyDataDir)
-        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL)
-
-        XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
-
-        let report = try XLSXValidator().validate(at: outURL)
-        XCTAssertFalse(
-            report.isValid,
-            "Engine output is expected to trip the empty-sheet rule; if it no longer "
-                + "does, revisit wiring XLSXValidator into generate()"
-        )
-        XCTAssertTrue(
-            report.issues.contains { $0.message.contains("no rows") },
-            "Expected the empty-sheet rule to be the reason: \(report.issues.map(\.message))"
-        )
-    }
+    // `XLSXValidator` has no production call sites. The reason, recorded here
+    // rather than as a test: it treats a sheet with no row elements as invalid
+    // (deliberately — see `testXLSXValidatorDetectsEmptySheetData`), while a
+    // full-instance report with real tenant data legitimately contains empty
+    // sheets, so wiring it as-is would warn on every genuine generate.
+    //
+    // An earlier version of this asserted that engine output DOES trip that
+    // rule. It passed locally and failed on CI, because whether the generated
+    // workbook happens to contain an empty sheet depends on the data present,
+    // not on the code — CI runs with none. That made it a test of incidental
+    // output, so it was removed rather than made conditional. The design
+    // question it guarded (is an empty sheet legitimate output?) is a product
+    // decision; if it is ever answered "no", the validator can be wired and
+    // this comment deleted.
 
     // MARK: - Helpers
 
