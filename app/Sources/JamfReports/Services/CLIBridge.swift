@@ -2033,6 +2033,9 @@ final class CLIBridge {
                 env[key] = value
             }
         }
+        // v1.26.0's daily update notifier can stall PTY-driven onboarding on a
+        // restricted network; older binaries ignore this var, so no version gate.
+        env["JAMF_CLI_NO_UPDATE_CHECK"] = "1"
         return env
     }
 

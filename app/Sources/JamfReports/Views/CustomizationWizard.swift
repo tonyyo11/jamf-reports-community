@@ -220,9 +220,7 @@ enum InventoryFieldMatcher {
             "batteryhealth": "battery_health", "batterylifecyclecount": "battery_health",
             "entrassoregistrationstatus": "entra_sso_status",
             "entrassoregistered": "entra_sso_status",
-            // Phase 6 additions — warranty and purchase date.
-            "warrantyexpires": "warranty_expires", "warrantyend": "warranty_expires",
-            "hardwarewarrantyexpires": "warranty_expires",
+            // Phase 6 addition — purchase date.
             "purchasedate": "purchase_date", "podate": "purchase_date",
             "acquireddate": "purchase_date", "acquired": "purchase_date",
         ]

@@ -246,8 +246,22 @@ extension WorkspaceStore {
     /// older than `heavyTierStaleDays`. Part of the launch-time freshness
     /// sweep — audit is a configuration-analysis call (no per-device
     /// enumeration), so unlike the heavy tiers it is safe to run unprompted.
-    func autoRefreshAuditIfStale() async {
+    ///
+    /// `autoAuditRefreshInFlight` dedups re-entry: rapid profile switches or
+    /// repeated launch-task firings must not stack concurrent audit runs. The
+    /// whole function is `@MainActor` and the flag is checked-then-set with no
+    /// `await` between, so the guard is race-free. `audit` is injectable so
+    /// tests can control timing without spawning a real subprocess.
+    func autoRefreshAuditIfStale(
+        audit: @Sendable (String) async throws -> Int32 = { profile in
+            try await CLIBridge().audit(profile: profile, category: nil, onLine: CLIBridge.noOpOnLine)
+        }
+    ) async {
+        guard !autoAuditRefreshInFlight else { return }
         guard canRefresh(profileSlug: profile) else { return }
+        autoAuditRefreshInFlight = true
+        defer { autoAuditRefreshInFlight = false }
+
         let activeProfile = profile
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
         let auditIsStale = await Task.detached(priority: .utility) {
@@ -260,9 +274,7 @@ extension WorkspaceStore {
             "Launch freshness sweep: audit data older than \(Self.heavyTierStaleDays) days — refreshing"
         )
         do {
-            _ = try await CLIBridge().audit(
-                profile: activeProfile, category: nil, onLine: CLIBridge.noOpOnLine
-            )
+            _ = try await audit(activeProfile)
         } catch {
             AppLogger.cli.warning(
                 "Launch audit refresh failed: \(error.localizedDescription, privacy: .private)"

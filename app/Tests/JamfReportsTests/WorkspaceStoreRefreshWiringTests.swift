@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import JamfReports
 
@@ -60,4 +61,43 @@ final class WorkspaceStoreRefreshWiringTests: XCTestCase {
         store.registerForegroundRefresh()
         store.registerForegroundRefresh()
     }
+
+    /// `autoRefreshAuditIfStale` guards re-entry so rapid profile switches or
+    /// repeated launch-task firings can't stack concurrent audit runs. Setting
+    /// the flag directly (rather than racing two real async calls) makes the
+    /// guard's early-return deterministic to test.
+    func testAutoRefreshAuditIfStaleSkipsWhenAlreadyInFlight() async {
+        let store = WorkspaceStore(demoMode: false)
+        store.autoAuditRefreshInFlight = true
+
+        let auditCalled = CallFlag()
+        await store.autoRefreshAuditIfStale(audit: { _ in
+            auditCalled.set(true)
+            return 0
+        })
+
+        XCTAssertFalse(auditCalled.value, "A second call must no-op while one is already in flight")
+        XCTAssertTrue(
+            store.autoAuditRefreshInFlight,
+            "The no-op path must not clear a flag it didn't set"
+        )
+    }
+
+    func testAutoRefreshAuditIfStaleClearsFlagOnCompletion() async {
+        let store = WorkspaceStore(demoMode: false)
+        await store.autoRefreshAuditIfStale(audit: { _ in 0 })
+        XCTAssertFalse(
+            store.autoAuditRefreshInFlight,
+            "The flag must clear once the call completes, win or lose"
+        )
+    }
+}
+
+/// Thread-safe bool box so a `@Sendable` test closure can record whether it
+/// ran, mirroring the `RouterCallCounter` idiom in CollectRouterTests.
+private final class CallFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _value = false
+    var value: Bool { lock.withLock { _value } }
+    func set(_ newValue: Bool) { lock.withLock { _value = newValue } }
 }

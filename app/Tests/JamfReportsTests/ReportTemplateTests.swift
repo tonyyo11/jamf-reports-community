@@ -188,10 +188,6 @@ final class ReportTemplateTests: XCTestCase {
         XCTAssertEqual(AssetTemplate().recommendedSchedule, .full)
     }
 
-    func testAssetTemplateHTMLIncludesWarrantyTable() {
-        XCTAssertTrue(AssetTemplate().htmlSections.contains(.warrantyTable))
-    }
-
     func testAssetTemplateHTMLIncludesBuildingBreakdown() {
         XCTAssertTrue(AssetTemplate().htmlSections.contains(.buildingBreakdown))
     }

@@ -447,48 +447,6 @@ final class HtmlSectionTests: XCTestCase {
         )
     }
 
-    // MARK: - warrantyTable
-
-    func testWarrantyTableWithData() {
-        let report = makeReport()
-        let inventory: [[String: Any]] = [
-            ["name": "ExpiredMac", "serial_number": "E001",
-             "warranty_expires": "2020-01-01"],
-            ["name": "CurrentMac", "serial_number": "C001",
-             "warranty_expires": "2030-12-31"],
-        ]
-        let html = report.buildWarrantyTable(computersInventory: inventory)
-        XCTAssertTrue(html.contains("warranty-table"))
-        XCTAssertTrue(html.contains("<table"))
-        XCTAssertTrue(html.contains("ExpiredMac"))
-        XCTAssertTrue(html.contains("CurrentMac"))
-    }
-
-    func testWarrantyTableEmptyState() {
-        let report = makeReport()
-        let html = report.buildWarrantyTable(computersInventory: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
-    }
-
-    func testWarrantyTableNoWarrantyFieldEmptyState() {
-        let report = makeReport()
-        let inventory: [[String: Any]] = [
-            ["name": "Mac-001", "serial_number": "X001"],
-        ]
-        let html = report.buildWarrantyTable(computersInventory: inventory)
-        XCTAssertTrue(html.contains("class=\"empty\""))
-    }
-
-    func testWarrantyTableXSS() {
-        let report = makeReport()
-        let inventory: [[String: Any]] = [
-            ["name": Self.xssPayload, "serial_number": "",
-             "warranty_expires": "2030-01-01"],
-        ]
-        let html = report.buildWarrantyTable(computersInventory: inventory)
-        XCTAssertFalse(html.contains("<script>"))
-    }
-
     // MARK: - purchaseCohorts
 
     func testPurchaseCohortsWithData() {
@@ -755,23 +713,4 @@ final class HtmlSectionTests: XCTestCase {
         )
     }
 
-    // MARK: - daysUntil
-
-    func testDaysUntilFutureDate() {
-        let report = makeReport()
-        let future = ISO8601DateFormatter().string(
-            from: Date().addingTimeInterval(60 * 60 * 24 * 10)
-        )
-        XCTAssertGreaterThan(report.daysUntil(future), 0)
-    }
-
-    func testDaysUntilPastDate() {
-        let report = makeReport()
-        XCTAssertLessThan(report.daysUntil("2020-01-01"), 0)
-    }
-
-    func testDaysUntilEmptyString() {
-        let report = makeReport()
-        XCTAssertEqual(report.daysUntil(""), Int.min)
-    }
 }

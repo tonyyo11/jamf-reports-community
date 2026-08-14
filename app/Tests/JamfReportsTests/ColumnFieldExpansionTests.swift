@@ -4,7 +4,7 @@ import XCTest
 
 // MARK: - ColumnFieldExpansionTests
 //
-// Verifies the Phase 6 additions to ColumnField (warrantyExpires, purchaseDate):
+// Verifies the Phase 6 addition to ColumnField (purchaseDate):
 //   - YAML decode round-trip through ConfigLoader
 //   - InventoryFieldMatcher scaffold semantic resolution
 //   - Exclusion: "Purchase Order" must NOT resolve to purchase_date
@@ -12,19 +12,6 @@ import XCTest
 final class ColumnFieldExpansionTests: XCTestCase {
 
     // MARK: - YAML round-trip
-
-    func testWarrantyExpiresDecodesFromYAML() throws {
-        let yaml = """
-        columns:
-          warranty_expires: "Hardware Warranty"
-          purchase_date: "Purchase Date"
-        """
-        let config = try ConfigLoader.loadFromString(yaml)
-        XCTAssertEqual(
-            config.columns?.warrantyExpires, "Hardware Warranty",
-            "warranty_expires YAML key must decode to ColumnConfig.warrantyExpires"
-        )
-    }
 
     func testPurchaseDateDecodesFromYAML() throws {
         let yaml = """
@@ -38,21 +25,10 @@ final class ColumnFieldExpansionTests: XCTestCase {
         )
     }
 
-    func testColumnNameForWarrantyExpires() throws {
-        var columns = ColumnConfig()
-        columns.warrantyExpires = "Hardware Warranty"
-        XCTAssertEqual(columns.columnName(for: .warrantyExpires), "Hardware Warranty")
-    }
-
     func testColumnNameForPurchaseDate() throws {
         var columns = ColumnConfig()
         columns.purchaseDate = "Purchase Date"
         XCTAssertEqual(columns.columnName(for: .purchaseDate), "Purchase Date")
-    }
-
-    func testColumnNameForWarrantyExpiresNilWhenUnset() {
-        let columns = ColumnConfig()
-        XCTAssertNil(columns.columnName(for: .warrantyExpires))
     }
 
     func testColumnNameForPurchaseDateNilWhenUnset() {
@@ -62,13 +38,6 @@ final class ColumnFieldExpansionTests: XCTestCase {
 
     // MARK: - ColumnField enum membership
 
-    func testWarrantyExpiresCaseExists() {
-        XCTAssertTrue(
-            ColumnField.allCases.contains(.warrantyExpires),
-            "ColumnField must include .warrantyExpires"
-        )
-    }
-
     func testPurchaseDateCaseExists() {
         XCTAssertTrue(
             ColumnField.allCases.contains(.purchaseDate),
@@ -77,29 +46,6 @@ final class ColumnFieldExpansionTests: XCTestCase {
     }
 
     // MARK: - InventoryFieldMatcher scaffold heuristic
-
-    func testMatcherResolvesWarrantyExpires() {
-        // "warrantyExpires" is a realistic camelCase key from jamf-cli device JSON.
-        XCTAssertEqual(
-            InventoryFieldMatcher.matchColumnKey("warrantyExpires"),
-            "warranty_expires",
-            "camelCase warrantyExpires should resolve to warranty_expires"
-        )
-    }
-
-    func testMatcherResolvesWarrantyExpiresSnakeCase() {
-        XCTAssertEqual(
-            InventoryFieldMatcher.matchColumnKey("warranty_expires"),
-            "warranty_expires"
-        )
-    }
-
-    func testMatcherResolvesWarrantyEnd() {
-        XCTAssertEqual(
-            InventoryFieldMatcher.matchColumnKey("warrantyEnd"),
-            "warranty_expires"
-        )
-    }
 
     func testMatcherResolvesPurchaseDate() {
         XCTAssertEqual(

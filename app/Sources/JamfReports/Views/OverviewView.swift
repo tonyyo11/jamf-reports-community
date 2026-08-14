@@ -1394,14 +1394,19 @@ struct OverviewView: View {
         let collected = await Task.detached(priority: .utility) {
             TrendStore.readLatestSnapshotMTime(profile: profile) != nil
         }.value
-        // Per-profile only: a real LaunchAgent owned by THIS profile. The
-        // app-global `AutomationPolicy.isManaged` disjunct was dropped —
-        // managed automation being enabled elsewhere must not tick a fresh
-        // profile's "set up a schedule" ✓. (Tradeoff: under managed-only
-        // automation, with no per-profile agent, this step never ticks — which
-        // matches the per-profile intent of the getting-started flow.)
+        // Covered either by a per-profile LaunchAgent, or by managed
+        // automation with this profile not excluded — the all-profiles agents
+        // discover profiles dynamically, so a managed, non-excluded profile
+        // is genuinely scheduled even with no per-profile agent. (The 2026-07
+        // fix dropped a blanket `isManaged` OR entirely because it ticked
+        // EVERY profile under managed automation with no exclusion awareness,
+        // including ones the operator had excluded; this restores the
+        // disjunct scoped to non-excluded profiles only.)
         let scheduled = await Task.detached(priority: .utility) {
-            LaunchAgentService.list().contains { $0.profile == profile }
+            let hasAgent = LaunchAgentService.list().contains { $0.profile == profile }
+            let policy = AutomationPolicy.current()
+            let excluded = policy.excludedProfiles.contains(profile)
+            return scheduleCovered(hasAgent: hasAgent, policyIsManaged: policy.isManaged, excluded: excluded)
         }.value
 
         let customized = await Task.detached(priority: .utility) {
@@ -1666,4 +1671,11 @@ func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> Strin
 func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
     guard fleetCount > 0 else { return baseline }
     return "\(baseline) · across \(fleetCount) active devices"
+}
+
+/// Pure "set up a schedule" coverage rule for `reloadChecklist`. A profile is
+/// covered by a per-profile agent, or by managed automation (which discovers
+/// profiles dynamically) as long as it hasn't been excluded.
+func scheduleCovered(hasAgent: Bool, policyIsManaged: Bool, excluded: Bool) -> Bool {
+    hasAgent || (policyIsManaged && !excluded)
 }

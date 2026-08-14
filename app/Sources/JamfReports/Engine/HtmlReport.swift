@@ -1841,15 +1841,6 @@ struct HtmlReport: Sendable {
         return "—"
     }
 
-    /// Extract a warranty expiry date string from a `computers list` record.
-    func inventoryWarrantyExpires(_ item: [String: Any]) -> String {
-        if let purchasing = item["purchasing"] as? [String: Any] {
-            if let w = purchasing["warrantyExpirationDate"] as? String, !w.isEmpty { return w }
-            if let w = purchasing["warranty_expires"] as? String, !w.isEmpty { return w }
-        }
-        return item["warranty_expires"] as? String ?? ""
-    }
-
     /// Extract purchase date string from a `computers list` record.
     func inventoryPurchaseDate(_ item: [String: Any]) -> String {
         if let purchasing = item["purchasing"] as? [String: Any] {

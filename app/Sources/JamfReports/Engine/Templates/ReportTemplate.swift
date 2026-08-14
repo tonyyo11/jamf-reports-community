@@ -83,7 +83,6 @@ enum SectionID: String, Sendable, CaseIterable {
     case recentFailures  = "recent_failures"
     case interventionList = "intervention_list"
     case patchQueue      = "patch_queue"
-    case warrantyTable   = "warranty_table"
     case purchaseCohorts = "purchase_cohorts"
     case buildingBreakdown = "building_breakdown"
     case departmentBreakdown = "department_breakdown"

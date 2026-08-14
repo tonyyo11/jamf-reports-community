@@ -577,8 +577,10 @@ struct DevicesView: View {
     }
 
     private func jamfDetailSections(_ detail: DeviceDetail) -> some View {
+        // All sections render — the panel sits inside the page-level ScrollView, so
+        // truncating here previously dropped sections (e.g. Policy History) silently.
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(detail.sections.prefix(5)) { section in
+            ForEach(detail.sections) { section in
                 VStack(alignment: .leading, spacing: 6) {
                     SectionHeader(title: section.title)
                     ForEach(section.items.prefix(8)) { item in
@@ -605,9 +607,6 @@ struct DevicesView: View {
                         Mono(text: "+ \(section.items.count - 8) more", size: 10.5)
                     }
                 }
-            }
-            if detail.sections.count > 5 {
-                Mono(text: "+ \(detail.sections.count - 5) more sections", size: 10.5)
             }
             ForEach(detail.warnings, id: \.self) { warning in
                 Text(warning)

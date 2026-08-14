@@ -42,4 +42,12 @@ final class CLIBridgeEnvironmentTests: XCTestCase {
         let env = CLIBridge.environmentForJamfCLI()
         XCTAssertEqual(env["HTTP_PROXY"], "http://proxy.local:8080")
     }
+
+    func test_environmentForJamfCLI_suppressesUpdateNotifier() {
+        // v1.26.0's daily update-check notifier can stall PTY-driven onboarding
+        // on a restricted network; the env var must always be set, and must win
+        // even if the parent process already exports the same key.
+        let env = CLIBridge.environmentForJamfCLI()
+        XCTAssertEqual(env["JAMF_CLI_NO_UPDATE_CHECK"], "1")
+    }
 }

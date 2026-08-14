@@ -175,7 +175,7 @@ final class TemplateApplierTests: XCTestCase {
         XCTAssertTrue(security.contains("firewall"))
 
         let asset = TemplateApplier.eaKeywords(for: AssetTemplate())
-        XCTAssertTrue(asset.contains("warranty"))
+        XCTAssertTrue(asset.contains("purchase"))
         XCTAssertTrue(asset.contains("asset"))
         XCTAssertTrue(asset.contains("serial"))
 
