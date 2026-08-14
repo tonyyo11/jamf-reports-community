@@ -157,6 +157,12 @@ func reconcileManagedAutomationHeadless(
 /// webhook is resolved from the first non-excluded profile whose `notify:` is
 /// usable. The `DayMarker(name: "overdue-notify")` once-per-day gate is SHARED
 /// with the GUI path so the two never double-fire. Best-effort — never throws.
+///
+/// Accepted ordering gap (2.6.1 review): running AFTER the per-profile work
+/// means a crash during that work suppresses this run's digest. Bounded, not
+/// fixed: the backward-looking expected-fire check flags the miss on the next
+/// evaluation (~grace period later), and the marker is stamped only after a
+/// confirmed send, so a suppressed day retries on the next run.
 @Sendable
 private func notifyOverdueSchedulesHeadless(
     profiles: [String], excluding excluded: Set<String> = []
