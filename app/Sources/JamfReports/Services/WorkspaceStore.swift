@@ -72,6 +72,12 @@ final class WorkspaceStore {
     /// process and would require an on-disk lock file (not implemented).
     private var runInProgressFlags: [String: Bool] = [:]
     private var didAutoUpdateJamfCLI = false
+    /// Dedup guard for `autoRefreshAuditIfStale()` — rapid profile switches or
+    /// repeated launch-task firings must not stack concurrent audit runs
+    /// alongside each other or a user-triggered Run Audit. Internal (not
+    /// `private`) so the `WorkspaceStore+Refresh.swift` extension can set it —
+    /// Swift's `private` is file-scoped, not type-scoped, across extensions.
+    var autoAuditRefreshInFlight: Bool = false
     /// UserDefaults key for "user has explicitly chosen demo mode."
     /// Persisted by `setDemoMode(_:)`; consulted by `init` and
     /// `reloadFromDisk` to decide whether to enter demo on no-profiles.
