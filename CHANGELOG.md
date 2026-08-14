@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-08-14
+
 ### Security
 
 A verified security review covered the reporting services, then the report
@@ -123,6 +125,32 @@ one that had; those are under Fixed below.
   schedule is overdue but no profile has a webhook configured to say so.
 - Error messages no longer tell you to check Run History for failures that
   never reach it — the command-line tool does not record there.
+- The launch-time audit refresh can no longer start a second copy of itself.
+  Switching profiles quickly at launch could kick off overlapping background
+  audit runs of the same data; at most one now runs at a time.
+- The device detail panel now shows every section instead of silently stopping
+  at five — Policy History was the usual casualty on devices with rich data.
+- The Getting Started checklist's "Set up a schedule" step now ticks under
+  managed automation. It only counted a schedule built by hand for that exact
+  profile, so operators using the recommended managed automation never saw the
+  step complete. A profile excluded from managed automation still requires its
+  own schedule to tick.
+
+### Changed
+
+- jamf-cli's daily "newer release available" check is switched off in every
+  jamf-cli process the app launches. It could stall first-time setup for a
+  couple of seconds on restricted networks, and update guidance in this app
+  comes from Settings, not from mid-command hints.
+
+### Removed
+
+- The HTML report's Warranty section, and the `columns.warranty_expires`
+  config key that fed it. Jamf Pro's API does not return purchasing or
+  warranty data (jamf-cli declined sourcing it from GSX), so the section
+  rendered an empty state on every tenant with advice that could not fix it.
+  Warranty tracking needs a data source Jamf doesn't provide; the Asset
+  template keeps its asset-tag, purchase-date, and location breakdowns.
 
 ## [2.6.0] - 2026-07-25
 
