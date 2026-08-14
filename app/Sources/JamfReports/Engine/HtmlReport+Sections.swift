@@ -505,73 +505,6 @@ extension HtmlReport {
         """
     }
 
-    // MARK: - 8. warrantyTable
-
-    /// Devices grouped by warranty status: expired / expiring < 90 days / current.
-    func buildWarrantyTable(computersInventory: [[String: Any]]) -> String {
-        let f = HtmlSectionFormatters.self
-
-        let withWarranty = computersInventory.filter { item -> Bool in
-            let raw = inventoryWarrantyExpires(item)
-            return !raw.trimmingCharacters(in: .whitespaces).isEmpty
-        }
-
-        guard !withWarranty.isEmpty else {
-            return """
-            <section class="content-section" id="warranty-table">
-              <h2>Warranty Status</h2>
-              \(f.emptyState("No warranty_expires field found in inventory data. " +
-                "Map the field under columns.warranty_expires in config.yaml, or ensure " +
-                "jamf-cli inventory-csv exports that field."))
-            </section>
-            """
-        }
-
-        struct WarrantyRow {
-            let name: String; let serial: String; let expires: String; let daysLeft: Int
-        }
-        let rows: [WarrantyRow] = withWarranty.map { item in
-            let name = inventoryName(item)
-            let serial = inventorySerial(item)
-            let raw = inventoryWarrantyExpires(item)
-            let days = daysUntil(raw)
-            return WarrantyRow(name: name, serial: serial, expires: raw, daysLeft: days)
-        }
-
-        let expired = rows.filter { $0.daysLeft < 0 }
-            .sorted { abs($0.daysLeft) > abs($1.daysLeft) }
-        let expiring = rows.filter { $0.daysLeft >= 0 && $0.daysLeft < 90 }
-            .sorted { $0.daysLeft < $1.daysLeft }
-        let current = rows.filter { $0.daysLeft >= 90 }
-            .sorted { $0.daysLeft < $1.daysLeft }
-
-        func groupBlock(_ title: String, _ group: [WarrantyRow]) -> String {
-            guard !group.isEmpty else { return "" }
-            let tableRows = group.prefix(25).map { row -> [String] in
-                let status = row.daysLeft < 0 ? "Expired" : "\(row.daysLeft) days"
-                return [row.name, row.serial, row.expires, status]
-            }
-            return """
-            <h3>\(f.escapeHTML(title)) (\(group.count))</h3>
-            \(f.renderTable(
-                headers: ["Device", "Serial", "Expiry Date", "Status"],
-                rows: Array(tableRows)
-            ))
-            \(group.count > 25 ? "<p class=\"empty\">\(group.count - 25) more — " +
-              "see workbook for full list.</p>" : "")
-            """
-        }
-
-        return """
-        <section class="content-section" id="warranty-table">
-          <h2>Warranty Status</h2>
-          \(groupBlock("Expired", expired))
-          \(groupBlock("Expiring within 90 days", expiring))
-          \(groupBlock("Current", current))
-        </section>
-        """
-    }
-
     // MARK: - 9. purchaseCohorts
 
     /// Devices grouped by purchase-date year with a CSS bar chart.
@@ -1631,35 +1564,13 @@ extension HtmlReport {
         return slug.isEmpty ? "device" : slug
     }
 
-    // MARK: - Date helpers
-
-    /// Days until a future date (positive = future, negative = past/expired).
-    func daysUntil(_ raw: String) -> Int {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return Int.min }
-        let fmts = ["yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd"]
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        for fmt in fmts {
-            df.dateFormat = fmt
-            if let date = df.date(from: trimmed) {
-                return Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? Int.min
-            }
-        }
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = iso.date(from: trimmed) {
-            return Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? Int.min
-        }
-        return Int.min
-    }
 }
 
 // MARK: - buildSectionMap extension
 
 extension HtmlReport {
 
-    /// Register all 16 section renderers into the section map produced by `buildSectionMap`.
+    /// Register the extended section renderers into the map produced by `buildSectionMap`.
     ///
     /// Called from `buildSectionMap` after the original 9 entries are populated.
     /// Returns a dictionary that merges into the base map.
@@ -1714,7 +1625,6 @@ extension HtmlReport {
             .auditEvidence: buildAuditEvidence(auditFindings: auditFindings),
             .exceptionList: buildExceptionList(),
             .assetMap: buildAssetMap(computersInventory: computersInventory),
-            .warrantyTable: buildWarrantyTable(computersInventory: computersInventory),
             .purchaseCohorts: buildPurchaseCohorts(
                 computersInventory: computersInventory
             ),

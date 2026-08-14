@@ -140,7 +140,7 @@ final class EngineCorrectnessTests: XCTestCase {
         let newKeys: Set<SectionID> = [
             .execSummary, .recentFailures, .interventionList,
             .patchQueue, .auditEvidence, .exceptionList,
-            .assetMap, .warrantyTable, .purchaseCohorts,
+            .assetMap, .purchaseCohorts,
             .buildingBreakdown, .departmentBreakdown,
             .protectAlerts, .insightsDrift, .agentHealth,
         ]
@@ -308,8 +308,6 @@ final class EngineCorrectnessTests: XCTestCase {
     // MARK: - Sanitized accent color helpers
 
     func testSanitizedAccentColorAcceptsValidHex() {
-        var branding = BrandingConfig()
-        // Use reflection or direct property access
         let config = makeBrandingConfig(accentColor: "#2D5EA2", accentDark: "#4A7EC8")
         XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2")
         XCTAssertEqual(config.sanitizedAccentDark, "#4A7EC8")

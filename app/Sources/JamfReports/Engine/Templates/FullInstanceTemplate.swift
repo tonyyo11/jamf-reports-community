@@ -90,7 +90,6 @@ struct FullInstanceTemplate: ReportTemplate {
             .policyTable,
             .profileTable,
             .assetMap,
-            .warrantyTable,
             .purchaseCohorts,
             .buildingBreakdown,
             .departmentBreakdown,

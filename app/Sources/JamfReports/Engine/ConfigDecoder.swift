@@ -103,8 +103,6 @@ struct ColumnConfig: Decodable, Sendable {
     var recoveryLock: String?
     var batteryHealth: String?
     var entraSSOStatus: String?
-    /// Hardware warranty expiration date column. YAML key: `warranty_expires`.
-    var warrantyExpires: String?
     /// Device purchase or acquisition date column. YAML key: `purchase_date`.
     var purchaseDate: String?
 
@@ -135,7 +133,6 @@ struct ColumnConfig: Decodable, Sendable {
         case recoveryLock = "recovery_lock"
         case batteryHealth = "battery_health"
         case entraSSOStatus = "entra_sso_status"
-        case warrantyExpires = "warranty_expires"
         case purchaseDate = "purchase_date"
     }
 
@@ -169,7 +166,6 @@ struct ColumnConfig: Decodable, Sendable {
         case .recoveryLock: value = recoveryLock
         case .batteryHealth: value = batteryHealth
         case .entraSSOStatus: value = entraSSOStatus
-        case .warrantyExpires: value = warrantyExpires
         case .purchaseDate: value = purchaseDate
         }
         let trimmed = value?.trimmingCharacters(in: .whitespaces) ?? ""
@@ -198,8 +194,6 @@ enum ColumnField: String, CaseIterable, Sendable {
     case diskPercentFull, architecture, model, lastEnrollment, mdmExpiry
     case fullName, assetTag, building, position
     case lastLoggedInUser, recoveryLock, batteryHealth, entraSSOStatus
-    /// Hardware warranty expiration date. YAML key: `warranty_expires`.
-    case warrantyExpires
     /// Device purchase or acquisition date. YAML key: `purchase_date`.
     case purchaseDate
 }

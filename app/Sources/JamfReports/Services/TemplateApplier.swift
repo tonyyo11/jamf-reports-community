@@ -97,7 +97,7 @@ enum TemplateApplier {
             return ["filevault", "gatekeeper", "firewall", "crowd", "sentinel", "defender",
                     "security", "encryption", "antivirus", "endpoint"]
         case "asset":
-            return ["warranty", "purchase", "asset", "serial", "model", "hardware",
+            return ["purchase", "asset", "serial", "model", "hardware",
                     "lifecycle", "depreciation"]
         case "operational":
             return ["status", "health", "uptime", "connectivity", "agent", "client",
