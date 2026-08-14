@@ -115,12 +115,13 @@ struct EAParseHealthService {
     }
 
     /// Int an `AnyCodable.intValue`-fed banding accepts for a string count:
-    /// an exact Int, else a whole non-negative Double ("2.0" → 2).
+    /// an exact Int, else a whole non-negative Double ("2.0" → 2). `Int(exactly:)`
+    /// returns nil (not a trap) for a Double outside Int's range or non-finite.
     private static func intCount(_ trimmed: String) -> Int? {
         if let n = Int(trimmed) { return n }
         guard let d = Double(trimmed), d >= 0,
               d.truncatingRemainder(dividingBy: 1) == 0 else { return nil }
-        return Int(d)
+        return Int(exactly: d)
     }
 
     // MARK: - Type parsing (mirrors the engine)

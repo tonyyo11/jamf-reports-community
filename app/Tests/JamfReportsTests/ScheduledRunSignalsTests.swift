@@ -135,4 +135,19 @@ final class ScheduledRunSignalsTests: XCTestCase {
         XCTAssertEqual(CLIRunSignals.mode(for: .collect), .snapshotOnly)
         XCTAssertEqual(CLIRunSignals.mode(for: .generate), .jamfCLIOnly)
     }
+
+    // MARK: - partialRunMarker
+
+    func testPartialRunMarkerMatchesScheduledPathFormat() {
+        // Kept byte-identical to main.swift's scheduledRunSingle marker so
+        // RunHistoryService.isPartialRun's "[partial]" scan recognizes both.
+        XCTAssertEqual(
+            partialRunMarker(sheetFailures: 3),
+            "[partial] 3 sheet failure(s) — see lines above"
+        )
+    }
+
+    func testPartialRunMarkerContainsThePartialTagRunHistoryScansFor() {
+        XCTAssertTrue(partialRunMarker(sheetFailures: 1).contains("[partial]"))
+    }
 }

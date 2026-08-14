@@ -275,7 +275,7 @@ struct OverviewView: View {
                 // fresh per-profile operator doesn't read it as this workspace's
                 // own backup/collect.
                 return "Managed automation (all profiles) — "
-                    + "\(fleetWideName(first.displayName)) should have run "
+                    + "\(WorkspaceStore.fleetWideDisplayName(first.displayName)) should have run "
                     + "\(when); last success \(last)\(more)."
             }
             return "Scheduled run overdue — \(first.displayName) should have run "
@@ -290,7 +290,7 @@ struct OverviewView: View {
         let name: String
         if firstFailing.isMulti {
             name = "Managed automation (all profiles) — "
-                + fleetWideName(firstFailing.displayName)
+                + WorkspaceStore.fleetWideDisplayName(firstFailing.displayName)
         } else {
             name = firstFailing.displayName
         }
@@ -306,14 +306,6 @@ struct OverviewView: View {
         return "\(name) failed on its last run \(last)\(more) — check Automation."
     }
 
-    /// Strip a leading "Managed " from a managed agent's display name so the
-    /// fleet-wide banner reads "Managed automation … — Backup …" rather than
-    /// the redundant "… — Managed Backup …".
-    private func fleetWideName(_ displayName: String) -> String {
-        displayName.hasPrefix("Managed ")
-            ? String(displayName.dropFirst("Managed ".count))
-            : displayName
-    }
 
     /// Run the trend-store disk scan (summaries + ea-results) OFF the main
     /// thread, then publish on the main actor. That scan is what froze the UI

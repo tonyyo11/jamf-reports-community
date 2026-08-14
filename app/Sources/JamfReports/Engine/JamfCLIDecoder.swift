@@ -1232,7 +1232,10 @@ struct AnyCodable: Codable, Sendable, CustomStringConvertible {
     var intValue: Int? {
         switch value {
         case let n as Int: return n
-        case let d as Double: return Int(d)
+        case let d as Double:
+            // `Int(_:)` traps outside Int64 range; this returns nil instead.
+            // `.towardZero` keeps the old truncating semantics (2.7 -> 2).
+            return Int(exactly: d.rounded(.towardZero))
         case let s as String:
             if let i = Int(s) { return i }
             // Audit EAs sometimes print counts float-formatted ("3.0"). Accept

@@ -100,6 +100,45 @@ final class FleetDriftTests: XCTestCase {
         XCTAssertEqual(result?.rows.count, 1)
     }
 
+    // MARK: - CSVParser.parseHeader (header-only parse used by PriorCSVLoader)
+
+    func testParseHeaderMatchesFullParseHeaders() throws {
+        let csvText = "Computer Name,Serial Number,OS Version\nMac1,AAA,15.0\nMac2,BBB,14.0\n"
+        let data = Data(csvText.utf8)
+        let headerOnly = CSVParser.parseHeader(data)
+        let (fullHeaders, _) = try CSVParser.parse(data)
+        XCTAssertEqual(headerOnly, fullHeaders,
+                       "Header-only parse must match the header row from a full parse")
+    }
+
+    func testPriorLoaderSkipsSchemaMismatchThenReturnsMatchingCandidate() throws {
+        // Guards the header-only pre-check added to PriorCSVLoader.load: a
+        // schema-mismatched candidate must still be skipped (not just cheaply
+        // rejected-but-silently-accepted), and a matching candidate elsewhere
+        // in the directory must still be fully parsed and returned intact.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let headers = "Computer Name,Serial Number,OS Version,Last Check-in,Department\n"
+        let current = dir.appendingPathComponent("current.csv")
+        try (headers + "Mac1,AAA,14.0,2024-01-01,IT\n").write(
+            to: current, atomically: true, encoding: .utf8
+        )
+        let historical = dir.appendingPathComponent("historical", isDirectory: true)
+        try FileManager.default.createDirectory(at: historical, withIntermediateDirectories: true)
+        try "Name,Serial,Extra\nMac2,BBB,xyz\n".write(
+            to: historical.appendingPathComponent("mismatch.csv"), atomically: true, encoding: .utf8
+        )
+        try (headers + "Mac3,CCC,13.0,2023-11-01,IT\nMac4,DDD,13.0,2023-11-02,Ops\n").write(
+            to: historical.appendingPathComponent("match.csv"), atomically: true, encoding: .utf8
+        )
+        let result = try XCTUnwrap(
+            PriorCSVLoader.load(historicalDir: historical, currentCSVURL: current)
+        )
+        XCTAssertEqual(result.label, "match.csv")
+        XCTAssertEqual(result.rows.count, 2)
+        XCTAssertEqual(result.rows.first?["Computer Name"], "Mac3")
+    }
+
     // MARK: - FleetDriftWriter: New Enrollments
 
     func testNewEnrollmentsDetected() {

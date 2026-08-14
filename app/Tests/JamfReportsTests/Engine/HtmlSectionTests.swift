@@ -45,6 +45,22 @@ final class HtmlSectionTests: XCTestCase {
         )
     }
 
+    func testEscapeHTMLBlocksJavascriptProtocolWithEmbeddedTab() {
+        // "java\tscript:" — a WHATWG URL parser strips the embedded tab and
+        // reads this back as a plain javascript: URL.
+        XCTAssertEqual(
+            HtmlSectionFormatters.escapeHTML("java\tscript:alert(1)"),
+            "[blocked]"
+        )
+    }
+
+    func testEscapeHTMLBlocksJavascriptProtocolWithEmbeddedCRLF() {
+        XCTAssertEqual(
+            HtmlSectionFormatters.escapeHTML("java\r\nscript:alert(1)"),
+            "[blocked]"
+        )
+    }
+
     func testRenderTable() {
         let html = HtmlSectionFormatters.renderTable(
             headers: ["Name", "Count"],

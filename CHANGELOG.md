@@ -7,6 +7,123 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Security
+
+A verified security review covered the reporting services, then the report
+engine, and then the app's scheduled-run entry point and command-line tool.
+Everything those reviews turned up is fixed here. None of it can be triggered
+remotely on its own, and the two worth reading are the webhook one (it needs an
+action from you) and the risk scorer (it was under-reporting devices you'd want
+to see).
+
+The third review — covering the unattended scheduled-run path, every webhook
+the app sends, and the bundled `jamf-reports` command-line tool — found **no
+new security issues**. What it did find was a set of accuracy and reliability
+problems, several of which caused a run that had not done its job to look like
+one that had; those are under Fixed below.
+
+- Diagnostic bundles no longer carry your Teams or Slack notification webhook
+  URL. The bundle exists to be shared, and its redaction pass promised
+  "secrets always removed" — but it looked for a key named `webhook_url`,
+  while the app stores the webhook under `notify:` as `url`. Masking the
+  hostname wasn't enough either: for both providers the secret travels in the
+  URL path. An incoming-webhook URL is a posting credential, so anyone holding
+  an affected bundle could post messages into that channel as your reporting
+  bot. **If you have notifications enabled and have shared a diagnostic bundle,
+  rotate the webhook URL in Teams or Slack.** The same gap in log exports and
+  webhook error text is fixed alongside it.
+- A device's own name or serial can no longer be read as a command-line flag
+  when fetching device details. Those values come from the fleet rather than
+  from you, so a renamed Mac could put a flag where an identifier belonged.
+- The checksums file downloaded during a jamf-cli install or update is now
+  written to a fixed local filename, and every download is confined to its
+  temporary directory, so a name supplied by the release server can't place a
+  file elsewhere before verification runs.
+- An unusually large number arriving in Jamf data can no longer stop the app
+  mid-run. Two places converted such a number in a way that aborted the process
+  outright, and because the data is cached, a single bad value could keep
+  ending every later run until the cached copy was deleted by hand. The most
+  likely cause was always a misbehaving Extension Attribute script rather than
+  anything deliberate.
+- A patch title identifier supplied by your Jamf Pro server can no longer be
+  read as a command-line flag when release dates are collected, matching the
+  guard already applied to device names.
+
+### Fixed
+
+- Devices reporting FileVault, SIP, Gatekeeper or the firewall as "Not
+  Enabled" / "Not Encrypted" are no longer scored as healthy. The risk scorer
+  matched the word "enabled" inside "not enabled", so an unprotected Mac could
+  score Clean and be filtered out of the Devices "Priority" list — the screen
+  meant to surface exactly those devices. Underscore forms (`NOT_ENCRYPTED`)
+  and "Off" are now recognised too. Expect some devices to appear in Priority
+  that previously did not; that is the correction, not a regression. A control
+  the tenant never reported still counts as unknown rather than failing.
+- The "Require snapshot manifest" setting description (Configuration →
+  jamf-cli Cache) overstated what it does. It now says what actually happens:
+  only tampered snapshots (a hash mismatch or a corrupt manifest) are
+  hard-failed. Missing or legacy manifests are tolerated, not blocked.
+- Workbooks can no longer be produced in a state Excel refuses to open. A
+  custom Extension Attribute whose name contained an invisible control
+  character, or two whose names matched over their first 31 characters, would
+  produce a sheet name Excel rejects — and because the workbook is what gets
+  emailed or put on a shared drive, the failure landed on everyone who opened
+  it, not just whoever generated it.
+- With the snapshot manifest check enabled, it now verifies the same snapshot
+  the report actually renders. It picked the newest file by modification time
+  while the report picked by the date in the filename, and on synced storage
+  those two disagree.
+- Re-detecting column mappings from a CSV export no longer freezes the window
+  while the file is read, and building the trend comparison no longer parses
+  the same export three times.
+- A scheduled run that crashed, was killed, or lost power partway through no
+  longer appears in Run History as a successful run. Such a run never gets to
+  write its closing line, and the missing line was being read as "exited
+  cleanly" — so the row showed OK and EXIT 0 for a run that never finished. It
+  now shows a warning and no exit code. The overdue banner already caught this
+  case about an hour later; the run list was the surface still claiming success.
+- A report that failed to write some of its sheets no longer shows as fully
+  healthy. The Schedules "Last Run" column and Automation Health read only a
+  success flag and ignored the failed-sheet count sitting beside it, so a
+  workbook missing sheets reported the same green state as a complete one. Both
+  now show the run as partial, and the command-line `generate` records the same
+  partial marker the scheduled path always has.
+- A fleet-health alert whose webhook post fails is now retried on the next run.
+  The app was marking the alert as sent before knowing whether it had been, so
+  a brief network problem silenced that alert for the rest of the day. This is
+  the same "only claim it once it's delivered" rule the overdue digest already
+  followed.
+- `jamf-reports collect` now collects Jamf Protect data. The bundled
+  command-line tool skipped the Protect step that the app and its scheduled
+  runs perform, then reported success — so anyone collecting via their own cron
+  job had Protect dashboards quietly going stale with nothing to indicate it.
+  Jamf School profiles invoked this way are now routed correctly too.
+- A column name containing an invisible line-break character can no longer
+  corrupt `config.yaml` when mappings are scaffolded from a CSV export. Certain
+  Unicode separators were written through unescaped and were later read as real
+  line breaks, which could silently add settings nobody typed. This affects both
+  the Jamf Pro and Jamf School scaffolders.
+- A monthly report schedule no longer tears itself down and reinstalls on every
+  single run. The app wrote the schedule's date one way and read it back
+  another, so it never recognised its own agent as unchanged.
+- Changing the excluded-profiles list in Automation now takes effect. The app
+  compared schedules by settings that did not include exclusions, so an
+  exclusions-only change was accepted in the UI and never reached disk.
+  Excluded profiles are also no longer listed in the overdue notification.
+- The overdue notification now names which profile each late schedule belongs
+  to. It evaluates every profile on the machine, but the detailed card listed
+  bare schedule names — so on a multi-profile Mac there was no way to tell whose
+  schedule was late. Fleet-wide schedules are labelled as such.
+- Backups that finish with a partial export are now pruned by retention instead
+  of accumulating, from both the app and the command line.
+- Cached collection data is now written atomically, so a crash or a full disk
+  mid-write cannot leave a half-written file behind for the next report to read.
+- Unattended runs now report problems they previously swallowed: a failure to
+  apply an automation change, a failure to rotate a log, and the case where a
+  schedule is overdue but no profile has a webhook configured to say so.
+- Error messages no longer tell you to check Run History for failures that
+  never reach it — the command-line tool does not record there.
+
 ## [2.6.0] - 2026-07-25
 
 ### Added
@@ -1302,7 +1419,7 @@ HTML instance report (Python CLI and macOS app):
   shows the per-artifact fingerprint with a click-to-copy button for the
   full 64-character digest. Python and Swift emitters produce identical
   envelope structure.
-- **`jamf_cli.require_manifest` config option + AuditView "Unverified snapshot" warning card** (PR-10, threat-model T-11): Set `jamf_cli.require_manifest: true` in `config.yaml` (or toggle "Require snapshot manifest" in Configuration → jamf-cli Cache) to hard-fail on snapshot integrity violations — missing manifest entries, SHA-256 mismatches, or absent `manifest.json` files. Equivalent to passing `--strict-manifest` on every invocation. The macOS app's AuditView now surfaces a warning card listing the count and breakdown of unverified snapshot directories regardless of the config setting, closing the "manifest absence = silent pass" gap from PR-7.
+- **`jamf_cli.require_manifest` config option + AuditView "Unverified snapshot" warning card** (PR-10, threat-model T-11): Set `jamf_cli.require_manifest: true` in `config.yaml` (or toggle "Require snapshot manifest" in Configuration → jamf-cli Cache) to hard-fail on tampered snapshots — SHA-256 mismatches or corrupt manifests. Missing or legacy manifests are tolerated, not hard-failed. Equivalent to passing `--strict-manifest` on every invocation. The macOS app's AuditView now surfaces a warning card listing the count and breakdown of unverified snapshot directories regardless of the config setting, closing the "manifest absence = silent pass" gap from PR-7.
 - **`LICENSE`** (MIT), **`NOTICE.md`** (Jamf/Apple trademark and non-affiliation notice), **`THIRD_PARTY_NOTICES.md`** (ZIPFoundation, jamf-cli, Chart.js, Python deps): canonical files at the repo root; mirrored copies in `app/Sources/JamfReports/Resources/` for in-app loading.
 - **`BACKLOG.md`**: project-visible backlog of deferred review findings. Items are added when valid but out of scope for the current change, removed in the same commit that fixes them. Pointer notes added to `CLAUDE.md` and `AGENTS.md`.
 - **`Acknowledgements…` menu item** (macOS app, application menu): opens a window with three tabs — License, Trademark Notice, Third-Party Notices — driven by `Bundle.module`-loaded resource files. Selectable, accessibility-labeled text.

@@ -203,6 +203,38 @@ final class SnapshotManifestTests: XCTestCase {
         XCTAssertEqual(summary.verified, 0)
     }
 
+    /// P2 review: mtime lies on synced storage (iCloud/SharePoint re-stamp
+    /// files on sync), so the newest-pick must order by the FILENAME
+    /// timestamp like `ReportEngine.loadLatestSnapshotData` — not raw mtime
+    /// — or the strict-manifest gate can verify a different file than the
+    /// one generate actually renders.
+    func testScanWorkspacePicksNewestByFilenameNotMtime() throws {
+        let dir = tempRoot.appendingPathComponent("audit", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let data = Data(#"{"ok":true}"#.utf8)
+
+        // Older FILENAME timestamp, stamped with the NEWER mtime.
+        let olderName = dir.appendingPathComponent("audit_20260101T000000.json")
+        try data.write(to: olderName)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date()], ofItemAtPath: olderName.path
+        )
+
+        // Newer FILENAME timestamp, stamped with the OLDER mtime.
+        let newerName = dir.appendingPathComponent("audit_20260201T000000.json")
+        try data.write(to: newerName)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -86400)], ofItemAtPath: newerName.path
+        )
+
+        // Manifest lists only the newer-FILENAME file — the reader's pick.
+        try writeManifest(at: dir, files: [newerName.lastPathComponent: sha256Hex(data)])
+
+        let summary = SnapshotManifest.scanWorkspace(dataDir: tempRoot)
+        XCTAssertEqual(summary.verified, 1, "must pick the file the reader would render")
+        XCTAssertEqual(summary.omitted, 0)
+    }
+
     // MARK: - Helpers
 
     private func writeManifest(files: [String: String]) throws {

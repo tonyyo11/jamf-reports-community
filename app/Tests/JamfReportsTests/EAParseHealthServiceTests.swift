@@ -139,6 +139,18 @@ final class EAParseHealthServiceTests: XCTestCase {
         XCTAssertEqual(health.parseable, 1)
     }
 
+    func testIntCountRejectsOutOfRangeValuesInsteadOfTrapping() {
+        // A whole-valued Double outside Int's range must fail the conversion
+        // rather than trap Int(d) — a rogue EA value must never abort the process.
+        let health = Service.assessIntCount(
+            column: "mSCP Failures",
+            values: ["1e30", "12345678901234567890123", "3"],
+            maxValid: nil
+        )
+        XCTAssertEqual(health.nonEmpty, 3)
+        XCTAssertEqual(health.parseable, 1, "only '3' parses; the two oversized values are unparseable")
+    }
+
     func testIntCountAcceptsWholeDoublesLikeBanding() {
         // The banding lens (intValue) tolerates whole doubles ("2.0" → 2); a
         // fractional or negative value stays unparseable.

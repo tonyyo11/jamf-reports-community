@@ -688,7 +688,10 @@ final class JamfCLIInstaller {
 
         // The checksums asset name does not match the binary-asset regex
         // (it's `*.txt`, not `*.{tar.gz,tgz,zip}`), so we re-use the trusted
-        // host allow-list directly rather than `validateAsset(...)`.
+        // host allow-list directly rather than `validateAsset(...)`. That skips
+        // the path scrub the regex would also have provided, so the remote name
+        // is never used as a path at all — the download below pins a fixed local
+        // filename, and `safeDestination` re-checks containment regardless.
         let checksumsHost = checksumsAsset.browserDownloadURL.host?.lowercased()
         guard let checksumsHost, trustedAssetHosts.contains(checksumsHost) else {
             throw NSError(
@@ -700,7 +703,8 @@ final class JamfCLIInstaller {
             )
         }
 
-        let checksumsFile = try await download(asset: checksumsAsset, to: tempDir)
+        let checksumsFile = try await download(
+            asset: checksumsAsset, to: tempDir, as: "checksums.txt")
         let text = (try? String(contentsOf: checksumsFile, encoding: .utf8)) ?? ""
         guard let expected = extractChecksum(forAsset: asset.name, in: text) else {
             throw NSError(
@@ -799,14 +803,32 @@ final class JamfCLIInstaller {
         return try JSONDecoder().decode(GitHubRelease.self, from: data)
     }
 
-    private static func download(asset: GitHubAsset, to directory: URL) async throws -> URL {
+    /// Resolve a download destination, refusing any name that escapes `directory`.
+    ///
+    /// `appendingPathComponent` preserves `/` and `..` as path components and
+    /// `moveItem` resolves them at the syscall layer, so a server-supplied asset
+    /// name could otherwise place the downloaded body outside the temp directory
+    /// — before any checksum or signature check has run. `validateAsset` bars
+    /// that for the binary asset; this closes it for every caller.
+    static func safeDestination(in directory: URL, name: String) throws -> URL {
+        let destination = directory.appendingPathComponent(name).standardizedFileURL
+        guard destination.deletingLastPathComponent().path
+                == directory.standardizedFileURL.path else {
+            throw AssetValidationError.invalidName(name)
+        }
+        return destination
+    }
+
+    private static func download(
+        asset: GitHubAsset, to directory: URL, as filename: String? = nil
+    ) async throws -> URL {
         var request = URLRequest(url: asset.browserDownloadURL)
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("JamfReports", forHTTPHeaderField: "User-Agent")
         let (downloaded, response) = try await URLSession.shared.download(for: request)
         try validateHTTP(response)
 
-        let destination = directory.appendingPathComponent(asset.name)
+        let destination = try safeDestination(in: directory, name: filename ?? asset.name)
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }

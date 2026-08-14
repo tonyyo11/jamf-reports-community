@@ -412,8 +412,7 @@ enum ManagedAutomation {
     }
 
     /// Cadence string in the exact shape `LaunchAgentWriter.setupCadence`
-    /// parses (same format `ScheduleFormState.scheduleString` emits):
-    /// "Daily HH:MM" / "<Day3> HH:MM" / "<n><suffix> HH:MM".
+    /// parses: "Daily HH:MM" / "<Day3> HH:MM" / "Day <n> HH:MM".
     private static func scheduleString(_ kind: ManagedKind, policy: AutomationPolicy) -> String {
         let time = staggeredTime(base: policy.runTime, offsetMinutes: staggerMinutes(kind))
         switch kind {
@@ -428,7 +427,14 @@ enum ManagedAutomation {
             case .daily:
                 return "Daily \(time)"
             case .monthly:
-                return "\(ordinal(policy.reportsDayOfMonth)) \(time)"
+                // Matches `LaunchAgentService.formatCalendar`'s "Day N HH:mm" reader
+                // output (not the ordinal form) so the signature converges instead
+                // of permanently reinstalling on every reconcile. Clamped to the
+                // 1...28 range `setupCadence` accepts — the retired `ordinal()`
+                // clamped too, and an out-of-range policy value must keep
+                // installing rather than start throwing cadenceParseError.
+                let day = min(max(1, policy.reportsDayOfMonth), 28)
+                return "Day \(day) \(time)"
             case .weekly, .off:
                 return "\(weekdayAbbrev(policy.reportsWeekday)) \(time)"
             }
@@ -452,21 +458,14 @@ enum ManagedAutomation {
         return names[min(max(0, weekday), 6)]
     }
 
-    private static func ordinal(_ day: Int) -> String {
-        let clamped = min(max(1, day), 28)
-        let suffixes = ["th", "st", "nd", "rd"]
-        let suffix = clamped <= 3 ? suffixes[clamped] : "th"
-        return "\(clamped)\(suffix)"
-    }
-
     /// Stable signature for the "unchanged?" check: mode + cadence string +
-    /// sorted tiers. Exclusions are intentionally out — `LaunchAgentService.parse`
-    /// doesn't surface them, so including them would force a reinstall whenever
-    /// exclusions are set; the Automation UI calls `reconcile(force: true)` to
-    /// apply an exclusion change explicitly.
+    /// sorted tiers + sorted exclusions. `LaunchAgentService.parse` now reads
+    /// `--exclude-profiles` back into `Schedule.excludedProfiles`, so an
+    /// exclusions-only policy edit is detected here instead of being a no-op.
     private static func signature(_ schedule: Schedule) -> String {
         let tierCSV = (schedule.tiers ?? []).map(\.rawValue).sorted().joined(separator: ",")
-        return "\(schedule.mode.rawValue)|\(schedule.schedule)|\(tierCSV)"
+        let exclCSV = (schedule.excludedProfiles ?? []).sorted().joined(separator: ",")
+        return "\(schedule.mode.rawValue)|\(schedule.schedule)|\(tierCSV)|\(exclCSV)"
     }
 
     private static func actionSort(_ lhs: Action, _ rhs: Action) -> Bool {

@@ -12,6 +12,14 @@ struct Backup: AsyncParsableCommand {
         // the same "keep newest 10" retention instead of growing unbounded.
         let label = "scheduled-\(BackupMaintenance.dateStamp())"
         let code = try await bridge.backup(profile: profile, label: label, onLine: CLIRun.printLogLine)
+        // Run housekeeping BEFORE the possible CLIRun.fail below (which exits the
+        // process) so an exit-7 partial export is pruned like any other backup —
+        // CLIRun.fail never returns, so housekeeping is otherwise unreachable.
+        // Third caller of the shared housekeeping (GUI + scheduled are the others):
+        // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
+        if CLIBridge.backupOutputIsPrunable(exit: code) {
+            BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: CLIRun.printLogLine)
+        }
         // Explain the exit code (cause + remediation) rather than printing a bare
         // integer — same translation the GUI and the scheduled path use.
         if code != 0 {
@@ -19,9 +27,6 @@ struct Backup: AsyncParsableCommand {
                 CLIBridge.explainExit(code, operation: "Backup for '\(profile)'"), code: code
             )
         }
-        // Third caller of the shared housekeeping (GUI + scheduled are the others):
-        // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
-        BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: CLIRun.printLogLine)
     }
 }
 

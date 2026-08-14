@@ -666,9 +666,13 @@ final class CLIBridge {
     /// that's due. `RefreshCoordinator` passes `[.refresh]` for its
     /// profile-switch backfill so it doesn't pull every list endpoint.
     ///
-    /// `force: true` bypasses the once-per-day guard in `ReportEngine.collect`
-    /// so ad-hoc Refresh calls always fetch fresh data. Scheduled collects
-    /// (via `main.swift --scheduled-run`) pass `force: false` (the default).
+    /// `force: true` bypasses the once-per-day FULL-collect guard in
+    /// `ReportEngine.collect` when `tiers` is left at its default (full) set.
+    /// For a narrower set — e.g. `RefreshCoordinator`'s `[.refresh]` — that
+    /// guard never applies regardless; what `force: true` bypasses there is
+    /// the per-kind cadence filter, so ad-hoc Refresh calls still always
+    /// fetch fresh data. Scheduled collects (via `main.swift --scheduled-run`)
+    /// pass `force: false` (the default).
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
@@ -758,6 +762,15 @@ final class CLIBridge {
     /// - Parameters:
     ///   - code: the process exit code.
     ///   - operation: human phrase for what failed, e.g. "HTML report generation".
+    /// True for the exit codes after which `pro backup` has left output on
+    /// disk that retention must prune: `0`, and `exitCodePartialFailure` (7 — a
+    /// partial export is still finalized to `backups/<timestamp>/`). All three
+    /// backup call sites (scheduled, GUI, CLI) share this one rule; they used
+    /// to spell it out separately and drifted apart.
+    nonisolated static func backupOutputIsPrunable(exit code: Int32) -> Bool {
+        code == 0 || code == exitCodePartialFailure
+    }
+
     nonisolated static func explainExit(_ code: Int32, operation: String) -> String {
         let detail: String
         switch code {
@@ -774,15 +787,16 @@ final class CLIBridge {
                 + "then try again."
         case exitCodePartialFailure:
             detail = "partial failure (exit 7) — some sub-operations failed but partial data "
-                + "was returned and saved. Check Run History for the specific failures."
+                + "was returned and saved. Review this run's log output for the specific "
+                + "failures."
         case exitCodeUsage:
-            detail = "internal argument error (exit 2) — please report this with the Run "
-                + "History log."
+            detail = "internal argument error (exit 2) — please report this along with this "
+                + "run's log output."
         case 1:
-            detail = "exit 1 — usually a network error or a per-command failure. Check Run "
-                + "History for the failing command."
+            detail = "exit 1 — usually a network error or a per-command failure. Review this "
+                + "run's log output for the failing command."
         default:
-            detail = "exit \(code) — check Run History for details."
+            detail = "exit \(code) — review this run's log output for details."
         }
         return "\(operation) failed: \(detail)"
     }
@@ -992,6 +1006,16 @@ final class CLIBridge {
     /// is identical and must stay in lock-step. Returns a `DeviceDetailResult`
     /// so callers can render a staleness banner when the live API call fails
     /// and we silently returned the previous snapshot.
+    /// B-03: a device identifier is fleet data — a device's own name or serial
+    /// out of the inventory snapshot — not operator input, and it lands in a
+    /// bare positional argv slot. A leading dash is parsed by jamf-cli's flag
+    /// layer as a global flag rather than an identifier, so it is refused here
+    /// exactly as `audit --checks` and `backup --label` already refuse one.
+    nonisolated static func isSafeDeviceIdentifier(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && !trimmed.hasPrefix("-")
+    }
+
     nonisolated private func singleDeviceDetail(
         profile: String,
         deviceID: String,
@@ -1000,8 +1024,11 @@ final class CLIBridge {
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard Self.isSafeDeviceIdentifier(trimmedID) else {
+            AppLogger.cli.warning("device detail: rejecting leading-dash identifier")
+            return nil
+        }
         guard ProfileService.isValid(profile),
-              !trimmedID.isEmpty,
               let workspace = ProfileService.workspaceURL(for: profile) else {
             return nil
         }

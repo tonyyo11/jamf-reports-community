@@ -20,6 +20,84 @@ final class RunHistoryServiceTests: XCTestCase {
         XCTAssertNil(RunHistoryService.exitCode(from: "[info] exited normally"))
     }
 
+    // MARK: - A crashed run must never fabricate exit 0 / .ok
+
+    /// No `exit N` footer and no failure marker (e.g. the process was killed
+    /// mid-flight, before `ScheduledRunRecorder.finish` ran) must not be
+    /// read as a successful exit 0.
+    func testParseLogTailNoFooterCleanTailReturnsNilExitCode() throws {
+        let logURL = try writeLog("[info] started\n[info] collecting inventory\n")
+        let (exitCode, _, _) = RunHistoryService.parseLogTail(from: logURL)
+        XCTAssertNil(exitCode,
+                     "a log with no footer and no failure marker must not fabricate an exit code")
+    }
+
+    /// A fatal marker with no footer must still read as a failure (unchanged).
+    func testParseLogTailNoFooterWithFailureMarkerReturnsOne() throws {
+        let logURL = try writeLog("[info] started\n[error] something broke\n")
+        let (exitCode, _, _) = RunHistoryService.parseLogTail(from: logURL)
+        XCTAssertEqual(exitCode, 1)
+    }
+
+    func testListStatusWarnForRunWithNoFooterAndCleanTail() throws {
+        let (root, profile) = try makeWorkspaceLogsRoot(
+            profile: "warn-status-test",
+            logText: "[info] started\n[info] collecting inventory\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let runs = RunHistoryService.list(profile: profile)
+
+        XCTAssertEqual(runs.count, 1)
+        XCTAssertNil(runs.first?.exitCode)
+        XCTAssertEqual(runs.first?.status, .warn,
+                       "a run that never recorded an outcome must surface as .warn, not .ok")
+    }
+
+    func testListStatusFailForRunWithNoFooterAndErrorMarker() throws {
+        let (root, profile) = try makeWorkspaceLogsRoot(
+            profile: "fail-status-test",
+            logText: "[info] started\n[error] something broke\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let runs = RunHistoryService.list(profile: profile)
+
+        XCTAssertEqual(runs.count, 1)
+        XCTAssertEqual(runs.first?.exitCode, 1)
+        XCTAssertEqual(runs.first?.status, .fail)
+    }
+
+    /// Unchanged: a real `exit 0` footer still reads as .ok.
+    func testListStatusOkForExitZeroFooterUnchanged() throws {
+        let (root, profile) = try makeWorkspaceLogsRoot(
+            profile: "ok-status-test",
+            logText: "[info] started\n[info] exit 0 after 5s\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let runs = RunHistoryService.list(profile: profile)
+
+        XCTAssertEqual(runs.count, 1)
+        XCTAssertEqual(runs.first?.exitCode, 0)
+        XCTAssertEqual(runs.first?.status, .ok)
+    }
+
+    /// Unchanged: `exit 0` plus a `[partial]` marker still reads as .partial.
+    func testListStatusPartialForExitZeroWithPartialMarkerUnchanged() throws {
+        let (root, profile) = try makeWorkspaceLogsRoot(
+            profile: "partial-status-test",
+            logText: "[info] started\n[partial] Report written with issues\n[info] exit 0 after 3s\n"
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let runs = RunHistoryService.list(profile: profile)
+
+        XCTAssertEqual(runs.count, 1)
+        XCTAssertEqual(runs.first?.exitCode, 0)
+        XCTAssertEqual(runs.first?.status, .partial)
+    }
+
     func testPartialStatusFromSummaryJSON() throws {
         let (logURL, workspace) = try writeWorkspaceLog(
             timestamp: "20260516-143000",
@@ -158,6 +236,32 @@ final class RunHistoryServiceTests: XCTestCase {
         try text.write(to: url, atomically: true, encoding: .utf8)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         return url
+    }
+
+    /// Creates a synthesized `<root>/Jamf-Reports/<profile>/automation/logs/`
+    /// tree containing a single `.log` file, and points
+    /// `ProfileService.workspacesRoot()` at it via `JRC_TEST_WORKSPACES_ROOT`
+    /// (mirrors `PerformanceRegressionTests.makeLogsDirectory`) so
+    /// `RunHistoryService.list(profile:)` can be exercised end-to-end.
+    private func makeWorkspaceLogsRoot(
+        profile: String,
+        logText: String
+    ) throws -> (root: URL, profile: String) {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-RunHistList-\(UUID().uuidString)", isDirectory: true)
+        let workspacesRoot = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        let logsDir = workspacesRoot
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("automation", isDirectory: true)
+            .appendingPathComponent("logs", isDirectory: true)
+        try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+
+        let name = "\(LaunchAgentWriter.labelPrefix).\(profile).daily-snapshot.out.log"
+        try logText.write(to: logsDir.appendingPathComponent(name), atomically: true, encoding: .utf8)
+
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        return (root, profile)
     }
 
     /// Creates `<workspace>/automation/logs/<ts>.log` and

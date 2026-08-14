@@ -53,7 +53,10 @@ enum RunHistoryService {
                         status = code == 0 ? .ok : .fail
                     }
                 } else {
-                    status = .ok
+                    // No exit footer and no failure marker — the run never
+                    // recorded an outcome (e.g. killed mid-flight). Do not
+                    // read that as success.
+                    status = .warn
                 }
                 return RunSummary(
                     logURL: resolved,
@@ -158,7 +161,9 @@ enum RunHistoryService {
     }
 
     /// Read the last 1 KB of a log to infer exit code, duration, and tail text
-    /// (returned for `isPartialRun` log-marker fallback).
+    /// (returned for `isPartialRun` log-marker fallback). Exit code is `nil`
+    /// when no `exit N` footer or failure marker was found — a crashed run
+    /// must never be fabricated as `0`/success.
     static func parseLogTail(from url: URL) -> (Int32?, String?, String) {
         guard let fh = FileHandle(forReadingAtPath: url.path) else { return (nil, nil, "") }
         defer { fh.closeFile() }
@@ -186,7 +191,8 @@ enum RunHistoryService {
                 if duration != nil { break }
             }
         }
-        return (parsedExitCode ?? (hasFatal ? 1 : 0), duration, text)
+        let exitCode: Int32? = parsedExitCode ?? (hasFatal ? 1 : nil)
+        return (exitCode, duration, text)
     }
 
     /// Authoritative source: sibling `summary_<logFilename>.json` matching the

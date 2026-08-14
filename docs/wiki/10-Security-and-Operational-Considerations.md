@@ -125,6 +125,14 @@ only aggregate metrics, statuses, and operational names** (profile, schedule lab
 status, counts). It requires `notify.url` to be `https://`; an `http://` URL is treated as
 not usable and no send is attempted.
 
+**Scope note — the overdue digest is fleet-wide.** The dead-man switch cannot be scoped
+to one profile, because the profile whose agent is dead is precisely the one that isn't
+running. A headless scheduled run therefore evaluates *every* schedule on the machine and
+posts the digest to the first profile that has a usable webhook. On a Mac with more than
+one profile, that card names the other profiles' slugs (and, in `full` detail, their
+schedule names). Excluded profiles are omitted. If your profiles map to different
+audiences, use `notify.detail: minimal`, which sends only a count.
+
 - **`notify.detail: minimal`** reduces every card to event facts only — counts and
   statuses ("2 alert rules tripped", "1 schedule overdue") with no metric values, no
   error text, and no schedule names. Use it for headless or high-security hosts where the

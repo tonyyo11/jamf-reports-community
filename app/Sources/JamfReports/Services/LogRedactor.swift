@@ -113,6 +113,26 @@ enum LogRedactor {
             template: "$1REDACTED_WEBHOOK_URL$3"
         ))
 
+        // The key-based rule above misses this app's own webhook: NotifyConfig
+        // stores it at `notify.url`, i.e. a bare `url:`, not `webhook_url:`. An
+        // incoming-webhook URL is a posting credential whose SECRET IS THE PATH,
+        // so match the endpoint shape and drop the whole value. Kept in step with
+        // DiagnosticRedactor (DiagnosticBundleService) — when one gains a webhook
+        // host, so must the other, or the two drift apart again.
+        for host in [
+            #"hooks\.slack\.com/services"#,
+            #"[A-Za-z0-9.\-]+\.webhook\.office\.com/"#,
+            #"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#
+        ] {
+            built.append(Pattern(
+                regex: try! NSRegularExpression(
+                    pattern: #"https?://"# + host + #"[^\s"',}]*"#,
+                    options: [.caseInsensitive]
+                ),
+                template: "REDACTED_WEBHOOK_URL"
+            ))
+        }
+
         // Password fields (generic; redact the value, keep the key). The optional
         // `["']?` after the key name catches the JSON shape `"password": "value"`.
         // One-char floor catches "password: x" as well as long values.

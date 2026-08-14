@@ -51,7 +51,10 @@ extension CLIBridge {
                 label: "scheduled-\(BackupMaintenance.dateStamp())",
                 onLine: onLine
             )
-            if exit == 0 {
+            // Exit 7 keeps its partial export on disk (see CLIBridge.backup), so
+            // retention has to see it too — otherwise partial backups accumulate
+            // unpruned forever. Mirrors main.swift's scheduled-run backup path.
+            if Self.backupOutputIsPrunable(exit: exit) {
                 BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: onLine)
             }
             return exit

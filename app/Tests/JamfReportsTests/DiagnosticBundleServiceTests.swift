@@ -492,4 +492,32 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         }
         return names
     }
+
+    // MARK: - notify.url webhook in the shareable config
+
+    /// The bundle stages config.yaml for sharing and the docs promise "secrets
+    /// always removed", but the redactor keyed on `webhook_url` while this app
+    /// stores the webhook at `notify.url`. Host masking alone is not enough:
+    /// for Slack and Teams the credential travels in the URL path.
+    func testNotifyURLWebhookIsRedactedInConfigText() {
+        let r = DiagnosticRedactor()
+        let secret = "T0ABCDEF/B0GHIJKL/9xQ2fTnotarealtoken"
+        let yaml = """
+        notify:
+          enabled: true
+          provider: slack
+          url: "https://hooks.slack.com/services/\(secret)"
+        """
+        let out = r.redactText(yaml)
+        XCTAssertFalse(out.contains(secret), "the webhook path is the credential")
+        XCTAssertFalse(out.contains("hooks.slack.com"))
+    }
+
+    func testNotifyURLTeamsWebhookIsRedactedInConfigText() {
+        let r = DiagnosticRedactor()
+        let secret = "0123456789abcdef0123456789abcdef"
+        let yaml = "  url: https://contoso.webhook.office.com/webhookb2/\(secret)/IncomingWebhook/x"
+        let out = r.redactText(yaml)
+        XCTAssertFalse(out.contains(secret))
+    }
 }

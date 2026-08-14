@@ -55,14 +55,19 @@ enum CellValue: Sendable {
         }
     }
 
-    private static func sanitizeString(_ raw: String) -> CellValue {
-        // Strip C0/C1 control characters, keeping only tab, LF, CR.
-        let filtered = raw.unicodeScalars.filter { scalar in
+    /// Strip C0 (keeping tab, LF, CR) and C1. Broader than XML 1.0 requires —
+    /// C1 is legal there — so cell values and sheet names sanitize identically.
+    static func stripControlCharacters(_ raw: String) -> [Unicode.Scalar] {
+        raw.unicodeScalars.filter { scalar in
             let v = scalar.value
             let isControl = (v <= 0x1F && v != 0x09 && v != 0x0A && v != 0x0D)
                 || (v >= 0x7F && v <= 0x9F)
             return !isControl
         }
+    }
+
+    private static func sanitizeString(_ raw: String) -> CellValue {
+        let filtered = stripControlCharacters(raw)
         // Excel cell limit: 32,767 characters.
         let s: String
         if filtered.count > 32_000 {
@@ -293,7 +298,8 @@ final class Workbook: @unchecked Sendable {
     @discardableResult
     func addSheet(_ name: String) -> Worksheet {
         let sanitized = sanitizeSheetName(name)
-        let ws = Worksheet(name: sanitized)
+        let unique = uniqueSheetName(sanitized)
+        let ws = Worksheet(name: unique)
         sheets.append(ws)
         return ws
     }
@@ -851,8 +857,25 @@ final class Workbook: @unchecked Sendable {
         let invalid = CharacterSet(charactersIn: "[]:*?/\\")
         var s = name.components(separatedBy: invalid).joined(separator: " ")
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: "'"))
+        s = String(String.UnicodeScalarView(CellValue.stripControlCharacters(s)))
         if s.isEmpty { s = "Sheet" }
         return String(s.prefix(31))
+    }
+
+    /// Disambiguate against existing sheet names — two names colliding after
+    /// the 31-char truncation would emit duplicate `<sheet>`, which ECMA-376
+    /// forbids. The suffixed result stays within 31 characters.
+    private func uniqueSheetName(_ base: String) -> String {
+        let existingNames = Set(sheets.map { $0.name })
+        guard existingNames.contains(base) else { return base }
+        var suffix = 2
+        while true {
+            let suffixStr = "_\(suffix)"
+            let maxBaseLength = max(0, 31 - suffixStr.count)
+            let candidate = String(base.prefix(maxBaseLength)) + suffixStr
+            if !existingNames.contains(candidate) { return candidate }
+            suffix += 1
+        }
     }
 
     private func xmlEscape(_ value: String) -> String {

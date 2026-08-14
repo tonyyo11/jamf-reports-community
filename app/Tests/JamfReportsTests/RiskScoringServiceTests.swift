@@ -225,4 +225,77 @@ final class RiskScoringServiceTests: XCTestCase {
         XCTAssertEqual(DeviceRisk.Level.from(score: 20), .critical)
         XCTAssertEqual(DeviceRisk.Level.from(score: 100), .critical)
     }
+
+    // MARK: - Status-string polarity
+
+    private func statusRecord(
+        fileVault: String, sip: String, firewall: String, gatekeeper: String
+    ) -> DeviceInventoryRecord {
+        DeviceInventoryRecord(
+            id: "JSS-900", jamfID: "900", name: "Mac-900", serial: "POLARITY9",
+            osVersion: "15.4", model: "MacBookPro18,1", user: "carol",
+            email: "carol@example.org", department: "Eng", building: "HQ",
+            site: "main", ipAddress: "10.0.0.9", assetTag: "AT-009",
+            managedState: "Managed", lastContact: "2026-05-10T12:00:00Z",
+            lastInventory: "2026-05-10T12:00:00Z", daysSinceContact: 1,
+            stale: false, fileVault: fileVault, sip: sip,
+            firewall: firewall, gatekeeper: gatekeeper,
+            bootstrapToken: "Escrowed", diskUsage: "10%", failedRules: 0,
+            patchFailures: [], source: "jamf-cli"
+        )
+    }
+
+    /// "not enabled" contains "enabled" and "not encrypted" contains
+    /// "encrypted", so testing positive substrings before negative ones scored
+    /// every disabled control as passing — an unprotected Mac scored Clean and
+    /// dropped out of the Priority filter. These are Jamf's own word-form
+    /// export values.
+    func testJamfWordFormNegativesScoreAsFailing() {
+        let input = RiskScoringService.Input.from(record: statusRecord(
+            fileVault: "Not Encrypted", sip: "Not Enabled",
+            firewall: "Not Enabled", gatekeeper: "Off"
+        ))
+        XCTAssertFalse(input.fileVaultEncrypted, "\"Not Encrypted\" is not encrypted")
+        XCTAssertFalse(input.sipEnabled, "\"Not Enabled\" is not enabled")
+        XCTAssertFalse(input.firewallEnabled, "\"Not Enabled\" is not enabled")
+        XCTAssertFalse(input.gatekeeperEnabled, "\"Off\" is not enabled")
+
+        let risk = RiskScoringService.score(input: input)
+        XCTAssertGreaterThan(risk.score, 0)
+        XCTAssertNotEqual(risk.level, .clean, "an unprotected Mac must never score Clean")
+    }
+
+    /// Underscore forms reach us from the API path rather than the CSV export;
+    /// normalization must fold them onto the same values.
+    func testUnderscoreFormNegativesScoreAsFailing() {
+        let input = RiskScoringService.Input.from(record: statusRecord(
+            fileVault: "NOT_ENCRYPTED", sip: "NOT_ENABLED",
+            firewall: "DISABLED", gatekeeper: "NOT_ENABLED"
+        ))
+        XCTAssertFalse(input.fileVaultEncrypted)
+        XCTAssertFalse(input.sipEnabled)
+        XCTAssertFalse(input.firewallEnabled)
+        XCTAssertFalse(input.gatekeeperEnabled)
+    }
+
+    func testAffirmativeStatusesStillPass() {
+        let input = RiskScoringService.Input.from(record: statusRecord(
+            fileVault: "Encrypted", sip: "Enabled",
+            firewall: "Enabled", gatekeeper: "Yes"
+        ))
+        XCTAssertTrue(input.fileVaultEncrypted)
+        XCTAssertTrue(input.sipEnabled)
+        XCTAssertTrue(input.firewallEnabled)
+        XCTAssertTrue(input.gatekeeperEnabled)
+    }
+
+    /// An absent value is not a failing value — a control we never measured
+    /// must not be scored as disabled.
+    func testEmptyStatusIsNotScoredAsFailing() {
+        let input = RiskScoringService.Input.from(record: statusRecord(
+            fileVault: "", sip: "", firewall: "", gatekeeper: ""
+        ))
+        XCTAssertTrue(input.fileVaultEncrypted)
+        XCTAssertTrue(input.sipEnabled)
+    }
 }

@@ -315,8 +315,10 @@ For each: **goal → path → assets → likelihood × impact → priority**, wi
 - **Path:** A1 modifies a snapshot AND deletes the matching `manifest.json` entry (or the whole file). Swift `SnapshotManifest.verify` returns `.absent`/`.corrupt` when the manifest is missing/unparseable. The comment at `SnapshotManifest.swift:11-16` documents the no-abort behavior as intentional ("partial-collect crashes look the same as tampering") — the resolution is a UI warning, not silence.
 - **Existing mitigations:** **Surfaced by PR-10.** `jamf_cli.require_manifest: true`
   (and the "Require snapshot manifest" toggle in Configuration → jamf-cli Cache)
-  hard-fails generation on missing or unparseable manifests via `ReportEngine`'s
-  strict pre-flight. AuditView surfaces an "Unverified snapshot" warning card
+  hard-fails generation on tampered manifests (`.mismatch`/`.corrupt`) via
+  `ReportEngine`'s strict pre-flight; missing or unparseable-legacy manifests
+  (`.absent`/`.omitted`) are tolerated, not hard-failed. AuditView surfaces an
+  "Unverified snapshot" warning card
   listing the count and breakdown of unverified snapshot directories regardless of
   the config setting, so manifest absence is visible rather than a silent pass.
 - **Producer caveat (2026-06-18, single-engine):** the `jamf-cli-data/<kind>/`

@@ -223,24 +223,36 @@ extension RiskScoringService.Input {
         )
     }
 
+    /// Same normalization as `valueLooksGood`/`statusLooksBad` (Models.swift), so
+    /// `NOT_ENCRYPTED` and `Not Encrypted` are one value on both paths.
+    private static func normalizedStatus(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+    }
+
     private static func looksAffirmative(_ raw: String) -> Bool {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let text = normalizedStatus(raw)
         if text.isEmpty { return true }    // missing data ≠ failing
-        if text.contains("enabled") || text.contains("escrowed") ||
-            text.contains("encrypted") || text == "yes" || text == "true" {
-            return true
-        }
+        // A negative is authoritative and must win. Testing the positive
+        // substrings first scored every disabled control as passing, because
+        // "not enabled" contains "enabled" and "not encrypted" contains
+        // "encrypted" — so an unprotected Mac scored Clean and dropped out of
+        // the Priority filter. Anything not provably negative stays affirmative,
+        // which is what the previous `!looksNegative` tail already did.
         return !looksNegative(text)
     }
 
     private static func looksNegative(_ raw: String) -> Bool {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if text.contains("disabled") || text.contains("not enabled") ||
-            text.contains("not escrowed") || text.contains("unencrypted") ||
-            text == "no" || text == "false" || text == "0" {
+        let text = normalizedStatus(raw)
+        guard !text.isEmpty else { return false }
+        // "not " covers not enabled / not encrypted / not escrowed in one test,
+        // matching valueLooksGood (Models.swift) rather than drifting from it.
+        if text.contains("not ") || text.contains("disabled") ||
+            text.contains("unencrypted") {
             return true
         }
-        return false
+        return ["no", "false", "0", "off"].contains(text)
     }
 
     private static func parseDiskUsagePct(_ raw: String) -> Double? {
