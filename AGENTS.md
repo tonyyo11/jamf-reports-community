@@ -159,6 +159,16 @@ interchangeable. Core inventory commands always run.
 
 ### output config
 
+`output.allow_absolute_paths` (default `false`) gates any output path outside the
+workspace. It is what makes "publish reports to a shared folder" possible:
+`~/Library/CloudStorage/*` is carved out of the `~/Library` deny-list in
+`WorkspacePaths.isSensitiveAbsolutePath` because that is where macOS mounts every
+sync provider. **Publish, don't relocate** — the workspace itself stays local, or
+the single-writer, POSIX-permission, and mtime assumptions the rest of the app
+makes stop holding. `ConfigDoctorService.evaluateCloudStorage` reports which
+layout is in effect; `docs/wiki/10-Security-and-Operational-Considerations.md`
+has the operator-facing version.
+
 ```yaml
 output:
   output_dir: "Generated Reports"
@@ -330,6 +340,8 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `BackupMaintenance` | (v2.2.0) Housekeeping for `backups/`: keeps the newest 10 scheduled backups (manual backups never pruned — identified by the `scheduled-` manifest label prefix) and sweeps abandoned `.tmp-*` staging dirs older than 24h. |
 | `SnapshotFreshness` | Decides fresh / stale / no-snapshots for a data dir by newest-file mtime. Gates the Overview "skip collect when fresh" path and the launch freshness sweep. |
 | `RefreshDebouncer` | Debounce helper extracted from the refresh path for testability. |
+| `CloudStorage` | Cloud-sync awareness shared by the path guards, the `newest*` file helpers and the Config Doctor. `snapshotTimestamp`/`isCanonicalSummaryFilename` require our own canonical filename stamps — a whitelist, so a provider's conflict copy (`… 2.json`, `… (1).json`) is rejected without maintaining a per-provider blacklist. `isLikelySyncConflict` is diagnostics only (no ordering depends on it). `provider(for:)` recognises `~/Library/CloudStorage/*`, iCloud, legacy `~/Dropbox`/`~/Box` and `/Volumes/*`. |
+| `BackupDiffModel` | Pure collapse of `jamf-cli pro diff --output json` into what actually changed: a recursive two-sided leaf diff, then grouping of objects whose change is identical. **Arrays are compared as multisets, never by index** — Jamf version lists are newest-first, so a new release prepends an element and an index-wise diff reported one added version as four hundred modified ones. Backs the Backups → Diff sheet's Summary mode. Deliberately not a model summary: these are numbers an operator acts on. |
 | `CSVFamilyDetector` | Detects whether a Jamf Pro CSV export contains computers or mobile devices via family-unique discriminator headers (`COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS`). Used by ScaffoldService and the CSV sheet routing. |
 | `SOFAFeedService` | Reads/writes the shared `jamf-cli-data/sofa/` cache (URLSession fetch, atomic writes). Feeds the OS Currency sheet/section, UpdatesView latest-version card, and ReportEngine.collect (refresh tier; kinds `sofa` + `patch-release-dates` in knownCollectKinds). |
 | `PatchReleaseDateService` | Reads the merged `patch-release-dates` snapshot (`[{title_id, title, latest_version, release_date}]`, written by the engine's collect). Latest-definition matching: exact version → absoluteOrderId 0 → first. Feeds Patch Compliance sheet + PatchView Released/Days Behind columns. |

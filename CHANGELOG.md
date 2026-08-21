@@ -7,7 +7,41 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+Reports can now be published to a cloud-synced team folder. Set
+`output.allow_absolute_paths: true` and point `output.output_dir` at the shared
+location — `~/Library/CloudStorage/…` for OneDrive, SharePoint, Box, Dropbox or
+Google Drive — and colleagues can read finished workbooks without being given the
+raw fleet data. Keep the workspace itself on local disk: that is where device
+serials, usernames and run logs live, and where the app's file permissions still
+mean something.
+
+The Config Doctor gained a **Cloud storage** section that says which layout is in
+effect, warns when the whole workspace (or just the backups folder) is on a
+synced volume, and lists any sync-conflict duplicates it finds.
+
+Comparing two backups now shows a summary of what actually changed instead of the
+full configuration of every changed object — grouped so that fifty apps receiving
+the same update read as one line. The old output is still one click away under
+**Raw**, the whole diff can be copied, and the sheet finally has a Done button
+(Escape works too) and lets you select text across lines.
+
 ### Fixed
+
+Old scheduled backups could be deleted in the wrong order — potentially removing
+the newest ones — on a cloud-synced or network volume, because the sort used
+modification dates that sync providers rewrite. Backups are now ordered by the
+timestamp in their folder name, any folder whose name can't be read aborts the
+whole cleanup rather than guessing, and automatic pruning is skipped entirely
+while the backups folder is synced (that folder may hold another Mac's backups).
+
+Dashboards could disagree about which day of data they were showing on synced
+storage: some read the newest snapshot by filename and others by modification
+date. They all use the filename now. Duplicate files a sync provider leaves
+behind (`… 2.json`, `… (1).json`) are ignored everywhere rather than being
+mistaken for the newest snapshot, and duplicate daily summaries no longer produce
+double points in Trends.
 
 - Device Lookup and the Devices detail panel's jamf-cli section work again.
   jamf-cli's `pro device` command accepts `--out-file` but prints its JSON to
