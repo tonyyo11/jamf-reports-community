@@ -1122,7 +1122,7 @@ final class CLIBridge {
         left: URL,
         right: URL,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async throws -> Int32 {
+    ) async throws -> (exitCode: Int32, payload: Data) {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             throw CLIBridgeError.invalidProfile(profile)
@@ -1131,19 +1131,27 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
-        return try await run(
+        // `--output json` (not `plain`): the plain renderer flattens each change
+        // into its whole field value, which is what made the diff sheet a wall of
+        // JSON — 246KB to express ten changes on a real pair of backups. The
+        // structured form is what `BackupDiffModel` collapses. jamf-cli writes
+        // the payload to stdout and only progress ("Loading source: …") to
+        // stderr, so `runAndCapture` streams the progress through `onLine` and
+        // hands back the payload.
+        let (exitCode, data) = try await runAndCapture(
             executable: bin,
             arguments: [
                 "-p", profile,
                 "pro", "diff",
                 "--source", left.path,
                 "--target", right.path,
-                "--output", "plain",
+                "--output", "json",
                 "--no-input",
             ],
             environment: Self.environmentForJamfCLI(),
             onLine: onLine
         )
+        return (exitCode, data)
     }
 
     func generateHTML(

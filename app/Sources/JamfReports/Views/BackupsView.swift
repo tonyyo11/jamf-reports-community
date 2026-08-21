@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct BackupsView: View {
     @Environment(WorkspaceStore.self) private var workspace
@@ -9,6 +10,11 @@ struct BackupsView: View {
     @State private var backupLabel = ""
     @State private var backupOutput: [CLIBridge.LogLine] = []
     @State private var diffOutput: [CLIBridge.LogLine] = []
+    @State private var diffGroups: [BackupDiffModel.Group] = []
+    @State private var diffHeadline = ""
+    @State private var diffRawText = ""
+    @State private var diffParseFailed = false
+    @State private var diffMode: DiffMode = .summary
     @State private var backupExitCode: Int32?
     @State private var diffExitCode: Int32?
     @State private var isRunningBackup = false
@@ -281,32 +287,121 @@ struct BackupsView: View {
 
     private var diffSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 10) {
                 SectionHeader(title: "Backup Diff")
                 Spacer()
                 if let diffExitCode {
                     Pill(text: "EXIT \(diffExitCode)", tone: diffExitCode == 0 ? .teal : .danger)
                 }
+                PNPButton(title: "Copy", icon: "doc.on.doc", size: .sm) {
+                    copyDiffToPasteboard()
+                }
+                .disabled(diffOutput.isEmpty)
+                .accessibilityLabel("Copy the whole diff to the clipboard")
+                PNPButton(title: "Done", size: .sm) {
+                    showingDiff = false
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+            if !diffParseFailed && !diffGroups.isEmpty {
+                HStack(spacing: 10) {
+                    Text(diffHeadline)
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(Theme.Text.secondary)
+                    Spacer()
+                    SegmentedControl(
+                        selection: $diffMode,
+                        options: [(DiffMode.summary, "Summary", nil), (DiffMode.raw, "Raw", nil)]
+                    )
+                }
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 5) {
-                    if diffOutput.isEmpty {
-                        Text("No diff output.")
+                    if isRunningDiff && diffGroups.isEmpty && diffRawText.isEmpty {
+                        Text("Running diff\u{2026}")
                             .font(Theme.Fonts.mono(11.5))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
+                    } else if diffMode == .summary && !diffParseFailed {
+                        diffSummaryBody
                     } else {
-                        ForEach(diffOutput) { line in
-                            DiffLineView(text: line.text, fallbackColor: color(for: line.level))
-                        }
+                        diffRawBody
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Selection belongs on the container: a per-Text modifier scopes
+                // each drag to one line, which is why select-all never worked.
+                .textSelection(.enabled)
             }
             .background(Theme.Colors.codeBG, in: RoundedRectangle(cornerRadius: 8))
         }
         .padding(22)
         .frame(width: 760, height: 520)
         .background(Theme.Surface.base)
+    }
+
+    private enum DiffMode: Hashable { case summary, raw }
+
+    @ViewBuilder
+    private var diffSummaryBody: some View {
+        if diffGroups.isEmpty {
+            Text("No differences between these backups.")
+                .font(Theme.Fonts.mono(11.5))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .padding(8)
+        } else {
+            ForEach(diffGroups) { group in
+                DiffGroupView(group: group)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var diffRawBody: some View {
+        if diffRawText.isEmpty {
+            ForEach(diffOutput) { line in
+                DiffLineView(text: line.text, fallbackColor: color(for: line.level))
+            }
+        } else {
+            if diffParseFailed {
+                Text("Could not read this as a structured diff \u{2014} showing raw output.")
+                    .font(Theme.Fonts.mono(11.5))
+                    .foregroundStyle(Theme.Colors.warn)
+                    .padding(.horizontal, 6)
+            }
+            Text(diffRawText)
+                .font(Theme.Fonts.mono(11.5))
+                .foregroundStyle(Theme.Text.secondary)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Decode the captured payload into the collapsed view. A payload that
+    /// isn't the expected JSON array falls back to Raw rather than rendering an
+    /// empty summary, which would read as "no differences".
+    private func applyDiffPayload(_ payload: Data) {
+        diffRawText = String(data: payload, encoding: .utf8) ?? ""
+        guard let items = BackupDiffModel.parse(payload) else {
+            diffParseFailed = true
+            diffGroups = []
+            diffHeadline = ""
+            diffMode = .raw
+            return
+        }
+        diffParseFailed = false
+        diffGroups = BackupDiffModel.group(items)
+        diffHeadline = BackupDiffModel.headline(items)
+        diffMode = .summary
+    }
+
+    /// Copies whatever the operator is looking at: the collapsed summary is
+    /// what goes in a ticket, the raw payload is what goes to a script.
+    private func copyDiffToPasteboard() {
+        let text = diffMode == .summary && !diffParseFailed
+            ? BackupDiffModel.plainText(diffGroups)
+            : diffRawText
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private func runBackup() {
@@ -349,14 +444,19 @@ struct BackupsView: View {
     private func diff(_ backup: BackupRecord, against latest: BackupRecord?) {
         guard let latest, latest.id != backup.id else { return }
         diffOutput.removeAll()
+        diffGroups = []
+        diffHeadline = ""
+        diffRawText = ""
+        diffParseFailed = false
+        diffMode = .summary
         diffExitCode = nil
         errorMessage = nil
         showingDiff = true
         isRunningDiff = true
         Task {
-            let exit: Int32
+            let result: (exitCode: Int32, payload: Data)
             do {
-                exit = try await bridge.diffBackups(
+                result = try await bridge.diffBackups(
                     profile: workspace.profile,
                     left: backup.url,
                     right: latest.url
@@ -369,10 +469,11 @@ struct BackupsView: View {
                 errorMessage = "Backup diff failed: \(error.localizedDescription)"
                 return
             }
-            diffExitCode = exit
+            applyDiffPayload(result.payload)
+            diffExitCode = result.exitCode
             isRunningDiff = false
-            if exit != 0 {
-                errorMessage = CLIBridge.explainExit(exit, operation: "Backup diff")
+            if result.exitCode != 0 {
+                errorMessage = CLIBridge.explainExit(result.exitCode, operation: "Backup diff")
             }
         }
     }
@@ -423,7 +524,6 @@ private struct DiffLineView: View {
             .padding(.vertical, 1)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(background, in: RoundedRectangle(cornerRadius: 4))
-            .textSelection(.enabled)
     }
 
     private var foreground: Color {
@@ -533,5 +633,89 @@ private struct BackupLibrary {
         var created: Date?
         var fileCount: Int?
         var sizeBytes: Int64?
+    }
+}
+
+/// One collapsed group of identical changes: the resource and object count,
+/// the leaf changes themselves, and the affected object names behind a
+/// disclosure so a 47-object group stays one line until asked.
+private struct DiffGroupView: View {
+    let group: BackupDiffModel.Group
+    @Environment(\.colorSchemeContrast) private var contrast
+    @State private var showNames = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(group.resource)
+                    .font(Theme.Fonts.mono(11.5).weight(.semibold))
+                    .foregroundStyle(Theme.Colors.goldBright)
+                Text(group.change)
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                Text(group.names.count == 1 ? "1 object" : "\(group.names.count) objects")
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.secondary)
+            }
+
+            ForEach(Array(group.changes.enumerated()), id: \.offset) { _, change in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(change.path.isEmpty ? "(value)" : change.path)
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Text.secondary)
+                    Text(change.old ?? "—")
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Colors.danger)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 8))
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                    Text(change.new ?? "—")
+                        .font(Theme.Fonts.mono(11))
+                        .foregroundStyle(Theme.Colors.ok)
+                }
+                .padding(.leading, 12)
+            }
+
+            if group.truncated {
+                Text("… more changes in this object than shown; use Raw for the full payload")
+                    .font(Theme.Fonts.mono(10.5))
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .padding(.leading, 12)
+            }
+            if group.opaque {
+                Text("value replaced (not structured JSON)")
+                    .font(Theme.Fonts.mono(10.5))
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .padding(.leading, 12)
+            }
+
+            Button {
+                showNames.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: showNames ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                    Text(showNames ? "Hide objects" : "Show objects")
+                        .font(Theme.Fonts.mono(10.5))
+                }
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .accessibilityLabel(showNames
+                ? "Hide the objects changed in \(group.resource)"
+                : "Show the objects changed in \(group.resource)")
+
+            if showNames {
+                Text(group.names.joined(separator: ", "))
+                    .font(Theme.Fonts.mono(10.5))
+                    .foregroundStyle(Theme.Text.secondary)
+                    .padding(.leading, 24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Colors.gold.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
     }
 }
