@@ -1046,6 +1046,7 @@ final class CLIBridge {
                     "--output", "json", "--no-input", "--out-file", partial.path,
                 ],
                 outputDirectory: devicesDir,
+                stdoutFallbackFile: partial,
                 onLine: onLine
             )
             if exit == 0 {
@@ -2137,10 +2138,17 @@ final class CLIBridge {
 // Internal (file-scope dropped) so JamfCLIIdentity-gate tests can
 // exercise this path directly — singleDeviceDetail is the only
 // production caller.
+/// `stdoutFallbackFile`: jamf-cli's `pro device` accepts `--out-file` but its
+/// structured-output path builds a local formatter without the out-file writer,
+/// so the JSON lands on stdout and the file is never created (upstream bug,
+/// observed through 1.26.0). When set, captured stdout is written there after a
+/// clean exit if the CLI didn't produce the file itself — so the fetch works on
+/// both broken and fixed jamf-cli versions.
 func runDeviceDetailProcess(
     executable: URL,
     arguments: [String],
     outputDirectory: URL,
+    stdoutFallbackFile: URL? = nil,
     onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 ) async -> Int32 {
     await Task.detached(priority: .userInitiated) {
@@ -2176,10 +2184,11 @@ func runDeviceDetailProcess(
             process.executableURL = executable
             process.arguments = arguments
             process.environment = CLIBridge.environmentForJamfCLI()
-            process.standardOutput = FileHandle.nullDevice
+            let stdoutPipe = Pipe()
+            process.standardOutput = stdoutPipe
             let stderrPipe = Pipe()
             process.standardError = stderrPipe
-            // Drain stderr via readabilityHandler before waitUntilExit to prevent
+            // Drain both pipes via readabilityHandler before waitUntilExit to prevent
             // a pipe-buffer deadlock when the child writes >~64 KB before exiting.
             // NSLock.lock()/unlock() is @available(*, noasync) — it cannot be called
             // directly in an async function body. Wrapping all lock/unlock pairs inside
@@ -2187,13 +2196,22 @@ func runDeviceDetailProcess(
             // this file (DataBox, RunCompletion, ProcessBox) and is safe because
             // the `@available(*, noasync)` restriction does not propagate through a
             // synchronous call boundary.
-            final class StderrBuffer: @unchecked Sendable {
+            final class ByteBuffer: @unchecked Sendable {
                 private let lock = NSLock()
                 private var data = Data()
                 func append(_ chunk: Data) { lock.lock(); data.append(chunk); lock.unlock() }
                 func snapshot() -> Data { lock.lock(); defer { lock.unlock() }; return data }
             }
-            let buf = StderrBuffer()
+            let outBuf = ByteBuffer()
+            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                guard !chunk.isEmpty else {
+                    handle.readabilityHandler = nil
+                    return
+                }
+                outBuf.append(chunk)
+            }
+            let buf = ByteBuffer()
             stderrPipe.fileHandleForReading.readabilityHandler = { handle in
                 let chunk = handle.availableData
                 guard !chunk.isEmpty else {
@@ -2204,6 +2222,7 @@ func runDeviceDetailProcess(
             }
             try process.run()
             process.waitUntilExit()
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
             stderrPipe.fileHandleForReading.readabilityHandler = nil
             let code = process.terminationStatus
             if code != 0 {
@@ -2213,6 +2232,13 @@ func runDeviceDetailProcess(
                     AppLogger.cli.warning(
                         "runDeviceDetailProcess exit \(code): \(msg, privacy: .private)"
                     )
+                }
+            }
+            if code == 0, let dest = stdoutFallbackFile {
+                let cliWroteFile = ((try? Data(contentsOf: dest))?.isEmpty == false)
+                let captured = outBuf.snapshot()
+                if !cliWroteFile && !captured.isEmpty {
+                    try? captured.write(to: dest, options: .atomic)
                 }
             }
             return code

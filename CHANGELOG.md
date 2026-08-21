@@ -7,6 +7,16 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Device Lookup and the Devices detail panel's jamf-cli section work again.
+  jamf-cli's `pro device` command accepts `--out-file` but prints its JSON to
+  the terminal instead of writing the file (an upstream bug present through
+  jamf-cli 1.26.0), so the app saw a successful exit with no data and showed
+  every device's live detail as unavailable. The app now captures the
+  command's output directly and no longer depends on the file, which also
+  keeps working once jamf-cli fixes the flag.
+
 ## [2.6.1] - 2026-08-14
 
 ### Security
