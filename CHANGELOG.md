@@ -31,6 +31,13 @@ ten screens of JSON into two lines. The old output is still one click away under
 
 ### Fixed
 
+Overview tiles now name the day their change figure compares against ("vs Aug 20")
+instead of leaving it unstated. The comparison is against the previous collection,
+not a fixed week, so a missed run can make that gap days or weeks — and because a
+metric that went unmeasured on some day is skipped, two tiles on the same screen can
+legitimately be comparing against different days. The drill-down's Previous and
+Change tiles name their dates too.
+
 Old scheduled backups could be deleted in the wrong order — potentially removing
 the newest ones — on a cloud-synced or network volume, because the sort used
 modification dates that sync providers rewrite. Backups are now ordered by the

@@ -706,10 +706,27 @@ struct OverviewView: View {
         return diff > 0 ? .up : .down
     }
 
+    /// "Aug 20" — short by design; the tile caption has little room and the
+    /// year is only ambiguous for comparisons more than a year stale, which
+    /// the freshness banner already flags.
+    private static let comparisonDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        return f
+    }()
+
     private func scoreCard(for metric: TrendSeries.Metric) -> some View {
+        // points(), not values(): the delta compares the two most recent
+        // samples, and the tile has to name WHICH day the older one is. That
+        // date is per-metric, not global — points() compactMaps away days where
+        // this metric was unmeasured, so Active Devices can be comparing
+        // against a different day than FileVault in the same render.
+        let points: [TrendPoint] = workspace.demoMode ? [] : trendStore.points(metric: metric)
         let values: [Double] = workspace.demoMode ?
             (metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])) :
-            trendStore.values(metric: metric)
+            points.map(\.value)
+        let comparisonDate: Date? = points.count >= 2 ? points[points.count - 2].date : nil
 
         let lastValue = values.last
         let current = lastValue ?? 0
@@ -744,13 +761,26 @@ struct OverviewView: View {
             return diff > 0 ? .up : .down
         }()
 
-        // DRAFT — needs visual verification. Clarifies that Active Devices
-        // (redefined 2.6 to exclude stale devices) is not the same count as
-        // Managed Devices.
+        // DRAFT — needs visual verification. Two captions share this line:
+        // the Active Devices clarification (redefined 2.6 to exclude stale
+        // devices, so it is not the same count as Managed Devices), and the
+        // delta's comparison date.
+        //
+        // The date is spelled out rather than described as "week over week"
+        // because the comparison is against the previous COLLECT, not a fixed
+        // period: a missed run makes the gap days or weeks, and the Trends
+        // range the operator picked does not change which day it lands on.
+        // Naming the day is both shorter and true.
         let subText: String? = {
-            guard metric == .activeDevices else { return nil }
-            let days = Int(workspace.configState.staleDeviceDays) ?? 30
-            return "Checked in within \(days)d"
+            var parts: [String] = []
+            if metric == .activeDevices {
+                let days = Int(workspace.configState.staleDeviceDays) ?? 30
+                parts.append("Checked in within \(days)d")
+            }
+            if values.count >= 2, let comparisonDate {
+                parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
 
         return StatTile(
@@ -1057,9 +1087,17 @@ struct OverviewView: View {
 
     private func metricDetail(_ metric: TrendSeries.Metric) -> some View {
         let values = metricValues(metric)
+        let dates = workspace.demoMode ? [] : trendStore.points(metric: metric).map(\.date)
         let current = values.last ?? 0
         let first = values.first ?? current
         let previous = values.count > 1 ? values[values.count - 2] : current
+        // Same reasoning as the Overview tiles: name the day rather than imply
+        // a fixed cadence. "Previous" alone gave no way to tell yesterday from
+        // three weeks ago after a run of missed collects.
+        let previousLabel = dates.count > 1
+            ? Self.comparisonDateFormatter.string(from: dates[dates.count - 2])
+            : nil
+        let firstLabel = dates.first.map(Self.comparisonDateFormatter.string(from:))
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: metric.displayLabel,
@@ -1069,9 +1107,10 @@ struct OverviewView: View {
             )
             HStack(spacing: 12) {
                 StatTile(label: "Current", value: metricValueLabel(current, metric: metric))
-                StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric))
+                StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric),
+                         sub: previousLabel)
                 StatTile(label: "Change", value: metricDeltaLabel(current - first, metric: metric),
-                         sub: "Since first snapshot")
+                         sub: firstLabel.map { "Since \($0)" } ?? "Since first snapshot")
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
