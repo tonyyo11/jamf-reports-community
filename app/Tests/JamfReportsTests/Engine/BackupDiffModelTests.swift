@@ -67,11 +67,44 @@ final class BackupDiffModelTests: XCTestCase {
         XCTAssertTrue(paths.contains("b added"))
     }
 
-    func testNonJSONValuesFallBackToWholeValueReplacement() {
-        let result = BackupDiffModel.leafChanges(old: "plain text", new: "other text")
-        XCTAssertTrue(result.opaque)
+    /// A short scalar swap (the real case: a package hash algorithm changing)
+    /// is perfectly legible as before/after and must NOT be labelled opaque —
+    /// that note said "not structured JSON" over a line already showing exactly
+    /// what changed.
+    func testShortScalarReplacementIsReportedButNotOpaque() {
+        let result = BackupDiffModel.leafChanges(old: "SHA3_512", new: "SHA_512")
+        XCTAssertFalse(result.opaque)
         XCTAssertEqual(result.changes.count, 1)
-        XCTAssertEqual(result.changes.first?.new, "other text")
+        XCTAssertEqual(result.changes.first?.old, "SHA3_512")
+        XCTAssertEqual(result.changes.first?.new, "SHA_512")
+    }
+
+    func testLongNonJSONValueIsOpaque() {
+        let long = String(repeating: "x", count: BackupDiffModel.opaqueValueLength + 1)
+        let result = BackupDiffModel.leafChanges(old: "short", new: long)
+        XCTAssertTrue(result.opaque, "an unreadable blob still earns the note")
+    }
+
+    /// An added or removed object has no before/after. Diffing produced a row
+    /// that stated nothing at all; the object's name is the information.
+    func testAddedObjectReportsNoChangesAndIsNotOpaque() {
+        let result = BackupDiffModel.leafChanges(old: nil, new: nil, change: "added")
+        XCTAssertTrue(result.changes.isEmpty)
+        XCTAssertFalse(result.opaque)
+    }
+
+    func testRemovedObjectSkipsTheLeafDiff() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"a":1}"#, new: nil, change: "removed"
+        )
+        XCTAssertTrue(result.changes.isEmpty)
+        XCTAssertFalse(result.opaque)
+    }
+
+    func testIdenticalNonJSONValuesReportNothing() {
+        let result = BackupDiffModel.leafChanges(old: "same", new: "same")
+        XCTAssertTrue(result.changes.isEmpty)
+        XCTAssertFalse(result.opaque)
     }
 
     func testBooleansRenderAsTrueFalseNotOneZero() {
@@ -119,7 +152,9 @@ final class BackupDiffModelTests: XCTestCase {
         XCTAssertEqual(groups.first?.names, ["Excel", "OneNote", "Outlook"])
     }
 
-    func testDifferentChangesStayInSeparateGroupsOrderedBySize() throws {
+    /// Supersedes the pre-tier-2 expectation that a differing value earned its
+    /// own card. Same resource, same verb, same field — one card, two lines.
+    func testSharedAndUniqueValuesOnOneFieldMergeIntoOneCard() throws {
         let shared = (#"{"versions":["1.0"]}"#, #"{"versions":["2.0","1.0"]}"#)
         let unique = (#"{"versions":["9.0"]}"#, #"{"versions":["9.1","9.0"]}"#)
         let data = payload([
@@ -128,9 +163,61 @@ final class BackupDiffModelTests: XCTestCase {
             ("modified", "versions", "Outlook", shared.0, shared.1),
         ])
         let groups = BackupDiffModel.group(try XCTUnwrap(BackupDiffModel.parse(data)))
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.names, ["Excel", "Outlook", "Solo"])
+        XCTAssertEqual(groups.first?.variants.count, 2)
+    }
+
+    /// Different verbs never merge, so "140 modified" and "32 added" stay the
+    /// two distinct statements they are.
+    func testDifferentChangeVerbsStayInSeparateGroups() throws {
+        let data = payload([
+            ("modified", "hash", "A", #"{"h":"SHA3_512"}"#, #"{"h":"SHA_512"}"#),
+            ("added", "hash", "B", "", ""),
+        ])
+        let groups = BackupDiffModel.group(try XCTUnwrap(BackupDiffModel.parse(data)))
         XCTAssertEqual(groups.count, 2)
-        XCTAssertEqual(groups.first?.names.count, 2, "largest group must sort first")
-        XCTAssertEqual(groups.last?.names, ["Solo"])
+        XCTAssertEqual(Set(groups.map(\.change)), ["modified", "added"])
+    }
+
+    /// Six patch titles that each gained a DIFFERENT version share a field but
+    /// not a value. Tier 1 leaves six cards; tier 2 merges them into one card
+    /// with six lines.
+    func testSameFieldDifferentValuesMergeIntoOneGroupWithVariants() throws {
+        let entries = (1...6).map { index in
+            ("modified", "versions", "Title \(index)",
+             #"{"versions":["1.0"]}"#, #"{"versions":["2.\#(index)","1.0"]}"#)
+        }
+        let items = try XCTUnwrap(BackupDiffModel.parse(payload(entries)))
+        let groups = BackupDiffModel.group(items)
+        XCTAssertEqual(groups.count, 1, "one card, not six")
+        XCTAssertEqual(groups.first?.names.count, 6)
+        XCTAssertEqual(groups.first?.variants.count, 6, "one line per distinct value")
+        XCTAssertTrue(groups.first?.changes.isEmpty == true, "no single shared change")
+        XCTAssertEqual(groups.first?.fields, ["versions added"])
+    }
+
+    /// A group whose members genuinely share a value must keep reading as
+    /// "N objects, one change" — tier 2 must not dissolve it into variants.
+    func testSharedValueGroupIsNotConvertedToVariants() throws {
+        let old = #"{"versions":["1.0"]}"#
+        let new = #"{"versions":["2.0","1.0"]}"#
+        let items = try XCTUnwrap(BackupDiffModel.parse(payload([
+            ("modified", "versions", "Excel", old, new),
+            ("modified", "versions", "Outlook", old, new),
+        ])))
+        let groups = BackupDiffModel.group(items)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertTrue(groups.first?.variants.isEmpty == true)
+        XCTAssertEqual(groups.first?.changes.count, 1)
+    }
+
+    func testDifferentFieldsStayInSeparateGroups() throws {
+        let items = try XCTUnwrap(BackupDiffModel.parse(payload([
+            ("modified", "a", "One", #"{"x":1}"#, #"{"x":2}"#),
+            ("modified", "b", "Two", #"{"y":1}"#, #"{"y":2}"#),
+        ])))
+        XCTAssertEqual(BackupDiffModel.group(items).count, 2)
     }
 
     func testHeadlineCountsObjectsAndResources() throws {

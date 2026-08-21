@@ -22,8 +22,10 @@ effect, warns when the whole workspace (or just the backups folder) is on a
 synced volume, and lists any sync-conflict duplicates it finds.
 
 Comparing two backups now shows a summary of what actually changed instead of the
-full configuration of every changed object — grouped so that fifty apps receiving
-the same update read as one line. The old output is still one click away under
+full configuration of every changed object. Objects taking the same update collapse
+into one line, and objects that changed the same field to different values collapse
+into one card with a line each — on a real pair of production backups that turns
+ten screens of JSON into two lines. The old output is still one click away under
 **Raw**, the whole diff can be copied, and the sheet finally has a Done button
 (Escape works too) and lets you select text across lines.
 

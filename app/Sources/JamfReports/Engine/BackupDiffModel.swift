@@ -29,6 +29,13 @@ enum BackupDiffModel {
         let new: String?
     }
 
+    /// A set of objects whose change is identical, inside a group whose members
+    /// changed the SAME FIELD but to different values.
+    struct Variant: Equatable, Sendable {
+        let names: [String]
+        let changes: [Change]
+    }
+
     /// One changed object as reported by jamf-cli, reduced to its leaf changes.
     struct Item: Equatable, Sendable {
         let resource: String
@@ -38,8 +45,10 @@ enum BackupDiffModel {
         let changes: [Change]
         /// True when the leaf diff hit `maxChangesPerItem` and was cut short.
         let truncated: Bool
-        /// True when a side could not be parsed as JSON, so `changes` is a
-        /// whole-value replacement rather than a leaf diff.
+        /// True only when a value was replaced wholesale AND is too long to read
+        /// as a before/after pair. A short scalar swap is a perfectly legible
+        /// change and must NOT be labelled opaque — saying "not structured JSON"
+        /// there leaks an implementation detail and tells the reader nothing.
         let opaque: Bool
     }
 
@@ -47,12 +56,27 @@ enum BackupDiffModel {
     struct Group: Identifiable, Equatable, Sendable {
         let resource: String
         let change: String
+        /// Changes shared by every member. Empty when members changed the same
+        /// field to DIFFERENT values — see `variants`.
         let changes: [Change]
+        /// Populated only when members differ: one entry per distinct value.
+        /// Lets six titles that each gained a different version read as one card
+        /// with six lines instead of six near-identical cards.
+        let variants: [Variant]
         let names: [String]
         let truncated: Bool
         let opaque: Bool
-        var id: String { "\(resource)|\(change)|\(names.first ?? "")|\(changes.count)|\(changes.first?.path ?? "")" }
+        /// Field paths every member touched, used as the card's subheading when
+        /// the values differ.
+        let fields: [String]
+        var id: String {
+            "\(resource)|\(change)|\(names.first ?? "")|\(fields.joined(separator: ","))|\(names.count)"
+        }
     }
+
+    /// Values longer than this are reported as an opaque replacement rather than
+    /// printed as a before/after pair.
+    static let opaqueValueLength = 120
 
     /// Cap on leaf changes reported per object. A genuinely large rewrite
     /// (a replaced script body) would otherwise reproduce the wall of JSON
@@ -102,7 +126,8 @@ enum BackupDiffModel {
         return entries.map { entry in
             let old = entry.oldValue?.text
             let new = entry.newValue?.text
-            let (changes, truncated, opaque) = leafChanges(old: old, new: new)
+            let verb = entry.change ?? "modified"
+            let (changes, truncated, opaque) = leafChanges(old: old, new: new, change: verb)
             return Item(
                 resource: entry.resource ?? "unknown",
                 name: entry.name ?? "(unnamed)",
@@ -121,15 +146,23 @@ enum BackupDiffModel {
     /// Falls back to a single whole-value change when either side is not JSON.
     static func leafChanges(
         old: String?,
-        new: String?
+        new: String?,
+        change: String = "modified"
     ) -> (changes: [Change], truncated: Bool, opaque: Bool) {
+        // For an added or removed object there is no before/after to diff — the
+        // object's existence IS the change, and its name (rendered by the caller)
+        // is the useful detail. Reporting a "replacement" here produced rows that
+        // stated nothing at all.
+        guard change.lowercased() == "modified" else { return ([], false, false) }
+
         let oldObject = old.flatMap(jsonObject)
         let newObject = new.flatMap(jsonObject)
         guard let oldObject, let newObject else {
             // One or both sides aren't JSON — report the field as replaced
             // rather than inventing a structural diff.
-            if old == new { return ([], false, true) }
-            return ([Change(path: "", old: old, new: new)], false, true)
+            if old == new { return ([], false, false) }
+            let longest = max(old?.count ?? 0, new?.count ?? 0)
+            return ([Change(path: "", old: old, new: new)], false, longest > opaqueValueLength)
         }
         var collected: [Change] = []
         diff(oldObject, newObject, path: "", into: &collected)
@@ -258,9 +291,22 @@ enum BackupDiffModel {
 
     // MARK: - Grouping
 
-    /// Collapse objects whose leaf changes are identical. Ordered by descending
-    /// group size so the widest change reads first.
+    /// Collapse objects into cards, in two tiers.
+    ///
+    /// Tier 1 merges objects whose leaf changes are byte-identical — the common
+    /// case when a fleet-wide counter moves, so fifty apps read as one line.
+    ///
+    /// Tier 2 then merges the CARDS that touched the same field but landed on
+    /// different values. Without it, six patch titles that each gained a
+    /// different version rendered as six near-identical cards; now they are one
+    /// card with six lines. Ordered by descending object count so the widest
+    /// change reads first.
     static func group(_ items: [Item]) -> [Group] {
+        let tier1 = groupByIdenticalChange(items)
+        return mergeByField(tier1).sorted { $0.names.count > $1.names.count }
+    }
+
+    private static func groupByIdenticalChange(_ items: [Item]) -> [Group] {
         var order: [String] = []
         var buckets: [String: [Item]] = [:]
         for item in items {
@@ -274,12 +320,40 @@ enum BackupDiffModel {
                 resource: first.resource,
                 change: first.change,
                 changes: first.changes,
+                variants: [],
                 names: members.map(\.name).sorted(),
                 truncated: first.truncated,
-                opaque: first.opaque
+                opaque: first.opaque,
+                fields: first.changes.map(\.path)
             )
         }
-        .sorted { $0.names.count > $1.names.count }
+    }
+
+    /// Merge tier-1 groups that share (resource, change, field paths). A bucket
+    /// of one is passed through untouched, so a group whose members really do
+    /// share a value keeps rendering as "N objects, one change".
+    private static func mergeByField(_ groups: [Group]) -> [Group] {
+        var order: [String] = []
+        var buckets: [String: [Group]] = [:]
+        for group in groups {
+            let key = "\(group.resource)\u{1D}\(group.change)\u{1D}\(group.fields.joined(separator: "\u{1E}"))"
+            if buckets[key] == nil { order.append(key) }
+            buckets[key, default: []].append(group)
+        }
+        return order.compactMap { key -> Group? in
+            guard let bucket = buckets[key], let first = bucket.first else { return nil }
+            guard bucket.count > 1 else { return first }
+            return Group(
+                resource: first.resource,
+                change: first.change,
+                changes: [],
+                variants: bucket.map { Variant(names: $0.names, changes: $0.changes) },
+                names: bucket.flatMap(\.names).sorted(),
+                truncated: bucket.contains { $0.truncated },
+                opaque: bucket.allSatisfy { $0.opaque },
+                fields: first.fields
+            )
+        }
     }
 
     private static func signature(_ item: Item) -> String {
@@ -303,13 +377,25 @@ enum BackupDiffModel {
         groups.map { group in
             var lines = ["\(group.resource) · \(group.change) · \(group.names.count) object(s)"]
             for change in group.changes {
-                let path = change.path.isEmpty ? "(value)" : change.path
-                lines.append("    \(path): \(change.old ?? "—") → \(change.new ?? "—")")
+                lines.append("    \(describe(change))")
+            }
+            for variant in group.variants {
+                let detail = variant.changes.map(describe).joined(separator: "; ")
+                lines.append("    \(variant.names.joined(separator: ", ")): \(detail)")
             }
             if group.truncated { lines.append("    … more changes not shown") }
-            lines.append("    objects: \(group.names.joined(separator: ", "))")
+            if group.changes.isEmpty && group.variants.isEmpty {
+                lines.append("    objects: \(group.names.joined(separator: ", "))")
+            } else if group.variants.isEmpty {
+                lines.append("    objects: \(group.names.joined(separator: ", "))")
+            }
             return lines.joined(separator: "\n")
         }
         .joined(separator: "\n\n")
+    }
+
+    private static func describe(_ change: Change) -> String {
+        let path = change.path.isEmpty ? "(value)" : change.path
+        return "\(path): \(change.old ?? "—") → \(change.new ?? "—")"
     }
 }

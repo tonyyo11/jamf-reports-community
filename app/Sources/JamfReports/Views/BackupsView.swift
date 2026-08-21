@@ -644,6 +644,30 @@ private struct DiffGroupView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var showNames = false
 
+    private func variantLabel(_ variant: BackupDiffModel.Variant) -> String {
+        let shown = variant.names.prefix(3).joined(separator: ", ")
+        let rest = variant.names.count - min(3, variant.names.count)
+        return rest > 0 ? "\(shown) +\(rest) more" : shown
+    }
+
+    @ViewBuilder
+    private func changeRow(_ change: BackupDiffModel.Change) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(change.path.isEmpty ? "(value)" : change.path)
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Text.secondary)
+            Text(change.old ?? "—")
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Colors.danger)
+            Image(systemName: "arrow.right")
+                .font(.system(size: 8))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+            Text(change.new ?? "—")
+                .font(Theme.Fonts.mono(11))
+                .foregroundStyle(Theme.Colors.ok)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
@@ -658,22 +682,34 @@ private struct DiffGroupView: View {
                     .foregroundStyle(Theme.Text.secondary)
             }
 
+            // Members share one change: render it once.
             ForEach(Array(group.changes.enumerated()), id: \.offset) { _, change in
-                HStack(alignment: .top, spacing: 6) {
-                    Text(change.path.isEmpty ? "(value)" : change.path)
-                        .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Text.secondary)
-                    Text(change.old ?? "—")
-                        .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Colors.danger)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 8))
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                    Text(change.new ?? "—")
-                        .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Colors.ok)
+                changeRow(change).padding(.leading, 12)
+            }
+
+            // Members changed the same field to different values: name the field
+            // once, then one line per value, rather than one card per object.
+            if !group.variants.isEmpty {
+                Text(group.fields.map { $0.isEmpty ? "(value)" : $0 }.joined(separator: ", "))
+                    .font(Theme.Fonts.mono(11))
+                    .foregroundStyle(Theme.Text.secondary)
+                    .padding(.leading, 12)
+                ForEach(Array(group.variants.enumerated()), id: \.offset) { _, variant in
+                    HStack(alignment: .top, spacing: 6) {
+                        // Cap the inline name list: a variant can legitimately
+                        // cover a hundred-plus objects, and joining those into
+                        // one line would clip to meaningless text. The full list
+                        // is under "Show objects".
+                        Text(variantLabel(variant))
+                            .font(Theme.Fonts.mono(10.5))
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .frame(maxWidth: 220, alignment: .leading)
+                        Text(variant.changes.map { $0.new ?? $0.old ?? "—" }.joined(separator: "; "))
+                            .font(Theme.Fonts.mono(10.5))
+                            .foregroundStyle(Theme.Colors.ok)
+                    }
+                    .padding(.leading, 24)
                 }
-                .padding(.leading, 12)
             }
 
             if group.truncated {
@@ -682,8 +718,10 @@ private struct DiffGroupView: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(.leading, 12)
             }
+            // Only when the value really is an unreadable blob. A short scalar
+            // swap renders as a normal before/after row and needs no excuse.
             if group.opaque {
-                Text("value replaced (not structured JSON)")
+                Text("value replaced — too long to show inline; use Raw")
                     .font(Theme.Fonts.mono(10.5))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .padding(.leading, 12)
