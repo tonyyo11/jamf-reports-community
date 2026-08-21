@@ -154,10 +154,21 @@ enum WorkspacePaths {
     /// gate `output.allow_absolute_paths` enforcement.
     static func isSensitiveAbsolutePath(_ url: URL) -> Bool {
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let home = NSString(string: "~").expandingTildeInPath
+
+        // Carve-out: `~/Library` is denied wholesale, but macOS mounts every
+        // modern sync provider (OneDrive/SharePoint, Box, Dropbox, Google Drive,
+        // iCloud Drive) under `~/Library/CloudStorage/<Provider>-<Account>/`.
+        // Blanket-denying that made "publish reports to the team folder"
+        // impossible while doing nothing for security — it is user data, not
+        // application support. Everything else under `~/Library` stays denied.
+        // Reaching it still requires `output.allow_absolute_paths: true`, and
+        // ConfigDoctor warns about what syncing costs.
+        if resolved.hasPrefix("\(home)/Library/CloudStorage/") { return false }
+
         let denied: [String] = [
             "/etc", "/var", "/private", "/System", "/Library", "/usr", "/bin", "/sbin"
         ]
-        let home = NSString(string: "~").expandingTildeInPath
         let homeDenied: [String] = [
             "\(home)/Library", "\(home)/.ssh", "\(home)/.config",
             "\(home)/.aws", "\(home)/.gnupg", "\(home)/.kube"

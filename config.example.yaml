@@ -700,6 +700,27 @@ output:
   # each report family before older runs are moved into archive_dir.
   keep_latest_runs: 10
 
+  # Allow output_dir / archive_dir to point OUTSIDE the workspace.
+  #
+  # Off by default: an absolute path outside the workspace is refused, which
+  # keeps every generated file under a directory this app controls. Turn it on
+  # to publish reports somewhere else -- most usefully a cloud-synced team
+  # folder, so colleagues can read the output without being given the raw
+  # fleet data:
+  #
+  #   allow_absolute_paths: true
+  #   output_dir: "~/Library/CloudStorage/OneDrive-Contoso/Team/Jamf Reports"
+  #
+  # Publish that way rather than relocating the whole workspace. Keeping
+  # snapshots, run logs, backups and this file on local disk is what makes the
+  # app's file permissions, snapshot ordering and backup retention meaningful --
+  # see docs/wiki/10-Security-and-Operational-Considerations.md, and run the
+  # Config Doctor (Health Audit -> Config) to see which layout is in effect.
+  #
+  # Sensitive locations (/etc, /System, ~/.ssh, the rest of ~/Library, ...) stay
+  # refused even with this enabled.
+  allow_absolute_paths: false
+
 
 # =============================================================================
 # AUTOMATION OUTPUTS

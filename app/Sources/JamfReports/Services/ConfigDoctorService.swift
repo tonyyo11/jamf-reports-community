@@ -87,6 +87,7 @@ enum ConfigDoctorService {
         if let config, parseError == nil {
             rows += accuracyRows(config: config, profile: profile)
         }
+        rows += evaluateCloudStorage(cloudStorageInputs(profile: profile))
         return DoctorReport(rows: rows)
     }
 
@@ -950,5 +951,129 @@ private extension String {
             }
         }
         return out
+    }
+}
+
+// MARK: - Cloud-storage family
+
+/// Inputs for the cloud-storage checks, resolved by `ConfigDoctorService.run`.
+/// Split out so the rules are testable without touching a real synced volume.
+struct CloudStorageInputs: Sendable {
+    let workspace: URL?
+    let outputDir: URL?
+    let archiveDir: URL?
+    let backupsDir: URL?
+    /// Sync-conflict filenames found in the workspace (sampled, not exhaustive).
+    let conflictCopies: [String]
+}
+
+extension ConfigDoctorService {
+
+    /// Pure rules for the "Cloud storage" family.
+    ///
+    /// The app's storage model is a local, single-writer workspace, and the
+    /// defaults keep it that way. Operators still want teammates to read the
+    /// output, so the supported shape is: **workspace local, `output.output_dir`
+    /// on the share.** These rows say which shape is in effect and what the
+    /// risky one costs, rather than refusing to run.
+    static func evaluateCloudStorage(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+
+        let workspaceProvider = inputs.workspace.flatMap(CloudStorage.provider(for:))
+        let outputProvider = inputs.outputDir.flatMap(CloudStorage.provider(for:))
+        let archiveProvider = inputs.archiveDir.flatMap(CloudStorage.provider(for:))
+        let backupsProvider = inputs.backupsDir.flatMap(CloudStorage.provider(for:))
+
+        if let provider = workspaceProvider {
+            rows.append(DoctorRow(
+                id: "cloud.workspace",
+                severity: .warn,
+                title: "Workspace is on \(provider.displayName)",
+                detail: "The whole workspace — raw device snapshots, run logs, backups and "
+                    + "config.yaml — syncs to \(provider.displayName). Raw snapshots and run "
+                    + "logs hold device serials, usernames and email addresses, and file "
+                    + "permissions set here are not carried across by the sync provider. If a "
+                    + "second Mac ever points at this folder, both write the same day-marker "
+                    + "and state files and each will report success for work the other did.",
+                hint: "Keep the workspace on local disk and publish instead: set "
+                    + "output.output_dir to the shared folder (with output.allow_absolute_paths: "
+                    + "true) so only finished reports sync."
+            ))
+        }
+
+        if workspaceProvider == nil, let provider = outputProvider {
+            rows.append(DoctorRow(
+                id: "cloud.output",
+                severity: .pass,
+                title: "Reports publish to \(provider.displayName)",
+                detail: "Generated reports are written to \(provider.displayName) while the "
+                    + "workspace stays on local disk. This is the recommended way to share "
+                    + "output with a team.",
+                hint: nil
+            ))
+        }
+
+        if workspaceProvider == nil, outputProvider == nil, let provider = archiveProvider {
+            rows.append(DoctorRow(
+                id: "cloud.archive",
+                severity: .warn,
+                title: "Report archive is on \(provider.displayName), reports are not",
+                detail: "output.archive_dir points at \(provider.displayName) but "
+                    + "output.output_dir does not, so rotated reports leave the machine while "
+                    + "current ones stay behind.",
+                hint: "Point output.output_dir at the shared folder too, or keep both local."
+            ))
+        }
+
+        if let provider = backupsProvider {
+            rows.append(DoctorRow(
+                id: "cloud.backups",
+                severity: .warn,
+                title: "Backups are on \(provider.displayName)",
+                detail: "Automatic pruning of scheduled backups is disabled while the backups "
+                    + "folder is synced: ordering there depends on modification dates that the "
+                    + "sync provider rewrites, and the folder may hold another Mac's backups. "
+                    + "The folder will grow until you remove old backups yourself.",
+                hint: "Keep backups/ on local disk to restore automatic retention."
+            ))
+        }
+
+        if !inputs.conflictCopies.isEmpty {
+            let sample = inputs.conflictCopies.prefix(3).joined(separator: ", ")
+            let more = inputs.conflictCopies.count > 3
+                ? " (+\(inputs.conflictCopies.count - 3) more)" : ""
+            rows.append(DoctorRow(
+                id: "cloud.conflicts",
+                severity: .warn,
+                title: "\(inputs.conflictCopies.count) sync-conflict file(s) in the workspace",
+                detail: "Files such as \(sample)\(more) are duplicate copies a sync provider "
+                    + "created when two machines wrote the same file. They are ignored when "
+                    + "reading data, so no report is built from them — but their presence "
+                    + "means something else is writing to this workspace.",
+                hint: "Delete the duplicates, and make sure only one Mac writes to this folder."
+            ))
+        }
+
+        return rows
+    }
+
+    /// Resolve the cloud-storage inputs for a profile. Path resolution failures
+    /// are non-fatal — a workspace whose `output_dir` is rejected has bigger
+    /// problems, already reported by other families.
+    static func cloudStorageInputs(profile: String) -> CloudStorageInputs {
+        let workspace = ProfileService.workspaceURL(for: profile)
+        let scanRoots = [
+            workspace?.appendingPathComponent("snapshots/summaries", isDirectory: true),
+            try? WorkspacePaths.outputDir(for: profile),
+        ].compactMap { $0 }
+        let conflicts = scanRoots.flatMap { CloudStorage.conflictCopies(in: $0) }
+
+        return CloudStorageInputs(
+            workspace: workspace,
+            outputDir: try? WorkspacePaths.outputDir(for: profile),
+            archiveDir: try? WorkspacePaths.archiveDir(for: profile),
+            backupsDir: workspace?.appendingPathComponent("backups", isDirectory: true),
+            conflictCopies: conflicts
+        )
     }
 }
