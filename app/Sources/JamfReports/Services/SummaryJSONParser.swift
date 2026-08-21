@@ -284,7 +284,7 @@ struct SummaryJSONParser {
         }
 
         let summaries = files
-            .filter { $0.lastPathComponent.hasPrefix("summary_") && $0.pathExtension == "json" }
+            .filter { CloudStorage.isCanonicalSummaryFilename($0.lastPathComponent) }
             .compactMap { url -> DailySummary? in
                 do {
                     return try parse(url)

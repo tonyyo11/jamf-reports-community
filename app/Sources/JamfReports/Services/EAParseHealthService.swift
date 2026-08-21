@@ -227,6 +227,7 @@ struct EAParseHealthService {
         let snapshots = entries
             .filter { $0.pathExtension.lowercased() == "json" }
             .filter { $0.lastPathComponent.lowercased() != "manifest.json" }
+            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
             .sorted {
                 MSCPChartDataBuilder.dateFromSnapshotFilename($0, fm: fm)
                     > MSCPChartDataBuilder.dateFromSnapshotFilename($1, fm: fm)

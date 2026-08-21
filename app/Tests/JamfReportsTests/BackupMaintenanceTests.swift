@@ -41,6 +41,54 @@ final class BackupMaintenanceTests: XCTestCase {
 
     // MARK: - Retention
 
+    /// A sync provider re-stamps directory mtimes when it materializes their
+    /// contents. Ordering must come from the timestamp in the NAME, or the
+    /// prune deletes the newest backups instead of the oldest.
+    func testPruneOrdersByDirectoryNameNotModificationDate() throws {
+        // mtimes deliberately inverted against the names: the OLDEST name
+        // carries the freshest mtime, as a re-sync would leave it.
+        try makeBackup(name: "20260501T010101", label: "scheduled-a", age: 1)
+        try makeBackup(name: "20260502T010101", label: "scheduled-b", age: 2 * 86_400)
+        try makeBackup(name: "20260503T010101", label: "scheduled-c", age: 4 * 86_400)
+
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 1)
+
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: backupsRoot.path)
+        XCTAssertEqual(
+            remaining.filter { $0.hasPrefix("2026") },
+            ["20260503T010101"],
+            "the newest backup by name must survive regardless of mtime"
+        )
+    }
+
+    /// Deleting is unrecoverable, so an ordering we cannot establish for every
+    /// candidate must abort the whole prune rather than guess.
+    func testPruneAbortsEntirelyWhenAnyBackupNameIsUnparseable() throws {
+        try makeBackup(name: "20260501T010101", label: "scheduled-a", age: 3 * 86_400)
+        try makeBackup(name: "20260502T010101", label: "scheduled-b", age: 2 * 86_400)
+        // A provider's conflict copy of a backup directory.
+        try makeBackup(name: "20260503T010101 2", label: "scheduled-c", age: 86_400)
+
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 1)
+
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: backupsRoot.path)
+            .filter { $0.hasPrefix("2026") }
+        XCTAssertEqual(remaining.count, 3, "no backup may be deleted when ordering is ambiguous")
+    }
+
+    func testPruneKeepsSameSecondBackupsInSequenceOrder() throws {
+        try makeBackup(name: "20260501T010101", label: "scheduled-a", age: 3 * 86_400)
+        try makeBackup(name: "20260502T010101", label: "scheduled-b", age: 2 * 86_400)
+        try makeBackup(name: "20260502T010101-2", label: "scheduled-c", age: 86_400)
+
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 1)
+
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: backupsRoot.path)
+            .filter { $0.hasPrefix("2026") }
+        XCTAssertEqual(remaining, ["20260502T010101-2"], "the -2 sibling is the later write")
+    }
+
+
     func testPruneKeepsNewestScheduledAndAllManualBackups() throws {
         // 4 scheduled (oldest..newest) + 1 manual, keep 2 scheduled.
         try makeBackup(name: "20260501T010101", label: "scheduled-20260501", age: 4 * 86_400)

@@ -32,12 +32,35 @@ enum BackupMaintenance {
     /// "Scheduled" is determined by the manifest.json label having the
     /// `scheduled-` prefix — directory names are timestamps and carry no
     /// origin information.
+    ///
+    /// This is the only unconditional `removeItem` in the app's housekeeping,
+    /// so it is deliberately fail-safe in three ways:
+    ///
+    /// 1. **Ordering comes from the directory NAME**, never mtime. The names
+    ///    are `yyyyMMddTHHmmss`; a sync provider re-stamps directory mtimes
+    ///    when it materializes children, which would scramble the sort and
+    ///    delete the newest backups instead of the oldest.
+    /// 2. **Any unparseable name aborts the whole prune.** If we cannot order
+    ///    every candidate confidently we delete none of them — growing the
+    ///    backups directory is recoverable, deleting the wrong one is not.
+    /// 3. **Synced storage is never pruned.** With the workspace on a shared
+    ///    volume, this machine's `keep` budget would be spent on every
+    ///    machine's backups, silently cutting everyone's retention. Say so and
+    ///    leave it to the operator.
     static func pruneScheduledBackups(
         profile: String,
         keep: Int,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) {
         guard let backupsRoot = backupsRoot(for: profile) else { return }
+        if let provider = CloudStorage.provider(for: backupsRoot) {
+            onLine?(.init(
+                timestamp: Date(), level: .warn,
+                text: "[warn] backups are on \(provider.displayName) — skipping automatic prune; "
+                    + "another Mac's backups may share this folder. Remove old backups manually."
+            ))
+            return
+        }
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: backupsRoot,
@@ -45,12 +68,32 @@ enum BackupMaintenance {
             options: [.skipsHiddenFiles]
         ) else { return }
 
-        let scheduled = entries
-            .filter { url in
-                let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-                return isDir && manifestLabel(of: url)?.hasPrefix("scheduled-") == true
+        let candidates = entries.filter { url in
+            let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            return isDir && manifestLabel(of: url)?.hasPrefix("scheduled-") == true
+        }
+
+        let stamped = candidates.compactMap { url -> (url: URL, key: (Date, Int))? in
+            guard let parsed = CloudStorage.backupDirectoryTimestamp(name: url.lastPathComponent) else {
+                return nil
             }
-            .sorted { mtime($0) > mtime($1) }
+            return (url, (parsed.date, parsed.sequence))
+        }
+        guard stamped.count == candidates.count else {
+            let unparseable = candidates.count - stamped.count
+            onLine?(.init(
+                timestamp: Date(), level: .warn,
+                text: "[warn] \(unparseable) backup folder(s) have non-standard names — "
+                    + "skipping prune so none are deleted out of order."
+            ))
+            return
+        }
+
+        let scheduled = stamped
+            .sorted { lhs, rhs in
+                lhs.key.0 == rhs.key.0 ? lhs.key.1 > rhs.key.1 : lhs.key.0 > rhs.key.0
+            }
+            .map(\.url)
 
         guard scheduled.count > keep else { return }
         for url in scheduled.dropFirst(keep) {
@@ -88,6 +131,10 @@ enum BackupMaintenance {
     @discardableResult
     static func cleanStaleTempDirs(profile: String, now: Date = Date()) -> [String] {
         guard let backupsRoot = backupsRoot(for: profile) else { return [] }
+        // Staleness here can only come from mtime — a `.tmp-<UUID>` name carries
+        // no timestamp. On synced storage that mtime is the provider's, and the
+        // directory may belong to another Mac's in-flight backup, so don't sweep.
+        if CloudStorage.provider(for: backupsRoot) != nil { return [] }
         let fm = FileManager.default
         // .tmp-* dirs are dot-prefixed → must NOT skip hidden files here.
         guard let entries = try? fm.contentsOfDirectory(

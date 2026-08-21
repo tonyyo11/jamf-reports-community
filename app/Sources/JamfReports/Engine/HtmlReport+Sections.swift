@@ -1347,7 +1347,7 @@ extension HtmlReport {
         ) else { return ([], 0) }
 
         let candidates = files
-            .filter { $0.lastPathComponent.hasPrefix("summary_") && $0.pathExtension == "json" }
+            .filter { CloudStorage.isCanonicalSummaryFilename($0.lastPathComponent) }
 
         var skipped = 0
         var snapshots: [SummarySnapshot] = []
