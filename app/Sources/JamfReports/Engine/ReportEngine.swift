@@ -687,8 +687,21 @@ struct ReportEngine: Sendable {
             mscpBands: mscpBandsSnapshot,
             mscpBandColumns: mscpBandColumnsSnapshot,
             collectionSources: liveKinds != nil && !sourceStatus.isEmpty ? sourceStatus : nil,
-            mobileDeviceCount: mobileDeviceCount
+            mobileDeviceCount: mobileDeviceCount,
+            // Only on a shared workspace. On a single-Mac install the answer is
+            // trivially "this Mac", and writing it into every summary would add
+            // a hostname to a file that never needed one.
+            collectedByHost: Self.collectingHostLabel(dataDir: dataDir)
         )
+    }
+
+    /// This machine's display name when the workspace is shared, else nil.
+    ///
+    /// Derived from the data directory rather than a passed-in flag so the
+    /// summary writer needs no new parameter threading through its callers.
+    static func collectingHostLabel(dataDir: URL) -> String? {
+        guard CloudStorage.provider(for: dataDir) != nil else { return nil }
+        return SharedWorkspace.currentHost.display
     }
 
     /// Map `MSCPComplianceService.BaselineResult` array → `[baselineName: MSCPBandCounts]`
@@ -1436,6 +1449,7 @@ struct ReportEngine: Sendable {
         skipExpensive: Bool = false,
         force: Bool = false,
         authConfirmationProbe: AuthConfirmationProbe = defaultAuthConfirmationProbe,
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
         guard ProfileService.isValid(profile) else {
@@ -1499,7 +1513,12 @@ struct ReportEngine: Sendable {
         }
         defer { if holdsClaim { SharedWorkspace.release(profile: profile) } }
 
-        guard let bin = ExecutableLocator.locate("jamf-cli") else {
+        // Test seam. Production callers omit it and get the real locator; a test
+        // passes a stub so the whole collect body below is reachable without a
+        // real jamf-cli. The stub must NOT be named `jamf-cli` — CLIBridge's
+        // codesign gate keys on exactly that filename and would refuse to launch
+        // an unsigned one, which is what made this path untestable before.
+        guard let bin = locateJamfCLI() else {
             throw ReportEngineError.jamfCLINotFound
         }
 
@@ -1892,6 +1911,8 @@ struct ReportEngine: Sendable {
     static func coordinationGate(
         profile: String,
         force: Bool,
+        operation: String = "collect",
+        checkFreshness: Bool = true,
         now: Date = Date()
     ) -> CoordinationOutcome {
         let idle = CoordinationState(coordinating: false, holdsClaim: false)
@@ -1910,7 +1931,8 @@ struct ReportEngine: Sendable {
         // Freshness: a scheduled run stands down when another machine collected
         // recently — one collect per interval across the team, not one per Mac.
         // An explicit Refresh is a deliberate operator action and proceeds.
-        if !force, let recent = SharedWorkspace.newestOtherCollect(profile: profile),
+        if checkFreshness, !force,
+           let recent = SharedWorkspace.newestOtherCollect(profile: profile),
            case .skipCollectedElsewhere(let host, let at) = SharedWorkspace.freshness(
                lastCollectHost: recent.host,
                lastCollectAt: recent.at,
@@ -1926,7 +1948,7 @@ struct ReportEngine: Sendable {
         }
 
         switch SharedWorkspace.acquire(
-            profile: profile, operation: "collect", ttl: shared.claimTTL, now: now
+            profile: profile, operation: operation, ttl: shared.claimTTL, now: now
         ) {
         case .acquire:
             return .proceed(
@@ -1946,7 +1968,7 @@ struct ReportEngine: Sendable {
                 + "workspace until \(Self.approximateAge(until: live.expiresAt, now: now))"
             guard force else {
                 return .standDown(
-                    note + " — skipping collect; another machine is already collecting"
+                    note + " — standing down; another machine is already working here"
                 )
             }
             return .proceed(

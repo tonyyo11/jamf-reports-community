@@ -152,6 +152,48 @@ enum ScheduledRunSignals {
     /// #1). Gated on `alerts.isEnabled` AND a usable `notify:` webhook — alerts
     /// reuse the notify webhook and add no URL of their own. Only call after a
     /// run that COLLECTED (snapshot-only, full, csv-assisted); jamf-cli-only
+    /// Record any config problem serious enough to make the data unreliable.
+    ///
+    /// A scheduled run happily collects against broken column mappings or a
+    /// baseline pointing at an EA nobody collects — it exits 0 and Run History
+    /// shows a clean run, so the config rots invisibly for weeks. This puts the
+    /// Config Doctor's failures where automation can see them: in the run log
+    /// (and therefore Run History), and as a line in the webhook digest.
+    ///
+    /// Only `.fail` rows surface. Warnings are for a human reading the Config
+    /// screen; putting them here would make every run look broken and train
+    /// the operator to ignore the signal.
+    ///
+    /// Best-effort, and deliberately after the data is written: a doctor that
+    /// throws must never cost a collect that already succeeded.
+    @discardableResult
+    static func recordConfigHealth(
+        profile: String,
+        recorder: ScheduledRunRecorder?,
+        report: DoctorReport? = nil
+    ) -> Int {
+        let report = report ?? ConfigDoctorService.run(profile: profile)
+        let failures = report.rows.filter { $0.severity == .fail }
+        guard !failures.isEmpty else { return 0 }
+
+        let headline = "[warn] \(failures.count) config check(s) failing — data may be "
+            + "unreliable until fixed"
+        AppLogger.collect.warning("\(headline, privacy: .public)")
+        print(headline)
+        recorder?.record(headline)
+        for row in failures {
+            let line = "[warn] \(row.title): \(row.detail)"
+            print(line)
+            recorder?.record(line)
+            if let hint = row.hint {
+                let fix = "        fix: \(hint)"
+                print(fix)
+                recorder?.record(fix)
+            }
+        }
+        return failures.count
+    }
+
     /// generates from cache and produces no fresh summary.
     ///
     /// Best-effort: a summary-load or send failure logs a warning and never

@@ -85,17 +85,19 @@ server-side search index can surface their contents, and a Windows client has no
 POSIX permission model at all. `.metadata_never_index` suppresses local
 Spotlight only; it does nothing server-side.
 
-This is the one thing coordination does not solve, and Run Check says so on
-every shared workspace. In a regulated environment, decide deliberately who the
+This is the one thing coordination does not solve. The app asks you to confirm
+it when you choose the folder, and Run Check repeats it on every shared
+workspace — but the decision is yours to make and to justify. In a regulated environment, decide deliberately who the
 folder is shared with, and get it reviewed before the first collect. If the
 audience for the reports is wider than the audience for device-level inventory,
 use the publish layout instead — or both: a private shared workspace plus an
 `output_dir` pointing at a wider folder.
 
-**Backups stop being pruned.** Scheduled-backup retention is skipped while
-`backups/` is on a synced volume: ordering there would depend on modification
-dates the provider rewrites, and the folder may hold another Mac's backups.
-Expect it to grow until someone removes old ones.
+**Backups are pruned per-machine.** Each scheduled backup records the Mac that
+made it, and each machine prunes only its own — an unscoped prune would spend
+one machine's retention budget on everyone's backups. Backups made before this
+version carry no ownership record and are never auto-removed, so clear those out
+once by hand.
 
 **Keep every Mac on the same app version.** Versions before 2.7.0 order
 snapshots by modification date and prune backups without checking whose they

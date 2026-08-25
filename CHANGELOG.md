@@ -28,6 +28,23 @@ raw device data — serials, usernames and email addresses sit in clear text in
 the snapshots and run logs, and folder permissions are the sync provider's, not
 this app's. Run check says so every time.
 
+Choosing a shared folder now asks you to confirm it, naming what becomes
+readable — device serials, usernames, email addresses and any configured webhook
+URL — and pointing at the narrower publish option if the audience for the
+reports is wider than the audience for raw inventory. Picking a local folder is
+unchanged.
+
+On a shared workspace, Overview says when another Mac is mid-run, so Refresh
+doing nothing reads as "someone else is working" rather than a bug. Each day's
+summary records which machine collected it. Backup retention works again on a
+shared folder: each backup records the Mac that made it and each machine prunes
+only its own, instead of retention being switched off entirely.
+
+`jamf-reports check --json` emits the same findings as a structured document,
+so a CI job or monitoring probe can gate on config health. A scheduled run now
+records failing config checks in its own log, so a run that collects happily
+against broken column mappings no longer looks clean in Run History.
+
 **Run check** (Config screen, and `jamf-reports check` from Terminal) now runs
 every validation the app has instead of only confirming that `config.yaml`
 parses. It reports column mappings that no longer match your CSV, baselines

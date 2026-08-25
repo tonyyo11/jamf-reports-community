@@ -43,24 +43,22 @@ enum BackupMaintenance {
     /// 2. **Any unparseable name aborts the whole prune.** If we cannot order
     ///    every candidate confidently we delete none of them — growing the
     ///    backups directory is recoverable, deleting the wrong one is not.
-    /// 3. **Synced storage is never pruned.** With the workspace on a shared
-    ///    volume, this machine's `keep` budget would be spent on every
-    ///    machine's backups, silently cutting everyone's retention. Say so and
-    ///    leave it to the operator.
+    /// 3. **On synced storage, only this machine's own backups are pruned.**
+    ///    A shared folder holds every Mac's backups, so an unscoped prune would
+    ///    spend this machine's `keep` budget on other people's work and cut
+    ///    everyone's retention. Ownership comes from the `.jrc-host` stamp
+    ///    written beside each backup; anything without one — a pre-2.7.0
+    ///    backup, or another Mac's — is left alone, because we only delete what
+    ///    we can prove is ours. Local storage keeps the original unscoped
+    ///    behaviour: there is one writer by definition, and scoping it would
+    ///    silently stop pruning every existing single-Mac install.
     static func pruneScheduledBackups(
         profile: String,
         keep: Int,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) {
         guard let backupsRoot = backupsRoot(for: profile) else { return }
-        if let provider = CloudStorage.provider(for: backupsRoot) {
-            onLine?(.init(
-                timestamp: Date(), level: .warn,
-                text: "[warn] backups are on \(provider.displayName) — skipping automatic prune; "
-                    + "another Mac's backups may share this folder. Remove old backups manually."
-            ))
-            return
-        }
+        let sharedProvider = CloudStorage.provider(for: backupsRoot)
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: backupsRoot,
@@ -68,9 +66,23 @@ enum BackupMaintenance {
             options: [.skipsHiddenFiles]
         ) else { return }
 
-        let candidates = entries.filter { url in
+        var candidates = entries.filter { url in
             let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
             return isDir && manifestLabel(of: url)?.hasPrefix("scheduled-") == true
+        }
+
+        if let provider = sharedProvider {
+            let mine = candidates.filter { ownerHostID(of: $0) == SharedWorkspace.currentHost.id }
+            let others = candidates.count - mine.count
+            if others > 0 {
+                onLine?(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[info] backups are on \(provider.displayName) — pruning only this "
+                        + "Mac's \(mine.count) scheduled backup(s); leaving \(others) belonging "
+                        + "to another machine (or made before ownership was recorded)."
+                ))
+            }
+            candidates = mine
         }
 
         let stamped = candidates.compactMap { url -> (url: URL, key: (Date, Int))? in
@@ -122,6 +134,9 @@ enum BackupMaintenance {
         keep: Int = defaultKeepCount,
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) {
+        // Stamp first: retention below can only scope to this machine on shared
+        // storage if the backup that just finished says who made it.
+        stampNewestScheduledBackup(profile: profile)
         pruneScheduledBackups(profile: profile, keep: keep, onLine: onLine)
         cleanStaleTempDirs(profile: profile)
     }
@@ -180,6 +195,48 @@ enum BackupMaintenance {
     }
 
     /// The `label` field from a backup directory's manifest.json, or nil.
+    /// Filename of the ownership stamp written beside a scheduled backup.
+    static let ownerStampName = ".jrc-host"
+
+    /// Record which machine produced `backupDir`.
+    ///
+    /// Best-effort: a backup without a stamp is simply never auto-pruned on
+    /// shared storage, which is the safe direction.
+    static func stampOwnership(of backupDir: URL) {
+        let url = backupDir.appendingPathComponent(ownerStampName)
+        try? Data(SharedWorkspace.currentHost.id.utf8).write(to: url, options: .atomic)
+    }
+
+    /// Host id recorded for `backupDir`, or nil when unstamped.
+    static func ownerHostID(of backupDir: URL) -> String? {
+        let url = backupDir.appendingPathComponent(ownerStampName)
+        guard let data = try? Data(contentsOf: url), data.count <= 512,
+              let id = String(data: data, encoding: .utf8) else { return nil }
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Stamp the newest scheduled backup as this machine's. Called right after
+    /// a backup completes, before retention runs.
+    static func stampNewestScheduledBackup(profile: String) {
+        guard let backupsRoot = backupsRoot(for: profile),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: backupsRoot, includingPropertiesForKeys: [.isDirectoryKey],
+                  options: [.skipsHiddenFiles]
+              ) else { return }
+        let newest = entries
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
+            .filter { manifestLabel(of: $0)?.hasPrefix("scheduled-") == true }
+            .compactMap { url -> (URL, Date, Int)? in
+                guard let p = CloudStorage.backupDirectoryTimestamp(name: url.lastPathComponent)
+                else { return nil }
+                return (url, p.date, p.sequence)
+            }
+            .max { lhs, rhs in lhs.1 == rhs.1 ? lhs.2 < rhs.2 : lhs.1 < rhs.1 }
+        guard let newest else { return }
+        stampOwnership(of: newest.0)
+    }
+
     private static func manifestLabel(of backupDir: URL) -> String? {
         let manifestURL = backupDir.appendingPathComponent("manifest.json")
         guard let data = try? Data(contentsOf: manifestURL),

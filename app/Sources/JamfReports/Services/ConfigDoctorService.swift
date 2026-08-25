@@ -1282,14 +1282,14 @@ extension ConfigDoctorService {
         if inputs.backupsDir.flatMap(CloudStorage.provider(for:)) != nil {
             rows.append(DoctorRow(
                 id: "cloud.backups",
-                severity: .warn,
-                title: "Backup pruning is disabled on this folder",
-                detail: "Scheduled-backup pruning is skipped while backups/ is synced: ordering "
-                    + "there depends on modification dates the provider rewrites, and the folder "
-                    + "may hold another Mac's backups. The folder grows until someone removes "
-                    + "old backups by hand.",
-                hint: "Keep backups/ on local disk to restore automatic retention, or add a "
-                    + "calendar reminder to prune the shared folder."
+                severity: .suggest,
+                title: "Only this Mac's backups are pruned here",
+                detail: "Retention on a shared folder applies to backups this Mac made — each "
+                    + "one records which machine produced it. Another Mac's backups, and any "
+                    + "made before ownership was recorded, are left alone rather than counted "
+                    + "against this machine's retention budget.",
+                hint: "Backups from other Macs, and any predating this version, need removing "
+                    + "by hand or by running each machine at least once so it prunes its own."
             ))
         }
         return rows

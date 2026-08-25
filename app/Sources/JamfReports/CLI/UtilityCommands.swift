@@ -64,14 +64,63 @@ struct Scaffold: AsyncParsableCommand {
 }
 
 struct Check: AsyncParsableCommand {
-    static let configuration =
-        CommandConfiguration(abstract: "Validate a profile's config.yaml and jamf-cli auth.")
+    static let configuration = CommandConfiguration(
+        abstract: "Check a profile's config, data accuracy and workspace, with a fix for each finding."
+    )
     @Option(help: "Workspace profile slug.") var profile: String
+    @Flag(help: "Emit machine-readable JSON.") var json = false
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
-        Foundation.exit(runCheck(profile: profile))
+        guard json else { Foundation.exit(runCheck(profile: profile)) }
+
+        // JSON mode reports the doctor alone. The plain path's extra lines
+        // (config decoded, snapshot counts) are narration for a human reading
+        // a terminal; a machine wants the findings and the verdict.
+        let report = ConfigDoctorService.run(profile: profile)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let payload = CheckJSON(
+            profile: profile,
+            passed: report.failCount == 0,
+            counts: .init(
+                pass: report.passCount, suggest: report.suggestCount,
+                warn: report.warnCount, fail: report.failCount
+            ),
+            findings: report.rows
+                .filter { $0.severity != .pass }
+                .map {
+                    CheckJSON.Finding(
+                        id: $0.id, severity: $0.severity.rawValue,
+                        title: $0.title, detail: $0.detail, fix: $0.hint
+                    )
+                }
+        )
+        print(String(decoding: try encoder.encode(payload), as: UTF8.self))
+        Foundation.exit(report.failCount > 0 ? 1 : 0)
     }
+}
+
+/// Shape of `check --json`. Stable enough to gate a CI job on: `passed` and the
+/// exit code agree, and `findings` carries the same fix text a human sees.
+private struct CheckJSON: Encodable {
+    struct Counts: Encodable {
+        let pass: Int
+        let suggest: Int
+        let warn: Int
+        let fail: Int
+    }
+    struct Finding: Encodable {
+        let id: String
+        let severity: String
+        let title: String
+        let detail: String
+        let fix: String?
+    }
+    let profile: String
+    let passed: Bool
+    let counts: Counts
+    let findings: [Finding]
 }
 
 struct Capabilities: AsyncParsableCommand {

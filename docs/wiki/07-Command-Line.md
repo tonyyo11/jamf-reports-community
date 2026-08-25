@@ -53,12 +53,25 @@ workspace rather than failing.
 | `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
 | `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export, or a minimal jamf-cli-only config with no CSV | `--csv <path>` (optional), `--out <path>` |
-| `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile` |
+| `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile`, `--json` |
 | `capabilities` | Report which `jamf-cli` commands are available | `--json` |
 | `diagnostic-bundle` | Build a redacted diagnostic zip | `--profile` |
 | `device` | Print one device's detail JSON | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School profile | `--profile` |
 | `school-scaffold` | Build a Jamf School `config.yaml` from a CSV | `--csv <path>`, `--out <path>` |
+
+### Gating a job on config health
+
+`check --json` emits the findings as a structured document. `passed` and the
+exit code always agree, so either can drive a CI step or a monitoring probe:
+
+```sh
+jamf-reports check --profile prod --json > check.json || echo "config needs attention"
+```
+
+Only genuine failures set a non-zero exit. Warnings are reported but do not fail
+the run — a warning is something to look at, not a reason to break a pipeline.
+
 
 Run `jamf-reports help <command>` (or `jamf-reports <command> --help`) for the
 full option list of any command.

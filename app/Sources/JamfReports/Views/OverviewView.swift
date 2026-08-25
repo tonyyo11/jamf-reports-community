@@ -142,6 +142,17 @@ struct OverviewView: View {
                 if !workspace.demoMode, !workspace.automationHealthIssues.isEmpty {
                     automationHealthBanner
                 }
+                // 2.7.0: on a shared workspace, say when another Mac is mid-run.
+                // Without this, Refresh looks like it did nothing — the run is
+                // real, it just belongs to someone else.
+                if let peer = peerActivity {
+                    InlineBanner(icon: "person.2", tone: .info) {
+                        Text(peer)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 // R1: these KPI cards render the daily digest, not live
                 // inventory — say so, and flag cached/missing inputs (R4).
                 if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
@@ -190,6 +201,21 @@ struct OverviewView: View {
     }
 
     /// Prompt shown when .inventory / .scan data is older than a week.
+    /// A live claim held by another machine, phrased for the operator.
+    ///
+    /// Read straight from disk rather than cached in state: it changes on
+    /// another Mac's schedule, and a stale "someone is collecting" is worse
+    /// than none. Cheap — one small file, only on a shared workspace.
+    private var peerActivity: String? {
+        guard !workspace.demoMode,
+              let claim = SharedWorkspace.readClaim(profile: workspace.profile),
+              claim.host.id != SharedWorkspace.currentHost.id,
+              !claim.isExpired(at: Date()) else { return nil }
+        return "\(claim.host.display) is running \(claim.operation) in this shared workspace "
+            + "\(ReportEngine.approximateAge(until: claim.expiresAt)). Scheduled runs here wait "
+            + "for it; Refresh still works."
+    }
+
     /// Mirrors StaleDataBanner's visual language but adds the action button —
     /// heavy collections only ever run when the operator asks.
     private var heavyTierStalePrompt: some View {

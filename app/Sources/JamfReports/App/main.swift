@@ -457,12 +457,40 @@ private func scheduledRunSingle(
             await ScheduledRunSignals.notifyMetricAlerts(
                 config: routingConfig, profile: profile, workspace: workspace, recorder: recorder
             )
+            ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
             recorder?.finish(exitCode: 0)
             return 0
         }
 
         let config = try routingConfig ?? ConfigLoader.load(from: configURL)
         let dataDir = try WorkspacePaths.dataDir(for: profile)
+
+        // Shared workspaces: don't render the same report twice. Placed here
+        // rather than inside ReportEngine.generate, which derives its profile
+        // from config and has many callers — the duplicates come from two
+        // LaunchAgents firing, and this is where both of those land.
+        //
+        // No freshness check: "has someone collected recently" governs
+        // collecting, not rendering. A scheduled generate only defers to a peer
+        // actively writing right now.
+        var holdsGenerateClaim = false
+        switch ReportEngine.coordinationGate(
+            profile: profile, force: false, operation: "generate", checkFreshness: false
+        ) {
+        case .standDown(let reason):
+            print(reason)
+            recorder?.record(reason)
+            recorder?.finish(exitCode: 0)
+            return 0
+        case .proceed(let state, let notes):
+            holdsGenerateClaim = state.holdsClaim
+            for note in notes {
+                print(note)
+                recorder?.record(note)
+            }
+        }
+        defer { if holdsGenerateClaim { SharedWorkspace.release(profile: profile) } }
+
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
@@ -495,6 +523,7 @@ private func scheduledRunSingle(
                 config: config, profile: profile, workspace: workspace, recorder: recorder
             )
         }
+        ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
         recorder?.finish(exitCode: 0, sheetFailures: failures.count, artifacts: [outputURL])
         return 0
     } catch {

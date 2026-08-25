@@ -132,13 +132,13 @@ final class ConfigDoctorCloudStorageTests: XCTestCase {
         XCTAssertEqual(rows.first { $0.id == "cloud.archive" }?.severity, .warn)
     }
 
-    func testBackupsOnCloudExplainsThatPruningIsDisabled() {
+    func testBackupsOnCloudExplainsHostScopedPruning() {
         let rows = ConfigDoctorService.evaluateCloudStorage(inputs(
             workspace: local("prod"), backups: cloud("Team/backups")
         ))
         let row = rows.first { $0.id == "cloud.backups" }
-        XCTAssertEqual(row?.severity, .warn)
-        XCTAssertTrue(row?.detail.contains("pruning") == true)
+        XCTAssertEqual(row?.severity, .suggest, "host-scoped pruning is no longer a warning")
+        XCTAssertTrue(row?.detail.contains("this Mac made") == true)
     }
 
     // MARK: - Workspace root
