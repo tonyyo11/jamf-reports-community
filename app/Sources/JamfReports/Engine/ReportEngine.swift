@@ -1477,6 +1477,28 @@ struct ReportEngine: Sendable {
             }
         }
 
+        // Shared-workspace coordination, placed beside the once-per-day guard
+        // and BEFORE the jamf-cli check. "Should I collect" belongs ahead of
+        // "can I collect": a teammate's Mac already collecting is a reason to
+        // stand down that has nothing to do with whether this Mac has jamf-cli
+        // installed. Keeping the whole decision here also makes it reachable
+        // without the binary, which is the only way it can be tested.
+        let coordination = Self.coordinationGate(profile: profile, force: force)
+        var holdsClaim = false
+        switch coordination {
+        case .standDown(let reason):
+            AppLogger.collect.info("\(reason, privacy: .public)")
+            onLine(.init(timestamp: Date(), level: .info, text: reason))
+            return
+        case .proceed(let state, let notes):
+            holdsClaim = state.holdsClaim
+            for note in notes {
+                AppLogger.collect.warning("\(note, privacy: .public)")
+                onLine(.init(timestamp: Date(), level: .warn, text: note))
+            }
+        }
+        defer { if holdsClaim { SharedWorkspace.release(profile: profile) } }
+
         guard let bin = ExecutableLocator.locate("jamf-cli") else {
             throw ReportEngineError.jamfCLINotFound
         }
@@ -1834,6 +1856,127 @@ struct ReportEngine: Sendable {
                 liveKinds: liveKinds, onLine: onLine
             )
         }
+
+        // Stamp this machine's activity so other Macs sharing the folder can
+        // see the collect happened without parsing summaries. One file per
+        // host, so concurrent runs never write the same path.
+        if case .proceed(let state, _) = coordination, state.coordinating {
+            SharedWorkspace.recordActivity(profile: profile)
+        }
+    }
+
+    /// Whether this workspace is coordinated, and whether this run holds the claim.
+    struct CoordinationState: Equatable, Sendable {
+        let coordinating: Bool
+        let holdsClaim: Bool
+    }
+
+    /// The whole "should this Mac collect right now" decision.
+    enum CoordinationOutcome: Equatable, Sendable {
+        /// Go ahead. `notes` carries anything the operator should see but that
+        /// is not a reason to stop (a stale claim taken over, a peer working
+        /// alongside a forced run).
+        case proceed(CoordinationState, notes: [String])
+        /// Do not collect; the string explains why, in the operator's terms.
+        case standDown(String)
+    }
+
+    /// Decide whether to collect, and claim the workspace if so.
+    ///
+    /// Deliberately reads config itself rather than taking the already-loaded
+    /// value: it runs before the main config load and before the jamf-cli
+    /// check, so the decision never depends on the binary being installed. A
+    /// config that fails to parse coordinates nothing — the real load reports
+    /// the parse error properly, and refusing to collect because a coordination
+    /// block is unreadable would be the wrong failure.
+    static func coordinationGate(
+        profile: String,
+        force: Bool,
+        now: Date = Date()
+    ) -> CoordinationOutcome {
+        let idle = CoordinationState(coordinating: false, holdsClaim: false)
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            return .proceed(idle, notes: [])
+        }
+        let config = try? ConfigLoader.load(
+            from: workspace.appendingPathComponent("config.yaml")
+        )
+        let shared = config?.sharedWorkspace ?? SharedWorkspaceConfig()
+        let synced = CloudStorage.provider(for: workspace) != nil
+        guard shared.isEnabled(workspaceIsSynced: synced) else {
+            return .proceed(idle, notes: [])
+        }
+
+        // Freshness: a scheduled run stands down when another machine collected
+        // recently — one collect per interval across the team, not one per Mac.
+        // An explicit Refresh is a deliberate operator action and proceeds.
+        if !force, let recent = SharedWorkspace.newestOtherCollect(profile: profile),
+           case .skipCollectedElsewhere(let host, let at) = SharedWorkspace.freshness(
+               lastCollectHost: recent.host,
+               lastCollectAt: recent.at,
+               me: SharedWorkspace.currentHost,
+               minInterval: shared.minCollectInterval,
+               now: now
+           ) {
+            return .standDown(
+                "[info] skipping collect — \(host.display) collected "
+                    + "\(Self.approximateAge(since: at, now: now)) "
+                    + "(shared workspace; use Refresh to collect anyway)"
+            )
+        }
+
+        switch SharedWorkspace.acquire(
+            profile: profile, operation: "collect", ttl: shared.claimTTL, now: now
+        ) {
+        case .acquire:
+            return .proceed(
+                CoordinationState(coordinating: true, holdsClaim: true), notes: []
+            )
+        case .takeOverExpired(let stale):
+            return .proceed(
+                CoordinationState(coordinating: true, holdsClaim: true),
+                notes: ["[warn] taking over an expired claim from \(stale.host.display) "
+                    + "(started \(Self.approximateAge(since: stale.startedAt, now: now)), "
+                    + "never released)"]
+            )
+        case .blocked(let live):
+            // Advisory only: a human who asked for this run wins, and is told
+            // what they are running alongside. A scheduled run defers.
+            let note = "[warn] \(live.host.display) is running \(live.operation) in this "
+                + "workspace until \(Self.approximateAge(until: live.expiresAt, now: now))"
+            guard force else {
+                return .standDown(
+                    note + " — skipping collect; another machine is already collecting"
+                )
+            }
+            return .proceed(
+                CoordinationState(coordinating: true, holdsClaim: false), notes: [note]
+            )
+        }
+    }
+
+    /// Rough human phrasing for a past instant ("12 minutes ago", "2 days ago").
+    /// Deliberately coarse — these strings sit in log lines an operator skims,
+    /// not in anything a decision is made from.
+    static func approximateAge(since date: Date, now: Date = Date()) -> String {
+        let seconds = max(0, now.timeIntervalSince(date))
+        return "\(Self.durationPhrase(seconds)) ago"
+    }
+
+    /// Rough human phrasing for a future instant ("in about 20 minutes").
+    static func approximateAge(until date: Date, now: Date = Date()) -> String {
+        let seconds = max(0, date.timeIntervalSince(now))
+        return seconds < 60 ? "shortly" : "in about \(Self.durationPhrase(seconds))"
+    }
+
+    private static func durationPhrase(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        if minutes < 1 { return "less than a minute" }
+        if minutes < 60 { return "\(minutes) minute\(minutes == 1 ? "" : "s")" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours) hour\(hours == 1 ? "" : "s")" }
+        let days = hours / 24
+        return "\(days) day\(days == 1 ? "" : "s")"
     }
 
     // MARK: - Patch release date collection

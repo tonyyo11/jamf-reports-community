@@ -26,6 +26,7 @@ struct ReportConfig: Decodable, Sendable {
     var notify: NotifyConfig?
     var alerts: AlertsConfig?
     var retention: RetentionConfig?
+    var sharedWorkspace: SharedWorkspaceConfig?
     var ai: AIConfig?
     var html: HTMLReportConfig?
 
@@ -48,6 +49,7 @@ struct ReportConfig: Decodable, Sendable {
         case notify
         case alerts
         case retention
+        case sharedWorkspace = "shared_workspace"
         case ai
         case html
     }
@@ -992,6 +994,54 @@ struct RetentionConfig: Decodable, Sendable {
     var keepCount: Int { max(0, snapshotKeepCount ?? 0) }
     var includesSummaries: Bool { includeSummaries ?? false }
     var resolvedArchiveDir: String { archiveDir?.trimmingCharacters(in: .whitespaces) ?? "" }
+}
+
+// MARK: - shared_workspace (multi-machine coordination)
+
+/// `shared_workspace:` block (2.7.0) — how this workspace behaves when more
+/// than one Mac writes to it.
+///
+/// Unlike the workspace root itself (per-machine, in preferences — a sync
+/// provider mounts the same folder at a different path under each user's
+/// home), these settings live in the workspace's own `config.yaml` so every
+/// machine sharing the folder reads the same policy.
+struct SharedWorkspaceConfig: Decodable, Sendable {
+    /// Tri-state. Absent means auto: coordination turns on when the workspace
+    /// resolves to a synced volume. Set explicitly to force it on for a share
+    /// the provider detection does not recognise, or off for a single-Mac
+    /// folder that merely happens to live under a synced path.
+    var enabled: Bool?
+    var claimTtlMinutes: Int?
+    var minCollectIntervalHours: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case claimTtlMinutes = "claim_ttl_minutes"
+        case minCollectIntervalHours = "min_collect_interval_hours"
+    }
+
+    /// Resolve the tri-state against a detected provider.
+    func isEnabled(workspaceIsSynced: Bool) -> Bool { enabled ?? workspaceIsSynced }
+
+    /// How long a claim stays valid. Floored at 5 minutes so a typo cannot
+    /// produce a lease that expires before the collect it guards; capped at
+    /// 12 hours so a crashed machine cannot hold the folder for a week.
+    var claimTTL: TimeInterval {
+        let minutes = min(max(claimTtlMinutes ?? 45, 5), 720)
+        return TimeInterval(minutes * 60)
+    }
+
+    /// Skip a collect when another host collected inside this window.
+    ///
+    /// 0 disables the check — each machine then collects on its own schedule,
+    /// which is a legitimate choice when they cover different tenants. Capped
+    /// at a week for the same reason `claimTTL` is capped: this value lives in
+    /// the *shared* config, so one mistyped digit (`120` for `12`) would stand
+    /// every Mac down for five days, and nobody would see a failure — only an
+    /// absence of runs.
+    var minCollectInterval: TimeInterval {
+        TimeInterval(min(max(0, minCollectIntervalHours ?? 12), 168) * 3600)
+    }
 }
 
 // MARK: - exceptions (list, not dict)
