@@ -3,19 +3,20 @@
 This page covers secure workspace management, automation integrity, and audit trail
 practices for fleet reporting in regulated environments.
 
-## Cloud Sync and Workspace Boundaries
+## Cloud Sync and Shared Workspaces
 
-**The default paths are the safe ones.** A workspace at `~/Jamf-Reports/<profile>/`
-on local disk, written by exactly one Mac, is the layout every guard in this app
-assumes. Moving the workspace onto OneDrive, SharePoint, Box, Dropbox, iCloud
-Drive, Google Drive, or a mounted share does not just change where bytes live —
-it changes three assumptions the app cannot re-establish on its own. Read this
-section before pointing anything at a synced folder.
+Two layouts are supported, and they answer different questions. Pick the
+narrower one that does what you need.
 
-### If you only want your team to read the reports
+| You want | Layout | What syncs |
+|---|---|---|
+| Teammates to **read the reports** | Publish | Finished workbooks and HTML only |
+| Several Macs to **run the reporting** | Shared workspace | Everything, including raw device data |
 
-Publish, don't relocate. Keep the workspace local and point **only the generated
-reports** at the shared folder:
+### Publish: share the reports, keep the workspace local
+
+The narrowest option. Keep the workspace on local disk and point only the
+generated reports at the shared folder:
 
 ```yaml
 output:
@@ -23,59 +24,108 @@ output:
   output_dir: "~/Library/CloudStorage/OneDrive-Contoso/Team/Jamf Reports"
 ```
 
-Raw snapshots, run logs, backups, and `config.yaml` stay on local disk, where
-their permissions and single-writer assumptions still hold, while finished
-workbooks and HTML land in the team folder. The Config Doctor confirms this
-layout with a green **"Reports publish to …"** row. This is the supported way to
-share output with a team.
+Raw snapshots, run logs, backups, and `config.yaml` stay local, where their
+permissions and single-writer assumptions still hold. Run Check confirms this
+with a green **"Reports publish to …"** row.
 
 `~/Library` is otherwise off-limits to output paths, but `~/Library/CloudStorage`
 is deliberately carved out — that is where macOS mounts every modern sync
 provider, and it holds user data rather than application state.
 
-### Why not the whole workspace
+### Shared workspace: several Macs, one history
 
-**1. Sharing the workspace shares the fleet's PII.** `jamf-cli-data/` snapshots
-and `automation/logs/` hold device serials, hostnames, usernames, and email
-addresses in the clear. The app writes them `0600` inside `0700` directories, but
-POSIX permissions are enforced by the local kernel — a sync provider does not
+Choose the folder in **Settings → Workspace location**. Every profile, snapshot,
+report and trend then lives there, and any Mac pointed at it contributes to one
+pooled history rather than keeping a private copy.
+
+That path is per-Mac and is stored in this Mac's preferences, not in
+`config.yaml` — a sync provider mounts the same team folder under each user's
+home, so `/Users/alice/Library/CloudStorage/…` on one machine is
+`/Users/bob/…` on the next. What every machine must agree on lives in the
+workspace's own config:
+
+```yaml
+shared_workspace:
+  enabled: true                  # omit to decide from the folder itself
+  claim_ttl_minutes: 45          # how long a run's claim stays valid
+  min_collect_interval_hours: 12 # 0 disables the freshness check
+```
+
+Coordination turns itself on when the workspace is on a synced volume. Two
+guards then run:
+
+- **Freshness.** A scheduled collect stands down when another Mac collected
+  inside `min_collect_interval_hours`, naming which one and when. Pressing
+  Refresh in the app always collects anyway — an explicit request wins.
+- **Claims.** Each run publishes a short lease at
+  `automation/.workspace-claim.json` naming the host, the operation and an
+  expiry, so a second machine can see one is already working. A machine that
+  sleeps or shuts down mid-run leaves its claim behind; expiry is what lets the
+  next run take over rather than waiting forever.
+
+Each Mac also records its own last run under `automation/hosts/<host-id>.json`
+— one file per machine, never a shared one, so this state cannot itself produce
+conflict copies.
+
+**The claim is advisory, not a lock.** Sync is eventual, so two machines
+starting within seconds of each other can both proceed. Nothing is corrupted
+when that happens: snapshots are written under unique timestamped names and read
+back in filename order, never by modification date. You simply get two collects
+where you wanted one.
+
+### What a shared workspace still costs you
+
+**Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
+snapshots and `automation/logs/` hold device serials, hostnames, usernames and
+email addresses in the clear, and `config.yaml` holds any webhook URL you have
+configured. The app writes them `0600` inside `0700` directories, but POSIX
+permissions are enforced by the local kernel — a sync provider does not
 replicate them. Whoever can open the SharePoint site can read the files, the
 server-side search index can surface their contents, and a Windows client has no
-POSIX permission model at all. `.metadata_never_index` suppresses local Spotlight
-only; it does nothing server-side. In a regulated environment, treat relocating
-the workspace as widening the audience for that data and get it reviewed first.
+POSIX permission model at all. `.metadata_never_index` suppresses local
+Spotlight only; it does nothing server-side.
 
-**2. Modification times stop being trustworthy.** A file provider re-stamps
-mtimes when it syncs or materializes a file. The app therefore orders snapshots
-by the timestamp in the **filename**, never by mtime, and refuses to prune
-scheduled backups at all while `backups/` is on a synced volume — ordering there
-would decide which backups get deleted. Expect the backups folder to grow until
-you remove old ones yourself.
+This is the one thing coordination does not solve, and Run Check says so on
+every shared workspace. In a regulated environment, decide deliberately who the
+folder is shared with, and get it reviewed before the first collect. If the
+audience for the reports is wider than the audience for device-level inventory,
+use the publish layout instead — or both: a private shared workspace plus an
+`output_dir` pointing at a wider folder.
 
-**3. Two Macs writing one workspace will quietly disagree.** There is no locking
-between installations. Both write the same `summary_<date>.json`, the same
-per-kind cadence markers, and the same `automation/<label>_status.json`, so the
-first machine to run each day claims the work and the others skip it while still
-reporting success. A failed run on one Mac can be masked by a successful run on
-another. If a workspace must be reachable from more than one Mac, treat exactly
-one as the writer and the rest as readers.
+**Backups stop being pruned.** Scheduled-backup retention is skipped while
+`backups/` is on a synced volume: ordering there would depend on modification
+dates the provider rewrites, and the folder may hold another Mac's backups.
+Expect it to grow until someone removes old ones.
 
-**Conflict copies.** When two machines do write at once, providers keep both as
-`summary_2026-08-20 2.json` or `computers_… (1).json`. The app ignores any file
-whose name is not in its canonical form, so no report is ever built from a
-duplicate — but the Config Doctor flags them, and their presence means something
-else is writing to that folder.
+**Keep every Mac on the same app version.** Versions before 2.7.0 order
+snapshots by modification date and prune backups without checking whose they
+are. Run Check warns when it sees a peer reporting a different version.
+
+**Clocks matter.** Freshness compares timestamps written by different machines,
+so leave "Set date and time automatically" on everywhere. Run Check warns when a
+peer's timestamps are more than five minutes ahead.
+
+**Conflict copies.** When two machines do write the same file at once, providers
+keep both as `summary_2026-08-20 2.json` or `computers_… (1).json`. The app
+ignores any file whose name is not in canonical form, so no report is ever built
+from a duplicate. Run Check lists them so you can delete them; if they keep
+appearing, raise `min_collect_interval_hours`.
 
 **LaunchAgent plists are never safe to sync.** `~/Library/LaunchAgents/…` stays
-local, always. launchd executes whatever lands on disk without a write-permission
-check, so a synced plist turns a cloud-account compromise into arbitrary
-scheduled execution. The app only ever writes these locally; do not copy them to
-a share yourself. Retired agents that the app archives into the workspace have
-their webhook URLs scrubbed, precisely because that archive often ends up on one.
+local, always — including on a shared workspace, where only the data moves.
+launchd executes whatever lands on disk without a write-permission check, so a
+synced plist turns a cloud-account compromise into arbitrary scheduled
+execution. The app only ever writes these locally; do not copy them to a share
+yourself. Retired agents that the app archives into the workspace have their
+webhook URLs scrubbed, precisely because that archive often ends up on one.
 
-**If you use cloud storage anyway**, run the Config Doctor (Health Audit →
-Config) — it reports which of the layouts above is in effect and what each one
-costs.
+### Check it
+
+**Config → Run check** reports the whole picture for the active profile: which
+layout is in effect, whether the workspace folder is reachable and writable,
+which other Macs write there and when each last collected, whether their clocks
+and app versions agree, any live or stale claim, and every conflict copy it can
+see — each with what to do about it.
 
 ## Configuration Integrity
 

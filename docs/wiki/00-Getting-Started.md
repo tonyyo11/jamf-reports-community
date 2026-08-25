@@ -71,7 +71,10 @@ full detail on each:
 2. **Install CLI** — confirms `jamf-cli` is installed and on `PATH` (shows the install
    command if not).
 3. **Workspace** — pick a short, lowercase profile name (for example `prod`). This
-   becomes the workspace folder under `~/Jamf-Reports/<profile>/`.
+   becomes the workspace folder under `~/Jamf-Reports/<profile>/`. That location is
+   the default, not a fixed one: **Settings → Workspace location** can move it to a
+   shared team folder so several Macs build one pooled history — see
+   [Security & Operational Considerations](/wiki/10-Security-and-Operational-Considerations).
 4. **Authenticate** — connect Jamf Pro with your API client credentials (or a Platform
    Gateway tenant ID). The secret is never persisted by the app; `jamf-cli` stores the
    resulting token in the macOS keychain.

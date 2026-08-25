@@ -9,17 +9,33 @@ versions in this repository map to git tags.
 
 ### Added
 
-Reports can now be published to a cloud-synced team folder. Set
-`output.allow_absolute_paths: true` and point `output.output_dir` at the shared
-location — `~/Library/CloudStorage/…` for OneDrive, SharePoint, Box, Dropbox or
-Google Drive — and colleagues can read finished workbooks without being given the
-raw fleet data. Keep the workspace itself on local disk: that is where device
-serials, usernames and run logs live, and where the app's file permissions still
-mean something.
+The whole workspace can now live on a shared team folder, so several Macs
+covering the same Jamf Pro tenants build one pooled history instead of a
+separate one each. Choose the folder in **Settings → Workspace location**;
+OneDrive, SharePoint, Box, Dropbox, Google Drive and mounted shares all work.
+Coordination switches itself on when the folder is a synced one: a scheduled
+collect stands down when another Mac collected recently — naming which and when
+— and each run publishes a short claim so a second machine can see one is
+already working. Pressing Refresh always collects anyway. Tune it per workspace
+with the new `shared_workspace` block, or leave it alone and it decides for
+itself.
 
-The Config Doctor gained a **Cloud storage** section that says which layout is in
-effect, warns when the whole workspace (or just the backups folder) is on a
-synced volume, and lists any sync-conflict duplicates it finds.
+If you only want colleagues to read the reports, the narrower option is still
+there and still preferred: keep the workspace local, set
+`output.allow_absolute_paths: true`, and point `output.output_dir` at the shared
+folder. One thing a shared workspace cannot do for you is decide who should see
+raw device data — serials, usernames and email addresses sit in clear text in
+the snapshots and run logs, and folder permissions are the sync provider's, not
+this app's. Run check says so every time.
+
+**Run check** (Config screen, and `jamf-reports check` from Terminal) now runs
+every validation the app has instead of only confirming that `config.yaml`
+parses. It reports column mappings that no longer match your CSV, baselines
+pointing at extension attributes that aren't collected, malformed alert rules,
+data-accuracy problems, and the state of the workspace folder — with a concrete
+fix under each finding. On a shared workspace it also lists which other Macs
+write there, when each last collected, whether their clocks and app versions
+agree, and any leftover claim or sync-conflict file.
 
 Comparing two backups now shows a summary of what actually changed instead of the
 full configuration of every changed object. Objects taking the same update collapse

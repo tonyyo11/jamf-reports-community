@@ -33,6 +33,19 @@ manages under `~/Jamf-Reports/<profile>/`), except `scaffold` and
 `school-scaffold`, which work on standalone CSV files (`scaffold`'s `--csv` is
 optional — see below).
 
+If the workspace has been moved off its default location (Settings → Workspace
+location), point the CLI at it with `JRC_WORKSPACES_ROOT`:
+
+```sh
+JRC_WORKSPACES_ROOT="$HOME/Library/CloudStorage/OneDrive-Contoso/Team/Jamf Reports" \
+  jamf-reports check --profile prod
+```
+
+Set it in the script or launchd job that calls the CLI. Scheduled runs the app
+creates carry it automatically; a cron job or script you wrote yourself does not,
+and without it the CLI reads the default `~/Jamf-Reports` and reports an empty
+workspace rather than failing.
+
 | Command | What it does | Key options |
 |---------|--------------|-------------|
 | `generate` | Generate an `.xlsx` workbook from cached snapshots | `--profile`, `--output <path>`, `--template <id>` |
@@ -40,7 +53,7 @@ optional — see below).
 | `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
 | `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export, or a minimal jamf-cli-only config with no CSV | `--csv <path>` (optional), `--out <path>` |
-| `check` | Validate a profile's `config.yaml` and `jamf-cli` auth | `--profile` |
+| `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile` |
 | `capabilities` | Report which `jamf-cli` commands are available | `--json` |
 | `diagnostic-bundle` | Build a redacted diagnostic zip | `--profile` |
 | `device` | Print one device's detail JSON | `--profile`, `--id <serial-or-id>` |

@@ -160,12 +160,13 @@ interchangeable. Core inventory commands always run.
 ### output config
 
 `output.allow_absolute_paths` (default `false`) gates any output path outside the
-workspace. It is what makes "publish reports to a shared folder" possible:
+workspace. It is what makes a shared team folder reachable at all:
 `~/Library/CloudStorage/*` is carved out of the `~/Library` deny-list in
 `WorkspacePaths.isSensitiveAbsolutePath` because that is where macOS mounts every
-sync provider. **Publish, don't relocate** — the workspace itself stays local, or
-the single-writer, POSIX-permission, and mtime assumptions the rest of the app
-makes stop holding. `ConfigDoctorService.evaluateCloudStorage` reports which
+sync provider. **Publish and relocate are both supported as of 2.7.0** — publish
+(workspace local, `output_dir` shared) stays the narrowest option, while
+relocating the whole workspace is what `WorkspaceRootStore` + `SharedWorkspace`
+exist to make safe. `ConfigDoctorService.evaluateCloudStorage` reports which
 layout is in effect; `docs/wiki/10-Security-and-Operational-Considerations.md`
 has the operator-facing version.
 
@@ -177,6 +178,31 @@ output:
   archive_dir: ""                # defaults to "archive" next to output file
   keep_latest_runs: 10           # how many timestamped runs to keep in output_dir
 ```
+
+### shared_workspace config (2.7.0 — multi-machine coordination)
+
+```yaml
+shared_workspace:
+  enabled: true                   # omit for auto (on when the workspace is synced)
+  claim_ttl_minutes: 45           # clamped 5–720
+  min_collect_interval_hours: 12  # 0 disables the freshness check
+```
+
+Lives in the workspace's `config.yaml` **because every machine sharing the folder
+must agree on it**. The workspace root itself does not — that is per-machine, in
+preferences, via `WorkspaceRootStore`. `enabled` is tri-state: absent means decide
+from the volume, explicit values force it either way (a share the provider
+detection misses, or a local folder that merely sits under a synced path).
+Consumed by `ReportEngine.coordinationGate` — one decision covering freshness
+AND the claim, deliberately placed **above** the `jamf-cli` binary check in
+`collect`: "should I collect" belongs ahead of "can I collect", since a peer
+mid-collect is a reason to stand down regardless of whether this Mac has the
+binary. That ordering is also the only thing that makes the decision
+reachable in tests (a stub named `jamf-cli` is rejected by `CLIBridge`'s
+codesign gate). It returns `.standDown(reason)` or `.proceed(state, notes:)`;
+`holdsClaim` is false for a forced run proceeding alongside a live peer, which
+is what stops that run releasing someone else's lease via `collect`'s `defer`.
+Also consumed by the Config Doctor's cloud family.
 
 ### notify config (v2.2.0 — opt-in webhook digest)
 
@@ -340,6 +366,8 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `BackupMaintenance` | (v2.2.0) Housekeeping for `backups/`: keeps the newest 10 scheduled backups (manual backups never pruned — identified by the `scheduled-` manifest label prefix) and sweeps abandoned `.tmp-*` staging dirs older than 24h. |
 | `SnapshotFreshness` | Decides fresh / stale / no-snapshots for a data dir by newest-file mtime. Gates the Overview "skip collect when fresh" path and the launch freshness sweep. |
 | `RefreshDebouncer` | Debounce helper extracted from the refresh path for testability. |
+| `WorkspaceRootStore` | (2.7.0) Owns where `~/Jamf-Reports` actually lives. Resolution order: `JRC_TEST_WORKSPACES_ROOT` (DEBUG) → `JRC_WORKSPACES_ROOT` (env; set by the LaunchAgents the app writes and usable by the included CLI) → the stored preference → `~/Jamf-Reports`. **Per-machine on purpose** — a sync provider mounts the same team folder under each user's home, so the path is not shareable and cannot live in `config.yaml`. An unreachable stored root is NOT silently replaced with the default (that would start a second, empty history beside the real one); it is returned as configured and `ConfigDoctorService` explains why nothing reads. `set(_:)` validates against `WorkspacePaths.isSensitiveAbsolutePath`, creates the folder if absent, never moves existing workspaces, and calls `ManagedAutomation.invalidateManagedPlists` so managed agents get rewritten (a root move changes `WorkingDirectory` but not the reconcile signature). `ProfileService.workspacesRoot()` and `SystemActions.allowedParents()` both derive from it. |
+| `SharedWorkspace` | (2.7.0) Coordination for a workspace several Macs write to. `Host` identity is the hardware UUID (`gethostuuid`) with the hostname as display text only. Pure `decide(existing:me:now:)` arbitrates the advisory claim at `automation/.workspace-claim.json` (own claim always re-acquired; another host's live claim blocks; an expired one is taken over, which is how a Mac that slept mid-run stops wedging the folder). Pure `freshness(...)` gates a collect on *other* hosts only — same-host repeats stay governed by `collect`'s once-per-day guard — and treats a future timestamp as recent rather than infinitely old. Per-host activity lives at `automation/hosts/<host-id>.json`, one file per machine, so this state can never generate sync-conflict copies. **The claim is advisory, not a lock**: sync is eventual, and nothing downstream needs mutual exclusion for correctness (snapshot writes are additive and uniquely stamped; readers order by filename). |
 | `CloudStorage` | Cloud-sync awareness shared by the path guards, the `newest*` file helpers and the Config Doctor. `snapshotTimestamp`/`isCanonicalSummaryFilename` require our own canonical filename stamps — a whitelist, so a provider's conflict copy (`… 2.json`, `… (1).json`) is rejected without maintaining a per-provider blacklist. `isLikelySyncConflict` is diagnostics only (no ordering depends on it). `provider(for:)` recognises `~/Library/CloudStorage/*`, iCloud, legacy `~/Dropbox`/`~/Box` and `/Volumes/*`. |
 | `BackupDiffModel` | Pure collapse of `jamf-cli pro diff --output json` into what actually changed: a recursive two-sided leaf diff, then grouping of objects whose change is identical. **Arrays are compared as multisets, never by index** — Jamf version lists are newest-first, so a new release prepends an element and an index-wise diff reported one added version as four hundred modified ones. Backs the Backups → Diff sheet's Summary mode. Deliberately not a model summary: these are numbers an operator acts on. |
 | `CSVFamilyDetector` | Detects whether a Jamf Pro CSV export contains computers or mobile devices via family-unique discriminator headers (`COMPUTER_CSV_DISCRIMINATORS` / `MOBILE_CSV_DISCRIMINATORS`). Used by ScaffoldService and the CSV sheet routing. |

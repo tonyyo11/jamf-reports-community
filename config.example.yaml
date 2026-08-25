@@ -420,6 +420,39 @@ retention:
   archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
 
 # =============================================================================
+# SHARED WORKSPACE (multi-Mac coordination; auto-detected)
+# =============================================================================
+# Point several Macs at one workspace on a shared folder — OneDrive/SharePoint,
+# Box, Dropbox, or a mounted share — and they build a single pooled history
+# instead of one per machine. Choose the folder in Settings > Workspace
+# location; that path is per-Mac (a sync provider mounts the same folder under
+# each user's home), which is why it is NOT a key here. What every machine must
+# agree on lives below.
+#
+# enabled: omit for auto — coordination turns itself on when the workspace is on
+#   a synced volume. Set true to force it on for a share the app does not
+#   recognise as one, or false for a folder that only looks shared.
+#
+# Two guards run when it is on:
+#   * a scheduled collect stands down if another Mac collected inside
+#     min_collect_interval_hours (Refresh in the app always collects anyway)
+#   * each run publishes a short claim, so a second machine can see one is
+#     already working and wait for its turn
+#
+# The claim is advisory, not a lock: sync is eventual, so two machines starting
+# within seconds of each other can both proceed. Nothing is corrupted when they
+# do — snapshots are written under unique timestamped names and read back in
+# filename order — you just get two collects instead of one.
+#
+# Run Check on the Config screen reports which Macs share the folder, when each
+# last collected, and whether their clocks and app versions agree.
+#
+# shared_workspace:
+#   enabled: true                  # omit to decide from the folder itself
+#   claim_ttl_minutes: 45          # how long a run's claim stays valid (5–720)
+#   min_collect_interval_hours: 12 # 0 disables the freshness check entirely
+
+# =============================================================================
 # AI INSIGHTS (macOS 27+; opt-in; OFF by default)
 # =============================================================================
 # Turn already-collected fleet data (the daily summary) into a plain-language
