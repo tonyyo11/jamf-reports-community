@@ -649,10 +649,68 @@ func runCheck(profile: String) -> Int32 {
                 fputs("[warn] could not read data_dir: \(error.localizedDescription)\n", stderr)
             }
         }
-        return 0
+
+        // The checks above only prove the file parses. Everything an operator
+        // actually gets wrong — column mappings that no longer match their CSV,
+        // baselines pointing at absent EAs, malformed alert rules, a workspace
+        // on a shared folder with no coordination — lives in the Config Doctor,
+        // which the GUI has surfaced since 2.3.0 while `check` did not. Same
+        // report, same rules, one implementation.
+        return printDoctorReport(ConfigDoctorService.run(profile: profile))
     } catch {
         fputs("[error] \(error.localizedDescription)\n", stderr)
         return 1
+    }
+}
+
+/// Render a `DoctorReport` as `check` output and turn it into an exit code.
+///
+/// Passes are summarised as a count rather than listed: a healthy config emits
+/// dozens of them and burying three warnings in that list is how a check gets
+/// ignored. Only `.fail` sets a non-zero exit — a warning is something to look
+/// at, not a reason to fail a scripted run.
+func printDoctorReport(_ report: DoctorReport) -> Int32 {
+    let actionable = report.rows.filter { $0.severity != .pass }
+
+    print("[ok] config checks passed: \(report.passCount)")
+    for row in actionable.sorted(by: { severityRank($0.severity) < severityRank($1.severity) }) {
+        let tag: String
+        switch row.severity {
+        case .fail: tag = "error"
+        case .warn: tag = "warn"
+        case .suggest: tag = "info"
+        case .pass: continue
+        }
+        // Every row goes to stdout, failures included. Splitting a report
+        // across two streams looked tidier but reordered it on a terminal:
+        // stderr is unbuffered and stdout is not, so findings arrived before
+        // the header and each "fix:" line detached from the finding it
+        // belonged to. The exit code is the machine-readable signal; a
+        // readable report is worth more than per-row stream convention.
+        print("[\(tag)] \(row.title): \(row.detail)")
+        if let hint = row.hint {
+            print("        fix: \(hint)")
+        }
+    }
+
+    if report.failCount > 0 {
+        fflush(stdout)
+        fputs("[error] \(report.failCount) check(s) must be fixed before reports are reliable\n",
+              stderr)
+        return 1
+    }
+    if report.warnCount > 0 {
+        print("[warn] \(report.warnCount) check(s) need attention")
+    }
+    return 0
+}
+
+private func severityRank(_ severity: DoctorSeverity) -> Int {
+    switch severity {
+    case .fail: return 0
+    case .warn: return 1
+    case .suggest: return 2
+    case .pass: return 3
     }
 }
 

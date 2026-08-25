@@ -219,7 +219,8 @@ struct ConfigView: View {
         PageHeader(
             kicker: "Workspace · \(workspace.profile)",
             title: "config.yaml",
-            subtitle: "~/Jamf-Reports/\(workspace.profile)/config.yaml"
+            subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                                     subpath: "config.yaml")
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -229,10 +230,19 @@ struct ConfigView: View {
                     }
                     saveStatusPill
                     PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
+                    // Switches to Columns because that is where the results
+                    // render. Worth knowing if this ever reads as a bug again:
+                    // the check used only to validate column mappings, which
+                    // made the jump look arbitrary. It now runs every Config
+                    // Doctor family — mappings, baselines, alert rules, data
+                    // accuracy, workspace and sharing — so the tab switch is
+                    // taking the operator to the report, not away from theirs.
                     PNPButton(title: "Run check", icon: "flask") {
                         tab = .columns
                         triggerColumnsCheck = true
                     }
+                    .help("Check this profile's config and data, and show what to fix "
+                          + "(results appear under Columns)")
                     PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
                 }
             )
@@ -324,7 +334,7 @@ private struct ColumnsTab: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var cli = CLIBridge()
-    @State private var checkStatus: String? = nil
+    @State private var checkOutput: [String] = []
     @State private var family: ColumnFamily = .mac
 
     var body: some View {
@@ -467,10 +477,21 @@ private struct ColumnsTab: View {
                     }
                 }
                 Divider().background(Theme.Hairline.standard).padding(.vertical, 12)
-                if let status = checkStatus {
-                    Mono(text: status, size: 10.5, color: Theme.Text.tertiary(contrast))
-                        .lineLimit(2)
-                        .padding(.bottom, 6)
+                if !checkOutput.isEmpty {
+                    // The check reports the whole Config Doctor now, not a
+                    // single exit line, so its output needs somewhere to go.
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(checkOutput.enumerated()), id: \.offset) { _, line in
+                                Mono(text: line, size: 10.5,
+                                     color: Theme.Text.tertiary(contrast))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 180)
+                    .padding(.bottom, 6)
                 }
                 HStack(spacing: 6) {
                     PNPButton(title: "Re-check", icon: "arrow.clockwise", size: .sm, action: runCheck)
@@ -509,21 +530,28 @@ private struct ColumnsTab: View {
 
     private func runCheck() {
         Task {
-            checkStatus = "Running check…"
+            checkOutput = ["Running check…"]
             let csvPath = newestCSVPath()
             let exit: Int32
             do {
                 exit = try await cli.check(profile: workspace.profile, csvPath: csvPath) { line in
-                    Task { @MainActor in checkStatus = line.text }
+                    Task { @MainActor in
+                        if checkOutput == ["Running check…"] { checkOutput = [] }
+                        checkOutput.append(line.text)
+                    }
                 }
             } catch {
-                checkStatus = "Check failed: \(error.localizedDescription). Confirm a CSV is in "
-                    + "csv-inbox and config.yaml is valid."
+                checkOutput = [
+                    "Check failed: \(error.localizedDescription).",
+                    "Confirm a CSV is in csv-inbox and config.yaml is valid.",
+                ]
                 return
             }
-            checkStatus = exit == 0
-                ? "Check passed · exit 0"
-                : CLIBridge.explainExit(exit, operation: "Config check")
+            checkOutput.append(
+                exit == 0
+                    ? "— check complete"
+                    : CLIBridge.explainExit(exit, operation: "Config check")
+            )
         }
     }
 
