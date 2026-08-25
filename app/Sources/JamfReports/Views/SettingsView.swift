@@ -42,6 +42,11 @@ struct SettingsView: View {
     @State private var aiConfig: AIConfig = AIConfig()
     @State private var aiSaveMessage: String? = nil
 
+    // Workspace location (2.7.0). Held in @State so the card reflects a change
+    // without waiting for the next `.task`; the store is the source of truth.
+    @State private var workspaceRootPath: String = ProfileService.workspacesRoot().path
+    @State private var workspaceRootMessage: String? = nil
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -58,6 +63,7 @@ struct SettingsView: View {
                     connectionsCard
                 }
                 commandLineToolCard
+                workspaceLocationCard
                 dataAndChartsCard
                 diagnosticsCard
                 loggingCard
@@ -80,6 +86,7 @@ struct SettingsView: View {
         // keep showing the first profile's config (PR-23 advisor finding).
         .task(id: workspace.profile) {
             workspace.refreshToolStatus()
+            workspaceRootPath = ProfileService.workspacesRoot().path
             workspace.reloadFromDisk()
             testResults = [:]
             await loadTokenStatuses()
@@ -140,6 +147,104 @@ struct SettingsView: View {
     }
 
     // MARK: - Included CLI install
+
+    private var workspaceLocationCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Workspace location")
+                Text(
+                    "Where profiles, history, snapshots and reports are kept. Point this at a " +
+                    "shared team folder — OneDrive/SharePoint, Box, Dropbox or a mounted share — " +
+                    "so several Macs can report against the same tenants and build one history " +
+                    "between them. Keep the default if this Mac is the only one reporting."
+                )
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text(workspaceRootPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let provider = CloudStorage.provider(for: URL(fileURLWithPath: workspaceRootPath)) {
+                    Label(
+                        "On \(provider.displayName) — multi-Mac coordination turns on " +
+                        "automatically. Run Check on the Config screen reports who else writes here.",
+                        systemImage: "person.2"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 8) {
+                    PNPButton(title: "Choose folder…", icon: "folder", size: .sm) {
+                        chooseWorkspaceRoot()
+                    }
+                    .help("Pick the folder that holds your Jamf Reports workspaces.")
+                    .accessibilityHint("Opens a folder picker for the workspace location.")
+
+                    if WorkspaceRootStore.isCustomised() {
+                        PNPButton(title: "Use default", icon: "arrow.uturn.backward", size: .sm) {
+                            applyWorkspaceRoot(nil)
+                        }
+                        .help("Go back to ~/Jamf-Reports on this Mac.")
+                    }
+                }
+
+                if let msg = workspaceRootMessage {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Workspace location")
+    }
+
+    private func chooseWorkspaceRoot() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose the folder that holds your Jamf Reports workspaces."
+        panel.directoryURL = URL(fileURLWithPath: workspaceRootPath)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        applyWorkspaceRoot(url)
+    }
+
+    /// Existing workspaces are deliberately NOT moved. Relocating gigabytes of
+    /// snapshots onto a synced volume on a button press is not recoverable in
+    /// one click, so the operator either points at a folder that already holds
+    /// them or copies them across themselves.
+    private func applyWorkspaceRoot(_ url: URL?) {
+        do {
+            let applied = try WorkspaceRootStore.set(url)
+            workspaceRootPath = applied.path
+            workspace.reloadFromDisk()
+            // Actually rewrite the managed plists now. set() only clears the
+            // flag that makes the NEXT reconcile forced, and reloadFromDisk
+            // does not reconcile — so without this the message below would
+            // describe something that had not happened yet.
+            Task { await workspace.reconcileManagedAutomation() }
+            workspaceRootMessage = url == nil
+                ? "Back to the default location. Profiles already in the previous folder stay "
+                    + "there — copy them across if you want them here."
+                : "Workspace location updated. Profiles already elsewhere are not moved; copy "
+                    + "them in if you want them here. Scheduled runs are rewritten to match."
+        } catch {
+            workspaceRootMessage = "Couldn't use that folder: \(error.localizedDescription)"
+        }
+    }
 
     private var commandLineToolCard: some View {
         Card(padding: 18) {
@@ -972,7 +1077,7 @@ struct SettingsView: View {
             } catch {
                 diagnosticBundleMessage =
                     "Diagnostic bundle failed: \(error.localizedDescription). Verify "
-                    + "~/Jamf-Reports/\(workspace.profile)/diagnostics is writable and has free space."
+                    + "\(WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "diagnostics")) is writable and has free space."
             }
             isGeneratingBundle = false
         }

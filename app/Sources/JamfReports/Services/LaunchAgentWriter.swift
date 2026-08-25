@@ -43,6 +43,27 @@ enum LaunchAgentWriter {
     /// plist behavior verbatim. The CSV uses sorted lowercase rawValues so
     /// the plist is byte-stable across writes (no spurious diffs, and a
     /// predictable layout for the trust check + parser).
+    /// Environment for a scheduled run.
+    ///
+    /// A LaunchAgent starts the same binary as the GUI, so it resolves the
+    /// workspace root the same way — but only if it can read the preference.
+    /// Naming the root explicitly makes the plist self-describing and survives
+    /// a preferences domain the agent cannot read. Omitted entirely for the
+    /// default `~/Jamf-Reports`, so a normal install's plists are unchanged.
+    private static func scheduledRunEnvironment() -> [String: String] {
+        guard WorkspaceRootStore.isCustomised() else { return [:] }
+        // Read the STORED preference, not the resolved root: when this runs from
+        // the headless --scheduled-run self-heal, the process was launched by a
+        // plist that already carries JRC_WORKSPACES_ROOT, and `current()` checks
+        // the environment before the preference. Going through the resolved root
+        // would re-embed the value we inherited, so a Mac that never opens the
+        // GUI could never converge on a second root change.
+        return [
+            WorkspaceRootStore.environmentKey:
+                WorkspaceRootStore.current(environment: [:]).path,
+        ]
+    }
+
     private static func tierArguments(for schedule: Schedule) -> [String] {
         guard let tiers = schedule.tiers, !tiers.isEmpty else { return [] }
         let csv = tiers.map(\.rawValue).sorted().joined(separator: ",")
@@ -115,6 +136,7 @@ enum LaunchAgentWriter {
             // Schedule.RunMode.runsAtLoad.
             "RunAtLoad": schedule.mode.runsAtLoad,
             "Disabled": !load,
+            "EnvironmentVariables": scheduledRunEnvironment(),
         ]
 
         let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(agentLabel).plist")
@@ -459,6 +481,7 @@ enum LaunchAgentWriter {
             // Schedule.RunMode.runsAtLoad.
             "RunAtLoad": schedule.mode.runsAtLoad,
             "Disabled": !load,
+            "EnvironmentVariables": scheduledRunEnvironment(),
         ]
 
         let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(agentLabel).plist")

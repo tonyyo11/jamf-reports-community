@@ -89,7 +89,8 @@ struct BackupsView: View {
         PageHeader(
             kicker: "Configuration Backups",
             title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
-            subtitle: "~/Jamf-Reports/\(workspace.profile)/backups/"
+            subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                                     subpath: "backups") + "/"
         ) {
             AnyView(
                 ScrollView(.horizontal, showsIndicators: false) {

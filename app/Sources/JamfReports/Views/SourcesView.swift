@@ -239,7 +239,8 @@ struct SourcesView: View {
                     Spacer()
                     Pill(text: "\(csvFiles.count) FILES", tone: .muted)
                 }
-                Mono(text: "~/Jamf-Reports/\(workspace.profile)/csv-inbox/")
+                Mono(text: WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                                          subpath: "csv-inbox") + "/")
 
                 if csvFiles.isEmpty {
                     emptyCSVState
@@ -291,8 +292,7 @@ struct SourcesView: View {
                 HStack(spacing: 8) {
                     PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
                         let url = (ProfileService.workspaceURL(for: workspace.profile)
-                                    ?? FileManager.default.homeDirectoryForCurrentUser
-                                        .appendingPathComponent("Jamf-Reports"))
+                                    ?? WorkspaceRootStore.defaultRoot)
                             .appendingPathComponent("csv-inbox", isDirectory: true)
                         SystemActions.openFolder(url)
                     }
@@ -550,8 +550,7 @@ struct SourcesView: View {
                     PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
                         let url = (try? WorkspacePaths.historicalDir(for: workspace.profile))
                                     ?? (ProfileService.workspaceURL(for: workspace.profile)
-                                        ?? FileManager.default.homeDirectoryForCurrentUser
-                                            .appendingPathComponent("Jamf-Reports"))
+                                        ?? WorkspaceRootStore.defaultRoot)
                                         .appendingPathComponent("snapshots", isDirectory: true)
                         SystemActions.openFolder(url)
                     }
@@ -634,7 +633,7 @@ struct SourcesView: View {
         } catch {
             resolutionError = "Couldn't resolve this profile's workspace folders: "
                 + "\(error.localizedDescription). Check the profile name and that "
-                + "~/Jamf-Reports/\(workspace.profile) exists and is writable."
+                + "\(WorkspaceRootStore.displayPath(profile: workspace.profile)) exists and is writable."
         }
     }
 
@@ -744,13 +743,14 @@ struct SourcesView: View {
     private var cliCacheDisplayPath: String {
         guard let root = WorkspacePathGuard.root(for: workspace.profile),
               let dataDir = try? WorkspacePaths.dataDir(for: workspace.profile) else {
-            return "~/Jamf-Reports/\(workspace.profile)/jamf-cli-data/"
+            return WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                                  subpath: "jamf-cli-data") + "/"
         }
         let rootPath = root.path
         let dataPath = dataDir.path
         if dataPath.hasPrefix(rootPath + "/") {
             let suffix = String(dataPath.dropFirst(rootPath.count + 1))
-            return "~/Jamf-Reports/\(workspace.profile)/\(suffix)/"
+            return WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: suffix) + "/"
         }
         return dataPath + "/"
     }

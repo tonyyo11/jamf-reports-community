@@ -438,7 +438,7 @@ struct OverviewView: View {
                     liveStateTile(
                         label: "Trend summaries",
                         value: "\(trendStore.filteredSummaries.count)",
-                        sub: "~/Jamf-Reports/\(workspace.profile)/",
+                        sub: WorkspaceRootStore.displayPath(profile: workspace.profile) + "/",
                         ok: !trendStore.filteredSummaries.isEmpty
                     )
                 }

@@ -119,12 +119,29 @@ enum SystemActions {
     /// gate rejected legitimate destinations (network shares, iCloud Drive) —
     /// silently, in AuditView's case. This reveal/open allow-list remains the
     /// boundary for all programmatic (non-panel) actions.
+    ///
+    /// 2.7.0: the workspace entry follows `ProfileService.workspacesRoot()`
+    /// rather than hardcoding `~/Jamf-Reports`. An operator who repoints the
+    /// root at a synced team folder would otherwise find every Reveal-in-Finder
+    /// and Open-report action silently refused, because the allow-list still
+    /// described the old location. The default root stays listed too, so
+    /// reports left behind by an earlier layout remain reachable.
     private static func allowedParents() -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        return [
-            home.appendingPathComponent("Jamf-Reports"),
+        var parents = [
+            ProfileService.workspacesRoot(),
             home.appendingPathComponent("Library/LaunchAgents"),
             home.appendingPathComponent("Library/Logs/JamfReports"),
         ]
+        let fallback = WorkspaceRootStore.defaultRoot
+        if !parents.contains(where: { sameResolvedPath($0, fallback) }) {
+            parents.append(fallback)
+        }
+        return parents
+    }
+
+    private static func sameResolvedPath(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.resolvingSymlinksInPath().standardizedFileURL.path
+            == rhs.resolvingSymlinksInPath().standardizedFileURL.path
     }
 }

@@ -10,8 +10,7 @@ enum DemoData {
         short: "MERIDIAN",
         jamfURL: "https://meridian.jamfcloud.example",
         profile: "meridian-prod",
-        apiClient: "reporting-svc",
-        workspaceRoot: "~/Jamf-Reports/meridian-prod"
+        apiClient: "reporting-svc"
     )
 
     // 26 weekly snapshots, ending 2026-04-20.

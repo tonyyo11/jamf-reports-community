@@ -779,8 +779,7 @@ final class WorkspaceStore {
             short: String(name.prefix(2)).uppercased(),
             jamfURL: url,
             profile: name,
-            apiClient: profile?.authMethod ?? "",
-            workspaceRoot: "~/Jamf-Reports/\(name)"
+            apiClient: profile?.authMethod ?? ""
         )
     }
 

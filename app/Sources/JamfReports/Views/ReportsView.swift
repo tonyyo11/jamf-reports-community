@@ -21,8 +21,7 @@ struct ReportsView: View {
 
     private var reportsDirectory: URL {
         let workspace = ProfileService.workspaceURL(for: workspace.profile)
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Jamf-Reports")
+            ?? WorkspaceRootStore.defaultRoot
         return workspace.appendingPathComponent("Generated Reports", isDirectory: true)
     }
 
@@ -168,7 +167,8 @@ struct ReportsView: View {
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
                 title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
-                subtitle: "~/Jamf-Reports/\(workspace.profile)/Generated Reports/"
+                subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                                         subpath: "Generated Reports") + "/"
             ) {
                 AnyView(
                     ScrollView(.horizontal, showsIndicators: false) {

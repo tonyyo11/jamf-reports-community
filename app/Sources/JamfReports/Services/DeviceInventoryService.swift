@@ -2,7 +2,7 @@ import Foundation
 
 /// Read-only loader for the Devices screen.
 ///
-/// All file reads are constrained to `~/Jamf-Reports/<profile>/`. The service
+/// All file reads are constrained to `<workspaces-root>/<profile>/`. The service
 /// never shells out; it uses current inventory CSV output plus cached jamf-cli
 /// JSON snapshots that the Python tool already writes.
 enum DeviceInventoryService {
@@ -21,7 +21,8 @@ enum DeviceInventoryService {
         if demoMode { return DemoData.deviceSnapshot }
         guard let root = validatedWorkspaceRoot(profile: profile) else {
             return emptySnapshot(
-                warning: "Workspace is missing or not contained in ~/Jamf-Reports/\(profile)/"
+                warning: "Workspace is missing or not contained in "
+                    + "\(WorkspaceRootStore.displayPath(profile: profile))/"
             )
         }
 
@@ -195,7 +196,7 @@ fileprivate extension DeviceInventoryService {
         let rootPath = root.standardizedFileURL.path
         guard path.hasPrefix(rootPath) else { return url.lastPathComponent }
         let suffix = path.dropFirst(rootPath.count).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return "~/Jamf-Reports/\(root.lastPathComponent)/\(suffix)"
+        return WorkspaceRootStore.displayPath(profile: root.lastPathComponent, subpath: suffix)
     }
 }
 

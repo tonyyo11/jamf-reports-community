@@ -36,7 +36,6 @@ struct Org: Sendable {
     let jamfURL: String
     let profile: String
     let apiClient: String
-    let workspaceRoot: String
 }
 
 // MARK: - API scope
