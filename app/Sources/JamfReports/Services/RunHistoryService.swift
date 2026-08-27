@@ -181,8 +181,15 @@ enum RunHistoryService {
         for line in text.components(separatedBy: "\n").reversed() {
             let level = CLIBridge.LogLevel.from(line: line)
             if level == .fail { hasFatal = true }
+            // Anchor on the recorder's own footer ("exit N after 205s") rather
+            // than any `\d+s` in the tail. The loose pattern matched the cadence
+            // label inside a `[skip] <kind>: not due (…, cadence: 172800s)` line,
+            // so a run that skipped everything reported a two-day duration.
             if duration == nil,
-               let r = line.range(of: #"\d+m \d+s|\d+s"#, options: .regularExpression) {
+               let r = line.range(
+                   of: #"(?<=after )\d+m \d+s|(?<=after )\d+s"#,
+                   options: .regularExpression
+               ) {
                 duration = String(line[r])
             }
             if parsedExitCode == nil,

@@ -13,6 +13,48 @@ final class RunHistoryServiceTests: XCTestCase {
         XCTAssertEqual(duration, "9s")
     }
 
+    /// Field defect (prod, 2026-08-25): Run History showed "172800s" — two
+    /// days — as the duration of a run that began and ended four minutes apart.
+    ///
+    /// The tail is scanned in REVERSE, so a run that wrote its `exit N after Ns`
+    /// footer was always safe. The break is a run that DIED before writing one:
+    /// the scan then walks back into the body and the first `\d+s` it meets is
+    /// the cadence label inside a `[skip] … cadence: 172800s` line. That is the
+    /// exact shape of a crashed collect, which is when the operator most needs
+    /// the row to be truthful.
+    func testDurationIsNotScrapedFromCadenceLabelsWhenTheRunCrashed() throws {
+        let logURL = try writeLog("""
+        [info] run started 2026-08-25T15:02:00Z for com.example.managed-freshness
+        [skip] security: not due (last: 2026-08-25T06:00:00Z, cadence: 43200s)
+        [skip] computers: not due (last: 2026-08-23T10:00:00Z, cadence: 172800s)
+
+        """)
+
+        let (exitCode, duration, _) = RunHistoryService.parseLogTail(from: logURL)
+
+        XCTAssertNil(exitCode, "No footer means the run never reported an exit")
+        XCTAssertNil(duration, "An unknown duration must read as unknown, not as a cadence value")
+    }
+
+    func testDurationStillComesFromTheFooterWhenPresent() throws {
+        let logURL = try writeLog("""
+        [skip] computers: not due (last: 2026-08-23T10:00:00Z, cadence: 172800s)
+        [info] exit 0 after 12s
+
+        """)
+
+        let (exitCode, duration, _) = RunHistoryService.parseLogTail(from: logURL)
+
+        XCTAssertEqual(exitCode, 0)
+        XCTAssertEqual(duration, "12s")
+    }
+
+    func testDurationStillParsesMinuteForm() throws {
+        let logURL = try writeLog("[info] exit 0 after 3m 20s\n")
+        let (_, duration, _) = RunHistoryService.parseLogTail(from: logURL)
+        XCTAssertEqual(duration, "3m 20s")
+    }
+
     func testExitCodeParserHandlesSignedValues() {
         XCTAssertEqual(RunHistoryService.exitCode(from: "[info] exit 0 after 1s"), 0)
         XCTAssertEqual(RunHistoryService.exitCode(from: "[info] exit 2 after 1s"), 2)
