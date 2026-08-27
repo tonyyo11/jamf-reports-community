@@ -676,7 +676,13 @@ private extension DeviceInventoryService {
 private extension DeviceInventoryService {
 
     static func cell(_ row: [String: String], _ candidates: [String]) -> String {
-        let normalized = Dictionary(uniqueKeysWithValues: row.map { (normalizeHeader($0.key), $0.value) })
+        // Two CSV headers can normalize to the same key ("Serial Number" and
+        // "serial_number" both become "serialnumber"), which traps. A duplicate
+        // column is a messy export, not a reason to crash — first wins.
+        let normalized = Dictionary(
+            row.map { (normalizeHeader($0.key), $0.value) },
+            uniquingKeysWith: { first, _ in first }
+        )
         for key in candidates {
             let value = row[key] ?? normalized[normalizeHeader(key)] ?? ""
             if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

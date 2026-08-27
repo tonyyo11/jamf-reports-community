@@ -64,6 +64,25 @@ ten screens of JSON into two lines. The old output is still one click away under
 
 ### Fixed
 
+Three crashes found in production testing on a shared workspace.
+
+A tenant with two extension attributes sharing a display name crashed the app
+outright. Extension-attribute names come from the server and are not unique, and
+the code assumed they were. This took down scheduled runs in particular, because
+those now run the config checks.
+
+Writing a run-history log line could abort the whole process when the workspace
+is on a sync provider. The write API in use reported failure in a way that could
+not be caught, so a file the provider had evicted or a share that had gone
+offline killed the collect instead of losing one log line. Log lines are now
+dropped with a warning; the collect continues.
+
+A CSV export with two columns whose names differ only in punctuation or case
+("Serial Number" and "serial_number") crashed device inventory. The first column
+now wins.
+
+
+
 Overview tiles now name the day their change figure compares against ("vs Aug 20")
 instead of leaving it unstated. The comparison is against the previous collection,
 not a fixed week, so a missed run can make that gap days or weeks — and because a

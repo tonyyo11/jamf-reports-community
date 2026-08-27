@@ -1107,7 +1107,11 @@ enum LaunchAgentWriter {
     private static func write(_ data: Data, to handle: FileHandle, lock: NSLock) {
         lock.lock()
         defer { lock.unlock() }
-        handle.write(data)
+        // Throwing variant: write(_:) raises an uncatchable ObjC exception when
+        // the underlying write fails, which is reachable once the workspace
+        // lives on a sync provider. A dropped progress line is acceptable; an
+        // aborted process is not.
+        try? handle.write(contentsOf: data)
     }
 
     private static func emit(

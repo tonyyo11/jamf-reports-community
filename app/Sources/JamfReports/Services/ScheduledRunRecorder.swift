@@ -37,6 +37,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
     /// Guards the one-time "dropped line" warning so we emit it only once per
     /// recorder instance rather than flooding the log on every subsequent line.
     private var hasWarnedHandleGone = false
+    private var hasWarnedWriteFailed = false
 
     /// Returns nil when the label is not a valid LaunchAgent label, when the
     /// automation directories cannot be created, or when the log file cannot
@@ -94,7 +95,37 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             return
         }
         guard let data = (text + "\n").data(using: .utf8) else { return }
-        handle.write(data)
+        Self.appendOrDrop(data, to: handle, label: label, warned: &hasWarnedWriteFailed)
+    }
+
+    /// Append to a log handle without letting a write failure kill the process.
+    ///
+    /// `FileHandle.write(_:)` bridges to `-[NSFileHandle writeData:]`, which
+    /// RAISES an Objective-C exception on failure. Swift cannot catch that, so
+    /// it becomes an uncatchable abort. That is survivable on local disk, where
+    /// writes to an open handle essentially never fail — but a workspace on a
+    /// sync provider is different: the file can be evicted, the provider can go
+    /// offline, or the path can vanish mid-run. It crashed a production collect
+    /// on a OneDrive-hosted workspace.
+    ///
+    /// `write(contentsOf:)` is the throwing Swift API and reports the same
+    /// failures as a catchable error. A dropped log line is the right trade:
+    /// losing run-history detail must never lose the collect that produced it.
+    static func appendOrDrop(
+        _ data: Data,
+        to handle: FileHandle,
+        label: String,
+        warned: inout Bool
+    ) {
+        do {
+            try handle.write(contentsOf: data)
+        } catch {
+            guard !warned else { return }
+            warned = true
+            AppLogger.schedule.warning(
+                "ScheduledRunRecorder: log write failed for \(label, privacy: .public) — further lines dropped: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     /// Write the exit footer + status JSON, close the log, prune old run logs.

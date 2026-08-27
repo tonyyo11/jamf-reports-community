@@ -81,7 +81,11 @@ private func appendFleetLog(_ message: String) {
             }
             let handle = try FileHandle(forWritingTo: logURL)
             handle.seekToEndOfFile()
-            handle.write(data)
+            // write(contentsOf:), not write(_:): the latter bridges to
+            // -[NSFileHandle writeData:] and RAISES on failure, which Swift
+            // cannot catch — the enclosing do/catch here looked like it covered
+            // that and did not. On a synced workspace the write really can fail.
+            try handle.write(contentsOf: data)
             try handle.close()
         } else {
             try data.write(to: logURL, options: .atomic)
