@@ -9,6 +9,15 @@ versions in this repository map to git tags.
 
 ### Added
 
+The Config Doctor now recognises a workspace that is fine but not the one you
+expected. Move your workspace to a shared folder and everything looks empty,
+because it is — the history is still in the old folder, and nothing tells you so.
+Two new checks close that: one says when more history for the profile exists in
+another folder, naming it and how much is there; the other says when a workspace
+is new, so column mappings and thresholds are defaults rather than something you
+set. Both are suggestions, not failures, and both stay quiet on an established
+workspace.
+
 The whole workspace can now live on a shared team folder, so several Macs
 covering the same Jamf Pro tenants build one pooled history instead of a
 separate one each. Choose the folder in **Settings → Workspace location**;

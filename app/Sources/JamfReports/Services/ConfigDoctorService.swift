@@ -88,6 +88,8 @@ enum ConfigDoctorService {
             rows += accuracyRows(config: config, profile: profile)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
+        rows += evaluateWorkspaceContinuity(
+            workspaceContinuityInputs(profile: profile, config: config))
         return DoctorReport(rows: rows)
     }
 
@@ -1363,5 +1365,135 @@ extension ConfigDoctorService {
             claim: coordinating ? SharedWorkspace.readClaim(profile: profile) : nil,
             now: Date()
         )
+    }
+}
+
+// MARK: - Workspace continuity
+
+/// Inputs for the "did I lose my history?" family. Every other family reports a
+/// workspace that is *broken*; this one reports a workspace that is healthy but
+/// not the one the operator expected — the state after moving the workspace to a
+/// shared folder, where nothing is wrong and everything looks empty.
+struct WorkspaceContinuityInputs: Sendable, Equatable {
+    /// One candidate workspace found outside the active root.
+    struct Elsewhere: Sendable, Equatable {
+        let profile: String
+        let root: URL
+        let summaryCount: Int
+    }
+
+    /// Where this profile's history currently lives, and how much of it there is.
+    let activeRoot: URL
+    let activeSummaryCount: Int
+    /// True when the root came from the stored preference rather than the default.
+    let rootIsCustom: Bool
+    /// True when config.yaml carries operator-authored content — custom EAs,
+    /// security agents or compliance baselines. A scaffold-fresh file has none.
+    let configIsCustomised: Bool
+    /// Workspaces for the same profile found under other roots, richest first.
+    let elsewhere: [Elsewhere]
+}
+
+extension ConfigDoctorService {
+
+    /// Two checks that fire on a *valid* workspace:
+    ///
+    /// 1. history for this profile exists somewhere else with more of it, which
+    ///    is what a workspace move looks like from the inside;
+    /// 2. this workspace is new, so settings are defaults and nothing was lost.
+    ///
+    /// Both are `.suggest`: nothing is broken, and only `.fail` rows reach the run
+    /// log, so neither can turn a healthy scheduled run red.
+    static func evaluateWorkspaceContinuity(_ inputs: WorkspaceContinuityInputs) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+
+        // 1 — richer history elsewhere. Only worth saying when the other copy has
+        // strictly more, otherwise a stale leftover folder nags forever.
+        if let best = inputs.elsewhere.max(by: { $0.summaryCount < $1.summaryCount }),
+           best.summaryCount > inputs.activeSummaryCount {
+            rows.append(DoctorRow(
+                id: "continuity.history-elsewhere",
+                severity: .suggest,
+                title: "More history for this profile exists in another folder",
+                detail: "This workspace has \(inputs.activeSummaryCount) daily "
+                    + "summar\(inputs.activeSummaryCount == 1 ? "y" : "ies"); "
+                    + "\(best.root.path) has \(best.summaryCount). Trends and every "
+                    + "period-over-period figure read only the folder in use, so the "
+                    + "older history is not lost — it is simply not being read.",
+                hint: "To use it, point Settings › Workspace at that folder, or copy its "
+                    + "snapshots/summaries into this workspace."
+            ))
+        }
+
+        // 2 — a fresh workspace. Deliberately silent once real history exists, and
+        // silent when the config is customised: an operator who has configured EAs
+        // knows where they are.
+        if inputs.activeSummaryCount == 0 && !inputs.configIsCustomised {
+            let moved = inputs.rootIsCustom
+                ? "This is a new workspace at a folder you chose"
+                : "This is a new workspace"
+            rows.append(DoctorRow(
+                id: "continuity.fresh-workspace",
+                severity: .suggest,
+                title: "Settings here are defaults",
+                detail: "\(moved), so it starts with a scaffold config and no history. "
+                    + "Column mappings, custom extension attributes and thresholds are at "
+                    + "their defaults rather than anything you set previously.",
+                hint: inputs.rootIsCustom
+                    ? "If you moved here from another folder, copy its config.yaml and "
+                        + "snapshots/ across — changing the workspace location does not "
+                        + "move existing data."
+                    : "Run Config › Scaffold from a CSV export to map your columns."
+            ))
+        }
+
+        return rows
+    }
+
+    /// Gather continuity inputs. Scans the default root and, when the active root
+    /// differs, the active one — enough to answer "is my history somewhere else"
+    /// without walking arbitrary disk.
+    static func workspaceContinuityInputs(profile: String, config: ReportConfig?)
+        -> WorkspaceContinuityInputs {
+        let activeRoot = ProfileService.workspacesRoot()
+        let candidateRoots = [activeRoot, WorkspaceRootStore.defaultRoot]
+        var seen: Set<String> = []
+        var counts: [(URL, Int)] = []
+        for root in candidateRoots where seen.insert(root.standardizedFileURL.path).inserted {
+            counts.append((root, summaryCount(profile: profile, root: root)))
+        }
+        let active = counts.first { $0.0.standardizedFileURL == activeRoot.standardizedFileURL }
+        let elsewhere = counts
+            .filter { $0.0.standardizedFileURL != activeRoot.standardizedFileURL && $0.1 > 0 }
+            .map { WorkspaceContinuityInputs.Elsewhere(
+                profile: profile, root: $0.0, summaryCount: $0.1) }
+
+        return WorkspaceContinuityInputs(
+            activeRoot: activeRoot,
+            activeSummaryCount: active?.1 ?? 0,
+            rootIsCustom: WorkspaceRootStore.isCustomised(),
+            configIsCustomised: isCustomised(config),
+            elsewhere: elsewhere
+        )
+    }
+
+    /// Scaffold-fresh configs have no operator-authored content. Column mappings
+    /// are excluded on purpose — the scaffold writes those itself, so their
+    /// presence proves nothing about whether anyone configured this workspace.
+    private static func isCustomised(_ config: ReportConfig?) -> Bool {
+        guard let config else { return false }
+        if !(config.customEas ?? []).isEmpty { return true }
+        if !(config.securityAgents ?? []).isEmpty { return true }
+        if !(config.compliance?.baselines ?? []).isEmpty { return true }
+        return false
+    }
+
+    private static func summaryCount(profile: String, root: URL) -> Int {
+        guard ProfileService.isValid(profile) else { return 0 }
+        let dir = root
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("snapshots/summaries", isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        return names.filter { $0.hasPrefix("summary_") && $0.hasSuffix(".json") }.count
     }
 }
