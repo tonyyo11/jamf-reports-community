@@ -1203,6 +1203,46 @@ struct ReportEngine: Sendable {
     /// collections" toggle filters these out of the manual refresh path.
     /// Scheduled collects (run via LaunchAgent → main.swift) ignore the
     /// toggle and always include them.
+    /// Kinds that ran this cycle and served stale cache: present in `outcomes`
+    /// (so they were actually attempted, not filtered out by tier or cadence)
+    /// but absent from `savedKinds` (so nothing was written). Sorted for a
+    /// stable log line.
+    ///
+    /// The rule is deliberately about the snapshot, not the exit code. An
+    /// earlier version also filtered on `exitCode != 0 && != 7`, which mutation
+    /// testing showed to be both redundant and wrong: redundant because exit 7
+    /// normally *does* save (so `savedKinds` already excludes it), and wrong
+    /// because when exit 7 returns empty or non-JSON output nothing is saved and
+    /// the operator is genuinely being served stale cache. Exit 0 with unusable
+    /// output has the same shape. "Did data land?" is the only question the
+    /// `[partial]` marker is answering, so it is the only one asked here.
+    static func degradedKinds(
+        outcomes: [CollectOutcome], savedKinds: Set<String>
+    ) -> [String] {
+        outcomes
+            .map(\.kind)
+            .filter { !savedKinds.contains($0) }
+            .sorted()
+    }
+
+    /// Exit codes worth one immediate in-run retry.
+    ///
+    /// 1 is jamf-cli's generic failure — on on-prem Jamf Pro that is
+    /// overwhelmingly a request timeout on a heavy per-device query, and it
+    /// clears on a second attempt often enough to be worth 3 seconds. 6 is
+    /// HTTP 429, which is a retry instruction by definition.
+    ///
+    /// Deliberately excluded: 2 (usage — deterministic, a caller bug), 3 (401)
+    /// and 5 (403) (credential/privilege state won't change in 3 seconds, and
+    /// hammering an auth endpoint risks lockout), 4 (404 — the resource does
+    /// not exist), 7 (partial success, already saved).
+    static let retryableExitCodes: Set<Int32> = [1, CLIBridge.exitCodeRateLimited]
+
+    /// Delay before the single in-run retry. Long enough for a transient
+    /// server-side blip to clear, short enough not to stretch a 30-kind
+    /// collect meaningfully when several kinds fail.
+    static let retryDelayNanoseconds: UInt64 = 3_000_000_000
+
     static let expensivePerDeviceKinds: Set<String> = [
         "ea-results",
         "patch-device-failures",
@@ -1657,27 +1697,49 @@ struct ReportEngine: Sendable {
                 timestamp: Date(), level: .info,
                 text: "[info] collecting \(kind) for \(profile)"
             ))
-            let captureResult: (Int32, Data)?
-            do {
-                // --no-hints suppresses interactive usage tips; --no-version-check
-                // suppresses the "new version available" banner that jamf-cli 1.18+
-                // emits on stderr. Both keep Runs-screen output signal-to-noise clean
-                // during automated collects. Only appended when the binary is >= 1.18.0
-                // (see `supportsQuietFlags` gate above the loop).
-                let invokeArgs = supportsQuietFlags
-                    ? args + ["--no-hints", "--no-version-check"]
-                    : args
-                captureResult = try await bridge.runAndCapture(
-                    executable: bin, arguments: invokeArgs,
-                    environment: CLIBridge.environmentForJamfCLI(),
-                    onLine: onLine
-                )
-            } catch {
-                onLine(.init(timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
-                captureResult = nil
+            // --no-hints suppresses interactive usage tips; --no-version-check
+            // suppresses the "new version available" banner that jamf-cli 1.18+
+            // emits on stderr. Both keep Runs-screen output signal-to-noise clean
+            // during automated collects. Only appended when the binary is >= 1.18.0
+            // (see `supportsQuietFlags` gate above the loop).
+            let invokeArgs = supportsQuietFlags
+                ? args + ["--no-hints", "--no-version-check"]
+                : args
+            @Sendable func invoke() async -> (Int32, Data)? {
+                do {
+                    return try await bridge.runAndCapture(
+                        executable: bin, arguments: invokeArgs,
+                        environment: CLIBridge.environmentForJamfCLI(),
+                        onLine: onLine
+                    )
+                } catch {
+                    onLine(.init(timestamp: Date(), level: .warn,
+                        text: "[warn] \(kind): launch failed — \(error.localizedDescription)"))
+                    return nil
+                }
             }
-            guard let (exitCode, data) = captureResult else { continue }
+
+            var captureResult = await invoke()
+            // Self-remediation, attempt 1: one immediate retry for a transient
+            // exit. On-prem Jamf Pro times out heavy per-device queries under
+            // load, and before this a single timeout meant the kind waited a
+            // whole tier cadence (up to a week) for its next chance.
+            let firstExit = captureResult?.0
+            if firstExit == nil || Self.retryableExitCodes.contains(firstExit ?? 0) {
+                let reason = firstExit.map { "exit \($0)" } ?? "launch failure"
+                onLine(.init(timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): \(reason) — retrying once"))
+                try? await Task.sleep(nanoseconds: Self.retryDelayNanoseconds)
+                if let retried = await invoke() { captureResult = retried }
+            }
+
+            guard let (exitCode, data) = captureResult else {
+                // No exit code at all (both launches failed): still a failure for
+                // this kind, and the failure counter is the only place that fact
+                // survives the run.
+                stateStore?.record(.failed, report: kind, at: collectStart)
+                continue
+            }
             // Record every command with a known exit code for the auth-dead verdict
             // after the loop. Launch failures (nil captureResult, already warned and
             // continued) carry no exit code and are not auth signals, so they are
@@ -1701,6 +1763,10 @@ struct ReportEngine: Sendable {
                     onLine(.init(timestamp: Date(), level: .warn,
                         text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                             + "command on this jamf-cli?) — snapshot not saved"))
+                    // Exit 0 with unusable output is a failure for this kind even
+                    // though the process succeeded — count it, or a renamed command
+                    // stays permanently invisible behind a green run.
+                    stateStore?.record(.failed, report: kind, at: collectStart)
                     continue
                 }
                 try saveSnapshot(
@@ -1708,11 +1774,9 @@ struct ReportEngine: Sendable {
                     recordManifest: recordManifest, onLine: onLine
                 )
                 savedKinds.insert(kind)
-                // T-8: record success so the cadence boundary advances.
-                // Use try? rather than try — a state-write failure should
-                // not undo the snapshot we already wrote. The worst case
-                // is a redundant fetch next cycle, which is recoverable.
-                try? stateStore?.recordRun(report: kind, at: collectStart)
+                // T-8: advances the cadence boundary and clears the failure
+                // streak — see StateFileStore.record for why both live there.
+                stateStore?.record(.landed, report: kind, at: collectStart)
                 if !isPartialFailure {
                     onLine(.init(timestamp: Date(), level: .ok,
                                  text: "[ok] \(kind): \(data.count) bytes"))
@@ -1726,10 +1790,17 @@ struct ReportEngine: Sendable {
                 let cacheNote = hasCachedSnapshot
                     ? "skipped (using cached)"
                     : "no cached snapshot available"
+                // THE swallow this whole track exists to close: before the
+                // counter, this warn line was the only trace that a kind failed,
+                // and the run still exited 0. Persisting it is what lets
+                // DataFreshnessHealth report a kind that has been failing nightly
+                // for months without anyone opening its screen.
+                stateStore?.record(.failed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .warn,
                              text: "[warn] \(kind): exit \(exitCode) — \(cacheNote)"))
             } else {
                 // use_cached_data=false: treat collect failure as fatal for this kind.
+                stateStore?.record(.failed, report: kind, at: collectStart)
                 onLine(.init(timestamp: Date(), level: .fail,
                              text: "[error] \(kind): exit \(exitCode) — failing (use_cached_data=false)"))
                 throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
@@ -1790,6 +1861,20 @@ struct ReportEngine: Sendable {
         // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
         // is in the requested tiers. Light network fetch — always in the Refresh tier
         // so snapshot-only and full runs both capture it.
+        // Degraded-run summary. A run where some kinds fell back to cache is not
+        // a success, but it is not a total outage either — the guards above only
+        // fire when EVERYTHING failed, so before this a 1-of-30 survivor exited 0
+        // and Run History showed a green pill. The `[partial]` prefix is the
+        // marker `RunHistoryService.isPartialRun` scans for, so a snapshot-only
+        // run (where this is the tail of the log) reports Partial instead of OK.
+        let unsavedKinds = Self.degradedKinds(outcomes: outcomes, savedKinds: savedKinds)
+        if !unsavedKinds.isEmpty {
+            let msg = "[partial] \(unsavedKinds.count) of \(outcomes.count) source(s) served "
+                + "stale cache: \(unsavedKinds.joined(separator: ", "))"
+            AppLogger.collect.warning("\(msg, privacy: .public)")
+            onLine(.init(timestamp: Date(), level: .warn, text: msg))
+        }
+
         var sofaRefreshSucceeded = false
         if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
             onLine(.init(timestamp: Date(), level: .info,
