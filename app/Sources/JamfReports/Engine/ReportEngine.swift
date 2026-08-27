@@ -1800,7 +1800,15 @@ struct ReportEngine: Sendable {
                 // (a renamed command filled classic-macos-profiles with help
                 // text). Python's bridge json.loads()es output, so this
                 // guard keeps the engines equivalent.
-                guard let payload = jsonPayload(from: data) else {
+                // patch-status --scan-failures prints several ── section ──
+                // blocks; only one of them is this kind. Selected before the
+                // generic guard, because the generic path would otherwise file
+                // the compliance section under patch-device-failures on any
+                // tenant with no failures.
+                let salvaged = sectionedCollectKinds.contains(kind)
+                    ? Self.patchDeviceFailurePayload(from: data)
+                    : jsonPayload(from: data)
+                guard let payload = salvaged else {
                     onLine(.init(timestamp: Date(), level: .warn,
                         text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                             + "command on this jamf-cli?) — snapshot not saved"))
@@ -1811,9 +1819,12 @@ struct ReportEngine: Sendable {
                     continue
                 }
                 if payload.count != data.count {
+                    let note = sectionedCollectKinds.contains(kind)
+                        ? "of section headings and other sections jamf-cli printed alongside it"
+                        : "of non-JSON text printed before the payload"
                     onLine(.init(timestamp: Date(), level: .info,
-                        text: "[info] \(kind): dropped \(data.count - payload.count) byte(s) of "
-                            + "non-JSON text printed before the payload"))
+                        text: "[info] \(kind): dropped \(data.count - payload.count) byte(s) "
+                            + note))
                 }
                 try saveSnapshot(
                     data: payload, kind: kind, dataDir: dataDir,
@@ -2798,6 +2809,68 @@ struct ReportEngine: Sendable {
     /// This only forgives a *prefix*. Anything that still fails to parse is
     /// still rejected, so a genuinely broken or truncated payload is never
     /// promoted to a snapshot.
+    /// Snapshot kinds whose jamf-cli command emits several `── section ──`
+    /// blocks on stdout rather than one document. Only `patch-status
+    /// --scan-failures` does this: its sibling `update-status --scan-failures`
+    /// guards structured output and returns one object with named keys, which
+    /// is why `update-device-failures` needs nothing here.
+    static let sectionedCollectKinds: Set<String> = ["patch-device-failures"]
+
+    /// Splits a sectioned jamf-cli stream into its parseable JSON documents.
+    ///
+    /// `--output json` is supposed to put only the document on stdout, but
+    /// `patch-status --scan-failures` prints a `── Heading ──` line before each
+    /// of up to three arrays. Sections are separated on those heading lines, so
+    /// nothing depends on the heading text itself.
+    static func jsonSections(from data: Data) -> [Data] {
+        guard let text = String(data: data, encoding: .utf8) else { return [] }
+        var sections: [Data] = []
+        var current = ""
+        func flush() {
+            let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+            current = ""
+            guard !trimmed.isEmpty, let chunk = trimmed.data(using: .utf8),
+                  (try? JSONSerialization.jsonObject(with: chunk, options: [])) != nil
+            else { return }
+            sections.append(chunk)
+        }
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("\u{2500}\u{2500}") {
+                flush()
+            } else {
+                current += line + "\n"
+            }
+        }
+        flush()
+        return sections
+    }
+
+    /// Picks the device-failure rows out of a `patch-status --scan-failures`
+    /// stream.
+    ///
+    /// The stream carries up to three arrays — title compliance, policies with
+    /// failures, then devices — and only the last is what this kind holds. The
+    /// first is always present, so taking the first (or the last) parseable
+    /// document would file compliance rows under `patch-device-failures` on the
+    /// common tenant that has no failures at all. Devices are identified by
+    /// their `device_id` field rather than by heading text or position.
+    ///
+    /// Returns an empty array when the stream parsed but carried no device
+    /// section: that means no failures, which is a real answer. Returns nil only
+    /// when nothing parsed, so genuinely broken output still trips the caller's
+    /// guard instead of being recorded as a clean zero.
+    static func patchDeviceFailurePayload(from data: Data) -> Data? {
+        let sections = jsonSections(from: data)
+        guard !sections.isEmpty else { return nil }
+        for section in sections {
+            guard let rows = try? JSONSerialization.jsonObject(with: section, options: [])
+                    as? [[String: Any]] else { continue }
+            guard let first = rows.first else { continue }
+            if first["device_id"] != nil { return section }
+        }
+        return Data("[]".utf8)
+    }
+
     static func jsonPayload(from data: Data) -> Data? {
         if (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil {
             return data

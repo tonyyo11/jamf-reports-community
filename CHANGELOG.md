@@ -105,11 +105,15 @@ bare number, so "exit 2" was all you got when the real answer — printed by
 jamf-cli itself — was that the command wanted credentials for a different
 product. Its own message is now included in the warning.
 
-The Patch Failures sheet came back. jamf-cli 1.24 and later print a section
-header before the JSON when asked for patch failures, which made the whole
-snapshot unparseable and dropped the sheet silently. Any such text ahead of the
-payload is now skipped. Output that is genuinely broken or truncated is still
-rejected rather than half-read.
+The Patch Failures sheet came back. Asked for patch failures as JSON, jamf-cli
+1.24 and later print up to three headed sections — title compliance, then
+policies, then devices — instead of one document, which made the snapshot
+unparseable and dropped the sheet silently. The device rows are now picked out
+of that stream by their shape, so section order and heading wording do not
+matter. A tenant with no failures records none, rather than filing the
+compliance rows in their place. Output that is genuinely broken or truncated is
+still rejected rather than half-read, so a renamed command cannot masquerade as
+a clean zero.
 
 Three crashes found in production testing on a shared workspace.
 
