@@ -919,9 +919,7 @@ struct TrendSeries: Identifiable, Sendable {
         case stability, activeDevices, compliance, fileVault, osCurrent
         case edrAgent = "crowdstrike"
         case stale, patch
-        /// v3.5 weighted security score (0–100). Populated from
-        /// LegacyHistoryImporter and from future Swift ReportEngine runs that
-        /// emit the field in summary.json.
+        /// Weighted security score (0–100), read from summary.json.
         case securityScore
         /// Per-baseline mSCP compliance band trend. Shows stacked-area chart
         /// of device counts by compliance band (Pass/Low/Medium/High) over time.

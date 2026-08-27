@@ -80,6 +80,11 @@ and repeated attempts risk locking the account out.
 
 ### Removed
 
+The v3.5 history migration is gone from Settings. It imported a
+`fleet_health_metrics_history.json` from the retired Python tool as a one-off, three
+major versions ago; anyone who was going to use it has, and it took up a permanent
+place in Settings to do nothing for everyone else.
+
 AI insights now state plainly that they run on this Mac and nothing more. Apple
 Foundation Models is on-device only — Apple's own `fm` tool lists a single model,
 "system — On-device Apple Foundation Model" — so the Private Cloud Compute option

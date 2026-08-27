@@ -31,9 +31,6 @@ struct SettingsView: View {
     // the target dir isn't app-writable and the user must run the command.
     @State private var cliInstallMessage: String? = nil
     @State private var cliInstallCommand: String? = nil
-    // Legacy v3.5 history import (LegacyHistoryImporter).
-    @State private var legacyImportMessage: String? = nil
-    @State private var isImportingLegacyHistory = false
     // Debug logging (DebugLoggingService) — toggles apply on next launch.
     @State private var debugState: DebugLoggingState = .off
     @State private var loggingApplyMessage: String? = nil
@@ -809,10 +806,6 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Divider().background(Theme.Hairline.standard)
-
-                legacyImportSection
             }
         }
         .accessibilityElement(children: .contain)
@@ -974,101 +967,6 @@ struct SettingsView: View {
         } catch {
             aiSaveMessage = "Couldn't save AI settings: \(error.localizedDescription)"
         }
-    }
-
-    // MARK: - Legacy v3.5 history import
-
-    /// Affordance to migrate a v3.5 `fleet_health_metrics_history.json` into
-    /// the active profile's summaries directory so TrendsView gains historical
-    /// data on day one without re-running collections.
-    ///
-    /// Isolation safety (Swift 6.1): `LegacyHistoryImporter` is `Sendable` and
-    /// `importHistory(from:forProfile:)` is a `static func` with no captured
-    /// actor state. The blocking file I/O runs inside `Task.detached` (outside
-    /// `@MainActor`) so it doesn't hold the main actor during disk reads/writes.
-    /// The `await .value` resumes on `@MainActor` to write UI state, which is
-    /// safe because `Outcome` and `String` are both `Sendable`.
-    @ViewBuilder
-    private var legacyImportSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("v3.5 History Migration")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Theme.Text.primary)
-            Text(
-                "Import a fleet_health_metrics_history.json from the previous v3.5 " +
-                "dashboard into the active profile's Trends data. Existing daily " +
-                "summaries are not overwritten."
-            )
-            .font(.caption.monospaced())
-            .foregroundStyle(Theme.Text.tertiary(contrast))
-            .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                if isImportingLegacyHistory {
-                    ProgressView().controlSize(.small)
-                    Text("Importing…")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                } else {
-                    PNPButton(
-                        title: "Migrate from v3.5 history…",
-                        icon: "arrow.down.doc",
-                        size: .sm
-                    ) {
-                        pickLegacyHistoryFile()
-                    }
-                    .disabled(workspace.profile.isEmpty)
-                    .help(
-                        "Pick a fleet_health_metrics_history.json file and import its entries " +
-                        "into the active profile's snapshot directory."
-                    )
-                }
-            }
-
-            if let msg = legacyImportMessage {
-                Text(msg)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func pickLegacyHistoryFile() {
-        let panel = NSOpenPanel()
-        panel.title = "Select fleet_health_metrics_history.json"
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.json]
-        panel.directoryURL = LegacyHistoryImporter.defaultHistoryURL
-            .deletingLastPathComponent()
-        panel.begin { [profile = workspace.profile] response in
-            guard response == .OK, let url = panel.url else { return }
-            Task { @MainActor in
-                await self.runLegacyImport(from: url, profile: profile)
-            }
-        }
-    }
-
-    private func runLegacyImport(from url: URL, profile: String) async {
-        isImportingLegacyHistory = true
-        legacyImportMessage = nil
-        do {
-            let outcome = try await Task.detached(priority: .userInitiated) {
-                try LegacyHistoryImporter.importHistory(from: url, forProfile: profile)
-            }.value
-            let parts: [String] = [
-                "\(outcome.imported.count) snapshot(s) imported",
-                outcome.skipped.isEmpty ? nil : "\(outcome.skipped.count) already existed",
-                outcome.invalid.isEmpty ? nil : "\(outcome.invalid.count) unreadable date(s)",
-            ].compactMap { $0 }
-            legacyImportMessage = parts.joined(separator: " · ")
-        } catch {
-            legacyImportMessage = "Legacy history import failed: \(error.localizedDescription). "
-                + "Confirm the source file is a valid v3.5 history JSON and the workspace is writable."
-        }
-        isImportingLegacyHistory = false
     }
 
     /// Active workspace root, or nil if no profile is selected.
