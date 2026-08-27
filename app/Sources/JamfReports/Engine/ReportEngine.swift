@@ -1738,14 +1738,19 @@ struct ReportEngine: Sendable {
                 // (a renamed command filled classic-macos-profiles with help
                 // text). Python's bridge json.loads()es output, so this
                 // guard keeps the engines equivalent.
-                guard isJSONSnapshot(data) else {
+                guard let payload = jsonPayload(from: data) else {
                     onLine(.init(timestamp: Date(), level: .warn,
                         text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                             + "command on this jamf-cli?) — snapshot not saved"))
                     continue
                 }
+                if payload.count != data.count {
+                    onLine(.init(timestamp: Date(), level: .info,
+                        text: "[info] \(kind): dropped \(data.count - payload.count) byte(s) of "
+                            + "non-JSON text printed before the payload"))
+                }
                 try saveSnapshot(
-                    data: data, kind: kind, dataDir: dataDir,
+                    data: payload, kind: kind, dataDir: dataDir,
                     recordManifest: recordManifest, onLine: onLine
                 )
                 savedKinds.insert(kind)
@@ -1767,8 +1772,14 @@ struct ReportEngine: Sendable {
                 let cacheNote = hasCachedSnapshot
                     ? "skipped (using cached)"
                     : "no cached snapshot available"
+                // jamf-cli reports its own reason as a JSON error object; an
+                // exit code alone sends the operator hunting. "exit 2 — no
+                // cached snapshot available" is very nearly useless next to
+                // "needs Jamf Security Cloud credentials", which is what
+                // actually stopped the fleet security report on a live tenant.
+                let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
                 onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] \(kind): exit \(exitCode) — \(cacheNote)"))
+                             text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"))
             } else {
                 // use_cached_data=false: treat collect failure as fatal for this kind.
                 onLine(.init(timestamp: Date(), level: .fail,
@@ -2664,8 +2675,55 @@ struct ReportEngine: Sendable {
     /// True when `data` parses as JSON. Snapshot saves are gated on this:
     /// Cobra's unknown-subcommand help text arrives with exit 0 and must
     /// never be cached as a .json snapshot.
+    /// jamf-cli's own explanation for a failure, when it emitted one.
+    ///
+    /// A non-zero exit is accompanied by a JSON object carrying `message`
+    /// (alongside `error`/`exitCode`/`exitCodeName`). Surfacing it turns an
+    /// opaque number into the actual problem — and it stays useful for reasons
+    /// this app has never heard of, which an exit-code table cannot.
+    ///
+    /// Truncated to keep one bad call from flooding a run log.
+    static func jamfCLIErrorMessage(in data: Data, limit: Int = 300) -> String? {
+        guard let payload = jsonPayload(from: data),
+              let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let message = object["message"] as? String else { return nil }
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed.count > limit ? String(trimmed.prefix(limit)) + "…" : trimmed
+    }
+
     static func isJSONSnapshot(_ data: Data) -> Bool {
-        (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil
+        jsonPayload(from: data) != nil
+    }
+
+    /// The JSON payload in `data`, tolerating decorative text printed ahead of it.
+    ///
+    /// `--output json` is supposed to put nothing but JSON on stdout, and
+    /// mostly does. But jamf-cli 1.24+ prints a section header before the array
+    /// for `pro report patch-status --scan-failures`:
+    ///
+    ///     ── Patch Title Compliance ──
+    ///     [ { ... } ]
+    ///
+    /// which made the whole snapshot unparseable and silently dropped the Patch
+    /// Failures sheet on a live tenant. Rather than pattern-match that one
+    /// banner, skip to the first `[` or `{` and parse from there — the same
+    /// repair works for whatever decoration a future release adds.
+    ///
+    /// This only forgives a *prefix*. Anything that still fails to parse is
+    /// still rejected, so a genuinely broken or truncated payload is never
+    /// promoted to a snapshot.
+    static func jsonPayload(from data: Data) -> Data? {
+        if (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil {
+            return data
+        }
+        guard let start = data.firstIndex(where: { $0 == UInt8(ascii: "[") || $0 == UInt8(ascii: "{") }),
+              start > data.startIndex else { return nil }
+        let trimmed = data[start...]
+        guard (try? JSONSerialization.jsonObject(with: trimmed, options: [])) != nil else {
+            return nil
+        }
+        return Data(trimmed)
     }
 
     private static func saveSnapshot(

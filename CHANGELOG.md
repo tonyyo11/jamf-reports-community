@@ -64,6 +64,17 @@ ten screens of JSON into two lines. The old output is still one click away under
 
 ### Fixed
 
+Reports that jamf-cli refuses now say why. A non-zero exit was reported as a
+bare number, so "exit 2" was all you got when the real answer — printed by
+jamf-cli itself — was that the command wanted credentials for a different
+product. Its own message is now included in the warning.
+
+The Patch Failures sheet came back. jamf-cli 1.24 and later print a section
+header before the JSON when asked for patch failures, which made the whole
+snapshot unparseable and dropped the sheet silently. Any such text ahead of the
+payload is now skipped. Output that is genuinely broken or truncated is still
+rejected rather than half-read.
+
 Three crashes found in production testing on a shared workspace.
 
 A tenant with two extension attributes sharing a display name crashed the app
