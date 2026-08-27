@@ -62,6 +62,22 @@ ten screens of JSON into two lines. The old output is still one click away under
 **Raw**, the whole diff can be copied, and the sheet finally has a Done button
 (Escape works too) and lets you select text across lines.
 
+The app now tells you when a data source has stopped collecting, on whatever
+screen you happen to be on. A strip across the top of the window reports data
+sources that are failing or far behind their schedule, and it appears everywhere
+— you no longer have to open Security Posture to discover that security data
+stopped landing five weeks ago, or Run History to learn that a scheduled run
+failed.
+
+It also tries to fix it. When the app is open and a source is behind, it
+re-collects just the affected data, at most once an hour, and only the sources
+that are actually behind — the healthy ones in the same group are left alone.
+Within a single run, a source that fails on a timeout or a rate limit is now
+retried once after a short pause instead of waiting for its next scheduled turn,
+which on the weekly deep scan could be another seven days. Authentication and
+permission failures are never retried: those cannot succeed on a second attempt
+and repeated attempts risk locking the account out.
+
 ### Fixed
 
 Reports that jamf-cli refuses now say why. A non-zero exit was reported as a
@@ -92,7 +108,19 @@ A CSV export with two columns whose names differ only in punctuation or case
 ("Serial Number" and "serial_number") crashed device inventory. The first column
 now wins.
 
+A collection run that failed on some data sources but not others used to finish
+green. Each failure was written to the run log as a warning and then forgotten,
+so nothing distinguished a run that refreshed everything from one that refreshed
+six sources and served months-old cache for the rest. Failures are now counted
+per source and persist between runs, a run that served stale cache for any source
+says so in its log, and a source that recovers clears its own count — so "failing
+for three runs" always describes now, not history.
 
+Run History no longer reports a nonsense duration for a run that crashed before
+finishing. It was reading the first number ending in "s" it could find near the
+end of the log, which on a run with nothing to do was a schedule interval — one
+production run four minutes long was listed as "172800s", or two days. A run that
+never reported an exit now shows no duration rather than a fabricated one.
 
 Overview tiles now name the day their change figure compares against ("vs Aug 20")
 instead of leaving it unstated. The comparison is against the previous collection,
