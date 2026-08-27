@@ -32,23 +32,41 @@ final class AIConfigPersistenceTests: XCTestCase {
         XCTAssertEqual(config.resolvedTier, .onDevice)
     }
 
-    func testSaveThenLoadRoundTripsEnabledTierAndLock() throws {
+    func testSaveThenLoadRoundTripsEnabledTierAndReasoning() throws {
         let profile = "ai-test-\(UUID().uuidString.lowercased())"
         _ = try makeWorkspace(profile: profile)
 
         var config = AIConfig()
         config.enabled = true
-        config.tier = "pcc"
-        config.lockOnDevice = true
+        config.tier = "on_device"
         config.reasoningLevel = "deep"
 
         try AIConfigWriter.save(config, profile: profile)
 
         let reloaded = AIConfigLoader.load(profile: profile)
         XCTAssertTrue(reloaded.isEnabled)
-        XCTAssertEqual(reloaded.resolvedTier, .pcc)
-        XCTAssertTrue(reloaded.isLockedOnDevice)
+        XCTAssertEqual(reloaded.resolvedTier, .onDevice)
         XCTAssertEqual(reloaded.resolvedReasoningLevel, .deep)
+    }
+
+    /// The writer emits `resolvedTier`, so saving a config that still carries
+    /// the removed `pcc` tier normalises it to `on_device` on disk and drops
+    /// the dead `lock_on_device` key — the file self-heals on first save.
+    func testSavingALegacyTierNormalisesItOnDisk() throws {
+        let profile = "ai-test-\(UUID().uuidString.lowercased())"
+        let workspace = try makeWorkspace(profile: profile)
+
+        var config = AIConfig()
+        config.enabled = true
+        config.tier = "pcc"
+        try AIConfigWriter.save(config, profile: profile)
+
+        let text = try String(
+            contentsOf: workspace.appendingPathComponent("config.yaml"), encoding: .utf8
+        )
+        XCTAssertTrue(text.contains("tier: on_device"), text)
+        XCTAssertFalse(text.contains("pcc"), text)
+        XCTAssertFalse(text.contains("lock_on_device"), text)
     }
 
     func testSavePreservesUnrelatedTopLevelKeys() throws {
@@ -89,11 +107,11 @@ final class AIConfigPersistenceTests: XCTestCase {
 
         var second = AIConfig()
         second.enabled = true
-        second.tier = "pcc"
+        second.tier = "external"
         try AIConfigWriter.save(second, profile: profile)
 
         let reloaded = AIConfigLoader.load(profile: profile)
-        XCTAssertEqual(reloaded.resolvedTier, .pcc)
+        XCTAssertEqual(reloaded.resolvedTier, .external)
 
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             return XCTFail("expected a valid workspace URL")

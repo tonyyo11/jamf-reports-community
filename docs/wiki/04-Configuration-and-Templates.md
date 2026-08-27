@@ -119,10 +119,10 @@ trend summaries alone unless explicitly set true; `archive_dir` defaults to
 
 ### AI insights (`ai`)
 
-Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` | `pcc` |
-`external` — `external` is reserved, not yet built), `lock_on_device` (refuses any
-non-on-device model even if `tier` says otherwise — a defense-in-depth switch for
-high-security environments), and `reasoning_level` (`light` | `moderate` | `deep`).
+Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` |
+`external` — `external` is reserved, not yet built), and `reasoning_level`
+(`light` | `moderate` | `deep`). Apple Foundation Models is on-device only, so
+`on_device` is the default and the only built behaviour.
 See [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights) for what the feature does and its in-app Settings
 panel.
 

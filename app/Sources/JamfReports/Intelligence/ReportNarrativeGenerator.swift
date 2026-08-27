@@ -80,8 +80,7 @@ struct StubReportNarrativeGenerator: ReportNarrativeGenerating {
 
 /// Picks the conformer for a config + resolved availability. Same shape as
 /// `makeInsightGenerator`. The narrative input is aggregates-only (like the
-/// insight card), so it respects the user's configured tier via the normal
-/// `GeneratorKind.select` — no forced on-device lock (unlike run-log inputs).
+/// insight card), so it resolves via the normal `GeneratorKind.select`.
 @MainActor
 func makeReportNarrativeGenerator(
     config: AIConfig,
@@ -180,9 +179,8 @@ enum ReportNarrative {
 #if canImport(FoundationModels) && compiler(>=6.4)
 import FoundationModels
 
-/// Tier-respecting narrative generator: aggregates-only input, so the user's
-/// configured tier applies (PCC reachable only when unlocked + entitled, same
-/// guards as `FoundationModelsInsightGenerator`).
+/// Narrative generator: aggregates-only input, resolved through the normal
+/// `GeneratorKind.select` (same guards as `FoundationModelsInsightGenerator`).
 @available(macOS 27, *)
 struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
     let config: AIConfig
@@ -203,8 +201,7 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
         let kind = GeneratorKind.select(config: config)
         AppLogger.platform.notice("""
             Report narrative requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(config.resolvedTier.rawValue, privacy: .public), \
-            locked=\(config.isLockedOnDevice, privacy: .public))
+            (tier=\(config.resolvedTier.rawValue, privacy: .public))
             """)
 
         do {
@@ -215,20 +212,6 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
                     throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
                 }
                 let prompt = input.promptContext(maxApproxTokens: model.contextSize / 4)
-                return try await respond(model: model, prompt: prompt)
-
-            case .privateCloudCompute:
-                // Constructing the PCC model without the entitlement is a
-                // fatalError — refuse (throw, never construct) when it's absent.
-                guard PCCEntitlement.isPresent else {
-                    throw FleetInsightError.unavailable(.pccEntitlementMissing)
-                }
-                let model = PrivateCloudComputeLanguageModel()
-                guard case .available = model.availability else {
-                    throw FleetInsightError.unavailable(ModelAvailability.mapPCC(model.availability))
-                }
-                let budget = (try? await model.contextSize) ?? 4_096
-                let prompt = input.promptContext(maxApproxTokens: budget / 4)
                 return try await respond(model: model, prompt: prompt)
 
             case .external:
