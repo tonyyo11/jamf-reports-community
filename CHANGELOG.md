@@ -105,6 +105,18 @@ file is tidied up on its own.
 
 ### Fixed
 
+The two chart switches in Customize now do something. "Save PNGs alongside xlsx"
+and "Per-major-version charts" were never read from your config when the screen
+opened, and never written back when you pressed Apply — they moved, and nothing
+else did. Both now persist per profile.
+
+"Save PNGs alongside xlsx" also had nothing behind it: the `charts.save_png`
+setting it appears to control was read by no part of the app, so standalone PNGs
+were always written whatever it or your config said. It is now honoured. **If
+your config.yaml already says `save_png: false`, PNG files beside the workbook
+will stop appearing** — which is what it asked for. Charts embedded in the
+workbook are unaffected; those are governed separately by `embed_in_xlsx`.
+
 Reports that jamf-cli refuses now say why. A non-zero exit was reported as a
 bare number, so "exit 2" was all you got when the real answer — printed by
 jamf-cli itself — was that the command wanted credentials for a different

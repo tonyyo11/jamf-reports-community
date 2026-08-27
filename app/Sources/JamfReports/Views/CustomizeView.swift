@@ -83,6 +83,12 @@ struct CustomizeView: View {
         chartOSAdoption = all.first(where: { $0.name == "OS Adoption" })?.on ?? true
         chartComplianceTrend = all.first(where: { $0.name == "Compliance Trend" })?.on ?? true
         chartDeviceStateTrend = all.first(where: { $0.name == "Device State Trend" })?.on ?? true
+        // These two are config keys, not sheet toggles, so they come from
+        // config.yaml rather than the sheet catalogue. Before 2.7.0 they were
+        // never loaded or saved at all — the switches moved and nothing else did.
+        let charts = ChartsConfigLoader.load(profile: workspace.profile)
+        chartSavePNGs = charts.savePNGs
+        chartPerMajor = charts.perMajorCharts
     }
 
     private var header: some View {
@@ -351,9 +357,16 @@ struct CustomizeView: View {
         workspace.sheetCatalog = updatedSheets
         sheets = updatedSheets
 
+        let chartOptions = ChartsOptions(
+            savePNGs: chartSavePNGs, perMajorCharts: chartPerMajor
+        )
+        let profile = workspace.profile
         Task {
             do {
                 try await workspace.saveConfig()
+                // Written separately: saveConfig round-trips the Config tab's
+                // managed keys, which deliberately exclude charts.
+                try ChartsConfigWriter.save(chartOptions, profile: profile)
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false

@@ -111,12 +111,17 @@ struct ReportEngine: Sendable {
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
         // Standalone PNGs land next to the xlsx via ExportNaming conventions.
+        // charts.save_png gates only the standalone files; embedding is governed
+        // separately by embed_in_xlsx, so turning PNGs off still leaves charts in
+        // the workbook. Defaults to true: the key was declared but unread before
+        // 2.7.0, so PNGs always appeared, and absent config must keep doing that.
         if config.charts?.isEnabled == true,
            let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
+            let savePNGs = config.charts?.savePng ?? true
             renderChartSheet(
                 workbook: workbook,
                 summariesDir: summariesDir,
-                pngOutputDir: outputURL.deletingLastPathComponent(),
+                pngOutputDir: savePNGs ? outputURL.deletingLastPathComponent() : nil,
                 profile: profile
             )
         }
