@@ -85,26 +85,33 @@ final class RunFailureExplainerTests: XCTestCase {
         XCTAssertTrue(rendered.contains("the failure line"))
     }
 
-    // MARK: - Privacy invariant 2: on-device pinning (pure, provable ungated)
+    // MARK: - Privacy invariant 2: on-device only (pure, provable ungated)
 
-    func testPCCTierResolvesOnDeviceForExplainer() {
-        let config = AIConfig(enabled: true, tier: "pcc", lockOnDevice: false)
+    func testNormalConfigResolvesOnDeviceForExplainer() {
+        XCTAssertEqual(runFailureGeneratorKind(for: AIConfig(enabled: true)), .onDevice)
+    }
+
+    /// A legacy config still naming the removed `pcc` tier resolves to
+    /// on-device, so log excerpts stay on the box without any migration.
+    func testLegacyPCCTierResolvesOnDeviceForExplainer() {
         XCTAssertEqual(
-            runFailureGeneratorKind(for: config), .onDevice,
-            "run-log explanation must never resolve off-box, even for a pcc tier"
+            runFailureGeneratorKind(for: AIConfig(enabled: true, tier: "pcc")), .onDevice,
+            "run-log explanation must never resolve off-box"
         )
     }
 
-    func testExternalTierResolvesOnDeviceForExplainer() {
-        let config = AIConfig(enabled: true, tier: "external", lockOnDevice: false)
-        XCTAssertEqual(runFailureGeneratorKind(for: config), .onDevice)
-    }
-
-    func testLockedOnDeviceCopyForcesLockAndPreservesTier() {
-        let copy = AIConfig(enabled: true, tier: "pcc", lockOnDevice: false).lockedOnDeviceCopy
-        XCTAssertTrue(copy.isLockedOnDevice)
-        XCTAssertEqual(copy.resolvedTier, .pcc)
-        XCTAssertEqual(GeneratorKind.select(config: copy), .onDevice)
+    /// The one config that does NOT resolve on-device. It must be refused, not
+    /// served: the factory hands back the stub so no off-box model type is ever
+    /// constructed for a log excerpt.
+    @MainActor
+    func testExternalTierIsRefusedRatherThanServedOffBox() {
+        let config = AIConfig(enabled: true, tier: "external")
+        XCTAssertEqual(runFailureGeneratorKind(for: config), .external)
+        let explainer = makeRunFailureExplainer(config: config, availability: .available)
+        XCTAssertTrue(
+            explainer is StubRunFailureExplainer,
+            "an off-box tier must never receive a run log"
+        )
     }
 
     // MARK: - Stub determinism
@@ -143,10 +150,9 @@ final class RunFailureExplainerTests: XCTestCase {
     @MainActor
     func testFactoryReturnsStubOnCurrentToolchain() {
         // On this host (Swift 6.3, compiler(>=6.4) false) the FM branch elides;
-        // on macOS 27 this returns FoundationModelsRunFailureExplainer pinned
-        // to config.lockedOnDeviceCopy.
+        // on macOS 27 this returns FoundationModelsRunFailureExplainer.
         let explainer = makeRunFailureExplainer(
-            config: AIConfig(enabled: true, tier: "pcc"), availability: .available
+            config: AIConfig(enabled: true), availability: .available
         )
         XCTAssertTrue(explainer is StubRunFailureExplainer)
     }

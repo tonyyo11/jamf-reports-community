@@ -1,6 +1,6 @@
 // The entire file is gated: it references macOS-27-only FoundationModels types
-// (LanguageModel, SystemLanguageModel, PrivateCloudComputeLanguageModel,
-// LanguageModelSession, ContextOptions, LanguageModelError, Prompt). `compiler(>=6.4)`
+// (LanguageModel, SystemLanguageModel, LanguageModelSession, ContextOptions,
+// LanguageModelError, Prompt). `compiler(>=6.4)`
 // is the real discriminator — Xcode 27 is the only toolchain shipping Swift 6.4;
 // on the default toolchain (Swift 6.3) this whole block elides and the seam is
 // served by StubInsightGenerator. NOT compile-checked by the default toolchain;
@@ -41,18 +41,12 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     // MARK: - Prewarm (session ownership)
 
     /// Construct and prewarm the session ahead of the first request. Same
-    /// selection/guard chain as `generate` — a locked config never constructs
-    /// PCC, and a missing entitlement/unavailable model no-ops here (the error
-    /// surfaces on `generate`, not on this best-effort warm-up).
+    /// selection/guard chain as `generate`; an unavailable model no-ops here
+    /// (the error surfaces on `generate`, not on this best-effort warm-up).
     func prepare() async {
         switch GeneratorKind.select(config: config) {
         case .onDevice:
             let model = SystemLanguageModel.default
-            guard case .available = model.availability else { return }
-            storePrewarmedSession(model: model)
-        case .privateCloudCompute:
-            guard PCCEntitlement.isPresent else { return }
-            let model = PrivateCloudComputeLanguageModel()
             guard case .available = model.availability else { return }
             storePrewarmedSession(model: model)
         case .external:
@@ -101,19 +95,12 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     }
 
     func generate(_ input: FleetInsightInput) async throws -> FleetInsight {
-        // Model selection honoring lock_on_device. Two branches because the
-        // concrete model TYPES differ (and only PCC needs async contextSize).
-        // lock_on_device (or tier==on_device) constructs ONLY SystemLanguageModel;
-        // PrivateCloudComputeLanguageModel() is never reached under a lock.
         let kind = GeneratorKind.select(config: config)
         // Audit trail: successes were previously silent, so a tier flipped by an
-        // out-of-band config edit would generate via PCC with no log evidence.
-        // Logging the configured tier and lock flag alongside the resolved kind
-        // lets an auditor tell "user chose on-device" from "lock overrode pcc".
+        // out-of-band config edit would generate with no log evidence.
         AppLogger.platform.notice("""
             Fleet insight requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(self.config.resolvedTier.rawValue, privacy: .public), \
-            locked=\(self.config.isLockedOnDevice, privacy: .public))
+            (tier=\(self.config.resolvedTier.rawValue, privacy: .public))
             """)
 
         do {
@@ -124,22 +111,6 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
                     throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
                 }
                 let prompt = await Self.verifiedPrompt(for: input, model: model)
-                return try await respond(model: model, prompt: prompt)
-
-            case .privateCloudCompute:
-                // Unreachable when config.isLockedOnDevice (GeneratorKind.select
-                // returns .onDevice under a lock) — belt and suspenders.
-                // Constructing the PCC model without the entitlement is a
-                // fatalError, so refuse (throw, never construct) when it's absent.
-                guard PCCEntitlement.isPresent else {
-                    throw FleetInsightError.unavailable(.pccEntitlementMissing)
-                }
-                let model = PrivateCloudComputeLanguageModel()
-                guard case .available = model.availability else {
-                    throw FleetInsightError.unavailable(ModelAvailability.mapPCC(model.availability))
-                }
-                let budget = (try? await model.contextSize) ?? 4_096
-                let prompt = input.promptContext(maxApproxTokens: budget / 4)
                 return try await respond(model: model, prompt: prompt)
 
             case .external:
@@ -158,10 +129,9 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     /// Run the request using ONLY capabilities the model advertises. The base
     /// on-device model does not support `.reasoning`, so passing a reasoning
     /// level unconditionally makes it reject the request ("doesn't have the
-    /// capabilities needed for this operation") — and `PrivateCloudCompute`
-    /// *traps* on the same unsupported option instead of throwing. Probe first:
-    /// apply a reasoning level only when supported, and fall back to plain text
-    /// when the model can't do guided (structured) generation at all.
+    /// capabilities needed for this operation"). Probe first: apply a reasoning
+    /// level only when supported, and fall back to plain text when the model
+    /// can't do guided (structured) generation at all.
     private func respond<M: LanguageModel>(model: M, prompt: String) async throws -> FleetInsight {
         let caps = model.capabilities
         let session = makeSession(for: model)
@@ -217,13 +187,12 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         _ input: FleetInsightInput,
         into continuation: AsyncThrowingStream<FleetInsight, Error>.Continuation
     ) async throws {
-        // Mirrors `generate` exactly: kind selection, tier audit log, PCC
-        // entitlement refusal, availability guards.
+        // Mirrors `generate` exactly: kind selection, tier audit log,
+        // availability guards.
         let kind = GeneratorKind.select(config: config)
         AppLogger.platform.notice("""
             Fleet insight stream requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(self.config.resolvedTier.rawValue, privacy: .public), \
-            locked=\(self.config.isLockedOnDevice, privacy: .public))
+            (tier=\(self.config.resolvedTier.rawValue, privacy: .public))
             """)
 
         switch kind {
@@ -233,18 +202,6 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
                 throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
             }
             let prompt = await Self.verifiedPrompt(for: input, model: model)
-            try await stream(model: model, prompt: prompt, into: continuation)
-
-        case .privateCloudCompute:
-            guard PCCEntitlement.isPresent else {
-                throw FleetInsightError.unavailable(.pccEntitlementMissing)
-            }
-            let model = PrivateCloudComputeLanguageModel()
-            guard case .available = model.availability else {
-                throw FleetInsightError.unavailable(ModelAvailability.mapPCC(model.availability))
-            }
-            let budget = (try? await model.contextSize) ?? 4_096
-            let prompt = input.promptContext(maxApproxTokens: budget / 4)
             try await stream(model: model, prompt: prompt, into: continuation)
 
         case .external:
@@ -292,11 +249,9 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         }
     }
 
-    // MARK: - Error mapping (LanguageModelError + PrivateCloudComputeLanguageModel.Error)
+    // MARK: - Error mapping (LanguageModelError)
 
-    /// Friendly message for a model error. Covers both the on-device
-    /// `LanguageModelError` and the PCC-only `PrivateCloudComputeLanguageModel.Error`
-    /// (quota/network) the on-device path never surfaces.
+    /// Friendly message for a model error.
     static func userMessage(for error: Error) -> String {
         if let e = error as? LanguageModelError {
             switch e {
@@ -318,21 +273,6 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
                 return "The model couldn't produce a structured insight from this data."
             @unknown default:
                 return "Insight generation failed."
-            }
-        }
-        if let p = error as? PrivateCloudComputeLanguageModel.Error {
-            switch p {
-            case .quotaLimitReached(let q):
-                if let reset = q.resetDate {
-                    return "Private Cloud Compute quota reached; resets \(reset.formatted())."
-                }
-                return "Private Cloud Compute quota reached."
-            case .networkFailure:
-                return "Couldn't reach Private Cloud Compute. Check the network."
-            case .serviceUnavailable:
-                return "Private Cloud Compute is temporarily unavailable."
-            @unknown default:
-                return "Private Cloud Compute request failed."
             }
         }
         return "Insight generation failed."

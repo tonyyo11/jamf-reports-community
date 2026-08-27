@@ -78,6 +78,26 @@ which on the weekly deep scan could be another seven days. Authentication and
 permission failures are never retried: those cannot succeed on a second attempt
 and repeated attempts risk locking the account out.
 
+### Removed
+
+AI insights now state plainly that they run on this Mac and nothing more. Apple
+Foundation Models is on-device only — Apple's own `fm` tool lists a single model,
+"system — On-device Apple Foundation Model" — so the Private Cloud Compute option
+has been removed along with the "Lock to on-device" switch that existed to refuse
+it. On-device is the default and the only behaviour, so there is no longer a
+setting to get wrong. Settings shows a "Model — On-device" row instead of a
+picker.
+
+Private Cloud Compute was never actually reachable from an official build: it
+needs an Apple-granted entitlement tied to App Store distribution, which a
+Developer ID-signed app cannot carry. Removing it deletes a permanently dormant
+option rather than a working one.
+
+Existing profiles need no changes. A `config.yaml` that still says `tier: "pcc"`
+or carries `lock_on_device` keeps loading — the tier resolves to on-device and
+the unused key is ignored — and the next time Settings saves that profile, the
+file is tidied up on its own.
+
 ### Fixed
 
 Reports that jamf-cli refuses now say why. A non-zero exit was reported as a

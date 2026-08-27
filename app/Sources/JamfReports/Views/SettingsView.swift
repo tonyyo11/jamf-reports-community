@@ -934,36 +934,17 @@ struct SettingsView: View {
                     set: { aiConfig.enabled = $0; saveAIConfig() }))
 
                 if aiConfig.isEnabled {
-                    // Official builds lack the Apple-granted PCC entitlement (App Store-only
-                    // program) — offering a tier that traps on construction would be wrong.
-                    if PCCEntitlement.isPresent {
-                        Picker("Model", selection: Binding(
-                            get: { aiConfig.resolvedTier },
-                            set: { aiConfig.tier = $0.rawValue; saveAIConfig() })) {
-                            Text("On-device").tag(AIConfig.Tier.onDevice)
-                            Text("Private Cloud Compute").tag(AIConfig.Tier.pcc)
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: 260, alignment: .leading)
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Model — On-device")
-                                .font(.callout.weight(.medium))
-                                .foregroundStyle(Theme.Text.primary)
-                            Text("Runs entirely on this Mac. No fleet data leaves the device.")
-                                .font(.caption)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                        }
+                    // No model picker: Apple Foundation Models is on-device only,
+                    // so there is nothing to choose between. The row states what
+                    // will happen rather than offering a one-option control.
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Model — On-device")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(Theme.Text.primary)
+                        Text("Runs entirely on this Mac. No fleet data leaves the device.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-
-                    Toggle("Lock to on-device (high security)", isOn: Binding(
-                        get: { aiConfig.isLockedOnDevice },
-                        set: { aiConfig.lockOnDevice = $0; saveAIConfig() }))
-                    Text("Ignores any configured tier and never uses Private Cloud Compute.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.leading, 2)
                 }
 
                 Text(ModelAvailability.current(for: aiConfig).message)

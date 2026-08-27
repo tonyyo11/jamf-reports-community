@@ -6,7 +6,7 @@ import SwiftUI
 /// Callers gate rendering on `ModelAvailability.platformSupported` (see
 /// `OverviewView`) so a macOS 26 host never instantiates this card at all —
 /// there is no impossible-feature placeholder to show. Below `.available`
-/// but on a supported host (config disabled, model not ready, PCC not
+/// but on a supported host (config disabled, model not
 /// entitled, …), this card DOES render with the matching `.message`.
 struct AIInsightCard: View {
     let profile: String
@@ -139,11 +139,7 @@ struct AIInsightCard: View {
     }
 
     private var tierLabel: String {
-        // Resolve through GeneratorKind so lock_on_device is honored — a locked
-        // config runs on-device even when tier == pcc, and the card must say so
-        // rather than claiming Private Cloud Compute it will never use.
         switch GeneratorKind.select(config: config) {
-        case .privateCloudCompute: "Private Cloud Compute"
         case .external: "external provider"
         case .onDevice: "on-device intelligence"
         }

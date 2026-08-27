@@ -106,24 +106,18 @@ struct RunFailureInput: Sendable {
     }
 }
 
-// MARK: - On-device pinning (ungated, pure — provable on the default toolchain)
+// MARK: - On-device-only rule (ungated, pure — provable on the default toolchain)
 
-extension AIConfig {
-    /// Copy of this config with `lock_on_device` forced on. The run-failure
-    /// explainer selects its generator from this copy so log excerpts NEVER
-    /// leave the box, regardless of the user's configured tier.
-    var lockedOnDeviceCopy: AIConfig {
-        var copy = self
-        copy.lockOnDevice = true
-        return copy
-    }
-}
-
-/// Pure generator-kind resolution for the explainer: ALWAYS selects on the
-/// locked copy, so any tier (pcc, external) resolves to `.onDevice`. Ungated so
-/// the guarantee is testable without FoundationModels.
+/// Whether this config may explain a run failure at all.
+///
+/// Logs are the one input class with residual PII risk, so the explainer runs
+/// on-device or not at all. Apple Foundation Models is on-device only, so the
+/// on-device path is the normal one; a config that explicitly selects the
+/// reserved `external` tier is refused here rather than served off-box.
+///
+/// Ungated so the guarantee is testable without FoundationModels.
 func runFailureGeneratorKind(for config: AIConfig) -> GeneratorKind {
-    GeneratorKind.select(config: config.lockedOnDeviceCopy)
+    GeneratorKind.select(config: config)
 }
 
 // MARK: - Stub (ungated — no model, deterministic)
@@ -149,13 +143,12 @@ struct StubRunFailureExplainer: RunFailureExplaining {
 
 // MARK: - Factory (ungated signature; FM branch is gated)
 
-/// Picks the conformer for a config + resolved availability. PRIVACY: logs are
-/// the one input class with residual PII risk, so the real explainer is handed
-/// `config.lockedOnDeviceCopy` — `GeneratorKind.select` on a locked config can
-/// never resolve to PCC/external, so no off-box model type is ever constructed
-/// for a log excerpt, regardless of the user's tier. Callers should probe
-/// `ModelAvailability.current(for: config.lockedOnDeviceCopy)` for the same
-/// reason (a pcc tier without the entitlement must not mask on-device readiness).
+/// Picks the conformer for a config + resolved availability.
+///
+/// PRIVACY: logs are the one input class with residual PII risk, so anything
+/// that does not resolve to the on-device model is served the stub rather than
+/// a real generator — no off-box model type is ever constructed for a log
+/// excerpt. `explain` re-checks the same rule (defense in depth).
 @MainActor
 func makeRunFailureExplainer(
     config: AIConfig,
@@ -163,10 +156,15 @@ func makeRunFailureExplainer(
 ) -> any RunFailureExplaining {
     guard config.isUsable else { return StubRunFailureExplainer(availability: .disabledByConfig) }
     guard availability.isReady else { return StubRunFailureExplainer(availability: availability) }
+    guard runFailureGeneratorKind(for: config) == .onDevice else {
+        return StubRunFailureExplainer(
+            availability: .unknown("Run logs are analyzed on-device only.")
+        )
+    }
 
     #if canImport(FoundationModels) && compiler(>=6.4)
     if #available(macOS 27, *) {
-        return FoundationModelsRunFailureExplainer(config: config.lockedOnDeviceCopy)
+        return FoundationModelsRunFailureExplainer(config: config)
     }
     #endif
     return StubRunFailureExplainer(availability: .requiresMacOS27)
@@ -180,9 +178,9 @@ func makeRunFailureExplainer(
 #if canImport(FoundationModels) && compiler(>=6.4)
 import FoundationModels
 
-/// On-device-ONLY explainer. The factory pins the config via
-/// `lockedOnDeviceCopy`; `explain` additionally refuses any non-on-device kind
-/// (defense in depth) — a log excerpt is never sent to PCC or an external model.
+/// On-device-ONLY explainer. The factory already refuses a non-on-device
+/// config; `explain` re-checks (defense in depth) — a log excerpt is never sent
+/// to an off-box model.
 @available(macOS 27, *)
 struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
     let config: AIConfig
@@ -199,12 +197,11 @@ struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
         let kind = GeneratorKind.select(config: config)
         AppLogger.platform.notice("""
             Run failure explanation requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(config.resolvedTier.rawValue, privacy: .public), \
-            locked=\(config.isLockedOnDevice, privacy: .public))
+            (tier=\(config.resolvedTier.rawValue, privacy: .public))
             """)
 
-        // The factory's locked copy makes this unreachable — refuse (never
-        // construct an off-box model) if a future caller bypasses the factory.
+        // The factory already refused a non-on-device config — refuse again
+        // (never construct an off-box model) if a caller bypasses the factory.
         guard kind == .onDevice else {
             throw FleetInsightError.unavailable(.unknown("Run logs are analyzed on-device only."))
         }

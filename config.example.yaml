@@ -459,19 +459,15 @@ retention:
 # insight card using Apple's on-device Foundation Model. OFF by default and
 # inert on any macOS below 27 — set enabled: true to opt in per profile.
 #
-# tier: "on_device" runs entirely on-device (no data leaves the Mac) — the only
-#   tier supported by official builds. "pcc" uses Apple Private Cloud Compute
-#   (still Apple-private, but off-device); it requires an Apple-granted
-#   `private-cloud-compute` entitlement, gated behind the App Store distribution
-#   program, which official (Developer ID) builds don't carry — the Settings
-#   picker only offers pcc when the running binary is entitled. "external" is
-#   RESERVED — not yet built.
-# lock_on_device: true refuses any non-on-device model even if tier says pcc —
-#   a defense-in-depth switch for high-security or regulated environments.
+# Apple Foundation Models is on-device only, so tier: "on_device" is the
+#   default and the only built behaviour — no fleet data leaves the Mac, and
+#   there is nothing to configure to keep it that way. "external" is RESERVED —
+#   not yet built.
+# A config still naming the removed "pcc" tier (or a stale lock_on_device key)
+#   keeps working: the tier falls back to on_device and the dead key is ignored.
 ai:
   enabled: false            # opt-in; inert on macOS < 27
-  tier: "on_device"         # on_device | pcc | external (external not yet built)
-  lock_on_device: false     # refuse any non-on-device model even if tier says otherwise
+  tier: "on_device"         # on_device | external (external not yet built)
   reasoning_level: "light"  # light | moderate | deep
   external:                 # RESERVED — ignored until the external tier ships (P5)
     provider: ""            # anthropic | google | openai_compatible

@@ -60,31 +60,27 @@ struct StubInsightGenerator: FleetInsightGenerator {
     }
 }
 
-// MARK: - Generator selection (pure — this is the lock_on_device guarantee)
+// MARK: - Generator selection (pure — ungated)
 
 /// Which kind of generator a config resolves to, independent of any model
-/// construction. Pure and UNGATED so the `lock_on_device` guarantee is provable
-/// on the default toolchain without importing FoundationModels or constructing
-/// any PCC/external type.
+/// construction. Pure and UNGATED so selection is provable on the default
+/// toolchain without importing FoundationModels.
+///
+/// Apple Foundation Models is on-device only, so `.onDevice` is the only kind
+/// that has a real generator behind it. `.external` remains a reserved,
+/// unbuilt tier (see `AIExternalConfig`) and every construction site falls back
+/// to the stub for it.
 enum GeneratorKind: Sendable, Equatable {
-    /// Use the on-device system model (also the resolved kind whenever
-    /// `lock_on_device` is set, regardless of the requested tier).
+    /// Use the on-device system model — the default and the only built path.
     case onDevice
-    /// Use Private Cloud Compute — only reachable when `tier == pcc` AND
-    /// `lock_on_device` is false.
-    case privateCloudCompute
-    /// Reserved external provider (built in a later phase) — only reachable when
-    /// `tier == external` AND `lock_on_device` is false.
+    /// Reserved external provider (built in a later phase), reachable only by
+    /// an explicit `tier: external` in config.yaml.
     case external
 
-    /// Resolve the generator kind from config. `lock_on_device` wins over `tier`
-    /// unconditionally: a locked config can NEVER select `.privateCloudCompute`
-    /// or `.external`, so no non-on-device model type is ever constructed.
+    /// Resolve the generator kind from config.
     static func select(config: AIConfig) -> GeneratorKind {
-        if config.isLockedOnDevice { return .onDevice }
         switch config.resolvedTier {
         case .onDevice: return .onDevice
-        case .pcc: return .privateCloudCompute
         case .external: return .external
         }
     }
@@ -96,8 +92,7 @@ enum GeneratorKind: Sendable, Equatable {
 /// `StubInsightGenerator` when AI is disabled, when the model isn't available,
 /// on the default toolchain (no FoundationModels), or for the not-yet-built
 /// `external` tier. On macOS 27 with an available model it returns the real
-/// `FoundationModelsInsightGenerator`, pinned to on-device whenever the config
-/// is locked (enforced both here and inside the generator, defense in depth).
+/// `FoundationModelsInsightGenerator`, which runs on-device.
 @MainActor
 func makeInsightGenerator(
     config: AIConfig,
@@ -107,8 +102,6 @@ func makeInsightGenerator(
     guard availability.isReady else { return StubInsightGenerator(availability: availability) }
 
     // `external` tier is specced but not built; fall back to the stub until P5.
-    // (A locked config never resolves to `.external`, so this only fires for an
-    // explicit unlocked external selection.)
     if GeneratorKind.select(config: config) == .external {
         return StubInsightGenerator(availability: .requiresMacOS27)
     }

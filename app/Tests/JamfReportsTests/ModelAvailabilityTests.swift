@@ -11,14 +11,13 @@ final class ModelAvailabilityTests: XCTestCase {
         XCTAssertFalse(ModelAvailability.deviceNotEligible.isReady)
         XCTAssertFalse(ModelAvailability.appleIntelligenceNotEnabled.isReady)
         XCTAssertFalse(ModelAvailability.modelNotReady.isReady)
-        XCTAssertFalse(ModelAvailability.pccSystemNotReady.isReady)
         XCTAssertFalse(ModelAvailability.unknown("x").isReady)
     }
 
     func testEveryCaseHasANonEmptyMessage() {
         let cases: [ModelAvailability] = [
             .available, .requiresMacOS27, .disabledByConfig, .deviceNotEligible,
-            .appleIntelligenceNotEnabled, .modelNotReady, .pccSystemNotReady,
+            .appleIntelligenceNotEnabled, .modelNotReady,
             .unknown("detail"),
         ]
         for state in cases {
@@ -44,11 +43,9 @@ final class ModelAvailabilityTests: XCTestCase {
         // .requiresMacOS27 via the runtime #available check.
         if #unavailable(macOS 27) {
             XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "on_device")), .requiresMacOS27)
-            XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "pcc")), .requiresMacOS27)
         }
         #else
         XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "on_device")), .requiresMacOS27)
-        XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "pcc")), .requiresMacOS27)
         XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "external")), .requiresMacOS27)
         #endif
     }

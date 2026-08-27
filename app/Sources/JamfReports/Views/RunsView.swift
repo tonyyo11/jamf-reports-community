@@ -38,9 +38,7 @@ struct RunsView: View {
         .task(id: workspace.profile) {
             reload()
             aiConfig = AIConfigLoader.load(profile: workspace.profile)
-            // Explainer is on-device-only: probe availability for the LOCKED
-            // copy so a pcc tier without the entitlement can't hide the button.
-            aiAvailability = ModelAvailability.current(for: aiConfig.lockedOnDeviceCopy)
+            aiAvailability = ModelAvailability.current(for: aiConfig)
         }
         .alert("Export Failed", isPresented: $showExportError) {
             Button("OK", role: .cancel) {}

@@ -50,7 +50,6 @@ enum AIConfigWriter {
         var entries: [YAMLCodec.YAMLEntry] = [
             .init(key: "enabled", value: .scalar(.bool(config.isEnabled))),
             .init(key: "tier", value: .scalar(.string(config.resolvedTier.rawValue))),
-            .init(key: "lock_on_device", value: .scalar(.bool(config.isLockedOnDevice))),
             .init(key: "reasoning_level", value: .scalar(.string(config.resolvedReasoningLevel.rawValue))),
         ]
         if let external = config.external {

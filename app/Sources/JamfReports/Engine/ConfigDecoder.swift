@@ -890,14 +890,25 @@ struct AlertRule: Decodable, Sendable, Equatable {
 
 // MARK: - ai (macOS 27 opt-in intelligence layer)
 
-/// `ai:` block — opt-in on-device/PCC fleet-insight generation (macOS 27+).
+/// `ai:` block — opt-in on-device fleet-insight generation (macOS 27+).
 /// OFF by default; inert on every OS below 27. Mirrors the `notify:` pattern:
 /// the struct decodes on every toolchain (config parsing is independent of
 /// FoundationModels availability); the actual model code is gated elsewhere.
+///
+/// Apple Foundation Models is on-device only: the `fm` CLI lists exactly one
+/// model ("system — On-device Apple Foundation Model"), and the Private Cloud
+/// Compute tier this block once carried was never reachable anyway — PCC needs
+/// an Apple-granted entitlement tied to App Store distribution, which a
+/// Developer ID build cannot obtain. Both the `pcc` tier and the
+/// `lock_on_device` override that existed to refuse it are gone; on-device is
+/// the default and the only behaviour.
+///
+/// A config that still names `tier: pcc` decodes to `.onDevice` via
+/// `resolvedTier`'s unknown-value fallback, and a stale `lock_on_device` key is
+/// ignored — neither breaks an existing workspace.
 struct AIConfig: Decodable, Sendable {
     enum Tier: String, Decodable, Sendable, CaseIterable {
         case onDevice = "on_device"
-        case pcc
         case external
     }
 
@@ -907,13 +918,11 @@ struct AIConfig: Decodable, Sendable {
 
     var enabled: Bool?
     var tier: String?
-    var lockOnDevice: Bool?
     var reasoningLevel: String?
     var external: AIExternalConfig?
 
     private enum CodingKeys: String, CodingKey {
         case enabled, tier
-        case lockOnDevice = "lock_on_device"
         case reasoningLevel = "reasoning_level"
         case external
     }
@@ -922,9 +931,6 @@ struct AIConfig: Decodable, Sendable {
     var resolvedTier: Tier {
         Tier(rawValue: (tier ?? "on_device").lowercased()) ?? .onDevice
     }
-    /// High-security guarantee: when true, refuse any non-on-device model even
-    /// if `tier` says otherwise. Enforced at generator selection.
-    var isLockedOnDevice: Bool { lockOnDevice ?? false }
     var resolvedReasoningLevel: ReasoningLevel {
         ReasoningLevel(rawValue: (reasoningLevel ?? "light").lowercased()) ?? .light
     }
