@@ -9,24 +9,6 @@ versions in this repository map to git tags.
 
 ### Added
 
-AI insights now state plainly that they run on this Mac and nothing more. Apple
-Foundation Models is on-device only — Apple's own `fm` tool lists a single model,
-"system — On-device Apple Foundation Model" — so the Private Cloud Compute option
-has been removed along with the "Lock to on-device" switch that existed to refuse
-it. On-device is the default and the only behaviour, so there is no longer a
-setting to get wrong. Settings shows a "Model — On-device" row instead of a
-picker.
-
-Private Cloud Compute was never actually reachable from an official build: it
-needs an Apple-granted entitlement tied to App Store distribution, which a
-Developer ID-signed app cannot carry. Removing it deletes a permanently dormant
-option rather than a working one.
-
-Existing profiles need no changes. A `config.yaml` that still says `tier: "pcc"`
-or carries `lock_on_device` keeps loading — the tier resolves to on-device and
-the unused key is ignored — and the next time Settings saves that profile, the
-file is tidied up on its own.
-
 Reports can now be published to a cloud-synced team folder. Set
 `output.allow_absolute_paths: true` and point `output.output_dir` at the shared
 location — `~/Library/CloudStorage/…` for OneDrive, SharePoint, Box, Dropbox or
@@ -46,6 +28,26 @@ into one card with a line each — on a real pair of production backups that tur
 ten screens of JSON into two lines. The old output is still one click away under
 **Raw**, the whole diff can be copied, and the sheet finally has a Done button
 (Escape works too) and lets you select text across lines.
+
+### Removed
+
+AI insights now state plainly that they run on this Mac and nothing more. Apple
+Foundation Models is on-device only — Apple's own `fm` tool lists a single model,
+"system — On-device Apple Foundation Model" — so the Private Cloud Compute option
+has been removed along with the "Lock to on-device" switch that existed to refuse
+it. On-device is the default and the only behaviour, so there is no longer a
+setting to get wrong. Settings shows a "Model — On-device" row instead of a
+picker.
+
+Private Cloud Compute was never actually reachable from an official build: it
+needs an Apple-granted entitlement tied to App Store distribution, which a
+Developer ID-signed app cannot carry. Removing it deletes a permanently dormant
+option rather than a working one.
+
+Existing profiles need no changes. A `config.yaml` that still says `tier: "pcc"`
+or carries `lock_on_device` keeps loading — the tier resolves to on-device and
+the unused key is ignored — and the next time Settings saves that profile, the
+file is tidied up on its own.
 
 ### Fixed
 
