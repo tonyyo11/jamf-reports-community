@@ -33,8 +33,8 @@ These were settled before design and constrain everything below.
 ### D1 — Extension attributes are discovered, never required
 
 The repo's standing rule is that the code contains no org-specific values, and
-EAs are the most org-specific data in Jamf. One organisation's `Entra Platform
-SSO Status` is another's nothing at all.
+EAs are the most org-specific data in Jamf: an attribute one organisation
+depends on is one another has never defined.
 
 So the metric catalogue is **built per profile from what that workspace actually
 contains**. An org with no EAs sees the built-in fleet metrics and nothing looks

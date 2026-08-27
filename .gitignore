@@ -16,7 +16,6 @@ snapshots/
 
 # Local tenant workspaces for testing
 Dummy/
-Harbor/
 
 # Python
 __pycache__/

@@ -20,7 +20,7 @@ final class WorkspaceStoreRefreshWiringTests: XCTestCase {
     func testCanRefreshIsTrueForValidProfileWhenNotDemo() {
         let store = WorkspaceStore(demoMode: false)
         XCTAssertTrue(store.canRefresh(profileSlug: "prod"))
-        XCTAssertTrue(store.canRefresh(profileSlug: "cbp-prod"))
+        XCTAssertTrue(store.canRefresh(profileSlug: "acme-prod"))
     }
 
     func testCanRefreshIsFalseForInvalidProfile() {
