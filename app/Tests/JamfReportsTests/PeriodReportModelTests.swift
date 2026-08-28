@@ -43,7 +43,8 @@ final class PeriodReportModelTests: XCTestCase {
                        summary("2026-06-30", total: 600, fv: 98)])
         let row = try XCTUnwrap(m.rows.first { $0.metricID == "fileVaultPct" })
         XCTAssertEqual(try XCTUnwrap(row.change), 2.0, accuracy: 0.001)
-        XCTAssertEqual(PeriodReportModel.formatChange(row.change, unit: .percent), "+2.0 pp")
+        XCTAssertEqual(PeriodReportModel.formatChange(row.change, unit: .percent), "+2.0pp",
+                       "must match the pp rule the fleet reports already use")
     }
 
     func testCountChangeRendersAsSignedInteger() {

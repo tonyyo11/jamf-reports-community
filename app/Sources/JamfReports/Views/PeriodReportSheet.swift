@@ -1,11 +1,7 @@
 import SwiftUI
 
 /// Builds a period report: choose a window, choose what goes in it, generate.
-///
-/// Extension attributes start unselected. An attribute's value can be a
-/// username, serial or certificate subject, and this workbook is meant to be
-/// forwarded — so including one is a decision the operator makes, and
-/// identifier-shaped attributes say so before they are picked.
+/// Extension attributes start unselected — their values can identify a device.
 struct PeriodReportSheet: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.dismiss) private var dismiss

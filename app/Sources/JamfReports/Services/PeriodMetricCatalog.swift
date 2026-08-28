@@ -7,6 +7,16 @@ struct PeriodMetric: Sendable, Equatable, Identifiable {
         case count          // signed integer change
         case percent        // change in percentage points
         case distribution   // no single figure; values and counts
+
+        /// Maps onto the fleet reports' formatting units. nil for
+        /// `.distribution`, which has no scalar to format.
+        var rollupUnit: FleetRollup.Unit? {
+            switch self {
+            case .count:        .count
+            case .percent:      .percent
+            case .distribution: nil
+            }
+        }
     }
 
     enum Source: Sendable, Equatable {
@@ -22,12 +32,8 @@ struct PeriodMetric: Sendable, Equatable, Identifiable {
     let source: Source
 }
 
-/// Builds the metric list for a profile from what its workspace actually holds.
-///
-/// The catalogue is discovered, never declared: this project carries no
-/// org-specific values, and extension attributes are the most org-specific data
-/// in Jamf. An organisation with no EAs sees the fleet metrics, and nothing
-/// looks broken or missing.
+/// Builds a profile's metric list from what its workspace holds. Discovered,
+/// never declared — this project carries no org-specific values.
 enum PeriodMetricCatalog {
 
     /// Fleet metrics with at least one observation in the supplied summaries.

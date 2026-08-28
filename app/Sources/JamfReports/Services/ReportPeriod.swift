@@ -1,11 +1,7 @@
 import Foundation
 
-/// A reporting window resolved against the snapshots that actually exist.
-///
-/// Requested boundaries rarely land on a snapshot — the Mac was off, a collect
-/// failed, or collection began mid-period. Every boundary therefore carries the
-/// date it resolved to, so a figure quoted into a written report never silently
-/// claims a date it does not have.
+/// A reporting window resolved against the snapshots that actually exist. Each
+/// boundary carries the date it resolved to, so no figure claims a date it lacks.
 struct ReportPeriod: Sendable, Equatable {
 
     /// Beyond this many days from the requested boundary, a resolution is

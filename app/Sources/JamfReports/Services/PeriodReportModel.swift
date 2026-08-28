@@ -114,24 +114,20 @@ struct PeriodReportModel: Sendable {
         }
     }
 
+    /// Distributions have no single figure; everything else defers to the one
+    /// formatting rule the fleet reports already use, so the same quantity is
+    /// not rendered two ways in one app.
     static func formatValue(_ v: Double?, unit: PeriodMetric.Unit) -> String {
-        guard let v else { return "—" }
-        switch unit {
-        case .percent:      return String(format: "%.1f%%", v)
-        case .count:        return String(Int(v.rounded()))
-        case .distribution: return "—"
-        }
+        guard let rollupUnit = unit.rollupUnit else { return "—" }
+        return FleetReportEmitter.format(v, unit: rollupUnit)
     }
 
-    /// Percentage change is in percentage points — stated, because a figure
-    /// quoted into a management document must not be ambiguous.
+    /// Percentage change is in percentage points, per `formatDelta`'s existing
+    /// rule — a figure quoted into a management document must not be ambiguous
+    /// about which it means.
     static func formatChange(_ v: Double?, unit: PeriodMetric.Unit) -> String {
-        guard let v else { return "—" }
-        switch unit {
-        case .percent:      return String(format: "%+.1f pp", v)
-        case .count:        return String(format: "%+d", Int(v.rounded()))
-        case .distribution: return "—"
-        }
+        guard let rollupUnit = unit.rollupUnit else { return "—" }
+        return FleetReportEmitter.formatDelta(v, unit: rollupUnit)
     }
 
     private static func dayDate(_ s: String, _ c: Calendar) -> Date? {
