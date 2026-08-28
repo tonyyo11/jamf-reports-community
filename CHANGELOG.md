@@ -9,6 +9,27 @@ versions in this repository map to git tags.
 
 ### Added
 
+Reports can now cover a period rather than a moment. Pick a rolling window (4,
+12, 26 or 52 weeks) or a calendar one (last full month, last full quarter, or
+your own dates), choose what goes in, and get a workbook with a start figure, an
+end figure and the change for each metric — the numbers a quarterly or annual
+write-up needs, without a manual Jamf export.
+
+Every figure carries the date it actually came from. Period boundaries rarely
+land on a day that collected, so a start of "1 April" that really came from the
+19th says so rather than quietly reporting the wrong date. Changes on percentages
+are in percentage points.
+
+What the report can cover depends on what your workspace holds: fleet metrics
+with data in the period, plus any extension attributes you collect. An attribute
+you have already configured is counted against the value you called good; one you
+have not is broken down by value.
+
+Extension attributes are not included unless you choose them, and the picker
+warns when an attribute's values are nearly unique per device — the shape of a
+serial or hostname rather than a status. Value tables are capped, and say how
+many values they left out.
+
 The Config Doctor now recognises a workspace that is fine but not the one you
 expected. Move your workspace to a shared folder and everything looks empty,
 because it is — the history is still in the old folder, and nothing tells you so.
