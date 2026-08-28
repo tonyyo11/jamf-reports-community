@@ -139,15 +139,3 @@ struct PeriodReportModel: Sendable {
         return f.date(from: s).map(c.startOfDay(for:))
     }
 }
-
-extension PeriodReportModel {
-    /// Replaced in full by the EA task; present so this type compiles standalone.
-    static func eaRow(
-        metric: PeriodMetric, name: String, match: String?,
-        period: ReportPeriod, snapshots: [PeriodEASnapshot]
-    ) -> Row {
-        Row(metricID: metric.id, label: metric.label, unit: metric.unit,
-            startValue: nil, endValue: nil, change: nil,
-            startDate: period.start.resolved, endDate: period.end.resolved)
-    }
-}
