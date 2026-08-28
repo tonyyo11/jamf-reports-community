@@ -16,6 +16,7 @@ struct ReportsView: View {
     @State private var searchText = ""
     @State private var profileFilter: String? = nil
     @State private var availableProfiles: [String] = []
+    @State private var showPeriodReport = false
     @State private var showQuickLook = false
     @State private var quickLookURL: URL? = nil
 
@@ -131,6 +132,9 @@ struct ReportsView: View {
             summary
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search reports...")
+        .sheet(isPresented: $showPeriodReport) {
+            PeriodReportSheet()
+        }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
                 if let url = quickLookURL {
@@ -177,6 +181,19 @@ struct ReportsView: View {
                                 SystemActions.openFolder(reportsDirectory)
                             }
                             .help("Open the Generated Reports folder in Finder")
+                            PNPButton(
+                                title: "Period report",
+                                icon: "calendar.badge.clock",
+                                style: .neutral
+                            ) {
+                                showPeriodReport = true
+                            }
+                            .disabled(workspace.demoMode)
+                            .help(
+                                workspace.demoMode
+                                ? "Available in live mode only"
+                                : "Fleet numbers for a period, with start, end and change"
+                            )
                             PNPButton(
                                 title: isGeneratingHTML ? "Generating..." : "Generate HTML",
                                 icon: "safari",
