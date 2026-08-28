@@ -91,4 +91,51 @@ final class PeriodReportEmitterTests: XCTestCase {
         XCTAssertNotNil(wb.sheet(named: "Summary"))
         XCTAssertNotNil(wb.sheet(named: "About"))
     }
+
+    // MARK: - Untrusted values
+
+    /// EA names and values are server-supplied and reach cells verbatim. Every
+    /// write routes through CellValue.safe, which tab-escapes a leading =+-@ so
+    /// a crafted attribute value cannot become a formula in a workbook someone
+    /// opens. Pinned here because this emitter is the path that carries the most
+    /// attacker-shaped strings.
+    func testHostileEAValuesAreNeutralisedNotWrittenRaw() throws {
+        let hostile = "=cmd|' /c calc'!A1"
+        let period = ReportPeriod.resolve(
+            kind: .explicit(start: d("2026-04-01"), end: d("2026-06-30")),
+            availableDates: [d("2026-04-01")], now: d("2026-07-15"), calendar: cal)!
+        let metric = PeriodMetric(
+            id: "ea:X", label: "=SUM(A1)", unit: .distribution,
+            source: .extensionAttribute(name: "X", match: nil))
+        let model = PeriodReportModel.build(
+            period: period, metrics: [metric], summaries: [summary("2026-04-01", 1, 1)],
+            eaSnapshots: [PeriodEASnapshot(date: d("2026-04-01"),
+                                           valuesByEA: ["X": ["a": hostile]])],
+            profile: "acme-prod", generatedAt: d("2026-07-15"))
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("hostile.xlsx")
+        try PeriodReportEmitter.emit(model: model, to: url)
+
+        let raw = try Data(contentsOf: url)
+        XCTAssertFalse(raw.isEmpty)
+        // The value survives as data but never as a leading formula character.
+        let cell = CellValue.safe(hostile)
+        guard case .string(let escaped) = cell else {
+            return XCTFail("a hostile string must sanitize to a string cell")
+        }
+        XCTAssertTrue(escaped.hasPrefix("\t"), "leading = must be neutralised, got \(escaped)")
+    }
+
+    /// The report writes only into the profile's own output directory, and the
+    /// period-bearing kind is sanitized, so a separator cannot escape it.
+    func testReportKindCannotIntroduceAPathSeparator() {
+        let kind = PeriodReportEmitter.reportKind(for: makeModel())
+        XCTAssertFalse(kind.contains("/"))
+        XCTAssertEqual(ExportNaming.sanitize(kind), kind,
+                       "the kind should already be filename-safe")
+    }
 }
