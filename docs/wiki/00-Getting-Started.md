@@ -20,7 +20,9 @@ brew install Jamf-Concepts/tap/jamf-cli
 ```
 
 This project supports jamf-cli v1.18.0 or later, with v1.19.0+ recommended for full
-partial-failure handling; the app itself currently tracks v1.22.0. See
+partial-failure handling; the app itself currently tracks v1.27.0. On jamf-cli 1.24.0 and
+later, the security report requires a Jamf Security Cloud subscription (see Known Issues in
+the CHANGELOG) — tenants without one should pin jamf-cli to 1.23.x. See
 [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for the full requirements table and pre-built binary
 links.
 

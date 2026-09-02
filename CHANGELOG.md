@@ -232,7 +232,14 @@ storage: some read the newest snapshot by filename and others by modification
 date. They all use the filename now. Duplicate files a sync provider leaves
 behind (`… 2.json`, `… (1).json`) are ignored everywhere rather than being
 mistaken for the newest snapshot, and duplicate daily summaries no longer produce
-double points in Trends.
+double points in Trends. If a snapshot folder holds only a conflict copy — say a
+lone `computers_20260902T060000 2.json` with nothing else for that day — the day
+now reads as having no data for that kind, where before the copy was used
+silently; rename the file to drop the trailing ` 2` or ` (1)`, or re-collect, to
+recover it. The generated workbook, the HTML report's "data as of" date, and the
+Devices and Offline Outreach screens now follow the same rule. A `csv-inbox` file
+whose name looks like a sync-conflict copy is reported by name instead of being
+silently ignored.
 
 - Device Lookup and the Devices detail panel's jamf-cli section work again.
   jamf-cli's `pro device` command accepts `--out-file` but prints its JSON to
@@ -241,6 +248,66 @@ double points in Trends.
   every device's live detail as unavailable. The app now captures the
   command's output directly and no longer depends on the file, which also
   keeps working once jamf-cli fixes the flag.
+
+The Health Audit page's note about snapshot integrity manifests no longer
+describes a feature that hasn't shipped. It said the checksum writer "will
+activate in a future release" — it has been writing manifests since 2.6 — and
+the note now names the `jamf_cli.require_manifest` setting that turns it on.
+
+A collect where the jamf-cli process itself could not be started for any
+source no longer finishes green. A launch failure — not a failed command, the
+process never starting — used to leave no record of the attempt, so the run
+fell through, wrote the day's summary from stale cache anyway, and sent a
+success notification. It now counts the same as any other failure: no summary
+from old cache, no success card.
+
+A scheduled run that stood down for another Mac on a shared workspace is now
+recorded as a partial run rather than one that updated Trends, sent a success
+notification, or evaluated metric alerts — nothing new landed, so there is
+nothing to report.
+
+A day whose summary could not be written, for any reason, now says so in the
+run log instead of claiming Trends advanced.
+
+Comparing backups now redacts password hashes, recovery keys, pre-shared keys
+and similar values in the Summary view and the Copy button. The Raw view is
+unchanged and still shows everything, for scripting against.
+
+The automatic re-collect of stale sources now works when every group of
+sources is behind — previously it did nothing in exactly that case, the one
+it exists for. It also no longer retries a source whose last failure was a
+usage or credentials error, since that cannot succeed on a second attempt.
+
+A peer Mac whose clock is set far ahead can no longer block every other Mac's
+scheduled collects until it next runs. Its claim is now treated as unusable
+and taken over, the same way an unreadable one already was.
+
+The period report's identifier warning now checks both ends of the period,
+not only the newest snapshot, and the extension-attribute picker names the
+synced folder the workbook will land in when one is configured.
+
+A run-log write failure on a synced folder is now reported once per schedule
+instead of being dropped silently.
+
+### Changed
+
+- Tracks jamf-cli v1.27.0 (was v1.26.0).
+
+### Known issues
+
+**Security data is unavailable on jamf-cli 1.24 and later without a Jamf
+Security Cloud subscription.** From jamf-cli 1.24.0, `pro report security` — a
+Jamf Pro report — is routed to the Jamf Security Cloud client and exits with
+"no Jamf Security Cloud credentials configured" on any tenant that does not
+have one. The app cannot work around a credentials gate. Until this is fixed
+upstream (issue filed against jamf-cli), the Security Posture screen, the
+weighted security score, and every FileVault, SIP, firewall and Gatekeeper
+figure derived from that report will show their last collected values, and
+the health strip will report the `security` source as failing to collect —
+that is correct. The run log now carries jamf-cli's own message so the cause
+is visible, and automatic re-collection skips the source rather than retrying
+it every hour. Pinning jamf-cli to 1.23.x restores the report on affected
+tenants; the app supports 1.18.0 and later.
 
 ## [2.6.1] - 2026-08-14
 

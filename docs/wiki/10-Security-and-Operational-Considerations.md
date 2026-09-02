@@ -73,6 +73,11 @@ when that happens: snapshots are written under unique timestamped names and read
 back in filename order, never by modification date. You simply get two collects
 where you wanted one.
 
+**Coordination covers Jamf Pro collects only.** A Jamf School profile on a
+shared workspace gets none of the stand-down or claim behavior above — School
+collects on its own schedule with no cross-Mac awareness. Jamf Protect data is
+collected inside the same run as Jamf Pro, so it is covered in practice.
+
 ### What a shared workspace still costs you
 
 **Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
@@ -120,6 +125,28 @@ synced plist turns a cloud-account compromise into arbitrary scheduled
 execution. The app only ever writes these locally; do not copy them to a share
 yourself. Retired agents that the app archives into the workspace have their
 webhook URLs scrubbed, precisely because that archive often ends up on one.
+
+**`jamf_cli.require_manifest` and a shared workspace don't mix well.** If two
+Macs happen to write a snapshot with the same filename stamp — a same-second
+collision — the surviving file after sync may not be the one whose hash was
+recorded, leaving a manifest that mismatches the file on disk and blocks
+generate until you delete the manifest by hand. Leave `require_manifest` off
+on a shared workspace.
+
+**A scheduled run needs the folder mounted to start at all.** If the shared
+folder isn't mounted when a LaunchAgent fires, launchd can't start the job and
+nothing is written — no log line, no entry in Run History. The Automation
+Health overdue check is what surfaces this: the schedule simply looks like it
+stopped firing.
+
+**`retention.snapshot_keep_count` counts files, not days per Mac.** The count
+floor keeps the newest N snapshot files in a kind's folder regardless of which
+Mac wrote them. With N Macs collecting daily into the same shared folder, that
+floor protects roughly `keep_count / N` days of any one machine's history.
+
+**Backup diffs: Raw mode is unredacted.** Summary mode and its Copy button
+redact credential-shaped values (password hashes, recovery keys, and similar);
+Raw mode shows the full payload as jamf-cli returned it.
 
 ### Check it
 
@@ -277,3 +304,12 @@ else to migrate.
 The same Automation screen that hosts this policy also drives the opt-in Notifications
 webhook and shows Automation Health (the dead-man switch for overdue or failing
 schedules) — see [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+
+## Known Issues
+
+**`pro report security` on jamf-cli 1.24+ requires a Jamf Security Cloud subscription.**
+From jamf-cli 1.24.0, this Jamf Pro report is routed through the Jamf Security Cloud client
+and fails on any tenant without a subscription — Security Posture, the weighted security
+score, and every FileVault, SIP, firewall and Gatekeeper figure derived from it will show
+their last collected values until this is fixed upstream. See the CHANGELOG's Known Issues
+entry for the current workaround (pinning jamf-cli to 1.23.x).
