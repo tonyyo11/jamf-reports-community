@@ -124,6 +124,48 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         XCTAssertEqual(ReportEngine.sectionedCollectKinds, ["patch-device-failures"])
     }
 
+    // MARK: - Saying which shape produced the zero
+
+    /// A stream with several sections and no device rows is indistinguishable
+    /// from an upstream rename of `device_id` unless the run says so. The `[]`
+    /// result is unchanged — this is a line in the log, not a new failure.
+    func testMultiSectionStreamWithoutDeviceRowsWarns() throws {
+        let collector = LineCollector()
+        let stream = Data((compliance + policies).utf8)
+
+        let picked = try rows(
+            ReportEngine.patchDeviceFailurePayload(from: stream, onLine: collector.append)
+        )
+
+        XCTAssertTrue(picked.isEmpty, "the warning must not change the result")
+        XCTAssertEqual(collector.texts.count, 1, "got: \(collector.texts)")
+        let line = try XCTUnwrap(collector.texts.first)
+        XCTAssertTrue(line.hasPrefix("[warn] patch-device-failures: 2 sections parsed, "),
+                      "the count is the diagnostic — got: \(line)")
+        XCTAssertTrue(line.contains("none carried device rows — treating as no failures"),
+                      "got: \(line)")
+    }
+
+    /// The ordinary healthy tenant emits ONE section (compliance) and no
+    /// devices. Warning there would fire on nearly every run and train the
+    /// operator to ignore the line that matters.
+    func testSingleSectionStreamDoesNotWarn() throws {
+        let collector = LineCollector()
+        _ = ReportEngine.patchDeviceFailurePayload(
+            from: Data(compliance.utf8), onLine: collector.append
+        )
+        XCTAssertTrue(collector.texts.isEmpty, "got: \(collector.texts)")
+    }
+
+    /// Finding the device section is the success case — no warning either.
+    func testFullStreamWithDeviceRowsDoesNotWarn() throws {
+        let collector = LineCollector()
+        _ = ReportEngine.patchDeviceFailurePayload(
+            from: Data((compliance + policies + devices).utf8), onLine: collector.append
+        )
+        XCTAssertTrue(collector.texts.isEmpty, "got: \(collector.texts)")
+    }
+
     /// The generic salvage keeps working for everything else: a single document
     /// behind a decorative prefix is still forgiven.
     func testGenericPrefixSalvageStillWorksForOtherKinds() throws {
@@ -138,5 +180,25 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         let stream = Data((compliance + policies + devices).utf8)
         XCTAssertNil(ReportEngine.jsonPayload(from: stream),
                      "the generic path must not silently return the first of several sections")
+    }
+}
+
+/// Thread-safe collector for streamed log-line text — `onLine` is `@Sendable`,
+/// so a plainly captured `var` is not.
+private final class LineCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    /// Usable directly as an `onLine` handler.
+    var append: @Sendable (CLIBridge.LogLine) -> Void {
+        { line in
+            self.lock.lock(); defer { self.lock.unlock() }
+            self.lines.append(line.text)
+        }
+    }
+
+    var texts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return lines
     }
 }

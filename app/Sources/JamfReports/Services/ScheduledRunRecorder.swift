@@ -123,7 +123,10 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             guard !warned else { return }
             warned = true
             AppLogger.schedule.warning(
-                "ScheduledRunRecorder: log write failed for \(label, privacy: .public) — further lines dropped: \(error.localizedDescription, privacy: .public)"
+                """
+                ScheduledRunRecorder: log write failed for \(label, privacy: .public) \
+                — further lines dropped: \(error.localizedDescription, privacy: .public)
+                """
             )
         }
     }

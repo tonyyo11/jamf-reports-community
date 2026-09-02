@@ -65,7 +65,8 @@ struct Scaffold: AsyncParsableCommand {
 
 struct Check: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "Check a profile's config, data accuracy and workspace, with a fix for each finding."
+        abstract: "Check a profile's config, data accuracy and workspace, with a fix for "
+            + "each finding."
     )
     @Option(help: "Workspace profile slug.") var profile: String
     @Flag(help: "Emit machine-readable JSON.") var json = false

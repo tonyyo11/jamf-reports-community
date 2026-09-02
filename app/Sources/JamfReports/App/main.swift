@@ -294,7 +294,14 @@ private func scheduledRunSingle(
         fputs("[warn] could not open run record in automation/logs — run will not appear in Run History\n", stderr)
     }
 
+    // `ReportEngine.collect` returns Void — CollectRouter's typealias and its
+    // test spies depend on that — so the two facts that make a bare exit 0 a
+    // lie arrive on the log stream instead: this Mac stood down for a peer, or
+    // the day's summary never reached disk. Watching the stream is what lets
+    // the completion line and the webhook below say which one happened.
+    let honesty = CollectHonestyWatcher()
     let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
+        honesty.observe(line.text)
         recorder?.record(line.text)
         if verbose || line.level != .info {
             print(line.text)
@@ -450,17 +457,36 @@ private func scheduledRunSingle(
         // School collect does not — avoid a false "Trends updated" claim for School.
         if mode == .snapshotOnly {
             let detected = ProfileProductType.detect(from: routingConfig)
-            let trendsSuffix = detected.type == .jamfPro ? " — Trends updated" : ""
-            let message = "[ok] scheduled snapshot complete for '\(profile)'\(trendsSuffix)"
+            // Trends only moved if a Jamf Pro collect ran AND its summary
+            // reached disk. Claiming it otherwise is the specific lie this
+            // release is closing: the operator reads "Trends updated" as proof
+            // the fleet was polled today.
+            let trendsSuffix = detected.type == .jamfPro && honesty.producedFreshSnapshot
+                ? " — Trends updated" : ""
+            let message = honesty.stoodDown
+                ? "[ok] scheduled snapshot for '\(profile)' stood down — another machine "
+                    + "in this shared workspace collected recently"
+                : "[ok] scheduled snapshot complete for '\(profile)'\(trendsSuffix)"
             print(message)
             recorder?.record(message)
-            await ScheduledRunSignals.notifyScheduledRun(
-                config: routingConfig, profile: profile, mode: mode,
-                artifact: nil, recorder: recorder
-            )
-            await ScheduledRunSignals.notifyMetricAlerts(
-                config: routingConfig, profile: profile, workspace: workspace, recorder: recorder
-            )
+            // A snapshot-only run's entire product is the day's summary — it
+            // renders no workbook — so a success card from a run that wrote no
+            // summary names an artifact that does not exist. Both markers
+            // therefore suppress it: a stand-down (nothing collected) and a
+            // summary that never reached disk. Exit 0 is still right for both —
+            // standing down is the coordination working, and the `[partial]`
+            // line already downgrades the run in Run History. The failure-card
+            // path is unchanged: a run that threw never gets here.
+            if honesty.producedFreshSnapshot {
+                await ScheduledRunSignals.notifyScheduledRun(
+                    config: routingConfig, profile: profile, mode: mode,
+                    artifact: nil, recorder: recorder
+                )
+                await ScheduledRunSignals.notifyMetricAlerts(
+                    config: routingConfig, profile: profile, workspace: workspace,
+                    recorder: recorder
+                )
+            }
             ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
             recorder?.finish(exitCode: 0)
             return 0
@@ -482,8 +508,12 @@ private func scheduledRunSingle(
             profile: profile, force: false, operation: "generate", checkFreshness: false
         ) {
         case .standDown(let reason):
-            print(reason)
-            recorder?.record(reason)
+            // Same `[partial]` line the collect-side twin emits: two runs that
+            // both did nothing must read alike in Run History, or a deferred
+            // generate looks like a report that rendered.
+            let line = ReportEngine.standDownLine(reason: reason)
+            print(line)
+            recorder?.record(line)
             recorder?.finish(exitCode: 0)
             return 0
         case .proceed(let state, let notes):
@@ -521,8 +551,11 @@ private func scheduledRunSingle(
             recorder: recorder
         )
         // jamf-cli-only generates from cache without a fresh collect, so its
-        // summary isn't "just produced" — skip alerting for it.
-        if mode != .jamfCLIOnly {
+        // summary isn't "just produced" — skip alerting for it. A collect that
+        // stood down for a peer is the same situation arrived at differently:
+        // the report is real (it rendered from cache), but no summary was
+        // written this run, so there is nothing new to alert on.
+        if mode != .jamfCLIOnly, !honesty.stoodDown {
             await ScheduledRunSignals.notifyMetricAlerts(
                 config: config, profile: profile, workspace: workspace, recorder: recorder
             )

@@ -73,8 +73,8 @@ final class StateFileFailureTests: XCTestCase {
         )
         XCTAssertNil(store.failures(report: "security"))
 
-        store.record(.failed, report: "security", at: t0)
-        store.record(.failed, report: "security", at: t0)
+        store.record(.failed(exitCode: nil), report: "security", at: t0)
+        store.record(.failed(exitCode: nil), report: "security", at: t0)
 
         XCTAssertEqual(store.failures(report: "security")?.count, 2,
                        "Counting must restart from a sane base, not from the corrupt value")
@@ -128,8 +128,9 @@ final class StateFileFailureTests: XCTestCase {
 
     func testFailedOutcomeIncrementsWithoutAdvancingTheCadenceBoundary() throws {
         store.record(.landed, report: "computers", at: t0)
-        store.record(.failed, report: "computers", at: t0.addingTimeInterval(86_400))
-        store.record(.failed, report: "computers", at: t0.addingTimeInterval(172_800))
+        store.record(.failed(exitCode: nil), report: "computers", at: t0.addingTimeInterval(86_400))
+        store.record(.failed(exitCode: nil), report: "computers",
+                     at: t0.addingTimeInterval(172_800))
 
         XCTAssertEqual(store.failures(report: "computers")?.count, 2)
         // The unchanged boundary is what keeps a broken kind permanently "due",
@@ -144,13 +145,91 @@ final class StateFileFailureTests: XCTestCase {
         try? fileManager.removeItem(at: tempDir)
         let readOnly = StateFileStore(directory: URL(fileURLWithPath: "/dev/null/nope"))
         readOnly.record(.landed, report: "security", at: t0)
-        readOnly.record(.failed, report: "security", at: t0)
+        readOnly.record(.failed(exitCode: nil), report: "security", at: t0)
     }
 
     func testRepeatedLandingsKeepTheStreakAtZero() {
         store.record(.landed, report: "overview", at: t0)
         store.record(.landed, report: "overview", at: t0.addingTimeInterval(43_200))
         XCTAssertNil(store.failures(report: "overview"))
+    }
+
+    // MARK: - Exit-code memory
+    //
+    // The count says a kind is broken; the code says how. Without it, every
+    // consumer downstream can only offer "it failed" — it cannot tell expired
+    // credentials (act now, re-authenticate) from a rate limit (wait).
+
+    func testExitCodeRoundTripsWithTheFailureRecord() throws {
+        store.record(.failed(exitCode: 3), report: "security", at: t0)
+
+        XCTAssertEqual(store.lastFailureExitCode(for: "security"), 3)
+        XCTAssertEqual(store.failures(report: "security")?.count, 1,
+                       "Adding the code must not disturb the count")
+        XCTAssertEqual(store.failures(report: "security")?.last, t0)
+    }
+
+    func testNewestExitCodeReplacesTheOlderOne() throws {
+        store.record(.failed(exitCode: 6), report: "security", at: t0)
+        store.record(.failed(exitCode: 3), report: "security", at: t0.addingTimeInterval(3600))
+
+        XCTAssertEqual(store.lastFailureExitCode(for: "security"), 3,
+                       "The record describes the newest failure, not the first")
+        XCTAssertEqual(store.failures(report: "security")?.count, 2)
+    }
+
+    /// A launch failure has no exit code — the process never ran. Recording a
+    /// fabricated 0 would read as success to anything inspecting the code, so
+    /// the field is omitted and reads back as "unknown".
+    func testLaunchFailureRecordsNoExitCode() throws {
+        store.record(.failed(exitCode: nil), report: "security", at: t0)
+
+        XCTAssertEqual(store.failures(report: "security")?.count, 1)
+        XCTAssertNil(store.lastFailureExitCode(for: "security"))
+    }
+
+    /// Every `.fail` file written before this release carries two fields. It
+    /// must keep reading as a valid failure record with an unknown cause, not
+    /// as a corrupt file that resets the streak.
+    func testLegacyTwoFieldRecordReadsAsAKnownFailureWithUnknownCause() throws {
+        try "4 2026-08-25T12:00:00Z".write(
+            to: tempDir.appendingPathComponent("security.fail"),
+            atomically: true, encoding: .utf8
+        )
+
+        XCTAssertEqual(store.failures(report: "security")?.count, 4)
+        XCTAssertNil(store.lastFailureExitCode(for: "security"))
+
+        store.record(.failed(exitCode: 5), report: "security", at: t0)
+        XCTAssertEqual(store.failures(report: "security")?.count, 5,
+                       "A legacy streak must continue, not restart")
+        XCTAssertEqual(store.lastFailureExitCode(for: "security"), 5)
+    }
+
+    func testLandingClearsTheExitCodeAlongWithTheStreak() throws {
+        store.record(.failed(exitCode: 3), report: "security", at: t0)
+        XCTAssertEqual(store.lastFailureExitCode(for: "security"), 3)
+
+        store.record(.landed, report: "security", at: t0.addingTimeInterval(3600))
+
+        XCTAssertNil(store.lastFailureExitCode(for: "security"),
+                     "A recovered kind must not keep advertising a stale cause")
+    }
+
+    func testNoRecordMeansNoExitCode() {
+        XCTAssertNil(store.lastFailureExitCode(for: "never-collected"))
+    }
+
+    /// Same rule as `failures`: a structurally broken record is no record.
+    /// Reading a code out of one would hand a consumer a cause it can act on
+    /// while the count it came with was rejected.
+    func testCorruptRecordYieldsNoExitCode() throws {
+        try "-5 2026-08-25T12:00:00Z 3".write(
+            to: tempDir.appendingPathComponent("security.fail"),
+            atomically: true, encoding: .utf8
+        )
+        XCTAssertNil(store.failures(report: "security"))
+        XCTAssertNil(store.lastFailureExitCode(for: "security"))
     }
 
     func testCollectionStatesReportBothHalves() throws {

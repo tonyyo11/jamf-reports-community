@@ -102,14 +102,38 @@ struct StateFileStore: Sendable {
     /// has no recorded failure. Like `lastRun`, reads never throw — a missing
     /// or malformed file means "no known failures".
     func failures(report: String) -> FailureRecord? {
+        guard let parts = validFailureFields(report: report),
+              let count = Int(parts[0]),
+              let date = Self.formatter.date(from: String(parts[1])) else { return nil }
+        return FailureRecord(count: count, last: date)
+    }
+
+    /// The exit code of the most recent failure for `report`, or nil when there
+    /// is no failure record, or the record predates exit-code memory (the
+    /// two-field form), or the failure carried no exit code at all (a launch
+    /// failure — the process never ran, so there is nothing to remember).
+    ///
+    /// Distinct from "the kind failed": a caller deciding *how* to react needs
+    /// the code, and must be able to tell "auth expired" from "we don't know".
+    func lastFailureExitCode(for report: String) -> Int32? {
+        guard let parts = validFailureFields(report: report), parts.count == 3 else { return nil }
+        return Int32(parts[2])
+    }
+
+    /// Whitespace-split fields of `<report>.fail` when the record is
+    /// structurally sound: a positive count, a parseable timestamp, and either
+    /// the legacy two-field form or the three-field form carrying an exit code.
+    /// Anything else reads as no record at all — a corrupt counter must not be
+    /// able to silence the alarm it exists to raise.
+    private func validFailureFields(report: String) -> [Substring]? {
         guard let raw = try? String(contentsOf: failureURL(for: report), encoding: .utf8) else {
             return nil
         }
-        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: " ", maxSplits: 1)
-        guard parts.count == 2, let count = Int(parts[0]), count > 0,
-              let date = Self.formatter.date(from: String(parts[1])) else { return nil }
-        return FailureRecord(count: count, last: date)
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
+        guard parts.count == 2 || parts.count == 3,
+              let count = Int(parts[0]), count > 0,
+              Self.formatter.date(from: String(parts[1])) != nil else { return nil }
+        return parts
     }
 
     /// Increment the consecutive-failure count for `report`.
@@ -121,13 +145,20 @@ struct StateFileStore: Sendable {
     ///
     /// Best-effort by design (`try?` at the call site): losing a failure count
     /// must never undo a collect that otherwise succeeded.
-    func recordFailure(report: String, at date: Date) throws {
+    ///
+    /// `exitCode` is appended as a third field so the *reason* for the newest
+    /// failure survives the run alongside the count. Omitted when the caller has
+    /// no code to record (a launch failure), which keeps the record in the
+    /// original two-field form and reads back as "unknown" rather than as a
+    /// fabricated exit 0.
+    func recordFailure(report: String, at date: Date, exitCode: Int32? = nil) throws {
         try FileManager.default.createDirectory(
             at: directory, withIntermediateDirectories: true
         )
         let next = (failures(report: report)?.count ?? 0) + 1
         let truncated = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
-        let body = "\(next) \(Self.formatter.string(from: truncated))"
+        var body = "\(next) \(Self.formatter.string(from: truncated))"
+        if let exitCode { body += " \(exitCode)" }
         guard let data = body.data(using: .utf8) else {
             throw StateFileError.encodingFailed(report: report)
         }
@@ -147,7 +178,10 @@ struct StateFileStore: Sendable {
         /// is `.failed`, because the operator's question is "is the data
         /// there?", not "did the process return?".
         case landed
-        case failed
+        /// `exitCode` is jamf-cli's own code when the process ran, and nil when
+        /// it never launched — the two are different diagnoses and the store is
+        /// the only place either survives the run.
+        case failed(exitCode: Int32?)
     }
 
     /// Apply one collect attempt's result to this kind's state.
@@ -172,8 +206,8 @@ struct StateFileStore: Sendable {
         case .landed:
             try? recordRun(report: report, at: date)
             clearFailures(report: report)
-        case .failed:
-            try? recordFailure(report: report, at: date)
+        case .failed(let exitCode):
+            try? recordFailure(report: report, at: date, exitCode: exitCode)
         }
     }
 
