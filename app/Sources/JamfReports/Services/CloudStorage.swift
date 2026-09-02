@@ -16,12 +16,13 @@ import Foundation
 ///   `computers_… (1).json`, `… (Mac's conflicted copy 2026-08-20).json`).
 ///   Those parse as valid JSON and would be ingested as real data.
 ///
-/// `snapshotTimestamp` is the defence: our writers always stamp a filename
-/// with `yyyyMMddTHHmmss`, so *requiring* that stamp rejects every provider's
-/// mangled copy without maintaining a per-provider blacklist that would drift.
-/// `isLikelySyncConflict` is diagnostics only — it names the pattern for the
-/// operator, and a false negative there is harmless because no ordering
-/// decision depends on it.
+/// `snapshotTimestamp` is the primary defence: our writers always stamp a
+/// filename with `yyyyMMddTHHmmss`, so *requiring* that stamp rejects every
+/// provider's mangled copy without maintaining a per-provider blacklist that
+/// would drift. `isLikelySyncConflict` is the second: every snapshot picker
+/// runs it as a filter (`FileManager.isSelectableSnapshot`) before ordering,
+/// so a conflict copy is dropped outright rather than ranked. It also names
+/// the pattern for the operator in the Config Doctor.
 enum CloudStorage {
 
     // MARK: - Filename canonicality
@@ -59,7 +60,9 @@ enum CloudStorage {
             return dashedStampFormatter.date(from: String(stem[range]))
         }
         // Dashed form with trailing microseconds: ...T210038673146
-        if let range = stem.range(of: #"\d{4}-\d{2}-\d{2}T\d{6}\d*$"#, options: .regularExpression) {
+        if let range = stem.range(
+            of: #"\d{4}-\d{2}-\d{2}T\d{6}\d*$"#, options: .regularExpression
+        ) {
             let match = String(stem[range])
             return dashedStampFormatter.date(from: String(match.prefix(17)))
         }
@@ -98,8 +101,10 @@ enum CloudStorage {
     }
 
     /// Best-effort recognition of a sync provider's conflict/duplicate copy.
-    /// Diagnostics only — used to tell the operator what it found. Ordering
-    /// never depends on this; it depends on the canonical-name requirement.
+    /// Applied as a filter by every snapshot picker (via
+    /// `FileManager.isSelectableSnapshot`) *and* surfaced to the operator by
+    /// the Config Doctor. Best-effort is acceptable because the canonical-name
+    /// requirement in `snapshotTimestamp` already demotes anything this misses.
     static func isLikelySyncConflict(_ name: String) -> Bool {
         let stem = (name as NSString).deletingPathExtension
         let patterns = [

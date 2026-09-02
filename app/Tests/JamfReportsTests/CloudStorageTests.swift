@@ -42,7 +42,9 @@ final class CloudStorageTests: XCTestCase {
         XCTAssertTrue(CloudStorage.isLikelySyncConflict("config copy.yaml"))
         XCTAssertTrue(CloudStorage.isLikelySyncConflict("config copy 3.yaml"))
         XCTAssertTrue(
-            CloudStorage.isLikelySyncConflict("summary (Tony's Mac's conflicted copy 2026-08-20).json")
+            CloudStorage.isLikelySyncConflict(
+                "summary (Tony's Mac's conflicted copy 2026-08-20).json"
+            )
         )
         XCTAssertFalse(CloudStorage.isLikelySyncConflict("computers_20240615T120000.json"))
         XCTAssertFalse(CloudStorage.isLikelySyncConflict("summary_2026-08-20.json"))

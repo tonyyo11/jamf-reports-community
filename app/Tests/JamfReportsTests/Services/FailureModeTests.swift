@@ -7,8 +7,7 @@ import XCTest
 // Defensive path coverage for CLIBridge / ExecutableLocator / ProfileService
 // when tools are absent, profiles are invalid, or subprocesses fail.
 //
-// Distinct from CLIBridgeFallbackTests (which covers the CachedDataFallback
-// caching layer) — these tests cover the bridge-level entry guards.
+// These tests cover the bridge-level entry guards.
 
 /// Thread-safe line collector for use across @Sendable closures.
 private final class LineCollector: @unchecked Sendable {

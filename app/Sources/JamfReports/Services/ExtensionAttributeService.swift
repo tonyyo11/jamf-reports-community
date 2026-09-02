@@ -246,16 +246,33 @@ struct ExtensionAttributeService: Sendable {
 
         let totalDevices = allDeviceIds.count
         let totalEAs = results.isEmpty ? definitions.count : accumulators.count
-        // uniquingKeysWith, NOT uniqueKeysWithValues: EA display names come from
-        // the server and are not unique — a tenant with two extension attributes
-        // sharing a name traps and takes the whole process down. That crashed a
-        // scheduled run on a 88-EA production tenant. Same defect class as
-        // PatchReleaseDateService.releaseDateLookup (duplicate title_id); first
-        // definition wins, which matches how the coverage rows read it.
-        let definitionIdByName = Dictionary(
-            definitions.compactMap { def in def.name.map { ($0, def.id) } },
-            uniquingKeysWith: { first, _ in first }
-        )
+        // First definition wins, NOT uniqueKeysWithValues: EA display names come
+        // from the server and are not unique — a tenant with two extension
+        // attributes sharing a name traps and takes the whole process down. That
+        // crashed a scheduled run on an 88-EA production tenant. Same defect
+        // class as PatchReleaseDateService.releaseDateLookup (duplicate
+        // title_id). The collision is named in the log because the dropped
+        // definition's id silently changes which EA a coverage row links to.
+        var definitionIdByName: [String: String?] = [:]
+        var collidedNames: Set<String> = []
+        for def in definitions {
+            guard let name = def.name else { continue }
+            if definitionIdByName.keys.contains(name) {
+                collidedNames.insert(name)
+            } else {
+                definitionIdByName[name] = def.id
+            }
+        }
+        if !collidedNames.isEmpty {
+            let names = collidedNames.sorted().joined(separator: ", ")
+            AppLogger.report.warning(
+                """
+                ExtensionAttributeService: duplicate extension-attribute display \
+                names; the first definition wins and the rest are dropped: \
+                \(names, privacy: .public)
+                """
+            )
+        }
 
         var coverage: [Snapshot.Coverage] = []
         coverage.reserveCapacity(accumulators.count)

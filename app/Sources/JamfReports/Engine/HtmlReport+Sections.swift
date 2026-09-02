@@ -925,10 +925,7 @@ extension HtmlReport {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
            ) {
-            candidates = files.filter {
-                $0.pathExtension == "json"
-                && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
-            }
+            candidates = files.filter { $0.pathExtension == "json" }
         }
         if let files = try? fm.contentsOfDirectory(
             at: dataDir,
@@ -939,13 +936,8 @@ extension HtmlReport {
                 $0.pathExtension == "json" && $0.lastPathComponent.hasPrefix(kind + "_")
             }
         }
-        guard let newest = candidates.max(by: { lhs, rhs in
-            let a = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate) ?? .distantPast
-            let b = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate) ?? .distantPast
-            return a < b
-        }) else { return [] }
+        // Shared rule (filename stamp, manifest + conflict copies excluded).
+        guard let newest = FileManager.newestSnapshot(among: candidates) else { return [] }
         let data: Data
         do {
             data = try Data(contentsOf: newest)
@@ -976,13 +968,13 @@ extension HtmlReport {
               ) else { return [] }
         return files
             .filter { $0.pathExtension == "json" }
-            .sorted { lhs, rhs in
-                let a = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate) ?? .distantPast
-                let b = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey])
-                    .contentModificationDate) ?? .distantPast
-                return a < b
-            }
+            // Shared rule (`FileSystemHelpers`): order by the filename stamp,
+            // excluding the manifest, `.partial` staging files and sync-conflict
+            // copies. Raw mtime mis-ordered the series on a synced volume — the
+            // provider re-stamps on materialize — and counted a conflict copy as
+            // an extra day of drift.
+            .filter(FileManager.isSelectableSnapshot)
+            .sorted { FileManager.isOlderSnapshot($0, than: $1) }
             .compactMap { url -> [String: Any]? in
                 let data: Data
                 do {

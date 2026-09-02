@@ -793,15 +793,20 @@ struct HtmlReport: Sendable {
         return "<div class=\"provenance-block\">\n\(inner)\n</div>"
     }
 
+    /// Age of the newest snapshot in `dir`, by filename stamp where one exists
+    /// and mtime only for unstamped files. On synced storage a provider
+    /// re-stamps mtimes, so an mtime-only answer reports a download as a
+    /// collection.
     private func newestFileDate(in dir: URL) -> Date? {
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return nil }
-        return files.compactMap { url in
-            try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-        }.max()
+        return files
+            .filter(FileManager.isSelectableSnapshot)
+            .compactMap(FileManager.snapshotDate(of:))
+            .max()
     }
 
     private func formattedDate(_ date: Date) -> String {
@@ -1661,10 +1666,7 @@ struct HtmlReport: Sendable {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
            ) {
-            candidates.append(contentsOf: files.filter {
-                $0.pathExtension == "json"
-                && $0.lastPathComponent.lowercased() != SnapshotManifest.fileName
-            })
+            candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
         }
         // Also check flat pattern under dataDir
         if let files = try? fm.contentsOfDirectory(
@@ -1676,13 +1678,10 @@ struct HtmlReport: Sendable {
                 $0.pathExtension == "json" && $0.lastPathComponent.hasPrefix(kind + "_")
             })
         }
-        guard let newest = candidates.max(by: { lhs, rhs in
-            let a = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate) ?? .distantPast
-            let b = (try? rhs.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate) ?? .distantPast
-            return a < b
-        }), let data = try? Data(contentsOf: newest) else { return nil }
+        // Shared rule — an HTML report and the workbook generated from the same
+        // workspace must not read different days.
+        guard let newest = FileManager.newestSnapshot(among: candidates),
+              let data = try? Data(contentsOf: newest) else { return nil }
         return try? JSONSerialization.jsonObject(with: data)
     }
 

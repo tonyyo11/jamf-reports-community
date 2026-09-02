@@ -66,6 +66,40 @@ final class CrashRegressionTests: XCTestCase {
         )
     }
 
+    // MARK: - Duplicate CSV header columns
+
+    /// `Dictionary(uniqueKeysWithValues:)` over normalized headers traps when a
+    /// messy export carries both `Serial Number` and `serial_number` — they
+    /// normalize to the same key. A duplicate column is a bad export, not a
+    /// reason to take down the Devices screen. Driven through the real `load`
+    /// so the trap is pinned at the site that crashed, not at the helper.
+    func testDuplicateCSVHeaderColumnsDoNotTrap() throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("jrc-dupheader-\(UUID().uuidString)", isDirectory: true)
+        let profile = "dupheader"
+        let inbox = root.appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("csv-inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        // No filename date stamp, so the export reads as current via mtime and
+        // the age bound cannot quietly drop the fixture.
+        try """
+        Computer Name,Serial Number,serial_number,Last Check-in
+        Mac-1,FIRSTCOL,SECONDCOL,2026-09-01
+        """.write(to: inbox.appendingPathComponent("inventory.csv"),
+                  atomically: true, encoding: .utf8)
+
+        let snapshot = DeviceInventoryService.load(profile: profile, demoMode: false)
+        XCTAssertEqual(snapshot.devices.count, 1, "a duplicate column must not lose the device")
+        XCTAssertEqual(snapshot.devices.first?.serial, "FIRSTCOL",
+                       "the first matching column wins; the duplicate is ignored")
+    }
+
     // MARK: - Log writes that fail
 
     /// `FileHandle.write(_:)` bridges to `-[NSFileHandle writeData:]`, which
@@ -92,6 +126,34 @@ final class CrashRegressionTests: XCTestCase {
             Data("another".utf8), to: handle, label: "test", warned: &warned
         )
         XCTAssertTrue(warned)
+    }
+
+    /// `LaunchAgentWriter.write` is static, so its warn-once latch is
+    /// process-wide. Keying it by label is what keeps a second schedule's
+    /// failure from being swallowed in a long-lived GUI session.
+    func testRunLogWriteFailureIsReportedOncePerLabel() throws {
+        LaunchAgentWriter.resetWriteFailureWarnings()
+        addTeardownBlock { LaunchAgentWriter.resetWriteFailureWarnings() }
+
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jrc-agentlog-\(UUID().uuidString).log")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.close()   // stands in for a handle the provider invalidated
+
+        let first = "\(LaunchAgentWriter.labelPrefix).acme.daily"
+        let second = "\(LaunchAgentWriter.labelPrefix).acme.weekly"
+
+        XCTAssertFalse(LaunchAgentWriter.hasWarnedWriteFailure(for: first))
+        LaunchAgentWriter.appendRunLog(Data("line".utf8), to: handle, label: first)
+        XCTAssertTrue(LaunchAgentWriter.hasWarnedWriteFailure(for: first),
+                      "the first failure must be reported, not swallowed")
+
+        // A process-global latch would leave this schedule silent.
+        XCTAssertFalse(LaunchAgentWriter.hasWarnedWriteFailure(for: second))
+        LaunchAgentWriter.appendRunLog(Data("line".utf8), to: handle, label: second)
+        XCTAssertTrue(LaunchAgentWriter.hasWarnedWriteFailure(for: second))
     }
 
     func testSuccessfulLogWriteDoesNotWarn() throws {
