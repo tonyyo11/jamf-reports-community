@@ -123,7 +123,9 @@ final class DataFreshnessHealthTests: XCTestCase {
         let issues = DataFreshnessHealth.evaluate(
             states: states, hasCollectedBefore: false, now: now
         )
-        XCTAssertTrue(issues.isEmpty, "A workspace that has never collected must not emit 30 alarms")
+        XCTAssertTrue(
+            issues.isEmpty, "A workspace that has never collected must not emit 30 alarms"
+        )
     }
 
     // MARK: - Unmapped kinds
@@ -151,6 +153,117 @@ final class DataFreshnessHealthTests: XCTestCase {
 
     func testRemediationOfHealthyFleetIsEmpty() {
         XCTAssertTrue(DataFreshnessHealth.tiersToRemediate([]).isEmpty)
+    }
+
+    // MARK: - Self-remediation dispatch (Task 3 / M2)
+    //
+    // `remediateOne` used to hand ALL affected tiers to `CollectRouter.run` in
+    // one call. When every tier is affected, that set equals
+    // `CollectionTier.allCases` — the exact value `ReportEngine.collect`'s
+    // once-per-day FULL-collect guard checks for — so the "remediation" would
+    // silently no-op on a day the full collect already ran. Dispatching one
+    // call per tier makes that equality impossible to produce by accident.
+
+    func testRemediateOneDispatchesOneCallPerTierNotTheFullSetAtOnce() async {
+        let recorder = RemediationDispatchRecorder()
+        let allTiers = Set(CollectionTier.allCases)
+        XCTAssertEqual(allTiers.count, 3, "premise: three tiers exist")
+
+        await WorkspaceStore.remediateOne(profile: "remediatespy", tiers: allTiers) {
+            _, tiers, _ in recorder.record(tiers)
+        }
+
+        XCTAssertEqual(recorder.calls.count, 3, "one collect call per tier")
+        XCTAssertEqual(Set(recorder.calls), Set(allTiers.map { Set([$0]) }),
+                       "each call must carry exactly one tier")
+        XCTAssertFalse(recorder.calls.contains(allTiers),
+                       "the full tier set must never be dispatched as a single call")
+    }
+
+    func testRemediateOneOfASingleTierDispatchesOneCall() async {
+        let recorder = RemediationDispatchRecorder()
+
+        await WorkspaceStore.remediateOne(profile: "remediatespy", tiers: [.scan]) {
+            _, tiers, _ in recorder.record(tiers)
+        }
+
+        XCTAssertEqual(recorder.calls, [[.scan]])
+    }
+
+    // MARK: - Exit-2 exclusion (Task 3 / S9)
+    //
+    // A jamf-cli exit 2 is a usage or credentials-gate failure (e.g. the
+    // 1.24+ Security Cloud gate on `pro report security`) — the same argv
+    // will fail identically on every retry, so remediation must not spend a
+    // collect on it. It stays visible: the banner reads `issues`, which is
+    // never filtered — only the tiers computed for the automatic re-collect are.
+
+    func testExitTwoFailureIsExcludedFromRemediationTargeting() throws {
+        let profile = "exittwofilter"
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-ExitTwo-\(UUID().uuidString)", isDirectory: true)
+        let workspacesRoot = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspacesRoot.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let stateDir = try WorkspacePaths.stateDir(for: profile)
+        let store = StateFileStore(directory: stateDir)
+        // A usage/credentials-gate failure — cannot succeed on retry.
+        store.record(.failed(exitCode: CLIBridge.exitCodeUsage), report: "security", at: now)
+        // A transient (retryable-class) failure on a different kind — must stay.
+        store.record(.failed(exitCode: 1), report: "computers", at: now)
+
+        let issues = [
+            DataFreshnessIssue(
+                snapshotKind: "security", tier: .refresh, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            ),
+            DataFreshnessIssue(
+                snapshotKind: "computers", tier: .inventory, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            )
+        ]
+
+        let remediable = WorkspaceStore.excludingPermanentUsageFailures(issues, profile: profile)
+        XCTAssertEqual(remediable.map(\.snapshotKind), ["computers"])
+        XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(remediable), [.inventory])
+    }
+
+    func testNoExitTwoFailureLeavesIssuesUntouched() throws {
+        let profile = "exittwofilter-none"
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-ExitTwo-\(UUID().uuidString)", isDirectory: true)
+        let workspacesRoot = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspacesRoot.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let stateDir = try WorkspacePaths.stateDir(for: profile)
+        StateFileStore(directory: stateDir)
+            .record(.failed(exitCode: 1), report: "security", at: now)
+
+        let issues = [
+            DataFreshnessIssue(
+                snapshotKind: "security", tier: .refresh, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            )
+        ]
+        XCTAssertEqual(
+            WorkspaceStore.excludingPermanentUsageFailures(issues, profile: profile), issues
+        )
     }
 
     // MARK: - In-run retry policy
@@ -266,5 +379,16 @@ final class DataFreshnessHealthTests: XCTestCase {
         )
         let summary = try? XCTUnwrap(issues.first).summary
         XCTAssertEqual(summary, "update-device-failures has never been collected successfully")
+    }
+}
+
+/// Thread-safe call recorder for `WorkspaceStore.RemediationCollector` spies —
+/// mirrors `RouterCallCounter` in `CollectRouterTests.swift`.
+private final class RemediationDispatchRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _calls: [Set<CollectionTier>] = []
+    var calls: [Set<CollectionTier>] { lock.withLock { _calls } }
+    func record(_ tiers: Set<CollectionTier>) {
+        lock.withLock { _calls.append(tiers) }
     }
 }

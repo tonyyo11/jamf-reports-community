@@ -324,13 +324,17 @@ extension WorkspaceStore {
         // slow collect cannot start a parallel one.
         Self.remediationMarker.stamp(day: hourKey, in: workspace)
 
-        let tiers = DataFreshnessHealth.tiersToRemediate(issues)
+        // Kinds whose last failure was a usage/credentials-gate error (jamf-cli
+        // exit 2) cannot be fixed by retrying — filtered before tier targeting,
+        // but left in `issues`/the banner so the operator still sees them.
+        let remediable = Self.excludingPermanentUsageFailures(issues, profile: profile)
+        let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
         defer { AutomationHealthModel.shared.isRemediating = false }
 
         AppLogger.collect.notice(
             """
-            Auto-remediating \(issues.count, privacy: .public) stale/failing kind(s) \
+            Auto-remediating \(remediable.count, privacy: .public) stale/failing kind(s) \
             for \(profile, privacy: .public) — tiers \
             \(tiers.map(\.rawValue).sorted().joined(separator: ","), privacy: .public)
             """
@@ -340,8 +344,45 @@ extension WorkspaceStore {
         return true
     }
 
-    nonisolated private static func remediateOne(
-        profile: String, tiers: Set<CollectionTier>
+    /// Drop issues whose kind's last failure exit code makes retry pointless —
+    /// currently `CLIBridge.exitCodeUsage` (2), a usage/config error (e.g. the
+    /// jamf-cli 1.24+ Security Cloud credentials gate on `pro report
+    /// security`) that will fail identically on every retry. The returned list
+    /// only narrows what `tiersToRemediate` sees; `issues` itself — and so the
+    /// banner — is untouched, because the operator still needs to see them.
+    nonisolated static func excludingPermanentUsageFailures(
+        _ issues: [DataFreshnessIssue], profile: String
+    ) -> [DataFreshnessIssue] {
+        guard ProfileService.isValid(profile),
+              let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return issues }
+        let store = StateFileStore(directory: stateDir)
+        let permanent = issues.filter {
+            store.lastFailureExitCode(for: $0.snapshotKind) == CLIBridge.exitCodeUsage
+        }
+        guard !permanent.isEmpty else { return issues }
+        AppLogger.collect.notice(
+            """
+            Skipping remediation for \(permanent.count, privacy: .public) kind(s) with a \
+            permanent usage/credentials-gate failure: \
+            \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .public)
+            """
+        )
+        let skip = Set(permanent.map(\.snapshotKind))
+        return issues.filter { !skip.contains($0.snapshotKind) }
+    }
+
+    /// Per-tier collect closure used by `remediateOne`. Matches a one-tier
+    /// slice of `CollectRouter.run`'s signature; tests inject a spy.
+    typealias RemediationCollector = @Sendable (
+        _ profile: String,
+        _ tiers: Set<CollectionTier>,
+        _ config: ReportConfig?
+    ) async throws -> Void
+
+    nonisolated static func remediateOne(
+        profile: String,
+        tiers: Set<CollectionTier>,
+        collect: RemediationCollector = defaultRemediationCollector
     ) async {
         let config: ReportConfig? = {
             guard let url = ProfileService.workspaceURL(for: profile)?
@@ -349,26 +390,38 @@ extension WorkspaceStore {
                   FileManager.default.fileExists(atPath: url.path) else { return nil }
             return try? ConfigLoader.load(from: url)
         }()
-        do {
-            try await CollectRouter.run(
-                profile: profile,
-                tiers: tiers,
-                skipExpensive: false,
-                force: false,
-                config: config,
-                onLine: CLIBridge.bufferingOnLine
-            )
-        } catch {
-            // A failed remediation is not silent: the failure counters advanced
-            // inside collect, so the next evaluation reports a HIGHER count and
-            // the banner escalates rather than resetting.
-            AppLogger.collect.warning(
-                """
-                Auto-remediation collect failed for \(profile, privacy: .public): \
-                \(error.localizedDescription, privacy: .private)
-                """
-            )
+        // One collect call PER TIER, never the full set at once: passing all
+        // three tiers together equals CollectionTier.allCases, which trips
+        // ReportEngine.collect's once-per-day FULL-collect guard and silently
+        // no-ops the remediation.
+        for tier in tiers.sorted(by: { $0.rawValue < $1.rawValue }) {
+            do {
+                try await collect(profile, [tier], config)
+            } catch {
+                // A failed remediation is not silent: the failure counters advanced
+                // inside collect, so the next evaluation reports a HIGHER count and
+                // the banner escalates rather than resetting.
+                AppLogger.collect.warning(
+                    """
+                    Auto-remediation collect failed for \(profile, privacy: .public) \
+                    tier \(tier.rawValue, privacy: .public): \
+                    \(error.localizedDescription, privacy: .private)
+                    """
+                )
+            }
         }
+    }
+
+    nonisolated static let defaultRemediationCollector: RemediationCollector = {
+        profile, tiers, config in
+        try await CollectRouter.run(
+            profile: profile,
+            tiers: tiers,
+            skipExpensive: false,
+            force: false,
+            config: config,
+            onLine: CLIBridge.bufferingOnLine
+        )
     }
 
     /// One-click "Run now" for a failing/overdue managed row on the

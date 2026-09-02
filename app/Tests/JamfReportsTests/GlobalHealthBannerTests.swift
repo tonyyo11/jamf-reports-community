@@ -38,7 +38,9 @@ final class GlobalHealthBannerTests: XCTestCase {
 
     func testFailingKindOutranksStaleAndSchedule() throws {
         let headline = try XCTUnwrap(GlobalHealthBanner.headline(
-            freshness: [freshness("security", .stale), freshness("computers", .failing, failures: 3)],
+            freshness: [
+                freshness("security", .stale), freshness("computers", .failing, failures: 3)
+            ],
             automation: [schedule("a")]
         ))
         XCTAssertEqual(headline.tone, .danger)
