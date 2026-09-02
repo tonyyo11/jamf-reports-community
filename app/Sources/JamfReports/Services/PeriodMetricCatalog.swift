@@ -86,7 +86,9 @@ enum PeriodMetricCatalog {
         securityAgents: [SecurityAgentConfig]
     ) -> [PeriodMetric] {
         names.map { name in
-            let match = configuredMatch(for: name, customEAs: customEAs, securityAgents: securityAgents)
+            let match = configuredMatch(
+                for: name, customEAs: customEAs, securityAgents: securityAgents
+            )
             return PeriodMetric(
                 id: "ea:\(name)",
                 label: name,

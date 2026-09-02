@@ -1,10 +1,12 @@
 import XCTest
+import ZIPFoundation
 @testable import JamfReports
 
 final class PeriodReportEmitterTests: XCTestCase {
     private let cal = Calendar(identifier: .gregorian)
     private func d(_ s: String) -> Date {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.calendar = cal; f.timeZone = .current
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        f.calendar = cal; f.timeZone = .current
         return f.date(from: s)!
     }
     private func summary(_ date: String, _ total: Int, _ fv: Double) -> DailySummary {
@@ -97,10 +99,17 @@ final class PeriodReportEmitterTests: XCTestCase {
     /// EA names and values are server-supplied and reach cells verbatim. Every
     /// write routes through CellValue.safe, which tab-escapes a leading =+-@ so
     /// a crafted attribute value cannot become a formula in a workbook someone
-    /// opens. Pinned here because this emitter is the path that carries the most
-    /// attacker-shaped strings.
+    /// opens. Pinned against the WRITTEN FILE (not the sanitizer in isolation)
+    /// because this emitter is the path that carries the most attacker-shaped
+    /// strings — a pin on the helper alone would not catch a call site that
+    /// bypasses it. The hostile value avoids XML-escapable characters (no
+    /// quotes/&/<>) so the assertions compare the writer's literal bytes
+    /// rather than an escaped form, and the negative assertion checks the
+    /// writer's real opening tag — a bare `<t>` never appears in this writer's
+    /// output, so checking for it would pass vacuously even if the sanitizer
+    /// were bypassed.
     func testHostileEAValuesAreNeutralisedNotWrittenRaw() throws {
-        let hostile = "=cmd|' /c calc'!A1"
+        let hostile = "=cmd|/c calc!A1"
         let period = ReportPeriod.resolve(
             kind: .explicit(start: d("2026-04-01"), end: d("2026-06-30")),
             availableDates: [d("2026-04-01")], now: d("2026-07-15"), calendar: cal)!
@@ -120,14 +129,20 @@ final class PeriodReportEmitterTests: XCTestCase {
         let url = dir.appendingPathComponent("hostile.xlsx")
         try PeriodReportEmitter.emit(model: model, to: url)
 
-        let raw = try Data(contentsOf: url)
-        XCTAssertFalse(raw.isEmpty)
-        // The value survives as data but never as a leading formula character.
-        let cell = CellValue.safe(hostile)
-        guard case .string(let escaped) = cell else {
-            return XCTFail("a hostile string must sanitize to a string cell")
-        }
-        XCTAssertTrue(escaped.hasPrefix("\t"), "leading = must be neutralised, got \(escaped)")
+        let archive = try Archive(url: url, accessMode: .read)
+        let entry = try XCTUnwrap(archive["xl/sharedStrings.xml"],
+                                   "a string cell was written, so sharedStrings.xml must exist")
+        var xmlData = Data()
+        _ = try archive.extract(entry) { chunk in xmlData.append(chunk) }
+        let xml = try XCTUnwrap(String(data: xmlData, encoding: .utf8))
+
+        XCTAssertTrue(xml.contains("\t" + hostile),
+                      "the tab-escaped form of the hostile value, exactly as the "
+                      + "writer serialises it, must reach the file")
+        XCTAssertFalse(xml.contains("<t xml:space=\"preserve\">" + hostile),
+                       "the hostile value must never sit raw immediately after the "
+                       + "shared-string tag opens — that is what CellValue.safe "
+                       + "being bypassed would look like")
     }
 
     /// The report writes only into the profile's own output directory, and the

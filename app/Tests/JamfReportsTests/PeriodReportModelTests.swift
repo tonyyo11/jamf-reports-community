@@ -4,7 +4,8 @@ import XCTest
 final class PeriodReportModelTests: XCTestCase {
     private let cal = Calendar(identifier: .gregorian)
     private func d(_ s: String) -> Date {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.calendar = cal; f.timeZone = .current
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        f.calendar = cal; f.timeZone = .current
         return f.date(from: s)!
     }
     private func summary(_ date: String, total: Int, fv: Double?) -> DailySummary {

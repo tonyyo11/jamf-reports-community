@@ -27,7 +27,9 @@ final class ReportPeriodTests: XCTestCase {
         let p = try XCTUnwrap(ReportPeriod.resolve(
             kind: .explicit(start: d("2026-04-01"), end: d("2026-06-30")),
             availableDates: dates, now: d("2026-07-15"), calendar: cal))
-        XCTAssertEqual(p.start.resolved, d("2026-04-19"), "must report the real date, not the requested one")
+        XCTAssertEqual(
+            p.start.resolved, d("2026-04-19"), "must report the real date, not the requested one"
+        )
         XCTAssertEqual(p.start.driftDays, 18)
         XCTAssertTrue(p.start.isAdrift)
     }

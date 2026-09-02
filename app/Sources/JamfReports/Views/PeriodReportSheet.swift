@@ -16,6 +16,16 @@ struct PeriodReportSheet: View {
     @State private var errorText: String?
     @State private var resultPath: String?
 
+    // Resolving the period and the cardinality advisory both read snapshot
+    // files from disk (and the config, for the synced-folder check). On a
+    // large EA set this is expensive enough that it must be resolved once
+    // per period-selection change — see `refreshPeriodDependentState()` —
+    // never recomputed from `body`. The resolved period itself is only an
+    // intermediate value on the way to `eaAdvisories`, so it stays a local
+    // in that function rather than another stored property nothing reads.
+    @State private var syncedProvider: CloudStorage.Provider?
+    @State private var eaAdvisories: [String: String] = [:]
+
     private enum RangeChoice: String, CaseIterable, Identifiable {
         case w4 = "4 weeks", w12 = "12 weeks", w26 = "26 weeks", w52 = "52 weeks"
         case lastFullMonth = "Last full month"
@@ -39,6 +49,17 @@ struct PeriodReportSheet: View {
     private var fleetMetrics: [PeriodMetric] { catalog.filter { $0.source == .fleet } }
     private var eaMetrics: [PeriodMetric] {
         catalog.filter { if case .extensionAttribute = $0.source { return true }; return false }
+    }
+
+    /// Built from cached `syncedProvider` state — no disk access here, so
+    /// this stays a plain computed property safe to read from `body`.
+    private var eaSectionCaption: String {
+        var text = "Not included unless you choose them. Values come from your own "
+                  + "scripts and may identify individual devices."
+        if let provider = syncedProvider {
+            text += " This report will be written to \(provider.displayName), a synced folder."
+        }
+        return text
     }
 
     var body: some View {
@@ -74,6 +95,9 @@ struct PeriodReportSheet: View {
         .frame(minWidth: 520, minHeight: 560)
         .background(Theme.Colors.winBG)
         .onAppear(perform: loadCatalog)
+        .onChange(of: rangeChoice) { _, _ in refreshPeriodDependentState() }
+        .onChange(of: customStart) { _, _ in refreshPeriodDependentState() }
+        .onChange(of: customEnd) { _, _ in refreshPeriodDependentState() }
     }
 
     private var periodPicker: some View {
@@ -110,12 +134,11 @@ struct PeriodReportSheet: View {
                             .font(Theme.Fonts.kicker)
                             .foregroundStyle(Theme.Colors.fgMuted)
                             .padding(.top, 8)
-                        Text("Not included unless you choose them. Values come from your own "
-                             + "scripts and may identify individual devices.")
+                        Text(eaSectionCaption)
                             .font(Theme.Fonts.caption)
                             .foregroundStyle(Theme.Colors.fgMuted)
                             .fixedSize(horizontal: false, vertical: true)
-                        ForEach(eaMetrics) { metricRow($0, advisory: advisory(for: $0)) }
+                        ForEach(eaMetrics) { metricRow($0, advisory: eaAdvisories[$0.id]) }
                     }
                 }
             }
@@ -159,13 +182,21 @@ struct PeriodReportSheet: View {
         }
     }
 
-    /// Names an attribute whose values are near-unique per device, which is the
-    /// shape of a serial or hostname rather than a status.
-    private func advisory(for metric: PeriodMetric) -> String? {
+    /// The EA name for a metric that is an UNCONFIGURED extension attribute
+    /// (no `match` value) — the only kind the identifier advisory applies to.
+    private func unconfiguredEAName(of metric: PeriodMetric) -> String? {
         guard case .extensionAttribute(let name, let match) = metric.source, match == nil
         else { return nil }
-        let c = PeriodReportService.cardinality(profile: workspace.profile, ea: name)
-        guard PeriodMetricCatalog.looksLikeIdentifier(distinct: c.distinct, devices: c.devices)
+        return name
+    }
+
+    /// Names an attribute whose values are near-unique per device, which is
+    /// the shape of a serial or hostname rather than a status. Pure — takes
+    /// an already-computed reading rather than reading disk itself, so a row
+    /// per EA never triggers its own decode.
+    private func advisoryText(for cardinality: (devices: Int, distinct: Int)) -> String? {
+        guard PeriodMetricCatalog.looksLikeIdentifier(
+            distinct: cardinality.distinct, devices: cardinality.devices)
         else { return nil }
         return "Nearly one value per device — this looks like an identifier, "
              + "so including it puts per-device data in the workbook."
@@ -179,6 +210,32 @@ struct PeriodReportSheet: View {
             selected = Set(PeriodReportService.defaultSelection(from: found))
         } else {
             selected = Set(PeriodReportService.pruneSelection(Array(selected), available: found))
+        }
+        refreshPeriodDependentState()
+    }
+
+    /// Resolves the period, the synced-output provider and every EA's
+    /// advisory once, from the current picker choice — the only place any of
+    /// this touches disk. Called on load and whenever the period selection
+    /// changes; `body` only ever reads the cached results.
+    ///
+    /// Advisories go through `cardinalityBatch`, which loads the period's two
+    /// boundary snapshots (or the newest one, with no period) ONCE and shares
+    /// them across every attribute — not one pair of loads per attribute.
+    private func refreshPeriodDependentState() {
+        let profile = workspace.profile
+        let kind = rangeChoice.kind(start: customStart, end: customEnd)
+        let period = PeriodReportService.resolvedPeriod(profile: profile, kind: kind)
+        let outputDir = try? WorkspacePaths.outputDir(for: profile)
+        syncedProvider = outputDir.flatMap { CloudStorage.provider(for: $0) }
+
+        let metrics = eaMetrics
+        let names = metrics.compactMap { unconfiguredEAName(of: $0) }
+        let batch = PeriodReportService.cardinalityBatch(
+            profile: profile, eas: names, period: period)
+        eaAdvisories = metrics.reduce(into: [:]) { result, metric in
+            guard let name = unconfiguredEAName(of: metric), let c = batch[name] else { return }
+            result[metric.id] = advisoryText(for: c)
         }
     }
 

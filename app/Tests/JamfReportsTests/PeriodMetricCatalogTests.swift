@@ -27,7 +27,9 @@ final class PeriodMetricCatalogTests: XCTestCase {
                  summary(date: "2026-04-02", fileVault: 92, patch: nil)]
         let names = PeriodMetricCatalog.fleetMetrics(in: s).map(\.id)
         XCTAssertTrue(names.contains("fileVaultPct"))
-        XCTAssertFalse(names.contains("patchPct"), "a metric with no data anywhere must not be offered")
+        XCTAssertFalse(
+            names.contains("patchPct"), "a metric with no data anywhere must not be offered"
+        )
     }
 
     func testTotalDevicesIsAlwaysOffered() {
@@ -93,6 +95,8 @@ final class PeriodMetricCatalogTests: XCTestCase {
         let rows = [try eaRow("Widget Status", "On")]
         XCTAssertEqual(
             PeriodMetricCatalog.eaMetrics(rows: rows, customEAs: [], securityAgents: []),
-            PeriodMetricCatalog.eaMetrics(names: ["Widget Status"], customEAs: [], securityAgents: []))
+            PeriodMetricCatalog.eaMetrics(
+                names: ["Widget Status"], customEAs: [], securityAgents: []
+            ))
     }
 }

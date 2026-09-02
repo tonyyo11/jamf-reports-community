@@ -34,7 +34,8 @@ enum PeriodReportEmitter {
         ws.write("Fleet metrics", row: 0, col: 0, format: .title)
         ws.write("\(dateLabel(m.period.start.resolved)) – \(dateLabel(m.period.end.resolved))"
                  + " · \(m.profile)", row: 1, col: 0, format: .subtitle)
-        for (c, h) in ["Metric", "Start", "End", "Change", "Start as of", "End as of"].enumerated() {
+        let headers = ["Metric", "Start", "End", "Change", "Start as of", "End as of"]
+        for (c, h) in headers.enumerated() {
             ws.write(h, row: 3, col: c, format: .header)
         }
         for (i, row) in m.rows.enumerated() {
