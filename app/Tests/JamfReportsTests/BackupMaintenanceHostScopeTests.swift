@@ -94,6 +94,62 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
         )
     }
 
+    // MARK: - Synced-volume pruning
+
+    /// Redirects `JRC_TEST_WORKSPACES_ROOT` at a path shaped like a real
+    /// provider mount (`~/Library/CloudStorage/<Provider>/...`) so
+    /// `CloudStorage.provider(for:)` recognizes it and `pruneScheduledBackups`
+    /// takes the host-scoped branch. Cleaned up via `addTeardownBlock`, per the
+    /// dotfile-scratch-under-home convention in `CrashRegressionTests`.
+    @discardableResult
+    private func makeSyncedWorkspaceRoot() throws -> URL {
+        let scratch = ".jrc-backupscope-cloud-\(UUID().uuidString)"
+        let cloudRoot = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/CloudStorage/OneDrive-JRCTest", isDirectory: true)
+            .appendingPathComponent(scratch, isDirectory: true)
+        let workspacesRoot = cloudRoot.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspacesRoot.appendingPathComponent(profile).appendingPathComponent("backups"),
+            withIntermediateDirectories: true
+        )
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+        addTeardownBlock { try? FileManager.default.removeItem(at: cloudRoot) }
+        return workspacesRoot
+    }
+
+    /// On a folder shared by several Macs, retention must only ever spend this
+    /// machine's `keep` budget on backups it can prove it made.
+    func testSyncedProviderPrunesOnlyThisMachinesScheduledBackups() throws {
+        try makeSyncedWorkspaceRoot()
+        try makeBackup("20260825T010000", owner: SharedWorkspace.currentHost.id)
+        try makeBackup("20260825T020000", owner: "some-other-host-abc123")
+        try makeBackup("20260825T030000", owner: nil)
+
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0)
+
+        let remaining = Set(try FileManager.default.contentsOfDirectory(atPath: backupsDir.path))
+        XCTAssertFalse(remaining.contains("20260825T010000"), "our own backup is prunable")
+        XCTAssertTrue(remaining.contains("20260825T020000"), "another host's backup must survive")
+        XCTAssertTrue(remaining.contains("20260825T030000"), "an unstamped backup must survive")
+    }
+
+    /// An unparseable name among candidates already scoped to this machine
+    /// must still abort the whole prune — ownership scoping narrows WHICH
+    /// backups are considered, not the safety rule for ordering them.
+    func testSyncedProviderAbortsWholePruneWhenOwnBackupNameIsUnparseable() throws {
+        try makeSyncedWorkspaceRoot()
+        let mine = SharedWorkspace.currentHost.id
+        try makeBackup("20260825T010000", owner: mine)
+        // A OneDrive conflict-copy name — still ours, but not orderable.
+        try makeBackup("20260825T010000 2", owner: mine)
+        try makeBackup("20260825T020000", owner: "some-other-host-abc123")
+
+        BackupMaintenance.pruneScheduledBackups(profile: profile, keep: 0)
+
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: backupsDir.path)
+        XCTAssertEqual(remaining.count, 3, "ambiguous ordering must abort the whole prune")
+    }
+
     /// Ordering is by folder name, never mtime — the whole reason this is safe
     /// on a volume where a sync provider rewrites modification dates.
     func testNewestIsChosenByNameNotModificationDate() throws {

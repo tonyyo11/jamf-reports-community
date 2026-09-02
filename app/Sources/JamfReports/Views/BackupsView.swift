@@ -705,7 +705,10 @@ private struct DiffGroupView: View {
                             .font(Theme.Fonts.mono(10.5))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                             .frame(maxWidth: 220, alignment: .leading)
-                        Text(variant.changes.map { $0.new ?? $0.old ?? "—" }.joined(separator: "; "))
+                        Text(
+                            variant.changes.map { $0.new ?? $0.old ?? "—" }
+                                .joined(separator: "; ")
+                        )
                             .font(Theme.Fonts.mono(10.5))
                             .foregroundStyle(Theme.Colors.ok)
                     }

@@ -86,7 +86,9 @@ enum BackupMaintenance {
         }
 
         let stamped = candidates.compactMap { url -> (url: URL, key: (Date, Int))? in
-            guard let parsed = CloudStorage.backupDirectoryTimestamp(name: url.lastPathComponent) else {
+            guard let parsed = CloudStorage.backupDirectoryTimestamp(
+                name: url.lastPathComponent
+            ) else {
                 return nil
             }
             return (url, (parsed.date, parsed.sequence))

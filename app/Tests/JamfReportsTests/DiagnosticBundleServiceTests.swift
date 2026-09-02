@@ -131,6 +131,20 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertEqual(out["totalDevices"] as? Int, 3, "non-PII key must survive")
     }
 
+    func testCollectedByHostRedactedInSummaryJSON() {
+        // A shared-workspace summary.json records which Mac produced it under
+        // "collectedByHost"; that hostname is PII and must placeholder like
+        // every other host field, not leak through the generic "host" key.
+        let r = DiagnosticRedactor()
+        let json: [String: Any] = ["collectedByHost": "Some-Mac.local", "totalDevices": 3]
+        guard let out = r.redactJSON(json) as? [String: Any] else { return XCTFail("not a dict") }
+        XCTAssertTrue(
+            (out["collectedByHost"] as? String ?? "").hasPrefix("host-"),
+            "collectedByHost must be placeholdered; got: \(out["collectedByHost"] ?? "nil")"
+        )
+        XCTAssertEqual(out["totalDevices"] as? Int, 3, "non-PII key must survive")
+    }
+
     func testUdidIpOrgAlwaysRedactedRegardlessOfKeepFlags() {
         let r = secretsOnlyRedactor() // every category keep-flag is off
         let json: [String: Any] = [

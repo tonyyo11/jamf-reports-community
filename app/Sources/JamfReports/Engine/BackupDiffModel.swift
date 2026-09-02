@@ -70,7 +70,8 @@ enum BackupDiffModel {
         /// the values differ.
         let fields: [String]
         var id: String {
-            "\(resource)|\(change)|\(names.first ?? "")|\(fields.joined(separator: ","))|\(names.count)"
+            let fieldList = fields.joined(separator: ",")
+            return "\(resource)|\(change)|\(names.first ?? "")|\(fieldList)|\(names.count)"
         }
     }
 
@@ -193,9 +194,17 @@ enum BackupDiffModel {
                 case let (.some(o), .some(n)):
                     diff(o, n, path: childPath, into: &out)
                 case let (.some(o), .none):
-                    out.append(Change(path: "\(childPath) removed", old: label(o), new: nil))
+                    let sensitive = isSensitiveLeafKey(childPath)
+                    out.append(Change(
+                        path: "\(childPath) removed",
+                        old: sensitive ? redactedPlaceholder : label(o), new: nil
+                    ))
                 case let (.none, .some(n)):
-                    out.append(Change(path: "\(childPath) added", old: nil, new: label(n)))
+                    let sensitive = isSensitiveLeafKey(childPath)
+                    out.append(Change(
+                        path: "\(childPath) added",
+                        old: nil, new: sensitive ? redactedPlaceholder : label(n)
+                    ))
                 case (.none, .none):
                     continue
                 }
@@ -206,28 +215,66 @@ enum BackupDiffModel {
             let newCanon = newArray.map(canonical)
             let added = multisetSubtract(newCanon, oldCanon)
             let removed = multisetSubtract(oldCanon, newCanon)
+            // The array's own field name decides sensitivity — elements are
+            // opaque blobs to `summarize`/`label`, which falls back to a raw
+            // JSON snippet for a dict with no name/version/id, so a redacted
+            // field must never reach `summarize` at all.
+            let sensitive = isSensitiveLeafKey(path)
+            let itemsPath = path.isEmpty ? "items" : path
             if !added.isEmpty {
-                out.append(Change(
-                    path: "\(path.isEmpty ? "items" : path) added",
-                    old: nil,
-                    new: summarize(added, from: newArray, canon: newCanon)
-                ))
+                let value = sensitive
+                    ? redactedPlaceholder : summarize(added, from: newArray, canon: newCanon)
+                out.append(Change(path: "\(itemsPath) added", old: nil, new: value))
             }
             if !removed.isEmpty {
-                out.append(Change(
-                    path: "\(path.isEmpty ? "items" : path) removed",
-                    old: summarize(removed, from: oldArray, canon: oldCanon),
-                    new: nil
-                ))
+                let value = sensitive
+                    ? redactedPlaceholder : summarize(removed, from: oldArray, canon: oldCanon)
+                out.append(Change(path: "\(itemsPath) removed", old: value, new: nil))
             }
 
         default:
             let o = label(old)
             let n = label(new)
             if o != n {
-                out.append(Change(path: path.isEmpty ? "(value)" : path, old: o, new: n))
+                let renderedPath = path.isEmpty ? "(value)" : path
+                if isSensitiveLeafKey(path) {
+                    out.append(Change(
+                        path: renderedPath, old: redactedPlaceholder, new: redactedPlaceholder
+                    ))
+                } else {
+                    out.append(Change(path: renderedPath, old: o, new: n))
+                }
             }
         }
+    }
+
+    /// Rendered in place of a secret's actual value — the change is still
+    /// reported (a credential rotating is real signal), the value never is.
+    private static let redactedPlaceholder = "<redacted>"
+
+    /// A JSON key that carries a secret: the credential-shaped keys the
+    /// diagnostic bundle already redacts, plus a suffix catch-all for
+    /// compound names (`wifi_password`, `vpn-secret`, `auth_token`,
+    /// `network_psk`) that would not otherwise be listed.
+    private static let sensitiveKeySuffixes = ["password", "secret", "token", "psk"]
+
+    /// A leaf whose normalised name ends in "key" but is a real, non-secret
+    /// field — `product_key` is a genuine `update-status --scan-failures`
+    /// column, and a bare `key` is too ambiguous to redact on its own.
+    private static let keySuffixExclusions: Set<String> = ["key", "product_key"]
+
+    /// True when the last dot-separated component of `path` looks like it
+    /// holds a secret, matched case-insensitively with `-`/`_` normalised.
+    /// A trailing "key" only counts as a compound, credential-shaped form
+    /// (`api_key`, `encryption_key`) — never a bare `key` leaf, and never one
+    /// of `keySuffixExclusions`.
+    private static func isSensitiveLeafKey(_ path: String) -> Bool {
+        guard let last = path.split(separator: ".").last else { return false }
+        let normalized = last.lowercased().replacingOccurrences(of: "-", with: "_")
+        if DiagnosticRedactor.sensitiveJSONKeys.contains(normalized) { return true }
+        if sensitiveKeySuffixes.contains(where: { normalized.hasSuffix($0) }) { return true }
+        guard !keySuffixExclusions.contains(normalized) else { return false }
+        return normalized.hasSuffix("_key")
     }
 
     /// Elements of `lhs` not matched by `rhs`, preserving duplicates.
@@ -246,7 +293,9 @@ enum BackupDiffModel {
     }
 
     /// "4: 26.139.0720.0007, 26.134.0713.0007, 26.134.0713.0004 …"
-    private static func summarize(_ picked: [String], from source: [Any], canon: [String]) -> String {
+    private static func summarize(
+        _ picked: [String], from source: [Any], canon: [String]
+    ) -> String {
         let labels = picked.prefix(3).map { needle -> String in
             guard let index = canon.firstIndex(of: needle) else { return needle }
             return label(source[index])
@@ -283,7 +332,9 @@ enum BackupDiffModel {
         if let array = value as? [Any] { return "\(array.count) item(s)" }
         if let number = value as? NSNumber {
             // Bools bridge to NSNumber; render them as true/false, not 1/0.
-            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue ? "true" : "false" }
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue ? "true" : "false"
+            }
             return number.stringValue
         }
         return String(describing: value)
@@ -336,7 +387,8 @@ enum BackupDiffModel {
         var order: [String] = []
         var buckets: [String: [Group]] = [:]
         for group in groups {
-            let key = "\(group.resource)\u{1D}\(group.change)\u{1D}\(group.fields.joined(separator: "\u{1E}"))"
+            let fieldList = group.fields.joined(separator: "\u{1E}")
+            let key = "\(group.resource)\u{1D}\(group.change)\u{1D}\(fieldList)"
             if buckets[key] == nil { order.append(key) }
             buckets[key, default: []].append(group)
         }

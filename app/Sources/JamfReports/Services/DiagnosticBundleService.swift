@@ -67,6 +67,7 @@ final class DiagnosticRedactor {
         "client_secret", "client_id", "access_token", "refresh_token",
         "password", "secret", "api_key", "apikey", "authorization",
         "token", "bearer_token", "session_token", "pat", "private_key",
+        "password_sha256", "institutional_recovery_key",
     ]
 
     /// Exact key match (lowercased) → PII category for placeholdering.
@@ -78,6 +79,7 @@ final class DiagnosticRedactor {
         "managementid": "device", "management_id": "device",
         "udid": "udid",
         "hostname": "host", "host_name": "host", "host": "host",
+        "collectedbyhost": "host",
         "ipaddress": "ip", "ip_address": "ip",
         "username": "user", "user_name": "user", "user": "user",
         "realname": "user", "real_name": "user",

@@ -120,8 +120,12 @@ final class BackupDiffModelTests: XCTestCase {
             oldDict["k\(index)"] = 0
             newDict["k\(index)"] = 1
         }
-        let old = String(data: try! JSONSerialization.data(withJSONObject: oldDict), encoding: .utf8)!
-        let new = String(data: try! JSONSerialization.data(withJSONObject: newDict), encoding: .utf8)!
+        let old = String(
+            data: try! JSONSerialization.data(withJSONObject: oldDict), encoding: .utf8
+        )!
+        let new = String(
+            data: try! JSONSerialization.data(withJSONObject: newDict), encoding: .utf8
+        )!
         let result = BackupDiffModel.leafChanges(old: old, new: new)
         XCTAssertTrue(result.truncated)
         XCTAssertEqual(result.changes.count, BackupDiffModel.maxChangesPerItem)
@@ -228,6 +232,121 @@ final class BackupDiffModelTests: XCTestCase {
         let items = try XCTUnwrap(BackupDiffModel.parse(data))
         XCTAssertEqual(BackupDiffModel.headline(items), "2 objects changed across 1 resource")
         XCTAssertEqual(BackupDiffModel.headline([]), "No differences")
+    }
+
+    // MARK: - Secret redaction
+
+    /// A backup credential rotating is real signal — the row must survive —
+    /// but the actual values must never render, in the sheet or the Copy text.
+    func testSensitiveLeafValueIsRedactedWhileSiblingSurvives() {
+        let old = #"{"password_sha256":"a","name":"safe"}"#
+        let new = #"{"password_sha256":"b","name":"safe-still"}"#
+        let result = BackupDiffModel.leafChanges(old: old, new: new)
+        let redacted = result.changes.first { $0.path == "password_sha256" }
+        XCTAssertEqual(redacted?.old, "<redacted>")
+        XCTAssertEqual(redacted?.new, "<redacted>")
+        let sibling = result.changes.first { $0.path == "name" }
+        XCTAssertEqual(sibling?.old, "safe")
+        XCTAssertEqual(sibling?.new, "safe-still")
+    }
+
+    func testInstitutionalRecoveryKeyIsRedacted() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"institutional_recovery_key":"AAA"}"#,
+            new: #"{"institutional_recovery_key":"BBB"}"#
+        )
+        XCTAssertEqual(result.changes.first?.old, "<redacted>")
+        XCTAssertEqual(result.changes.first?.new, "<redacted>")
+    }
+
+    /// The suffix catch-all reaches compound key names, case-insensitively,
+    /// with `-`/`_` treated the same.
+    func testSuffixedSecretKeyIsRedactedCaseInsensitively() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"WiFi-Password":"a"}"#, new: #"{"WiFi-Password":"z"}"#
+        )
+        XCTAssertEqual(result.changes.first?.old, "<redacted>")
+        XCTAssertEqual(result.changes.first?.new, "<redacted>")
+    }
+
+    /// The suffix rule reaches nested leaves too — only the last path
+    /// component decides sensitivity.
+    func testNestedSensitiveKeyIsRedacted() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"wifi":{"psk":"open"}}"#, new: #"{"wifi":{"psk":"closed"}}"#
+        )
+        let change = result.changes.first { $0.path == "wifi.psk" }
+        XCTAssertEqual(change?.old, "<redacted>")
+        XCTAssertEqual(change?.new, "<redacted>")
+    }
+
+    func testRedactionSurvivesTheCopyPlainTextPath() throws {
+        let data = payload([
+            ("modified", "auth", "Config",
+             #"{"password_sha256":"a"}"#, #"{"password_sha256":"b"}"#),
+        ])
+        let groups = BackupDiffModel.group(try XCTUnwrap(BackupDiffModel.parse(data)))
+        let text = BackupDiffModel.plainText(groups)
+        XCTAssertTrue(text.contains("password_sha256: <redacted> → <redacted>"))
+        XCTAssertFalse(
+            text.contains(": a →"), "the raw secret value must never appear in Copy text"
+        )
+    }
+
+    /// A key gaining a secret value is the interesting case (the credential
+    /// is now live) — it must redact exactly like a modified leaf.
+    func testAddedSensitiveKeyIsRedacted() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"name":"x"}"#, new: #"{"name":"x","password_sha256":"z"}"#
+        )
+        let added = result.changes.first { $0.path == "password_sha256 added" }
+        XCTAssertEqual(added?.new, "<redacted>")
+    }
+
+    func testRemovedSensitiveKeyIsRedacted() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"name":"x","password_sha256":"z"}"#, new: #"{"name":"x"}"#
+        )
+        let removed = result.changes.first { $0.path == "password_sha256 removed" }
+        XCTAssertEqual(removed?.old, "<redacted>")
+    }
+
+    /// Array elements are opaque blobs to `summarize`/`label` — a dict with no
+    /// name/version/id falls back to a raw JSON snippet, which would leak a
+    /// secret carried inside an array element wholesale.
+    func testSensitiveArrayElementsAreRedactedNotSummarized() {
+        let old = #"{"psk":[{"ssid":"Guest"}]}"#
+        let new = #"{"psk":[{"ssid":"Guest"},{"ssid":"Staff","value":"hunter2"}]}"#
+        let result = BackupDiffModel.leafChanges(old: old, new: new)
+        let change = result.changes.first { $0.path == "psk added" }
+        XCTAssertEqual(change?.new, "<redacted>")
+        XCTAssertFalse((change?.new ?? "").contains("hunter2"))
+        XCTAssertFalse((change?.new ?? "").contains("Staff"))
+    }
+
+    /// Compound "_key" forms other than the two exact exclusions still redact.
+    func testCompoundKeySuffixIsStillRedacted() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"encryption_key":"a"}"#, new: #"{"encryption_key":"b"}"#
+        )
+        XCTAssertEqual(result.changes.first?.old, "<redacted>")
+    }
+
+    /// `product_key` is a real `update-status --scan-failures` field, not a
+    /// secret — a bare "key" suffix must not sweep it up.
+    func testProductKeyFieldIsNotTreatedAsSensitive() {
+        let result = BackupDiffModel.leafChanges(
+            old: #"{"product_key":"ABC-123"}"#, new: #"{"product_key":"XYZ-999"}"#
+        )
+        XCTAssertEqual(result.changes.first?.old, "ABC-123")
+        XCTAssertEqual(result.changes.first?.new, "XYZ-999")
+    }
+
+    /// A bare "key" leaf is too ambiguous on its own to redact.
+    func testBareKeyFieldIsNotTreatedAsSensitive() {
+        let result = BackupDiffModel.leafChanges(old: #"{"key":"A"}"#, new: #"{"key":"B"}"#)
+        XCTAssertEqual(result.changes.first?.old, "A")
+        XCTAssertEqual(result.changes.first?.new, "B")
     }
 
     func testPlainTextRenderingIncludesPathsAndObjectNames() throws {
