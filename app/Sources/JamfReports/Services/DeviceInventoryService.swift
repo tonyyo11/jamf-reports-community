@@ -32,11 +32,15 @@ enum DeviceInventoryService {
         var sourceFiles: [String] = []
         var newestSourceDate: Date?
 
-        if let csv = latestInventoryCSV(config: config, root: root) {
-            loadCSVInventory(csv, root: root, into: &merger, warnings: &warnings,
-                             staleThresholdDays: config.staleDeviceDays)
-            sourceFiles.append(displayPath(csv, root: root))
-            newestSourceDate = maxDate(newestSourceDate, modificationDate(csv))
+        if let csv = resolveInventoryCSV(config: config, root: root, now: Date()) {
+            if csv.isCurrent {
+                loadCSVInventory(csv.url, root: root, into: &merger, warnings: &warnings,
+                                 staleThresholdDays: config.staleDeviceDays)
+                sourceFiles.append(displayPath(csv.url, root: root))
+                newestSourceDate = maxDate(newestSourceDate, modificationDate(csv.url))
+            } else {
+                warnings.append(agedInventoryCSVWarning(csv, root: root, config: config))
+            }
         }
 
         if let computers = latestCachedJSON(
@@ -121,8 +125,8 @@ enum DeviceInventoryService {
         let config = loadConfigHints(root: root, warnings: &warnings)
         var dates: [String: Date] = [:]
 
-        if let csv = latestInventoryCSV(config: config, root: root),
-           let d = modificationDate(csv) {
+        if let csv = resolveInventoryCSV(config: config, root: root, now: Date()),
+           csv.isCurrent, let d = modificationDate(csv.url) {
             dates["inventory-csv"] = d
         }
         let jsonKinds: [(kind: String, names: [String])] = [
@@ -266,6 +270,48 @@ fileprivate extension DeviceInventoryService {
 // MARK: - Current source lookup
 
 private extension DeviceInventoryService {
+
+    /// Resolve the inventory CSV together with the verdict on whether it is
+    /// still current. Kept separate from `latestInventoryCSV` so the "which file"
+    /// and "is it usable" questions stay independently testable.
+    static func resolveInventoryCSV(
+        config: ConfigHints,
+        root: URL,
+        now: Date
+    ) -> (url: URL, isCurrent: Bool, ageDays: Int?)? {
+        guard let url = latestInventoryCSV(config: config, root: root) else { return nil }
+        let exportDate = inventoryCSVExportDate(
+            filename: url.lastPathComponent,
+            modified: modificationDate(url)
+        )
+        return (
+            url: url,
+            isCurrent: inventoryCSVIsCurrent(
+                exportDate: exportDate, now: now, staleDeviceDays: config.staleDeviceDays
+            ),
+            ageDays: exportDate.map { inventoryCSVAgeDays(exportDate: $0, now: now) }
+        )
+    }
+
+    /// Names the file, its age and the remedy. An ignored file the operator
+    /// dropped themselves must never be a silent skip.
+    ///
+    /// ponytail: the unknown-age wording is unreachable by construction — an
+    /// undatable file is reported as current, so this only ever runs with a
+    /// known age. Kept so a future change to that rule degrades to vague copy
+    /// rather than a crash or a silent skip.
+    static func agedInventoryCSVWarning(
+        _ csv: (url: URL, isCurrent: Bool, ageDays: Int?),
+        root: URL,
+        config: ConfigHints
+    ) -> String {
+        let age = csv.ageDays.map { "\($0) days old" } ?? "older than the stale threshold"
+        return "Ignoring \(displayPath(csv.url, root: root)) — it is \(age), past the "
+            + "\(config.staleDeviceDays)-day stale threshold. A CSV export cannot report a "
+            + "check-in newer than the day it ran, so at that age it marks devices stale that "
+            + "are still checking in and re-adds devices already retired. Drop a current export "
+            + "in csv-inbox/ or delete this one."
+    }
 
     static func latestInventoryCSV(config: ConfigHints, root: URL) -> URL? {
         let primary = latestFile(
@@ -527,6 +573,84 @@ extension DeviceInventoryService {
         record.patchFailures = [failure]
         return record
     }
+}
+
+// MARK: - Inventory CSV freshness
+
+extension DeviceInventoryService {
+
+    /// Export date of an inventory CSV: the date stamped in the filename first,
+    /// modification time only as a fallback.
+    ///
+    /// mtime is not trustworthy here. A sync provider restamps a file when it
+    /// materializes it, so on a shared workspace a months-old export downloads
+    /// as "modified today" — which is exactly the deployment this bound exists
+    /// to protect. The filename is the only durable record of when the export ran.
+    static func inventoryCSVExportDate(filename: String, modified: Date?) -> Date? {
+        lastDateStamp(in: filename) ?? modified
+    }
+
+    /// Whether a CSV export is still current inventory.
+    ///
+    /// A CSV is a point-in-time roster: it can never report a check-in newer than
+    /// the day it ran. Once it ages past the stale threshold every device it
+    /// contributes reads as stale, and devices retired since the export are
+    /// resurrected — at that point it is history, not inventory.
+    ///
+    /// An unknown export date or a disabled threshold means no bound: fail toward
+    /// loading the operator's file rather than silently dropping it.
+    static func inventoryCSVIsCurrent(exportDate: Date?, now: Date, staleDeviceDays: Int) -> Bool {
+        guard staleDeviceDays > 0, let exportDate else { return true }
+        return inventoryCSVAgeDays(exportDate: exportDate, now: now) <= staleDeviceDays
+    }
+
+    /// Whole days between the export and `now`. Negative for a future stamp,
+    /// which reads as current rather than infinitely stale.
+    static func inventoryCSVAgeDays(exportDate: Date, now: Date) -> Int {
+        Int((now.timeIntervalSince(exportDate) / 86_400).rounded(.towardZero))
+    }
+
+    /// Last `yyyy-MM-dd` or `yyyy_MM_dd` in the name — last, not first, because
+    /// export names commonly carry a config stamp ahead of the run stamp
+    /// (`automation_inventory_config_2026_04_28_090007_2026-04-28_090526.csv`).
+    static func lastDateStamp(in filename: String) -> Date? {
+        let chars = Array(filename)
+        guard chars.count >= 10 else { return nil }
+        var found: Date?
+        var i = 0
+        while i + 10 <= chars.count {
+            let window = Array(chars[i..<(i + 10)])
+            if isDateStampShape(window), let parsed = dateFromStamp(String(window)) {
+                found = parsed
+                i += 10
+            } else {
+                i += 1
+            }
+        }
+        return found
+    }
+
+    private static func isDateStampShape(_ w: [Character]) -> Bool {
+        func digit(_ c: Character) -> Bool { c.isASCII && c.isNumber }
+        func sep(_ c: Character) -> Bool { c == "-" || c == "_" }
+        return digit(w[0]) && digit(w[1]) && digit(w[2]) && digit(w[3])
+            && sep(w[4]) && digit(w[5]) && digit(w[6])
+            && sep(w[7]) && digit(w[8]) && digit(w[9])
+    }
+
+    private static func dateFromStamp(_ stamp: String) -> Date? {
+        csvStampFormatter.date(from: stamp.replacingOccurrences(of: "_", with: "-"))
+    }
+
+    /// Local time zone, matching `dateFromSnapshotFilename` — the comparison is
+    /// whole days, so the zone only shifts the boundary by under a day.
+    static let csvStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        f.isLenient = false
+        return f
+    }()
 }
 
 // MARK: - Patch title summary

@@ -135,6 +135,18 @@ file is tidied up on its own.
 
 ### Fixed
 
+A CSV export dropped in `csv-inbox/` is no longer treated as current inventory
+forever. A CSV can only report check-ins up to the day it ran, so as it ages it
+reports devices as stale that are still checking in every day, and puts back
+devices that have since left the fleet — one four-month-old export was showing
+retired Macs at the top of Offline Outreach at 119 days. Exports older than
+`thresholds.stale_device_days` (30 by default) are now skipped, and the Devices
+screen names the file it ignored, how old it is and what to do about it rather
+than quietly showing you a different device list. Raise the threshold if you
+deliberately report over a longer window. The export date is read from the
+filename in preference to the file's modification time, so a sync provider
+restamping the file when it downloads it cannot make an old export look new.
+
 The two chart switches in Customize now do something. "Save PNGs alongside xlsx"
 and "Per-major-version charts" were never read from your config when the screen
 opened, and never written back when you pressed Apply — they moved, and nothing

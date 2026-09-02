@@ -683,6 +683,12 @@ thresholds:
 
   # Devices not checked in within this many days are treated as inactive
   # and excluded from compliance/security agent counts.
+  #
+  # Also bounds how old a dropped csv-inbox/ export may be before the Devices
+  # and Outreach screens stop treating it as current inventory: a CSV cannot
+  # report a check-in newer than the day it ran, so past this age it reports
+  # live devices as stale and re-adds retired ones. Raise it if you deliberately
+  # report over a longer window.
   stale_device_days: 30
 
   # Devices not checked in within this many days are flagged overdue on the
