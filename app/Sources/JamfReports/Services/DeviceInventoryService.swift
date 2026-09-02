@@ -360,7 +360,19 @@ private extension DeviceInventoryService {
         guard let dir = validatedDirectory(directory, root: root) else { return nil }
         var files: [URL] = []
         collectFiles(in: dir, root: root, extensions: extensions, maxDepth: maxDepth, into: &files)
-        return newest(files.filter { predicate($0.lastPathComponent) && !$0.lastPathComponent.contains(".partial") })
+        // manifest.json is integrity metadata, never a device source — and
+        // ReportEngine writes it *after* the snapshot it describes, so it always
+        // sorts newest by mtime. Without this, turning on `jamf_cli.require_manifest`
+        // would resolve every kind to the manifest and read zero devices, leaving
+        // an inventory CSV as the only source. Mirrors the exclusion
+        // FileManager.newestJSONFile has applied since 2.6; this file has its own
+        // picker and never received it.
+        return newest(files.filter {
+            let name = $0.lastPathComponent
+            return predicate(name)
+                && !name.contains(".partial")
+                && name.lowercased() != "manifest.json"
+        })
     }
 
     static func collectFiles(

@@ -147,6 +147,14 @@ deliberately report over a longer window. The export date is read from the
 filename in preference to the file's modification time, so a sync provider
 restamping the file when it downloads it cannot make an old export look new.
 
+Turning on snapshot integrity checking no longer empties the Devices screen.
+`jamf_cli.require_manifest` writes a `manifest.json` beside each snapshot, and it
+is written after the snapshot, so it was always the newest file in the folder —
+which the Devices and Outreach screens then read as the device list, finding none.
+The effect was that enabling an integrity feature silently emptied two screens,
+and the Health Audit banner recommends enabling it. Integrity files are now
+skipped when picking a snapshot to read.
+
 The two chart switches in Customize now do something. "Save PNGs alongside xlsx"
 and "Per-major-version charts" were never read from your config when the screen
 opened, and never written back when you pressed Apply — they moved, and nothing
