@@ -23,6 +23,17 @@ import Foundation
 /// hitting Refresh while a teammate's LaunchAgent is mid-collect.
 enum SharedWorkspace {
 
+    /// Strips control characters (including newlines) and caps at 64
+    /// characters. Applied to every peer-controlled free string that can
+    /// reach a Run History or Doctor note verbatim — `Host.name`,
+    /// `Claim.operation` — so a hostile or corrupt value can't inject a
+    /// fake log line or blow out a note.
+    static func sanitized(_ raw: String) -> String {
+        let disallowed = CharacterSet.controlCharacters.union(.newlines)
+        let filtered = String(raw.unicodeScalars.filter { !disallowed.contains($0) })
+        return String(filtered.prefix(64))
+    }
+
     // MARK: - Host identity
 
     /// Identifies the machine that wrote something. Hostnames alone are not
@@ -33,8 +44,13 @@ enum SharedWorkspace {
         let id: String
         let name: String
 
-        /// Short display form for logs and Doctor rows.
-        var display: String { name.isEmpty ? String(id.prefix(8)) : name }
+        /// Short display form for logs and Doctor rows. `Claim`'s decoder
+        /// already sanitises a peer-written `name`, so this mainly guards
+        /// `currentHost`'s own hostname; kept for defense in depth.
+        var display: String {
+            let cleaned = SharedWorkspace.sanitized(name)
+            return cleaned.isEmpty ? String(id.prefix(8)) : cleaned
+        }
     }
 
     /// This machine. Resolved once; the hardware UUID does not change at runtime.
@@ -74,6 +90,35 @@ enum SharedWorkspace {
         let pid: Int32
         let appVersion: String
 
+        init(
+            host: Host, operation: String, startedAt: Date, expiresAt: Date,
+            pid: Int32, appVersion: String
+        ) {
+            self.host = host
+            self.operation = operation
+            self.startedAt = startedAt
+            self.expiresAt = expiresAt
+            self.pid = pid
+            self.appVersion = appVersion
+        }
+
+        /// Sanitises `host.name` and `operation` on the way in — both are
+        /// peer-controlled free strings that reach Run History and Doctor
+        /// notes verbatim, so cleaning them at the decode boundary covers
+        /// every consumer without touching a render call site. On-disk
+        /// shape and `encode(to:)` are unchanged (synthesized as before).
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let decodedHost = try container.decode(Host.self, forKey: .host)
+            host = Host(id: decodedHost.id, name: SharedWorkspace.sanitized(decodedHost.name))
+            let decodedOperation = try container.decode(String.self, forKey: .operation)
+            operation = SharedWorkspace.sanitized(decodedOperation)
+            startedAt = try container.decode(Date.self, forKey: .startedAt)
+            expiresAt = try container.decode(Date.self, forKey: .expiresAt)
+            pid = try container.decode(Int32.self, forKey: .pid)
+            appVersion = try container.decode(String.self, forKey: .appVersion)
+        }
+
         /// Expiry, bounded by how long a claim is ever allowed to last.
         ///
         /// `expiresAt` is read from a file anyone with folder access can write,
@@ -108,6 +153,11 @@ enum SharedWorkspace {
     static func decide(existing: Claim?, me: Host, now: Date) -> ClaimDecision {
         guard let existing else { return .acquire }
         if existing.host.id == me.id { return .acquire }
+        // An unusable future startedAt fails toward taking over, closing the
+        // same asymmetry `freshness` already closes for `lastCollectAt`.
+        if existing.startedAt.timeIntervalSince(now) > clockSkewTolerance {
+            return .takeOverExpired(existing)
+        }
         if existing.isExpired(at: now) { return .takeOverExpired(existing) }
         return .blocked(existing)
     }

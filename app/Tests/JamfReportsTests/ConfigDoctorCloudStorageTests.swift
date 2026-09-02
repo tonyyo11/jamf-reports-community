@@ -163,7 +163,9 @@ final class ConfigDoctorCloudStorageTests: XCTestCase {
         let rows = ConfigDoctorService.evaluateCloudStorage(inputs(
             workspace: local("prod"), rootIsCustom: false
         ))
-        XCTAssertNil(rows.first { $0.id == "cloud.root" }, "silence is the right report for a default")
+        XCTAssertNil(
+            rows.first { $0.id == "cloud.root" }, "silence is the right report for a default"
+        )
     }
 
     // MARK: - Coordination

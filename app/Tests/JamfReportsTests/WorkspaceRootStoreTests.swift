@@ -152,7 +152,10 @@ final class WorkspaceRootStoreTests: XCTestCase {
     /// and a hand-edited launchd job both reach `current()` directly, so the
     /// sensitive-location rule is re-applied on read.
     func testStoredSensitivePathIsRefusedOnRead() {
-        defaults.set("\(NSString(string: "~").expandingTildeInPath)/.ssh", forKey: WorkspaceRootStore.defaultsKey)
+        defaults.set(
+            "\(NSString(string: "~").expandingTildeInPath)/.ssh",
+            forKey: WorkspaceRootStore.defaultsKey
+        )
         XCTAssertEqual(
             WorkspaceRootStore.current(defaults: defaults, environment: [:]).path,
             WorkspaceRootStore.defaultRoot.path

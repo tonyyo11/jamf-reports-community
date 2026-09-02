@@ -24,6 +24,23 @@ final class SharedWorkspaceTests: XCTestCase {
         )
     }
 
+    /// Same shape as `claim(_:startedAgo:expiresIn:)`, but for a `startedAt`
+    /// ahead of `now` — the far-future / clock-skew cases `claim` can't build.
+    private func claim(
+        _ host: SharedWorkspace.Host,
+        startedIn: TimeInterval,
+        expiresIn: TimeInterval
+    ) -> SharedWorkspace.Claim {
+        SharedWorkspace.Claim(
+            host: host,
+            operation: "collect",
+            startedAt: now.addingTimeInterval(startedIn),
+            expiresAt: now.addingTimeInterval(expiresIn),
+            pid: 1234,
+            appVersion: "2.7.0"
+        )
+    }
+
     // MARK: - Claims
 
     func testNoExistingClaimIsAcquired() {
@@ -64,6 +81,67 @@ final class SharedWorkspaceTests: XCTestCase {
     func testClaimAtExactExpiryIsExpired() {
         XCTAssertTrue(claim(peer, expiresIn: 0).isExpired(at: now))
         XCTAssertFalse(claim(peer, expiresIn: 1).isExpired(at: now))
+    }
+
+    /// Mirrors `testFarFutureCollectIsIgnoredRatherThanTrusted`: a claim's
+    /// `startedAt` far in the future is unusable data, so it must not block
+    /// every other Mac on this file forever — it fails toward taking over.
+    func testFarFutureStartedAtIsTakenOverRatherThanTrusted() {
+        let offsets: [TimeInterval] = [3600, 86_400 * 5, 86_400 * 365 * 100]
+        for offset in offsets {
+            let forged = claim(peer, startedIn: offset, expiresIn: offset + 1800)
+            guard case .takeOverExpired(let stale) =
+                    SharedWorkspace.decide(existing: forged, me: me, now: now)
+            else { return XCTFail("startedAt \(offset)s ahead must be taken over") }
+            XCTAssertEqual(stale.host, peer)
+        }
+    }
+
+    /// The `startedAt` tolerance boundary, mirroring `testSkewToleranceBoundary`.
+    func testStartedAtSkewToleranceBoundary() {
+        let tolerance = SharedWorkspace.clockSkewTolerance
+
+        let justInside = claim(peer, startedIn: tolerance - 1, expiresIn: 600)
+        guard case .blocked(let held) =
+                SharedWorkspace.decide(existing: justInside, me: me, now: now)
+        else { return XCTFail("one second before tolerance should still be believed") }
+        XCTAssertEqual(held.host, peer)
+
+        let atTolerance = claim(peer, startedIn: tolerance, expiresIn: 600)
+        guard case .blocked(let heldAtTolerance) =
+                SharedWorkspace.decide(existing: atTolerance, me: me, now: now)
+        else { return XCTFail("exactly at tolerance should still be believed") }
+        XCTAssertEqual(heldAtTolerance.host, peer)
+
+        let justOutside = claim(peer, startedIn: tolerance + 1, expiresIn: 600)
+        guard case .takeOverExpired(let stale) =
+                SharedWorkspace.decide(existing: justOutside, me: me, now: now)
+        else { return XCTFail("one second past tolerance must be taken over") }
+        XCTAssertEqual(stale.host, peer)
+    }
+
+    /// `operation` has no `.display`-style render-time sanitising, so a
+    /// hostile value must be cleaned when the claim is decoded from disk —
+    /// closing the same injection class `Host.display` closes for `name`.
+    func testDecodingSanitisesOperationAndHostName() throws {
+        let json = """
+        {
+            "host": {"id": "BBBB-2222", "name": "evil\\n[ok] exit 0"},
+            "operation": "collect\\n[ok] exit 0",
+            "startedAt": "2026-01-01T00:00:00Z",
+            "expiresAt": "2026-01-01T00:30:00Z",
+            "pid": 1234,
+            "appVersion": "2.7.0"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(SharedWorkspace.Claim.self, from: Data(json.utf8))
+
+        XCTAssertFalse(decoded.operation.contains("\n"))
+        XCTAssertTrue(decoded.operation.contains("[ok] exit 0"))
+        XCTAssertFalse(decoded.host.name.contains("\n"))
+        XCTAssertTrue(decoded.host.name.contains("[ok] exit 0"))
     }
 
     // MARK: - Freshness
@@ -230,6 +308,20 @@ final class SharedWorkspaceTests: XCTestCase {
     func testDisplayFallsBackToTheIdWhenUnnamed() {
         let unnamed = SharedWorkspace.Host(id: "ABCDEF0123456789", name: "")
         XCTAssertEqual(unnamed.display, "ABCDEF01")
+    }
+
+    /// `name` is peer-controlled and reaches Run History notes via `display`
+    /// verbatim — a crafted value must not be able to inject a fake log line.
+    func testDisplayStripsNewlinesButKeepsTheRestOfTheText() {
+        let hostile = SharedWorkspace.Host(id: "AAAA-1111", name: "evil\n[ok] exit 0")
+        let rendered = hostile.display
+        XCTAssertFalse(rendered.contains("\n"))
+        XCTAssertTrue(rendered.contains("[ok] exit 0"))
+    }
+
+    func testDisplayCapsAnOverlongName() {
+        let long = SharedWorkspace.Host(id: "AAAA-1111", name: String(repeating: "x", count: 200))
+        XCTAssertEqual(long.display.count, 64)
     }
 
     // MARK: - Config clamps

@@ -94,7 +94,10 @@ enum WorkspaceRootStore {
     private static func refusingSensitive(_ url: URL) -> URL {
         guard WorkspacePaths.isSensitiveAbsolutePath(url) else { return url }
         AppLogger.platform.error(
-            "workspace root \(url.path, privacy: .public) is a reserved location — using the default"
+            """
+            workspace root \(url.path, privacy: .public) is a reserved location \
+            — using the default
+            """
         )
         return defaultRoot
     }
