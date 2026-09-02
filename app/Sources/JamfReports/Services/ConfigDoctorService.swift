@@ -1160,14 +1160,16 @@ extension ConfigDoctorService {
                 guard let at = activity.lastCollectAt else {
                     return "\(activity.host.display) (no collect recorded)"
                 }
-                return "\(activity.host.display) \(ReportEngine.approximateAge(since: at, now: inputs.now))"
+                let age = ReportEngine.approximateAge(since: at, now: inputs.now)
+                return "\(activity.host.display) \(age)"
             }
             .joined(separator: ", ")
         let more = inputs.otherHosts.count > 4 ? " (+\(inputs.otherHosts.count - 4) more)" : ""
 
         // A mixed-version fleet is worth naming: an older build writing here
         // predates the ordering and pruning guards this one relies on.
-        let versions = Set(inputs.otherHosts.map(\.appVersion)).subtracting([SharedWorkspace.appVersion])
+        let versions = Set(inputs.otherHosts.map(\.appVersion))
+            .subtracting([SharedWorkspace.appVersion])
         let mismatched = versions.subtracting(["unknown"]).sorted()
 
         var rows = [DoctorRow(
