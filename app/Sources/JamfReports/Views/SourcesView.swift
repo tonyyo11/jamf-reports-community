@@ -631,9 +631,10 @@ struct SourcesView: View {
             _ = try WorkspacePaths.outputDir(for: workspace.profile)
             resolutionError = nil
         } catch {
+            let rootPath = WorkspaceRootStore.displayPath(profile: workspace.profile)
             resolutionError = "Couldn't resolve this profile's workspace folders: "
                 + "\(error.localizedDescription). Check the profile name and that "
-                + "\(WorkspaceRootStore.displayPath(profile: workspace.profile)) exists and is writable."
+                + "\(rootPath) exists and is writable."
         }
     }
 

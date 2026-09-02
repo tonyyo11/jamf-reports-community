@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // Thread-safe accumulator for streaming log lines from CLIBridge callbacks.
 private final class LineBuffer: @unchecked Sendable {

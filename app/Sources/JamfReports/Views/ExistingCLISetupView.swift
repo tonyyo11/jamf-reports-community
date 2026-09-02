@@ -73,8 +73,11 @@ struct ExistingCLISetupView: View {
                         .toggleStyle(.checkbox)
                         .disabled(flow.isRunning || flow.didComplete)
                 }
-                Text("Each profile gets its own workspace under \(WorkspaceRootStore.displayRoot)/ — "
-                    + "config, cached snapshots, and generated reports stay per-tenant.")
+                Text(
+                    "Each profile gets its own workspace under "
+                        + "\(WorkspaceRootStore.displayRoot)/ — "
+                        + "config, cached snapshots, and generated reports stay per-tenant."
+                )
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }

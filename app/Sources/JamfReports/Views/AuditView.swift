@@ -1011,9 +1011,9 @@ struct AuditView: View {
             // source of truth for "show CLI output."
             let code: Int32
             do {
-                code = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
+                code = try await bridge.audit(profile: profile, category: nil) { line in
                     Task { @MainActor in
-                        guard let workspace, self.isRunningAudit else { return }
+                        guard self.isRunningAudit else { return }
                         workspace.globalStatus = line.text
                     }
                 }
@@ -1043,9 +1043,9 @@ struct AuditView: View {
             let profile = workspace.profile
             let code: Int32
             do {
-                code = try await bridge.groupHygiene(profile: profile) { [weak workspace] line in
+                code = try await bridge.groupHygiene(profile: profile) { line in
                     Task { @MainActor in
-                        guard let workspace, self.isRunningHygiene else { return }
+                        guard self.isRunningHygiene else { return }
                         workspace.globalStatus = line.text
                     }
                 }

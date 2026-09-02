@@ -26,7 +26,8 @@ enum ChartsConfigLoader {
         else { return .defaults }
         return ChartsOptions(
             savePNGs: charts.savePng ?? ChartsOptions.defaults.savePNGs,
-            perMajorCharts: charts.osAdoption?.perMajorCharts ?? ChartsOptions.defaults.perMajorCharts
+            perMajorCharts: charts.osAdoption?.perMajorCharts
+                ?? ChartsOptions.defaults.perMajorCharts
         )
     }
 }

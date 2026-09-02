@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 // GenerateOutputType is defined in Models/Models.swift.
 

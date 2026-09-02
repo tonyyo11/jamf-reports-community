@@ -146,16 +146,35 @@ struct SettingsView: View {
 
     // MARK: - Included CLI install
 
+    private nonisolated static let workspaceLocationBlurb: String =
+        "Where profiles, history, snapshots and reports are kept. Point this at a " +
+        "shared team folder — OneDrive/SharePoint, Box, Dropbox or a mounted " +
+        "share — so several Macs can report against the same tenants and build " +
+        "one history between them. Keep the default if this Mac is the only one " +
+        "reporting."
+
+    private nonisolated static let sharedFolderConsentMessage: String = """
+        Device serials, usernames and email addresses are stored in clear text in the \
+        raw snapshots and run logs, and any webhook URL you configure is stored in \
+        config.yaml. The folder's sharing settings decide who can read all of that — \
+        this app cannot restrict it, and the file permissions it sets are not carried \
+        across by the sync provider.
+
+        Confirm the folder is shared only with people cleared to see device-level \
+        inventory. If a wider audience only needs the reports, cancel and set \
+        Output & Branding's output folder to the shared location instead — that \
+        publishes finished reports without sharing the raw data.
+        """
+
+    private nonisolated static func providerLabel(_ name: String) -> String {
+        "On \(name) — multi-Mac coordination turns on automatically. Run Check on the Config screen reports who else writes here."
+    }
+
     private var workspaceLocationCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Workspace location")
-                Text(
-                    "Where profiles, history, snapshots and reports are kept. Point this at a " +
-                    "shared team folder — OneDrive/SharePoint, Box, Dropbox or a mounted share — " +
-                    "so several Macs can report against the same tenants and build one history " +
-                    "between them. Keep the default if this Mac is the only one reporting."
-                )
+                Text(Self.workspaceLocationBlurb)
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -168,12 +187,10 @@ struct SettingsView: View {
                     .truncationMode(.middle)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let provider = CloudStorage.provider(for: URL(fileURLWithPath: workspaceRootPath)) {
-                    Label(
-                        "On \(provider.displayName) — multi-Mac coordination turns on " +
-                        "automatically. Run Check on the Config screen reports who else writes here.",
-                        systemImage: "person.2"
-                    )
+                if let provider = CloudStorage.provider(
+                    for: URL(fileURLWithPath: workspaceRootPath)
+                ) {
+                    Label(Self.providerLabel(provider.displayName), systemImage: "person.2")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -220,17 +237,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingSharedRoot = nil }
         } message: {
-            Text(
-                "Device serials, usernames and email addresses are stored in clear text in the "
-                + "raw snapshots and run logs, and any webhook URL you configure is stored in "
-                + "config.yaml. The folder's sharing settings decide who can read all of that — "
-                + "this app cannot restrict it, and the file permissions it sets are not carried "
-                + "across by the sync provider.\n\n"
-                + "Confirm the folder is shared only with people cleared to see device-level "
-                + "inventory. If a wider audience only needs the reports, cancel and set "
-                + "Output & Branding's output folder to the shared location instead — that "
-                + "publishes finished reports without sharing the raw data."
-            )
+            Text(Self.sharedFolderConsentMessage)
         }
     }
 
@@ -1001,9 +1008,12 @@ struct SettingsView: View {
                     : "Bundle written to \(url.lastPathComponent) in this profile's " +
                       "diagnostics folder (Finder reveal was blocked)."
             } catch {
+                let diagnosticsPath = WorkspaceRootStore.displayPath(
+                    profile: workspace.profile, subpath: "diagnostics"
+                )
                 diagnosticBundleMessage =
                     "Diagnostic bundle failed: \(error.localizedDescription). Verify "
-                    + "\(WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "diagnostics")) is writable and has free space."
+                    + "\(diagnosticsPath) is writable and has free space."
             }
             isGeneratingBundle = false
         }

@@ -386,12 +386,14 @@ struct ReportsView: View {
                 // Status-bar race guard — see comment in AuditView.runAudit.
                 let code: Int32
                 do {
-                    code = try await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in
+                    code = try await bridge.generateHTML(
+                        profile: profile, outFile: outPath
+                    ) { line in
                         if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
                             Task { @MainActor in hashBox.value = parsed.hash }
                         }
                         Task { @MainActor in
-                            guard let workspace, self.isGeneratingHTML else { return }
+                            guard self.isGeneratingHTML else { return }
                             workspace.globalStatus = line.text
                         }
                     }
@@ -441,9 +443,11 @@ struct ReportsView: View {
             Task {
                 let code: Int32
                 do {
-                    code = try await bridge.generatePDF(profile: profile, outFile: outPath) { [weak workspace] line in
+                    code = try await bridge.generatePDF(
+                        profile: profile, outFile: outPath
+                    ) { line in
                         Task { @MainActor in
-                            guard let workspace, self.isGeneratingPDF else { return }
+                            guard self.isGeneratingPDF else { return }
                             workspace.globalStatus = line.text
                         }
                     }
@@ -486,9 +490,11 @@ struct ReportsView: View {
             Task {
                 let code: Int32
                 do {
-                    code = try await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { [weak workspace] line in
+                    code = try await bridge.exportInventoryCSV(
+                        profile: profile, outFile: outPath
+                    ) { line in
                         Task { @MainActor in
-                            guard let workspace, self.isExportingCSV else { return }
+                            guard self.isExportingCSV else { return }
                             workspace.globalStatus = line.text
                         }
                     }
