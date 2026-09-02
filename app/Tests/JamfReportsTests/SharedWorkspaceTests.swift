@@ -121,8 +121,9 @@ final class SharedWorkspaceTests: XCTestCase {
     }
 
     /// `operation` has no `.display`-style render-time sanitising, so a
-    /// hostile value must be cleaned when the claim is decoded from disk —
-    /// closing the same injection class `Host.display` closes for `name`.
+    /// hostile value's newline must be stripped when the claim is decoded
+    /// from disk — closing the same injection class `Host.display` closes
+    /// for `name`. Length is not asserted here; that is the next test.
     func testDecodingSanitisesOperationAndHostName() throws {
         let json = """
         {
@@ -142,6 +143,31 @@ final class SharedWorkspaceTests: XCTestCase {
         XCTAssertTrue(decoded.operation.contains("[ok] exit 0"))
         XCTAssertFalse(decoded.host.name.contains("\n"))
         XCTAssertTrue(decoded.host.name.contains("[ok] exit 0"))
+    }
+
+    /// The regression this fix round closes: a CI runner's 67-character
+    /// hostname must decode back to exactly itself (so a re-acquired claim
+    /// still equals `Host.currentHost`), while `display` still caps it —
+    /// length is a rendering concern, not a decode-time transform.
+    func testLongControlCharacterFreeHostNameRoundTripsWhileDisplayIsCapped() throws {
+        let longName = String(repeating: "a", count: 70)
+        let json = """
+        {
+            "host": {"id": "34DA1234", "name": "\(longName)"},
+            "operation": "collect",
+            "startedAt": "2026-01-01T00:00:00Z",
+            "expiresAt": "2026-01-01T00:30:00Z",
+            "pid": 1234,
+            "appVersion": "2.7.0"
+        }
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(SharedWorkspace.Claim.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.host.name, longName)
+        XCTAssertEqual(decoded.host.name.count, 70)
+        XCTAssertEqual(decoded.host.display.count, 64)
     }
 
     // MARK: - Freshness

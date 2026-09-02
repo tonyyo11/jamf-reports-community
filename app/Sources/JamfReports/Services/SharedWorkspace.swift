@@ -23,15 +23,17 @@ import Foundation
 /// hitting Refresh while a teammate's LaunchAgent is mid-collect.
 enum SharedWorkspace {
 
-    /// Strips control characters (including newlines) and caps at 64
-    /// characters. Applied to every peer-controlled free string that can
-    /// reach a Run History or Doctor note verbatim — `Host.name`,
-    /// `Claim.operation` — so a hostile or corrupt value can't inject a
-    /// fake log line or blow out a note.
-    static func sanitized(_ raw: String) -> String {
+    /// Strips control characters (including newlines) only — no length
+    /// cap. Applied to every peer-controlled free string that can reach a
+    /// Run History or Doctor note verbatim — `Host.name`, `Claim.operation`
+    /// — so an embedded newline can't inject a fake log line. Length is
+    /// deliberately left alone here: a decoded `Host.name` must still
+    /// compare equal to `Host.currentHost`'s, and real hostnames (CI
+    /// runners, imaged fleets) can exceed 64 characters. Capping is a
+    /// rendering concern, done by `Host.display` alone.
+    static func strippingControlCharacters(_ raw: String) -> String {
         let disallowed = CharacterSet.controlCharacters.union(.newlines)
-        let filtered = String(raw.unicodeScalars.filter { !disallowed.contains($0) })
-        return String(filtered.prefix(64))
+        return String(raw.unicodeScalars.filter { !disallowed.contains($0) })
     }
 
     // MARK: - Host identity
@@ -44,12 +46,13 @@ enum SharedWorkspace {
         let id: String
         let name: String
 
-        /// Short display form for logs and Doctor rows. `Claim`'s decoder
-        /// already sanitises a peer-written `name`, so this mainly guards
-        /// `currentHost`'s own hostname; kept for defense in depth.
+        /// Short display form for logs and Doctor rows. The 64-character
+        /// cap lives here, not at decode — `name` itself (including a
+        /// decoded peer's) keeps its full length so equality checks against
+        /// `Host.currentHost` still work.
         var display: String {
-            let cleaned = SharedWorkspace.sanitized(name)
-            return cleaned.isEmpty ? String(id.prefix(8)) : cleaned
+            let cleaned = SharedWorkspace.strippingControlCharacters(name).prefix(64)
+            return cleaned.isEmpty ? String(id.prefix(8)) : String(cleaned)
         }
     }
 
@@ -102,17 +105,23 @@ enum SharedWorkspace {
             self.appVersion = appVersion
         }
 
-        /// Sanitises `host.name` and `operation` on the way in — both are
-        /// peer-controlled free strings that reach Run History and Doctor
-        /// notes verbatim, so cleaning them at the decode boundary covers
-        /// every consumer without touching a render call site. On-disk
-        /// shape and `encode(to:)` are unchanged (synthesized as before).
+        /// Strips control characters from `host.name` and `operation` on
+        /// the way in — both are peer-controlled free strings that reach
+        /// Run History and Doctor notes verbatim. Length is NOT capped
+        /// here: a decoded `host.name` must still compare equal to
+        /// `Host.currentHost` (real hostnames can exceed 64 characters),
+        /// and `operation` has no display accessor of its own to cap in.
+        /// On-disk shape and `encode(to:)` are unchanged (synthesized as
+        /// before).
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             let decodedHost = try container.decode(Host.self, forKey: .host)
-            host = Host(id: decodedHost.id, name: SharedWorkspace.sanitized(decodedHost.name))
+            host = Host(
+                id: decodedHost.id,
+                name: SharedWorkspace.strippingControlCharacters(decodedHost.name)
+            )
             let decodedOperation = try container.decode(String.self, forKey: .operation)
-            operation = SharedWorkspace.sanitized(decodedOperation)
+            operation = SharedWorkspace.strippingControlCharacters(decodedOperation)
             startedAt = try container.decode(Date.self, forKey: .startedAt)
             expiresAt = try container.decode(Date.self, forKey: .expiresAt)
             pid = try container.decode(Int32.self, forKey: .pid)
