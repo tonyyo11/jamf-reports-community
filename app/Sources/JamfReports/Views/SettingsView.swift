@@ -105,6 +105,10 @@ struct SettingsView: View {
         )
         if platformCapability == nil { platformCapability = service }
         service.refresh()
+        // Same fact, second cache: collect and the health strip read the auth
+        // method through `ProfileAuthMethod`, so a profile that just gained
+        // platform auth must not stay excluded for the rest of the session.
+        ProfileAuthMethod.invalidateCache()
         platformCapabilityAvailable = await service.isAvailable(for: workspace.profile)
     }
 

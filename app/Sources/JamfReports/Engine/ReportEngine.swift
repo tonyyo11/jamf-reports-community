@@ -1343,6 +1343,28 @@ struct ReportEngine: Sendable {
         "device-compliance"
     ]
 
+    /// Kinds served only by the Jamf Platform API. On a Jamf Pro instance
+    /// profile (`auth-method: oauth2`) these four fail on every run forever —
+    /// silently before 2.7.0, and as a permanently red health strip plus an
+    /// hourly retry loop after it. The views that render them are already
+    /// gated on `PlatformCapabilityService`; collect now agrees.
+    static let platformOnlyKinds: Set<String> = [
+        "compliance-devices",
+        "compliance-rules",
+        "ddm-status",
+        "blueprint-status",
+    ]
+
+    /// The profile's auth method when it positively rules out
+    /// `platformOnlyKinds`; nil for a platform profile and — deliberately —
+    /// for an unknown method. Unknown fails toward collecting: never skip a
+    /// kind because we could not ask.
+    static func nonPlatformAuthMethod(_ authMethod: String?) -> String? {
+        guard let method = authMethod?.trimmingCharacters(in: .whitespaces).lowercased(),
+              !method.isEmpty, method != "platform" else { return nil }
+        return method
+    }
+
     /// Every snapshot kind `collect` produces, in the order the engine
     /// fetches them. PR-22 T-1: used by `CollectionTier` tests to verify
     /// every kind has a tier assignment, and (T-8) as the iteration
@@ -1707,6 +1729,11 @@ struct ReportEngine: Sendable {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
 
+        // Resolved once per run, not per kind — it spawns `config list`.
+        let nonPlatformAuth = Self.nonPlatformAuthMethod(
+            ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        )
+
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
         // Tracks kinds where saveSnapshot actually wrote a file this run.
@@ -1718,6 +1745,18 @@ struct ReportEngine: Sendable {
         // fresh-cache kinds and failed only the chronic residue is not an outage.
         var skippedNotDueCount = 0
         for (args, kind) in plannedCommands {
+            // Platform-only filter. Recorded nowhere: a kind this profile's API
+            // cannot serve is not a failure, so it must not advance a failure
+            // counter, reach `degradedKinds`, or count toward the outage guard.
+            if let nonPlatformAuth, Self.platformOnlyKinds.contains(kind) {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): requires a Platform API profile "
+                        + "(auth-method is \(nonPlatformAuth))"
+                ))
+                continue
+            }
+
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
             // tier map is a guidance layer, not a gate.

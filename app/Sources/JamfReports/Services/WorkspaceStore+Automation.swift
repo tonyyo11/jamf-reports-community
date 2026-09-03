@@ -262,15 +262,11 @@ extension WorkspaceStore {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return [] }
         let store = StateFileStore(directory: stateDir)
-        // The Settings toggle makes the four per-device kinds intentionally
-        // absent; alarming on a deliberate opt-out is the false-alarm class
-        // FreshnessChipRow already guards against.
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
-        let kinds = skipExpensive
-            ? ReportEngine.knownCollectKinds.filter {
-                !ReportEngine.expensivePerDeviceKinds.contains($0)
-            }
-            : ReportEngine.knownCollectKinds
+        let kinds = expectedKinds(
+            skipExpensive: skipExpensive,
+            authMethod: ProfileAuthMethod.resolve(profile: profile)
+        )
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.
@@ -278,6 +274,66 @@ extension WorkspaceStore {
         return DataFreshnessHealth.evaluate(
             states: states, hasCollectedBefore: hasCollectedBefore, now: now
         )
+    }
+
+    /// Which kinds this profile is expected to collect, and so which may be
+    /// reported as failing or stale.
+    ///
+    /// Two exclusions, both about not alarming on an absence that is intended:
+    /// the Settings toggle makes the four per-device kinds deliberately absent
+    /// (the false-alarm class `FreshnessChipRow` already guards), and a Jamf
+    /// Pro instance profile can never serve the Platform-only kinds. The
+    /// second is applied regardless of the `.fail` counters on disk: a
+    /// workspace that ran for months before the collect-side skip has a
+    /// standing pile of them, and reading those back is exactly what kept the
+    /// banner red.
+    nonisolated static func expectedKinds(
+        skipExpensive: Bool,
+        authMethod: String?
+    ) -> [String] {
+        let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
+        return ReportEngine.knownCollectKinds.filter { kind in
+            if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
+                return false
+            }
+            return !(skipsPlatform && ReportEngine.platformOnlyKinds.contains(kind))
+        }
+    }
+
+    // MARK: - Manual collect
+
+    /// The health strip's "Collect now". Force-collects the tiers behind the
+    /// current freshness issues and re-evaluates, so the strip answers for the
+    /// run that just happened instead of holding yesterday's verdict.
+    ///
+    /// Unlike `remediateStaleDataIfNeeded` this applies no hourly rate limit
+    /// and no exit-2/exit-8 exclusion: a person clicking has usually just
+    /// fixed the credentials or the profile that made an automatic retry
+    /// pointless, and the click must not be a silent no-op.
+    func collectFailingNow() async {
+        guard !demoMode else { return }
+        guard canRefresh(profileSlug: profile) else {
+            // Practically unreachable — freshness only evaluates for a valid
+            // profile — but a button click must never be a silent no-op.
+            toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
+            return
+        }
+        let tiers = Self.manualCollectTiers(AutomationHealthModel.shared.freshnessIssues)
+        AutomationHealthModel.shared.isRemediating = true
+        defer { AutomationHealthModel.shared.isRemediating = false }
+        // runTierRefresh owns the force-collect, the globalStatus line, the
+        // completion toast, and (since 2.7.0) the freshness re-evaluation.
+        await runTierRefresh(tiers)
+    }
+
+    /// Tiers for the manual collect: those behind the current issues, or every
+    /// tier when there are none — the button is then a plain "collect
+    /// everything", which is what a person clicking a health strip expects.
+    nonisolated static func manualCollectTiers(
+        _ issues: [DataFreshnessIssue]
+    ) -> Set<CollectionTier> {
+        let tiers = DataFreshnessHealth.tiersToRemediate(issues)
+        return tiers.isEmpty ? Set(CollectionTier.allCases) : tiers
     }
 
     // MARK: - Self-remediation

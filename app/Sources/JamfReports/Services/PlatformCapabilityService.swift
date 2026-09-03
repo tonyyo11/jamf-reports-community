@@ -60,9 +60,17 @@ final class PlatformCapabilityService {
     /// matching profile uses `auth-method: platform`. When `profile` is empty,
     /// the entry with `default: true` is used. Internal-static for testability.
     static func parseAuthMethod(data: Data, profile: String) -> Bool {
+        authMethod(data: data, profile: profile) == "platform"
+    }
+
+    /// The matching profile's `auth-method`, lowercased, or nil when the
+    /// response is unreadable, the profile is absent, or the field is empty.
+    /// `ProfileAuthMethod` needs that nil: unknown is not the same answer as
+    /// oauth2, and only the second may be acted on.
+    nonisolated static func authMethod(data: Data, profile: String) -> String? {
         guard let json = try? JSONSerialization.jsonObject(with: data),
               let entries = json as? [[String: Any]] else {
-            return false
+            return nil
         }
         for entry in entries {
             let name = (entry["name"] as? String) ?? ""
@@ -70,8 +78,9 @@ final class PlatformCapabilityService {
             let matches = profile.isEmpty ? isDefault : (name == profile)
             guard matches else { continue }
             let auth = (entry["auth-method"] as? String) ?? ""
-            return auth.lowercased() == "platform"
+            let trimmed = auth.trimmingCharacters(in: .whitespaces).lowercased()
+            return trimmed.isEmpty ? nil : trimmed
         }
-        return false
+        return nil
     }
 }

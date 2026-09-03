@@ -499,6 +499,44 @@ final class CollectHonestyTests: XCTestCase {
         try json.write(to: dir.appendingPathComponent("peer.json"),
                        atomically: true, encoding: .utf8)
     }
+
+    // MARK: - Platform-only kinds
+
+    /// The counterpart to the oauth2 skip: when the auth method cannot be
+    /// resolved — no jamf-cli config to read, as here — nothing may be
+    /// skipped. Getting this backwards would silently stop collecting four
+    /// kinds on a platform profile whose probe merely failed, so this pins
+    /// that the Platform-only kinds are still attempted and still recorded.
+    func testUnknownAuthMethodSkipsNothing() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        ProfileAuthMethod.invalidateCache()
+        // Exit 4 (not found) rather than a launch failure: it is not in
+        // `retryableExitCodes`, so the whole inventory tier runs without the
+        // 3s retry sleep a launch failure incurs per kind.
+        let stub = try makeStub(exitCode: 4)
+        let collector = LogTextCollector()
+
+        try? await ReportEngine.collect(
+            profile: profile,
+            workspacePaths: WorkspacePaths.self,
+            tiers: [.inventory],
+            force: true,
+            locateJamfCLI: { stub },
+            onLine: collector.append
+        )
+
+        XCTAssertFalse(
+            collector.texts.contains { $0.contains("requires a Platform API profile") },
+            "an unresolved auth method must not skip anything"
+        )
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        for kind in ReportEngine.platformOnlyKinds {
+            XCTAssertEqual(
+                store.failures(report: kind)?.count, 1,
+                "\(kind) must still be attempted when the auth method is unknown"
+            )
+        }
+    }
 }
 
 /// Thread-safe collector for streamed log-line text — `onLine` is `@Sendable`,
