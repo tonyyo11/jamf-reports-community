@@ -530,7 +530,11 @@ experimental:
   # Platform API features (compliance benchmarks, DDM blueprints).
   # Requires a jamf-cli profile with `auth-method: platform`. Set up via:
   #   jamf-cli config add-profile <name> --auth-method platform \
-  #     --url <gateway-url> --tenant-id <id>
+  #     --url https://<region>.api.jamfcloud.com --tenant-id <id>
+  # jamf-cli 1.28 also accepts --environment-id (and organization scope, which
+  # takes no ID); the three are mutually exclusive. The app only sets up tenant
+  # scope today — for the other two, create the profile by hand with the command
+  # above and point the app at the existing profile name.
   platform_features_enabled: false
 
 

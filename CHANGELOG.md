@@ -291,23 +291,37 @@ instead of being dropped silently.
 
 ### Changed
 
-- Tracks jamf-cli v1.27.0 (was v1.26.0).
+- Tracks jamf-cli v1.28.0 (was v1.26.0).
+
+The Jamf Platform API reached general availability, so the sign-in screens now
+prefill the current gateway address instead of the retired pre-GA one, which
+recent jamf-cli releases reject outright. When jamf-cli refuses a command
+because the profile's API does not publish it — its new exit code 8 — the run
+log now explains what happened and what to use instead, and automatic
+re-collection leaves that source alone rather than retrying it every hour.
+
+Two things to check on jamf-cli 1.28.0 if you run a Jamf Pro instance that does
+not serve inventory v4: `pro computers list` now asks for v4 and falls back to
+v1 on a 404, so confirm a collect still fills the Devices screen, and confirm
+`pro comp erase` and `pro comp remove-mdm` still work if you use them — they
+send v4 with no fallback.
 
 ### Known issues
 
-**Security data is unavailable on jamf-cli 1.24 and later without a Jamf
-Security Cloud subscription.** From jamf-cli 1.24.0, `pro report security` — a
-Jamf Pro report — is routed to the Jamf Security Cloud client and exits with
-"no Jamf Security Cloud credentials configured" on any tenant that does not
-have one. The app cannot work around a credentials gate. Until this is fixed
-upstream (issue filed against jamf-cli), the Security Posture screen, the
-weighted security score, and every FileVault, SIP, firewall and Gatekeeper
-figure derived from that report will show their last collected values, and
-the health strip will report the `security` source as failing to collect —
-that is correct. The run log now carries jamf-cli's own message so the cause
-is visible, and automatic re-collection skips the source rather than retrying
-it every hour. Pinning jamf-cli to 1.23.x restores the report on affected
-tenants; the app supports 1.18.0 and later.
+**Security data is unavailable on jamf-cli 1.24.0 through 1.27.0 without a
+Jamf Security Cloud subscription — fixed in jamf-cli 1.28.0.** On those
+releases, `pro report security` — a Jamf Pro report — is routed to the Jamf
+Security Cloud client and exits with "no Jamf Security Cloud credentials
+configured" on any tenant that does not have one. The app cannot work around a
+credentials gate, so the Security Posture screen, the weighted security score,
+and every FileVault, SIP, firewall and Gatekeeper figure derived from that
+report show their last collected values, and the health strip reports the
+`security` source as failing to collect — that is correct. The run log carries
+jamf-cli's own message so the cause is visible, and automatic re-collection
+skips the source rather than retrying it every hour. jamf-cli 1.28.0 resolves
+the report as Jamf Pro again: upgrading restores all of it. If you cannot move
+past 1.27.0, pinning jamf-cli to 1.23.x restores the report; the app supports
+1.18.0 and later.
 
 ## [2.6.1] - 2026-08-14
 

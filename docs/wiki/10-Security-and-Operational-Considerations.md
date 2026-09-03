@@ -307,9 +307,10 @@ schedules) — see [Automation Trust](https://github.com/tonyyo11/jamf-reports-c
 
 ## Known Issues
 
-**`pro report security` on jamf-cli 1.24+ requires a Jamf Security Cloud subscription.**
-From jamf-cli 1.24.0, this Jamf Pro report is routed through the Jamf Security Cloud client
-and fails on any tenant without a subscription — Security Posture, the weighted security
-score, and every FileVault, SIP, firewall and Gatekeeper figure derived from it will show
-their last collected values until this is fixed upstream. See the CHANGELOG's Known Issues
-entry for the current workaround (pinning jamf-cli to 1.23.x).
+**`pro report security` on jamf-cli 1.24.0 through 1.27.0 requires a Jamf Security Cloud
+subscription — fixed in 1.28.0.** On those releases this Jamf Pro report is routed through
+the Jamf Security Cloud client and fails on any tenant without a subscription — Security
+Posture, the weighted security score, and every FileVault, SIP, firewall and Gatekeeper
+figure derived from it show their last collected values. jamf-cli 1.28.0 resolves the
+report as Jamf Pro again, so upgrading restores all of it. If you cannot move past 1.27.0,
+pin jamf-cli to 1.23.x instead; see the CHANGELOG's Known Issues entry.
