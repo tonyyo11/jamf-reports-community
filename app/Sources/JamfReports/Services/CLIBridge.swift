@@ -753,6 +753,9 @@ final class CLIBridge {
     nonisolated static let exitCodePermissionDenied: Int32 = 5  // HTTP 403 — account lacks required API privileges
     nonisolated static let exitCodeRateLimited: Int32 = 6    // HTTP 429 — server throttling; transient, self-resolving
     nonisolated static let exitCodePartialFailure: Int32 = 7 // partial failure (v1.19.0+): some ops succeeded, stdout has valid JSON
+    // Refused by policy (v1.28.0+): correctly invoked, but the resolved credentials
+    // cannot reach the API that serves it. Never succeeds on retry.
+    nonisolated static let exitCodeRefusedByPolicy: Int32 = 8
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"
@@ -792,6 +795,13 @@ final class CLIBridge {
         case exitCodeUsage:
             detail = "internal argument error (exit 2) — please report this along with this "
                 + "run's log output."
+        case exitCodeRefusedByPolicy:
+            detail = "refused by policy (exit 8) — the command is outside what this "
+                + "profile's API publishes: on a Platform gateway profile, a Jamf Pro or "
+                + "Classic command the Platform API does not serve; on an instance "
+                + "profile, a Platform-only command. Use an oauth2 profile against the "
+                + "Jamf Pro instance for this command. `jamf-cli commands -o json` lists "
+                + "the refusals for the binary in hand (gateway == \"unserved\")."
         case 1:
             detail = "exit 1 — usually a network error or a per-command failure. Review this "
                 + "run's log output for the failing command."

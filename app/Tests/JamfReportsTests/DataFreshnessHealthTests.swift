@@ -190,15 +190,16 @@ final class DataFreshnessHealthTests: XCTestCase {
         XCTAssertEqual(recorder.calls, [[.scan]])
     }
 
-    // MARK: - Exit-2 exclusion (Task 3 / S9)
+    // MARK: - Never-retryable exit exclusion (Task 3 / S9)
     //
     // A jamf-cli exit 2 is a usage or credentials-gate failure (e.g. the
-    // 1.24+ Security Cloud gate on `pro report security`) — the same argv
-    // will fail identically on every retry, so remediation must not spend a
-    // collect on it. It stays visible: the banner reads `issues`, which is
-    // never filtered — only the tiers computed for the automatic re-collect are.
+    // 1.24–1.27 Security Cloud gate on `pro report security`); an exit 8
+    // (1.28+) is a policy refusal — the command is outside what the profile's
+    // API publishes. Both fail identically on every retry, so remediation must
+    // not spend a collect on either. They stay visible: the banner reads
+    // `issues`, which is never filtered — only the re-collect tiers are.
 
-    func testExitTwoFailureIsExcludedFromRemediationTargeting() throws {
+    func testNeverRetryableFailuresAreExcludedFromRemediationTargeting() throws {
         let profile = "exittwofilter"
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("JRC-ExitTwo-\(UUID().uuidString)", isDirectory: true)
@@ -217,12 +218,19 @@ final class DataFreshnessHealthTests: XCTestCase {
         let store = StateFileStore(directory: stateDir)
         // A usage/credentials-gate failure — cannot succeed on retry.
         store.record(.failed(exitCode: CLIBridge.exitCodeUsage), report: "security", at: now)
+        // A policy refusal (jamf-cli 1.28+) — equally permanent, different cause.
+        store.record(
+            .failed(exitCode: CLIBridge.exitCodeRefusedByPolicy), report: "policies", at: now)
         // A transient (retryable-class) failure on a different kind — must stay.
         store.record(.failed(exitCode: 1), report: "computers", at: now)
 
         let issues = [
             DataFreshnessIssue(
                 snapshotKind: "security", tier: .refresh, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            ),
+            DataFreshnessIssue(
+                snapshotKind: "policies", tier: .scan, kind: .failing,
                 lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
             ),
             DataFreshnessIssue(

@@ -116,7 +116,7 @@ final class OnboardingFlow {
     var secretFieldHasText = false
 
     // Platform Gateway additional fields
-    var gatewayURL = "https://us.apigw.jamf.com"
+    var gatewayURL = "https://us.api.jamfcloud.com"
     var tenantID = ""
     var platformClientID = ""
     var platformClientSecret = ""

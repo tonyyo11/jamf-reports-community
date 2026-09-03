@@ -344,12 +344,11 @@ extension WorkspaceStore {
         return true
     }
 
-    /// Drop issues whose kind's last failure exit code makes retry pointless —
-    /// currently `CLIBridge.exitCodeUsage` (2), a usage/config error (e.g. the
-    /// jamf-cli 1.24+ Security Cloud credentials gate on `pro report
-    /// security`) that will fail identically on every retry. The returned list
-    /// only narrows what `tiersToRemediate` sees; `issues` itself — and so the
-    /// banner — is untouched, because the operator still needs to see them.
+    /// Drop issues whose kind's last failure exit code makes retry pointless:
+    /// `exitCodeUsage` (2, a usage/credentials gate — e.g. jamf-cli 1.24–1.27 on
+    /// `pro report security`) and `exitCodeRefusedByPolicy` (8, 1.28+ — outside
+    /// the profile's published API). Only `tiersToRemediate`'s input narrows;
+    /// `issues` — and so the banner — is untouched, the operator still sees them.
     nonisolated static func excludingPermanentUsageFailures(
         _ issues: [DataFreshnessIssue], profile: String
     ) -> [DataFreshnessIssue] {
@@ -357,13 +356,15 @@ extension WorkspaceStore {
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return issues }
         let store = StateFileStore(directory: stateDir)
         let permanent = issues.filter {
-            store.lastFailureExitCode(for: $0.snapshotKind) == CLIBridge.exitCodeUsage
+            let code = store.lastFailureExitCode(for: $0.snapshotKind)
+            return code == CLIBridge.exitCodeUsage
+                || code == CLIBridge.exitCodeRefusedByPolicy
         }
         guard !permanent.isEmpty else { return issues }
         AppLogger.collect.notice(
             """
             Skipping remediation for \(permanent.count, privacy: .public) kind(s) with a \
-            permanent usage/credentials-gate failure: \
+            permanent usage/credentials-gate or policy-refusal failure: \
             \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .public)
             """
         )

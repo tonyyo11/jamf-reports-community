@@ -194,7 +194,7 @@ final class OnboardingFlowRedactionTests: XCTestCase {
         let data = OnboardingFlow.platformGatewayStdin(clientID: clientID, clientSecret: secret)
         let args = OnboardingFlow.platformGatewayArguments(
             profile: "testprofile",
-            gatewayURL: "https://us.apigw.jamf.com",
+            gatewayURL: "https://us.api.jamfcloud.com",
             tenantID: "tenant-abc"
         )
 
@@ -347,7 +347,7 @@ final class OnboardingFlowRedactionTests: XCTestCase {
     /// unencrypted endpoint.
     func test_gatewayURL_httpScheme_isInvalid() {
         let flow = OnboardingFlow()
-        flow.gatewayURL = "http://apigw.jamf.com"
+        flow.gatewayURL = "http://us.api.jamfcloud.com"
         XCTAssertFalse(
             flow.isGatewayURLValid,
             "http:// gateway URL must be rejected (S1: TLS required before secret send)"
@@ -377,7 +377,7 @@ final class OnboardingFlowRedactionTests: XCTestCase {
     /// isGatewayURLValid must accept https:// URLs.
     func test_gatewayURL_httpsScheme_isValid() {
         let flow = OnboardingFlow()
-        flow.gatewayURL = "https://us.apigw.jamf.com"
+        flow.gatewayURL = "https://us.api.jamfcloud.com"
         XCTAssertTrue(flow.isGatewayURLValid)
     }
 
