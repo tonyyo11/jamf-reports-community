@@ -108,6 +108,16 @@ which on the weekly deep scan could be another seven days. Authentication and
 permission failures are never retried: those cannot succeed on a second attempt
 and repeated attempts risk locking the account out.
 
+The strip now has a **Collect now** button, so a red banner is somewhere to act
+rather than a dead end, and it re-evaluates after any manual refresh instead of
+holding its verdict until the app is restarted.
+
+On a Jamf Pro profile without Platform API access, the four Platform-only data
+sources — compliance devices, compliance rules, DDM status and blueprint status
+— are now skipped rather than attempted, failed, and reported every day. They
+were never able to succeed on that kind of profile, so the strip no longer
+reports them as failing and the hourly self-repair no longer retries them.
+
 ### Removed
 
 The v3.5 history migration is gone from Settings. It imported a

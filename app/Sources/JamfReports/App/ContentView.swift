@@ -81,7 +81,10 @@ struct ContentView: View {
                         freshnessIssues: workspace.dataFreshnessIssues,
                         automationIssues: workspace.automationHealthIssues,
                         isRemediating: workspace.isRemediatingFreshness,
-                        onOpenAutomation: { tab = .schedules }
+                        onOpenAutomation: { tab = .schedules },
+                        onCollectNow: {
+                            Task { await workspace.collectFailingNow() }
+                        }
                     )
                     ZStack(alignment: .bottom) {
                         detailView

@@ -17,6 +17,9 @@ struct GlobalHealthBanner: View {
     let isRemediating: Bool
     /// Opens the Automation screen, where the detail and the manual controls are.
     let onOpenAutomation: () -> Void
+    /// Force-collects the tiers behind the freshness issues. Optional so a
+    /// caller with no collect context keeps the informational banner.
+    var onCollectNow: (() -> Void)?
 
     var body: some View {
         if isRemediating {
@@ -35,11 +38,29 @@ struct GlobalHealthBanner: View {
                 tone: headline.tone,
                 text: headline.text,
                 detail: headline.detail,
-                action: InlineBannerAction(
-                    label: "Open Automation",
-                    icon: "gearshape.2",
-                    handler: onOpenAutomation
-                )
+                action: bannerAction()
+            )
+        }
+    }
+
+    /// `InlineBanner` renders one button, so the strip offers the action that
+    /// resolves what it is complaining about rather than two competing ones.
+    private func bannerAction() -> InlineBannerAction {
+        switch Self.primaryAction(
+            freshness: freshnessIssues, canCollect: onCollectNow != nil
+        ) {
+        case .collectNow:
+            return InlineBannerAction(
+                label: PrimaryAction.collectNow.label,
+                icon: "arrow.clockwise",
+                help: "Collect the data sources that are behind",
+                handler: onCollectNow ?? onOpenAutomation
+            )
+        case .openAutomation:
+            return InlineBannerAction(
+                label: PrimaryAction.openAutomation.label,
+                icon: "gearshape.2",
+                handler: onOpenAutomation
             )
         }
     }
@@ -66,6 +87,33 @@ struct GlobalHealthBanner: View {
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Pure action derivation
+
+    enum PrimaryAction: Equatable {
+        case collectNow
+        case openAutomation
+
+        var label: String {
+            switch self {
+            case .collectNow: return "Collect now"
+            case .openAutomation: return "Open Automation"
+            }
+        }
+    }
+
+    /// A red strip whose only button opened a screen with no re-collect
+    /// control was a dead end, so anything the operator can fix by collecting
+    /// offers the collect. Schedule-only issues still route to Automation,
+    /// which is where the fix for those lives.
+    ///
+    /// `nonisolated` for the same reason as `headline`.
+    nonisolated static func primaryAction(
+        freshness: [DataFreshnessIssue],
+        canCollect: Bool
+    ) -> PrimaryAction {
+        (canCollect && !freshness.isEmpty) ? .collectNow : .openAutomation
     }
 
     // MARK: - Pure headline derivation

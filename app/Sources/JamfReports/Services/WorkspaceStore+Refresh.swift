@@ -129,6 +129,10 @@ extension WorkspaceStore {
         } catch {
             toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
+        // Success or failure, the health strip must describe the run that just
+        // happened — before 2.7.0 it kept its launch-time verdict until the app
+        // was backgrounded, so a manual refresh appeared to change nothing.
+        await refreshDataFreshness()
     }
 
     /// Force-collect the given `tiers` and surface progress through `globalStatus`
@@ -157,6 +161,7 @@ extension WorkspaceStore {
         } catch {
             toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
+        await refreshDataFreshness()
     }
 
     /// First full collect for a never-fetched workspace (#181) — the
@@ -207,6 +212,7 @@ extension WorkspaceStore {
             )
         }
         await checkHeavyTierStaleness()
+        await refreshDataFreshness()
     }
 
     /// Must carry the LaunchAgent label prefix or `ScheduledRunRecorder.init`

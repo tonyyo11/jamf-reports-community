@@ -100,4 +100,40 @@ final class GlobalHealthBannerTests: XCTestCase {
     func testCapIsThree() {
         XCTAssertEqual(GlobalHealthBanner.maxNamedKinds, 3)
     }
+
+    // MARK: - Primary action
+
+    /// The field defect: a red strip whose only button opened a screen with no
+    /// re-collect control. Anything collectable now offers the collect.
+    func testFreshnessIssuesOfferCollectNow() {
+        XCTAssertEqual(
+            GlobalHealthBanner.primaryAction(
+                freshness: [freshness("security", .failing, failures: 6)], canCollect: true
+            ),
+            .collectNow
+        )
+        XCTAssertEqual(GlobalHealthBanner.PrimaryAction.collectNow.label, "Collect now")
+    }
+
+    /// A schedule that has not fired is not fixed by collecting — that button
+    /// still has to go to Automation.
+    func testScheduleOnlyIssuesKeepOpenAutomation() {
+        XCTAssertEqual(
+            GlobalHealthBanner.primaryAction(
+                freshness: [], canCollect: true
+            ),
+            .openAutomation
+        )
+    }
+
+    /// A caller that wires no collect handler must not be offered a button
+    /// that does nothing.
+    func testCollectNowIsNotOfferedWithoutAHandler() {
+        XCTAssertEqual(
+            GlobalHealthBanner.primaryAction(
+                freshness: [freshness("security", .stale)], canCollect: false
+            ),
+            .openAutomation
+        )
+    }
 }
