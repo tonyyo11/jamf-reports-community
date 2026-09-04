@@ -1806,6 +1806,16 @@ struct ReportEngine: Sendable {
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
 
+        // 2.8.0: per-device scan phase. After the verdicts (so a dead run never
+        // starts a fleet-wide fan-out) and before finalize (so its kinds count
+        // as live in today's summary).
+        let scanSaved = await Self.runDeviceScanPhase(
+            profile: profile, bin: bin, dataDir: dataDir, tiers: tiers,
+            skipExpensive: skipExpensive, force: force, recordManifest: recordManifest,
+            stateStore: stateStore, collectStart: collectStart, onLine: onLine
+        )
+        savedKinds.formUnion(scanSaved)
+
         await Self.finalizeCollect(
             profile: profile, tiers: tiers, bin: bin, dataDir: dataDir,
             savedKinds: savedKinds, loadedConfig: loadedConfig,
@@ -3212,7 +3222,7 @@ struct ReportEngine: Sendable {
         return Data(trimmed)
     }
 
-    private static func saveSnapshot(
+    static func saveSnapshot(
         data: Data,
         kind: String,
         dataDir: URL,
@@ -3284,7 +3294,7 @@ struct ReportEngine: Sendable {
     /// path passes a non-zero `maxCacheAgeHours`. Report sheets pass 0 and render
     /// whatever cache exists, carrying their own "data as of" subtitles — a stale
     /// but complete report is more useful than an empty one.
-    private static func loadLatestSnapshotData(
+    static func loadLatestSnapshotData(
         kind: String,
         dataDir: URL,
         maxCacheAgeHours: Int = 0
