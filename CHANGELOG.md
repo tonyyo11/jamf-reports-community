@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-04
+
 ### Added
 
 Reports can now cover a period rather than a moment. Pick a rolling window (4,
