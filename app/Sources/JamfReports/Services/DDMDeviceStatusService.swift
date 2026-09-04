@@ -69,10 +69,16 @@ struct DDMDeviceStatusService: Sendable {
                 let v = perId[id]!
                 return IdentifierSummary(identifier: id, active: v.active, inactive: v.inactive,
                                          invalid: v.invalid, mixed: v.mixed, devices: v.devices)
-            }.sorted {
-                ($1.mixed, $1.invalid, $1.inactive, $0.identifier) <
-                ($0.mixed, $0.invalid, $0.inactive, $1.identifier)
-            }
+            }.sorted(by: Self.worstFirst)
+        }
+
+        /// Field-by-field comparator (avoids a heterogeneous tuple comparison,
+        /// which Swift 6.1's type-checker can time out on).
+        private static func worstFirst(_ a: IdentifierSummary, _ b: IdentifierSummary) -> Bool {
+            if a.mixed != b.mixed { return a.mixed > b.mixed }
+            if a.invalid != b.invalid { return a.invalid > b.invalid }
+            if a.inactive != b.inactive { return a.inactive > b.inactive }
+            return a.identifier < b.identifier
         }
 
         var failingDeclarationCount: Int { byIdentifier.reduce(0) { $0 + $1.issues } }
