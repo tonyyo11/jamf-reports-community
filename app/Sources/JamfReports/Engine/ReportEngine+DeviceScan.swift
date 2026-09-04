@@ -40,17 +40,13 @@ extension ReportEngine {
             let g = try? c.nestedContainer(keyedBy: General.self, forKey: .general)
             name = (try? g?.decodeIfPresent(String.self, forKey: .name)) ?? ""
             managementId = try? g?.decodeIfPresent(String.self, forKey: .managementId)
-            // Bound in two `if let` steps rather than one chained optional
-            // expression — `g` is itself optional, and the exact optional
-            // depth of a chained `try? …decodeIfPresent(...)` through an
-            // optional receiver is not worth gambling on when it can't be
-            // compile-checked here.
+            // Two if-let steps: try? flattens decodeIfPresent's result to a single optional.
             var ddm = false
             if let container = g,
                let raw = try? container.decodeIfPresent(
                    AnyCodable.self, forKey: .declarativeDeviceManagementEnabled
                ) {
-                ddm = raw?.boolValue ?? false
+                ddm = raw.boolValue ?? false
             }
             ddmEnabled = ddm
         }
