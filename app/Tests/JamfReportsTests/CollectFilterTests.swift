@@ -86,6 +86,16 @@ final class CollectFilterTests: XCTestCase {
         "departments"
     ]
 
+    /// Literal pin of the argv-matrix expensive kinds (the four cold-tier
+    /// per-device commands filtered by the "Skip expensive collections"
+    /// toggle). The two scan-phase kinds (ddm-device-status,
+    /// mdm-command-health — Task 5, ReportEngine+DeviceScan) are
+    /// deliberately absent: they never appear in `plannedKinds`, so they
+    /// contribute nothing to the argv-matrix filter delta below.
+    private static let matrixExpensiveKinds: Set<String> = [
+        "ea-results", "patch-device-failures", "update-device-failures", "device-compliance"
+    ]
+
     /// Asserts the skipExpensive=true branch removes exactly the four cold-tier
     /// kinds and nothing else. Mirrors the production branch:
     ///
@@ -101,22 +111,23 @@ final class CollectFilterTests: XCTestCase {
         let withSkip = Self.plannedKinds.filter {
             !ReportEngine.expensivePerDeviceKinds.contains($0)
         }
-        // Only the four argv-matrix expensive kinds can appear here — the
-        // two scan-phase kinds (ddm-device-status, mdm-command-health)
-        // never appear in plannedKinds, so they contribute nothing to
-        // this filter's delta.
-        let matrixExpensiveKinds = ReportEngine.expensivePerDeviceKinds
-            .intersection(Self.plannedKinds)
         XCTAssertEqual(
             withAll.count - withSkip.count, 4,
             "skipExpensive=true must remove exactly the 4 cold-tier per-device commands"
         )
-        XCTAssertFalse(matrixExpensiveKinds.isEmpty)
         XCTAssertEqual(
             Set(withAll).subtracting(Set(withSkip)),
-            matrixExpensiveKinds,
+            Self.matrixExpensiveKinds,
             "The kinds removed by skipExpensive=true must be exactly the matrix-side "
                 + "expensive kinds"
+        )
+        // Real drift check: the production constant's intersection with the
+        // planned commands must equal the literal above — no scan-phase
+        // kind has leaked into the matrix, and no matrix kind has been
+        // dropped from the constant.
+        XCTAssertEqual(
+            ReportEngine.expensivePerDeviceKinds.intersection(Self.plannedKinds),
+            Self.matrixExpensiveKinds
         )
     }
 
@@ -141,14 +152,12 @@ final class CollectFilterTests: XCTestCase {
         let removed = Self.plannedKinds.filter {
             ReportEngine.expensivePerDeviceKinds.contains($0)
         }
-        let matrixExpensiveKinds = ReportEngine.expensivePerDeviceKinds
-            .intersection(Self.plannedKinds)
 
         XCTAssertEqual(removed.count, 4,
                        "Exactly 4 kinds should be filtered out when skipExpensive=true")
-        XCTAssertEqual(Set(removed), matrixExpensiveKinds)
+        XCTAssertEqual(Set(removed), Self.matrixExpensiveKinds)
         XCTAssertEqual(filtered.count, Self.plannedKinds.count - 4)
-        for kind in matrixExpensiveKinds {
+        for kind in Self.matrixExpensiveKinds {
             XCTAssertFalse(filtered.contains(kind),
                            "Filtered list should not contain \(kind) when skipExpensive=true")
         }
