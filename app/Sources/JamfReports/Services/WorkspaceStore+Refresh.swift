@@ -129,6 +129,10 @@ extension WorkspaceStore {
         } catch {
             toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
+        // Success or failure, the health strip must describe the run that just
+        // happened — before 2.7.0 it kept its launch-time verdict until the app
+        // was backgrounded, so a manual refresh appeared to change nothing.
+        await refreshDataFreshness()
     }
 
     /// Force-collect the given `tiers` and surface progress through `globalStatus`
@@ -157,6 +161,7 @@ extension WorkspaceStore {
         } catch {
             toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
+        await refreshDataFreshness()
     }
 
     /// First full collect for a never-fetched workspace (#181) — the
@@ -207,6 +212,7 @@ extension WorkspaceStore {
             )
         }
         await checkHeavyTierStaleness()
+        await refreshDataFreshness()
     }
 
     /// Must carry the LaunchAgent label prefix or `ScheduledRunRecorder.init`
@@ -391,8 +397,12 @@ extension WorkspaceStore {
                 await self.catchUpCollectIfNeeded()
                 // Re-evaluate the dead-man switch on wake so a schedule that
                 // went overdue while the app was open/asleep surfaces without
-                // a relaunch. Self-guards on demo mode.
+                // a relaunch. Self-guards on demo mode. This also re-evaluates
+                // per-kind data freshness.
                 await self.refreshAutomationHealth()
+                // Then try to fix what it found. Hour-rate-limited internally,
+                // so repeated app focus does not repeatedly hit the server.
+                await self.remediateStaleDataIfNeeded()
             }
         }
         objc_setAssociatedObject(

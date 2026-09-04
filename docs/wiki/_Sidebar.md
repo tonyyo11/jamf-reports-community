@@ -14,6 +14,7 @@
 - [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust)
 - [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends)
 - [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity)
+- [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports)
 - [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line)
 - [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance)
 

@@ -152,6 +152,7 @@ struct MSCPChartDataBuilder: Sendable {
         // the newest file for a given date overwrites earlier ones.
         let jsonFiles = files
             .filter { $0.pathExtension == "json" && $0.lastPathComponent != "manifest.json" }
+            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
             .sorted { dateFromSnapshotFilename($0) < dateFromSnapshotFilename($1) }
         for url in jsonFiles {
             guard let data = try? Data(contentsOf: url) else { continue }
@@ -292,26 +293,6 @@ struct MSCPChartDataBuilder: Sendable {
         return d
     }
 
-    // Allocated once; DateFormatter is not Sendable, so `nonisolated(unsafe)` is
-    // required to store it in a static on a Sendable-conforming type.
-    private static let snapshotDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyyMMdd'T'HHmmss"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.calendar = Calendar(identifier: .iso8601)
-        return f
-    }()
-
-    // Python-era dashed form: ea-results_2026-04-15T210038673146 (microsecond tail).
-    // Same POSIX/UTC settings as the canonical formatter; only the pattern differs.
-    private static let dashedSnapshotDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd'T'HHmmss"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.calendar = Calendar(identifier: .iso8601)
-        return f
-    }()
-
     /// Extract a date from an ea-results snapshot filename.
     ///
     /// Handles the canonical `saveSnapshot` form `<kind>_yyyyMMddTHHmmss.json`
@@ -319,19 +300,13 @@ struct MSCPChartDataBuilder: Sendable {
     /// (trailing microsecond digits ignored). Falls back to the file modification
     /// time when neither pattern matches.
     static func dateFromSnapshotFilename(_ url: URL, fm: FileManager = .default) -> Date {
-        let stem = url.deletingPathExtension().lastPathComponent
-        // Canonical saveSnapshot format: ea-results_20240615T120000
-        if let range = stem.range(of: #"(\d{8})T(\d{6})$"#, options: .regularExpression) {
-            let match = String(stem[range])
-            if let date = snapshotDateFormatter.date(from: match) { return date }
-        }
-        // Python-era dashed format: ea-results_2026-04-15T210038673146
-        // Take the first 6 digits after 'T' as HHmmss; ignore trailing microseconds.
-        if let range = stem.range(of: #"(\d{4})-(\d{2})-(\d{2})T(\d{6})"#,
-                                  options: .regularExpression) {
-            let match = String(stem[range])
-            if let date = dashedSnapshotDateFormatter.date(from: match) { return date }
-        }
+        // One parser, shared with FileSystemHelpers' newest* helpers, so the
+        // ordering used by the charts can never drift from the ordering used by
+        // the dashboards reading the same directory.
+        if let stamped = CloudStorage.snapshotTimestamp(of: url) { return stamped }
+        // No canonical stamp. Callers filter sync-conflict copies out before
+        // they reach here, so this is a legacy or hand-placed file; mtime is the
+        // only signal left.
         let attrs = try? fm.attributesOfItem(atPath: url.path)
         return (attrs?[.modificationDate] as? Date) ?? .distantPast
     }

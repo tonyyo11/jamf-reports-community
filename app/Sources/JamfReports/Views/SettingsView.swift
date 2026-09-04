@@ -31,9 +31,6 @@ struct SettingsView: View {
     // the target dir isn't app-writable and the user must run the command.
     @State private var cliInstallMessage: String? = nil
     @State private var cliInstallCommand: String? = nil
-    // Legacy v3.5 history import (LegacyHistoryImporter).
-    @State private var legacyImportMessage: String? = nil
-    @State private var isImportingLegacyHistory = false
     // Debug logging (DebugLoggingService) — toggles apply on next launch.
     @State private var debugState: DebugLoggingState = .off
     @State private var loggingApplyMessage: String? = nil
@@ -41,6 +38,12 @@ struct SettingsView: View {
     // not the Config-tab managed-key surface.
     @State private var aiConfig: AIConfig = AIConfig()
     @State private var aiSaveMessage: String? = nil
+
+    // Workspace location (2.7.0). Held in @State so the card reflects a change
+    // without waiting for the next `.task`; the store is the source of truth.
+    @State private var workspaceRootPath: String = ProfileService.workspacesRoot().path
+    @State private var workspaceRootMessage: String? = nil
+    @State private var pendingSharedRoot: URL? = nil
 
     var body: some View {
         ScrollView {
@@ -58,6 +61,7 @@ struct SettingsView: View {
                     connectionsCard
                 }
                 commandLineToolCard
+                workspaceLocationCard
                 dataAndChartsCard
                 diagnosticsCard
                 loggingCard
@@ -80,6 +84,7 @@ struct SettingsView: View {
         // keep showing the first profile's config (PR-23 advisor finding).
         .task(id: workspace.profile) {
             workspace.refreshToolStatus()
+            workspaceRootPath = ProfileService.workspacesRoot().path
             workspace.reloadFromDisk()
             testResults = [:]
             await loadTokenStatuses()
@@ -100,6 +105,10 @@ struct SettingsView: View {
         )
         if platformCapability == nil { platformCapability = service }
         service.refresh()
+        // Same fact, second cache: collect and the health strip read the auth
+        // method through `ProfileAuthMethod`, so a profile that just gained
+        // platform auth must not stay excluded for the rest of the session.
+        ProfileAuthMethod.invalidateCache()
         platformCapabilityAvailable = await service.isAvailable(for: workspace.profile)
     }
 
@@ -140,6 +149,157 @@ struct SettingsView: View {
     }
 
     // MARK: - Included CLI install
+
+    private nonisolated static let workspaceLocationBlurb: String =
+        "Where profiles, history, snapshots and reports are kept. Point this at a " +
+        "shared team folder — OneDrive/SharePoint, Box, Dropbox or a mounted " +
+        "share — so several Macs can report against the same tenants and build " +
+        "one history between them. Keep the default if this Mac is the only one " +
+        "reporting."
+
+    private nonisolated static let sharedFolderConsentMessage: String = """
+        Device serials, usernames and email addresses are stored in clear text in the \
+        raw snapshots and run logs, and any webhook URL you configure is stored in \
+        config.yaml. The folder's sharing settings decide who can read all of that — \
+        this app cannot restrict it, and the file permissions it sets are not carried \
+        across by the sync provider.
+
+        Confirm the folder is shared only with people cleared to see device-level \
+        inventory. If a wider audience only needs the reports, cancel and set \
+        Output & Branding's output folder to the shared location instead — that \
+        publishes finished reports without sharing the raw data.
+        """
+
+    private nonisolated static func providerLabel(_ name: String) -> String {
+        "On \(name) — multi-Mac coordination turns on automatically. Run Check on the Config screen reports who else writes here."
+    }
+
+    private var workspaceLocationCard: some View {
+        Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Workspace location")
+                Text(Self.workspaceLocationBlurb)
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+
+                Text(workspaceRootPath)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Theme.Text.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let provider = CloudStorage.provider(
+                    for: URL(fileURLWithPath: workspaceRootPath)
+                ) {
+                    Label(Self.providerLabel(provider.displayName), systemImage: "person.2")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 8) {
+                    PNPButton(title: "Choose folder…", icon: "folder", size: .sm) {
+                        chooseWorkspaceRoot()
+                    }
+                    .help("Pick the folder that holds your Jamf Reports workspaces.")
+                    .accessibilityHint("Opens a folder picker for the workspace location.")
+
+                    if WorkspaceRootStore.isCustomised() {
+                        PNPButton(title: "Use default", icon: "arrow.uturn.backward", size: .sm) {
+                            applyWorkspaceRoot(nil)
+                        }
+                        .help("Go back to ~/Jamf-Reports on this Mac.")
+                    }
+                }
+
+                if let msg = workspaceRootMessage {
+                    Text(msg)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Workspace location")
+        .confirmationDialog(
+            sharedFolderConsentTitle,
+            isPresented: Binding(
+                get: { pendingSharedRoot != nil },
+                set: { if !$0 { pendingSharedRoot = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Use this folder") {
+                let url = pendingSharedRoot
+                pendingSharedRoot = nil
+                if let url { applyWorkspaceRoot(url) }
+            }
+            Button("Cancel", role: .cancel) { pendingSharedRoot = nil }
+        } message: {
+            Text(Self.sharedFolderConsentMessage)
+        }
+    }
+
+    private func chooseWorkspaceRoot() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose the folder that holds your Jamf Reports workspaces."
+        panel.directoryURL = URL(fileURLWithPath: workspaceRootPath)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        // Choosing a synced folder widens who can read raw fleet data. That is
+        // the operator's call to make — but it must be a call they knowingly
+        // make, at the moment they make it, not something they read later in
+        // the wiki. A local folder skips the prompt entirely.
+        if CloudStorage.provider(for: url) != nil {
+            pendingSharedRoot = url
+            return
+        }
+        applyWorkspaceRoot(url)
+    }
+
+    /// Named for what it actually shares, not for the feature.
+    private var sharedFolderConsentTitle: String {
+        guard let url = pendingSharedRoot,
+              let provider = CloudStorage.provider(for: url) else {
+            return "Use this shared folder?"
+        }
+        return "Everyone with access to this \(provider.displayName) folder will be able to "
+            + "read your fleet's device data"
+    }
+
+    /// Existing workspaces are deliberately NOT moved. Relocating gigabytes of
+    /// snapshots onto a synced volume on a button press is not recoverable in
+    /// one click, so the operator either points at a folder that already holds
+    /// them or copies them across themselves.
+    private func applyWorkspaceRoot(_ url: URL?) {
+        do {
+            let applied = try WorkspaceRootStore.set(url)
+            workspaceRootPath = applied.path
+            workspace.reloadFromDisk()
+            // Actually rewrite the managed plists now. set() only clears the
+            // flag that makes the NEXT reconcile forced, and reloadFromDisk
+            // does not reconcile — so without this the message below would
+            // describe something that had not happened yet.
+            Task { await workspace.reconcileManagedAutomation() }
+            workspaceRootMessage = url == nil
+                ? "Back to the default location. Profiles already in the previous folder stay "
+                    + "there — copy them across if you want them here."
+                : "Workspace location updated. Profiles already elsewhere are not moved; copy "
+                    + "them in if you want them here. Scheduled runs are rewritten to match."
+        } catch {
+            workspaceRootMessage = "Couldn't use that folder: \(error.localizedDescription)"
+        }
+    }
 
     private var commandLineToolCard: some View {
         Card(padding: 18) {
@@ -657,10 +817,6 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Divider().background(Theme.Hairline.standard)
-
-                legacyImportSection
             }
         }
         .accessibilityElement(children: .contain)
@@ -782,36 +938,17 @@ struct SettingsView: View {
                     set: { aiConfig.enabled = $0; saveAIConfig() }))
 
                 if aiConfig.isEnabled {
-                    // Official builds lack the Apple-granted PCC entitlement (App Store-only
-                    // program) — offering a tier that traps on construction would be wrong.
-                    if PCCEntitlement.isPresent {
-                        Picker("Model", selection: Binding(
-                            get: { aiConfig.resolvedTier },
-                            set: { aiConfig.tier = $0.rawValue; saveAIConfig() })) {
-                            Text("On-device").tag(AIConfig.Tier.onDevice)
-                            Text("Private Cloud Compute").tag(AIConfig.Tier.pcc)
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(maxWidth: 260, alignment: .leading)
-                    } else {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Model — On-device")
-                                .font(.callout.weight(.medium))
-                                .foregroundStyle(Theme.Text.primary)
-                            Text("Runs entirely on this Mac. No fleet data leaves the device.")
-                                .font(.caption)
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                        }
+                    // No model picker: Apple Foundation Models is on-device only,
+                    // so there is nothing to choose between. The row states what
+                    // will happen rather than offering a one-option control.
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Model — On-device")
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(Theme.Text.primary)
+                        Text("Runs entirely on this Mac. No fleet data leaves the device.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-
-                    Toggle("Lock to on-device (high security)", isOn: Binding(
-                        get: { aiConfig.isLockedOnDevice },
-                        set: { aiConfig.lockOnDevice = $0; saveAIConfig() }))
-                    Text("Ignores any configured tier and never uses Private Cloud Compute.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .padding(.leading, 2)
                 }
 
                 Text(ModelAvailability.current(for: aiConfig).message)
@@ -841,101 +978,6 @@ struct SettingsView: View {
         } catch {
             aiSaveMessage = "Couldn't save AI settings: \(error.localizedDescription)"
         }
-    }
-
-    // MARK: - Legacy v3.5 history import
-
-    /// Affordance to migrate a v3.5 `fleet_health_metrics_history.json` into
-    /// the active profile's summaries directory so TrendsView gains historical
-    /// data on day one without re-running collections.
-    ///
-    /// Isolation safety (Swift 6.1): `LegacyHistoryImporter` is `Sendable` and
-    /// `importHistory(from:forProfile:)` is a `static func` with no captured
-    /// actor state. The blocking file I/O runs inside `Task.detached` (outside
-    /// `@MainActor`) so it doesn't hold the main actor during disk reads/writes.
-    /// The `await .value` resumes on `@MainActor` to write UI state, which is
-    /// safe because `Outcome` and `String` are both `Sendable`.
-    @ViewBuilder
-    private var legacyImportSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("v3.5 History Migration")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(Theme.Text.primary)
-            Text(
-                "Import a fleet_health_metrics_history.json from the previous v3.5 " +
-                "dashboard into the active profile's Trends data. Existing daily " +
-                "summaries are not overwritten."
-            )
-            .font(.caption.monospaced())
-            .foregroundStyle(Theme.Text.tertiary(contrast))
-            .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                if isImportingLegacyHistory {
-                    ProgressView().controlSize(.small)
-                    Text("Importing…")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                } else {
-                    PNPButton(
-                        title: "Migrate from v3.5 history…",
-                        icon: "arrow.down.doc",
-                        size: .sm
-                    ) {
-                        pickLegacyHistoryFile()
-                    }
-                    .disabled(workspace.profile.isEmpty)
-                    .help(
-                        "Pick a fleet_health_metrics_history.json file and import its entries " +
-                        "into the active profile's snapshot directory."
-                    )
-                }
-            }
-
-            if let msg = legacyImportMessage {
-                Text(msg)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func pickLegacyHistoryFile() {
-        let panel = NSOpenPanel()
-        panel.title = "Select fleet_health_metrics_history.json"
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [.json]
-        panel.directoryURL = LegacyHistoryImporter.defaultHistoryURL
-            .deletingLastPathComponent()
-        panel.begin { [profile = workspace.profile] response in
-            guard response == .OK, let url = panel.url else { return }
-            Task { @MainActor in
-                await self.runLegacyImport(from: url, profile: profile)
-            }
-        }
-    }
-
-    private func runLegacyImport(from url: URL, profile: String) async {
-        isImportingLegacyHistory = true
-        legacyImportMessage = nil
-        do {
-            let outcome = try await Task.detached(priority: .userInitiated) {
-                try LegacyHistoryImporter.importHistory(from: url, forProfile: profile)
-            }.value
-            let parts: [String] = [
-                "\(outcome.imported.count) snapshot(s) imported",
-                outcome.skipped.isEmpty ? nil : "\(outcome.skipped.count) already existed",
-                outcome.invalid.isEmpty ? nil : "\(outcome.invalid.count) unreadable date(s)",
-            ].compactMap { $0 }
-            legacyImportMessage = parts.joined(separator: " · ")
-        } catch {
-            legacyImportMessage = "Legacy history import failed: \(error.localizedDescription). "
-                + "Confirm the source file is a valid v3.5 history JSON and the workspace is writable."
-        }
-        isImportingLegacyHistory = false
     }
 
     /// Active workspace root, or nil if no profile is selected.
@@ -970,9 +1012,12 @@ struct SettingsView: View {
                     : "Bundle written to \(url.lastPathComponent) in this profile's " +
                       "diagnostics folder (Finder reveal was blocked)."
             } catch {
+                let diagnosticsPath = WorkspaceRootStore.displayPath(
+                    profile: workspace.profile, subpath: "diagnostics"
+                )
                 diagnosticBundleMessage =
                     "Diagnostic bundle failed: \(error.localizedDescription). Verify "
-                    + "~/Jamf-Reports/\(workspace.profile)/diagnostics is writable and has free space."
+                    + "\(diagnosticsPath) is writable and has free space."
             }
             isGeneratingBundle = false
         }

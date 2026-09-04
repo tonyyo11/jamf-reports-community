@@ -87,6 +87,9 @@ enum ConfigDoctorService {
         if let config, parseError == nil {
             rows += accuracyRows(config: config, profile: profile)
         }
+        rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
+        rows += evaluateWorkspaceContinuity(
+            workspaceContinuityInputs(profile: profile, config: config))
         return DoctorReport(rows: rows)
     }
 
@@ -950,5 +953,549 @@ private extension String {
             }
         }
         return out
+    }
+}
+
+// MARK: - Cloud-storage family
+
+/// Inputs for the cloud-storage and shared-workspace checks.
+///
+/// Split out so every rule below is exercisable without a real synced volume,
+/// a second Mac, or a mounted share.
+struct CloudStorageInputs: Sendable {
+    let workspaceRoot: URL
+    let rootValidation: WorkspaceRootStore.Validation
+    let rootIsCustom: Bool
+    let workspace: URL?
+    let outputDir: URL?
+    let archiveDir: URL?
+    let backupsDir: URL?
+    /// Sync-conflict filenames found in the workspace (sampled, not exhaustive).
+    let conflictCopies: [String]
+    /// Whether multi-machine coordination is active for this workspace.
+    let coordinationEnabled: Bool
+    /// True when `shared_workspace.enabled` was set explicitly rather than
+    /// inferred from the volume. Changes the advice: an explicit `false` on a
+    /// synced volume is a deliberate (and risky) choice, not an oversight.
+    let coordinationExplicit: Bool
+    let minCollectInterval: TimeInterval
+    let otherHosts: [SharedWorkspace.HostActivity]
+    let claim: SharedWorkspace.Claim?
+    let now: Date
+}
+
+extension ConfigDoctorService {
+
+    /// Pure rules for the "Cloud storage" family.
+    ///
+    /// 2.7.0 changed what these rules are for. Previously a synced workspace
+    /// was simply wrong and every row said so. Hosting the workspace on a team
+    /// folder is now supported, so the rows describe **which shape is in
+    /// effect**, whether the coordination that makes the shape safe is switched
+    /// on, and what specifically remains the operator's responsibility. A row
+    /// only warns when there is a real exposure, not merely because a sync
+    /// provider is involved.
+    static func evaluateCloudStorage(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        rootRows(inputs)
+            + workspaceShapeRows(inputs)
+            + coordinationRows(inputs)
+            + publishTargetRows(inputs)
+            + conflictRows(inputs)
+    }
+
+    // MARK: Workspace root
+
+    private static func rootRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        let path = inputs.workspaceRoot.path
+
+        switch inputs.rootValidation {
+        case .missing:
+            return [DoctorRow(
+                id: "cloud.root",
+                severity: .fail,
+                title: "Workspace folder is not there",
+                detail: "Nothing exists at \(path). On a synced folder this usually means the "
+                    + "provider has not finished mounting, you are signed out of it, or the "
+                    + "share was renamed. Until it returns, no profile can be read or written.",
+                hint: "Open the folder in Finder to confirm it mounts, then reopen the app. "
+                    + "To go back to local storage, clear the folder in Settings › Workspace."
+            )]
+        case .notADirectory:
+            return [DoctorRow(
+                id: "cloud.root",
+                severity: .fail,
+                title: "Workspace path is a file",
+                detail: "\(path) is a file, so no workspace can live there.",
+                hint: "Pick a folder in Settings › Workspace."
+            )]
+        case .notWritable:
+            return [DoctorRow(
+                id: "cloud.root",
+                severity: .fail,
+                title: "Workspace folder is read-only",
+                detail: "\(path) cannot be written by your account. On a shared team folder this "
+                    + "normally means you have been granted read access rather than edit access.",
+                hint: "Ask the folder's owner for edit permission, or point Settings › Workspace "
+                    + "at a folder you can write to."
+            )]
+        case .sensitiveLocation:
+            return [DoctorRow(
+                id: "cloud.root",
+                severity: .fail,
+                title: "Workspace folder is in a reserved location",
+                detail: "\(path) is a system directory or holds credentials, so it will not be "
+                    + "used for fleet data.",
+                hint: "Pick a folder under your home directory or a synced team folder."
+            )]
+        case .ok:
+            guard inputs.rootIsCustom else { return [] }
+            let provider = CloudStorage.provider(for: inputs.workspaceRoot)
+            let where_ = provider.map { "on \($0.displayName)" } ?? "at a custom location"
+            return [DoctorRow(
+                id: "cloud.root",
+                severity: .pass,
+                title: "Workspace is \(where_)",
+                detail: "Profiles, history and reports are read from and written to \(path).",
+                hint: nil
+            )]
+        }
+    }
+
+    // MARK: Workspace shape
+
+    private static func workspaceShapeRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        guard let workspace = inputs.workspace,
+              let provider = CloudStorage.provider(for: workspace) else { return [] }
+
+        // The genuinely risky state: the folder syncs to other people's Macs
+        // but nothing is coordinating writes to it.
+        guard inputs.coordinationEnabled else {
+            let why = inputs.coordinationExplicit
+                ? "shared_workspace.enabled is set to false, so coordination is switched off "
+                    + "even though this folder syncs."
+                : "Coordination could not be enabled automatically for this folder."
+            return [DoctorRow(
+                id: "cloud.workspace",
+                severity: .warn,
+                title: "Shared folder with coordination off",
+                detail: "\(why) If a second Mac points at this folder, both will collect the "
+                    + "same day's inventory, each will report success for work the other did, "
+                    + "and neither will wait for the other to finish writing.",
+                hint: "Set shared_workspace.enabled: true in config.yaml — or leave it unset so "
+                    + "it turns on by itself — unless you are certain this Mac is the only "
+                    + "writer."
+            )]
+        }
+
+        return [DoctorRow(
+            id: "cloud.workspace",
+            severity: .pass,
+            title: "Shared workspace on \(provider.displayName)",
+            detail: "Several Macs can report against these tenants and build one shared "
+                + "history. \(collectSpacing(inputs.minCollectInterval)) Each run is announced "
+                + "with a short claim so two machines do not collect at once.",
+            hint: nil
+        )] + privacyRow(provider: provider)
+    }
+
+    /// Phrase the configured spacing as the number an operator set, not the key
+    /// name — zero is a real choice here and reads very differently.
+    private static func collectSpacing(_ interval: TimeInterval) -> String {
+        guard interval > 0 else {
+            return "Freshness checks are off, so every Mac collects on its own schedule."
+        }
+        let hours = Int(interval / 3600)
+        return "A scheduled collect stands down if another Mac collected in the last "
+            + "\(hours) hour\(hours == 1 ? "" : "s")."
+    }
+
+    /// Always paired with an enabled shared workspace. Coordination solves
+    /// collisions; it does nothing about who can read the folder, and that is
+    /// the part an operator has to decide deliberately.
+    private static func privacyRow(provider: CloudStorage.Provider) -> [DoctorRow] {
+        [DoctorRow(
+            id: "cloud.privacy",
+            severity: .suggest,
+            title: "Everyone with folder access can read raw fleet data",
+            detail: "Raw snapshots under jamf-cli-data/ and the files in automation/logs/ hold "
+                + "device serials, usernames and email addresses in clear text, and config.yaml "
+                + "holds any webhook URL you have configured. \(provider.displayName) shares "
+                + "those with everyone the folder is shared with; the file permissions this Mac "
+                + "sets are not carried across.",
+            hint: "Confirm the folder is shared only with people cleared to see device-level "
+                + "inventory. To share findings more widely, keep the workspace private and "
+                + "point output.output_dir at a second, wider folder so only finished reports "
+                + "are published."
+        )]
+    }
+
+    // MARK: Multi-machine coordination
+
+    private static func coordinationRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        guard inputs.coordinationEnabled else { return [] }
+        var rows: [DoctorRow] = []
+
+        rows += peerRows(inputs)
+        rows += claimRows(inputs)
+        rows += clockSkewRows(inputs)
+        return rows
+    }
+
+    private static func peerRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        guard !inputs.otherHosts.isEmpty else {
+            return [DoctorRow(
+                id: "cloud.peers",
+                severity: .pass,
+                title: "This Mac is the only one writing here",
+                detail: "No other machine has recorded a run in this workspace. Coordination is "
+                    + "armed and will engage as soon as one does.",
+                hint: nil
+            )]
+        }
+
+        let named = inputs.otherHosts
+            .sorted { ($0.lastCollectAt ?? .distantPast) > ($1.lastCollectAt ?? .distantPast) }
+            .prefix(4)
+            .map { activity -> String in
+                guard let at = activity.lastCollectAt else {
+                    return "\(activity.host.display) (no collect recorded)"
+                }
+                let age = ReportEngine.approximateAge(since: at, now: inputs.now)
+                return "\(activity.host.display) \(age)"
+            }
+            .joined(separator: ", ")
+        let more = inputs.otherHosts.count > 4 ? " (+\(inputs.otherHosts.count - 4) more)" : ""
+
+        // A mixed-version fleet is worth naming: an older build writing here
+        // predates the ordering and pruning guards this one relies on.
+        let versions = Set(inputs.otherHosts.map(\.appVersion))
+            .subtracting([SharedWorkspace.appVersion])
+        let mismatched = versions.subtracting(["unknown"]).sorted()
+
+        var rows = [DoctorRow(
+            id: "cloud.peers",
+            severity: .pass,
+            title: "\(inputs.otherHosts.count) other Mac(s) share this workspace",
+            detail: "Last collects: \(named)\(more).",
+            hint: nil
+        )]
+
+        if !mismatched.isEmpty {
+            rows.append(DoctorRow(
+                id: "cloud.peerversions",
+                severity: .warn,
+                title: "Other Macs are running different app versions",
+                detail: "This Mac runs \(SharedWorkspace.appVersion); others report "
+                    + "\(mismatched.joined(separator: ", ")). Versions before 2.7.0 order "
+                    + "snapshots by modification date, which a sync provider rewrites, and "
+                    + "prune backups without checking whose they are.",
+                hint: "Update every Mac writing to this folder to the same version before "
+                    + "relying on the shared history."
+            ))
+        }
+        return rows
+    }
+
+    private static func claimRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        guard let claim = inputs.claim else { return [] }
+        if claim.host.id == SharedWorkspace.currentHost.id { return [] }
+
+        if claim.isExpired(at: inputs.now) {
+            return [DoctorRow(
+                id: "cloud.claim",
+                severity: .suggest,
+                title: "Stale claim left by \(claim.host.display)",
+                detail: "\(claim.host.display) started \(claim.operation) "
+                    + "\(ReportEngine.approximateAge(since: claim.startedAt, now: inputs.now)) and "
+                    + "never released it — usually a Mac that slept or was shut down mid-run. "
+                    + "It has expired, so the next run here takes it over automatically.",
+                hint: nil
+            )]
+        }
+
+        return [DoctorRow(
+            id: "cloud.claim",
+            severity: .pass,
+            title: "\(claim.host.display) is running \(claim.operation)",
+            detail: "Its claim lasts "
+                + "\(ReportEngine.approximateAge(until: claim.expiresAt, now: inputs.now)). "
+                + "Scheduled runs on this Mac will stand down until then; Refresh still works "
+                + "and will say it is running alongside.",
+            hint: nil
+        )]
+    }
+
+    /// Every coordination decision compares timestamps written by different
+    /// machines, so a badly-set clock is not cosmetic here — it decides whether
+    /// a collect is skipped as recent or treated as overdue.
+    private static func clockSkewRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        let tolerance = SharedWorkspace.clockSkewTolerance
+        let ahead = inputs.otherHosts.compactMap { activity -> (String, Date)? in
+            guard let at = activity.lastCollectAt,
+                  at.timeIntervalSince(inputs.now) > tolerance else { return nil }
+            return (activity.host.display, at)
+        }
+        guard !ahead.isEmpty else { return [] }
+
+        let names = ahead.map(\.0).joined(separator: ", ")
+        return [DoctorRow(
+            id: "cloud.clockskew",
+            severity: .warn,
+            title: "Another Mac's clock is ahead of this one",
+            detail: "\(names) recorded a collect dated in the future relative to this Mac. "
+                + "Freshness checks compare these timestamps, so this Mac may keep standing "
+                + "down for a collect that has not actually happened recently.",
+            hint: "Turn on Set date and time automatically in System Settings › General › "
+                + "Date & Time on every Mac sharing this folder."
+        )]
+    }
+
+    // MARK: Publish targets
+
+    private static func publishTargetRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+        let workspaceProvider = inputs.workspace.flatMap(CloudStorage.provider(for:))
+        let outputProvider = inputs.outputDir.flatMap(CloudStorage.provider(for:))
+        let archiveProvider = inputs.archiveDir.flatMap(CloudStorage.provider(for:))
+
+        if workspaceProvider == nil, let provider = outputProvider {
+            rows.append(DoctorRow(
+                id: "cloud.output",
+                severity: .pass,
+                title: "Reports publish to \(provider.displayName)",
+                detail: "Generated reports are written to \(provider.displayName) while the "
+                    + "workspace stays on local disk — the narrowest way to share output, since "
+                    + "only finished reports leave this Mac.",
+                hint: nil
+            ))
+        }
+
+        if workspaceProvider == nil, outputProvider == nil, let provider = archiveProvider {
+            rows.append(DoctorRow(
+                id: "cloud.archive",
+                severity: .warn,
+                title: "Report archive is on \(provider.displayName), reports are not",
+                detail: "output.archive_dir points at \(provider.displayName) but "
+                    + "output.output_dir does not, so rotated reports leave the machine while "
+                    + "current ones stay behind — the opposite of what most people intend.",
+                hint: "Point output.output_dir at the shared folder too, or set archive_dir back "
+                    + "to a local path."
+            ))
+        }
+
+        if inputs.backupsDir.flatMap(CloudStorage.provider(for:)) != nil {
+            rows.append(DoctorRow(
+                id: "cloud.backups",
+                severity: .suggest,
+                title: "Only this Mac's backups are pruned here",
+                detail: "Retention on a shared folder applies to backups this Mac made — each "
+                    + "one records which machine produced it. Another Mac's backups, and any "
+                    + "made before ownership was recorded, are left alone rather than counted "
+                    + "against this machine's retention budget.",
+                hint: "Backups from other Macs, and any predating this version, need removing "
+                    + "by hand or by running each machine at least once so it prunes its own."
+            ))
+        }
+        return rows
+    }
+
+    // MARK: Conflict copies
+
+    private static func conflictRows(_ inputs: CloudStorageInputs) -> [DoctorRow] {
+        guard !inputs.conflictCopies.isEmpty else { return [] }
+        let sample = inputs.conflictCopies.prefix(3).joined(separator: ", ")
+        let more = inputs.conflictCopies.count > 3
+            ? " (+\(inputs.conflictCopies.count - 3) more)" : ""
+
+        // With coordination on, conflict copies are expected background noise
+        // from overlapping runs rather than evidence of an unknown writer.
+        let severity: DoctorSeverity = inputs.coordinationEnabled ? .suggest : .warn
+        let cause = inputs.coordinationEnabled
+            ? "Two Macs wrote the same file closely enough that the provider kept both copies. "
+                + "They are ignored when reading data, so no report is built from them."
+            : "A sync provider created these when two machines wrote the same file. They are "
+                + "ignored when reading data, but their presence means something other than "
+                + "this Mac is writing here."
+        let hint = inputs.coordinationEnabled
+            ? "Safe to delete. If they keep appearing, raise "
+                + "shared_workspace.min_collect_interval_hours so runs overlap less often."
+            : "Delete the duplicates, then either turn on shared_workspace.enabled or make sure "
+                + "only one Mac writes to this folder."
+
+        return [DoctorRow(
+            id: "cloud.conflicts",
+            severity: severity,
+            title: "\(inputs.conflictCopies.count) sync-conflict file(s) in the workspace",
+            detail: "Files such as \(sample)\(more). \(cause)",
+            hint: hint
+        )]
+    }
+
+    // MARK: IO gather
+
+    /// Resolve the cloud-storage inputs for a profile. Path resolution failures
+    /// are non-fatal — a workspace whose `output_dir` is rejected has bigger
+    /// problems, already reported by other families.
+    static func cloudStorageInputs(profile: String, config: ReportConfig? = nil)
+        -> CloudStorageInputs {
+        let root = ProfileService.workspacesRoot()
+        let workspace = ProfileService.workspaceURL(for: profile)
+        let scanRoots = [
+            workspace?.appendingPathComponent("snapshots/summaries", isDirectory: true),
+            workspace?.appendingPathComponent("automation", isDirectory: true),
+            try? WorkspacePaths.outputDir(for: profile),
+        ].compactMap { $0 }
+        let conflicts = scanRoots.flatMap { CloudStorage.conflictCopies(in: $0) }
+
+        let shared = config?.sharedWorkspace ?? SharedWorkspaceConfig()
+        let synced = workspace.flatMap(CloudStorage.provider(for:)) != nil
+        let coordinating = shared.isEnabled(workspaceIsSynced: synced)
+
+        return CloudStorageInputs(
+            workspaceRoot: root,
+            rootValidation: WorkspaceRootStore.validate(root),
+            rootIsCustom: WorkspaceRootStore.isCustomised(),
+            workspace: workspace,
+            outputDir: try? WorkspacePaths.outputDir(for: profile),
+            archiveDir: try? WorkspacePaths.archiveDir(for: profile),
+            backupsDir: workspace?.appendingPathComponent("backups", isDirectory: true),
+            conflictCopies: conflicts,
+            coordinationEnabled: coordinating,
+            coordinationExplicit: shared.enabled != nil,
+            minCollectInterval: shared.minCollectInterval,
+            otherHosts: coordinating ? SharedWorkspace.otherHosts(profile: profile) : [],
+            claim: coordinating ? SharedWorkspace.readClaim(profile: profile) : nil,
+            now: Date()
+        )
+    }
+}
+
+// MARK: - Workspace continuity
+
+/// Inputs for the "did I lose my history?" family. Every other family reports a
+/// workspace that is *broken*; this one reports a workspace that is healthy but
+/// not the one the operator expected — the state after moving the workspace to a
+/// shared folder, where nothing is wrong and everything looks empty.
+struct WorkspaceContinuityInputs: Sendable, Equatable {
+    /// One candidate workspace found outside the active root.
+    struct Elsewhere: Sendable, Equatable {
+        let profile: String
+        let root: URL
+        let summaryCount: Int
+    }
+
+    /// Where this profile's history currently lives, and how much of it there is.
+    let activeRoot: URL
+    let activeSummaryCount: Int
+    /// True when the root came from the stored preference rather than the default.
+    let rootIsCustom: Bool
+    /// True when config.yaml carries operator-authored content — custom EAs,
+    /// security agents or compliance baselines. A scaffold-fresh file has none.
+    let configIsCustomised: Bool
+    /// Workspaces for the same profile found under other roots, richest first.
+    let elsewhere: [Elsewhere]
+}
+
+extension ConfigDoctorService {
+
+    /// Two checks that fire on a *valid* workspace:
+    ///
+    /// 1. history for this profile exists somewhere else with more of it, which
+    ///    is what a workspace move looks like from the inside;
+    /// 2. this workspace is new, so settings are defaults and nothing was lost.
+    ///
+    /// Both are `.suggest`: nothing is broken, and only `.fail` rows reach the run
+    /// log, so neither can turn a healthy scheduled run red.
+    static func evaluateWorkspaceContinuity(_ inputs: WorkspaceContinuityInputs) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+
+        // 1 — richer history elsewhere. Only worth saying when the other copy has
+        // strictly more, otherwise a stale leftover folder nags forever.
+        if let best = inputs.elsewhere.max(by: { $0.summaryCount < $1.summaryCount }),
+           best.summaryCount > inputs.activeSummaryCount {
+            rows.append(DoctorRow(
+                id: "continuity.history-elsewhere",
+                severity: .suggest,
+                title: "More history for this profile exists in another folder",
+                detail: "This workspace has \(inputs.activeSummaryCount) daily "
+                    + "summar\(inputs.activeSummaryCount == 1 ? "y" : "ies"); "
+                    + "\(best.root.path) has \(best.summaryCount). Trends and every "
+                    + "period-over-period figure read only the folder in use, so the "
+                    + "older history is not lost — it is simply not being read.",
+                hint: "To use it, point Settings › Workspace at that folder, or copy its "
+                    + "snapshots/summaries into this workspace."
+            ))
+        }
+
+        // 2 — a fresh workspace. Deliberately silent once real history exists, and
+        // silent when the config is customised: an operator who has configured EAs
+        // knows where they are.
+        if inputs.activeSummaryCount == 0 && !inputs.configIsCustomised {
+            let moved = inputs.rootIsCustom
+                ? "This is a new workspace at a folder you chose"
+                : "This is a new workspace"
+            rows.append(DoctorRow(
+                id: "continuity.fresh-workspace",
+                severity: .suggest,
+                title: "Settings here are defaults",
+                detail: "\(moved), so it starts with a scaffold config and no history. "
+                    + "Column mappings, custom extension attributes and thresholds are at "
+                    + "their defaults rather than anything you set previously.",
+                hint: inputs.rootIsCustom
+                    ? "If you moved here from another folder, copy its config.yaml and "
+                        + "snapshots/ across — changing the workspace location does not "
+                        + "move existing data."
+                    : "Run Config › Scaffold from a CSV export to map your columns."
+            ))
+        }
+
+        return rows
+    }
+
+    /// Gather continuity inputs. Scans the default root and, when the active root
+    /// differs, the active one — enough to answer "is my history somewhere else"
+    /// without walking arbitrary disk.
+    static func workspaceContinuityInputs(profile: String, config: ReportConfig?)
+        -> WorkspaceContinuityInputs {
+        let activeRoot = ProfileService.workspacesRoot()
+        let candidateRoots = [activeRoot, WorkspaceRootStore.defaultRoot]
+        var seen: Set<String> = []
+        var counts: [(URL, Int)] = []
+        for root in candidateRoots where seen.insert(root.standardizedFileURL.path).inserted {
+            counts.append((root, summaryCount(profile: profile, root: root)))
+        }
+        let active = counts.first { $0.0.standardizedFileURL == activeRoot.standardizedFileURL }
+        let elsewhere = counts
+            .filter { $0.0.standardizedFileURL != activeRoot.standardizedFileURL && $0.1 > 0 }
+            .map { WorkspaceContinuityInputs.Elsewhere(
+                profile: profile, root: $0.0, summaryCount: $0.1) }
+
+        return WorkspaceContinuityInputs(
+            activeRoot: activeRoot,
+            activeSummaryCount: active?.1 ?? 0,
+            rootIsCustom: WorkspaceRootStore.isCustomised(),
+            configIsCustomised: isCustomised(config),
+            elsewhere: elsewhere
+        )
+    }
+
+    /// Scaffold-fresh configs have no operator-authored content. Column mappings
+    /// are excluded on purpose — the scaffold writes those itself, so their
+    /// presence proves nothing about whether anyone configured this workspace.
+    private static func isCustomised(_ config: ReportConfig?) -> Bool {
+        guard let config else { return false }
+        if !(config.customEas ?? []).isEmpty { return true }
+        if !(config.securityAgents ?? []).isEmpty { return true }
+        if !(config.compliance?.baselines ?? []).isEmpty { return true }
+        return false
+    }
+
+    private static func summaryCount(profile: String, root: URL) -> Int {
+        guard ProfileService.isValid(profile) else { return 0 }
+        let dir = root
+            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent("snapshots/summaries", isDirectory: true)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        return names.filter { $0.hasPrefix("summary_") && $0.hasSuffix(".json") }.count
     }
 }

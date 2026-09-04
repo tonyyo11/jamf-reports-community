@@ -147,6 +147,50 @@ enum ScheduledRunSignals {
         }
     }
 
+    /// Record any config problem serious enough to make the data unreliable.
+    ///
+    /// A scheduled run happily collects against broken column mappings or a
+    /// baseline pointing at an EA nobody collects — it exits 0 and Run History
+    /// shows a clean run, so the config rots invisibly for weeks. This puts the
+    /// Config Doctor's failures where automation can see them: the run log, and
+    /// therefore Run History. It does NOT reach the webhook digest — nothing
+    /// here posts, and the digest's facts are assembled by the callers above
+    /// without consulting the doctor.
+    ///
+    /// Only `.fail` rows surface. Warnings are for a human reading the Config
+    /// screen; putting them here would make every run look broken and train
+    /// the operator to ignore the signal.
+    ///
+    /// Best-effort, and deliberately after the data is written: a doctor that
+    /// throws must never cost a collect that already succeeded.
+    @discardableResult
+    static func recordConfigHealth(
+        profile: String,
+        recorder: ScheduledRunRecorder?,
+        report: DoctorReport? = nil
+    ) -> Int {
+        let report = report ?? ConfigDoctorService.run(profile: profile)
+        let failures = report.rows.filter { $0.severity == .fail }
+        guard !failures.isEmpty else { return 0 }
+
+        let headline = "[warn] \(failures.count) config check(s) failing — data may be "
+            + "unreliable until fixed"
+        AppLogger.collect.warning("\(headline, privacy: .public)")
+        print(headline)
+        recorder?.record(headline)
+        for row in failures {
+            let line = "[warn] \(row.title): \(row.detail)"
+            print(line)
+            recorder?.record(line)
+            if let hint = row.hint {
+                let fix = "        fix: \(hint)"
+                print(fix)
+                recorder?.record(fix)
+            }
+        }
+        return failures.count
+    }
+
     /// Evaluate metric-threshold alert rules against the fresh summary a collect
     /// just wrote and post ONE attention card if any rule trips (2.6 "trust trio"
     /// #1). Gated on `alerts.isEnabled` AND a usable `notify:` webhook — alerts
@@ -298,6 +342,44 @@ func partialRunMarker(sheetFailures: Int) -> String {
     "[partial] \(sheetFailures) sheet failure(s) — see lines above"
 }
 
+/// Watches a run's log lines for the two engine markers that mean a run exiting
+/// 0 did NOT do what "success" implies: it stood down for another machine
+/// (nothing was collected at all), or it could not write the day's summary
+/// (Trends did not move).
+///
+/// This exists because `ReportEngine.collect` returns `Void` — `CollectRouter`'s
+/// typealias and its test spies depend on that signature, so the facts have to
+/// travel out on the log stream the caller is already reading. A locked box
+/// rather than a captured `var` because `onLine` is `@Sendable` and the engine
+/// calls it from its process-reader queues.
+final class CollectHonestyWatcher: @unchecked Sendable {
+    private let lock = NSLock()
+    private var standDown = false
+    private var summaryFailed = false
+
+    init() {}
+
+    /// Feed one log line. Cheap enough to call on every line of a collect.
+    func observe(_ line: String) {
+        if line.hasPrefix(ReportEngine.standDownMarker) {
+            lock.withLock { standDown = true }
+        } else if line.hasPrefix(ReportEngine.summaryNotWrittenMarker) {
+            lock.withLock { summaryFailed = true }
+        }
+    }
+
+    /// The run deferred to another machine — no snapshot, no summary, nothing
+    /// to announce. Still a successful outcome, just not a productive one.
+    var stoodDown: Bool { lock.withLock { standDown } }
+
+    /// The summary write failed, so the trend chart did not advance.
+    var summaryWriteFailed: Bool { lock.withLock { summaryFailed } }
+
+    /// Whether the run may claim it refreshed the fleet's data. False for
+    /// either marker: both mean today's summary is not this run's work.
+    var producedFreshSnapshot: Bool { !stoodDown && !summaryWriteFailed }
+}
+
 // MARK: - Included-CLI run signals
 
 /// Bundles the best-effort trust signals — a Run History recorder, the webhook
@@ -320,12 +402,30 @@ struct CLIRunSignals: Sendable {
     let mode: Schedule.RunMode
     let kind: Kind
     let recorder: ScheduledRunRecorder?
+    /// Watches the run's own log stream for the two markers that make a bare
+    /// exit 0 a lie. `generate` never emits them, so it is simply always quiet.
+    let honesty: CollectHonestyWatcher
 
     /// True only for `collect` — `generate` does not collect, so it never
     /// evaluates alerts (mirrors the scheduled jamf-cli-only rule).
     var evaluatesAlerts: Bool { Self.evaluatesAlerts(for: kind) }
 
+    /// Whether this run may post the success digest and evaluate alerts.
+    var announcesSuccess: Bool { Self.announcesSuccess(for: kind, honesty: honesty) }
+
     static func evaluatesAlerts(for kind: Kind) -> Bool { kind == .collect }
+
+    /// The gate, per kind, mirroring what `main.swift` does for each mode.
+    ///
+    /// A `collect`'s entire product is the day's summary, so either marker
+    /// suppresses the card: a stand-down collected nothing, and a failed summary
+    /// write left Trends where it was (`main.swift:480`). A `generate` renders a
+    /// real workbook whether or not the summary write that follows it succeeded
+    /// — `ReportEngine.generate` emits the same marker — so only a stand-down
+    /// suppresses it, matching the scheduled twin at `main.swift:547`/`:558`.
+    static func announcesSuccess(for kind: Kind, honesty: CollectHonestyWatcher) -> Bool {
+        kind == .collect ? honesty.producedFreshSnapshot : !honesty.stoodDown
+    }
 
     /// The digest run-mode label a CLI kind reports.
     static func mode(for kind: Kind) -> Schedule.RunMode {
@@ -354,18 +454,22 @@ struct CLIRunSignals: Sendable {
         }
         return CLIRunSignals(
             profile: profile, workspace: workspace, config: resolvedConfig,
-            mode: mode(for: kind), kind: kind, recorder: recorder
+            mode: mode(for: kind), kind: kind, recorder: recorder,
+            honesty: CollectHonestyWatcher()
         )
     }
 
     /// Wrap the CLI's own log-line router so every engine line is also recorded
-    /// to Run History. The recorder side is best-effort; `downstream` (the CLI's
-    /// stdout/stderr routing) runs unchanged so stdout/exit behavior is preserved.
+    /// to Run History and watched for the honesty markers. The recorder and
+    /// watcher sides are best-effort; `downstream` (the CLI's stdout/stderr
+    /// routing) runs unchanged so stdout/exit behavior is preserved.
     func teeing(
         _ downstream: @escaping @Sendable (CLIBridge.LogLine) -> Void
     ) -> @Sendable (CLIBridge.LogLine) -> Void {
         let recorder = self.recorder
+        let honesty = self.honesty
         return { line in
+            honesty.observe(line.text)
             recorder?.record(line.text)
             downstream(line)
         }
@@ -381,15 +485,22 @@ struct CLIRunSignals: Sendable {
         } else {
             recorder?.record("[ok] \(verb) complete for \(profile)")
         }
-        await ScheduledRunSignals.notifyScheduledRun(
-            config: config, profile: profile, mode: mode,
-            artifact: artifact?.lastPathComponent, sheetFailures: sheetFailures,
-            recorder: recorder
-        )
-        if evaluatesAlerts, let workspace {
-            await ScheduledRunSignals.notifyMetricAlerts(
-                config: config, profile: profile, workspace: workspace, recorder: recorder
+        // A cron-driven run gets the same gate the scheduled path has: it exits
+        // 0, but must not post a success card or alert on a summary it did not
+        // write. Per-kind, because a generate still produced a real workbook —
+        // see `announcesSuccess(for:honesty:)`. The `[partial]` line already
+        // reached Run History through `teeing`, so the pill is correct either way.
+        if announcesSuccess {
+            await ScheduledRunSignals.notifyScheduledRun(
+                config: config, profile: profile, mode: mode,
+                artifact: artifact?.lastPathComponent, sheetFailures: sheetFailures,
+                recorder: recorder
             )
+            if evaluatesAlerts, let workspace {
+                await ScheduledRunSignals.notifyMetricAlerts(
+                    config: config, profile: profile, workspace: workspace, recorder: recorder
+                )
+            }
         }
         recorder?.finish(
             exitCode: 0, sheetFailures: sheetFailures, artifacts: artifact.map { [$0] } ?? []

@@ -20,7 +20,11 @@ brew install Jamf-Concepts/tap/jamf-cli
 ```
 
 This project supports jamf-cli v1.18.0 or later, with v1.19.0+ recommended for full
-partial-failure handling; the app itself currently tracks v1.22.0. See
+partial-failure handling; the app itself currently tracks v1.28.0. On jamf-cli 1.24.0
+through 1.27.0, the security report requires a Jamf Security Cloud subscription (see Known
+Issues in the CHANGELOG) — this is fixed in 1.28.0, so upgrade to restore Security Posture,
+the security score and the FileVault, SIP, firewall and Gatekeeper figures. Tenants that
+cannot upgrade past 1.27.0 should pin jamf-cli to 1.23.x instead. See
 [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for the full requirements table and pre-built binary
 links.
 
@@ -71,7 +75,10 @@ full detail on each:
 2. **Install CLI** — confirms `jamf-cli` is installed and on `PATH` (shows the install
    command if not).
 3. **Workspace** — pick a short, lowercase profile name (for example `prod`). This
-   becomes the workspace folder under `~/Jamf-Reports/<profile>/`.
+   becomes the workspace folder under `~/Jamf-Reports/<profile>/`. That location is
+   the default, not a fixed one: **Settings → Workspace location** can move it to a
+   shared team folder so several Macs build one pooled history — see
+   [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 4. **Authenticate** — connect Jamf Pro with your API client credentials (or a Platform
    Gateway tenant ID). The secret is never persisted by the app; `jamf-cli` stores the
    resulting token in the macOS keychain.
@@ -109,3 +116,5 @@ Finder.
   scheduled runs.
 - [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates) — tune `config.yaml` for
   your fleet.
+- [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports) — once a few weeks of history exist, the
+  start/end/change figures a quarterly write-up needs.

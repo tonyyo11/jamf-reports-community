@@ -62,4 +62,30 @@ final class CLIBridgeExplainExitTests: XCTestCase {
             )
         }
     }
+
+    /// Exit 8 (jamf-cli 1.28+) is a policy refusal, not a fault: the command is
+    /// outside what the profile's API publishes. The remedy is a different
+    /// profile, so the text must not read as an outage or a credential problem.
+    func testRefusedByPolicyNamesTheProfileRemedy() {
+        let msg = CLIBridge.explainExit(
+            CLIBridge.exitCodeRefusedByPolicy, operation: "Collect")
+        XCTAssertTrue(msg.contains("exit 8"))
+        XCTAssertTrue(msg.lowercased().contains("refused"))
+        XCTAssertTrue(msg.contains("oauth2"), "must name the profile type that can serve it")
+        XCTAssertTrue(
+            msg.contains("commands -o json"),
+            "must name the command that lists the refusals for the binary in hand")
+        XCTAssertFalse(
+            msg.contains("Run History"),
+            "exit 8 remediation must not name Run History: \(msg)")
+    }
+
+    /// A refusal must not be confused with the exit-2 usage error it superseded
+    /// — they lead to different remedies and only 2 is a caller bug.
+    func testRefusedByPolicyIsDistinctFromUsageError() {
+        XCTAssertNotEqual(CLIBridge.exitCodeRefusedByPolicy, CLIBridge.exitCodeUsage)
+        XCTAssertNotEqual(
+            CLIBridge.explainExit(CLIBridge.exitCodeRefusedByPolicy, operation: "X"),
+            CLIBridge.explainExit(CLIBridge.exitCodeUsage, operation: "X"))
+    }
 }

@@ -153,7 +153,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
     func test_platformGatewayArguments_containsExpectedFlags() {
         let args = OnboardingFlow.platformGatewayArguments(
             profile: "platform-prod",
-            gatewayURL: "https://us.apigw.jamf.com",
+            gatewayURL: "https://us.api.jamfcloud.com",
             tenantID: "my-tenant"
         )
         XCTAssertTrue(args.contains("config"), "must include 'config'")
@@ -163,6 +163,22 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertTrue(args.contains("--tenant-id"), "must include --tenant-id")
         XCTAssertTrue(args.contains("my-tenant"), "must include tenant ID value")
         XCTAssertTrue(args.contains("--no-color"), "must include --no-color")
+    }
+
+    /// jamf-cli refuses the retired `{region}.apigw.jamf.com` gateway by name
+    /// before sending, so a prefilled default naming it is a hard stop at
+    /// Authenticate. The GA host is `{region}.api.jamfcloud.com`.
+    func test_defaultGatewayURL_isTheGAHost_notTheRetiredGateway() {
+        let flow = OnboardingFlow()
+        XCTAssertTrue(
+            flow.gatewayURL.hasSuffix(".api.jamfcloud.com"),
+            "default gateway URL must be a GA api.jamfcloud.com host, got \(flow.gatewayURL)"
+        )
+        XCTAssertFalse(
+            flow.gatewayURL.contains("apigw.jamf.com"),
+            "the pre-GA apigw.jamf.com gateway is retired and refused by name"
+        )
+        XCTAssertTrue(flow.isGatewayURLValid, "the default must pass the https:// guard")
     }
 
     func test_platformGatewayStdin_format() {
@@ -245,7 +261,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         // PTY result. We test via the fact that argument builders do NOT embed
         // the secret in args (it goes via stdin only).
         let args = OnboardingFlow.platformGatewayArguments(
-            profile: "p", gatewayURL: "https://apigw.jamf.com", tenantID: "tid"
+            profile: "p", gatewayURL: "https://us.api.jamfcloud.com", tenantID: "tid"
         )
         let argsJoined = args.joined(separator: " ")
         XCTAssertFalse(
@@ -668,7 +684,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         flow.currentStep = .authenticate
         flow.proConnectionType = .platformGateway
         flow.profileName = "testprofile"
-        flow.gatewayURL = "https://us.apigw.jamf.com"
+        flow.gatewayURL = "https://us.api.jamfcloud.com"
         flow.tenantID = "my-tenant"
         flow.platformClientID = "platform-client-id"
         flow.platformClientSecret = ""

@@ -60,50 +60,43 @@ final class FleetInsightGeneratorTests: XCTestCase {
     @MainActor
     func testFactoryReturnsStubOnCurrentToolchain() {
         // On this host (Swift 6.3, compiler(>=6.4) false) the FM branch elides,
-        // so even an enabled+available PCC config resolves to the stub. On
-        // macOS 27 hardware this returns FoundationModelsInsightGenerator.
+        // so even an enabled+available config resolves to the stub. On macOS 27
+        // hardware this returns FoundationModelsInsightGenerator.
         let generator = makeInsightGenerator(
-            config: AIConfig(enabled: true, tier: "pcc"), availability: .available
+            config: AIConfig(enabled: true), availability: .available
         )
         XCTAssertTrue(generator is StubInsightGenerator)
     }
 
-    // MARK: - lock_on_device guarantee (pure selection truth table)
+    // MARK: - Selection truth table
 
     func testSelectOnDeviceTierResolvesOnDevice() {
         XCTAssertEqual(GeneratorKind.select(config: AIConfig(tier: "on_device")), .onDevice)
     }
 
-    func testSelectPCCTierResolvesPCCWhenUnlocked() {
+    func testSelectDefaultsToOnDeviceWhenNoTierIsSet() {
+        XCTAssertEqual(GeneratorKind.select(config: AIConfig()), .onDevice)
+    }
+
+    func testSelectExternalTierResolvesExternal() {
         XCTAssertEqual(
-            GeneratorKind.select(config: AIConfig(tier: "pcc", lockOnDevice: false)),
-            .privateCloudCompute
+            GeneratorKind.select(config: AIConfig(tier: "external")), .external
         )
     }
 
-    func testSelectExternalTierResolvesExternalWhenUnlocked() {
+    /// Backward compatibility: Apple Foundation Models is on-device only, so the
+    /// `pcc` tier and the `lock_on_device` override that existed to refuse it
+    /// were removed. A workspace whose config.yaml still names the old tier must
+    /// keep working — `resolvedTier`'s unknown-value fallback lands it on
+    /// on-device, which is now the only behaviour anyway.
+    func testLegacyPCCTierFallsBackToOnDevice() {
         XCTAssertEqual(
-            GeneratorKind.select(config: AIConfig(tier: "external", lockOnDevice: false)),
-            .external
+            GeneratorKind.select(config: AIConfig(tier: "pcc")), .onDevice,
+            "a config still naming the removed pcc tier must run on-device, not break"
         )
     }
 
-    /// THE guarantee: a locked config NEVER selects a non-on-device kind, even
-    /// when the tier explicitly requests PCC — so no PCC/external model type is
-    /// ever constructed. Proven on the pure selection function, no FM types.
-    func testLockOnDevicePinsPCCTierToOnDevice() {
-        XCTAssertEqual(
-            GeneratorKind.select(config: AIConfig(tier: "pcc", lockOnDevice: true)),
-            .onDevice,
-            "lock_on_device must override a pcc tier selection"
-        )
-    }
-
-    func testLockOnDevicePinsExternalTierToOnDevice() {
-        XCTAssertEqual(
-            GeneratorKind.select(config: AIConfig(tier: "external", lockOnDevice: true)),
-            .onDevice,
-            "lock_on_device must override an external tier selection"
-        )
+    func testUnknownTierFallsBackToOnDevice() {
+        XCTAssertEqual(GeneratorKind.select(config: AIConfig(tier: "nonsense")), .onDevice)
     }
 }

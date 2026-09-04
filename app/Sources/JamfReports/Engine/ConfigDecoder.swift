@@ -26,6 +26,7 @@ struct ReportConfig: Decodable, Sendable {
     var notify: NotifyConfig?
     var alerts: AlertsConfig?
     var retention: RetentionConfig?
+    var sharedWorkspace: SharedWorkspaceConfig?
     var ai: AIConfig?
     var html: HTMLReportConfig?
 
@@ -48,6 +49,7 @@ struct ReportConfig: Decodable, Sendable {
         case notify
         case alerts
         case retention
+        case sharedWorkspace = "shared_workspace"
         case ai
         case html
     }
@@ -888,14 +890,25 @@ struct AlertRule: Decodable, Sendable, Equatable {
 
 // MARK: - ai (macOS 27 opt-in intelligence layer)
 
-/// `ai:` block — opt-in on-device/PCC fleet-insight generation (macOS 27+).
+/// `ai:` block — opt-in on-device fleet-insight generation (macOS 27+).
 /// OFF by default; inert on every OS below 27. Mirrors the `notify:` pattern:
 /// the struct decodes on every toolchain (config parsing is independent of
 /// FoundationModels availability); the actual model code is gated elsewhere.
+///
+/// Apple Foundation Models is on-device only: the `fm` CLI lists exactly one
+/// model ("system — On-device Apple Foundation Model"), and the Private Cloud
+/// Compute tier this block once carried was never reachable anyway — PCC needs
+/// an Apple-granted entitlement tied to App Store distribution, which a
+/// Developer ID build cannot obtain. Both the `pcc` tier and the
+/// `lock_on_device` override that existed to refuse it are gone; on-device is
+/// the default and the only behaviour.
+///
+/// A config that still names `tier: pcc` decodes to `.onDevice` via
+/// `resolvedTier`'s unknown-value fallback, and a stale `lock_on_device` key is
+/// ignored — neither breaks an existing workspace.
 struct AIConfig: Decodable, Sendable {
     enum Tier: String, Decodable, Sendable, CaseIterable {
         case onDevice = "on_device"
-        case pcc
         case external
     }
 
@@ -905,13 +918,11 @@ struct AIConfig: Decodable, Sendable {
 
     var enabled: Bool?
     var tier: String?
-    var lockOnDevice: Bool?
     var reasoningLevel: String?
     var external: AIExternalConfig?
 
     private enum CodingKeys: String, CodingKey {
         case enabled, tier
-        case lockOnDevice = "lock_on_device"
         case reasoningLevel = "reasoning_level"
         case external
     }
@@ -920,9 +931,6 @@ struct AIConfig: Decodable, Sendable {
     var resolvedTier: Tier {
         Tier(rawValue: (tier ?? "on_device").lowercased()) ?? .onDevice
     }
-    /// High-security guarantee: when true, refuse any non-on-device model even
-    /// if `tier` says otherwise. Enforced at generator selection.
-    var isLockedOnDevice: Bool { lockOnDevice ?? false }
     var resolvedReasoningLevel: ReasoningLevel {
         ReasoningLevel(rawValue: (reasoningLevel ?? "light").lowercased()) ?? .light
     }
@@ -992,6 +1000,54 @@ struct RetentionConfig: Decodable, Sendable {
     var keepCount: Int { max(0, snapshotKeepCount ?? 0) }
     var includesSummaries: Bool { includeSummaries ?? false }
     var resolvedArchiveDir: String { archiveDir?.trimmingCharacters(in: .whitespaces) ?? "" }
+}
+
+// MARK: - shared_workspace (multi-machine coordination)
+
+/// `shared_workspace:` block (2.7.0) — how this workspace behaves when more
+/// than one Mac writes to it.
+///
+/// Unlike the workspace root itself (per-machine, in preferences — a sync
+/// provider mounts the same folder at a different path under each user's
+/// home), these settings live in the workspace's own `config.yaml` so every
+/// machine sharing the folder reads the same policy.
+struct SharedWorkspaceConfig: Decodable, Sendable {
+    /// Tri-state. Absent means auto: coordination turns on when the workspace
+    /// resolves to a synced volume. Set explicitly to force it on for a share
+    /// the provider detection does not recognise, or off for a single-Mac
+    /// folder that merely happens to live under a synced path.
+    var enabled: Bool?
+    var claimTtlMinutes: Int?
+    var minCollectIntervalHours: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case claimTtlMinutes = "claim_ttl_minutes"
+        case minCollectIntervalHours = "min_collect_interval_hours"
+    }
+
+    /// Resolve the tri-state against a detected provider.
+    func isEnabled(workspaceIsSynced: Bool) -> Bool { enabled ?? workspaceIsSynced }
+
+    /// How long a claim stays valid. Floored at 5 minutes so a typo cannot
+    /// produce a lease that expires before the collect it guards; capped at
+    /// 12 hours so a crashed machine cannot hold the folder for a week.
+    var claimTTL: TimeInterval {
+        let minutes = min(max(claimTtlMinutes ?? 45, 5), 720)
+        return TimeInterval(minutes * 60)
+    }
+
+    /// Skip a collect when another host collected inside this window.
+    ///
+    /// 0 disables the check — each machine then collects on its own schedule,
+    /// which is a legitimate choice when they cover different tenants. Capped
+    /// at a week for the same reason `claimTTL` is capped: this value lives in
+    /// the *shared* config, so one mistyped digit (`120` for `12`) would stand
+    /// every Mac down for five days, and nobody would see a failure — only an
+    /// absence of runs.
+    var minCollectInterval: TimeInterval {
+        TimeInterval(min(max(0, minCollectIntervalHours ?? 12), 168) * 3600)
+    }
 }
 
 // MARK: - exceptions (list, not dict)

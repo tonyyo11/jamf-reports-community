@@ -19,6 +19,12 @@ Title-level patch adoption speed (days to 50%/90% adoption after a release) is a
 separate view on the Patch screen, not a Trends metric; see
 [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity).
 
+Trends is for looking. When you need the same history as *figures to quote* — a start, an
+end, and the change over a quarter or any other window — generate a
+[period report](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports)
+from the Generated screen instead. It reads the same `summary.json` snapshots described
+below, plus your collected extension attributes.
+
 ## Compliance band history
 
 When `compliance.baselines` (see [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates))

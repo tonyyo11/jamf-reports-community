@@ -33,6 +33,19 @@ manages under `~/Jamf-Reports/<profile>/`), except `scaffold` and
 `school-scaffold`, which work on standalone CSV files (`scaffold`'s `--csv` is
 optional — see below).
 
+If the workspace has been moved off its default location (Settings → Workspace
+location), point the CLI at it with `JRC_WORKSPACES_ROOT`:
+
+```sh
+JRC_WORKSPACES_ROOT="$HOME/Library/CloudStorage/OneDrive-Contoso/Team/Jamf Reports" \
+  jamf-reports check --profile prod
+```
+
+Set it in the script or launchd job that calls the CLI. Scheduled runs the app
+creates carry it automatically; a cron job or script you wrote yourself does not,
+and without it the CLI reads the default `~/Jamf-Reports` and reports an empty
+workspace rather than failing.
+
 | Command | What it does | Key options |
 |---------|--------------|-------------|
 | `generate` | Generate an `.xlsx` workbook from cached snapshots | `--profile`, `--output <path>`, `--template <id>` |
@@ -40,12 +53,39 @@ optional — see below).
 | `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
 | `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export, or a minimal jamf-cli-only config with no CSV | `--csv <path>` (optional), `--out <path>` |
-| `check` | Validate a profile's `config.yaml` and `jamf-cli` auth | `--profile` |
+| `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile`, `--json` |
 | `capabilities` | Report which `jamf-cli` commands are available | `--json` |
 | `diagnostic-bundle` | Build a redacted diagnostic zip | `--profile` |
 | `device` | Print one device's detail JSON | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School profile | `--profile` |
 | `school-scaffold` | Build a Jamf School `config.yaml` from a CSV | `--csv <path>`, `--out <path>` |
+
+### Gating a job on config health
+
+`check` runs every validation the app has, not just "does `config.yaml` parse":
+column mappings against your CSV, baselines pointing at extension attributes
+nobody collects, malformed alert rules, data accuracy, and the state of the
+workspace folder — including whether more history for the profile sits in
+another folder, and whether this is a new workspace still on default settings.
+On a shared workspace it also lists the other Macs writing there. Each finding
+carries a concrete fix.
+
+`check --json` emits the same findings as a structured document. `passed` and the
+exit code always agree, so either can drive a CI step or a monitoring probe:
+
+```sh
+jamf-reports check --profile prod --json > check.json || echo "config needs attention"
+```
+
+The document carries `profile`, `passed`, a `counts` object
+(`pass`, `suggest`, `warn`, `fail`), and a `findings` array whose entries have
+`id`, `severity`, `title`, `detail`, and the same `fix` text a human sees.
+
+Only genuine failures set a non-zero exit. Warnings are reported but do not fail
+the run — a warning is something to look at, not a reason to break a pipeline.
+Scheduled runs record failing checks in their own run log too, so a run that
+collected happily against a broken config does not look clean in Run History.
+
 
 Run `jamf-reports help <command>` (or `jamf-reports <command> --help`) for the
 full option list of any command.

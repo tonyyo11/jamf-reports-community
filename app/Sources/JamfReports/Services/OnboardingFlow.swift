@@ -116,7 +116,7 @@ final class OnboardingFlow {
     var secretFieldHasText = false
 
     // Platform Gateway additional fields
-    var gatewayURL = "https://us.apigw.jamf.com"
+    var gatewayURL = "https://us.api.jamfcloud.com"
     var tenantID = ""
     var platformClientID = ""
     var platformClientSecret = ""
@@ -275,8 +275,12 @@ final class OnboardingFlow {
         ProfileService.workspaceURL(for: profileName.trimmed)
     }
 
+    /// Where onboarding will create the workspace. Resolves through the
+    /// configured root so it agrees with `workspaceURL` directly above — the
+    /// two used to answer the same question differently once the root moved.
     var workspacePreviewPath: String {
-        "~/Jamf-Reports/\(profileName.trimmed.isEmpty ? "<profile>" : profileName.trimmed)/"
+        let name = profileName.trimmed.isEmpty ? "<profile>" : profileName.trimmed
+        return WorkspaceRootStore.displayPath(profile: name) + "/"
     }
 
     var brewCommand: String {

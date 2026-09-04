@@ -3,24 +3,158 @@
 This page covers secure workspace management, automation integrity, and audit trail
 practices for fleet reporting in regulated environments.
 
-## Cloud Sync and Workspace Boundaries
+## Cloud Sync and Shared Workspaces
 
-**Do not cloud-sync workspaces or LaunchAgent plists to consumer cloud storage** (OneDrive,
-iCloud Drive, Google Drive, Dropbox, etc.). 
+Two layouts are supported, and they answer different questions. Pick the
+narrower one that does what you need.
 
-- **Workspace data** (`~/Jamf-Reports/<profile>/`) contains fleet inventory at rest: device
-  serials, usernames, security posture, compliance status, and application inventory. 
+| You want | Layout | What syncs |
+|---|---|---|
+| Teammates to **read the reports** | Publish | Finished workbooks and HTML only |
+| Several Macs to **run the reporting** | Shared workspace | Everything, including raw device data |
 
-- **LaunchAgent plists** (`~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist`)
-  contain automation policy, schedule cadence, and webhook URLs — and can be modified by a
-  synced-cloud write to change when, how, and where your reports run. launchd executes
-  whatever plists are present without a write-permission check once they land on disk.
+### Publish: share the reports, keep the workspace local
 
-- **Implication:** a compromise of the cloud account or a cloud-provider infrastructure
-  breach can alter your automation policy or exfiltrate fleet data without re-authentication.
+The narrowest option. Keep the workspace on local disk and point only the
+generated reports at the shared folder:
 
-If you use cloud storage, keep workspaces and LaunchAgents local. Use your MDM, version
-control (GitHub/GitLab), or SIEM integration to back them up instead.
+```yaml
+output:
+  allow_absolute_paths: true    # required for any path outside the workspace
+  output_dir: "~/Library/CloudStorage/OneDrive-Contoso/Team/Jamf Reports"
+```
+
+Raw snapshots, run logs, backups, and `config.yaml` stay local, where their
+permissions and single-writer assumptions still hold. Run Check confirms this
+with a green **"Reports publish to …"** row.
+
+`~/Library` is otherwise off-limits to output paths, but `~/Library/CloudStorage`
+is deliberately carved out — that is where macOS mounts every modern sync
+provider, and it holds user data rather than application state.
+
+### Shared workspace: several Macs, one history
+
+Choose the folder in **Settings → Workspace location**. Every profile, snapshot,
+report and trend then lives there, and any Mac pointed at it contributes to one
+pooled history rather than keeping a private copy.
+
+That path is per-Mac and is stored in this Mac's preferences, not in
+`config.yaml` — a sync provider mounts the same team folder under each user's
+home, so `/Users/alice/Library/CloudStorage/…` on one machine is
+`/Users/bob/…` on the next. What every machine must agree on lives in the
+workspace's own config:
+
+```yaml
+shared_workspace:
+  enabled: true                  # omit to decide from the folder itself
+  claim_ttl_minutes: 45          # how long a run's claim stays valid
+  min_collect_interval_hours: 12 # 0 disables the freshness check
+```
+
+Coordination turns itself on when the workspace is on a synced volume. Two
+guards then run:
+
+- **Freshness.** A scheduled collect stands down when another Mac collected
+  inside `min_collect_interval_hours`, naming which one and when. Pressing
+  Refresh in the app always collects anyway — an explicit request wins.
+- **Claims.** Each run publishes a short lease at
+  `automation/.workspace-claim.json` naming the host, the operation and an
+  expiry, so a second machine can see one is already working. A machine that
+  sleeps or shuts down mid-run leaves its claim behind; expiry is what lets the
+  next run take over rather than waiting forever.
+
+Each Mac also records its own last run under `automation/hosts/<host-id>.json`
+— one file per machine, never a shared one, so this state cannot itself produce
+conflict copies.
+
+**The claim is advisory, not a lock.** Sync is eventual, so two machines
+starting within seconds of each other can both proceed. Nothing is corrupted
+when that happens: snapshots are written under unique timestamped names and read
+back in filename order, never by modification date. You simply get two collects
+where you wanted one.
+
+**Coordination covers Jamf Pro collects only.** A Jamf School profile on a
+shared workspace gets none of the stand-down or claim behavior above — School
+collects on its own schedule with no cross-Mac awareness. Jamf Protect data is
+collected inside the same run as Jamf Pro, so it is covered in practice.
+
+### What a shared workspace still costs you
+
+**Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
+snapshots and `automation/logs/` hold device serials, hostnames, usernames and
+email addresses in the clear, and `config.yaml` holds any webhook URL you have
+configured. The app writes them `0600` inside `0700` directories, but POSIX
+permissions are enforced by the local kernel — a sync provider does not
+replicate them. Whoever can open the SharePoint site can read the files, the
+server-side search index can surface their contents, and a Windows client has no
+POSIX permission model at all. `.metadata_never_index` suppresses local
+Spotlight only; it does nothing server-side.
+
+This is the one thing coordination does not solve. The app asks you to confirm
+it when you choose the folder, and Run Check repeats it on every shared
+workspace — but the decision is yours to make and to justify. In a regulated environment, decide deliberately who the
+folder is shared with, and get it reviewed before the first collect. If the
+audience for the reports is wider than the audience for device-level inventory,
+use the publish layout instead — or both: a private shared workspace plus an
+`output_dir` pointing at a wider folder.
+
+**Backups are pruned per-machine.** Each scheduled backup records the Mac that
+made it, and each machine prunes only its own — an unscoped prune would spend
+one machine's retention budget on everyone's backups. Backups made before this
+version carry no ownership record and are never auto-removed, so clear those out
+once by hand.
+
+**Keep every Mac on the same app version.** Versions before 2.7.0 order
+snapshots by modification date and prune backups without checking whose they
+are. Run Check warns when it sees a peer reporting a different version.
+
+**Clocks matter.** Freshness compares timestamps written by different machines,
+so leave "Set date and time automatically" on everywhere. Run Check warns when a
+peer's timestamps are more than five minutes ahead.
+
+**Conflict copies.** When two machines do write the same file at once, providers
+keep both as `summary_2026-08-20 2.json` or `computers_… (1).json`. The app
+ignores any file whose name is not in canonical form, so no report is ever built
+from a duplicate. Run Check lists them so you can delete them; if they keep
+appearing, raise `min_collect_interval_hours`.
+
+**LaunchAgent plists are never safe to sync.** `~/Library/LaunchAgents/…` stays
+local, always — including on a shared workspace, where only the data moves.
+launchd executes whatever lands on disk without a write-permission check, so a
+synced plist turns a cloud-account compromise into arbitrary scheduled
+execution. The app only ever writes these locally; do not copy them to a share
+yourself. Retired agents that the app archives into the workspace have their
+webhook URLs scrubbed, precisely because that archive often ends up on one.
+
+**`jamf_cli.require_manifest` and a shared workspace don't mix well.** If two
+Macs happen to write a snapshot with the same filename stamp — a same-second
+collision — the surviving file after sync may not be the one whose hash was
+recorded, leaving a manifest that mismatches the file on disk and blocks
+generate until you delete the manifest by hand. Leave `require_manifest` off
+on a shared workspace.
+
+**A scheduled run needs the folder mounted to start at all.** If the shared
+folder isn't mounted when a LaunchAgent fires, launchd can't start the job and
+nothing is written — no log line, no entry in Run History. The Automation
+Health overdue check is what surfaces this: the schedule simply looks like it
+stopped firing.
+
+**`retention.snapshot_keep_count` counts files, not days per Mac.** The count
+floor keeps the newest N snapshot files in a kind's folder regardless of which
+Mac wrote them. With N Macs collecting daily into the same shared folder, that
+floor protects roughly `keep_count / N` days of any one machine's history.
+
+**Backup diffs: Raw mode is unredacted.** Summary mode and its Copy button
+redact credential-shaped values (password hashes, recovery keys, and similar);
+Raw mode shows the full payload as jamf-cli returned it.
+
+### Check it
+
+**Config → Run check** reports the whole picture for the active profile: which
+layout is in effect, whether the workspace folder is reachable and writable,
+which other Macs write there and when each last collected, whether their clocks
+and app versions agree, any live or stale claim, and every conflict copy it can
+see — each with what to do about it.
 
 ## Configuration Integrity
 
@@ -170,3 +304,13 @@ else to migrate.
 The same Automation screen that hosts this policy also drives the opt-in Notifications
 webhook and shows Automation Health (the dead-man switch for overdue or failing
 schedules) — see [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+
+## Known Issues
+
+**`pro report security` on jamf-cli 1.24.0 through 1.27.0 requires a Jamf Security Cloud
+subscription — fixed in 1.28.0.** On those releases this Jamf Pro report is routed through
+the Jamf Security Cloud client and fails on any tenant without a subscription — Security
+Posture, the weighted security score, and every FileVault, SIP, firewall and Gatekeeper
+figure derived from it show their last collected values. jamf-cli 1.28.0 resolves the
+report as Jamf Pro again, so upgrading restores all of it. If you cannot move past 1.27.0,
+pin jamf-cli to 1.23.x instead; see the CHANGELOG's Known Issues entry.

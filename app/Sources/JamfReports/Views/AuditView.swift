@@ -654,8 +654,16 @@ struct AuditView: View {
                 .accessibilityLabel("\(integrityTitle(summary)): \(summary.unverified) snapshot directories")
                 .accessibilityHint(integrityHint(summary))
             } else {
-                Text("Snapshot integrity manifests are not yet written for collected " +
-                     "snapshots — integrity verification will activate in a future release.")
+                // 2.6 shipped the writer (ReportEngine.saveSnapshot ->
+                // SnapshotManifest.record). This branch means no manifests were
+                // found, which is the DEFAULT state, not an unreleased feature —
+                // the old copy said "a future release" and talked operators out
+                // of a setting they already have.
+                Text("No snapshot integrity manifests found. Set " +
+                     "`jamf_cli.require_manifest: true` in config.yaml to stamp a " +
+                     "checksum beside each snapshot as it is collected; report " +
+                     "generation then refuses to run on a snapshot that fails " +
+                     "verification.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -1003,9 +1011,9 @@ struct AuditView: View {
             // source of truth for "show CLI output."
             let code: Int32
             do {
-                code = try await bridge.audit(profile: profile, category: nil) { [weak workspace] line in
+                code = try await bridge.audit(profile: profile, category: nil) { line in
                     Task { @MainActor in
-                        guard let workspace, self.isRunningAudit else { return }
+                        guard self.isRunningAudit else { return }
                         workspace.globalStatus = line.text
                     }
                 }
@@ -1035,9 +1043,9 @@ struct AuditView: View {
             let profile = workspace.profile
             let code: Int32
             do {
-                code = try await bridge.groupHygiene(profile: profile) { [weak workspace] line in
+                code = try await bridge.groupHygiene(profile: profile) { line in
                     Task { @MainActor in
-                        guard let workspace, self.isRunningHygiene else { return }
+                        guard self.isRunningHygiene else { return }
                         workspace.globalStatus = line.text
                     }
                 }

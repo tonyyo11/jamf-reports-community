@@ -39,9 +39,9 @@ final class AIInsightCardRenderTests: XCTestCase {
         _ = card.body
     }
 
-    /// The card must construct for a `pcc`-tier profile too — the tier only
-    /// changes label/model selection, never whether the view can build.
-    func testCardInstantiatesForPCCTierProfile() throws {
+    /// The card must construct for any tier — the tier only changes
+    /// label/model selection, never whether the view can build.
+    func testCardInstantiatesRegardlessOfTier() throws {
         let card = AIInsightCard(
             profile: "test",
             current: summary(),

@@ -420,25 +420,54 @@ retention:
   archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
 
 # =============================================================================
+# SHARED WORKSPACE (multi-Mac coordination; auto-detected)
+# =============================================================================
+# Point several Macs at one workspace on a shared folder — OneDrive/SharePoint,
+# Box, Dropbox, or a mounted share — and they build a single pooled history
+# instead of one per machine. Choose the folder in Settings > Workspace
+# location; that path is per-Mac (a sync provider mounts the same folder under
+# each user's home), which is why it is NOT a key here. What every machine must
+# agree on lives below.
+#
+# enabled: omit for auto — coordination turns itself on when the workspace is on
+#   a synced volume. Set true to force it on for a share the app does not
+#   recognise as one, or false for a folder that only looks shared.
+#
+# Two guards run when it is on:
+#   * a scheduled collect stands down if another Mac collected inside
+#     min_collect_interval_hours (Refresh in the app always collects anyway)
+#   * each run publishes a short claim, so a second machine can see one is
+#     already working and wait for its turn
+#
+# The claim is advisory, not a lock: sync is eventual, so two machines starting
+# within seconds of each other can both proceed. Nothing is corrupted when they
+# do — snapshots are written under unique timestamped names and read back in
+# filename order — you just get two collects instead of one.
+#
+# Run Check on the Config screen reports which Macs share the folder, when each
+# last collected, and whether their clocks and app versions agree.
+#
+# shared_workspace:
+#   enabled: true                  # omit to decide from the folder itself
+#   claim_ttl_minutes: 45          # how long a run's claim stays valid (5–720)
+#   min_collect_interval_hours: 12 # 0 disables the freshness check entirely
+
+# =============================================================================
 # AI INSIGHTS (macOS 27+; opt-in; OFF by default)
 # =============================================================================
 # Turn already-collected fleet data (the daily summary) into a plain-language
 # insight card using Apple's on-device Foundation Model. OFF by default and
 # inert on any macOS below 27 — set enabled: true to opt in per profile.
 #
-# tier: "on_device" runs entirely on-device (no data leaves the Mac) — the only
-#   tier supported by official builds. "pcc" uses Apple Private Cloud Compute
-#   (still Apple-private, but off-device); it requires an Apple-granted
-#   `private-cloud-compute` entitlement, gated behind the App Store distribution
-#   program, which official (Developer ID) builds don't carry — the Settings
-#   picker only offers pcc when the running binary is entitled. "external" is
-#   RESERVED — not yet built.
-# lock_on_device: true refuses any non-on-device model even if tier says pcc —
-#   a defense-in-depth switch for high-security or regulated environments.
+# Apple Foundation Models is on-device only, so tier: "on_device" is the
+#   default and the only built behaviour — no fleet data leaves the Mac, and
+#   there is nothing to configure to keep it that way. "external" is RESERVED —
+#   not yet built.
+# A config still naming the removed "pcc" tier (or a stale lock_on_device key)
+#   keeps working: the tier falls back to on_device and the dead key is ignored.
 ai:
   enabled: false            # opt-in; inert on macOS < 27
-  tier: "on_device"         # on_device | pcc | external (external not yet built)
-  lock_on_device: false     # refuse any non-on-device model even if tier says otherwise
+  tier: "on_device"         # on_device | external (external not yet built)
   reasoning_level: "light"  # light | moderate | deep
   external:                 # RESERVED — ignored until the external tier ships (P5)
     provider: ""            # anthropic | google | openai_compatible
@@ -501,7 +530,11 @@ experimental:
   # Platform API features (compliance benchmarks, DDM blueprints).
   # Requires a jamf-cli profile with `auth-method: platform`. Set up via:
   #   jamf-cli config add-profile <name> --auth-method platform \
-  #     --url <gateway-url> --tenant-id <id>
+  #     --url https://<region>.api.jamfcloud.com --tenant-id <id>
+  # jamf-cli 1.28 also accepts --environment-id (and organization scope, which
+  # takes no ID); the three are mutually exclusive. The app only sets up tenant
+  # scope today — for the other two, create the profile by hand with the command
+  # above and point the app at the existing profile name.
   platform_features_enabled: false
 
 
@@ -654,6 +687,12 @@ thresholds:
 
   # Devices not checked in within this many days are treated as inactive
   # and excluded from compliance/security agent counts.
+  #
+  # Also bounds how old a dropped csv-inbox/ export may be before the Devices
+  # and Outreach screens stop treating it as current inventory: a CSV cannot
+  # report a check-in newer than the day it ran, so past this age it reports
+  # live devices as stale and re-adds retired ones. Raise it if you deliberately
+  # report over a longer window.
   stale_device_days: 30
 
   # Devices not checked in within this many days are flagged overdue on the
@@ -700,26 +739,26 @@ output:
   # each report family before older runs are moved into archive_dir.
   keep_latest_runs: 10
 
-
-# =============================================================================
-# AUTOMATION OUTPUTS
-# =============================================================================
-# Controls which extra artifacts launchagent-run writes on scheduled runs.
-# The LaunchAgent mode still controls how inputs are gathered; these flags
-# control whether automation also emits xlsx, HTML, and/or inventory CSV files.
-
-automation:
-  # Keep the existing behavior for jamf-cli-only / jamf-cli-full / csv-assisted:
-  # write a timestamped xlsx on each scheduled run.
-  generate_xlsx: true
-
-  # Also write a timestamped HTML report on each scheduled run. This calls the
-  # same html command logic and uses output.timestamp_outputs / archive_enabled.
-  generate_html: false
-
-  # Also export a timestamped jamf inventory CSV on each scheduled run.
-  # snapshot-only can use this as the CSV source for generate_xlsx runs.
-  generate_inventory_csv: false
+  # Allow output_dir / archive_dir to point OUTSIDE the workspace.
+  #
+  # Off by default: an absolute path outside the workspace is refused, which
+  # keeps every generated file under a directory this app controls. Turn it on
+  # to publish reports somewhere else -- most usefully a cloud-synced team
+  # folder, so colleagues can read the output without being given the raw
+  # fleet data:
+  #
+  #   allow_absolute_paths: true
+  #   output_dir: "~/Library/CloudStorage/OneDrive-Contoso/Team/Jamf Reports"
+  #
+  # Publish that way rather than relocating the whole workspace. Keeping
+  # snapshots, run logs, backups and this file on local disk is what makes the
+  # app's file permissions, snapshot ordering and backup retention meaningful --
+  # see docs/wiki/10-Security-and-Operational-Considerations.md, and run the
+  # Config Doctor (Health Audit -> Config) to see which layout is in effect.
+  #
+  # Sensitive locations (/etc, /System, ~/.ssh, the rest of ~/Library, ...) stay
+  # refused even with this enabled.
+  allow_absolute_paths: false
 
 
 # =============================================================================
@@ -865,92 +904,3 @@ school_columns:
   member_of: ""
   # Available storage capacity (float, GB)
   available_capacity: ""
-
-
-# =============================================================================
-# FILTERED CSV EXPORT REPORTS
-# =============================================================================
-# Generates dated CSV snapshots from the wide automation_inventory_*.csv
-# produced by launchagent-run --mode jamf-cli-full.  Each entry runs on its
-# own schedule and writes to a designated folder, replicating the outputs that
-# Jamf Pro's built-in Advanced Computer Search reports used to produce.
-#
-# These run automatically as the last step of a jamf-cli-full scheduled run.
-#
-# To force all reports regardless of schedule, delete:
-#   jamf-cli-data/state/export-<name>.last
-#
-# --- Schedule values ---
-#   daily           Run every time the tool fires (each weekday if using the default LaunchAgent)
-#   1st-of-month    Run only on the 1st of the month
-#   mon,wed,fri     Run on specific weekday(s); comma-separate multiple days
-#
-# --- Filter options (optional) ---
-#   within_days: N      Include only rows where <field> date is within N days of today
-#   exclude_values: []  Exclude rows where <field> value is in the provided list
-#
-# --- Column mapping ---
-#   columns:
-#     "Output Column Name": "Source Column Name in inventory CSV"
-#
-# Leave export_reports as an empty list [] to disable all filtered exports.
-
-export_reports:
-
-  # macOS version report — all managed devices, every weekday
-  - name: "macos_updates"
-    output_dir: "macOS_Updates"
-    filename: "{ts} - Report - macOS Operating System Report.csv"
-    schedule: daily
-    columns:
-      Computer Name: "Computer Name"
-      Model: "Model"
-      Serial Number: "Serial Number"
-      "Operating System Version": "Operating System"
-      "Email Address": "Email Address"
-      "Full Name": "Real Name"
-      "Last Inventory Update": "Last Report"
-
-  # All managed devices — minimal columns, every Monday
-  - name: "all_managed_macs"
-    output_dir: "All Managed Macs Report"
-    filename: "{ts} - Report - All Managed Macs.csv"
-    schedule: mon
-    columns:
-      Computer Name: "Computer Name"
-      "Email Address": "Email Address"
-      "Full Name": "Real Name"
-
-  # Active devices (checked in within 30 days) — 1st of each month
-  - name: "active_device_list"
-    output_dir: "Active Device List"
-    filename: "{ts} - Report - Devices Checked In (Last 30 Days).csv"
-    schedule: 1st-of-month
-    filter:
-      field: "Last Check-in"
-      within_days: 30
-    columns:
-      Computer Name: "Computer Name"
-      Model: "Model"
-      Serial Number: "Serial Number"
-      "Full Name": "Real Name"
-      "Operating System Version": "Operating System"
-      "Last Inventory Update": "Last Report"
-      "Last Check-in": "Last Check-in"
-
-  # New enrollments in the past 7 days — every Friday
-  - name: "new_system_builds"
-    output_dir: "New System Build Report"
-    filename: "{ts} - Report - New System Builds for Past Week.csv"
-    schedule: fri
-    filter:
-      field: "Last Enrollment"
-      within_days: 7
-    columns:
-      Computer Name: "Computer Name"
-      "Full Name": "Real Name"
-      "Last Enrollment": "Last Enrollment"
-      Username: "Username"
-      "Email Address": "Email Address"
-      "Operating System": "Operating System"
-      Position: "Position"

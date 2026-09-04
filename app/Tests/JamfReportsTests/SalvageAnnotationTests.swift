@@ -152,8 +152,8 @@ final class SalvageAnnotationTests: XCTestCase {
         // to `filteredSummaries.first.parsedDate ... last.parsedDate` — the
         // actual summary-date SPAN, not `Date()`-relative. Two constraints
         // this fixture must satisfy, both confirmed against the real
-        // formatters (SummaryJSONParser.dateFormatter / MSCPChartDataBuilder's
-        // snapshotDateFormatter — neither pins an explicit time zone, both
+        // formatters (SummaryJSONParser.dateFormatter / CloudStorage's
+        // snapshot stamp formatter — neither pins an explicit time zone, both
         // resolve "yyyy-MM-dd" to LOCAL midnight):
         //   1. A single summary date collapses the range to one instant,
         //      filtering out any ea-results point on a DIFFERENT calendar

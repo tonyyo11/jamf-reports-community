@@ -17,7 +17,7 @@ enum ProfileService {
             case .invalidProfile(let profile):
                 return "Invalid profile name: \(profile)"
             case .outsideWorkspaceRoot(let url):
-                return "Refusing to remove workspace outside ~/Jamf-Reports: \(url.path)"
+                return "Refusing to remove workspace outside \(workspacesRoot().path): \(url.path)"
             }
         }
     }
@@ -103,18 +103,11 @@ enum ProfileService {
             .sorted()
     }
 
-    /// Workspace root, always inside the user's home dir.
+    /// Workspace root. Defaults to `~/Jamf-Reports`; an operator hosting the
+    /// workspace on a synced team folder repoints it via `WorkspaceRootStore`,
+    /// which owns the resolution order and the validation rules.
     static func workspacesRoot() -> URL {
-        #if DEBUG
-        if let override = getenv("JRC_TEST_WORKSPACES_ROOT"),
-           let path = String(validatingCString: override),
-           !path.isEmpty {
-            return URL(fileURLWithPath: path, isDirectory: true)
-        }
-        #endif
-
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Jamf-Reports")
+        WorkspaceRootStore.current()
     }
 
     /// Path to a specific workspace. Returns nil for invalid names.

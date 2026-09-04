@@ -2,9 +2,10 @@ import XCTest
 @testable import JamfReports
 
 /// 2.6 trust trio #3: per-kind freshness + a real `max_cache_age_hours`.
-/// Covers the config decode + resolved-default semantics, the
-/// CachedDataFallback age gate, per-kind `sourceDates` population, and the
-/// pure relative-label formatter behind `FreshnessChipRow`.
+/// Covers the config decode + resolved-default semantics, per-kind
+/// `sourceDates` population, and the pure relative-label formatter behind
+/// `FreshnessChipRow`. The age gate itself is enforced by
+/// `ReportEngine.loadLatestSnapshotData`, which is where it is exercised.
 final class FreshnessChipTests: XCTestCase {
 
     // MARK: - JamfCLIConfig.resolvedMaxCacheAgeHours
@@ -35,81 +36,6 @@ final class FreshnessChipTests: XCTestCase {
         let json = #"{"max_cache_age_hours": -1}"#
         let cfg = try JSONDecoder().decode(JamfCLIConfig.self, from: Data(json.utf8))
         XCTAssertEqual(cfg.resolvedMaxCacheAgeHours, -1)
-    }
-
-    // MARK: - CachedDataFallback age gate (temp-dir fixture)
-
-    private func makeCacheDir() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FreshnessChipTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }
-
-    private func writeSnapshot(in dir: URL, kind: String, ageHours: Double) throws -> URL {
-        let subdir = dir.appendingPathComponent(kind, isDirectory: true)
-        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
-        let file = subdir.appendingPathComponent("\(kind)_fixture.json")
-        try Data(#"{"ok": true}"#.utf8).write(to: file)
-        let mtime = Date().addingTimeInterval(-ageHours * 3600)
-        try FileManager.default.setAttributes(
-            [.modificationDate: mtime], ofItemAtPath: file.path
-        )
-        return file
-    }
-
-    func testCacheWithinLimitLoads() async throws {
-        let dir = try makeCacheDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        _ = try writeSnapshot(in: dir, kind: "security", ageHours: 2)
-
-        let (_, mode) = try await CachedDataFallback.runWithFallback(
-            useCachedData: true,
-            maxCacheAgeHours: 168,
-            cacheNames: ["security"],
-            dataDir: dir,
-            liveFetch: { throw URLError(.cannotConnectToHost) },
-            saveSnapshot: { _ in }
-        )
-        XCTAssertEqual(mode, .cachedFallback)
-    }
-
-    func testCacheOlderThanLimitThrowsExpired() async throws {
-        let dir = try makeCacheDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        // 200h old exceeds the 168h limit.
-        _ = try writeSnapshot(in: dir, kind: "security", ageHours: 200)
-
-        do {
-            _ = try await CachedDataFallback.runWithFallback(
-                useCachedData: true,
-                maxCacheAgeHours: 168,
-                cacheNames: ["security"],
-                dataDir: dir,
-                liveFetch: { throw URLError(.cannotConnectToHost) },
-                saveSnapshot: { _ in }
-            )
-            XCTFail("Expected CLIFallbackError.cacheExpired")
-        } catch CachedDataFallback.CLIFallbackError.cacheExpired(_, let limit) {
-            XCTAssertEqual(limit, 168)
-        }
-    }
-
-    func testCacheZeroLimitNeverExpires() async throws {
-        let dir = try makeCacheDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        // A year old, but the limit is 0 (unlimited) so it still loads.
-        _ = try writeSnapshot(in: dir, kind: "security", ageHours: 24 * 365)
-
-        let (_, mode) = try await CachedDataFallback.runWithFallback(
-            useCachedData: true,
-            maxCacheAgeHours: 0,
-            cacheNames: ["security"],
-            dataDir: dir,
-            liveFetch: { throw URLError(.cannotConnectToHost) },
-            saveSnapshot: { _ in }
-        )
-        XCTAssertEqual(mode, .cachedFallback)
     }
 
     // MARK: - Per-kind sourceDates (UpdateStatusService — easiest to drive file-based)

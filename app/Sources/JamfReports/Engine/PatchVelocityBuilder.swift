@@ -155,6 +155,7 @@ enum PatchVelocityBuilder {
         let jsonFiles = files
             .filter { $0.pathExtension == "json"
                 && $0.lastPathComponent.lowercased() != "manifest.json" }
+            .filter { !CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
             .sorted {
                 MSCPChartDataBuilder.dateFromSnapshotFilename($0)
                     < MSCPChartDataBuilder.dateFromSnapshotFilename($1)

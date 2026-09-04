@@ -7,7 +7,251 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-09-04
+
+### Added
+
+Reports can now cover a period rather than a moment. Pick a rolling window (4,
+12, 26 or 52 weeks) or a calendar one (last full month, last full quarter, or
+your own dates), choose what goes in, and get a workbook with a start figure, an
+end figure and the change for each metric — the numbers a quarterly or annual
+write-up needs, without a manual Jamf export.
+
+Every figure carries the date it actually came from. Period boundaries rarely
+land on a day that collected, so a start of "1 April" that really came from the
+19th says so rather than quietly reporting the wrong date. Changes on percentages
+are in percentage points.
+
+What the report can cover depends on what your workspace holds: fleet metrics
+with data in the period, plus any extension attributes you collect. An attribute
+you have already configured is counted against the value you called good; one you
+have not is broken down by value.
+
+Extension attributes are not included unless you choose them, and the picker
+warns when an attribute's values are nearly unique per device — the shape of a
+serial or hostname rather than a status. Value tables are capped, and say how
+many values they left out.
+
+The Config Doctor now recognises a workspace that is fine but not the one you
+expected. Move your workspace to a shared folder and everything looks empty,
+because it is — the history is still in the old folder, and nothing tells you so.
+Two new checks close that: one says when more history for the profile exists in
+another folder, naming it and how much is there; the other says when a workspace
+is new, so column mappings and thresholds are defaults rather than something you
+set. Both are suggestions, not failures, and both stay quiet on an established
+workspace.
+
+The whole workspace can now live on a shared team folder, so several Macs
+covering the same Jamf Pro tenants build one pooled history instead of a
+separate one each. Choose the folder in **Settings → Workspace location**;
+OneDrive, SharePoint, Box, Dropbox, Google Drive and mounted shares all work.
+Coordination switches itself on when the folder is a synced one: a scheduled
+collect stands down when another Mac collected recently — naming which and when
+— and each run publishes a short claim so a second machine can see one is
+already working. Pressing Refresh always collects anyway. Tune it per workspace
+with the new `shared_workspace` block, or leave it alone and it decides for
+itself.
+
+If you only want colleagues to read the reports, the narrower option is still
+there and still preferred: keep the workspace local, set
+`output.allow_absolute_paths: true`, and point `output.output_dir` at the shared
+folder. One thing a shared workspace cannot do for you is decide who should see
+raw device data — serials, usernames and email addresses sit in clear text in
+the snapshots and run logs, and folder permissions are the sync provider's, not
+this app's. Run check says so every time.
+
+Choosing a shared folder now asks you to confirm it, naming what becomes
+readable — device serials, usernames, email addresses and any configured webhook
+URL — and pointing at the narrower publish option if the audience for the
+reports is wider than the audience for raw inventory. Picking a local folder is
+unchanged.
+
+On a shared workspace, Overview says when another Mac is mid-run, so Refresh
+doing nothing reads as "someone else is working" rather than a bug. Each day's
+summary records which machine collected it. Backup retention works again on a
+shared folder: each backup records the Mac that made it and each machine prunes
+only its own, instead of retention being switched off entirely.
+
+`jamf-reports check --json` emits the same findings as a structured document,
+so a CI job or monitoring probe can gate on config health. A scheduled run now
+records failing config checks in its own log, so a run that collects happily
+against broken column mappings no longer looks clean in Run History.
+
+**Run check** (Config screen, and `jamf-reports check` from Terminal) now runs
+every validation the app has instead of only confirming that `config.yaml`
+parses. It reports column mappings that no longer match your CSV, baselines
+pointing at extension attributes that aren't collected, malformed alert rules,
+data-accuracy problems, and the state of the workspace folder — with a concrete
+fix under each finding. On a shared workspace it also lists which other Macs
+write there, when each last collected, whether their clocks and app versions
+agree, and any leftover claim or sync-conflict file.
+
+Comparing two backups now shows a summary of what actually changed instead of the
+full configuration of every changed object. Objects taking the same update collapse
+into one line, and objects that changed the same field to different values collapse
+into one card with a line each — on a real pair of production backups that turns
+ten screens of JSON into two lines. The old output is still one click away under
+**Raw**, the whole diff can be copied, and the sheet finally has a Done button
+(Escape works too) and lets you select text across lines.
+
+The app now tells you when a data source has stopped collecting, on whatever
+screen you happen to be on. A strip across the top of the window reports data
+sources that are failing or far behind their schedule, and it appears everywhere
+— you no longer have to open Security Posture to discover that security data
+stopped landing five weeks ago, or Run History to learn that a scheduled run
+failed.
+
+It also tries to fix it. When the app is open and a source is behind, it
+re-collects just the affected data, at most once an hour, and only the sources
+that are actually behind — the healthy ones in the same group are left alone.
+Within a single run, a source that fails on a timeout or a rate limit is now
+retried once after a short pause instead of waiting for its next scheduled turn,
+which on the weekly deep scan could be another seven days. Authentication and
+permission failures are never retried: those cannot succeed on a second attempt
+and repeated attempts risk locking the account out.
+
+The strip now has a **Collect now** button, so a red banner is somewhere to act
+rather than a dead end, and it re-evaluates after any manual refresh instead of
+holding its verdict until the app is restarted.
+
+On a Jamf Pro profile without Platform API access, the four Platform-only data
+sources — compliance devices, compliance rules, DDM status and blueprint status
+— are now skipped rather than attempted, failed, and reported every day. They
+were never able to succeed on that kind of profile, so the strip no longer
+reports them as failing and the hourly self-repair no longer retries them.
+
+### Removed
+
+The v3.5 history migration is gone from Settings. It imported a
+`fleet_health_metrics_history.json` from the retired Python tool as a one-off, three
+major versions ago; anyone who was going to use it has, and it took up a permanent
+place in Settings to do nothing for everyone else.
+
+AI insights now state plainly that they run on this Mac and nothing more. Apple
+Foundation Models is on-device only — Apple's own `fm` tool lists a single model,
+"system — On-device Apple Foundation Model" — so the Private Cloud Compute option
+has been removed along with the "Lock to on-device" switch that existed to refuse
+it. On-device is the default and the only behaviour, so there is no longer a
+setting to get wrong. Settings shows a "Model — On-device" row instead of a
+picker.
+
+Private Cloud Compute was never actually reachable from an official build: it
+needs an Apple-granted entitlement tied to App Store distribution, which a
+Developer ID-signed app cannot carry. Removing it deletes a permanently dormant
+option rather than a working one.
+
+Existing profiles need no changes. A `config.yaml` that still says `tier: "pcc"`
+or carries `lock_on_device` keeps loading — the tier resolves to on-device and
+the unused key is ignored — and the next time Settings saves that profile, the
+file is tidied up on its own.
+
 ### Fixed
+
+A CSV export dropped in `csv-inbox/` is no longer treated as current inventory
+forever. A CSV can only report check-ins up to the day it ran, so as it ages it
+reports devices as stale that are still checking in every day, and puts back
+devices that have since left the fleet — one four-month-old export was showing
+retired Macs at the top of Offline Outreach at 119 days. Exports older than
+`thresholds.stale_device_days` (30 by default) are now skipped, and the Devices
+screen names the file it ignored, how old it is and what to do about it rather
+than quietly showing you a different device list. Raise the threshold if you
+deliberately report over a longer window. The export date is read from the
+filename in preference to the file's modification time, so a sync provider
+restamping the file when it downloads it cannot make an old export look new.
+
+Turning on snapshot integrity checking no longer empties the Devices screen.
+`jamf_cli.require_manifest` writes a `manifest.json` beside each snapshot, and it
+is written after the snapshot, so it was always the newest file in the folder —
+which the Devices and Outreach screens then read as the device list, finding none.
+The effect was that enabling an integrity feature silently emptied two screens,
+and the Health Audit banner recommends enabling it. Integrity files are now
+skipped when picking a snapshot to read.
+
+The two chart switches in Customize now do something. "Save PNGs alongside xlsx"
+and "Per-major-version charts" were never read from your config when the screen
+opened, and never written back when you pressed Apply — they moved, and nothing
+else did. Both now persist per profile.
+
+"Save PNGs alongside xlsx" also had nothing behind it: the `charts.save_png`
+setting it appears to control was read by no part of the app, so standalone PNGs
+were always written whatever it or your config said. It is now honoured. **If
+your config.yaml already says `save_png: false`, PNG files beside the workbook
+will stop appearing** — which is what it asked for. Charts embedded in the
+workbook are unaffected; those are governed separately by `embed_in_xlsx`.
+
+Reports that jamf-cli refuses now say why. A non-zero exit was reported as a
+bare number, so "exit 2" was all you got when the real answer — printed by
+jamf-cli itself — was that the command wanted credentials for a different
+product. Its own message is now included in the warning.
+
+The Patch Failures sheet came back. Asked for patch failures as JSON, jamf-cli
+1.24 and later print up to three headed sections — title compliance, then
+policies, then devices — instead of one document, which made the snapshot
+unparseable and dropped the sheet silently. The device rows are now picked out
+of that stream by their shape, so section order and heading wording do not
+matter. A tenant with no failures records none, rather than filing the
+compliance rows in their place. Output that is genuinely broken or truncated is
+still rejected rather than half-read, so a renamed command cannot masquerade as
+a clean zero.
+
+Three crashes found in production testing on a shared workspace.
+
+A tenant with two extension attributes sharing a display name crashed the app
+outright. Extension-attribute names come from the server and are not unique, and
+the code assumed they were. This took down scheduled runs in particular, because
+those now run the config checks.
+
+Writing a run-history log line could abort the whole process when the workspace
+is on a sync provider. The write API in use reported failure in a way that could
+not be caught, so a file the provider had evicted or a share that had gone
+offline killed the collect instead of losing one log line. Log lines are now
+dropped with a warning; the collect continues.
+
+A CSV export with two columns whose names differ only in punctuation or case
+("Serial Number" and "serial_number") crashed device inventory. The first column
+now wins.
+
+A collection run that failed on some data sources but not others used to finish
+green. Each failure was written to the run log as a warning and then forgotten,
+so nothing distinguished a run that refreshed everything from one that refreshed
+six sources and served months-old cache for the rest. Failures are now counted
+per source and persist between runs, a run that served stale cache for any source
+says so in its log, and a source that recovers clears its own count — so "failing
+for three runs" always describes now, not history.
+
+Run History no longer reports a nonsense duration for a run that crashed before
+finishing. It was reading the first number ending in "s" it could find near the
+end of the log, which on a run with nothing to do was a schedule interval — one
+production run four minutes long was listed as "172800s", or two days. A run that
+never reported an exit now shows no duration rather than a fabricated one.
+
+Overview tiles now name the day their change figure compares against ("vs Aug 20")
+instead of leaving it unstated. The comparison is against the previous collection,
+not a fixed week, so a missed run can make that gap days or weeks — and because a
+metric that went unmeasured on some day is skipped, two tiles on the same screen can
+legitimately be comparing against different days. The drill-down's Previous and
+Change tiles name their dates too.
+
+Old scheduled backups could be deleted in the wrong order — potentially removing
+the newest ones — on a cloud-synced or network volume, because the sort used
+modification dates that sync providers rewrite. Backups are now ordered by the
+timestamp in their folder name, any folder whose name can't be read aborts the
+whole cleanup rather than guessing, and automatic pruning is skipped entirely
+while the backups folder is synced (that folder may hold another Mac's backups).
+
+Dashboards could disagree about which day of data they were showing on synced
+storage: some read the newest snapshot by filename and others by modification
+date. They all use the filename now. Duplicate files a sync provider leaves
+behind (`… 2.json`, `… (1).json`) are ignored everywhere rather than being
+mistaken for the newest snapshot, and duplicate daily summaries no longer produce
+double points in Trends. If a snapshot folder holds only a conflict copy — say a
+lone `computers_20260902T060000 2.json` with nothing else for that day — the day
+now reads as having no data for that kind, where before the copy was used
+silently; rename the file to drop the trailing ` 2` or ` (1)`, or re-collect, to
+recover it. The generated workbook, the HTML report's "data as of" date, and the
+Devices and Offline Outreach screens now follow the same rule. A `csv-inbox` file
+whose name looks like a sync-conflict copy is reported by name instead of being
+silently ignored.
 
 - Device Lookup and the Devices detail panel's jamf-cli section work again.
   jamf-cli's `pro device` command accepts `--out-file` but prints its JSON to
@@ -16,6 +260,80 @@ versions in this repository map to git tags.
   every device's live detail as unavailable. The app now captures the
   command's output directly and no longer depends on the file, which also
   keeps working once jamf-cli fixes the flag.
+
+The Health Audit page's note about snapshot integrity manifests no longer
+describes a feature that hasn't shipped. It said the checksum writer "will
+activate in a future release" — it has been writing manifests since 2.6 — and
+the note now names the `jamf_cli.require_manifest` setting that turns it on.
+
+A collect where the jamf-cli process itself could not be started for any
+source no longer finishes green. A launch failure — not a failed command, the
+process never starting — used to leave no record of the attempt, so the run
+fell through, wrote the day's summary from stale cache anyway, and sent a
+success notification. It now counts the same as any other failure: no summary
+from old cache, no success card.
+
+A scheduled run that stood down for another Mac on a shared workspace is now
+recorded as a partial run rather than one that updated Trends, sent a success
+notification, or evaluated metric alerts — nothing new landed, so there is
+nothing to report.
+
+A day whose summary could not be written, for any reason, now says so in the
+run log instead of claiming Trends advanced.
+
+Comparing backups now redacts password hashes, recovery keys, pre-shared keys
+and similar values in the Summary view and the Copy button. The Raw view is
+unchanged and still shows everything, for scripting against.
+
+The automatic re-collect of stale sources now works when every group of
+sources is behind — previously it did nothing in exactly that case, the one
+it exists for. It also no longer retries a source whose last failure was a
+usage or credentials error, since that cannot succeed on a second attempt.
+
+A peer Mac whose clock is set far ahead can no longer block every other Mac's
+scheduled collects until it next runs. Its claim is now treated as unusable
+and taken over, the same way an unreadable one already was.
+
+The period report's identifier warning now checks both ends of the period,
+not only the newest snapshot, and the extension-attribute picker names the
+synced folder the workbook will land in when one is configured.
+
+A run-log write failure on a synced folder is now reported once per schedule
+instead of being dropped silently.
+
+### Changed
+
+- Tracks jamf-cli v1.28.0 (was v1.26.0).
+
+The Jamf Platform API reached general availability, so the sign-in screens now
+prefill the current gateway address instead of the retired pre-GA one, which
+recent jamf-cli releases reject outright. When jamf-cli refuses a command
+because the profile's API does not publish it — its new exit code 8 — the run
+log now explains what happened and what to use instead, and automatic
+re-collection leaves that source alone rather than retrying it every hour.
+
+Two things to check on jamf-cli 1.28.0 if you run a Jamf Pro instance that does
+not serve inventory v4: `pro computers list` now asks for v4 and falls back to
+v1 on a 404, so confirm a collect still fills the Devices screen, and confirm
+`pro comp erase` and `pro comp remove-mdm` still work if you use them — they
+send v4 with no fallback.
+
+### Known issues
+
+**Security data is unavailable on jamf-cli 1.24.0 through 1.27.0 without a
+Jamf Security Cloud subscription — fixed in jamf-cli 1.28.0.** On those
+releases, `pro report security` — a Jamf Pro report — is routed to the Jamf
+Security Cloud client and exits with "no Jamf Security Cloud credentials
+configured" on any tenant that does not have one. The app cannot work around a
+credentials gate, so the Security Posture screen, the weighted security score,
+and every FileVault, SIP, firewall and Gatekeeper figure derived from that
+report show their last collected values, and the health strip reports the
+`security` source as failing to collect — that is correct. The run log carries
+jamf-cli's own message so the cause is visible, and automatic re-collection
+skips the source rather than retrying it every hour. jamf-cli 1.28.0 resolves
+the report as Jamf Pro again: upgrading restores all of it. If you cannot move
+past 1.27.0, pinning jamf-cli to 1.23.x restores the report; the app supports
+1.18.0 and later.
 
 ## [2.6.1] - 2026-08-14
 

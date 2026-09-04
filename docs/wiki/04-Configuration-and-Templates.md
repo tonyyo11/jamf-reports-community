@@ -29,7 +29,7 @@ In the app, the **Config** screen edits `config.yaml` through seven tabs:
 | Custom EAs | extra Extension-Attribute-driven sheets |
 | Thresholds | stale-device days, disk-usage and compliance bands |
 | Platform API | opt-in Jamf Platform API reporting |
-| Output | output directory, archiving, run retention |
+| Output & Branding | output directory, archiving, run retention, report branding |
 | Scoring | the weighted Security Score and risk-score weights |
 
 ## Reviewing column mappings
@@ -52,7 +52,8 @@ Not every config block has a screen in the app. The Config screen's seven tabs c
 `columns`, `security_agents`, `custom_eas`, `thresholds`, `platform`, `output`, and
 `scoring`. `notify` and `ai` each have their own dedicated panel elsewhere in the app
 (linked below). `alerts`, `retention`, and `compliance.baselines` are hand-edited in
-`config.yaml` directly — there is no editor for them in the app yet.
+`config.yaml` directly — there is no editor for them in the app yet, and so are
+`shared_workspace` and the two `charts` sub-keys the Customize screen does not cover.
 
 Hand-editing is safe alongside the GUI: the app's config editor only rewrites its own
 managed keys and preserves everything else verbatim, and scheduled runs read
@@ -81,6 +82,37 @@ one is configured. `rule_count`, when set, bounds validity: a failure count abov
 baseline's total rule count is treated as bad data (No Data), not banded as a High
 failure count. When `baselines` is empty, the app synthesizes a single baseline from
 `failures_count_column` + `baseline_label`.
+
+### Shared workspaces (`shared_workspace`)
+
+Only relevant when several Macs point at the same workspace folder. It lives in
+`config.yaml` — rather than in this Mac's preferences, where the workspace *location*
+lives — because every machine sharing the folder has to agree on it:
+
+```yaml
+shared_workspace:
+  enabled: true                  # omit to decide from the folder itself
+  claim_ttl_minutes: 45          # how long a run's claim stays valid (5-720)
+  min_collect_interval_hours: 12 # 0 disables the freshness check (max 168)
+```
+
+- **`enabled`** is three-state. Leave it out and coordination turns itself on when the
+  workspace resolves to a synced folder. Set it explicitly to force it on for a share the
+  provider detection does not recognise, or off for a local folder that merely happens to
+  sit under a synced path.
+- **`claim_ttl_minutes`** (default 45) is how long a run's advertised claim stays valid.
+  Floored at 5 minutes so a typo cannot produce a lease that expires before the collect it
+  covers, and capped at 720 (12 hours) so a machine that crashed mid-run cannot hold the
+  folder for a week.
+- **`min_collect_interval_hours`** (default 12) is the window inside which another Mac's
+  collect makes this one stand down. `0` disables the check, which is a reasonable choice
+  when the machines cover different tenants. Capped at 168 (a week), because one mistyped
+  digit in a *shared* file would otherwise stand every Mac down for days with no failure
+  to see — only an absence of runs.
+
+Pressing **Refresh** in the app always collects regardless of the freshness window. See
+[Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)
+for the full picture, including what a shared folder costs you in readable device data.
 
 ### Metric alerts (`alerts`)
 
@@ -119,10 +151,10 @@ trend summaries alone unless explicitly set true; `archive_dir` defaults to
 
 ### AI insights (`ai`)
 
-Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` | `pcc` |
-`external` — `external` is reserved, not yet built), `lock_on_device` (refuses any
-non-on-device model even if `tier` says otherwise — a defense-in-depth switch for
-high-security environments), and `reasoning_level` (`light` | `moderate` | `deep`).
+Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` |
+`external` — `external` is reserved, not yet built), and `reasoning_level`
+(`light` | `moderate` | `deep`). Apple Foundation Models is on-device only, so
+`on_device` is the default and the only built behaviour.
 See [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights) for what the feature does and its in-app Settings
 panel.
 
@@ -187,6 +219,34 @@ The **Customize** screen controls what a generated workbook contains:
 - Toggle individual sheets on or off.
 - Choose which metrics appear on the Overview score cards.
 - Apply a template preset as a starting point.
+- Two chart switches, saved per profile when you press Apply:
+  **Save PNGs alongside xlsx** (`charts.save_png`) and **Per-major-version charts**
+  (`charts.os_adoption.per_major_charts`).
+
+Both chart switches default to on, so a workspace with no `charts:` block behaves as it
+always has. `save_png: false` now genuinely stops standalone PNG files being written
+beside the workbook — before 2.7.0 the setting was read by nothing and PNGs were always
+written. Charts *embedded in* the workbook are governed separately by
+`charts.embed_in_xlsx`.
+
+## Checking your config
+
+**Config → Run check** runs every validation the app has — not just "does `config.yaml`
+parse". It reports column mappings that no longer match your CSV, baselines pointing at
+extension attributes nobody collects, malformed alert rules, data-accuracy problems, and
+the state of the workspace folder, each with a concrete fix. On a shared workspace it also
+reports the other Macs writing there.
+
+Two of its findings are about a workspace that is fine but not the one you expected: it
+says when **more history for this profile exists in another folder** (naming it and how
+much is there), and when **a workspace is new**, so column mappings and thresholds are
+defaults rather than something you set. Both are suggestions, not failures, and both stay
+quiet once the workspace has history.
+
+The same checks run headlessly as `jamf-reports check` — see
+[Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line).
+A scheduled run records any *failing* check in its own log, so a run that collects happily
+against broken column mappings no longer looks clean in Run History.
 
 ## Report templates
 

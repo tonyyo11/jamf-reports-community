@@ -148,6 +148,16 @@ final class AutomationHealthModel {
     private init() {}
 
     var issues: [AutomationHealthIssue] = []
+
+    /// Per-kind data-freshness issues for the ACTIVE profile. Separate from
+    /// `issues` because they answer a different question (did the data land?
+    /// vs did the schedule fire?) and because they are profile-scoped where a
+    /// managed schedule may be fleet-wide.
+    var freshnessIssues: [DataFreshnessIssue] = []
+
+    /// True while an automatic re-collect is in flight, so the banner can say
+    /// so instead of repeating the problem the app is already fixing.
+    var isRemediating = false
 }
 
 // MARK: - Managed automation wiring
@@ -210,6 +220,265 @@ extension WorkspaceStore {
         AutomationHealthModel.shared.issues = issues
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
+        await refreshDataFreshness()
+    }
+
+    // MARK: - Data freshness (per-kind)
+
+    /// Current per-kind freshness issues. Reads the shared observable so any
+    /// view referencing it re-renders on change.
+    var dataFreshnessIssues: [DataFreshnessIssue] {
+        AutomationHealthModel.shared.freshnessIssues
+    }
+
+    var isRemediatingFreshness: Bool {
+        AutomationHealthModel.shared.isRemediating
+    }
+
+    /// Re-evaluate per-kind freshness for the active profile from the state
+    /// files `ReportEngine.collect` writes, then publish to the shared model.
+    ///
+    /// Runs on the same chain as `refreshAutomationHealth` (launch, reconcile,
+    /// foreground) so a kind that quietly stopped landing surfaces without the
+    /// operator visiting the screen that reads it.
+    func refreshDataFreshness() async {
+        guard !demoMode else {
+            AutomationHealthModel.shared.freshnessIssues = []
+            return
+        }
+        let profile = self.profile
+        let issues = await Task.detached(priority: .utility) {
+            Self.evaluateFreshness(profile: profile)
+        }.value
+        AutomationHealthModel.shared.freshnessIssues = issues
+    }
+
+    /// Pure-ish freshness read: state dir → states → issues. `nonisolated` so
+    /// the file reads happen off the main actor.
+    nonisolated static func evaluateFreshness(
+        profile: String,
+        now: Date = Date()
+    ) -> [DataFreshnessIssue] {
+        guard ProfileService.isValid(profile),
+              let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return [] }
+        let store = StateFileStore(directory: stateDir)
+        let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
+        let kinds = expectedKinds(
+            skipExpensive: skipExpensive,
+            authMethod: ProfileAuthMethod.resolve(profile: profile)
+        )
+        let states = store.collectionStates(for: kinds)
+        // "Has this workspace ever collected?" — without it every kind on a
+        // brand-new workspace reports as never-landed.
+        let hasCollectedBefore = states.contains { $0.lastSuccess != nil }
+        return DataFreshnessHealth.evaluate(
+            states: states, hasCollectedBefore: hasCollectedBefore, now: now
+        )
+    }
+
+    /// Which kinds this profile is expected to collect, and so which may be
+    /// reported as failing or stale.
+    ///
+    /// Two exclusions, both about not alarming on an absence that is intended:
+    /// the Settings toggle makes the four per-device kinds deliberately absent
+    /// (the false-alarm class `FreshnessChipRow` already guards), and a Jamf
+    /// Pro instance profile can never serve the Platform-only kinds. The
+    /// second is applied regardless of the `.fail` counters on disk: a
+    /// workspace that ran for months before the collect-side skip has a
+    /// standing pile of them, and reading those back is exactly what kept the
+    /// banner red.
+    nonisolated static func expectedKinds(
+        skipExpensive: Bool,
+        authMethod: String?
+    ) -> [String] {
+        let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
+        return ReportEngine.knownCollectKinds.filter { kind in
+            if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
+                return false
+            }
+            return !(skipsPlatform && ReportEngine.platformOnlyKinds.contains(kind))
+        }
+    }
+
+    // MARK: - Manual collect
+
+    /// The health strip's "Collect now". Force-collects the tiers behind the
+    /// current freshness issues and re-evaluates, so the strip answers for the
+    /// run that just happened instead of holding yesterday's verdict.
+    ///
+    /// Unlike `remediateStaleDataIfNeeded` this applies no hourly rate limit
+    /// and no exit-2/exit-8 exclusion: a person clicking has usually just
+    /// fixed the credentials or the profile that made an automatic retry
+    /// pointless, and the click must not be a silent no-op.
+    func collectFailingNow() async {
+        guard !demoMode else { return }
+        guard canRefresh(profileSlug: profile) else {
+            // Practically unreachable — freshness only evaluates for a valid
+            // profile — but a button click must never be a silent no-op.
+            toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
+            return
+        }
+        let tiers = Self.manualCollectTiers(AutomationHealthModel.shared.freshnessIssues)
+        AutomationHealthModel.shared.isRemediating = true
+        defer { AutomationHealthModel.shared.isRemediating = false }
+        // runTierRefresh owns the force-collect, the globalStatus line, the
+        // completion toast, and (since 2.7.0) the freshness re-evaluation.
+        await runTierRefresh(tiers)
+    }
+
+    /// Tiers for the manual collect: those behind the current issues, or every
+    /// tier when there are none — the button is then a plain "collect
+    /// everything", which is what a person clicking a health strip expects.
+    nonisolated static func manualCollectTiers(
+        _ issues: [DataFreshnessIssue]
+    ) -> Set<CollectionTier> {
+        let tiers = DataFreshnessHealth.tiersToRemediate(issues)
+        return tiers.isEmpty ? Set(CollectionTier.allCases) : tiers
+    }
+
+    // MARK: - Self-remediation
+
+    /// Marker for the automatic re-collect. `DayMarker` is a one-line string
+    /// marker; stamping an HOUR key (`2026-08-25T14`) rather than a day key
+    /// gives once-per-hour rate limiting with no new persistence code, and it
+    /// survives relaunch — so quitting and reopening cannot be used (by an
+    /// impatient operator or a crash loop) to hammer an on-prem server.
+    private static let remediationMarker = DayMarker(name: "freshness-remediation")
+
+    nonisolated static let hourKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd'T'HH"
+        return f
+    }()
+
+    /// Attempt one automatic re-collect of the tiers that have failing or
+    /// stale kinds, then re-evaluate.
+    ///
+    /// Deliberately narrow:
+    /// - only when the app is open and the operator can see the banner,
+    /// - at most once an hour per profile,
+    /// - only the tiers that actually have issues,
+    /// - `force: false`, so the per-kind cadence filter collects exactly the
+    ///   kinds that are behind and skips the healthy ones in the same tier.
+    ///
+    /// Returns true when a collect was attempted (not whether it fixed
+    /// anything — the re-evaluation that follows is the real answer).
+    @discardableResult
+    func remediateStaleDataIfNeeded() async -> Bool {
+        guard !demoMode else { return false }
+        let issues = AutomationHealthModel.shared.freshnessIssues
+        guard !issues.isEmpty else { return false }
+        let profile = self.profile
+        guard ProfileService.isValid(profile),
+              let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+
+        let hourKey = Self.hourKeyFormatter.string(from: Date())
+        guard Self.remediationMarker.lastStampedDay(in: workspace) != hourKey else { return false }
+        // Claim the hour BEFORE the await so a second foreground event during a
+        // slow collect cannot start a parallel one.
+        Self.remediationMarker.stamp(day: hourKey, in: workspace)
+
+        // Kinds whose last failure was a usage/credentials-gate error (jamf-cli
+        // exit 2) cannot be fixed by retrying — filtered before tier targeting,
+        // but left in `issues`/the banner so the operator still sees them.
+        let remediable = Self.excludingPermanentUsageFailures(issues, profile: profile)
+        let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
+        AutomationHealthModel.shared.isRemediating = true
+        defer { AutomationHealthModel.shared.isRemediating = false }
+
+        AppLogger.collect.notice(
+            """
+            Auto-remediating \(remediable.count, privacy: .public) stale/failing kind(s) \
+            for \(profile, privacy: .public) — tiers \
+            \(tiers.map(\.rawValue).sorted().joined(separator: ","), privacy: .public)
+            """
+        )
+        await Self.remediateOne(profile: profile, tiers: tiers)
+        await refreshDataFreshness()
+        return true
+    }
+
+    /// Drop issues whose kind's last failure exit code makes retry pointless:
+    /// `exitCodeUsage` (2, a usage/credentials gate — e.g. jamf-cli 1.24–1.27 on
+    /// `pro report security`) and `exitCodeRefusedByPolicy` (8, 1.28+ — outside
+    /// the profile's published API). Only `tiersToRemediate`'s input narrows;
+    /// `issues` — and so the banner — is untouched, the operator still sees them.
+    nonisolated static func excludingPermanentUsageFailures(
+        _ issues: [DataFreshnessIssue], profile: String
+    ) -> [DataFreshnessIssue] {
+        guard ProfileService.isValid(profile),
+              let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return issues }
+        let store = StateFileStore(directory: stateDir)
+        let permanent = issues.filter {
+            let code = store.lastFailureExitCode(for: $0.snapshotKind)
+            return code == CLIBridge.exitCodeUsage
+                || code == CLIBridge.exitCodeRefusedByPolicy
+        }
+        guard !permanent.isEmpty else { return issues }
+        AppLogger.collect.notice(
+            """
+            Skipping remediation for \(permanent.count, privacy: .public) kind(s) with a \
+            permanent usage/credentials-gate or policy-refusal failure: \
+            \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .public)
+            """
+        )
+        let skip = Set(permanent.map(\.snapshotKind))
+        return issues.filter { !skip.contains($0.snapshotKind) }
+    }
+
+    /// Per-tier collect closure used by `remediateOne`. Matches a one-tier
+    /// slice of `CollectRouter.run`'s signature; tests inject a spy.
+    typealias RemediationCollector = @Sendable (
+        _ profile: String,
+        _ tiers: Set<CollectionTier>,
+        _ config: ReportConfig?
+    ) async throws -> Void
+
+    nonisolated static func remediateOne(
+        profile: String,
+        tiers: Set<CollectionTier>,
+        collect: RemediationCollector = defaultRemediationCollector
+    ) async {
+        let config: ReportConfig? = {
+            guard let url = ProfileService.workspaceURL(for: profile)?
+                .appendingPathComponent("config.yaml"),
+                  FileManager.default.fileExists(atPath: url.path) else { return nil }
+            return try? ConfigLoader.load(from: url)
+        }()
+        // One collect call PER TIER, never the full set at once: passing all
+        // three tiers together equals CollectionTier.allCases, which trips
+        // ReportEngine.collect's once-per-day FULL-collect guard and silently
+        // no-ops the remediation.
+        for tier in tiers.sorted(by: { $0.rawValue < $1.rawValue }) {
+            do {
+                try await collect(profile, [tier], config)
+            } catch {
+                // A failed remediation is not silent: the failure counters advanced
+                // inside collect, so the next evaluation reports a HIGHER count and
+                // the banner escalates rather than resetting.
+                AppLogger.collect.warning(
+                    """
+                    Auto-remediation collect failed for \(profile, privacy: .public) \
+                    tier \(tier.rawValue, privacy: .public): \
+                    \(error.localizedDescription, privacy: .private)
+                    """
+                )
+            }
+        }
+    }
+
+    nonisolated static let defaultRemediationCollector: RemediationCollector = {
+        profile, tiers, config in
+        try await CollectRouter.run(
+            profile: profile,
+            tiers: tiers,
+            skipExpensive: false,
+            force: false,
+            config: config,
+            onLine: CLIBridge.bufferingOnLine
+        )
     }
 
     /// One-click "Run now" for a failing/overdue managed row on the

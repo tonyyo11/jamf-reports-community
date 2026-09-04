@@ -146,7 +146,8 @@ struct OnboardingView: View {
         case .installCLI:
             "The app detects jamf-cli locally. Installation stays under your control; copy the Homebrew command if it is missing."
         case .workspace:
-            "The profile name becomes both the jamf-cli profile id and the folder under ~/Jamf-Reports."
+            "The profile name becomes both the jamf-cli profile id and the folder under "
+            + "\(WorkspaceRootStore.displayRoot)."
         case .authenticate:
             flow.proConnectionType == .platformGateway
                 ? "Registers a jamf-cli profile with Platform API auth. Secrets are passed over stdin and cleared immediately."
@@ -404,7 +405,7 @@ struct OnboardingView: View {
                         FieldLabel(label: "Gateway URL")
                         PNPTextField(
                             value: binding(\.gatewayURL),
-                            placeholder: "https://us.apigw.jamf.com",
+                            placeholder: "https://us.api.jamfcloud.com",
                             mono: true
                         )
                         validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")

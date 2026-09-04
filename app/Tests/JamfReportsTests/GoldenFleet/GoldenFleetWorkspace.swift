@@ -62,7 +62,7 @@ enum GoldenFleetClock {
         return f.string(from: date)
     }
 
-    // Matches MSCPChartDataBuilder.snapshotDateFormatter exactly (no explicit
+    // Matches CloudStorage's snapshot stamp formatter exactly (no explicit
     // timezone → renders in local time; parse side is likewise local).
     private static let filenameFormatter: DateFormatter = {
         let f = DateFormatter()

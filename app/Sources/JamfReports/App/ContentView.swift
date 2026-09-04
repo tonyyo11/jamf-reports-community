@@ -74,6 +74,18 @@ struct ContentView: View {
                         .transition(.move(edge: .leading))
                 }
                 VStack(spacing: 0) {
+                    // App-wide health strip: per-kind collection failures and
+                    // schedule problems follow the operator onto every screen
+                    // instead of waiting on Overview or Run History.
+                    GlobalHealthBanner(
+                        freshnessIssues: workspace.dataFreshnessIssues,
+                        automationIssues: workspace.automationHealthIssues,
+                        isRemediating: workspace.isRemediatingFreshness,
+                        onOpenAutomation: { tab = .schedules },
+                        onCollectNow: {
+                            Task { await workspace.collectFailingNow() }
+                        }
+                    )
                     ZStack(alignment: .bottom) {
                         detailView
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -133,6 +145,10 @@ struct ContentView: View {
             // scheduled run was missed (e.g. asleep at 06:00). No-op when
             // already collected today or automation is unmanaged.
             await workspace.catchUpCollectIfNeeded()
+            // Data-freshness self-remediation: re-collect the tiers whose kinds
+            // are failing or far past cadence. Rate-limited to once an hour and
+            // scoped to the affected tiers; no-op when nothing is wrong.
+            await workspace.remediateStaleDataIfNeeded()
         }
         .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
         .animation(.snappy, value: workspace.toast != nil)

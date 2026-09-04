@@ -90,6 +90,142 @@ struct StateFileStore: Sendable {
         try? rewriteManifest()
     }
 
+    // MARK: - Failure tracking (2.8 data-freshness health)
+
+    /// Consecutive-failure record for one report kind.
+    struct FailureRecord: Sendable, Equatable {
+        let count: Int
+        let last: Date
+    }
+
+    /// Read the consecutive-failure record for `report`, or nil when the kind
+    /// has no recorded failure. Like `lastRun`, reads never throw — a missing
+    /// or malformed file means "no known failures".
+    func failures(report: String) -> FailureRecord? {
+        guard let parts = validFailureFields(report: report),
+              let count = Int(parts[0]),
+              let date = Self.formatter.date(from: String(parts[1])) else { return nil }
+        return FailureRecord(count: count, last: date)
+    }
+
+    /// The exit code of the most recent failure for `report`, or nil when there
+    /// is no failure record, or the record predates exit-code memory (the
+    /// two-field form), or the failure carried no exit code at all (a launch
+    /// failure — the process never ran, so there is nothing to remember).
+    ///
+    /// Distinct from "the kind failed": a caller deciding *how* to react needs
+    /// the code, and must be able to tell "auth expired" from "we don't know".
+    func lastFailureExitCode(for report: String) -> Int32? {
+        guard let parts = validFailureFields(report: report), parts.count == 3 else { return nil }
+        return Int32(parts[2])
+    }
+
+    /// Whitespace-split fields of `<report>.fail` when the record is
+    /// structurally sound: a positive count, a parseable timestamp, and either
+    /// the legacy two-field form or the three-field form carrying an exit code.
+    /// Anything else reads as no record at all — a corrupt counter must not be
+    /// able to silence the alarm it exists to raise.
+    private func validFailureFields(report: String) -> [Substring]? {
+        guard let raw = try? String(contentsOf: failureURL(for: report), encoding: .utf8) else {
+            return nil
+        }
+        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
+        guard parts.count == 2 || parts.count == 3,
+              let count = Int(parts[0]), count > 0,
+              Self.formatter.date(from: String(parts[1])) != nil else { return nil }
+        return parts
+    }
+
+    /// Increment the consecutive-failure count for `report`.
+    ///
+    /// Written on the cache-fallback branch of `ReportEngine.collect`, which is
+    /// where a per-kind collect failure used to vanish into a log warning. The
+    /// count is what lets `DataFreshnessHealth` distinguish a one-off server
+    /// hiccup from a kind that has been quietly failing for months.
+    ///
+    /// Best-effort by design (`try?` at the call site): losing a failure count
+    /// must never undo a collect that otherwise succeeded.
+    ///
+    /// `exitCode` is appended as a third field so the *reason* for the newest
+    /// failure survives the run alongside the count. Omitted when the caller has
+    /// no code to record (a launch failure), which keeps the record in the
+    /// original two-field form and reads back as "unknown" rather than as a
+    /// fabricated exit 0.
+    func recordFailure(report: String, at date: Date, exitCode: Int32? = nil) throws {
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true
+        )
+        let next = (failures(report: report)?.count ?? 0) + 1
+        let truncated = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
+        var body = "\(next) \(Self.formatter.string(from: truncated))"
+        if let exitCode { body += " \(exitCode)" }
+        guard let data = body.data(using: .utf8) else {
+            throw StateFileError.encodingFailed(report: report)
+        }
+        try atomicWrite(data: data, to: failureURL(for: report))
+    }
+
+    /// Drop the failure record for `report` — called on every success so the
+    /// count means *consecutive* failures rather than lifetime failures.
+    func clearFailures(report: String) {
+        try? FileManager.default.removeItem(at: failureURL(for: report))
+    }
+
+    /// The result of one collect attempt for a single report kind.
+    enum KindOutcome: Sendable {
+        /// A snapshot was written to disk. Anything short of that — a non-zero
+        /// exit, a launch failure, or exit 0 carrying output that isn't JSON —
+        /// is `.failed`, because the operator's question is "is the data
+        /// there?", not "did the process return?".
+        case landed
+        /// `exitCode` is jamf-cli's own code when the process ran, and nil when
+        /// it never launched — the two are different diagnoses and the store is
+        /// the only place either survives the run.
+        case failed(exitCode: Int32?)
+    }
+
+    /// Apply one collect attempt's result to this kind's state.
+    ///
+    /// The two rules that make the counters mean anything live here rather than
+    /// at the five `ReportEngine.collect` branches that used to write the store
+    /// directly: a landing advances the cadence boundary AND clears the failure
+    /// streak, and everything else increments it.
+    ///
+    /// Consolidating them is also what makes those rules reachable by tests.
+    /// `collect` resolves jamf-cli through `ExecutableLocator`, which has no
+    /// injectable seam on purpose — the CWD fallback was removed so a planted
+    /// binary can never be handed the API secret — so the collect loop itself
+    /// cannot be run in the suite. Adding a test-only executable override to
+    /// `collect` would reopen exactly that hole, so the bookkeeping moved to
+    /// where it can be tested instead.
+    ///
+    /// Never throws: a state-write failure must not undo a snapshot already on
+    /// disk. The worst case is one redundant fetch next cycle.
+    func record(_ outcome: KindOutcome, report: String, at date: Date) {
+        switch outcome {
+        case .landed:
+            try? recordRun(report: report, at: date)
+            clearFailures(report: report)
+        case .failed(let exitCode):
+            try? recordFailure(report: report, at: date, exitCode: exitCode)
+        }
+    }
+
+    /// Per-kind collection state for every kind in `kinds`, for the freshness
+    /// evaluator. Kinds with neither a success nor a failure still yield a
+    /// state (all-nil) so a never-collected kind is visible rather than absent.
+    func collectionStates(for kinds: [String]) -> [KindCollectionState] {
+        kinds.map { kind in
+            let failure = failures(report: kind)
+            return KindCollectionState(
+                kind: kind,
+                lastSuccess: lastRun(report: kind),
+                consecutiveFailures: failure?.count ?? 0,
+                lastFailure: failure?.last
+            )
+        }
+    }
+
     // MARK: - Manifest (T-14)
 
     /// Rebuild `<state-dir>/manifest.json` from the current `.last`
@@ -182,6 +318,12 @@ struct StateFileStore: Sendable {
 
     private func fileURL(for report: String) -> URL {
         directory.appendingPathComponent("\(report).last", isDirectory: false)
+    }
+
+    /// `.fail` rather than `.last` so `rewriteManifest` — which hashes only
+    /// `.last` files — is unaffected by failure bookkeeping.
+    private func failureURL(for report: String) -> URL {
+        directory.appendingPathComponent("\(report).fail", isDirectory: false)
     }
 
     /// Write `data` to `url` via a temp-file-then-rename so a crash mid-

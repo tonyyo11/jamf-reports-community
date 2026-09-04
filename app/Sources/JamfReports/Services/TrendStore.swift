@@ -201,7 +201,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             return nil
         }
         return files
-            .filter { $0.lastPathComponent.hasPrefix("summary_") && $0.pathExtension == "json" }
+            .filter { CloudStorage.isCanonicalSummaryFilename($0.lastPathComponent) }
             .compactMap { url -> Date? in
                 (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
             }

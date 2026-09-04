@@ -81,7 +81,11 @@ private func appendFleetLog(_ message: String) {
             }
             let handle = try FileHandle(forWritingTo: logURL)
             handle.seekToEndOfFile()
-            handle.write(data)
+            // write(contentsOf:), not write(_:): the latter bridges to
+            // -[NSFileHandle writeData:] and RAISES on failure, which Swift
+            // cannot catch — the enclosing do/catch here looked like it covered
+            // that and did not. On a synced workspace the write really can fail.
+            try handle.write(contentsOf: data)
             try handle.close()
         } else {
             try data.write(to: logURL, options: .atomic)
@@ -290,7 +294,14 @@ private func scheduledRunSingle(
         fputs("[warn] could not open run record in automation/logs — run will not appear in Run History\n", stderr)
     }
 
+    // `ReportEngine.collect` returns Void — CollectRouter's typealias and its
+    // test spies depend on that — so the two facts that make a bare exit 0 a
+    // lie arrive on the log stream instead: this Mac stood down for a peer, or
+    // the day's summary never reached disk. Watching the stream is what lets
+    // the completion line and the webhook below say which one happened.
+    let honesty = CollectHonestyWatcher()
     let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
+        honesty.observe(line.text)
         recorder?.record(line.text)
         if verbose || line.level != .info {
             print(line.text)
@@ -446,23 +457,74 @@ private func scheduledRunSingle(
         // School collect does not — avoid a false "Trends updated" claim for School.
         if mode == .snapshotOnly {
             let detected = ProfileProductType.detect(from: routingConfig)
-            let trendsSuffix = detected.type == .jamfPro ? " — Trends updated" : ""
-            let message = "[ok] scheduled snapshot complete for '\(profile)'\(trendsSuffix)"
+            // Trends only moved if a Jamf Pro collect ran AND its summary
+            // reached disk. Claiming it otherwise is the specific lie this
+            // release is closing: the operator reads "Trends updated" as proof
+            // the fleet was polled today.
+            let trendsSuffix = detected.type == .jamfPro && honesty.producedFreshSnapshot
+                ? " — Trends updated" : ""
+            let message = honesty.stoodDown
+                ? "[ok] scheduled snapshot for '\(profile)' stood down — another machine "
+                    + "in this shared workspace collected recently"
+                : "[ok] scheduled snapshot complete for '\(profile)'\(trendsSuffix)"
             print(message)
             recorder?.record(message)
-            await ScheduledRunSignals.notifyScheduledRun(
-                config: routingConfig, profile: profile, mode: mode,
-                artifact: nil, recorder: recorder
-            )
-            await ScheduledRunSignals.notifyMetricAlerts(
-                config: routingConfig, profile: profile, workspace: workspace, recorder: recorder
-            )
+            // A snapshot-only run's entire product is the day's summary — it
+            // renders no workbook — so a success card from a run that wrote no
+            // summary names an artifact that does not exist. Both markers
+            // therefore suppress it: a stand-down (nothing collected) and a
+            // summary that never reached disk. Exit 0 is still right for both —
+            // standing down is the coordination working, and the `[partial]`
+            // line already downgrades the run in Run History. The failure-card
+            // path is unchanged: a run that threw never gets here.
+            if honesty.producedFreshSnapshot {
+                await ScheduledRunSignals.notifyScheduledRun(
+                    config: routingConfig, profile: profile, mode: mode,
+                    artifact: nil, recorder: recorder
+                )
+                await ScheduledRunSignals.notifyMetricAlerts(
+                    config: routingConfig, profile: profile, workspace: workspace,
+                    recorder: recorder
+                )
+            }
+            ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
             recorder?.finish(exitCode: 0)
             return 0
         }
 
         let config = try routingConfig ?? ConfigLoader.load(from: configURL)
         let dataDir = try WorkspacePaths.dataDir(for: profile)
+
+        // Shared workspaces: don't render the same report twice. Placed here
+        // rather than inside ReportEngine.generate, which derives its profile
+        // from config and has many callers — the duplicates come from two
+        // LaunchAgents firing, and this is where both of those land.
+        //
+        // No freshness check: "has someone collected recently" governs
+        // collecting, not rendering. A scheduled generate only defers to a peer
+        // actively writing right now.
+        var holdsGenerateClaim = false
+        switch ReportEngine.coordinationGate(
+            profile: profile, force: false, operation: "generate", checkFreshness: false
+        ) {
+        case .standDown(let reason):
+            // Same `[partial]` line the collect-side twin emits: two runs that
+            // both did nothing must read alike in Run History, or a deferred
+            // generate looks like a report that rendered.
+            let line = ReportEngine.standDownLine(reason: reason)
+            print(line)
+            recorder?.record(line)
+            recorder?.finish(exitCode: 0)
+            return 0
+        case .proceed(let state, let notes):
+            holdsGenerateClaim = state.holdsClaim
+            for note in notes {
+                print(note)
+                recorder?.record(note)
+            }
+        }
+        defer { if holdsGenerateClaim { SharedWorkspace.release(profile: profile) } }
+
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
@@ -489,12 +551,16 @@ private func scheduledRunSingle(
             recorder: recorder
         )
         // jamf-cli-only generates from cache without a fresh collect, so its
-        // summary isn't "just produced" — skip alerting for it.
-        if mode != .jamfCLIOnly {
+        // summary isn't "just produced" — skip alerting for it. A collect that
+        // stood down for a peer is the same situation arrived at differently:
+        // the report is real (it rendered from cache), but no summary was
+        // written this run, so there is nothing new to alert on.
+        if mode != .jamfCLIOnly, !honesty.stoodDown {
             await ScheduledRunSignals.notifyMetricAlerts(
                 config: config, profile: profile, workspace: workspace, recorder: recorder
             )
         }
+        ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
         recorder?.finish(exitCode: 0, sheetFailures: failures.count, artifacts: [outputURL])
         return 0
     } catch {
@@ -649,10 +715,68 @@ func runCheck(profile: String) -> Int32 {
                 fputs("[warn] could not read data_dir: \(error.localizedDescription)\n", stderr)
             }
         }
-        return 0
+
+        // The checks above only prove the file parses. Everything an operator
+        // actually gets wrong — column mappings that no longer match their CSV,
+        // baselines pointing at absent EAs, malformed alert rules, a workspace
+        // on a shared folder with no coordination — lives in the Config Doctor,
+        // which the GUI has surfaced since 2.3.0 while `check` did not. Same
+        // report, same rules, one implementation.
+        return printDoctorReport(ConfigDoctorService.run(profile: profile))
     } catch {
         fputs("[error] \(error.localizedDescription)\n", stderr)
         return 1
+    }
+}
+
+/// Render a `DoctorReport` as `check` output and turn it into an exit code.
+///
+/// Passes are summarised as a count rather than listed: a healthy config emits
+/// dozens of them and burying three warnings in that list is how a check gets
+/// ignored. Only `.fail` sets a non-zero exit — a warning is something to look
+/// at, not a reason to fail a scripted run.
+func printDoctorReport(_ report: DoctorReport) -> Int32 {
+    let actionable = report.rows.filter { $0.severity != .pass }
+
+    print("[ok] config checks passed: \(report.passCount)")
+    for row in actionable.sorted(by: { severityRank($0.severity) < severityRank($1.severity) }) {
+        let tag: String
+        switch row.severity {
+        case .fail: tag = "error"
+        case .warn: tag = "warn"
+        case .suggest: tag = "info"
+        case .pass: continue
+        }
+        // Every row goes to stdout, failures included. Splitting a report
+        // across two streams looked tidier but reordered it on a terminal:
+        // stderr is unbuffered and stdout is not, so findings arrived before
+        // the header and each "fix:" line detached from the finding it
+        // belonged to. The exit code is the machine-readable signal; a
+        // readable report is worth more than per-row stream convention.
+        print("[\(tag)] \(row.title): \(row.detail)")
+        if let hint = row.hint {
+            print("        fix: \(hint)")
+        }
+    }
+
+    if report.failCount > 0 {
+        fflush(stdout)
+        fputs("[error] \(report.failCount) check(s) must be fixed before reports are reliable\n",
+              stderr)
+        return 1
+    }
+    if report.warnCount > 0 {
+        print("[warn] \(report.warnCount) check(s) need attention")
+    }
+    return 0
+}
+
+private func severityRank(_ severity: DoctorSeverity) -> Int {
+    switch severity {
+    case .fail: return 0
+    case .warn: return 1
+    case .suggest: return 2
+    case .pass: return 3
     }
 }
 

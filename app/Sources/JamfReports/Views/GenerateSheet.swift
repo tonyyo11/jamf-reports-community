@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 // GenerateOutputType is defined in Models/Models.swift.
 
@@ -79,7 +80,7 @@ final class GenerateSheetState {
     func resolvedOutputDir(for profile: String) -> URL {
         if let dir = customOutputDir { return dir }
         let fallback = ProfileService.workspaceURL(for: profile)
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Jamf-Reports")
+            ?? WorkspaceRootStore.defaultRoot
         return fallback.appendingPathComponent("Generated Reports", isDirectory: true)
     }
 

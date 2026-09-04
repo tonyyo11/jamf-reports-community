@@ -2,7 +2,7 @@ import Foundation
 
 /// Read-only loader for the Devices screen.
 ///
-/// All file reads are constrained to `~/Jamf-Reports/<profile>/`. The service
+/// All file reads are constrained to `<workspaces-root>/<profile>/`. The service
 /// never shells out; it uses current inventory CSV output plus cached jamf-cli
 /// JSON snapshots that the Python tool already writes.
 enum DeviceInventoryService {
@@ -21,7 +21,8 @@ enum DeviceInventoryService {
         if demoMode { return DemoData.deviceSnapshot }
         guard let root = validatedWorkspaceRoot(profile: profile) else {
             return emptySnapshot(
-                warning: "Workspace is missing or not contained in ~/Jamf-Reports/\(profile)/"
+                warning: "Workspace is missing or not contained in "
+                    + "\(WorkspaceRootStore.displayPath(profile: profile))/"
             )
         }
 
@@ -31,11 +32,17 @@ enum DeviceInventoryService {
         var sourceFiles: [String] = []
         var newestSourceDate: Date?
 
-        if let csv = latestInventoryCSV(config: config, root: root) {
-            loadCSVInventory(csv, root: root, into: &merger, warnings: &warnings,
-                             staleThresholdDays: config.staleDeviceDays)
-            sourceFiles.append(displayPath(csv, root: root))
-            newestSourceDate = maxDate(newestSourceDate, modificationDate(csv))
+        if let csv = resolveInventoryCSV(
+            config: config, root: root, now: Date(), warnings: &warnings
+        ) {
+            if csv.isCurrent {
+                loadCSVInventory(csv.url, root: root, into: &merger, warnings: &warnings,
+                                 staleThresholdDays: config.staleDeviceDays)
+                sourceFiles.append(displayPath(csv.url, root: root))
+                newestSourceDate = maxDate(newestSourceDate, modificationDate(csv.url))
+            } else {
+                warnings.append(agedInventoryCSVWarning(csv, root: root, config: config))
+            }
         }
 
         if let computers = latestCachedJSON(
@@ -120,8 +127,16 @@ enum DeviceInventoryService {
         let config = loadConfigHints(root: root, warnings: &warnings)
         var dates: [String: Date] = [:]
 
-        if let csv = latestInventoryCSV(config: config, root: root),
-           let d = modificationDate(csv) {
+        // Export date, not mtime — the same rule the age bound applies. A
+        // provider restamps a file when it materializes it, so an mtime here
+        // would show a months-old export as collected today on exactly the
+        // deployment the bound exists to protect.
+        if let csv = resolveInventoryCSV(
+               config: config, root: root, now: Date(), warnings: &warnings
+           ), csv.isCurrent,
+           let d = inventoryCSVExportDate(
+               filename: csv.url.lastPathComponent, modified: modificationDate(csv.url)
+           ) {
             dates["inventory-csv"] = d
         }
         let jsonKinds: [(kind: String, names: [String])] = [
@@ -130,9 +145,13 @@ enum DeviceInventoryService {
             ("patch-device-failures", ["patch-device-failures", "patch_device_failures"]),
             ("patch-status", ["patch-status", "patch_status"]),
         ]
+        // Same rule for the snapshot kinds: the filename stamp is when the
+        // collect ran, mtime only when there is no stamp to read.
         for entry in jsonKinds {
-            if let url = latestCachedJSON(dataDir: config.jamfCLIDataDir, names: entry.names, root: root),
-               let d = modificationDate(url) {
+            if let url = latestCachedJSON(
+                   dataDir: config.jamfCLIDataDir, names: entry.names, root: root
+               ),
+               let d = FileManager.snapshotDate(of: url) {
                 dates[entry.kind] = d
             }
         }
@@ -195,7 +214,7 @@ fileprivate extension DeviceInventoryService {
         let rootPath = root.standardizedFileURL.path
         guard path.hasPrefix(rootPath) else { return url.lastPathComponent }
         let suffix = path.dropFirst(rootPath.count).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return "~/Jamf-Reports/\(root.lastPathComponent)/\(suffix)"
+        return WorkspaceRootStore.displayPath(profile: root.lastPathComponent, subpath: suffix)
     }
 }
 
@@ -266,7 +285,54 @@ fileprivate extension DeviceInventoryService {
 
 private extension DeviceInventoryService {
 
-    static func latestInventoryCSV(config: ConfigHints, root: URL) -> URL? {
+    /// Resolve the inventory CSV together with the verdict on whether it is
+    /// still current. Kept separate from `latestInventoryCSV` so the "which file"
+    /// and "is it usable" questions stay independently testable.
+    static func resolveInventoryCSV(
+        config: ConfigHints,
+        root: URL,
+        now: Date,
+        warnings: inout [String]
+    ) -> (url: URL, isCurrent: Bool, ageDays: Int?)? {
+        guard let url = latestInventoryCSV(config: config, root: root, warnings: &warnings) else {
+            return nil
+        }
+        let exportDate = inventoryCSVExportDate(
+            filename: url.lastPathComponent,
+            modified: modificationDate(url)
+        )
+        return (
+            url: url,
+            isCurrent: inventoryCSVIsCurrent(
+                exportDate: exportDate, now: now, staleDeviceDays: config.staleDeviceDays
+            ),
+            ageDays: exportDate.map { inventoryCSVAgeDays(exportDate: $0, now: now) }
+        )
+    }
+
+    /// Names the file, its age and the remedy. An ignored file the operator
+    /// dropped themselves must never be a silent skip.
+    ///
+    /// ponytail: the unknown-age wording is unreachable by construction — an
+    /// undatable file is reported as current, so this only ever runs with a
+    /// known age. Kept so a future change to that rule degrades to vague copy
+    /// rather than a crash or a silent skip.
+    static func agedInventoryCSVWarning(
+        _ csv: (url: URL, isCurrent: Bool, ageDays: Int?),
+        root: URL,
+        config: ConfigHints
+    ) -> String {
+        let age = csv.ageDays.map { "\($0) days old" } ?? "older than the stale threshold"
+        return "Ignoring \(displayPath(csv.url, root: root)) — it is \(age), past the "
+            + "\(config.staleDeviceDays)-day stale threshold. A CSV export cannot report a "
+            + "check-in newer than the day it ran, so at that age it marks devices stale that "
+            + "are still checking in and re-adds devices already retired. Drop a current export "
+            + "in csv-inbox/ or delete this one."
+    }
+
+    static func latestInventoryCSV(
+        config: ConfigHints, root: URL, warnings: inout [String]
+    ) -> URL? {
         let primary = latestFile(
             in: config.outputDir,
             root: root,
@@ -281,7 +347,33 @@ private extension DeviceInventoryService {
         if let inboxLatest = latestFile(in: inbox, root: root, extensions: ["csv"]) {
             return inboxLatest
         }
+        // The conflict-copy filter is right for JSON snapshots — a forked
+        // snapshot is never data — but csv-inbox is a folder the operator drops
+        // files into by hand, and Finder names a second download "Computers
+        // 2.csv". Dropping that silently would leave the screen with no source
+        // and no explanation, so name it and say how to make it readable.
+        if let shaped = conflictShapedCSV(in: inbox, root: root) {
+            warnings.append(conflictNamedCSVWarning(shaped, root: root))
+        }
         return latestFile(in: config.historicalCSVDir, root: root, extensions: ["csv"], maxDepth: 2)
+    }
+
+    /// Newest csv-inbox file rejected only because its name looks like a sync or
+    /// download duplicate. Used for the warning above — never loaded.
+    static func conflictShapedCSV(in inbox: URL, root: URL) -> URL? {
+        guard let dir = validatedDirectory(inbox, root: root) else { return nil }
+        var files: [URL] = []
+        collectFiles(in: dir, root: root, extensions: ["csv"], maxDepth: 1, into: &files)
+        return files
+            .filter { CloudStorage.isLikelySyncConflict($0.lastPathComponent) }
+            .max { (modificationDate($0) ?? .distantPast) < (modificationDate($1) ?? .distantPast) }
+    }
+
+    static func conflictNamedCSVWarning(_ url: URL, root: URL) -> String {
+        "Ignoring \(displayPath(url, root: root)) — its name ends in a duplicate marker "
+            + "(a trailing \" 2\" or \" (1)\"), which is how Finder names a second download and "
+            + "how a sync provider forks a file, so it is never read as inventory. Rename it "
+            + "without that suffix to have it picked up."
     }
 
     static func latestCachedJSON(dataDir: URL, names: [String], root: URL) -> URL? {
@@ -313,7 +405,11 @@ private extension DeviceInventoryService {
         guard let dir = validatedDirectory(directory, root: root) else { return nil }
         var files: [URL] = []
         collectFiles(in: dir, root: root, extensions: extensions, maxDepth: maxDepth, into: &files)
-        return newest(files.filter { predicate($0.lastPathComponent) && !$0.lastPathComponent.contains(".partial") })
+        // `newest` applies the shared exclusions (manifest.json, `.partial`,
+        // sync-conflict copies) and the shared ordering, so this picker can no
+        // longer drift from the workbook's. Only the caller-supplied name
+        // predicate stays local.
+        return newest(files.filter { predicate($0.lastPathComponent) })
     }
 
     static func collectFiles(
@@ -528,6 +624,68 @@ extension DeviceInventoryService {
     }
 }
 
+// MARK: - Inventory CSV freshness
+
+extension DeviceInventoryService {
+
+    /// Export date of an inventory CSV: the date stamped in the filename first,
+    /// modification time only as a fallback.
+    ///
+    /// mtime is not trustworthy here. A sync provider restamps a file when it
+    /// materializes it, so on a shared workspace a months-old export downloads
+    /// as "modified today" — which is exactly the deployment this bound exists
+    /// to protect. The filename is the only durable record of when the export ran.
+    static func inventoryCSVExportDate(filename: String, modified: Date?) -> Date? {
+        lastDateStamp(in: filename) ?? modified
+    }
+
+    /// Whether a CSV export is still current inventory.
+    ///
+    /// A CSV is a point-in-time roster: it can never report a check-in newer than
+    /// the day it ran. Once it ages past the stale threshold every device it
+    /// contributes reads as stale, and devices retired since the export are
+    /// resurrected — at that point it is history, not inventory.
+    ///
+    /// An unknown export date or a disabled threshold means no bound: fail toward
+    /// loading the operator's file rather than silently dropping it.
+    static func inventoryCSVIsCurrent(exportDate: Date?, now: Date, staleDeviceDays: Int) -> Bool {
+        guard staleDeviceDays > 0, let exportDate else { return true }
+        return inventoryCSVAgeDays(exportDate: exportDate, now: now) <= staleDeviceDays
+    }
+
+    /// Whole days between the export and `now`. Negative for a future stamp,
+    /// which reads as current rather than infinitely stale.
+    static func inventoryCSVAgeDays(exportDate: Date, now: Date) -> Int {
+        Int((now.timeIntervalSince(exportDate) / 86_400).rounded(.towardZero))
+    }
+
+    /// Last `yyyy-MM-dd` or `yyyy_MM_dd` in the name — last, not first, because
+    /// export names commonly carry a config stamp ahead of the run stamp
+    /// (`automation_inventory_config_2026_04_28_090007_2026-04-28_090526.csv`).
+    /// Last *parsing* match wins, so an impossible stamp (`1234-56-78`) is
+    /// skipped by the non-lenient formatter rather than clearing a real one.
+    static func lastDateStamp(in filename: String) -> Date? {
+        filename
+            .matches(of: #/\d{4}[-_]\d{2}[-_]\d{2}/#)
+            .compactMap { dateFromStamp(String($0.output)) }
+            .last
+    }
+
+    private static func dateFromStamp(_ stamp: String) -> Date? {
+        csvStampFormatter.date(from: stamp.replacingOccurrences(of: "_", with: "-"))
+    }
+
+    /// Local time zone, matching `dateFromSnapshotFilename` — the comparison is
+    /// whole days, so the zone only shifts the boundary by under a day.
+    static let csvStampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        f.isLenient = false
+        return f
+    }()
+}
+
 // MARK: - Patch title summary
 
 private extension DeviceInventoryService {
@@ -675,7 +833,13 @@ private extension DeviceInventoryService {
 private extension DeviceInventoryService {
 
     static func cell(_ row: [String: String], _ candidates: [String]) -> String {
-        let normalized = Dictionary(uniqueKeysWithValues: row.map { (normalizeHeader($0.key), $0.value) })
+        // Two CSV headers can normalize to the same key ("Serial Number" and
+        // "serial_number" both become "serialnumber"), which traps. A duplicate
+        // column is a messy export, not a reason to crash — first wins.
+        let normalized = Dictionary(
+            row.map { (normalizeHeader($0.key), $0.value) },
+            uniquingKeysWith: { first, _ in first }
+        )
         for key in candidates {
             let value = row[key] ?? normalized[normalizeHeader(key)] ?? ""
             if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -850,8 +1014,11 @@ fileprivate extension DeviceInventoryService {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
+    /// The one snapshot-ordering rule (`FileManager.newestSnapshot`): filename
+    /// stamp first, mtime only for files that carry no stamp — which is every
+    /// inventory CSV, so the CSV path keeps its previous behaviour exactly.
     static func newest(_ urls: [URL]) -> URL? {
-        urls.max { (modificationDate($0) ?? .distantPast) < (modificationDate($1) ?? .distantPast) }
+        FileManager.newestSnapshot(among: urls)
     }
 
     static func maxDate(_ lhs: Date?, _ rhs: Date?) -> Date? {

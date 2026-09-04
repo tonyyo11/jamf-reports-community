@@ -18,14 +18,15 @@ final class AIConfigTests: XCTestCase {
     }
 
     func testTierParsesKnownValuesCaseInsensitively() {
-        XCTAssertEqual(AIConfig(tier: "pcc").resolvedTier, .pcc)
         XCTAssertEqual(AIConfig(tier: "external").resolvedTier, .external)
         XCTAssertEqual(AIConfig(tier: "ON_DEVICE").resolvedTier, .onDevice)
     }
 
-    func testLockOnDeviceDefaultsFalse() {
-        XCTAssertFalse(AIConfig().isLockedOnDevice)
-        XCTAssertTrue(AIConfig(lockOnDevice: true).isLockedOnDevice)
+    /// Apple Foundation Models is on-device only, so the `pcc` tier was
+    /// removed. An existing workspace naming it must keep working rather than
+    /// fail to decode — the unknown-value fallback lands it on on-device.
+    func testLegacyPCCTierDecodesAsOnDevice() {
+        XCTAssertEqual(AIConfig(tier: "pcc").resolvedTier, .onDevice)
     }
 
     func testReasoningLevelDefaultsToLight() {
@@ -38,12 +39,28 @@ final class AIConfigTests: XCTestCase {
     func testIsUsableTracksEnabledOnly() {
         XCTAssertFalse(AIConfig(enabled: false).isUsable)
         XCTAssertTrue(AIConfig(enabled: true).isUsable, "on-device needs no URL/key")
-        XCTAssertTrue(AIConfig(enabled: true, tier: "pcc").isUsable)
+        XCTAssertTrue(AIConfig(enabled: true, tier: "external").isUsable)
     }
 
     // MARK: - YAML decode
 
     func testDecodesFromYAML() throws {
+        let yaml = """
+        ai:
+          enabled: true
+          tier: "on_device"
+          reasoning_level: "deep"
+        """
+        let config = try ConfigLoader.loadFromString(yaml)
+        XCTAssertEqual(config.ai?.isEnabled, true)
+        XCTAssertEqual(config.ai?.resolvedTier, .onDevice)
+        XCTAssertEqual(config.ai?.resolvedReasoningLevel, .deep)
+    }
+
+    /// A config.yaml written by an older build still carries `tier: pcc` and
+    /// `lock_on_device`. Decoding must ignore both rather than throw — an
+    /// unknown key is not a parse error, and the removed tier falls back.
+    func testLegacyAIBlockStillDecodes() throws {
         let yaml = """
         ai:
           enabled: true
@@ -53,8 +70,7 @@ final class AIConfigTests: XCTestCase {
         """
         let config = try ConfigLoader.loadFromString(yaml)
         XCTAssertEqual(config.ai?.isEnabled, true)
-        XCTAssertEqual(config.ai?.resolvedTier, .pcc)
-        XCTAssertEqual(config.ai?.isLockedOnDevice, true)
+        XCTAssertEqual(config.ai?.resolvedTier, .onDevice)
         XCTAssertEqual(config.ai?.resolvedReasoningLevel, .deep)
     }
 

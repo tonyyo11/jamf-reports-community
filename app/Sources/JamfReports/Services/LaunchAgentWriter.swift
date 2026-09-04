@@ -43,6 +43,27 @@ enum LaunchAgentWriter {
     /// plist behavior verbatim. The CSV uses sorted lowercase rawValues so
     /// the plist is byte-stable across writes (no spurious diffs, and a
     /// predictable layout for the trust check + parser).
+    /// Environment for a scheduled run.
+    ///
+    /// A LaunchAgent starts the same binary as the GUI, so it resolves the
+    /// workspace root the same way — but only if it can read the preference.
+    /// Naming the root explicitly makes the plist self-describing and survives
+    /// a preferences domain the agent cannot read. Omitted entirely for the
+    /// default `~/Jamf-Reports`, so a normal install's plists are unchanged.
+    private static func scheduledRunEnvironment() -> [String: String] {
+        guard WorkspaceRootStore.isCustomised() else { return [:] }
+        // Read the STORED preference, not the resolved root: when this runs from
+        // the headless --scheduled-run self-heal, the process was launched by a
+        // plist that already carries JRC_WORKSPACES_ROOT, and `current()` checks
+        // the environment before the preference. Going through the resolved root
+        // would re-embed the value we inherited, so a Mac that never opens the
+        // GUI could never converge on a second root change.
+        return [
+            WorkspaceRootStore.environmentKey:
+                WorkspaceRootStore.current(environment: [:]).path,
+        ]
+    }
+
     private static func tierArguments(for schedule: Schedule) -> [String] {
         guard let tiers = schedule.tiers, !tiers.isEmpty else { return [] }
         let csv = tiers.map(\.rawValue).sorted().joined(separator: ",")
@@ -115,6 +136,7 @@ enum LaunchAgentWriter {
             // Schedule.RunMode.runsAtLoad.
             "RunAtLoad": schedule.mode.runsAtLoad,
             "Disabled": !load,
+            "EnvironmentVariables": scheduledRunEnvironment(),
         ]
 
         let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(agentLabel).plist")
@@ -269,7 +291,7 @@ enum LaunchAgentWriter {
             let started = Date()
             let header = "\n[info] manual multi-profile Run now started "
                 + "\(ISO8601DateFormatter().string(from: started)) for \(label)\n"
-            if let outFile = outFile { write(header, to: outFile, lock: outLock) }
+            if let outFile = outFile { write(header, to: outFile, lock: outLock, label: label) }
             onLine(.init(
                 timestamp: started,
                 level: .info,
@@ -285,8 +307,12 @@ enum LaunchAgentWriter {
             pipe.fileHandleForReading.readabilityHandler = { fh in
                 let data = fh.availableData
                 guard !data.isEmpty else { return }
-                if let outFile = finalOutFile { write(data, to: outFile, lock: outLock) }
-                if let errFile = finalErrFile { write(data, to: errFile, lock: errLock) }
+                if let outFile = finalOutFile {
+                    write(data, to: outFile, lock: outLock, label: label)
+                }
+                if let errFile = finalErrFile {
+                    write(data, to: errFile, lock: errLock, label: label)
+                }
 
                 let text = String(decoding: data, as: UTF8.self)
                 for line in text.components(separatedBy: .newlines) where !line.isEmpty {
@@ -298,7 +324,9 @@ enum LaunchAgentWriter {
                 
                 let seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
                 let footer = "[info] exit \(proc.terminationStatus) after \(seconds)s\n"
-                if let outFile = finalOutFile { write(footer, to: outFile, lock: outLock) }
+                if let outFile = finalOutFile {
+                    write(footer, to: outFile, lock: outLock, label: label)
+                }
                 onLine(.init(
                     timestamp: Date(),
                     level: proc.terminationStatus == 0 ? .ok : .fail,
@@ -313,8 +341,12 @@ enum LaunchAgentWriter {
                 try p.run()
             } catch {
                 let message = "[fatal] \(error.localizedDescription)\n"
-                if let outFile = finalOutFile { write(message, to: outFile, lock: outLock) }
-                if let errFile = finalErrFile { write(message, to: errFile, lock: errLock) }
+                if let outFile = finalOutFile {
+                    write(message, to: outFile, lock: outLock, label: label)
+                }
+                if let errFile = finalErrFile {
+                    write(message, to: errFile, lock: errLock, label: label)
+                }
                 onLine(.init(timestamp: Date(), level: .fail, text: message.trimmingCharacters(in: .newlines)))
                 
                 try? finalOutFile?.close()
@@ -459,6 +491,7 @@ enum LaunchAgentWriter {
             // Schedule.RunMode.runsAtLoad.
             "RunAtLoad": schedule.mode.runsAtLoad,
             "Disabled": !load,
+            "EnvironmentVariables": scheduledRunEnvironment(),
         ]
 
         let plistURL = LaunchAgentService.agentsDir.appendingPathComponent("\(agentLabel).plist")
@@ -813,19 +846,19 @@ enum LaunchAgentWriter {
                 let started = Date()
                 let header = "\n[info] manual Run now started "
                     + "\(ISO8601DateFormatter().string(from: started)) for \(plan.label)\n"
-                write(header, to: outFile, lock: outLock)
+                write(header, to: outFile, lock: outLock, label: plan.label)
                 onLine(.init(timestamp: started, level: .info, text: header.trimmingCharacters(in: .whitespacesAndNewlines)))
 
                 stdout.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
                     guard !data.isEmpty else { return }
-                    write(data, to: outFile, lock: outLock)
+                    write(data, to: outFile, lock: outLock, label: plan.label)
                     emit(data, stderr: false, onLine: onLine)
                 }
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
                     guard !data.isEmpty else { return }
-                    write(data, to: errFile, lock: errLock)
+                    write(data, to: errFile, lock: errLock, label: plan.label)
                     emit(data, stderr: true, onLine: onLine)
                 }
 
@@ -833,8 +866,8 @@ enum LaunchAgentWriter {
                     try process.run()
                 } catch {
                     let message = "[fatal] \(error.localizedDescription)\n"
-                    write(message, to: outFile, lock: outLock)
-                    write(message, to: errFile, lock: errLock)
+                    write(message, to: outFile, lock: outLock, label: plan.label)
+                    write(message, to: errFile, lock: errLock, label: plan.label)
                     onLine(.init(timestamp: Date(), level: .fail, text: message.trimmingCharacters(in: .newlines)))
                     return -1
                 }
@@ -845,7 +878,7 @@ enum LaunchAgentWriter {
 
                 let seconds = max(0, Int(Date().timeIntervalSince(started).rounded()))
                 let footer = "[info] exit \(process.terminationStatus) after \(seconds)s\n"
-                write(footer, to: outFile, lock: outLock)
+                write(footer, to: outFile, lock: outLock, label: plan.label)
                 onLine(.init(timestamp: Date(), level: process.terminationStatus == 0 ? .ok : .fail, text: footer.trimmingCharacters(in: .newlines)))
                 return process.terminationStatus
             } catch {
@@ -1076,15 +1109,67 @@ enum LaunchAgentWriter {
         return handle
     }
 
-    private static func write(_ text: String, to handle: FileHandle, lock: NSLock) {
+    private static func write(
+        _ text: String, to handle: FileHandle, lock: NSLock, label: String
+    ) {
         guard let data = text.data(using: .utf8) else { return }
-        write(data, to: handle, lock: lock)
+        write(data, to: handle, lock: lock, label: label)
     }
 
-    private static func write(_ data: Data, to handle: FileHandle, lock: NSLock) {
+    /// Labels already reported as having a failing run log. These statics are
+    /// process-wide because `write` is, but the latch is keyed by label so a
+    /// second schedule failing in a long-lived GUI is still reported.
+    /// `warnLock` guards them, not the caller's handle lock — that one is
+    /// per-log-file and cannot serialize shared state.
+    private nonisolated(unsafe) static var warnedWriteFailureLabels: Set<String> = []
+    private static let warnLock = NSLock()
+
+    private static func write(
+        _ data: Data, to handle: FileHandle, lock: NSLock, label: String
+    ) {
         lock.lock()
         defer { lock.unlock() }
-        handle.write(data)
+        // Throwing variant: write(_:) raises an uncatchable ObjC exception when
+        // the underlying write fails, which is reachable once the workspace
+        // lives on a sync provider. A dropped progress line is acceptable; an
+        // aborted process is not — but a silently truncated run log is not
+        // acceptable either, so say so once per label. Matches
+        // ScheduledRunRecorder.appendOrDrop.
+        do {
+            try handle.write(contentsOf: data)
+        } catch {
+            warnLock.lock()
+            defer { warnLock.unlock() }
+            guard warnedWriteFailureLabels.insert(label).inserted else { return }
+            AppLogger.schedule.warning(
+                """
+                LaunchAgentWriter: run-log write failed for \(label, privacy: .public) \
+                — further lines dropped: \(error.localizedDescription, privacy: .public)
+                """
+            )
+        }
+    }
+
+    /// Test seam: lets a regression test observe the warn-once latch without
+    /// leaking state into the next test.
+    static func resetWriteFailureWarnings() {
+        warnLock.lock()
+        defer { warnLock.unlock() }
+        warnedWriteFailureLabels.removeAll()
+    }
+
+    /// Whether `label` has already had a run-log write failure reported.
+    static func hasWarnedWriteFailure(for label: String) -> Bool {
+        warnLock.lock()
+        defer { warnLock.unlock() }
+        return warnedWriteFailureLabels.contains(label)
+    }
+
+    /// Append `data`, reporting a write failure once per label. Exposed so the
+    /// per-label latch is testable; production callers use the private
+    /// overloads above.
+    static func appendRunLog(_ data: Data, to handle: FileHandle, label: String) {
+        write(data, to: handle, lock: NSLock(), label: label)
     }
 
     private static func emit(

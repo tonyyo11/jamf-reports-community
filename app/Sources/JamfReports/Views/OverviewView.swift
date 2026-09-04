@@ -142,6 +142,17 @@ struct OverviewView: View {
                 if !workspace.demoMode, !workspace.automationHealthIssues.isEmpty {
                     automationHealthBanner
                 }
+                // 2.7.0: on a shared workspace, say when another Mac is mid-run.
+                // Without this, Refresh looks like it did nothing — the run is
+                // real, it just belongs to someone else.
+                if let peer = peerActivity {
+                    InlineBanner(icon: "person.2", tone: .info) {
+                        Text(peer)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Text.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 // R1: these KPI cards render the daily digest, not live
                 // inventory — say so, and flag cached/missing inputs (R4).
                 if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
@@ -190,6 +201,21 @@ struct OverviewView: View {
     }
 
     /// Prompt shown when .inventory / .scan data is older than a week.
+    /// A live claim held by another machine, phrased for the operator.
+    ///
+    /// Read straight from disk rather than cached in state: it changes on
+    /// another Mac's schedule, and a stale "someone is collecting" is worse
+    /// than none. Cheap — one small file, only on a shared workspace.
+    private var peerActivity: String? {
+        guard !workspace.demoMode,
+              let claim = SharedWorkspace.readClaim(profile: workspace.profile),
+              claim.host.id != SharedWorkspace.currentHost.id,
+              !claim.isExpired(at: Date()) else { return nil }
+        return "\(claim.host.display) is running \(claim.operation) in this shared workspace "
+            + "\(ReportEngine.approximateAge(until: claim.expiresAt)). Scheduled runs here wait "
+            + "for it; Refresh still works."
+    }
+
     /// Mirrors StaleDataBanner's visual language but adds the action button —
     /// heavy collections only ever run when the operator asks.
     private var heavyTierStalePrompt: some View {
@@ -438,7 +464,7 @@ struct OverviewView: View {
                     liveStateTile(
                         label: "Trend summaries",
                         value: "\(trendStore.filteredSummaries.count)",
-                        sub: "~/Jamf-Reports/\(workspace.profile)/",
+                        sub: WorkspaceRootStore.displayPath(profile: workspace.profile) + "/",
                         ok: !trendStore.filteredSummaries.isEmpty
                     )
                 }
@@ -706,10 +732,27 @@ struct OverviewView: View {
         return diff > 0 ? .up : .down
     }
 
+    /// "Aug 20" — short by design; the tile caption has little room and the
+    /// year is only ambiguous for comparisons more than a year stale, which
+    /// the freshness banner already flags.
+    private static let comparisonDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        return f
+    }()
+
     private func scoreCard(for metric: TrendSeries.Metric) -> some View {
+        // points(), not values(): the delta compares the two most recent
+        // samples, and the tile has to name WHICH day the older one is. That
+        // date is per-metric, not global — points() compactMaps away days where
+        // this metric was unmeasured, so Active Devices can be comparing
+        // against a different day than FileVault in the same render.
+        let points: [TrendPoint] = workspace.demoMode ? [] : trendStore.points(metric: metric)
         let values: [Double] = workspace.demoMode ?
             (metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])) :
-            trendStore.values(metric: metric)
+            points.map(\.value)
+        let comparisonDate: Date? = points.count >= 2 ? points[points.count - 2].date : nil
 
         let lastValue = values.last
         let current = lastValue ?? 0
@@ -744,13 +787,26 @@ struct OverviewView: View {
             return diff > 0 ? .up : .down
         }()
 
-        // DRAFT — needs visual verification. Clarifies that Active Devices
-        // (redefined 2.6 to exclude stale devices) is not the same count as
-        // Managed Devices.
+        // DRAFT — needs visual verification. Two captions share this line:
+        // the Active Devices clarification (redefined 2.6 to exclude stale
+        // devices, so it is not the same count as Managed Devices), and the
+        // delta's comparison date.
+        //
+        // The date is spelled out rather than described as "week over week"
+        // because the comparison is against the previous COLLECT, not a fixed
+        // period: a missed run makes the gap days or weeks, and the Trends
+        // range the operator picked does not change which day it lands on.
+        // Naming the day is both shorter and true.
         let subText: String? = {
-            guard metric == .activeDevices else { return nil }
-            let days = Int(workspace.configState.staleDeviceDays) ?? 30
-            return "Checked in within \(days)d"
+            var parts: [String] = []
+            if metric == .activeDevices {
+                let days = Int(workspace.configState.staleDeviceDays) ?? 30
+                parts.append("Checked in within \(days)d")
+            }
+            if values.count >= 2, let comparisonDate {
+                parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
 
         return StatTile(
@@ -766,8 +822,8 @@ struct OverviewView: View {
             sparkColor: Color(hex: metric.colorHex)
         )
         // The label can be an operator-configured string (compliance baseline
-        // name, EDR agent name) with no length guarantee — some CBP configs
-        // set it to a raw audit-plist filename. StatTile's Kicker doesn't cap
+        // name, EDR agent name) with no length guarantee — in the field these
+        // are sometimes a raw audit-plist filename. StatTile's Kicker doesn't cap
         // line count, so a long value wraps mid-word onto a second line.
         // `.lineLimit`/`.truncationMode` are environment modifiers that
         // cascade into the Kicker's Text without touching the shared
@@ -1057,9 +1113,17 @@ struct OverviewView: View {
 
     private func metricDetail(_ metric: TrendSeries.Metric) -> some View {
         let values = metricValues(metric)
+        let dates = workspace.demoMode ? [] : trendStore.points(metric: metric).map(\.date)
         let current = values.last ?? 0
         let first = values.first ?? current
         let previous = values.count > 1 ? values[values.count - 2] : current
+        // Same reasoning as the Overview tiles: name the day rather than imply
+        // a fixed cadence. "Previous" alone gave no way to tell yesterday from
+        // three weeks ago after a run of missed collects.
+        let previousLabel = dates.count > 1
+            ? Self.comparisonDateFormatter.string(from: dates[dates.count - 2])
+            : nil
+        let firstLabel = dates.first.map(Self.comparisonDateFormatter.string(from:))
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: metric.displayLabel,
@@ -1069,9 +1133,10 @@ struct OverviewView: View {
             )
             HStack(spacing: 12) {
                 StatTile(label: "Current", value: metricValueLabel(current, metric: metric))
-                StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric))
+                StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric),
+                         sub: previousLabel)
                 StatTile(label: "Change", value: metricDeltaLabel(current - first, metric: metric),
-                         sub: "Since first snapshot")
+                         sub: firstLabel.map { "Since \($0)" } ?? "Since first snapshot")
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {

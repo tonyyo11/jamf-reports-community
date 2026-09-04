@@ -199,7 +199,7 @@ struct ReauthenticateSheet: View {
                     FieldLabel(label: "Gateway URL")
                     PNPTextField(
                         value: binding(\.gatewayURL),
-                        placeholder: "https://us.apigw.jamf.com",
+                        placeholder: "https://us.api.jamfcloud.com",
                         mono: true
                     )
                     validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")

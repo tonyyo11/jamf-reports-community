@@ -4,12 +4,12 @@ import XCTest
 
 // Tests for the S-01 production-side guard.
 //
-// silent-failure-hunter (Phase 0 + PR-1 review) surfaced that
-// `CachedDataFallback.loadFromCache` has zero production callers — the
-// AuditView / CustomizationWizard read path runs
-// through `CLIBridge.cachedJSONSnapshots`. A JSON-structural validity
-// probe in CachedDataFallback alone protected only test-only code. This
-// test exercises the production path: a corrupted snapshot dropped into
+// silent-failure-hunter (Phase 0 + PR-1 review) surfaced that the old
+// cached-fallback helper had zero production callers — the AuditView /
+// CustomizationWizard read path runs through `CLIBridge.cachedJSONSnapshots`,
+// so a JSON-structural validity probe in that helper protected only test-only
+// code (the helper was deleted in 2.7.0). This test exercises the production
+// path instead: a corrupted snapshot dropped into
 // `<workspace>/jamf-cli-data/<type>/` must be filtered before reaching
 // any decoder.
 final class CLIBridgeCachedSnapshotCorruptionTests: XCTestCase {

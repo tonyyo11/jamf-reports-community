@@ -3188,10 +3188,7 @@ struct CoreDashboard: Sendable {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
                ) {
-                candidates.append(contentsOf: files.filter {
-                    $0.pathExtension == "json"
-                    && $0.lastPathComponent != SnapshotManifest.fileName
-                })
+                candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
             }
             if fm.fileExists(atPath: dataDir.path),
                let files = try? fm.contentsOfDirectory(
@@ -3206,16 +3203,13 @@ struct CoreDashboard: Sendable {
                 candidates.append(contentsOf: matching)
             }
         }
-        guard !candidates.isEmpty else {
+        // One ordering rule for every reader: filename stamp first, manifest and
+        // sync-conflict copies excluded. `newestSnapshot` also replaces a
+        // force-unwrap that only held because `candidates` was checked non-empty
+        // one line above — the filter can now empty it, so the guard does both.
+        guard let newest = FileManager.newestSnapshot(among: candidates) else {
             throw CoreDashboardError.noCachedData(names: names)
         }
-        let newest = candidates.max(by: { lhs, rhs in
-            let lMod = (try? lhs.resourceValues(
-                forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            let rMod = (try? rhs.resourceValues(
-                forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            return lMod < rMod
-        })!
         let data = try Data(contentsOf: newest)
         SnapshotManifest.verify(snapshot: newest, data: data)
         return data
@@ -3239,16 +3233,17 @@ struct CoreDashboard: Sendable {
                 includingPropertiesForKeys: [.contentModificationDateKey],
                 options: [.skipsHiddenFiles]
                ) {
-                candidates.append(contentsOf: files.filter {
-                    $0.pathExtension == "json"
-                    && $0.lastPathComponent != SnapshotManifest.fileName
-                })
+                candidates.append(contentsOf: files.filter { $0.pathExtension == "json" })
             }
         }
-        return candidates.compactMap {
-            (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate
-        }.max()
+        // Same rule as the picker above: the filename stamp is when the snapshot
+        // was collected; mtime is when the sync provider last touched the file.
+        // A "Data as of" caption reading the re-stamp would contradict the sheet
+        // rendered right beside it.
+        return candidates
+            .filter(FileManager.isSelectableSnapshot)
+            .compactMap(FileManager.snapshotDate(of:))
+            .max()
     }
 
     /// Build a sheet subtitle that includes a "Data as of" clause when the

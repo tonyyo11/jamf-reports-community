@@ -8,6 +8,12 @@ Most dashboards read cached `jamf-cli` snapshots already on disk — opening a d
 does not issue new API calls. Data is refreshed by collection (see
 [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation)).
 
+A **health strip** sits above whichever screen you are on. It reports data sources that
+have stopped collecting or fallen far behind their schedule, and any overdue or failing
+schedule, with a **Collect now** action that re-collects just what is behind — so you do
+not have to be on Security Posture to learn that security data stopped landing. See
+[Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+
 With no jamf-cli connection at all — a CSV-only workspace — most of these screens have
 nothing to show: Devices and Offline Outreach render from CSV columns (plus
 `custom_eas` / `security_agents`) and stay populated; everything else on this page needs
@@ -21,7 +27,9 @@ these interactive dashboards either — it produces a separate generated workboo
 ![Fleet Overview](images/overview.png)
 
 - **Overview** — the fleet home screen: headline KPIs, an OS-distribution donut, top
-  failing compliance rules, security-agent coverage, and recent activity. On a
+  failing compliance rules, security-agent coverage, and recent activity. On a shared
+  workspace it also says when another Mac is mid-run, so Refresh appearing to do nothing
+  reads as "someone else is working" rather than a bug. On a
   macOS 27+ host with AI insights enabled, an AI Fleet Insight card turns the same daily
   digest into a plain-language summary — see [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights). A banner
   also surfaces when a scheduled run should have fired but didn't — see
@@ -48,7 +56,9 @@ these interactive dashboards either — it produces a separate generated workboo
   Data source: `pro audit` (instance-config checks, fetched by the Run Audit button)
   and group lists (tier 1).
 - **Generated** — the library of reports already produced, with actions to generate new
-  workbooks, HTML reports, and inventory CSVs.
+  workbooks, HTML reports, and inventory CSVs. A **Period report** button builds a
+  start/end/change workbook for a rolling or calendar window — see
+  [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports).
   Data source: generated report catalog (no single tier; see [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) for report composition).
 
 ![Devices](images/devices.png)
@@ -153,11 +163,19 @@ these interactive dashboards either — it produces a separate generated workboo
 - **Data Sources** — the inputs surface: cached `jamf-cli` data, the CSV inbox, and
   snapshot status.
   Data source: no tier (local workspace cache status).
-- **Backups** — snapshot and compare Jamf Pro configuration backups.
+- **Backups** — snapshot and compare Jamf Pro configuration backups. **Diff Selected**
+  compares two backups: the **Summary** view collapses objects taking the same change into
+  one line, and objects that changed the same field to different values into one card with
+  a line each, instead of printing every changed object in full. **Raw** is the whole
+  jamf-cli payload, one click away, and **Copy** takes the diff to the clipboard. Summary
+  and Copy redact credential-shaped values (password hashes, recovery keys, pre-shared
+  keys); Raw is deliberately unredacted, for scripting against.
   Data source: `jamf-cli pro backup` exports (tier 2).
 
 ## System
 
 - **Settings** — app preferences: the jamf-cli install/update check, connections,
+  **Workspace location** (point every profile at a shared team folder — see
+  [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)),
   diagnostics, and Sidebar Visibility.
   Data source: no tier (app configuration).

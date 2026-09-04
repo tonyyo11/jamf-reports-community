@@ -294,6 +294,27 @@ enum ManagedAutomation {
         return outcomes
     }
 
+    /// Force the next reconcile to rewrite every managed plist, by clearing the
+    /// flag `reconcileWithMigration` uses to decide whether a forced pass is
+    /// still owed.
+    ///
+    /// Needed when something outside the policy changes what a plist should
+    /// contain — moving the workspace root changes `WorkingDirectory` and the
+    /// run environment, but leaves mode, cadence, tiers and exclusions
+    /// identical, so the signature check would call every agent unchanged and
+    /// silently leave them pointing at the old location.
+    ///
+    /// Note the flag's name is now historical: `managedRunAtLoadMigratedV1`
+    /// began as the RunAtLoad migration's one-shot marker and is now the
+    /// general "a forced pass is owed" trigger. Do not narrow it back to
+    /// RunAtLoad-only — a root move depends on it too.
+    static func invalidateManagedPlists(
+        migrationKey: String = "managedRunAtLoadMigratedV1",
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.removeObject(forKey: migrationKey)
+    }
+
     /// Pure decision behind `reconcileWithMigration`: the migration flag may
     /// be marked complete only when every attempted action succeeded. An
     /// empty plan (nothing needed doing) trivially satisfies this.

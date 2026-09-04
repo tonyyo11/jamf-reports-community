@@ -57,9 +57,11 @@ struct MigrationBanner: View {
                     icon: "folder",
                     actionTitle: "Open workspace folder",
                     action: {
-                        let workspaceURL = URL(fileURLWithPath: NSHomeDirectory())
-                            .appendingPathComponent("Jamf-Reports")
-                        _ = SystemActions.reveal(workspaceURL)
+                        // The configured root, not the default: the legacy
+                        // workspaces this banner is about live wherever the
+                        // root points now, and revealing an empty ~/Jamf-Reports
+                        // would strand an operator trying to rename them.
+                        _ = SystemActions.reveal(ProfileService.workspacesRoot())
                     }
                 )
             }

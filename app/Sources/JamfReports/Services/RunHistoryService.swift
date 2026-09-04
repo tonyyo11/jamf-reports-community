@@ -121,23 +121,28 @@ enum RunHistoryService {
 
     // MARK: - Private
 
-    /// Validate `url` resolves inside `~/Jamf-Reports/<valid-profile>/automation/logs/`.
+    /// Validate `url` resolves inside `<workspaces-root>/<valid-profile>/automation/logs/`.
+    ///
+    /// Checks the configured root AND the default one. `list(profile:)` resolves
+    /// logs through `WorkspacePaths.runHistoryDir`, which follows the configured
+    /// root — so while this hardcoded `~/Jamf-Reports`, moving the workspace to
+    /// a team folder made `list` enumerate real logs that this then rejected,
+    /// and every run's log body rendered empty with no error shown. The default
+    /// stays accepted so logs written before a move remain readable.
     private static func isInsideLogsDir(_ url: URL) -> Bool {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let reportsRoot = home.appendingPathComponent("Jamf-Reports")
-            .resolvingSymlinksInPath()
         let resolved = url.resolvingSymlinksInPath()
-
-        let prefix = reportsRoot.path + "/"
-        guard resolved.path.hasPrefix(prefix) else { return false }
-
-        let rest = String(resolved.path.dropFirst(prefix.count))
-        let parts = rest.components(separatedBy: "/")
-        // Expected: <profile>/automation/logs/<file>.log  → 4 components minimum
-        return parts.count >= 4
-            && ProfileService.isValid(parts[0])
-            && parts[1] == "automation"
-            && parts[2] == "logs"
+        let roots = [ProfileService.workspacesRoot(), WorkspaceRootStore.defaultRoot]
+        return roots.contains { root in
+            let prefix = root.resolvingSymlinksInPath().path + "/"
+            guard resolved.path.hasPrefix(prefix) else { return false }
+            let parts = String(resolved.path.dropFirst(prefix.count))
+                .components(separatedBy: "/")
+            // Expected: <profile>/automation/logs/<file>.log → 4 components minimum
+            return parts.count >= 4
+                && ProfileService.isValid(parts[0])
+                && parts[1] == "automation"
+                && parts[2] == "logs"
+        }
     }
 
     /// Convert a plist/log label like
@@ -181,8 +186,15 @@ enum RunHistoryService {
         for line in text.components(separatedBy: "\n").reversed() {
             let level = CLIBridge.LogLevel.from(line: line)
             if level == .fail { hasFatal = true }
+            // Anchor on the recorder's own footer ("exit N after 205s") rather
+            // than any `\d+s` in the tail. The loose pattern matched the cadence
+            // label inside a `[skip] <kind>: not due (…, cadence: 172800s)` line,
+            // so a run that skipped everything reported a two-day duration.
             if duration == nil,
-               let r = line.range(of: #"\d+m \d+s|\d+s"#, options: .regularExpression) {
+               let r = line.range(
+                   of: #"(?<=after )\d+m \d+s|(?<=after )\d+s"#,
+                   options: .regularExpression
+               ) {
                 duration = String(line[r])
             }
             if parsedExitCode == nil,

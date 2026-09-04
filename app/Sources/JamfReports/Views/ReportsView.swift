@@ -16,13 +16,13 @@ struct ReportsView: View {
     @State private var searchText = ""
     @State private var profileFilter: String? = nil
     @State private var availableProfiles: [String] = []
+    @State private var showPeriodReport = false
     @State private var showQuickLook = false
     @State private var quickLookURL: URL? = nil
 
     private var reportsDirectory: URL {
         let workspace = ProfileService.workspaceURL(for: workspace.profile)
-            ?? FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Jamf-Reports")
+            ?? WorkspaceRootStore.defaultRoot
         return workspace.appendingPathComponent("Generated Reports", isDirectory: true)
     }
 
@@ -132,6 +132,9 @@ struct ReportsView: View {
             summary
         }
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search reports...")
+        .sheet(isPresented: $showPeriodReport) {
+            PeriodReportSheet()
+        }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
                 if let url = quickLookURL {
@@ -168,7 +171,8 @@ struct ReportsView: View {
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
                 title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
-                subtitle: "~/Jamf-Reports/\(workspace.profile)/Generated Reports/"
+                subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                                         subpath: "Generated Reports") + "/"
             ) {
                 AnyView(
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -177,6 +181,19 @@ struct ReportsView: View {
                                 SystemActions.openFolder(reportsDirectory)
                             }
                             .help("Open the Generated Reports folder in Finder")
+                            PNPButton(
+                                title: "Period report",
+                                icon: "calendar.badge.clock",
+                                style: .neutral
+                            ) {
+                                showPeriodReport = true
+                            }
+                            .disabled(workspace.demoMode)
+                            .help(
+                                workspace.demoMode
+                                ? "Available in live mode only"
+                                : "Fleet numbers for a period, with start, end and change"
+                            )
                             PNPButton(
                                 title: isGeneratingHTML ? "Generating..." : "Generate HTML",
                                 icon: "safari",
@@ -369,12 +386,14 @@ struct ReportsView: View {
                 // Status-bar race guard — see comment in AuditView.runAudit.
                 let code: Int32
                 do {
-                    code = try await bridge.generateHTML(profile: profile, outFile: outPath) { [weak workspace] line in
+                    code = try await bridge.generateHTML(
+                        profile: profile, outFile: outPath
+                    ) { line in
                         if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
                             Task { @MainActor in hashBox.value = parsed.hash }
                         }
                         Task { @MainActor in
-                            guard let workspace, self.isGeneratingHTML else { return }
+                            guard self.isGeneratingHTML else { return }
                             workspace.globalStatus = line.text
                         }
                     }
@@ -424,9 +443,11 @@ struct ReportsView: View {
             Task {
                 let code: Int32
                 do {
-                    code = try await bridge.generatePDF(profile: profile, outFile: outPath) { [weak workspace] line in
+                    code = try await bridge.generatePDF(
+                        profile: profile, outFile: outPath
+                    ) { line in
                         Task { @MainActor in
-                            guard let workspace, self.isGeneratingPDF else { return }
+                            guard self.isGeneratingPDF else { return }
                             workspace.globalStatus = line.text
                         }
                     }
@@ -469,9 +490,11 @@ struct ReportsView: View {
             Task {
                 let code: Int32
                 do {
-                    code = try await bridge.exportInventoryCSV(profile: profile, outFile: outPath) { [weak workspace] line in
+                    code = try await bridge.exportInventoryCSV(
+                        profile: profile, outFile: outPath
+                    ) { line in
                         Task { @MainActor in
-                            guard let workspace, self.isExportingCSV else { return }
+                            guard self.isExportingCSV else { return }
                             workspace.globalStatus = line.text
                         }
                     }

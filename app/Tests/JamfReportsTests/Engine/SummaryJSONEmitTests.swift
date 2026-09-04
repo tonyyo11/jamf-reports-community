@@ -85,7 +85,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         let prov = Provenance(
             runID: "emit-test-run-id",
             generatedAt: Date(),
-            profile: "cbp-prod",
+            profile: "acme-prod",
             jamfCLIVersion: "1.14.0",
             jamfTenantURL: "https://jamf.example.com",
             operatorUserHost: "user@host"
@@ -110,7 +110,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertNotNil(json?["provenance"], "provenance key must be present when set")
         let provDict = json?["provenance"] as? [String: Any]
         XCTAssertEqual(provDict?["runID"] as? String, "emit-test-run-id")
-        XCTAssertEqual(provDict?["profile"] as? String, "cbp-prod")
+        XCTAssertEqual(provDict?["profile"] as? String, "acme-prod")
         XCTAssertEqual(provDict?["jamfCLIVersion"] as? String, "1.14.0")
         XCTAssertEqual(provDict?["jamfTenantURL"] as? String, "https://jamf.example.com")
         XCTAssertEqual(provDict?["operatorUserHost"] as? String, "user@host")

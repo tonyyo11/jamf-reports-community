@@ -2,8 +2,8 @@
 
 Unattended reporting has a failure mode that silent success can hide: the schedule stops
 firing, or fires and fails, and nobody notices because there is no error on screen. This
-page covers the three features that tell you your automation is actually running — the
-dead-man switch, metric alerts, and webhook notifications.
+page covers the four features that tell you your automation is actually running — the
+data freshness strip, the dead-man switch, metric alerts, and webhook notifications.
 
 For how to set up schedules in the first place, see
 [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation).
@@ -20,6 +20,11 @@ so it does not evaluate alerts). Both record to Run History under a distinct `cl
 `cli-generate` label, so a self-scheduled cron/launchd job that calls the CLI is no longer
 invisible.
 
+Every scheduled run also records **failing config checks** in its own log. A run collects
+happily against broken column mappings and exits 0, so without this the config rots
+invisibly for weeks. Only genuine failures surface — warnings are for a human reading the
+Config screen, and putting them here would make every run look broken.
+
 The **dead-man switch is the exception** — it can only track LaunchAgent *schedules*. It
 reasons about a `StartCalendarInterval` (an expected fire time it can measure "overdue"
 against), and a cron job or a hand-written `launchd` plist has no such schedule for the app
@@ -27,6 +32,68 @@ to see. So if you drive the CLI from your own cron/launchd, you still get alerts
 and Run History, but the dead-man switch cannot tell that your timer stopped. For dead-man
 coverage, let the app's Automation screen manage the LaunchAgent, or add an external monitor
 (see [The honest limitation](#the-honest-limitation)).
+
+## The data freshness strip
+
+The dead-man switch asks whether the schedule fired. This asks a different question:
+**did the data actually land?** A run can fire, exit 0, and still leave one source months
+stale — a per-source failure is a warning in the run log and never reaches the run's exit
+code. Before 2.7.0 that degradation was only visible on whichever screen happened to read
+that source.
+
+The strip sits across the top of the window on **every** screen, so you no longer have to
+open Security Posture to discover that security data stopped landing five weeks ago. It
+reports two conditions, worst first:
+
+- **Failing** — the source failed **two or more consecutive** collect attempts. One blip
+  is a transient server hiccup, and the in-run retry below already absorbs those.
+- **Stale** — the source's last success is past **three times its tier cadence**: 36 hours
+  for Refresh, 6 days for Inventory, 21 days for Scan. A source that has never landed on a
+  workspace that has collected counts as stale too.
+
+A source is reported once. Failing wins over stale, because a repeatedly-failing source is
+stale *for a known reason* and the cause is the useful thing to show. On a brand-new
+workspace where nothing has collected yet, the strip stays quiet rather than raising an
+alarm per source.
+
+### It tries to fix it
+
+- **Collect now.** The strip's button force-collects the tiers behind the reported
+  sources and re-evaluates, so a red banner is somewhere to act rather than a dead end.
+  When the only issue is a schedule one, the button is **Open Automation** instead.
+- **Automatic re-collect.** While the app is open, a source that is behind is re-collected
+  at most **once an hour**, and only the sources actually behind — healthy sources in the
+  same tier are left alone. The rate limit survives a relaunch, so a crash loop cannot
+  hammer an on-premise server.
+- **In-run retry.** Within a single run, a source that fails on a general/network error or
+  an HTTP 429 rate limit is retried once after a short pause, rather than waiting for its
+  next scheduled turn — which on the weekly scan tier could be another seven days.
+  Authentication and permission failures are **never** retried: they cannot succeed on a
+  second attempt, and repeated attempts risk locking the account out.
+- **Two failures are never retried automatically.** A usage or credentials-gate error
+  (exit 2) and a refused-by-policy error (exit 8 — the command is outside what this
+  profile's API publishes) fail identically every time. Those sources stay in the strip so
+  you can see them, but the hourly repair skips them. Pressing **Collect now** yourself
+  does try them, on the assumption that you have just fixed the cause.
+
+The strip re-evaluates after any manual refresh, not only at launch, so a collect you just
+ran is reflected immediately.
+
+### Sources that are skipped, not failing
+
+On a Jamf Pro profile without Platform API access, four data sources — compliance devices,
+compliance rules, DDM status and blueprint status — are served only by the Platform API.
+They are now skipped rather than attempted, failed and reported every day, and the run log
+says so. They never appear in the strip and the hourly repair never retries them. A
+profile whose authentication method cannot be determined is *not* skipped: "we could not
+ask" is never read as "not platform".
+
+### Where the state lives
+
+Per-source success and consecutive-failure counts are kept in the workspace, so "failing
+for three runs" always describes now rather than history — a source that recovers clears
+its own count. A run that served stale cache for any source records a `[partial]` line in
+its log, visible in Run History.
 
 ## The dead-man switch
 

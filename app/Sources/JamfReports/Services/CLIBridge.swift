@@ -753,6 +753,9 @@ final class CLIBridge {
     nonisolated static let exitCodePermissionDenied: Int32 = 5  // HTTP 403 — account lacks required API privileges
     nonisolated static let exitCodeRateLimited: Int32 = 6    // HTTP 429 — server throttling; transient, self-resolving
     nonisolated static let exitCodePartialFailure: Int32 = 7 // partial failure (v1.19.0+): some ops succeeded, stdout has valid JSON
+    // Refused by policy (v1.28.0+): correctly invoked, but the resolved credentials
+    // cannot reach the API that serves it. Never succeeds on retry.
+    nonisolated static let exitCodeRefusedByPolicy: Int32 = 8
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"
@@ -792,6 +795,13 @@ final class CLIBridge {
         case exitCodeUsage:
             detail = "internal argument error (exit 2) — please report this along with this "
                 + "run's log output."
+        case exitCodeRefusedByPolicy:
+            detail = "refused by policy (exit 8) — the command is outside what this "
+                + "profile's API publishes: on a Platform gateway profile, a Jamf Pro or "
+                + "Classic command the Platform API does not serve; on an instance "
+                + "profile, a Platform-only command. Use an oauth2 profile against the "
+                + "Jamf Pro instance for this command. `jamf-cli commands -o json` lists "
+                + "the refusals for the binary in hand (gateway == \"unserved\")."
         case 1:
             detail = "exit 1 — usually a network error or a per-command failure. Review this "
                 + "run's log output for the failing command."
@@ -1122,7 +1132,7 @@ final class CLIBridge {
         left: URL,
         right: URL,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async throws -> Int32 {
+    ) async throws -> (exitCode: Int32, payload: Data) {
         guard ProfileService.isValid(profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
             throw CLIBridgeError.invalidProfile(profile)
@@ -1131,19 +1141,27 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
-        return try await run(
+        // `--output json` (not `plain`): the plain renderer flattens each change
+        // into its whole field value, which is what made the diff sheet a wall of
+        // JSON — 246KB to express ten changes on a real pair of backups. The
+        // structured form is what `BackupDiffModel` collapses. jamf-cli writes
+        // the payload to stdout and only progress ("Loading source: …") to
+        // stderr, so `runAndCapture` streams the progress through `onLine` and
+        // hands back the payload.
+        let (exitCode, data) = try await runAndCapture(
             executable: bin,
             arguments: [
                 "-p", profile,
                 "pro", "diff",
                 "--source", left.path,
                 "--target", right.path,
-                "--output", "plain",
+                "--output", "json",
                 "--no-input",
             ],
             environment: Self.environmentForJamfCLI(),
             onLine: onLine
         )
+        return (exitCode, data)
     }
 
     func generateHTML(
