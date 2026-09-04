@@ -17,14 +17,21 @@ final class CollectFilterTests: XCTestCase {
     /// collections" Settings toggle filters out of manual refreshes.
     /// Documented in CLAUDE.md (Swift App Architecture → expensivePerDeviceKinds).
     func testExpensiveKindsConstantIsStable() {
+        // "ddm-device-status" and "mdm-command-health" are scan-phase kinds
+        // (Task 5, ReportEngine+DeviceScan) — skipExpensive still governs
+        // them, but they never appear in plannedKinds below.
         XCTAssertEqual(
             ReportEngine.expensivePerDeviceKinds,
-            ["ea-results", "patch-device-failures", "update-device-failures", "device-compliance"]
+            [
+                "ea-results", "patch-device-failures",
+                "update-device-failures", "device-compliance",
+                "ddm-device-status", "mdm-command-health"
+            ]
         )
     }
 
-    func testExpensiveKindsHasExactlyFourEntries() {
-        XCTAssertEqual(ReportEngine.expensivePerDeviceKinds.count, 4)
+    func testExpensiveKindsHasExactlySixEntries() {
+        XCTAssertEqual(ReportEngine.expensivePerDeviceKinds.count, 6)
     }
 
     func testExpensiveKindsAreUnique() {
@@ -94,14 +101,22 @@ final class CollectFilterTests: XCTestCase {
         let withSkip = Self.plannedKinds.filter {
             !ReportEngine.expensivePerDeviceKinds.contains($0)
         }
+        // Only the four argv-matrix expensive kinds can appear here — the
+        // two scan-phase kinds (ddm-device-status, mdm-command-health)
+        // never appear in plannedKinds, so they contribute nothing to
+        // this filter's delta.
+        let matrixExpensiveKinds = ReportEngine.expensivePerDeviceKinds
+            .intersection(Self.plannedKinds)
         XCTAssertEqual(
             withAll.count - withSkip.count, 4,
             "skipExpensive=true must remove exactly the 4 cold-tier per-device commands"
         )
+        XCTAssertFalse(matrixExpensiveKinds.isEmpty)
         XCTAssertEqual(
             Set(withAll).subtracting(Set(withSkip)),
-            ReportEngine.expensivePerDeviceKinds,
-            "The kinds removed by skipExpensive=true must be exactly expensivePerDeviceKinds"
+            matrixExpensiveKinds,
+            "The kinds removed by skipExpensive=true must be exactly the matrix-side "
+                + "expensive kinds"
         )
     }
 
@@ -117,7 +132,7 @@ final class CollectFilterTests: XCTestCase {
         )
     }
 
-    func testSkipExpensiveTrueRemovesExactlyTheFourExpensiveKinds() {
+    func testSkipExpensiveTrueRemovesExactlyTheMatrixExpensiveKinds() {
         // Mirror of the production filter:
         //   commands.filter { !Self.expensivePerDeviceKinds.contains($0.kind) }
         let filtered = Self.plannedKinds.filter {
@@ -126,12 +141,14 @@ final class CollectFilterTests: XCTestCase {
         let removed = Self.plannedKinds.filter {
             ReportEngine.expensivePerDeviceKinds.contains($0)
         }
+        let matrixExpensiveKinds = ReportEngine.expensivePerDeviceKinds
+            .intersection(Self.plannedKinds)
 
         XCTAssertEqual(removed.count, 4,
                        "Exactly 4 kinds should be filtered out when skipExpensive=true")
-        XCTAssertEqual(Set(removed), ReportEngine.expensivePerDeviceKinds)
+        XCTAssertEqual(Set(removed), matrixExpensiveKinds)
         XCTAssertEqual(filtered.count, Self.plannedKinds.count - 4)
-        for kind in ReportEngine.expensivePerDeviceKinds {
+        for kind in matrixExpensiveKinds {
             XCTAssertFalse(filtered.contains(kind),
                            "Filtered list should not contain \(kind) when skipExpensive=true")
         }
@@ -157,11 +174,17 @@ final class CollectFilterTests: XCTestCase {
     func testExpensiveKindsAreAllPresentInPlannedKinds() {
         // Guardrail: if a future refactor renames a kind in the planned
         // commands list, the constant must be updated too — otherwise
-        // skipExpensive will be a no-op for that kind.
+        // skipExpensive will be a no-op for that kind. A kind may instead
+        // be one of the scan-phase kinds (Task 5, ReportEngine+DeviceScan),
+        // which check skipExpensive themselves outside the argv matrix.
+        let scanPhaseKinds: Set<String> = [
+            DDMDeviceStatusService.kind, MDMCommandHealthService.kind
+        ]
         for kind in ReportEngine.expensivePerDeviceKinds {
             XCTAssertTrue(
-                Self.plannedKinds.contains(kind),
-                "Expensive kind \(kind) must appear in plannedKinds — otherwise the filter has nothing to remove"
+                Self.plannedKinds.contains(kind) || scanPhaseKinds.contains(kind),
+                "Expensive kind \(kind) must appear in plannedKinds or scanPhaseKinds — "
+                    + "otherwise neither the filter nor the scan phase can honour the toggle"
             )
         }
     }
