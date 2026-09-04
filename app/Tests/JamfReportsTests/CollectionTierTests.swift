@@ -79,6 +79,8 @@ final class CollectionTierLookupTests: XCTestCase {
         let expectedScan: Set<String> = [
             "patch-device-failures",
             "update-device-failures",
+            "ddm-device-status",
+            "mdm-command-health",
         ]
         // Every expected kind must be in .scan.
         for kind in expectedScan {
@@ -87,13 +89,14 @@ final class CollectionTierLookupTests: XCTestCase {
                 "\(kind) must be in the Scan tier"
             )
         }
-        // The .scan set must contain ONLY those two kinds — no extras.
+        // The .scan set must contain ONLY those four kinds — no extras.
         let actualScan = Set(CollectionTier.mappedKinds.filter {
             CollectionTier.tier(forReport: $0) == .scan
         })
         XCTAssertEqual(
             actualScan, expectedScan,
-            "Scan tier must contain exactly patch-device-failures and update-device-failures. " +
+            "Scan tier must contain exactly patch-device-failures, update-device-failures, " +
+            "ddm-device-status, and mdm-command-health. " +
             "Extra: \(actualScan.subtracting(expectedScan).sorted()). " +
             "Missing: \(expectedScan.subtracting(actualScan).sorted())."
         )

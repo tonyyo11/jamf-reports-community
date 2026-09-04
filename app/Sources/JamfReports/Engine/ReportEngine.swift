@@ -1340,7 +1340,10 @@ struct ReportEngine: Sendable {
         "ea-results",
         "patch-device-failures",
         "update-device-failures",
-        "device-compliance"
+        "device-compliance",
+        // 2.8.0 per-device scan phase (ReportEngine+DeviceScan).
+        "ddm-device-status",
+        "mdm-command-health",
     ]
 
     /// Kinds served only by the Jamf Platform API. On a Jamf Pro instance
@@ -1416,6 +1419,9 @@ struct ReportEngine: Sendable {
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
         "sofa",
         "patch-release-dates",
+        // 2.8.0 per-device scan phase — written by ReportEngine+DeviceScan, not the argv matrix.
+        "ddm-device-status",
+        "mdm-command-health",
     ]
 
     /// Fetch jamf-cli snapshots for `profile`, filtered by:

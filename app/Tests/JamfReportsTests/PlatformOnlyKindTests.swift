@@ -116,4 +116,19 @@ final class PlatformOnlyKindTests: XCTestCase {
             WorkspaceStore.manualCollectTiers([]), Set(CollectionTier.allCases)
         )
     }
+
+    // MARK: - 2.8.0 scan-phase kinds
+
+    /// The scan-phase kinds are per-device fan-outs, so the Settings toggle
+    /// that hides the four existing per-device kinds hides these two as well.
+    func testScanPhaseKindsAreExpensiveAndHiddenByTheToggle() {
+        for kind in ["ddm-device-status", "mdm-command-health"] {
+            XCTAssertTrue(ReportEngine.expensivePerDeviceKinds.contains(kind), kind)
+            XCTAssertTrue(ReportEngine.knownCollectKinds.contains(kind), kind)
+            XCTAssertFalse(WorkspaceStore.expectedKinds(skipExpensive: true, authMethod: "oauth2")
+                            .contains(kind), "\(kind) must not be expected when skipped")
+            XCTAssertTrue(WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: "oauth2")
+                            .contains(kind), "\(kind) is expected on an on-prem profile")
+        }
+    }
 }
