@@ -48,6 +48,7 @@ final class DeviceScanCollectTests: XCTestCase {
         let script = """
         #!/bin/sh
         A="\(answers.path)"
+        printf '%s\\n' "$*" >> "$A/calls.log"
         emit() { f="$A/$1"; if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
                  [ -f "$f" ] && cat "$f"; exit "$code"; }
         case "$*" in
@@ -67,6 +68,15 @@ final class DeviceScanCollectTests: XCTestCase {
             try "\(code)".write(to: answers.appendingPathComponent("\(name).exit"),
                                 atomically: true, encoding: .utf8)
         }
+    }
+
+    /// Every argv the stub was invoked with, one line each — proves a call
+    /// type genuinely never reached a given device rather than being called
+    /// and then filtered out downstream.
+    private func callsLog() -> String {
+        (try? String(
+            contentsOf: answers.appendingPathComponent("calls.log"), encoding: .utf8
+        )) ?? ""
     }
 
     private func computers(
@@ -154,6 +164,10 @@ final class DeviceScanCollectTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertNotNil(store.lastRun(report: "ddm-device-status"))
         XCTAssertNotNil(store.lastRun(report: "mdm-command-health"))
+
+        let calls = callsLog()
+        XCTAssertTrue(calls.contains("status-items m1"), calls)
+        XCTAssertFalse(calls.contains("status-items m2"), calls)
     }
 
     // MARK: - Failure rules
@@ -214,6 +228,13 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self),
                         "the history call type carried on")
         XCTAssertTrue(lines.contains { $0.contains("Read Computers") }, "\(lines)")
+
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "ddm-device-status"),
+            CLIBridge.exitCodePermissionDenied
+        )
+        XCTAssertNotNil(store.lastRun(report: "mdm-command-health"))
     }
 
     func testExit8SkipsHistoryForTheRun() async throws {
@@ -229,6 +250,49 @@ final class DeviceScanCollectTests: XCTestCase {
             },
             "\(lines)"
         )
+
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "mdm-command-health"),
+            CLIBridge.exitCodeRefusedByPolicy
+        )
+        XCTAssertNotNil(store.lastRun(report: "ddm-device-status"))
+    }
+
+    func testExit3StopsBothCallTypes() async throws {
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", "", exit: Int(CLIBridge.exitCodeUnauthorized))
+        try answer("ddm-m1", ddmPayload)
+        let lines = try await runScan()
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertTrue(
+            lines.contains { $0.contains("stopping both call types") }, "\(lines)"
+        )
+
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "mdm-command-health"), CLIBridge.exitCodeUnauthorized
+        )
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "ddm-device-status"), CLIBridge.exitCodeUnauthorized
+        )
+    }
+
+    func testZeroDDMDevicesLandsAnEmptySnapshot() async throws {
+        try writeComputers([("1", "A", "m1", false), ("2", "B", "m2", false)])
+        try answer("hist-1", cleanHistory); try answer("hist-2", cleanHistory)
+        let lines = try await runScan()
+
+        let ddm = try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self)
+        XCTAssertNotNil(ddm, "a fleet with no DDM-enabled Macs still lands a snapshot")
+        XCTAssertEqual(ddm ?? [], [])
+        XCTAssertTrue(
+            lines.contains { $0 == "[ok] ddm-device-status: 0 device(s)" }, "\(lines)"
+        )
+
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNotNil(store.lastRun(report: "ddm-device-status"))
     }
 
     func testNoComputersSnapshotSkipsWithOneLine() async throws {
