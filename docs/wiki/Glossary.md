@@ -219,10 +219,13 @@ Edge"). Each title has versions; the latest version is what compliance
 percentages measure against.
 
 ### Platform API
-Jamf's newer REST/JSON API spanning Pro, Protect, and other surfaces.
-Different from the Pro API; uses Platform Gateway authentication
-(`auth-method = platform` in jamf-cli profiles) instead of per-tenant
-OAuth2. *see also: Pro API, Classic API.*
+Jamf's newer REST/JSON API spanning Pro, Protect, and other surfaces. Different
+from the Pro API; uses Platform Gateway authentication (`auth-method = platform`
+in jamf-cli profiles) instead of per-tenant OAuth2, at
+`https://{region}.api.jamfcloud.com`. Four JamfReports data sources are served
+only by this API — compliance devices, compliance rules, DDM status and
+blueprint status — and are skipped on a profile that authenticates any other
+way. *see also: Pro API, Classic API, Refused by policy.*
 
 ### Policy
 A Jamf Pro automated workflow that runs on devices (install a package, run
@@ -298,6 +301,14 @@ JamfReports' `CoreDashboard` consumes `pro` and `protect`;
 `SchoolDashboard` consumes `school` (both are internal engine modules, not sidebar
 screens).
 
+### Refused by policy
+jamf-cli exit code 8 (v1.28.0+): the command was invoked correctly but is
+outside what the profile's API publishes — a Jamf Pro or Classic command on a
+Platform gateway profile, or a Platform-only command on an instance profile.
+The remedy is a different profile, never a retry, so JamfReports keeps the
+source visible in the health strip but never re-collects it automatically.
+`jamf-cli commands -o json` lists the refusals for the binary in hand.
+
 ---
 
 ## jamf-reports-community
@@ -307,6 +318,15 @@ The Overview card that turns the current daily-summary digest into a plain-langu
 headline and severity-tagged findings using Apple's on-device Foundation Model. Opt-in,
 off by default, and hidden entirely below macOS 27 — one of three AI Insights surfaces
 alongside the Run History failure explainer and the report executive-summary narrative.
+
+### Claim
+A short lease a run publishes to a shared workspace
+(`automation/.workspace-claim.json`) naming the host, the operation and an
+expiry, so another Mac can see one is already working. **Advisory, not a lock**
+— sync is eventual, so two machines starting seconds apart can both proceed;
+nothing is corrupted when they do. An expired claim is taken over, which is what
+stops a Mac that slept mid-run wedging the folder. *see also: Shared workspace,
+Stand-down.*
 
 ### Collection tier
 One of three per-report cadence tiers — **Refresh**, **Inventory**, and
@@ -345,6 +365,14 @@ the age of the newest on-disk snapshot for a raw jamf-cli kind that screen reads
 the screen expects but has never collected shows a distinct red "never" chip rather than
 silently vanishing.
 
+### Health strip
+The banner above every screen reporting data sources that are **failing** (two or
+more consecutive collect failures) or **stale** (past three times their tier
+cadence), plus any overdue or failing schedule. Offers **Collect now** for the
+tiers behind, and re-evaluates after any manual refresh. The twin of the
+dead-man switch: that asks whether the schedule fired, this asks whether the data
+landed. *see also: Dead-man switch, Freshness chip.*
+
 ### Inventory tier
 The mid-cost collection tier — device lists, configuration profiles,
 apps, and EA coverage. Pageable bulk queries; tens of seconds per run.
@@ -378,6 +406,14 @@ headless or high-security deployments.
 Per-title patch-adoption speed, built from every dated `patch-status` snapshot on disk:
 an adoption-over-time series, days-behind-latest, and the observed days-to-50/90-percent
 crossings. *see also: Days-to-50 / Days-to-90.*
+
+### Period report
+A workbook covering a window rather than a moment: a start figure, an end figure
+and the change for each selected metric, generated from the Generated screen.
+Windows are rolling (4/12/26/52 weeks) or calendar (last full month, last full
+quarter, custom dates). Every figure carries the date the snapshot actually came
+from, percentage changes are in percentage points, and extension attributes are
+opt-in. *see also: summary.json, TrendStore.*
 
 ### Profile (workspace profile)
 A logical tenant within JamfReports. Each profile gets its own
@@ -416,6 +452,14 @@ metrics drop from the denominator and the result is renormalized.
 Configurable in Config → Scoring. *see also: Risk Score, Stability
 Index.*
 
+### Shared workspace
+A workspace folder several Macs point at, so they build one pooled history
+instead of a private copy each. Chosen per Mac in Settings → Workspace location;
+what the machines must agree on lives in the workspace's own `shared_workspace:`
+config. Coordination turns itself on when the folder is synced. Everyone with
+folder access can read the raw device data it holds — that decision is the
+operator's, not the app's. *see also: Claim, Stand-down, Workspace.*
+
 ### Snapshot manifest
 The sibling `manifest.json` SHA-256 file written next to each collected snapshot when
 `jamf_cli.require_manifest: true`, used to detect tampering between collect and
@@ -432,6 +476,14 @@ A device that hasn't checked in (reconned) within the configured stale
 threshold (`thresholds.stale_device_days` in `config.yaml`, default 30).
 Outreach dashboard tiers further bucket into Recent (0–30d) / Offline
 (31–90d) / Inactive (91–180d) / Dormant (180d+). *see also: recon.*
+
+### Stand-down
+A scheduled collect declining to run because another Mac collected the same
+shared workspace inside `shared_workspace.min_collect_interval_hours`. The run
+log names which machine and when, and the run is recorded as partial — it does
+not update Trends, send a success notification, or evaluate metric alerts,
+because nothing new landed. Pressing Refresh in the app always collects
+regardless. *see also: Claim, Shared workspace.*
 
 ### summary.json
 A per-day snapshot file under `~/Jamf-Reports/<profile>/snapshots/computers/summaries/`

@@ -62,15 +62,29 @@ workspace rather than failing.
 
 ### Gating a job on config health
 
-`check --json` emits the findings as a structured document. `passed` and the
+`check` runs every validation the app has, not just "does `config.yaml` parse":
+column mappings against your CSV, baselines pointing at extension attributes
+nobody collects, malformed alert rules, data accuracy, and the state of the
+workspace folder — including whether more history for the profile sits in
+another folder, and whether this is a new workspace still on default settings.
+On a shared workspace it also lists the other Macs writing there. Each finding
+carries a concrete fix.
+
+`check --json` emits the same findings as a structured document. `passed` and the
 exit code always agree, so either can drive a CI step or a monitoring probe:
 
 ```sh
 jamf-reports check --profile prod --json > check.json || echo "config needs attention"
 ```
 
+The document carries `profile`, `passed`, a `counts` object
+(`pass`, `suggest`, `warn`, `fail`), and a `findings` array whose entries have
+`id`, `severity`, `title`, `detail`, and the same `fix` text a human sees.
+
 Only genuine failures set a non-zero exit. Warnings are reported but do not fail
 the run — a warning is something to look at, not a reason to break a pipeline.
+Scheduled runs record failing checks in their own run log too, so a run that
+collected happily against a broken config does not look clean in Run History.
 
 
 Run `jamf-reports help <command>` (or `jamf-reports <command> --help`) for the

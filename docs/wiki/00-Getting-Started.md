@@ -78,7 +78,7 @@ full detail on each:
    becomes the workspace folder under `~/Jamf-Reports/<profile>/`. That location is
    the default, not a fixed one: **Settings → Workspace location** can move it to a
    shared team folder so several Macs build one pooled history — see
-   [Security & Operational Considerations](/wiki/10-Security-and-Operational-Considerations).
+   [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 4. **Authenticate** — connect Jamf Pro with your API client credentials (or a Platform
    Gateway tenant ID). The secret is never persisted by the app; `jamf-cli` stores the
    resulting token in the macOS keychain.
@@ -116,3 +116,5 @@ Finder.
   scheduled runs.
 - [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates) — tune `config.yaml` for
   your fleet.
+- [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports) — once a few weeks of history exist, the
+  start/end/change figures a quarterly write-up needs.

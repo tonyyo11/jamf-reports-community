@@ -19,8 +19,8 @@ There are two ways to schedule work, and they are mutually exclusive per host:
 A single master toggle, **Manage automation**, switches between the two. It is **off by
 default**: a fresh install manages nothing and installs no agents until you opt in.
 
-For how to tell whether your automation is actually running — dead-man overdue detection,
-metric alerts, and webhook notifications — see
+For how to tell whether your automation is actually running — the data freshness strip,
+dead-man overdue detection, metric alerts, and webhook notifications — see
 [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
 
 ## Managed automation — set policy, not cron jobs
@@ -204,10 +204,34 @@ data within its tier's window does not re-fetch. To force fresh data on demand:
 - **Catch-up on wake** — when managed freshness is on, launching or waking the Mac after a
   missed scheduled run collects that day's freshness snapshot if it hasn't happened yet
   (a no-op if it already ran today).
+- **Collect now on the health strip** — when a data source is failing or far behind its
+  cadence, the strip across the top of every screen offers to collect just the tiers
+  behind it. See
+  [Automation Trust → The data freshness strip](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+
+While the app is open it also re-collects a source that has fallen behind on its own, at
+most once an hour and only the sources actually behind.
 
 The app does not throttle `jamf-cli` — it inherits whatever limits your tenant enforces.
 Persistent HTTP 429s in the logs mean you should stagger profiles or lean on the weekly
 scan cadence rather than forcing scans more often.
+
+## Several Macs, one workspace
+
+When the workspace is a shared folder (**Settings → Workspace location**), scheduled
+collects coordinate rather than duplicating each other. A scheduled collect **stands
+down** when another Mac collected inside `shared_workspace.min_collect_interval_hours`,
+naming which machine and when, and each run publishes a short claim so a second machine
+can see one is already working. A run that stood down is recorded as a partial run — it
+does not update Trends, send a success notification, or evaluate metric alerts, because
+nothing new landed.
+
+Pressing **Refresh** in the app always collects regardless. Coordination covers Jamf Pro
+collects only. See
+[Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)
+for the layout choices and what a shared folder costs you, and
+[Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates)
+for the `shared_workspace` keys.
 
 ## See also
 

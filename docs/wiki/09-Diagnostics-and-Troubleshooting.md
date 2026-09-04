@@ -87,6 +87,29 @@ misconfiguration and data-quality issues that would otherwise fail silently.
   fewer than two comparable days have been collected, the doctor reports "EA coverage
   drift unavailable" rather than a false "stable" result.
 
+**Workspace and storage.** Where the workspace lives, whether it is reachable and
+writable, which layout is in effect (reports published to a shared folder, or the whole
+workspace shared), and — on a shared workspace — which other Macs write there, when each
+last collected, whether their clocks and app versions agree, and any leftover claim or
+sync-conflict file.
+
+**Workspace continuity.** Two suggestions for a workspace that is fine but not the one you
+expected:
+
+- **More history for this profile exists in another folder** — naming the folder and how
+  many daily summaries are in each. Moving the workspace does not move existing data, so
+  everything looks empty because it is; the old history is still there, just not being
+  read.
+- **Settings here are defaults** — this workspace is new, so column mappings, custom
+  extension attributes and thresholds are scaffold defaults rather than anything you set
+  previously.
+
+Both are suggestions rather than failures, and both stay quiet once the workspace has
+history. Only failures reach a scheduled run's log, so neither can turn a healthy run red.
+
+The same checks run headlessly as `jamf-reports check` (and `check --json` for a CI gate)
+— see [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line).
+
 ## Common failure modes
 
 **`jamf-cli: command not found` / "jamf-cli not detected".** The binary is not installed
@@ -117,6 +140,19 @@ accumulate. Check usage and lower `output.keep_latest_runs` in `config.yaml`:
 ```bash
 du -sh ~/Jamf-Reports/<profile>/*
 ```
+
+**The health strip says a data source is failing or behind.** The strip across the top of
+every screen reports a source that failed two or more consecutive collects, or whose last
+success is past three times its tier cadence. Press **Collect now** to re-collect just the
+tiers behind it, and read the run log in Run History for jamf-cli's own message — a
+non-zero exit is reported with its cause, not as a bare number. Sources whose last failure
+was a usage/credentials error (exit 2) or a policy refusal (exit 8) stay listed but are
+never retried automatically, because they fail identically every time. See
+[Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+
+**A run says `[partial]`.** The run completed but did not refresh everything: at least one
+source served cached data, the run stood down for another Mac on a shared workspace, or
+the day's summary could not be written. The line names which.
 
 **`[skip]` lines in run output.** A sub-step skipped because the cached data it needed
 was stale or absent. Normal in the first day after enabling schedules. If `[skip]` lines
@@ -153,9 +189,16 @@ remembers the choice.
 | 5 | Permission denied (HTTP 403) | Warn; use cached data |
 | 6 | Rate limited (HTTP 429) | Warn; use cached data |
 | 7 | Partial failure (jamf-cli v1.19+) | Some sub-operations failed but the successful subset's JSON is saved, with a warning |
+| 8 | Refused by policy (jamf-cli v1.28+) | The command is outside what this profile's API publishes — warn, keep the source visible, never retry automatically |
 
 Only an unauthorized result (3) aborts a run. Everything else falls back to the most
 recent cached snapshot.
+
+Exit 8 means the command was correct but this profile cannot serve it: a Jamf Pro or
+Classic command on a Platform gateway profile, or a Platform-only command on an instance
+profile. The remedy is a different profile, not another attempt, so the automatic
+re-collect leaves that source alone. `jamf-cli commands -o json` lists what the binary in
+hand refuses.
 
 ## Report integrity envelope
 

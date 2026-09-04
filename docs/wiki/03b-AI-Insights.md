@@ -50,6 +50,7 @@ Three surfaces, all built from data the app has already collected:
 - Narrative generation is raced against a 10-second timebox; on timeout, an error, or
   empty output, the report is produced without the AI section rather than waiting.
 - Model output that lands in an HTML report is escaped before insertion.
+
 ## Turning it on
 
 Settings → **AI Insights** (only visible on a macOS 27+ host):

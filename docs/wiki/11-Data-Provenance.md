@@ -14,6 +14,7 @@ Raw `jamf-cli` API snapshots where each row is a device or device-related object
 are the most detailed data: you can drill down to a specific device and see what it is.
 
 Tier 1 kinds include:
+
 - `ea-results` — one row per device's Extension Attribute result
 - `device-compliance` — one row per device's per-rule compliance failures
 - `computers` (device inventory) and `mobile-device-inventory-details`
@@ -21,6 +22,7 @@ Tier 1 kinds include:
 - `compliance-devices` — Jamf Platform API per-device control compliance
 
 Feeds these screens:
+
 - **Devices** table and detail panel
 - **Device Lookup**
 - Failure drawers in **Patch Compliance** and **OS Updates**
@@ -38,6 +40,7 @@ alone won't tell you — you need the paired `--scan-failures` collection (Tier 
 that detail.
 
 Tier 2 kinds include:
+
 - `pro report security` — FileVault, SIP, firewall, Gatekeeper percentages per the fleet
 - `patch-status` — per-title compliance percentage and version distribution
 - `update-status` — software-update plan summary and state counts
@@ -45,6 +48,7 @@ Tier 2 kinds include:
 - `policy-status` — policy configuration findings
 
 Feeds these screens:
+
 - **Security Posture** — FileVault/SIP/firewall/Gatekeeper rates and KPI counts
 - **Patch Compliance** title-level compliance percentages
 - **OS Updates** plan state and error summary
@@ -64,6 +68,7 @@ summary may omit the `collectionSources` map the morning collect recorded.
 This is not live data. It is a snapshot of the fleet state at the time of collection.
 
 Feeds these screens:
+
 - **Overview** — all KPI cards and donut charts
 - **Trends** — all timeline charts
 - **Fleet Overview** — per-profile health signals across all workspaces
@@ -106,6 +111,7 @@ A metric that cannot be computed is shown as "—" (em-dash) and is excluded fro
 Stability index and other aggregates. It does not count as 0%.
 
 Examples:
+
 - If you have not collected `ea-results` yet, Compliance % shows "—".
 - If you have not collected `patch-status` yet, Patch % shows "—".
 - If a device has no last-check-in date, it does not count toward Stale Count.
@@ -114,6 +120,13 @@ This is intentional: missing data does not drag down your health scores. When yo
 data source to your collection schedule, the metric appears and the index recalculates.
 
 ## Freshness
+
+A strip above every screen reports data sources that are **failing** (two or more
+consecutive collect failures) or **stale** (past three times their tier cadence), so a
+source that stopped collecting is visible wherever you are working rather than only on the
+screen that reads it. Per-source success and failure counts are kept in the workspace's
+state files. See
+[Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
 
 **Patch Compliance, Security Posture, OS Updates, and Devices** each show a row of
 per-kind freshness chips — one per raw jamf-cli kind that screen reads, showing the age of
@@ -167,8 +180,13 @@ screen. These include:
 This is intentional. The app focuses on device posture and compliance; detailed policy
 audit trails and app inventories are report outputs, not interactive screens.
 
-## Cross-reference: Historical Trends
+## Cross-reference: Historical Trends and period reports
 
 The **Trends** screen reads `summary.json` snapshots. See
 [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) for details on how these files are managed and
 how the trend timeline is built from them.
+
+A [period report](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports)
+reads the same Tier 3 summaries between two dates, plus your collected `ea-results`, and
+prints the real snapshot date beside every figure — so a start date the fleet has no
+snapshot for is stated rather than assumed.

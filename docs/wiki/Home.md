@@ -21,8 +21,9 @@ unattended runs, and tracks fleet health — all from a GUI. Read these pages in
 8. [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust) — metric alerts and the automation dead-man switch
 9. [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) — snapshots and the Trends screen
 10. [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity) — adoption speed and days-behind tracking
-11. [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line) — the included `jamf-reports` CLI for scripting
-12. [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) — what each dashboard's numbers are based on
+11. [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports) — start/end/change figures for a quarter or any window
+12. [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line) — the included `jamf-reports` CLI for scripting
+13. [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) — what each dashboard's numbers are based on
 
 ### Reference for everyone
 

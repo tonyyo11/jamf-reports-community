@@ -29,7 +29,11 @@ routes start the same onboarding flow.
    [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for details.
 3. **Workspace** — choose a profile name. The name becomes a folder under
    `~/Jamf-Reports/<profile>/` and must match `^[a-z0-9][a-z0-9._-]*$` — lowercase, no
-   spaces. Pick something short like `prod`.
+   spaces. Pick something short like `prod`. `~/Jamf-Reports` is the default location,
+   not a fixed one — **Settings → Workspace location** can point it at a shared team
+   folder so several Macs build one pooled history; see
+   [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)
+   before you do, because everyone with access to that folder can read raw device data.
 4. **Authenticate** — connect Jamf Pro with either OAuth2 API client credentials (URL,
    client ID, client secret) or a Platform Gateway tenant ID. The secret is passed to
    `jamf-cli` over a controlling TTY and cleared immediately; the app never persists it.
@@ -68,7 +72,8 @@ full workflow.
 
 ## Where data lives
 
-Each profile is a self-contained workspace under `~/Jamf-Reports/<profile>/`:
+Each profile is a self-contained workspace under `~/Jamf-Reports/<profile>/` — or under
+whatever folder **Settings → Workspace location** points at, if you have moved it:
 
 ```text
 ~/Jamf-Reports/<profile>/
@@ -85,7 +90,10 @@ Each profile is a self-contained workspace under `~/Jamf-Reports/<profile>/`:
 ```
 
 Everything for one tenant is under one folder. To move a profile to another Mac, copy the
-folder and re-authenticate with `jamf-cli pro setup` for that profile.
+folder and re-authenticate with `jamf-cli pro setup` for that profile. Changing the
+workspace location does **not** move existing data — copy `config.yaml` and `snapshots/`
+across yourself; Run check on the Config screen says when more history for a profile is
+sitting in the folder you left behind.
 
 ## First-run checklist
 
