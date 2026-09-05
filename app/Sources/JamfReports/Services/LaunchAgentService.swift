@@ -6,166 +6,9 @@ import OSLog
 /// files and parses them into `Schedule` model objects.
 enum LaunchAgentService {
 
-    struct LegacyCleanupResult: Sendable {
-        let removedLabels: [String]
-
-        var message: String? {
-            guard !removedLabels.isEmpty else { return nil }
-            return "Removed \(removedLabels.count) legacy com.tonyyo.jrc LaunchAgent"
-                + (removedLabels.count == 1 ? "." : "s.")
-        }
-    }
-
     /// Where macOS UserAgents live. We never touch system-wide LaunchDaemons.
     static let agentsDir: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
-
-    /// All Jamf Reports LaunchAgent plist files.
-    static func list() -> [Schedule] {
-        launchAgentEntries()
-            .filter { $0.lastPathComponent.hasPrefix("\(LaunchAgentWriter.labelPrefix).") }
-            .filter { $0.pathExtension == "plist" }
-            .compactMap(parse)
-            .sorted { $0.name < $1.name }
-    }
-
-    /// LaunchAgent labels whose `ProgramArguments[0]` (executable) no longer
-    /// exists on disk — typically because the .app bundle was rebuilt at a
-    /// different path (different worktree, different release archive).
-    /// macOS will queue these for execution at the next trigger and they will
-    /// fail at launch with `posix_spawn` ENOENT, polluting the
-    /// `~/Library/Logs/JamfReports/<label>/stderr.log` file with a
-    /// confusing path-not-found error.
-    ///
-    /// - Parameter dir: Directory to scan. Defaults to the user's
-    ///   `~/Library/LaunchAgents`. Tests pass a temp dir.
-    /// - Returns: Sorted list of plist labels whose recorded executable is
-    ///   missing on disk. Empty when every JRC plist's executable still
-    ///   exists or when there are no JRC plists at all.
-    static func staleExecutableLabels(in dir: URL = agentsDir) -> [String] {
-        let prefix = "\(LaunchAgentWriter.labelPrefix)."
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        let fm = FileManager.default
-        return entries
-            .filter { $0.pathExtension == "plist" }
-            .filter { $0.lastPathComponent.hasPrefix(prefix) }
-            .compactMap { url -> String? in
-                guard let data = try? Data(contentsOf: url),
-                      let plist = try? PropertyListSerialization
-                          .propertyList(from: data, format: nil) as? [String: Any],
-                      let label = plist["Label"] as? String,
-                      LaunchAgentWriter.isValidLabel(label),
-                      let args = plist["ProgramArguments"] as? [String],
-                      let executable = args.first,
-                      !executable.isEmpty else {
-                    return nil
-                }
-                return fm.fileExists(atPath: executable) ? nil : label
-            }
-            .sorted()
-    }
-
-    /// LaunchAgent plist labels that look like JRC schedules but cannot be
-    /// unambiguously attributed to a current profile slug — typically
-    /// because they were written before S-03 tightened
-    /// `ProfileService.isValid`, so they encode a dotted profile name
-    /// (`com.…jamf-reports-community.tenant-1.prod.daily`).
-    ///
-    /// Surfaced so the caller can log a one-shot migration warning per
-    /// label after PR-3. The plist files are left on disk untouched —
-    /// the user should `launchctl bootout` and remove them manually, or
-    /// the upcoming UI surfacing pass (tracked in BACKLOG) will offer a
-    /// "remove legacy schedule" action.
-    ///
-    /// - Parameter dir: Directory to scan. Defaults to the user's
-    ///   `~/Library/LaunchAgents`. Tests pass a temp dir to avoid
-    ///   touching the real home directory.
-    static func dottedLegacyAgents(in dir: URL = agentsDir) -> [String] {
-        let prefix = "\(LaunchAgentWriter.labelPrefix)."
-        let entries = (try? FileManager.default.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        return entries
-            .filter { $0.pathExtension == "plist" }
-            .filter { $0.lastPathComponent.hasPrefix(prefix) }
-            .compactMap { url -> String? in
-                let label = plistLabel(url) ?? url.deletingPathExtension().lastPathComponent
-                guard label.hasPrefix(prefix) else { return nil }
-                let tail = String(label.dropFirst(prefix.count))
-                // Multi labels are well-formed by construction; skip.
-                if tail.hasPrefix("multi.") { return nil }
-                let parts = tail.components(separatedBy: ".")
-                // After PR-3 a well-formed non-multi label has exactly 2
-                // post-prefix components (profile + slug). More than 2
-                // means a dotted profile name slipped through the old
-                // validator — flag for migration.
-                return parts.count > 2 ? label : nil
-            }
-            .sorted()
-    }
-
-    /// Delete old Swift-owned `com.tonyyo.jrc.*` plists once at app launch.
-    static func cleanupLegacyAgents() -> LegacyCleanupResult {
-        let legacyURLs = launchAgentEntries()
-            .filter { $0.lastPathComponent.hasPrefix("\(LaunchAgentWriter.legacyLabelPrefix).") }
-            .filter { $0.pathExtension == "plist" }
-
-        var removed: [String] = []
-        for url in legacyURLs {
-            let label = plistLabel(url) ?? url.deletingPathExtension().lastPathComponent
-            guard label.hasPrefix("\(LaunchAgentWriter.legacyLabelPrefix).") else { continue }
-            _ = bootout(label)
-            do {
-                try FileManager.default.removeItem(at: url)
-                removed.append(label)
-            } catch {
-                continue
-            }
-        }
-        return LegacyCleanupResult(removedLabels: removed.sorted())
-    }
-
-    /// Remove generated Jamf Reports LaunchAgents for a profile. Used when
-    /// leaving demo mode so synthetic demo schedules cannot appear in live mode.
-    static func removeAgents(profile: String) -> [String] {
-        guard ProfileService.isValid(profile) else {
-            // Dotted legacy profile names (e.g. "tenant.prod") contain a period and
-            // fail the current validator. Those plists cannot be matched by prefix and
-            // must be removed manually via `launchctl bootout` + `rm`.
-            AppLogger.schedule.warning(
-                // swiftlint:disable:next line_length
-                "LaunchAgentService.removeAgents: profile \(profile, privacy: .private) failed validation — dotted legacy profiles cannot be removed by this path and need manual launchctl bootout cleanup"
-            )
-            return []
-        }
-        let prefix = "\(LaunchAgentWriter.labelPrefix).\(profile)."
-        let urls = launchAgentEntries()
-            .filter { $0.lastPathComponent.hasPrefix(prefix) }
-            .filter { $0.pathExtension == "plist" }
-
-        var removed: [String] = []
-        for url in urls {
-            guard let label = plistLabel(url),
-                  LaunchAgentWriter.isValidLabel(label),
-                  label.hasPrefix(prefix) else {
-                continue
-            }
-            _ = bootout(label)
-            do {
-                try FileManager.default.removeItem(at: url)
-                removed.append(label)
-            } catch {
-                continue
-            }
-        }
-        return removed.sorted()
-    }
 
     /// Result of a consolidation removal.
     struct ConsolidationRemovalResult: Sendable {
@@ -236,7 +79,7 @@ enum LaunchAgentService {
     /// `<label>.plist` filename convention, then falls back to scanning.
     ///
     /// - Parameter dir: Directory to search. Defaults to the real
-    ///   `~/Library/LaunchAgents`; `kickstartNow` tests pass a temp dir.
+    ///   `~/Library/LaunchAgents`.
     private static func agentURL(forLabel label: String, in dir: URL = agentsDir) -> URL? {
         let direct = dir.appendingPathComponent("\(label).plist")
         if FileManager.default.fileExists(atPath: direct.path), plistLabel(direct) == label {
@@ -266,12 +109,12 @@ enum LaunchAgentService {
     /// URL is scrubbed in the COPY. The live plist in LaunchAgents is untouched;
     /// restoring it means re-adding the webhook.
     ///
-    /// MAINTENANCE CONTRACT: this set must stay in sync with the credential-bearing
-    /// flag vocabulary of `LaunchAgentWriter.nativeSingleWrite` and
-    /// `nativeMultiWrite`. Any future flag that embeds a credential (API key,
-    /// webhook URL, bearer token, etc.) in ProgramArguments MUST be added here,
-    /// or it will ship unredacted into workspace archives (potentially on a
-    /// cloud share). One flag per entry; the flag name only — not the value slot.
+    /// MAINTENANCE CONTRACT: this set covers the credential-bearing flag
+    /// vocabulary of the legacy plist formats `archiveAndRemove` retires. Any
+    /// future flag that embeds a credential (API key, webhook URL, bearer
+    /// token, etc.) in ProgramArguments MUST be added here, or it will ship
+    /// unredacted into workspace archives (potentially on a cloud share). One
+    /// flag per entry; the flag name only — not the value slot.
     private static let secretArgFlags: Set<String> = ["--notify"]
 
     private static func archivePlist(at url: URL, label: String, into dir: URL) -> Bool {
@@ -322,14 +165,6 @@ enum LaunchAgentService {
     }
 
     // MARK: - Private
-
-    private static func launchAgentEntries() -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(
-            at: agentsDir,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []
-    }
 
     /// Every JRC plist still in `~/Library/LaunchAgents`, parsed, plus the
     /// filenames that would not parse. Import reads this once; the
@@ -398,8 +233,7 @@ enum LaunchAgentService {
             launchAgentLabel: label,
             multiTarget: labelParts.isMulti ? (multiTarget(from: args) ?? MultiTarget(scope: .all)) : nil,
             tiers: tiers(from: args),
-            excludedProfiles: excludedProfiles(from: args),
-            executablePath: args.first
+            excludedProfiles: excludedProfiles(from: args)
         )
     }
 
@@ -518,81 +352,6 @@ enum LaunchAgentService {
         inputs.filter { $0.isMulti || $0.profile == profile }
     }
 
-    // MARK: - Run now (health-row kickstart)
-
-    /// Outcome of `kickstartNow`, including whether the bootstrap fallback was
-    /// needed — surfaced for logging without changing the simple success Bool
-    /// the UI acts on.
-    struct KickstartOutcome: Sendable, Equatable {
-        let succeeded: Bool
-        let usedBootstrapFallback: Bool
-    }
-
-    /// One-click "Run now" for a failing/overdue Automation Health row:
-    /// immediately re-executes an INSTALLED agent's job via
-    /// `launchctl kickstart -k gui/<uid>/<label>`. launchd runs the real job
-    /// with its exact plist arguments, so the run records under the correct
-    /// label and writes the correct status file — a success genuinely clears
-    /// the row's health state.
-    ///
-    /// If kickstart fails — commonly because the plist is on disk but was
-    /// never `launchctl bootstrap`ed (e.g. after a file-only self-heal
-    /// write) — falls back to bootstrapping the plist first, then retries
-    /// kickstart once. Never throws; a failure is just a `false` the caller
-    /// surfaces as a toast.
-    ///
-    /// `runLaunchctl` is injectable so tests can assert the exact argv
-    /// without touching real launchctl; production uses `defaultRunLaunchctl`.
-    ///
-    /// - Parameter dir: Directory to locate the agent's plist in for the
-    ///   bootstrap fallback. Defaults to the real `~/Library/LaunchAgents`;
-    ///   tests pass a temp dir.
-    static func kickstartNow(
-        label: String,
-        in dir: URL = agentsDir,
-        runLaunchctl: @Sendable ([String]) async -> Int32 = defaultRunLaunchctl
-    ) async -> KickstartOutcome {
-        guard LaunchAgentWriter.isValidLabel(label) else {
-            return KickstartOutcome(succeeded: false, usedBootstrapFallback: false)
-        }
-        let target = "gui/\(getuid())/\(label)"
-        if await runLaunchctl(["kickstart", "-k", target]) == 0 {
-            return KickstartOutcome(succeeded: true, usedBootstrapFallback: false)
-        }
-        guard let url = agentURL(forLabel: label, in: dir) else {
-            return KickstartOutcome(succeeded: false, usedBootstrapFallback: false)
-        }
-        guard await runLaunchctl(["bootstrap", "gui/\(getuid())", url.path]) == 0 else {
-            return KickstartOutcome(succeeded: false, usedBootstrapFallback: true)
-        }
-        let succeeded = await runLaunchctl(["kickstart", "-k", target]) == 0
-        return KickstartOutcome(succeeded: succeeded, usedBootstrapFallback: true)
-    }
-
-    /// Production launchctl invocation for `kickstartNow` — mirrors
-    /// `LaunchAgentWriter`'s private async launchctl helper.
-    static let defaultRunLaunchctl: @Sendable ([String]) async -> Int32 = { args in
-        await withCheckedContinuation { cont in
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            p.arguments = args
-            p.standardOutput = Pipe()
-            p.standardError = Pipe()
-            p.terminationHandler = { proc in cont.resume(returning: proc.terminationStatus) }
-            do {
-                try p.run()
-            } catch {
-                AppLogger.cli.error(
-                    """
-                    launchctl \(args.first ?? "", privacy: .public) launch failed: \
-                    \(error.localizedDescription, privacy: .private)
-                    """
-                )
-                cont.resume(returning: -1)
-            }
-        }
-    }
-
     private static func plistLabel(_ url: URL) -> String? {
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization
@@ -626,8 +385,7 @@ enum LaunchAgentService {
         // join the rest as the slug, which silently re-attributed the
         // plist to a different (valid-by-itself) profile. Reject so the
         // Schedules UI cannot operate on a mis-attributed legacy plist;
-        // the file on disk is preserved and surfaced via
-        // `LaunchAgentService.dottedLegacyAgents()` for migration.
+        // the file on disk is preserved untouched.
         guard parts.count == 2 else { return nil }
         guard let profile = parts.first, ProfileService.isValid(profile) else { return nil }
         let slug = parts[1]
@@ -724,7 +482,7 @@ enum LaunchAgentService {
     }
 
     /// Parse `--exclude-profiles <csv>` back into a sorted, validated profile
-    /// list — the read-side counterpart of `LaunchAgentWriter.excludeArguments`.
+    /// list, so a plist imported from an older release keeps its exclusions.
     ///
     /// Returns `nil` when the flag is absent (mirrors `tiers(from:)`). An
     /// all-invalid CSV also collapses to `nil` rather than an empty-but-non-nil

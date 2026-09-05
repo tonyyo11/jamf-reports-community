@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 import XCTest
 @testable import JamfReports
@@ -106,8 +105,6 @@ final class LaunchAgentServiceTests: XCTestCase {
 
         let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
         XCTAssertEqual(parsed.tiers, [.refresh, .scan])
-        XCTAssertEqual(
-            parsed.executablePath, "/Applications/JamfReports.app/Contents/MacOS/JamfReports")
     }
 
     func testParseNativePlistWithoutTiersFlagYieldsNil() throws {
@@ -173,26 +170,21 @@ final class LaunchAgentServiceTests: XCTestCase {
     }
 
     func testTiersRoundTripThroughWriteAndParse() throws {
-        var sched = Schedule(
-            name: "Tier Round Trip",
-            profile: "dummy",
-            schedule: "Daily 07:00",
-            cadence: "daily",
-            mode: .jamfCLIFull,
-            next: "-", last: "-", lastStatus: .ok,
-            artifacts: [], enabled: true
-        )
-        sched.tiers = [.refresh, .inventory]
-        let agentLabel = try XCTUnwrap(LaunchAgentWriter.label(for: sched))
-        let plan = try LaunchAgentWriter.nativeSingleWrite(for: sched, load: false)
-        defer {
-            try? FileManager.default.removeItem(at: plan.plistURL)
-            let logDir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
-            try? FileManager.default.removeItem(at: logDir)
-        }
+        let label = "\(prefix).dummy.tier-round-trip"
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", "dummy",
+                "--mode", "jamf-cli-full",
+                "--tiers", "inventory,refresh",
+            ],
+            "StartCalendarInterval": ["Hour": 7, "Minute": 0],
+            "Disabled": false,
+        ])
 
-        let parsed = try XCTUnwrap(LaunchAgentService.parse(plan.plistURL))
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
         XCTAssertEqual(parsed.tiers, [.refresh, .inventory],
                        "Tier set must survive the write → parse round trip")
     }
@@ -200,36 +192,22 @@ final class LaunchAgentServiceTests: XCTestCase {
     // MARK: - --exclude-profiles round trip (was write-only; parse dropped it)
 
     func testExcludeProfilesRoundTripThroughWriteAndParse() throws {
-        var sched = Schedule(
-            name: "Exclude Round Trip",
-            profile: "alpha",
-            schedule: "Daily 07:00",
-            cadence: "daily",
-            mode: .jamfCLIFull,
-            next: "-", last: "-", lastStatus: .ok,
-            artifacts: [], enabled: true,
-            multiTarget: MultiTarget(scope: .all)
-        )
-        sched.excludedProfiles = ["dummy", "sandbox"]
-        let agentLabel = try XCTUnwrap(LaunchAgentWriter.label(for: sched))
+        let label = "\(prefix).multi.exclude-round-trip"
+        let plistURL = try writePlist([
+            "Label": label,
+            "ProgramArguments": [
+                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
+                "--scheduled-run",
+                "--profile", "alpha",
+                "--mode", "jamf-cli-full",
+                "--all-profiles",
+                "--exclude-profiles", "dummy,sandbox",
+            ],
+            "StartCalendarInterval": ["Hour": 7, "Minute": 0],
+            "Disabled": false,
+        ])
 
-        let tempExec = FileManager.default.temporaryDirectory
-            .appendingPathComponent("fake-jamf-reports-\(UUID().uuidString)")
-        FileManager.default.createFile(atPath: tempExec.path, contents: Data("#!/bin/sh\nexit 0\n".utf8))
-        try FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: Int16(0o755))], ofItemAtPath: tempExec.path
-        )
-        defer { try? FileManager.default.removeItem(at: tempExec) }
-
-        let plan = try LaunchAgentWriter.nativeMultiWrite(for: sched, executableURL: tempExec, load: false)
-        defer {
-            try? FileManager.default.removeItem(at: plan.plistURL)
-            let logDir = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Logs/JamfReports/\(agentLabel)", isDirectory: true)
-            try? FileManager.default.removeItem(at: logDir)
-        }
-
-        let parsed = try XCTUnwrap(LaunchAgentService.parse(plan.plistURL))
+        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
         XCTAssertEqual(parsed.excludedProfiles, ["dummy", "sandbox"],
                        "--exclude-profiles must survive the write → parse round trip")
     }
@@ -612,105 +590,6 @@ final class LaunchAgentServiceTests: XCTestCase {
         return url
     }
 
-    // MARK: - staleExecutableLabels (PR-15)
-
-    func testStaleExecutableLabelsReturnsEmptyForFreshPlists() throws {
-        let dir = try makeAgentsDir()
-        let realExec = FileManager.default.homeDirectoryForCurrentUser
-        try writeLabeledPlist(
-            in: dir,
-            label: "\(prefix).demo.daily-fresh",
-            executable: realExec.path
-        )
-
-        XCTAssertEqual(LaunchAgentService.staleExecutableLabels(in: dir), [])
-    }
-
-    func testStaleExecutableLabelsFlagsMissingExecutable() throws {
-        let dir = try makeAgentsDir()
-        try writeLabeledPlist(
-            in: dir,
-            label: "\(prefix).demo.daily-stale",
-            executable: "/Users/nobody/JamfReports.app/Contents/MacOS/JamfReports"
-        )
-
-        XCTAssertEqual(
-            LaunchAgentService.staleExecutableLabels(in: dir),
-            ["\(prefix).demo.daily-stale"]
-        )
-    }
-
-    func testStaleExecutableLabelsSortsMultipleStaleEntriesAlphabetically() throws {
-        let dir = try makeAgentsDir()
-        let missing = "/tmp/nonexistent-binary-\(UUID().uuidString.prefix(8))"
-        try writeLabeledPlist(in: dir, label: "\(prefix).beta.weekly-z", executable: missing)
-        try writeLabeledPlist(in: dir, label: "\(prefix).alpha.daily-a", executable: missing)
-        // Add a fresh one to confirm it's filtered out
-        try writeLabeledPlist(
-            in: dir,
-            label: "\(prefix).gamma.hourly-fresh",
-            executable: FileManager.default.homeDirectoryForCurrentUser.path
-        )
-
-        XCTAssertEqual(
-            LaunchAgentService.staleExecutableLabels(in: dir),
-            ["\(prefix).alpha.daily-a", "\(prefix).beta.weekly-z"]
-        )
-    }
-
-    func testStaleExecutableLabelsIgnoresNonJRCPlists() throws {
-        let dir = try makeAgentsDir()
-        let missing = "/tmp/nope-\(UUID().uuidString.prefix(8))"
-        // A plist with our prefix but missing binary → flagged
-        try writeLabeledPlist(in: dir, label: "\(prefix).demo.daily", executable: missing)
-        // A plist with a different prefix → ignored even though executable missing
-        try writeLabeledPlist(in: dir, label: "com.apple.someone.else.daily", executable: missing)
-
-        XCTAssertEqual(
-            LaunchAgentService.staleExecutableLabels(in: dir),
-            ["\(prefix).demo.daily"]
-        )
-    }
-
-
-    private func writeMultiHealthPlist(
-        in dir: URL, label: String, hour: Int, minute: Int
-    ) throws {
-        let plist: [String: Any] = [
-            "Label": label,
-            "ProgramArguments": [
-                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
-                "--scheduled-run", "--all-profiles",
-                "--mode", "snapshot-only",
-            ],
-            "StartCalendarInterval": ["Hour": hour, "Minute": minute],
-            "Disabled": false,
-        ]
-        let url = dir.appendingPathComponent("\(label).plist")
-        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-        try data.write(to: url)
-    }
-
-    private func makeAgentsDir() throws -> URL {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("staleAgents-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-        return root
-    }
-
-    private func writeLabeledPlist(in dir: URL, label: String, executable: String) throws {
-        let plist: [String: Any] = [
-            "Label": label,
-            "ProgramArguments": [executable, "--scheduled-run"],
-            "RunAtLoad": false,
-            "Disabled": true,
-        ]
-        let url = dir.appendingPathComponent("\(label).plist")
-        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-        try data.write(to: url)
-    }
-
     private func writeLog(_ text: String) throws -> URL {
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -721,113 +600,4 @@ final class LaunchAgentServiceTests: XCTestCase {
         return url
     }
 
-    // MARK: - kickstartNow (Automation Health "Run now")
-
-    func testKickstartNowSucceedsOnFirstAttemptNoFallback() async throws {
-        let label = "\(prefix).multi.managed-scan"
-        let dir = try makeAgentsDir()
-        let recorder = ArgvRecorder(exitCodes: [0])
-
-        let outcome = await LaunchAgentService.kickstartNow(
-            label: label, in: dir, runLaunchctl: { recorder.record($0) }
-        )
-
-        XCTAssertTrue(outcome.succeeded)
-        XCTAssertFalse(outcome.usedBootstrapFallback)
-        XCTAssertEqual(recorder.calls, [
-            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
-        ])
-    }
-
-    func testKickstartNowFallsBackToBootstrapThenRetriesKickstart() async throws {
-        let label = "\(prefix).multi.managed-freshness"
-        let dir = try makeAgentsDir()
-        try writeMultiHealthPlist(in: dir, label: label, hour: 6, minute: 0)
-        let plistURL = dir.appendingPathComponent("\(label).plist")
-        // kickstart fails (job not loaded) → bootstrap the plist → kickstart again.
-        let recorder = ArgvRecorder(exitCodes: [1, 0, 0])
-
-        let outcome = await LaunchAgentService.kickstartNow(
-            label: label, in: dir, runLaunchctl: { recorder.record($0) }
-        )
-
-        XCTAssertTrue(outcome.succeeded)
-        XCTAssertTrue(outcome.usedBootstrapFallback)
-        XCTAssertEqual(recorder.calls, [
-            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
-            ["bootstrap", "gui/\(getuid())", plistURL.path],
-            ["kickstart", "-k", "gui/\(getuid())/\(label)"],
-        ])
-    }
-
-    func testKickstartNowFailsWhenBootstrapFallbackAlsoFails() async throws {
-        let label = "\(prefix).multi.managed-reports"
-        let dir = try makeAgentsDir()
-        try writeMultiHealthPlist(in: dir, label: label, hour: 6, minute: 20)
-        let recorder = ArgvRecorder(exitCodes: [1, 1])
-
-        let outcome = await LaunchAgentService.kickstartNow(
-            label: label, in: dir, runLaunchctl: { recorder.record($0) }
-        )
-
-        XCTAssertFalse(outcome.succeeded)
-        XCTAssertTrue(outcome.usedBootstrapFallback,
-                      "bootstrap was attempted even though it too failed")
-        XCTAssertEqual(
-            recorder.calls.count, 2, "no second kickstart retry after a failed bootstrap")
-    }
-
-    func testKickstartNowFailsWithoutFallbackWhenPlistNotFound() async throws {
-        // No plist written for this label in `dir` — the bootstrap fallback
-        // has nothing to bootstrap, so it must not be attempted.
-        let label = "\(prefix).multi.managed-backup"
-        let dir = try makeAgentsDir()
-        let recorder = ArgvRecorder(exitCodes: [1])
-
-        let outcome = await LaunchAgentService.kickstartNow(
-            label: label, in: dir, runLaunchctl: { recorder.record($0) }
-        )
-
-        XCTAssertFalse(outcome.succeeded)
-        XCTAssertFalse(outcome.usedBootstrapFallback)
-        XCTAssertEqual(recorder.calls.count, 1, "only the initial kickstart attempt runs")
-    }
-
-    func testKickstartNowRejectsInvalidLabelBeforeRunningLaunchctl() async {
-        let recorder = ArgvRecorder(exitCodes: [])
-
-        let outcome = await LaunchAgentService.kickstartNow(
-            label: "com.evil.example", runLaunchctl: { recorder.record($0) }
-        )
-
-        XCTAssertFalse(outcome.succeeded)
-        XCTAssertEqual(recorder.calls.count, 0, "an invalid label must never reach launchctl")
-    }
-}
-
-/// Records the exact argv of each injected `runLaunchctl` call and replays a
-/// scripted sequence of exit codes — `kickstartNow`'s only source of test
-/// truth, since production launchctl is never invoked in tests.
-private final class ArgvRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var recordedCalls: [[String]] = []
-    private var exitCodes: [Int32]
-
-    init(exitCodes: [Int32]) {
-        self.exitCodes = exitCodes
-    }
-
-    func record(_ args: [String]) -> Int32 {
-        lock.lock()
-        defer { lock.unlock() }
-        recordedCalls.append(args)
-        guard !exitCodes.isEmpty else { return 0 }
-        return exitCodes.removeFirst()
-    }
-
-    var calls: [[String]] {
-        lock.lock()
-        defer { lock.unlock() }
-        return recordedCalls
-    }
 }

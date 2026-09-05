@@ -19,8 +19,8 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
         case off, daily, weekly, monthly
     }
 
-    /// Master switch. When false, `ManagedAutomation.reconcile` tears down any
-    /// managed agents and installs none.
+    /// Master switch. When false, `ManagedAutomation.desiredSchedules` yields
+    /// nothing, so the tick runs no managed schedule at all.
     var isManaged: Bool
     /// Daily light freshness collect (tiers refresh+inventory) for all profiles.
     /// This is what writes a daily `summary_<date>.json` per profile → a daily

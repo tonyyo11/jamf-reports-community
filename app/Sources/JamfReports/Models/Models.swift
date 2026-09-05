@@ -223,16 +223,11 @@ struct Schedule: Identifiable, Sendable {
     /// PR-23 omit the `--tiers` flag, and `main.swift` defaults a missing
     /// value to all tiers so their behavior is unchanged.
     var tiers: Set<CollectionTier>? = nil
-    /// Profiles excluded from a multi-profile (`--all-profiles`) run. Emitted
-    /// as `--exclude-profiles <csv>` by `nativeMultiWrite` so the managed
-    /// freshness/scan agents can skip a dummy/test tenant. Empty/nil → no flag
-    /// (run-time discovery picks up every profile). Ignored for single-profile
-    /// schedules.
+    /// Profiles excluded from a multi-profile (`--all-profiles`) run, so the
+    /// managed freshness/scan agents can skip a dummy/test tenant. Empty/nil
+    /// → none excluded (run-time discovery picks up every profile). Ignored
+    /// for single-profile schedules.
     var excludedProfiles: [String]? = nil
-    /// `ProgramArguments[0]` as written to the plist. Part of the managed
-    /// reconcile signature, so an agent pinned to a moved or scratch bundle is
-    /// rewritten the next time the app runs from its installed location.
-    var executablePath: String? = nil
 
     var isMulti: Bool { multiTarget != nil }
     var profileDisplayLabel: String { multiTarget?.displayLabel ?? profile }

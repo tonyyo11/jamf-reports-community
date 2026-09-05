@@ -67,7 +67,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         self.logURL = logsDir.appendingPathComponent("\(label).\(stamp).log")
         self.statusURL = automationDir.appendingPathComponent("\(label)_status.json")
 
-        // 0600 atomically at create — same contract as LaunchAgentWriter.appendHandle.
+        // 0600 atomically at create — never the process umask default.
         guard fm.createFile(
             atPath: logURL.path,
             contents: nil,

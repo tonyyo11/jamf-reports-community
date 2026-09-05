@@ -444,9 +444,10 @@ struct OverviewView: View {
 
     private func loadLegacyItems() {
         legacyWorkspaces = ProfileService.dottedLegacyWorkspaces()
-        legacySchedules = LaunchAgentService.dottedLegacyAgents().map {
-            URL(fileURLWithPath: $0).lastPathComponent
-        }
+        // Legacy dotted LaunchAgent detection retired with the plist mechanism
+        // (2.8.0) — the bundled SMAppService ticker has no per-agent plists to
+        // scan for the pre-PR-3 dotted-slug label bug.
+        legacySchedules = []
     }
 
     private var liveWorkspaceState: some View {
@@ -1472,7 +1473,9 @@ struct OverviewView: View {
         // including ones the operator had excluded; this restores the
         // disjunct scoped to non-excluded profiles only.)
         let scheduled = await Task.detached(priority: .utility) {
-            let hasAgent = LaunchAgentService.list().contains { $0.profile == profile }
+            let hasAgent = ScheduleStore().load()
+                .map { $0.toSchedule() }
+                .contains { $0.profile == profile }
             let policy = AutomationPolicy.current()
             let excluded = policy.excludedProfiles.contains(profile)
             return scheduleCovered(hasAgent: hasAgent, policyIsManaged: policy.isManaged, excluded: excluded)

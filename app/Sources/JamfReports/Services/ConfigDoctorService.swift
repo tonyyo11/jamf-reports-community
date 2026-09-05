@@ -90,7 +90,6 @@ enum ConfigDoctorService {
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
             workspaceContinuityInputs(profile: profile, config: config))
-        rows += evaluateBundleLocation()
         return DoctorReport(rows: rows)
     }
 
@@ -1407,25 +1406,6 @@ extension ConfigDoctorService {
     ///
     /// Both are `.suggest`: nothing is broken, and only `.fail` rows reach the run
     /// log, so neither can turn a healthy scheduled run red.
-    /// The app is running from a scratch or build folder. Every LaunchAgent it
-    /// writes points at that copy, and the managed reconcile repoints them only
-    /// once the app runs from an installed location again.
-    static func evaluateBundleLocation(
-        executablePath: String? = Bundle.main.executableURL?.path,
-        home: URL = FileManager.default.homeDirectoryForCurrentUser
-    ) -> [DoctorRow] {
-        guard let warning = ManagedAutomation.bundleLocationWarning(
-            executablePath: executablePath, home: home) else { return [] }
-        return [DoctorRow(
-            id: "automation.bundle-location",
-            severity: .warn,
-            title: "App is not running from an Applications folder",
-            detail: warning,
-            hint: "Move JamfReports.app to /Applications and launch it once; managed agents "
-                + "are rewritten to point at the installed copy."
-        )]
-    }
-
     static func evaluateWorkspaceContinuity(_ inputs: WorkspaceContinuityInputs) -> [DoctorRow] {
         var rows: [DoctorRow] = []
 
