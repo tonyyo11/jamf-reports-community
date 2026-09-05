@@ -94,7 +94,7 @@ extension ReportEngine {
         if !force {
             let due = kinds.contains { kind in
                 CadenceResolver.isDue(
-                    lastRun: stateStore?.lastRun(report: kind),
+                    lastRun: lastAttemptDate(for: kind, stateStore: stateStore),
                     cadence: CadenceResolver.cadence(forReport: kind),
                     now: collectStart
                 )
@@ -138,6 +138,18 @@ extension ReportEngine {
             recordManifest: recordManifest, stateStore: stateStore,
             collectStart: collectStart, onLine: onLine
         )
+    }
+
+    /// A failed attempt still counts as an attempt for cadence purposes —
+    /// otherwise a chronically-failing kind never advances its `.last` state
+    /// and self-remediation's hourly retry turns it into an hourly full
+    /// fan-out instead of waiting for the scan tier's normal weekly cadence.
+    /// `force: true` (manual Collect now) bypasses this via the `!force`
+    /// guard above.
+    private static func lastAttemptDate(for kind: String, stateStore: StateFileStore?) -> Date? {
+        [stateStore?.lastRun(report: kind), stateStore?.failures(report: kind)?.last]
+            .compactMap { $0 }
+            .max()
     }
 
     // MARK: - Fan-out
@@ -272,6 +284,13 @@ extension ReportEngine {
                     timestamp: Date(), level: .warn,
                     text: "[warn] \(kind): refused by policy (exit 8) — this "
                         + "profile's API does not publish the command; skipping for the run"
+                ))
+            case CLIBridge.exitCodeRateLimited:
+                stopped[type] = exit
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] \(kind): rate limited (exit 6) — stopping "
+                        + "this call type for the run"
                 ))
             case CLIBridge.exitCodeUnauthorized:
                 // Only claim a call type that isn't already stopped for a

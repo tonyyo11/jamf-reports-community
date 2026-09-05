@@ -217,6 +217,43 @@ final class DeviceScanCollectTests: XCTestCase {
         )
     }
 
+    func testExit6StopsTheCallType() async throws {
+        try writeComputers([("1", "A", "m1", false), ("2", "B", "m2", false)])
+        try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRateLimited))
+        try answer("hist-2", cleanHistory)
+        _ = try await runScan()
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "mdm-command-health"), CLIBridge.exitCodeRateLimited
+        )
+    }
+
+    // MARK: - Cadence floor (a failed attempt still counts as an attempt)
+
+    func testChronicFailureIsNotRetriedInsideTheCadence() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let now = Date()
+        store.record(.landed, report: "ddm-device-status", at: now)
+        store.record(.failed(exitCode: nil), report: "mdm-command-health", at: now)
+        let lines = try await runScan(force: false)
+        XCTAssertTrue(lines.contains { $0 == "[skip] device scan: not due" }, "\(lines)")
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+    }
+
+    func testForceIgnoresTheCadenceFloor() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let now = Date()
+        store.record(.landed, report: "ddm-device-status", at: now)
+        store.record(.failed(exitCode: nil), report: "mdm-command-health", at: now)
+        _ = try await runScan(force: true)
+        XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+    }
+
     func testExit3AfterExit8KeepsTheExit8Record() async throws {
         try writeComputers([("1", "A", "m1", true)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))
