@@ -52,21 +52,20 @@ struct DDMDeviceStatusService: Sendable {
             for r in records where r.ddmReported {
                 let grouped = Dictionary(grouping: r.declarations, by: \.identifier)
                 for (identifier, decls) in grouped {
-                    if perId[identifier] == nil {
-                        order.append(identifier)
-                        perId[identifier] = (0, 0, 0, 0, [])
-                    }
+                    if perId[identifier] == nil { order.append(identifier) }
+                    var entry = perId[identifier] ?? (0, 0, 0, 0, [])
                     let anyInvalid = decls.contains { $0.valid == false }
                     let states = Set(decls.compactMap(\.active))
-                    if anyInvalid { perId[identifier]!.invalid += 1 }
-                    else if states.count == 2 { perId[identifier]!.mixed += 1 }
-                    else if states == [false] { perId[identifier]!.inactive += 1 }
-                    else { perId[identifier]!.active += 1 }
-                    perId[identifier]!.devices.append(DeviceRef(id: r.deviceId, name: r.name))
+                    if anyInvalid { entry.invalid += 1 }
+                    else if states.count == 2 { entry.mixed += 1 }
+                    else if states == [false] { entry.inactive += 1 }
+                    else { entry.active += 1 }
+                    entry.devices.append(DeviceRef(id: r.deviceId, name: r.name))
+                    perId[identifier] = entry
                 }
             }
-            return order.map { id in
-                let v = perId[id]!
+            return order.compactMap { id -> IdentifierSummary? in
+                guard let v = perId[id] else { return nil }
                 return IdentifierSummary(identifier: id, active: v.active, inactive: v.inactive,
                                          invalid: v.invalid, mixed: v.mixed, devices: v.devices)
             }.sorted(by: Self.worstFirst)

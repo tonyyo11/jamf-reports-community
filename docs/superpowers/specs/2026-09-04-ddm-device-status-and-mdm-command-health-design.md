@@ -179,3 +179,5 @@ No HTML section in 2.8.0.
 
 Force DDM sync, command flush, mobile devices, Updates-screen reason join,
 HTML section, blueprint name cross-reference file, configurable pending threshold.
+Blueprint display names for declaration identifiers — `pro report
+blueprint-status` returns no identifier field to join on; the UUID is shown.

@@ -59,22 +59,26 @@ struct DDMBlueprintView: View {
             platformAvailable: platformAvailable,
             hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0,
             hasDeviceData: !deviceSnapshot.records.isEmpty,
-            ddmEnabledCount: fleetCounts.enabled)
+            ddmEnabledCount: fleetCounts.enabled,
+            hasDeviceSnapshot: deviceSnapshot.isDetected)
     }
 
-    /// Three inputs can unlock the screen: the Platform blueprint snapshot
+    /// Four inputs can unlock the screen: the Platform blueprint snapshot
     /// (still behind the experimental gate + capability probe), the per-device
-    /// scan snapshot (any profile), and inventory saying DDM is enabled on at
+    /// scan snapshot (any profile), inventory saying DDM is enabled on at
     /// least one Mac (any profile — "the scan has not run yet" is empty, not
-    /// locked). Locked only when none of them exists.
+    /// locked), and a per-device scan snapshot that ran and found nothing to
+    /// report (an empty result is still a result). Locked only when none of
+    /// them exists.
     static func decideLockState(
         isDemoMode: Bool, experimentalOn: Bool, platformAvailable: Bool,
-        hasPlatformData: Bool, hasDeviceData: Bool, ddmEnabledCount: Int
+        hasPlatformData: Bool, hasDeviceData: Bool, ddmEnabledCount: Int,
+        hasDeviceSnapshot: Bool
     ) -> LockState {
         if isDemoMode { return hasPlatformData ? .unlockedWithData : .unlockedNoData }
         let platformPath = experimentalOn && platformAvailable
         if hasDeviceData || (platformPath && hasPlatformData) { return .unlockedWithData }
-        if platformPath || ddmEnabledCount > 0 { return .unlockedNoData }
+        if platformPath || ddmEnabledCount > 0 || hasDeviceSnapshot { return .unlockedNoData }
         return .locked
     }
 
@@ -88,7 +92,9 @@ struct DDMBlueprintView: View {
         case .unlockedNoData:
             unlockedEmptyCard
         case .unlockedWithData:
-            headerStrip
+            if !workspace.demoMode {
+                headerStrip
+            }
             if showsPlatformSections {
                 adoptionCard
                 blueprintTableCard
@@ -163,15 +169,25 @@ struct DDMBlueprintView: View {
     private var unlockedEmptyCard: some View {
         Card(padding: 24) {
             VStack(alignment: .leading, spacing: 14) {
-                DDMBlueprintView.experimentalBadge()
-                EmptyStateView(
-                    systemImage: "doc.badge.gearshape",
-                    title: "No DDM snapshots yet",
-                    message: "Run a collect with the Scan tier (or wait for the weekly managed "
-                        + "scan) to populate per-device DDM status. Platform profiles can also "
-                        + "run the blueprint reports.",
-                    commands: ["jamf-reports collect --tiers scan"]
-                )
+                if platformPath { DDMBlueprintView.experimentalBadge() }
+                if deviceSnapshot.isDetected && fleetCounts.enabled == 0 {
+                    EmptyStateView(
+                        systemImage: "checkmark.circle",
+                        title: "No DDM-enabled Macs",
+                        message: "The per-device scan ran; no Mac in this inventory has "
+                            + "Declarative Device Management enabled.",
+                        commands: []
+                    )
+                } else {
+                    EmptyStateView(
+                        systemImage: "doc.badge.gearshape",
+                        title: "No DDM snapshots yet",
+                        message: "Run a collect with the Scan tier (or wait for the weekly "
+                            + "managed scan) to populate per-device DDM status. Platform "
+                            + "profiles can also run the blueprint reports.",
+                        commands: ["jamf-reports collect --tiers inventory,scan"]
+                    )
+                }
             }
         }
     }
@@ -256,7 +272,7 @@ struct DDMBlueprintView: View {
                     label: "DDM enabled",
                     value: fleetCounts.enabled, color: Theme.Colors.teal)
                 DDMBlueprintView.declarationCounter(
-                    label: "of \(fleetCounts.total) Macs",
+                    label: "Macs in inventory",
                     value: fleetCounts.total, color: Theme.Colors.fgMuted)
                 DDMBlueprintView.declarationCounter(
                     label: "Reported", value: deviceSnapshot.ddmReportedCount,
@@ -284,8 +300,9 @@ struct DDMBlueprintView: View {
                         DDMBlueprintView.deviceList(entry.devices)
                     } label: {
                         HStack(spacing: 8) {
-                            Mono(text: DDMBlueprintView.identifierLabel(
-                                entry.identifier, blueprints: snapshot.blueprints))
+                            // Blueprint names cannot be joined: BlueprintStatusRow
+                            // carries no identifier field to join on.
+                            Mono(text: entry.identifier)
                                 .lineLimit(1)
                             Spacer()
                             Pill(text: "\(entry.active) active", tone: .teal)
@@ -335,14 +352,6 @@ struct DDMBlueprintView: View {
                 }
             }
         }
-    }
-
-    /// Blueprint display name when the Platform snapshot knows this identifier, else the UUID.
-    static func identifierLabel(
-        _ identifier: String, blueprints: [DDMBlueprintService.Snapshot.Blueprint]
-    ) -> String {
-        // Blueprint rows carry no identifier field today; the join is by exact name.
-        blueprints.first { $0.name == identifier }?.name ?? identifier
     }
 
     static func deviceList(_ devices: [DeviceRef]) -> some View {

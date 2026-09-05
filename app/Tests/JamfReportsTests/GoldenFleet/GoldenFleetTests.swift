@@ -568,9 +568,10 @@ final class GoldenFleetTests: XCTestCase {
         XCTAssertEqual(s.ddmReportedCount, 1)
         XCTAssertEqual(s.failingDeclarationCount, 1)
         XCTAssertEqual(
-            DDMBlueprintView.decideLockState(isDemoMode: false, experimentalOn: false, platformAvailable: false,
-                                             hasPlatformData: false, hasDeviceData: !s.records.isEmpty,
-                                             ddmEnabledCount: counts.enabled),
+            DDMBlueprintView.decideLockState(
+                isDemoMode: false, experimentalOn: false, platformAvailable: false,
+                hasPlatformData: false, hasDeviceData: !s.records.isEmpty,
+                ddmEnabledCount: counts.enabled, hasDeviceSnapshot: s.isDetected),
             .unlockedWithData, "an on-prem profile with a scan snapshot is unlocked")
     }
 }

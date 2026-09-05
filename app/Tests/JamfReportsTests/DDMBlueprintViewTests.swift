@@ -26,11 +26,12 @@ final class DDMBlueprintViewTests: XCTestCase {
     // MARK: - decideLockState semantics
 
     private func decide(demo: Bool = false, experimental: Bool = true, platform: Bool = true,
-                        platformData: Bool = false, deviceData: Bool = false,
-                        enabled: Int = 0) -> DDMBlueprintView.LockState {
+                        platformData: Bool = false, deviceData: Bool = false, enabled: Int = 0,
+                        deviceSnapshot: Bool = false) -> DDMBlueprintView.LockState {
         DDMBlueprintView.decideLockState(
             isDemoMode: demo, experimentalOn: experimental, platformAvailable: platform,
-            hasPlatformData: platformData, hasDeviceData: deviceData, ddmEnabledCount: enabled)
+            hasPlatformData: platformData, hasDeviceData: deviceData, ddmEnabledCount: enabled,
+            hasDeviceSnapshot: deviceSnapshot)
     }
 
     func testLockedOnlyWhenNoInputExists() {
@@ -47,6 +48,12 @@ final class DDMBlueprintViewTests: XCTestCase {
     func testDDMEnabledCountAloneUnlocksToEmpty() {
         XCTAssertEqual(decide(experimental: false, platform: false, enabled: 6), .unlockedNoData,
                        "inventory says DDM is on; the scan has not run yet")
+    }
+
+    func testEmptyDeviceSnapshotUnlocksToEmptyNotLocked() {
+        XCTAssertEqual(
+            decide(experimental: false, platform: false, deviceSnapshot: true), .unlockedNoData,
+            "the scan ran and found no DDM-enabled Macs — that's an empty result, not locked")
     }
 
     func testPlatformDataStillNeedsTheExperimentalGate() {
