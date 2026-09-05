@@ -43,7 +43,8 @@ struct ScheduleRecord: Codable, Sendable, Equatable {
         profile = try c.decodeIfPresent(String.self, forKey: .profile) ?? ""
         allProfiles = try c.decodeIfPresent(Bool.self, forKey: .allProfiles) ?? false
         excludedProfiles = try c.decodeIfPresent([String].self, forKey: .excludedProfiles) ?? []
-        mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? Schedule.RunMode.jamfCLIOnly.rawValue
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
+            ?? Schedule.RunMode.jamfCLIOnly.rawValue
         tiers = try c.decodeIfPresent([String].self, forKey: .tiers)
         schedule = try c.decodeIfPresent(String.self, forKey: .schedule) ?? "Daily 06:00"
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
@@ -88,7 +89,11 @@ struct ScheduleStore: Sendable {
             return try JSONDecoder().decode([ScheduleRecord].self, from: data)
         } catch {
             AppLogger.schedule.error(
-                "schedules.json could not be decoded: \(error.localizedDescription, privacy: .public)")
+                """
+                schedules.json could not be decoded: \
+                \(error.localizedDescription, privacy: .public)
+                """
+            )
             return []
         }
     }

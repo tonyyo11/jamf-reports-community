@@ -621,6 +621,13 @@ enum LaunchAgentWriter {
         return CLIBridge.codesignGate(executable: candidate, onLine: CLIBridge.noOpOnLine) == nil
     }
 
+    /// The launchd `StartCalendarInterval` entries a cadence string denotes —
+    /// the one place the tick and the dead-man switch turn "Daily 06:20" into
+    /// fire times. Throws `WriterError.cadenceParseError` for anything else.
+    static func calendarIntervals(for cadence: String) throws -> [[String: Int]] {
+        try setupCadence(from: cadence).startCalendarIntervals
+    }
+
     private static func setupCadence(from raw: String) throws -> CadenceOptions {
         let normalized = raw
             .replacingOccurrences(of: " · ", with: " ")
