@@ -67,12 +67,12 @@ struct CoreDashboard: Sendable {
             ("Patch Compliance", writePatch),
             ("Device Compliance", writeDeviceCompliance),
             ("Audit Summary", writeAuditSummary),
-            // --- Inventory & hardware (sheets 8–11) ---
+            // --- Inventory & hardware (sheets 9–12) ---
             ("Inventory Summary", writeInventorySummary),
             ("Hardware Models", writeHardwareModels),
             ("Mobile Fleet Summary", writeMobileFleetSummary),
             ("Mobile Inventory", writeMobileInventory),
-            // --- Configuration health (sheets 12–20) ---
+            // --- Configuration health (sheets 13–21) ---
             ("Policy Health", writePolicyHealth),
             ("Profile Status", writeProfileStatus),
             ("Mobile Config Profiles", writeMobileConfigProfiles),
@@ -82,37 +82,37 @@ struct CoreDashboard: Sendable {
             ("EA Coverage", writeEACoverage),
             ("EA Definitions", writeEADefinitions),
             ("Environment Stats", writeEnvironmentStats),
-            // --- Device health (sheets 21–23) ---
+            // --- Device health (sheets 22–24) ---
             ("Check-in Health", writeCheckinHealth),
             ("Active Devices", writeActiveDevices),
             ("Group Hygiene", writeGroupHygiene),
-            // --- Update & patch details (sheets 24–27) ---
+            // --- Update & patch details (sheets 25–28) ---
             ("Patch Failures", writePatchFailures),
             ("Update Status", writeUpdateStatus),
             ("Update Failures", writeUpdateFailures),
             ("Smart Groups", writeSmartGroups),
-            // --- Platform / DDM (sheets 28–31, optional) ---
+            // --- Platform / DDM (sheets 29–34, optional) ---
             ("Compliance Devices", writeComplianceDevices),
             ("Compliance Rules", writeComplianceRules),
             ("DDM Status", writeDDMStatus),
             ("Blueprint Status", writeBlueprintStatus),
             ("DDM Device Status", writeDDMDeviceStatus),
             ("MDM Command Health", writeMDMCommandHealth),
-            // --- Protect (sheets 32–39, optional) ---
+            // --- Protect (sheets 35–40, optional) ---
             ("Protect Overview", writeProtectOverview),
             ("Protect Alerts", writeProtectAlerts),
             ("Protect Computers", writeProtectComputers),
             ("Protect Insights", writeProtectInsights),
             ("Protect Plans", writeProtectPlans),
             ("Protect Threat Overview", writeProtectThreatOverview),
-            // --- Parity / detail sheets (sheets 38–41) ---
+            // --- Parity / detail sheets (sheets 41–44) ---
             ("Patch Summary Dashboard", writePatchSummaryDashboard),
             ("Patch Velocity", writePatchVelocity),
             ("Device Security State", writeDeviceSecurityState),
             ("Mobile Supervision Status", writeMobileSupervisionStatus),
-            // --- OS currency (sheet 42) ---
+            // --- OS currency (sheet 45) ---
             ("OS Currency", writeOSCurrency),
-            // --- mSCP / STIG compliance (sheets 43–44) ---
+            // --- mSCP / STIG compliance (sheets 46–47) ---
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
         ]

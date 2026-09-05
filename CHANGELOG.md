@@ -27,7 +27,9 @@ stays a console action.
 
 Only a fixed set of status-item keys is ever kept; the device's push token and
 per-declaration server tokens are dropped before anything is written. The scan
-honours the "Skip expensive collections" setting.
+honours the "Skip expensive collections" setting. On first launch after
+upgrading, the health strip may show the two new sources as never collected
+until the next scan runs; the weekly scan or Collect now clears it.
 
 ## [2.7.0] - 2026-09-04
 

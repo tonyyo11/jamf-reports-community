@@ -576,7 +576,7 @@ struct AuditView: View {
             Card(padding: 0) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
-                        SectionHeader(title: "Command Health")
+                        SectionHeader(title: "Command health")
                         Spacer()
                         if let d = commandHealth.snapshotDate {
                             let stamp = d.formatted(date: .abbreviated, time: .shortened)
@@ -1289,7 +1289,7 @@ private struct FindingDetailPopover: View {
 
 /// The two "Command health" findings, derived from the per-device scan snapshot
 /// rather than `pro audit`. OK when the fleet is clean, WARNING otherwise, so
-/// they sort and export like every other finding. Internal for tests.
+/// they sort like every other finding. Internal for tests.
 func commandHealthFindings(_ snapshot: MDMCommandHealthService.Snapshot) -> [AuditFinding] {
     guard snapshot.isDetected else { return [] }
     let failed = snapshot.devicesWithFailures.count
