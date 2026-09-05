@@ -80,7 +80,8 @@ full detail on each:
    shared team folder so several Macs build one pooled history — see
    [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 4. **Authenticate** — connect Jamf Pro with your API client credentials (or a Platform
-   Gateway tenant ID). The secret is never persisted by the app; `jamf-cli` stores the
+   API scope — environment ID, or tenant ID for a legacy integration; organization
+   scope needs no ID). The secret is never persisted by the app; `jamf-cli` stores the
    resulting token in the macOS keychain.
 5. **Validate** — the app confirms the connection works.
 6. **CSV mapping** — optionally add a Jamf Pro CSV export for the sheets that need

@@ -36,6 +36,12 @@ backs off for the rest of the run if Jamf Pro rate-limits it, and after a
 failed run it waits for its normal weekly cadence rather than retrying every
 hour; Collect now still runs it immediately.
 
+### Changed
+
+Connecting a Platform API profile now asks which scope the integration was
+created at — environment (the GA default), tenant, or organization — instead
+of assuming a tenant ID.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added
