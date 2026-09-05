@@ -406,7 +406,9 @@ extension ReportEngine {
                 .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart
             )
         } else {
-            let healthTally = tally(results, outcome: \.history) { r, exit, data in
+            let healthTally = tally(
+                results, outcome: \.history
+            ) { (r: DeviceResult, exit: Int32, data: Data) -> MDMCommandHealthRecord? in
                 guard exit == 0 || exit == CLIBridge.exitCodePartialFailure,
                       let decoded = try? JSONDecoder().decode(
                           ComputerHistoryCommands.self, from: data
@@ -446,7 +448,9 @@ extension ReportEngine {
                     collectStart: collectStart, onLine: onLine, saved: &saved
                 )
             } else {
-                let statusTally = tally(ddmTargets, outcome: \.status) { r, exit, data in
+                let statusTally = tally(
+                    ddmTargets, outcome: \.status
+                ) { (r: DeviceResult, exit: Int32, data: Data) -> DDMDeviceStatusRecord? in
                     let mgmt = r.target.managementId ?? ""
                     if exit == CLIBridge.exitCodeNotFound {
                         return DeviceScanBuilders.ddmRecordNotReported(
