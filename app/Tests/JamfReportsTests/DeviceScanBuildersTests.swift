@@ -89,6 +89,14 @@ final class DeviceScanBuildersTests: XCTestCase {
         XCTAssertEqual(d[1].reasonText, "bad thing")
     }
 
+    func testDescriptionOutsideReasonsIsIgnored() {
+        let raw = "{active=true, identifier=A, valid=valid, description=leak, "
+            + "server-token=x}"
+        let d = DeviceScanBuilders.parseDeclarations(raw)
+        XCTAssertEqual(d.count, 1)
+        XCTAssertNil(d[0].reasonText, "description outside reasons={} must not be read")
+    }
+
     func testGroupWithoutIdentifierIsDropped() {
         XCTAssertTrue(DeviceScanBuilders.parseDeclarations("{active=true, valid=true}").isEmpty)
         XCTAssertTrue(DeviceScanBuilders.parseDeclarations("").isEmpty)

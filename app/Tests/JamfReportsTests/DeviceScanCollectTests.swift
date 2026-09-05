@@ -217,6 +217,43 @@ final class DeviceScanCollectTests: XCTestCase {
         )
     }
 
+    /// The failure-budget denominator is every device the phase attempted to
+    /// reach (`ran` + launch failures), never `ran` alone. A launch failure —
+    /// the process never starting — cannot be reproduced through this stub
+    /// (it always launches), so this only re-verifies the ran-only arithmetic
+    /// still holds; the launch-failure branch is verified by reading
+    /// `reduceAndSave`, not by a test.
+    func testFailureLineCountsAttemptedNotRan() async throws {
+        try writeComputers([
+            ("1", "A", "m1", false), ("2", "B", "m2", false),
+            ("3", "C", "m3", false), ("4", "D", "m4", false),
+        ])
+        for i in 1...3 { try answer("hist-\(i)", cleanHistory) }
+        try answer("hist-4", "", exit: 1)
+        let lines = try await runScan()
+        XCTAssertTrue(
+            lines.contains { $0 == "[partial] mdm-command-health: 1 of 4 devices did not respond" },
+            "\(lines)"
+        )
+    }
+
+    func testExit3AfterExit8KeepsTheExit8Record() async throws {
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))
+        try answer("ddm-m1", "", exit: Int(CLIBridge.exitCodeUnauthorized))
+        _ = try await runScan()
+
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "mdm-command-health"),
+            CLIBridge.exitCodeRefusedByPolicy,
+            "the earlier exit 8 on history must survive a later exit 3 on the other call type"
+        )
+        XCTAssertEqual(
+            store.lastFailureExitCode(for: "ddm-device-status"), CLIBridge.exitCodeUnauthorized
+        )
+    }
+
     func testExit5OnFirstDeviceStopsThatCallTypeOnly() async throws {
         try writeComputers([("1", "A", "m1", true), ("2", "B", "m2", true)])
         try answer("hist-1", cleanHistory); try answer("hist-2", cleanHistory)
@@ -312,7 +349,7 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
     }
 
-    func testConcurrencyNeverExceedsFour() async throws {
+    func testAllDevicesCompleteAcrossTheConcurrencyWindow() async throws {
         // Each history answer is served by a stub that records its own PID
         // overlap; simpler and deterministic: assert the code constant, and
         // that 12 devices complete (the window logic drains fully).

@@ -46,7 +46,8 @@ struct ComputerHistoryCommands: Decodable, Sendable {
 
         init(from decoder: Decoder) throws {
             // "" → nothing in this bucket.
-            if let single = try? decoder.singleValueContainer(), (try? single.decode(String.self)) != nil {
+            if let single = try? decoder.singleValueContainer(),
+               (try? single.decode(String.self)) != nil {
                 command = []
                 return
             }
@@ -79,7 +80,8 @@ struct ComputerHistoryCommands: Decodable, Sendable {
         init(name: String?, status: String?, username: String? = nil,
              issuedEpoch: Int? = nil, failedEpoch: Int? = nil, lastPushEpoch: Int? = nil) {
             self.name = name; self.status = status; self.username = username
-            self.issuedEpoch = issuedEpoch; self.failedEpoch = failedEpoch; self.lastPushEpoch = lastPushEpoch
+            self.issuedEpoch = issuedEpoch; self.failedEpoch = failedEpoch
+            self.lastPushEpoch = lastPushEpoch
         }
 
         init(from decoder: Decoder) throws {
@@ -128,9 +130,9 @@ struct DDMDeviceStatusRecord: Codable, Sendable, Equatable {
         let failureReason: String?
         let failureAt: String?
         let betaEnrollment: String?
-        static let empty = SoftwareUpdate(pendingOSVersion: nil, pendingBuild: nil, installState: nil,
-                                          installReason: nil, failureReason: nil, failureAt: nil,
-                                          betaEnrollment: nil)
+        static let empty = SoftwareUpdate(
+            pendingOSVersion: nil, pendingBuild: nil, installState: nil,
+            installReason: nil, failureReason: nil, failureAt: nil, betaEnrollment: nil)
     }
 }
 

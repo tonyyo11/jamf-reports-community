@@ -257,7 +257,7 @@ extension ReportEngine {
                 stopped[type] = exit
                 onLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): exit 5 on the first device — the API "
+                    text: "[warn] \(kind): exit 5 from a device — the API "
                         + "role needs Read Computers; skipping the rest of the run"
                 ))
             case CLIBridge.exitCodeRefusedByPolicy:
@@ -268,8 +268,11 @@ extension ReportEngine {
                         + "profile's API does not publish the command; skipping for the run"
                 ))
             case CLIBridge.exitCodeUnauthorized:
-                stopped[.history] = exit
-                stopped[.statusItems] = exit
+                // Only claim a call type that isn't already stopped for a
+                // different reason — an exit 3 observed after an exit 5/8 on
+                // the OTHER call type must not clobber that earlier record.
+                if stopped[.history] == nil { stopped[.history] = exit }
+                if stopped[.statusItems] == nil { stopped[.statusItems] = exit }
                 onLine(.init(
                     timestamp: Date(), level: .warn,
                     text: "[warn] device scan: credentials rejected (exit 3) "
@@ -309,20 +312,21 @@ extension ReportEngine {
         if let stopExit = stops[.history] {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[warn] \(mdmCommandHealthKind): stopped after exit \(stopExit) — not written"
+                text: "[warn] \(mdmCommandHealthKind): stopped after exit "
+                    + "\(stopExit) — not written"
             ))
             stateStore?.record(
                 .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart
             )
         } else {
             var health: [MDMCommandHealthRecord] = []
-            var ran = 0, failed = 0
+            var ran = 0, launchFailed = 0, decodeFailed = 0
             for r in results {
                 switch r.history {
                 case .notMade:
                     continue
                 case .launchFailed:
-                    failed += 1
+                    launchFailed += 1
                 case .ran(let exit, let data):
                     ran += 1
                     if exit == 0 || exit == CLIBridge.exitCodePartialFailure,
@@ -333,21 +337,27 @@ extension ReportEngine {
                             deviceId: r.target.id, name: r.target.name, history: decoded, now: now
                         ))
                     } else {
-                        failed += 1
+                        decodeFailed += 1
                     }
                 }
             }
-            if ran == 0 {
-                // No history call ever completed — every device's jamf-cli
-                // process failed to launch; `noteLaunchFailure` already logged
-                // why. A stopped call type is handled above, before this loop.
+            // The budget denominator is every device the phase attempted to
+            // reach, not just the ones whose process actually launched — a
+            // launch failure is a failure, and must count toward the total.
+            let attempted = ran + launchFailed
+            let failed = decodeFailed + launchFailed
+            if ran == 0 && launchFailed == 0 {
+                // No history call was ever attempted for this kind — should
+                // not happen once `stops[.history]` is nil (every device
+                // would have hit `.ran` or `.launchFailed`); kept as a
+                // defensive no-write path.
                 stateStore?.record(
                     .failed(exitCode: nil), report: mdmCommandHealthKind, at: collectStart
                 )
-            } else if DeviceScanBuilders.exceedsFailureBudget(failed: failed, total: ran) {
+            } else if DeviceScanBuilders.exceedsFailureBudget(failed: failed, total: attempted) {
                 onLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] \(mdmCommandHealthKind): \(failed) of \(ran) "
+                    text: "[warn] \(mdmCommandHealthKind): \(failed) of \(attempted) "
                         + "devices failed — not written"
                 ))
                 stateStore?.record(
@@ -356,7 +366,7 @@ extension ReportEngine {
             } else {
                 health.sort { $0.deviceId < $1.deviceId }
                 save(
-                    health, kind: mdmCommandHealthKind, failed: failed, attempted: ran,
+                    health, kind: mdmCommandHealthKind, failed: failed, attempted: attempted,
                     dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
                     collectStart: collectStart, onLine: onLine, saved: &saved
                 )
@@ -367,7 +377,8 @@ extension ReportEngine {
         if let stopExit = stops[.statusItems] {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[warn] \(ddmDeviceStatusKind): stopped after exit \(stopExit) — not written"
+                text: "[warn] \(ddmDeviceStatusKind): stopped after exit "
+                    + "\(stopExit) — not written"
             ))
             stateStore?.record(
                 .failed(exitCode: stopExit), report: ddmDeviceStatusKind, at: collectStart
@@ -389,14 +400,14 @@ extension ReportEngine {
                 )
             } else {
                 var rows: [DDMDeviceStatusRecord] = []
-                var ran = 0, failed = 0
+                var ran = 0, launchFailed = 0, decodeFailed = 0
                 for r in ddmTargets {
                     let mgmt = r.target.managementId ?? ""
                     switch r.status {
                     case .notMade:
                         continue
                     case .launchFailed:
-                        failed += 1
+                        launchFailed += 1
                     case .ran(let exit, let data):
                         ran += 1
                         if exit == CLIBridge.exitCodeNotFound {
@@ -412,20 +423,27 @@ extension ReportEngine {
                                 managementId: mgmt, payload: payload
                             ))
                         } else {
-                            failed += 1
+                            decodeFailed += 1
                         }
                     }
                 }
-                if ran == 0 {
-                    // Every DDM-enabled device's status-items call failed to
-                    // launch or was rejected as unsafe; already logged above.
+                // See the history loop above: the denominator is every device
+                // attempted, launch failures included.
+                let attempted = ran + launchFailed
+                let failed = decodeFailed + launchFailed
+                if ran == 0 && launchFailed == 0 {
+                    // Every DDM-enabled device's status-items call was
+                    // rejected as unsafe before any process ran; nothing was
+                    // ever attempted for this kind.
                     stateStore?.record(
                         .failed(exitCode: nil), report: ddmDeviceStatusKind, at: collectStart
                     )
-                } else if DeviceScanBuilders.exceedsFailureBudget(failed: failed, total: ran) {
+                } else if DeviceScanBuilders.exceedsFailureBudget(
+                    failed: failed, total: attempted
+                ) {
                     onLine(.init(
                         timestamp: Date(), level: .warn,
-                        text: "[warn] \(ddmDeviceStatusKind): \(failed) of \(ran) "
+                        text: "[warn] \(ddmDeviceStatusKind): \(failed) of \(attempted) "
                             + "devices failed — not written"
                     ))
                     stateStore?.record(
@@ -434,7 +452,7 @@ extension ReportEngine {
                 } else {
                     rows.sort { $0.deviceId < $1.deviceId }
                     save(
-                        rows, kind: ddmDeviceStatusKind, failed: failed, attempted: ran,
+                        rows, kind: ddmDeviceStatusKind, failed: failed, attempted: attempted,
                         dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
                         collectStart: collectStart, onLine: onLine, saved: &saved
                     )

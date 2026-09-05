@@ -70,13 +70,36 @@ enum DeviceScanBuilders {
         topLevelGroups(raw).compactMap { group in
             let fields = keyValues(group)
             guard let identifier = fields["identifier"], !identifier.isEmpty else { return nil }
+            let reasons = reasonsBody(group)
             return .init(
                 identifier: identifier,
                 active: fields["active"].flatMap(bool),
                 valid: fields["valid"].flatMap(validState),
-                reasonCode: capture(#"code=([^,}]*)"#, in: group),
-                reasonText: capture(#"description=([^}]*)"#, in: group))
+                reasonCode: reasons.flatMap { capture(#"code=([^,}]*)"#, in: $0) },
+                reasonText: reasons.flatMap { capture(#"description=([^}]*)"#, in: $0) })
         }
+    }
+
+    /// The body of a `reasons={…}` sub-group inside a declaration group, or
+    /// nil when absent. `code=`/`description=` are read from THIS substring
+    /// only, so a same-named field elsewhere in the group is never mistaken
+    /// for a failure reason.
+    private static func reasonsBody(_ group: String) -> String? {
+        guard let marker = group.range(of: "reasons={") else { return nil }
+        var depth = 1
+        var idx = marker.upperBound
+        let start = idx
+        while idx < group.endIndex {
+            switch group[idx] {
+            case "{": depth += 1
+            case "}":
+                depth -= 1
+                if depth == 0 { return String(group[start..<idx]) }
+            default: break
+            }
+            idx = group.index(after: idx)
+        }
+        return nil
     }
 
     private static func topLevelGroups(_ s: String) -> [String] {
