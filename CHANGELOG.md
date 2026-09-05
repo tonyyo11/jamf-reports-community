@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-09-05
+
 ### Added
 
 The DDM screen now works on every Jamf Pro profile, on-prem included. A new
