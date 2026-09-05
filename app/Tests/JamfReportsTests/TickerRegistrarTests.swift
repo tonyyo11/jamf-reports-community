@@ -28,7 +28,8 @@ final class TickerRegistrarTests: XCTestCase {
         XCTAssertFalse(SMAppServiceRegistrar.isBundled(bundleURL: app))
         try Data().write(to: agents.appendingPathComponent(SMAppServiceRegistrar.plistName))
         XCTAssertTrue(SMAppServiceRegistrar.isBundled(bundleURL: app))
-        XCTAssertFalse(SMAppServiceRegistrar.isBundled(bundleURL: root.appendingPathComponent("JamfReports")))
+        XCTAssertFalse(
+            SMAppServiceRegistrar.isBundled(bundleURL: root.appendingPathComponent("JamfReports")))
     }
 
     func testStubRecordsCallsAndSurfacesErrors() throws {

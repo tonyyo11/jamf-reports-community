@@ -6,7 +6,8 @@ import Foundation
 /// stored records and are not editable here.
 struct Schedules: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "List, add, remove, or run hand-built schedules (managed ones come from Automation).",
+        abstract: "List, add, remove, or run hand-built schedules "
+            + "(managed ones come from Automation).",
         subcommands: [List.self, Add.self, Remove.self, Run.self]
     )
 
@@ -26,11 +27,15 @@ struct Schedules: AsyncParsableCommand {
     struct Add: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Add or replace a schedule.")
         @Option(help: "Display name; the label slug derives from it.") var name: String
-        @Option(help: "Workspace profile slug (the base profile when --all-profiles).") var profile: String
+        @Option(help: "Workspace profile slug (the base profile when --all-profiles).")
+        var profile: String
         @Flag(help: "Run for every local profile.") var allProfiles = false
-        @Option(help: "Comma-separated profiles to skip (with --all-profiles).") var exclude: String?
-        @Option(help: "snapshot-only | jamf-cli-only | jamf-cli-full | csv-assisted | backup") var mode: String
-        @Option(help: "Cadence: 'Daily 06:20', 'Mon 07:00', 'Weekdays 09:00', 'Day 15 06:20'.") var cadence: String
+        @Option(help: "Comma-separated profiles to skip (with --all-profiles).")
+        var exclude: String?
+        @Option(help: "snapshot-only | jamf-cli-only | jamf-cli-full | csv-assisted | backup")
+        var mode: String
+        @Option(help: "Cadence: 'Daily 06:20', 'Mon 07:00', 'Weekdays 09:00', 'Day 15 06:20'.")
+        var cadence: String
         @Option(help: "Comma-separated collect tiers (refresh,inventory,scan).") var tiers: String?
         @Flag(help: "Store disabled.") var disabled = false
 
@@ -90,7 +95,8 @@ struct Schedules: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Run a schedule now and wait.")
         @Argument(help: "Full label (hand-built or managed).") var label: String
         func run() async throws {
-            let code = await TickRunner.spawnNow(label: label, wait: true, onLine: CLIRun.printLogLine)
+            let code = await TickRunner.spawnNow(
+                label: label, wait: true, onLine: CLIRun.printLogLine)
             if code != 0 { CLIRun.fail("schedule exited \(code)", code: code) }
         }
     }

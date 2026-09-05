@@ -9,7 +9,9 @@ final class ScheduleHealthInputsTests: XCTestCase {
         return Calendar.current.date(from: c)!
     }
 
-    private func schedule(_ label: String, profile: String, multi: Bool, cadence: String) -> Schedule {
+    private func schedule(
+        _ label: String, profile: String, multi: Bool, cadence: String
+    ) -> Schedule {
         Schedule(
             name: "n", profile: profile, schedule: cadence, cadence: "custom", mode: .snapshotOnly,
             next: "—", last: "—", lastStatus: .ok, artifacts: [], enabled: true,
@@ -48,7 +50,8 @@ final class ScheduleHealthInputsTests: XCTestCase {
             expectedFire: date(2026, 9, 7, 6, 20), lastRunFinishedAt: nil,
             lastRunSuccess: nil, lastRunExitCode: nil)
         for status in [TickerStatus.requiresApproval, .notRegistered] {
-            let issues = AutomationHealth.evaluate(inputs: [overdue], tickerStatus: status, now: now)
+            let issues = AutomationHealth.evaluate(
+                inputs: [overdue], tickerStatus: status, now: now)
             XCTAssertEqual(issues.map(\.kind), [.tickerDisabled], "\(status)")
             XCTAssertEqual(issues.first?.label, AutomationHealth.tickerLabel)
             XCTAssertTrue(issues.first?.isMulti == true)
