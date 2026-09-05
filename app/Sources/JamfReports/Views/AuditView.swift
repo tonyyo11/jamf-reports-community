@@ -88,6 +88,7 @@ struct AuditView: View {
     @State private var findings: [AuditFinding] = []
     @State private var unusedGroups: [UnusedGroup] = []
     @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
+    @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
@@ -474,6 +475,7 @@ struct AuditView: View {
                 resolvedSection
             }
             duplicateSerialsSection
+            commandHealthSection
         }
     }
 
@@ -557,6 +559,60 @@ struct AuditView: View {
         group.records
             .map { $0.lastContact.isEmpty ? "—" : $0.lastContact }
             .joined(separator: ", ")
+    }
+
+    /// Per-device MDM command health from the scan snapshot. Independent of
+    /// the `pro audit` findings table, like the duplicate-serials section.
+    /// DRAFT — needs visual verification at `PageScaffold.minSupportedWidth`.
+    @ViewBuilder
+    private var commandHealthSection: some View {
+        if commandHealth.readFailed {
+            Text("An mdm-command-health snapshot exists but couldn't be read — " +
+                 "see Settings → Logging.")
+                .font(.caption).foregroundStyle(Theme.Text.tertiary(contrast))
+        } else if commandHealth.isDetected {
+            Card(padding: 0) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack {
+                        SectionHeader(title: "Command Health")
+                        Spacer()
+                        if let d = commandHealth.snapshotDate {
+                            let stamp = d.formatted(date: .abbreviated, time: .shortened)
+                            Mono(text: "snapshot " + stamp, size: 10.5)
+                        }
+                    }
+                    .padding(16)
+                    Divider().background(Theme.Colors.hairline)
+                    ForEach(commandHealthFindings(commandHealth)) { finding in
+                        HStack(spacing: 10) {
+                            Pill(text: finding.severity, tone: pillTone(finding.severity))
+                                .frame(width: 86, alignment: .leading)
+                            Text(finding.name)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Theme.Colors.fg)
+                            Spacer()
+                            Text(finding.affectedDisplay).font(.footnote.monospacedDigit())
+                            Button { selectedFinding = finding } label: {
+                                Image(systemName: "info.circle")
+                            }
+                            .buttonStyle(.plain)
+                            .help("Recommendation and where to act.")
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                    }
+                    if !commandHealth.topFailedCommands.isEmpty {
+                        Divider().background(Theme.Colors.hairline)
+                        HStack(spacing: 6) {
+                            Kicker(text: "Most failed")
+                            ForEach(commandHealth.topFailedCommands.prefix(3), id: \.name) { c in
+                                Pill(text: "\(c.name) ×\(c.count)", tone: .warn)
+                            }
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -912,6 +968,7 @@ struct AuditView: View {
             resolvedFindings = []
             integritySummary = nil
             duplicateSerials = .empty
+            commandHealth = .empty
             return
         }
 
@@ -923,6 +980,7 @@ struct AuditView: View {
         resolvedFindings = []
         await loadIntegritySummary()
         duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
+        commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
@@ -1216,6 +1274,38 @@ private struct FindingDetailPopover: View {
     }
 }
 
+/// The two "Command health" findings, derived from the per-device scan snapshot
+/// rather than `pro audit`. OK when the fleet is clean, WARNING otherwise, so
+/// they sort and export like every other finding. Internal for tests.
+func commandHealthFindings(_ snapshot: MDMCommandHealthService.Snapshot) -> [AuditFinding] {
+    guard snapshot.isDetected else { return [] }
+    let failed = snapshot.devicesWithFailures.count
+    let stale = snapshot.devicesWithStalePending.count
+    let staleDays = DeviceScanBuilders.pendingAgeThresholdDays
+    let failedRecommendation = "Open the device's Jamf Pro record → Management → "
+        + "Management Commands, read the failure text, then clear the failed "
+        + "command there. The app never flushes commands."
+    let staleRecommendation = "A command pending this long usually means the Mac "
+        + "is offline or its APNs channel is broken. Check last contact, then "
+        + "Management → Management Commands."
+    return [
+        AuditFinding(
+            name: "Devices with failed MDM commands",
+            affected: failed,
+            category: "Command health",
+            recommendation: failedRecommendation,
+            severity: failed > 0 ? "WARNING" : "OK"
+        ),
+        AuditFinding(
+            name: "MDM commands pending more than \(staleDays) days",
+            affected: stale,
+            category: "Command health",
+            recommendation: staleRecommendation,
+            severity: stale > 0 ? "WARNING" : "OK"
+        ),
+    ]
+}
+
 /// Maps a finding to the screen that can show its underlying records — by
 /// finding name first, category as fallback. Internal (not private) for tests.
 func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: Tab)? {
@@ -1235,6 +1325,7 @@ func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: T
     }
     if name.contains("extension attribute") { return ("Extension Attributes", .extensionAttributes) }
     if name.contains("group") { return ("Groups & Searches", .groupInventory) }
+    if name.contains("mdm command") { return ("Devices", .devices) }
     switch finding.category.lowercased() {
     case "security": return ("Security Posture", .securityPosture)
     case "compliance": return ("Compliance Posture", .compliancePosture)
