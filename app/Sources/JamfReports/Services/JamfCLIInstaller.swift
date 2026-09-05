@@ -182,6 +182,18 @@ final class JamfCLIInstaller {
         return compareVersions(installedVersion, minimumSupportedVersion) == .orderedAscending
     }
 
+    /// First release whose `config add-profile --auth-method platform` accepts
+    /// `--environment-id` (GA scope). Older binaries only know `--tenant-id`.
+    nonisolated static let environmentScopeVersion: String = "1.28.0"
+
+    /// True unless `installedVersion` parses and is below 1.28.0 — an unknown
+    /// version fails toward the GA default rather than the legacy flag.
+    nonisolated static func supportsEnvironmentScope(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return true }
+        return compareVersions(installedVersion, environmentScopeVersion) != .orderedAscending
+    }
+
     /// Errors raised by `validateAsset(host:name:)` when a release asset
     /// fails the host allow-list, control-char/path-traversal scrub, or
     /// archive-suffix pattern. See P9-A-08 in the security audit.

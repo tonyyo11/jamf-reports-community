@@ -423,13 +423,14 @@ struct OnboardingView: View {
                             }
                         )
                         Text(
-                            "Environment is the level a GA integration is usually created at. "
-                                + "Tenant is the legacy single-tenant level. Organization sends no "
-                                + "scope and needs jamf-cli 1.28 or later for `--environment-id`."
+                            "Environment is where a GA integration is usually created "
+                                + "(needs jamf-cli 1.28 or later). Tenant is the legacy "
+                                + "single-tenant level. Organization sends no scope at all."
                         )
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.fg2)
                         if flow.platformScope.needsID {
+                            FieldLabel(label: flow.platformScope.idFieldLabel)
                             PNPTextField(
                                 value: binding(\.platformScopeID),
                                 placeholder: flow.platformScope == .environment

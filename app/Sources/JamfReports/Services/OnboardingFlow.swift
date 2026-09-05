@@ -136,6 +136,12 @@ final class OnboardingFlow {
             case .tenant, .organization: "Tenant ID"
             }
         }
+
+        /// GA default is environment; a detected pre-1.28 jamf-cli would reject
+        /// `--environment-id` (exit 2), so it starts on the legacy flag instead.
+        static func defaultScope(forCLIVersion version: String?) -> PlatformScope {
+            JamfCLIInstaller.supportsEnvironmentScope(version) ? .environment : .tenant
+        }
     }
 
     // Platform Gateway additional fields
@@ -212,6 +218,7 @@ final class OnboardingFlow {
             Self.pendingProductPath = nil
         }
         refreshJamfCLIStatus()
+        platformScope = PlatformScope.defaultScope(forCLIVersion: jamfCLIVersion)
     }
 
     /// The ordered steps for the active `productPath`.

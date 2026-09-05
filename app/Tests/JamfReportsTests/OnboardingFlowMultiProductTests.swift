@@ -218,6 +218,16 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         }
     }
 
+    func test_platformScope_defaultFollowsJamfCLIVersion() {
+        typealias Scope = OnboardingFlow.PlatformScope
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.24.0"), .tenant)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.27.9"), .tenant)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.28.0"), .environment)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.30.1"), .environment)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: nil), .environment)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "garbage"), .environment)
+    }
+
     func test_platformScope_needsID_falseOnlyForOrganization() {
         for scope in OnboardingFlow.PlatformScope.allCases {
             XCTAssertEqual(
