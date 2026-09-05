@@ -411,9 +411,32 @@ struct OnboardingView: View {
                         validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")
                     }
 
-                    VStack(alignment: .leading, spacing: 5) {
-                        FieldLabel(label: "Tenant ID")
-                        PNPTextField(value: binding(\.tenantID), placeholder: "your-tenant-id", mono: true)
+                    VStack(alignment: .leading, spacing: 8) {
+                        FieldLabel(label: "Platform API scope")
+                        SegmentedControl(
+                            selection: Binding(
+                                get: { flow.platformScope },
+                                set: { flow.platformScope = $0 }
+                            ),
+                            options: OnboardingFlow.PlatformScope.allCases.map {
+                                ($0, $0.label, nil)
+                            }
+                        )
+                        Text(
+                            "Environment is the level a GA integration is usually created at. "
+                                + "Tenant is the legacy single-tenant level. Organization sends no "
+                                + "scope and needs jamf-cli 1.28 or later for `--environment-id`."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.fg2)
+                        if flow.platformScope.needsID {
+                            PNPTextField(
+                                value: binding(\.platformScopeID),
+                                placeholder: flow.platformScope == .environment
+                                    ? "your-environment-id" : "your-tenant-id",
+                                mono: true
+                            )
+                        }
                     }
 
                     HStack(alignment: .top, spacing: 12) {

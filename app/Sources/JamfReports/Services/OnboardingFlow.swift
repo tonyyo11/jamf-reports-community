@@ -115,9 +115,33 @@ final class OnboardingFlow {
     /// True when the secure field has keystrokes but `clientSecret` is not yet finalized.
     var secretFieldHasText = false
 
+    /// The Platform API scope level: which flag `config add-profile` sends.
+    enum PlatformScope: String, CaseIterable, Sendable {
+        case environment, tenant, organization
+
+        var label: String {
+            switch self {
+            case .environment: "Environment"
+            case .tenant: "Tenant (legacy)"
+            case .organization: "Organization"
+            }
+        }
+
+        /// Organization scope sends no ID flag at all.
+        var needsID: Bool { self != .organization }
+
+        var idFieldLabel: String {
+            switch self {
+            case .environment: "Environment ID"
+            case .tenant, .organization: "Tenant ID"
+            }
+        }
+    }
+
     // Platform Gateway additional fields
     var gatewayURL = "https://us.api.jamfcloud.com"
-    var tenantID = ""
+    var platformScope: PlatformScope = .environment
+    var platformScopeID = ""
     var platformClientID = ""
     var platformClientSecret = ""
     var platformSecretFieldHasText = false
@@ -230,7 +254,8 @@ final class OnboardingFlow {
                 isProfileNameValid && isJamfURLValid && !clientID.trimmed.isEmpty
                     && (!clientSecret.isEmpty || secretFieldHasText) && !isRegisteringProfile
             case .platformGateway:
-                isProfileNameValid && isGatewayURLValid && !tenantID.trimmed.isEmpty
+                isProfileNameValid && isGatewayURLValid
+                    && (!platformScope.needsID || !platformScopeID.trimmed.isEmpty)
                     && !platformClientID.trimmed.isEmpty
                     && (!platformClientSecret.isEmpty || platformSecretFieldHasText)
                     && !isRegisteringProfile
@@ -460,7 +485,8 @@ final class OnboardingFlow {
             arguments: Self.platformGatewayArguments(
                 profile: profileName.trimmed,
                 gatewayURL: gatewayURL.trimmed,
-                tenantID: tenantID.trimmed
+                scope: platformScope,
+                scopeID: platformScopeID.trimmed
             ),
             stdin: stdinData
         )
@@ -646,14 +672,20 @@ final class OnboardingFlow {
     }
 
     /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth.
+    /// Sends exactly one scope flag (`--environment-id` / `--tenant-id`), or
+    /// none for organization scope — the flags are mutually exclusive.
     static func platformGatewayArguments(
-        profile: String, gatewayURL: String, tenantID: String
+        profile: String, gatewayURL: String, scope: PlatformScope, scopeID: String
     ) -> [String] {
-        ["config", "add-profile", profile,
-         "--auth-method", "platform",
-         "--tenant-id", tenantID,
-         "--url", gatewayURL,
-         "--no-color"]
+        var args = ["config", "add-profile", profile,
+                     "--auth-method", "platform"]
+        switch scope {
+        case .environment: args += ["--environment-id", scopeID]
+        case .tenant: args += ["--tenant-id", scopeID]
+        case .organization: break
+        }
+        args += ["--url", gatewayURL, "--no-color"]
+        return args
     }
 
     /// stdin bytes for Platform Gateway profile registration (clientID\nclientSecret\n).

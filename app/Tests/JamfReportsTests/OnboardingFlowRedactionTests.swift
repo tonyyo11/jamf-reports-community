@@ -195,7 +195,8 @@ final class OnboardingFlowRedactionTests: XCTestCase {
         let args = OnboardingFlow.platformGatewayArguments(
             profile: "testprofile",
             gatewayURL: "https://us.api.jamfcloud.com",
-            tenantID: "tenant-abc"
+            scope: .environment,
+            scopeID: "env-abc"
         )
 
         let stdin = String(data: data, encoding: .utf8) ?? ""

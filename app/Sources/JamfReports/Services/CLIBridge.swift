@@ -794,7 +794,9 @@ final class CLIBridge {
                 + "failures."
         case exitCodeUsage:
             detail = "internal argument error (exit 2) — please report this along with this "
-                + "run's log output."
+                + "run's log output. On a Platform API profile, exit 2 is also the retired "
+                + "`apigw.jamf.com` host or an environment/tenant scope conflict — run "
+                + "`jamf-cli config validate`."
         case exitCodeRefusedByPolicy:
             detail = "refused by policy (exit 8) — the command is outside what this "
                 + "profile's API publishes: on a Platform gateway profile, a Jamf Pro or "

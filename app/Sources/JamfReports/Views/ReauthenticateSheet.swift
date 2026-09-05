@@ -58,11 +58,13 @@ struct ReauthenticateSheet: View {
     /// Whether the Platform Gateway "Verify & save" action may run. Mirrors
     /// `OnboardingFlow.canAdvance`'s authenticate/platformGateway branch.
     nonisolated static func canVerifyPlatform(
-        isBusy: Bool, gatewayURLValid: Bool, tenantID: String, clientID: String, hasSecret: Bool
+        isBusy: Bool, gatewayURLValid: Bool, scope: OnboardingFlow.PlatformScope, scopeID: String,
+        clientID: String, hasSecret: Bool
     ) -> Bool {
-        let tenantFilled = !tenantID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let scopeFilled = !scope.needsID
+            || !scopeID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let idFilled = !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return !isBusy && gatewayURLValid && tenantFilled && idFilled && hasSecret
+        return !isBusy && gatewayURLValid && scopeFilled && idFilled && hasSecret
     }
 
     // MARK: - Body
@@ -205,9 +207,32 @@ struct ReauthenticateSheet: View {
                     validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")
                 }
 
-                VStack(alignment: .leading, spacing: 5) {
-                    FieldLabel(label: "Tenant ID")
-                    PNPTextField(value: binding(\.tenantID), placeholder: "your-tenant-id", mono: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    FieldLabel(label: "Platform API scope")
+                    SegmentedControl(
+                        selection: Binding(
+                            get: { flow.platformScope },
+                            set: { flow.platformScope = $0 }
+                        ),
+                        options: OnboardingFlow.PlatformScope.allCases.map {
+                            ($0, $0.label, nil)
+                        }
+                    )
+                    Text(
+                        "Environment is the level a GA integration is usually created at. "
+                            + "Tenant is the legacy single-tenant level. Organization sends no "
+                            + "scope and needs jamf-cli 1.28 or later for `--environment-id`."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.fg2)
+                    if flow.platformScope.needsID {
+                        PNPTextField(
+                            value: binding(\.platformScopeID),
+                            placeholder: flow.platformScope == .environment
+                                ? "your-environment-id" : "your-tenant-id",
+                            mono: true
+                        )
+                    }
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -339,7 +364,8 @@ struct ReauthenticateSheet: View {
             return Self.canVerifyPlatform(
                 isBusy: isBusy,
                 gatewayURLValid: flow.isGatewayURLValid,
-                tenantID: flow.tenantID,
+                scope: flow.platformScope,
+                scopeID: flow.platformScopeID,
                 clientID: flow.platformClientID,
                 hasSecret: !flow.platformClientSecret.isEmpty || flow.platformSecretFieldHasText
             )

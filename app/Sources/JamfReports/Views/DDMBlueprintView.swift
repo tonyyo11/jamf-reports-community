@@ -399,7 +399,7 @@ struct DDMBlueprintView: View {
 
     private static let setupCommands: [String] = [
         "jamf-cli config add-profile <name> --auth-method platform \\",
-        "  --url <gateway-url> --tenant-id <id>",
+        "  --url <gateway-url> --environment-id <id>",
         "Then enable both platform.enabled: true and experimental.platform_features_enabled: true",
     ]
 
