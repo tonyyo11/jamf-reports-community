@@ -599,10 +599,13 @@ struct AuditView: View {
                             }
                             .buttonStyle(.plain)
                             .help("Recommendation and where to act.")
-                            .popover(item: $selectedCommandFinding) { popoverFinding in
+                            .popover(isPresented: Binding(
+                                get: { selectedCommandFinding?.id == finding.id },
+                                set: { if !$0 { selectedCommandFinding = nil } }
+                            )) {
                                 FindingDetailPopover(
-                                    finding: popoverFinding,
-                                    tone: pillTone(popoverFinding.severity)
+                                    finding: finding,
+                                    tone: pillTone(finding.severity)
                                 )
                             }
                         }
