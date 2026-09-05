@@ -70,7 +70,7 @@ struct DDMBlueprintView: View {
     /// locked), and a per-device scan snapshot that ran and found nothing to
     /// report (an empty result is still a result). Locked only when none of
     /// them exists.
-    static func decideLockState(
+    nonisolated static func decideLockState(
         isDemoMode: Bool, experimentalOn: Bool, platformAvailable: Bool,
         hasPlatformData: Bool, hasDeviceData: Bool, ddmEnabledCount: Int,
         hasDeviceSnapshot: Bool
@@ -123,7 +123,7 @@ struct DDMBlueprintView: View {
             hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0)
     }
 
-    static func showsPlatformSections(platformPath: Bool, hasPlatformData: Bool) -> Bool {
+    nonisolated static func showsPlatformSections(platformPath: Bool, hasPlatformData: Bool) -> Bool {
         platformPath && hasPlatformData
     }
 
