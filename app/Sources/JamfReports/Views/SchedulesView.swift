@@ -13,7 +13,6 @@ struct SchedulesView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var profileFilter: String = "All"
-    @State private var bridge = CLIBridge()
     @State private var isRunning = false
     @State private var lastRunMessage: String? = nil
     @State private var runLogLines: [CLIBridge.LogLine] = []
@@ -530,23 +529,15 @@ struct SchedulesView: View {
     }
 
     private func runScheduleNow(_ schedule: Schedule) async {
+        guard !workspace.demoMode,
+              let label = LaunchAgentWriter.label(for: schedule) else { return }
         isRunning = true
         runLogLines = []
         let buf = LineBuffer()
-
-        guard let agentLabel = LaunchAgentWriter.label(for: schedule),
-              schedule.isMulti || ProfileService.isValid(schedule.profile)
-        else {
-            lastRunMessage = "invalid schedule label"
-            isRunning = false
-            return
-        }
-
-        let exit = await LaunchAgentWriter.runNow(agentLabel) { line in
+        let exit = await TickRunner.spawnNow(label: label, wait: true) { line in
             buf.append(line)
             Task { @MainActor in runLogLines = buf.lines }
         }
-
         runLogLines = buf.lines
         isRunning = false
         lastRunMessage = "\(schedule.name) · exit \(exit)"
@@ -554,84 +545,43 @@ struct SchedulesView: View {
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {
-        guard !workspace.demoMode else { return }
-        guard let idx = workspace.schedules.firstIndex(where: { $0.id == schedule.id }) else { return }
-
-        let original = workspace.schedules[idx].enabled
-        guard let agentLabel = LaunchAgentWriter.label(for: workspace.schedules[idx]) else {
-            writeError = "Schedule name or profile produces an invalid LaunchAgent label."
-            showWriteError = true
-            return
+        guard var record = ScheduleRecord(schedule: schedule) else {
+            writeError = "This schedule cannot be edited here."; showWriteError = true; return
         }
-        workspace.schedules[idx].enabled.toggle()
-        let nowEnabled = workspace.schedules[idx].enabled
-
-        let exitCode: Int32
-        do {
-            exitCode = try await bridge.setupLaunchAgent(
-                workspace.schedules[idx],
-                load: nowEnabled
-            ) { _ in }
-        } catch {
-            workspace.schedules[idx].enabled = original
-            writeError = "Could not update LaunchAgent \(agentLabel) · \(error.localizedDescription)"
-            showWriteError = true
-            return
+        record.enabled.toggle()
+        do { try ScheduleStore().upsert(record) } catch {
+            writeError = error.localizedDescription; showWriteError = true; return
         }
-
-        if exitCode != 0 {
-            workspace.schedules[idx].enabled = original
-            writeError = "Could not update LaunchAgent \(agentLabel) · exit \(exitCode)"
-            showWriteError = true
-        } else {
-            workspace.reloadFromDisk()
-        }
+        workspace.reloadFromDisk()
     }
 
     private func deleteSchedule(_ schedule: Schedule) {
-        guard !workspace.demoMode else { return }
-        guard let label = LaunchAgentWriter.label(for: schedule) else {
-            writeError = "Schedule name or profile produces an invalid LaunchAgent label."
-            showWriteError = true
-            return
-        }
-        // Epic #103: the manual editor must never remove a managed agent —
-        // parity with LaunchAgentService.archiveAndRemove's refusal. Normally
-        // unreachable (managed agents are torn down on entry to manual mode),
-        // but the two-mode Automation router makes this table reachable.
+        guard !workspace.demoMode,
+              let label = LaunchAgentWriter.label(for: schedule) else { return }
         guard !ManagedAutomation.owns(label) else {
             writeError = "\(schedule.name) is a managed automation agent — "
                 + "turn off Manage automation to remove it."
             showWriteError = true
             return
         }
-        Task {
-            _ = await LaunchAgentWriter.unload(label)
-            do {
-                try LaunchAgentWriter.delete(label)
-                workspace.schedules.removeAll { $0.id == schedule.id }
-            } catch {
-                writeError = error.localizedDescription; showWriteError = true
-            }
+        do { try ScheduleStore().remove(label: label) } catch {
+            writeError = error.localizedDescription; showWriteError = true; return
         }
+        Task { await workspace.applyAutomationPolicy() }
     }
 
     private func saveSchedule(_ form: ScheduleFormState) async {
-        let schedule = form.toSchedule()
-        let exitCode: Int32
-        do {
-            exitCode = try await bridge.setupLaunchAgent(schedule, load: schedule.enabled) { _ in }
-        } catch {
-            writeError = "Could not create LaunchAgent · \(error.localizedDescription)"
+        guard let record = ScheduleRecord(schedule: form.toSchedule()) else {
+            writeError = "Schedule name or profile produces an invalid label."
             showWriteError = true
             return
         }
-        if exitCode == 0 {
-            workspace.reloadFromDisk()
-        } else {
-            writeError = "Could not create LaunchAgent · exit \(exitCode)"
+        do { try ScheduleStore().upsert(record) } catch {
+            writeError = "Could not save schedule · \(error.localizedDescription)"
             showWriteError = true
+            return
         }
+        await workspace.applyAutomationPolicy()
     }
 
     // MARK: - Helpers
@@ -808,31 +758,22 @@ struct ScheduleFormState {
         tiers = mode.defaultTiers
     }
 
-    // Multi-profile targeting
+    // Multi-profile targeting. The native runner only ever honours
+    // `--all-profiles` + exclusions (`ScheduleRecord.allProfiles` is a Bool),
+    // so this stays a two-way choice rather than modeling scopes the store
+    // cannot persist.
     enum ProfileMode: String, CaseIterable, Identifiable {
         case single = "Single profile"
         case all = "All profiles"
-        case filter = "Profile filter (glob)"
-        case list = "Specific profiles"
         var id: String { rawValue }
     }
     var profileMode: ProfileMode = .single
-    var multiFilter = ""          // for .filter
-    var multiList = ""            // for .list, comma-separated
     var multiSequential = false
 
     var resolvedMultiTarget: MultiTarget? {
         switch profileMode {
         case .single: return nil
         case .all:    return MultiTarget(scope: .all, sequential: multiSequential)
-        case .filter:
-            let g = multiFilter.trimmingCharacters(in: .whitespaces)
-            guard !g.isEmpty else { return MultiTarget(scope: .all, sequential: multiSequential) }
-            return MultiTarget(scope: .filter(g), sequential: multiSequential)
-        case .list:
-            let ps = multiList.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            guard !ps.isEmpty else { return MultiTarget(scope: .all, sequential: multiSequential) }
-            return MultiTarget(scope: .list(ps), sequential: multiSequential)
         }
     }
 
@@ -869,8 +810,6 @@ struct ScheduleFormState {
         switch profileMode {
         case .single:  return !profile.isEmpty
         case .all:     return true
-        case .filter:  return !multiFilter.trimmingCharacters(in: .whitespaces).isEmpty
-        case .list:    return !multiList.trimmingCharacters(in: .whitespaces).isEmpty
         }
     }
 
@@ -962,15 +901,6 @@ private struct NewScheduleSheet: View {
                             }
                             .labelsHidden()
                             .frame(maxWidth: .infinity)
-                        }
-                    } else if form.profileMode == .filter {
-                        formRow(label: "Glob pattern") {
-                            PNPTextField(value: $form.multiFilter, placeholder: "e.g. prod-*", mono: true)
-                        }
-                    } else if form.profileMode == .list {
-                        formRow(label: "Profiles") {
-                            PNPTextField(value: $form.multiList,
-                                         placeholder: "production,staging", mono: true)
                         }
                     }
 

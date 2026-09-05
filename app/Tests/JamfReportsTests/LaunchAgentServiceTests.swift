@@ -254,10 +254,12 @@ final class LaunchAgentServiceTests: XCTestCase {
     }
 
     func testScheduleFormKeepsBaseProfileForMultiTarget() {
+        // The form's profile-target picker collapsed to single/all in 2.8.0
+        // (ScheduleRecord.allProfiles is a Bool — the native runner never
+        // honoured a filter or explicit list); this pins the surviving path.
         var form = ScheduleFormState(defaultProfile: "alpha")
         form.name = "Weekly Multi"
-        form.profileMode = .list
-        form.multiList = "alpha,beta"
+        form.profileMode = .all
         form.mode = .jamfCLIFull
 
         let schedule = form.toSchedule()
@@ -265,7 +267,7 @@ final class LaunchAgentServiceTests: XCTestCase {
         XCTAssertTrue(schedule.isMulti)
         XCTAssertEqual(schedule.profile, "alpha")
         XCTAssertEqual(schedule.mode, .jamfCLIFull)
-        XCTAssertEqual(schedule.multiTarget, MultiTarget(scope: .list(["alpha", "beta"])))
+        XCTAssertEqual(schedule.multiTarget, MultiTarget(scope: .all))
         XCTAssertEqual(LaunchAgentWriter.label(for: schedule), "\(prefix).multi.weekly-multi")
     }
 

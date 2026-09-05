@@ -282,6 +282,10 @@ struct OverviewView: View {
 
     private var automationHealthMessage: String {
         let issues = workspace.automationHealthIssues
+        if issues.contains(where: { $0.kind == .tickerDisabled }) {
+            return "Automation is off — JamfReports is not allowed to run in the "
+                + "background. Open Automation to fix it."
+        }
         let overdue = issues.filter { $0.kind == .overdue }
         let failing = issues.filter { $0.kind == .failing }
         // Shared by BOTH branches: the failing branch used to show no timestamp

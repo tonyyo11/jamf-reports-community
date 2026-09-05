@@ -82,6 +82,26 @@ struct AutomationView: View {
                         Text(warning).font(.callout)
                     }
                 }
+                if workspace.tickerStatus == .requiresApproval
+                    || workspace.tickerStatus == .notRegistered {
+                    InlineBanner(
+                        icon: "exclamationmark.triangle", tone: .danger,
+                        action: .init(label: "Open Login Items") {
+                            workspace.tickerRegistrar.openLoginItems()
+                        }
+                    ) {
+                        Text("Automation is off: JamfReports is not allowed to run in the "
+                            + "background. Turn it on under Login Items › Allow in the "
+                            + "Background.")
+                            .font(.callout)
+                    }
+                } else if workspace.tickerStatus == .unavailable {
+                    InlineBanner(icon: "hammer", tone: .info) {
+                        Text("Ticker unavailable in this build — schedules run only via "
+                            + "`JamfReports --tick` until the app is installed.")
+                            .font(.callout)
+                    }
+                }
                 masterCard
                 if !workspace.automationHealthIssues.isEmpty || policy.isManaged {
                     HealthCard(issues: workspace.automationHealthIssues)
@@ -102,14 +122,15 @@ struct AutomationView: View {
                         onRemove: removeGroup,
                         onAdd: addGroup
                     )
-                    if !consolidationCandidates.isEmpty {
-                        ConsolidationCard(
-                            candidates: consolidationCandidates,
-                            selectedForRemoval: $selectedForRemoval,
-                            showRemovalConfirm: $showRemovalConfirm,
-                            onConfirmRemoval: { Task { await removeSelectedAgents() } }
-                        )
-                    }
+                }
+                // About imported legacy plists, not the policy — shows in both modes.
+                if !consolidationCandidates.isEmpty {
+                    ConsolidationCard(
+                        candidates: consolidationCandidates,
+                        selectedForRemoval: $selectedForRemoval,
+                        showRemovalConfirm: $showRemovalConfirm,
+                        onConfirmRemoval: { Task { await removeSelectedAgents() } }
+                    )
                 }
             }
         }
@@ -154,17 +175,19 @@ struct AutomationView: View {
         discoveredProfiles = names
     }
 
-    /// Recompute the hand-built agents the active policy duplicates. Reads the
-    /// installed agents once (synchronous directory I/O) per call.
+    /// Recompute imported plists still loaded by launchd. About legacy
+    /// plists, not the managed policy — reads the installed agents once
+    /// (synchronous directory I/O) per call.
     private func refreshConsolidationCandidates() {
-        guard !workspace.demoMode, policy.isManaged else {
+        guard !workspace.demoMode else {
             consolidationCandidates = []
             selectedForRemoval = []
             return
         }
-        let installed = LaunchAgentService.list()
-        consolidationCandidates = ScheduleConsolidation.candidates(installed: installed, policy: policy)
-        // Drop selections that no longer correspond to a live candidate.
+        let installed = LaunchAgentService.installedLegacy().schedules
+        let storeLabels = Set(ScheduleStore().load().map(\.label))
+        consolidationCandidates = ScheduleConsolidation.stillLoaded(
+            installed: installed, storeLabels: storeLabels)
         let live = Set(consolidationCandidates.map(\.label))
         selectedForRemoval = selectedForRemoval.intersection(live)
     }
@@ -671,7 +694,8 @@ private struct AddGroupForm: View {
 
 // MARK: - Consolidation
 
-/// Offers to retire hand-built schedules the managed policy now duplicates.
+/// Offers to retire imported LaunchAgent plists still loaded by launchd now
+/// that their schedules run from the JamfReports background item.
 private struct ConsolidationCard: View {
     let candidates: [ScheduleConsolidation.Candidate]
     @Binding var selectedForRemoval: Set<String>
@@ -681,17 +705,19 @@ private struct ConsolidationCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                AutomationCardShared.sectionTitle("Consolidate Schedules")
-                Text("These hand-built schedules do work managed automation now covers for "
-                    + "every profile — retiring them stops duplicate collection. Each is "
-                    + "archived to _archived-launchagents before removal, so it is recoverable.")
+                AutomationCardShared.sectionTitle("Schedules now run by JamfReports")
+                Text("These schedules were imported and now run from the JamfReports "
+                    + "background item, but their old LaunchAgent files are still loaded — "
+                    + "each runs twice per fire until retired. Retiring archives the file to "
+                    + "_archived-launchagents first.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
 
                 ForEach(candidates) { candidate in
                     Toggle(isOn: removalBinding(candidate.label)) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(candidate.displayName).font(.callout.weight(.semibold))
-                            Text("\(candidate.mode.displayTitle) · now covered by \(candidate.coveredBy)")
+                            Text("\(candidate.mode.displayTitle) · now run by "
+                                + candidate.coveredBy)
                                 .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                         }
                     }
@@ -717,8 +743,7 @@ private struct ConsolidationCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Each schedule is archived to _archived-launchagents and can be restored by "
-                + "copying its plist back to ~/Library/LaunchAgents. Managed agents are never "
-                + "affected.")
+                + "copying its plist back to ~/Library/LaunchAgents.")
         }
     }
 
