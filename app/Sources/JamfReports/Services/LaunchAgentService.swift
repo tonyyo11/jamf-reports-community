@@ -187,14 +187,16 @@ enum LaunchAgentService {
     ///    bootout + delete (recoverable, matching the snapshot retention
     ///    archive-not-delete model). A failed archive aborts that label's
     ///    removal — recoverability first, nothing is lost on a mis-click.
-    static func archiveAndRemove(labels: [String]) -> ConsolidationRemovalResult {
+    static func archiveAndRemove(
+        labels: [String], includingManaged: Bool = false
+    ) -> ConsolidationRemovalResult {
         let archiveDir = ProfileService.workspacesRoot()
             .appendingPathComponent("_archived-launchagents", isDirectory: true)
         var removed: [String] = []
         var rejected: [String] = []
         var didArchive = false
         for label in labels {
-            guard !ManagedAutomation.owns(label) else {
+            guard includingManaged || !ManagedAutomation.owns(label) else {
                 AppLogger.schedule.warning(
                     "archiveAndRemove refused managed label \(label, privacy: .public)")
                 rejected.append(label)
@@ -327,6 +329,29 @@ enum LaunchAgentService {
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         )) ?? []
+    }
+
+    /// Every JRC plist still in `~/Library/LaunchAgents`, parsed, plus the
+    /// filenames that would not parse. Import reads this once; the
+    /// consolidation card reads it to show what is still loaded.
+    static func installedLegacy(
+        in dir: URL = agentsDir
+    ) -> (schedules: [Schedule], unparseable: [String]) {
+        let prefix = "\(LaunchAgentWriter.labelPrefix)."
+        let urls = ((try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? [])
+            .filter { $0.pathExtension == "plist" && $0.lastPathComponent.hasPrefix(prefix) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        var schedules: [Schedule] = []
+        var unparseable: [String] = []
+        for url in urls {
+            if let s = parse(url) {
+                schedules.append(s)
+            } else {
+                unparseable.append(url.lastPathComponent)
+            }
+        }
+        return (schedules, unparseable)
     }
 
     /// Parse one plist into a Schedule. Returns nil if the plist is malformed

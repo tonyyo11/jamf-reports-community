@@ -121,9 +121,9 @@ enum ProfileService {
     /// default profile first, then by name. In demo mode, the caller falls back
     /// to `DemoData.cliProfiles`.
     static func discoverLocal() -> [JamfCLIProfile] {
-        let schedules = LaunchAgentService.list()
-        let scheduleCounts = Dictionary(grouping: schedules, by: \.profile)
-            .mapValues(\.count)
+        let scheduleCounts = Dictionary(
+            grouping: ScheduleStore().load().filter { !$0.allProfiles }, by: \.profile
+        ).mapValues(\.count)
 
         var profiles = discoverJamfCLIProfiles(scheduleCounts: scheduleCounts)
         let namesFromCLI = Set(profiles.map(\.name))

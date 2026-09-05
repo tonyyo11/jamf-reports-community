@@ -53,13 +53,9 @@ final class WorkspaceStore {
     var isUpdatingJamfCLI: Bool = false
     var isInitializingWorkspace: Bool = false
     var workspaceInitMessage: String?
-    var launchAgentCleanupMessage: String?
-    /// Labels of JRC LaunchAgent plists whose recorded executable no longer
-    /// exists on disk. Populated by `LaunchAgentService.staleExecutableLabels`
-    /// during workspace refresh and on init. Drives the
-    /// SchedulesView "stale executable" warning banner (PR-15). Empty when
-    /// every plist's executable resolves cleanly.
-    var launchAgentStaleLabels: [String] = []
+    /// Seam for tests; production uses the real SMAppService registrar.
+    let tickerRegistrar: any TickerRegistrar
+    var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
     var toast: Toast? = nil
     /// Last known auth probe result for the active profile. `nil` while not yet
@@ -199,7 +195,8 @@ final class WorkspaceStore {
 
     // MARK: Init
 
-    init(demoMode: Bool? = nil) {
+    init(demoMode: Bool? = nil, tickerRegistrar: any TickerRegistrar = SMAppServiceRegistrar()) {
+        self.tickerRegistrar = tickerRegistrar
         // MFS-2: one-shot Spotlight + permissions backfill on existing
         // workspaces. Gated on a per-version UserDefaults sentinel so the
         // walk runs at most once per app version. Wave 1 covers the
@@ -207,9 +204,7 @@ final class WorkspaceStore {
         // covers the pre-existing-workspace case.
         WorkspaceMigration.runIfNeeded()
 
-        let cleanup = LaunchAgentService.cleanupLegacyAgents()
         let realProfiles = ProfileService.discoverLocal()
-        let realSchedules = LaunchAgentService.list()
         // First-launch chooser: an empty real-profile list no longer implies
         // demo mode. Only an explicit `demoMode:` override (tests) or the
         // persisted `forceDemoModeKey` (user previously chose demo) enables
@@ -223,7 +218,8 @@ final class WorkspaceStore {
         self.org = isDemo ? DemoData.org : Self.org(for: realProfiles.first)
         self.profile = isDemo ? DemoData.org.profile : (realProfiles.first?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
-        self.schedules = isDemo ? DemoData.scheduledRuns : realSchedules
+        self.schedules = isDemo ? DemoData.scheduledRuns
+            : Self.loadSchedules(baseProfile: realProfiles.first?.name)
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
@@ -235,8 +231,24 @@ final class WorkspaceStore {
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
-        self.launchAgentCleanupMessage = cleanup.message
-        self.launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
+        if !isDemo {
+            if let result = ScheduleImport.runIfNeeded(), !result.managedLabels.isEmpty {
+                _ = LaunchAgentService.archiveAndRemove(
+                    labels: result.managedLabels, includingManaged: true)
+            }
+        }
+    }
+
+    /// Managed schedules come from the policy; hand-built from the store.
+    nonisolated static func loadSchedules(
+        policy: AutomationPolicy = AutomationPolicy.current(),
+        store: ScheduleStore = ScheduleStore(),
+        baseProfile: String?
+    ) -> [Schedule] {
+        let managed = ManagedAutomation.desiredSchedules(for: policy, baseProfile: baseProfile)
+        let handBuilt = store.load().map { $0.toSchedule() }
+            .sorted { ($0.launchAgentLabel ?? "") < ($1.launchAgentLabel ?? "") }
+        return managed + handBuilt
     }
 
     // MARK: Profile switching
@@ -253,7 +265,8 @@ final class WorkspaceStore {
             observeProfileSwitchRefresh(for: id)
         }
         if !demoMode {
-            schedules = LaunchAgentService.list().filter { $0.profile == id }
+            schedules = Self.loadSchedules(baseProfile: id)
+                .filter { $0.isMulti || $0.profile == id }
             Task {
                 do { try await loadConfig() } catch {
                     configError = error.localizedDescription
@@ -285,8 +298,7 @@ final class WorkspaceStore {
         } else {
             demoMode = false
             profiles = real
-            schedules = LaunchAgentService.list()
-            launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
+            schedules = Self.loadSchedules(baseProfile: real.first?.name)
             if !real.contains(where: { $0.name == profile }) {
                 profile = real.first!.name
             }
@@ -307,30 +319,37 @@ final class WorkspaceStore {
             let cleanupMessage = cleanupDemoProfileArtifacts()
             reloadFromDisk()
             if let cleanupMessage {
-                launchAgentCleanupMessage = cleanupMessage
+                toast = Toast(message: cleanupMessage, style: .success)
             }
         }
     }
 
     private func cleanupDemoProfileArtifacts() -> String? {
         let demoProfile = DemoData.org.profile
-        let removedAgents = LaunchAgentService.removeAgents(profile: demoProfile)
+        let store = ScheduleStore()
+        let all = store.load()
+        let kept = all.filter { $0.profile != demoProfile }
+        let removedAgents = all.count - kept.count
+        if removedAgents > 0 {
+            try? store.save(kept)
+        }
         do {
             let removedWorkspace = try ProfileService.removeLocalWorkspace(profile: demoProfile)
-            if removedWorkspace || !removedAgents.isEmpty {
+            if removedWorkspace || removedAgents > 0 {
                 var parts: [String] = []
                 if removedWorkspace {
                     parts.append("workspace \(demoProfile)")
                 }
-                if !removedAgents.isEmpty {
-                    parts.append("\(removedAgents.count) demo LaunchAgent\(removedAgents.count == 1 ? "" : "s")")
+                if removedAgents > 0 {
+                    let suffix = removedAgents == 1 ? "" : "s"
+                    parts.append("\(removedAgents) demo LaunchAgent\(suffix)")
                 }
                 return "Removed demo \(parts.joined(separator: " and "))."
             }
         } catch {
-            if !removedAgents.isEmpty {
-                return "Removed \(removedAgents.count) demo LaunchAgent"
-                    + (removedAgents.count == 1 ? "" : "s")
+            if removedAgents > 0 {
+                return "Removed \(removedAgents) demo LaunchAgent"
+                    + (removedAgents == 1 ? "" : "s")
                     + ", but could not remove workspace \(demoProfile): \(error.localizedDescription)"
             }
             return "Could not remove demo workspace \(demoProfile): \(error.localizedDescription)"

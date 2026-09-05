@@ -301,9 +301,9 @@ struct ExistingCLISetupView: View {
         )
     }
 
-    /// Persist the automation policy (when enabled), reconcile the managed
-    /// agents, and only then record the completed outcome that re-routes
-    /// ContentView to the shell — an unawaited reconcile would race the view
+    /// Persist the automation policy (when enabled), apply it (registers the
+    /// ticker), and only then record the completed outcome that re-routes
+    /// ContentView to the shell — an unawaited apply would race the view
     /// swap (see the AutomationTab relocation note, 6101086).
     private func finish() {
         guard !isFinishing else { return }
@@ -313,20 +313,13 @@ struct ExistingCLISetupView: View {
                 UserDefaults.standard.set(
                     flow.configuredPolicy().serialize(), forKey: AutomationPolicy.storageKey
                 )
-                // The user just opted into managed automation — a failed agent
-                // install must not be silently absorbed into "setup complete"
-                // (mirrors AutomationView's outcome handling).
-                let failed = await workspace.reconcileManagedAutomation()
-                    .filter { !$0.succeeded }
-                if !failed.isEmpty {
-                    for outcome in failed {
-                        AppLogger.schedule.error(
-                            "Setup reconcile failure: \(outcome.failureReason ?? "unknown error", privacy: .public)"
-                        )
-                    }
+                // The user just opted into automation — a ticker Login Items
+                // won't run must not be silently absorbed into "setup complete".
+                await workspace.applyAutomationPolicy()
+                if workspace.tickerStatus != .enabled {
                     workspace.toast = Toast(
-                        message: "Setup finished, but \(failed.count) automation agent\(failed.count == 1 ? "" : "s") "
-                            + "failed to install — check the Automation tab",
+                        message: "Setup finished — allow JamfReports under Login Items › "
+                            + "Allow in the Background to start automation",
                         style: .danger
                     )
                 }

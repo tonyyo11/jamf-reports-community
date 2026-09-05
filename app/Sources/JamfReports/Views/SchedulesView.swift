@@ -56,12 +56,6 @@ struct SchedulesView: View {
         PageScaffold(spacing: 14) {
             header
             managedModeCard
-            if let message = workspace.launchAgentCleanupMessage {
-                legacyCleanupBanner(message)
-            }
-            if !workspace.launchAgentStaleLabels.isEmpty {
-                staleExecutableBanner(workspace.launchAgentStaleLabels)
-            }
             profileFilterStrip
             nextUpCallout
             schedulesTable
@@ -168,44 +162,6 @@ struct SchedulesView: View {
                           : "Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
                 }
             )
-        }
-    }
-
-    private func legacyCleanupBanner(_ message: String) -> some View {
-        GlassPane(borderColor: Theme.Colors.warn.opacity(0.35)) {
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
-                Text(message)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg2)
-                Spacer()
-            }
-        }
-    }
-
-    /// Warn about LaunchAgent plists whose recorded executable no longer
-    /// exists on disk — typically because the .app bundle was rebuilt at a
-    /// different path. macOS will run the plist anyway and the spawn will
-    /// fail with ENOENT, leaving a confusing stderr trail. PR-15.
-    private func staleExecutableBanner(_ labels: [String]) -> some View {
-        let count = labels.count
-        let preview = labels.prefix(2).joined(separator: ", ")
-        let suffix = count > 2 ? " (+\(count - 2) more)" : ""
-        let copy = """
-            \(count) scheduled run\(count == 1 ? "" : "s") reference a missing executable and will fail at next trigger: \
-            \(preview)\(suffix). Re-create them via "New schedule" or remove the stale plists from ~/Library/LaunchAgents/.
-            """
-        return GlassPane(borderColor: Theme.Colors.warn.opacity(0.35)) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
-                Text(copy)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
         }
     }
 

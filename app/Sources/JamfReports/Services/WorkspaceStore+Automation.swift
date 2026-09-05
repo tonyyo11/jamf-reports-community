@@ -170,33 +170,35 @@ extension WorkspaceStore {
         AutomationHealthModel.shared.issues
     }
 
-    /// Reconcile the managed-automation LaunchAgents from the saved
-    /// `AutomationPolicy`. Called from the root view's `.task` at launch AND
-    /// from the Automation screen whenever the policy changes, so enabling
-    /// "Manage automation" (or editing the cadence) takes effect immediately
+    /// The policy changed, or the app launched: make Login Items agree with
+    /// it. Registered when anything is scheduled; unregistered when nothing
+    /// is. Called from the root view's `.task` at launch AND from the
+    /// Automation screen whenever the policy changes, so enabling "Manage
+    /// automation" (or adding a hand-built schedule) takes effect immediately
     /// instead of waiting for the next app launch.
-    ///
-    /// No-ops in demo mode. Safe to call when automation is unmanaged: the
-    /// reconcile plan is then empty for a user who never opted in, and tears
-    /// down any leftover managed agents if the operator turned the policy off.
-    /// Returns the install/remove actions it applied (empty when nothing
-    /// changed) so callers can surface confirmation.
-    ///
-    /// The one-time RunAtLoad migration (agents installed before that change
-    /// were written with RunAtLoad:false; the reconcile signature ignores
-    /// RunAtLoad so only a forced pass rewrites them) is shared with the
-    /// headless `--scheduled-run` self-heal via
-    /// `ManagedAutomation.reconcileWithMigration` — see its doc.
-    @discardableResult
-    func reconcileManagedAutomation() async -> [ManagedAutomation.ActionOutcome] {
-        guard !demoMode else { return [] }
-        let outcomes = await ManagedAutomation.reconcileWithMigration(
-            policy: AutomationPolicy.current()
-        )
-        // The install/remove above can change what "should have fired" — recompute
-        // the dead-man state on the same chain so the banner reflects it at once.
+    func applyAutomationPolicy() async {
+        guard !demoMode else { return }
+        let wantsTicker = AutomationPolicy.current().isManaged || !ScheduleStore().load().isEmpty
+        do {
+            if wantsTicker {
+                try tickerRegistrar.register()
+            } else {
+                try tickerRegistrar.unregister()
+            }
+        } catch {
+            AppLogger.schedule.error(
+                """
+                ticker \(wantsTicker ? "register" : "unregister", privacy: .public) failed: \
+                \(error.localizedDescription, privacy: .public)
+                """
+            )
+        }
+        tickerStatus = tickerRegistrar.status
+        // The policy/store change above can change what schedules exist and
+        // what "should have fired" means — recompute on the same chain so
+        // both the schedule list and the dead-man banner reflect it at once.
+        reloadFromDisk()
         await refreshAutomationHealth()
-        return outcomes
     }
 
     // MARK: - Dead-man switch compute

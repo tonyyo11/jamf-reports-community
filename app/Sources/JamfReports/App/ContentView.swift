@@ -137,10 +137,9 @@ struct ContentView: View {
             // cheap). Both no-op in demo mode.
             await workspace.checkHeavyTierStaleness()
             await workspace.autoRefreshAuditIfStale()
-            // v2.2.0 managed automation: reconcile the policy-driven
-            // all-profiles agents. No-op unless the operator opted in
-            // (AutomationPolicy.isManaged); no-op in demo mode.
-            await workspace.reconcileManagedAutomation()
+            // v2.2.0 managed automation: make Login Items agree with the
+            // policy-driven schedule. No-op in demo mode.
+            await workspace.applyAutomationPolicy()
             // Catch-up backstop: collect today's freshness snapshot if the
             // scheduled run was missed (e.g. asleep at 06:00). No-op when
             // already collected today or automation is unmanaged.

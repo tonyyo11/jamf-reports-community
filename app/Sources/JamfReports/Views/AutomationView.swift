@@ -26,48 +26,12 @@ struct AutomationTab: View {
         .task(id: policyRaw) { await reconcileOnPolicyChange() }
     }
 
-    /// Debounce, then reconcile the managed LaunchAgents and toast the result.
+    /// Debounce, then make Login Items agree with the policy. No toast — there
+    /// are no per-plist install/remove counts any more, just one ticker.
     private func reconcileOnPolicyChange() async {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
-        let outcomes = await workspace.reconcileManagedAutomation()
-        guard !outcomes.isEmpty else { return }
-        // Reflect the install/remove in any visible schedule list (the manual
-        // SchedulesView table reads workspace.schedules) so the table doesn't
-        // show agents the reconcile just added or removed until a manual refresh.
-        workspace.reloadFromDisk()
-
-        let succeeded = outcomes.filter(\.succeeded)
-        let failed = outcomes.filter { !$0.succeeded }
-        let installs = succeeded.filter(\.isInstall).count
-        let removes = succeeded.count - installs
-
-        var parts: [String] = []
-        if installs > 0 { parts.append("\(installs) installed") }
-        if removes > 0 { parts.append("\(removes) removed") }
-
-        if failed.isEmpty {
-            workspace.toast = Toast(
-                message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
-            )
-        } else {
-            let suffix = parts.isEmpty ? "" : "\(parts.joined(separator: ", ")), "
-            workspace.toast = Toast(
-                message: "Automation applied — \(suffix)\(failed.count) failed — see log",
-                style: .danger
-            )
-            for outcome in failed {
-                let label: String
-                switch outcome.action {
-                case .install(let sched): label = sched.launchAgentLabel ?? sched.name
-                case .remove(let lbl): label = lbl
-                }
-                let reason = outcome.failureReason ?? "unknown error"
-                AppLogger.schedule.error(
-                    "Reconcile failure for \(label, privacy: .public): \(reason, privacy: .public)"
-                )
-            }
-        }
+        await workspace.applyAutomationPolicy()
     }
 }
 

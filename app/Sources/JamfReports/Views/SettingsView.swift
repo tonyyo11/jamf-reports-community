@@ -290,7 +290,7 @@ struct SettingsView: View {
             // flag that makes the NEXT reconcile forced, and reloadFromDisk
             // does not reconcile — so without this the message below would
             // describe something that had not happened yet.
-            Task { await workspace.reconcileManagedAutomation() }
+            Task { await workspace.applyAutomationPolicy() }
             workspaceRootMessage = url == nil
                 ? "Back to the default location. Profiles already in the previous folder stay "
                     + "there — copy them across if you want them here."
