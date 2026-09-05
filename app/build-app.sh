@@ -65,7 +65,7 @@ mkdir -p "$APP_OUT/Contents/Resources"
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
-# The one SMAppService agent (2.9.0). Lives outside Sources/ so SwiftPM's
+# The one SMAppService agent (2.8.0). Lives outside Sources/ so SwiftPM's
 # .process("Resources") never rewrites it; signed with the bundle below.
 mkdir -p "$APP_OUT/Contents/Library/LaunchAgents"
 cp "LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist" \

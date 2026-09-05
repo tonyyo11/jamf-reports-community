@@ -59,6 +59,7 @@ workspace rather than failing.
 | `device` | Print one device's detail JSON | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School profile | `--profile` |
 | `school-scaffold` | Build a Jamf School `config.yaml` from a CSV | `--csv <path>`, `--out <path>` |
+| `schedules` | List, add, remove, or run hand-built schedules (managed ones come from the Automation policy and are not editable here) | `list`, `add …`, `remove <label>`, `run <label>` |
 
 ### Gating a job on config health
 
@@ -125,6 +126,36 @@ you run Jamf School, please try them and
 [open an issue or pull request](https://github.com/tonyyo11/jamf-reports-community/issues)
 with feedback.
 
+### Hand-built schedules from the command line
+
+`jamf-reports schedules` reads and writes the same store the Schedules screen shows,
+so a schedule added here appears there and vice versa. Managed schedules (from the
+Automation policy) are derived, not stored, and are not editable through this command.
+
+```sh
+# List every hand-built schedule
+jamf-reports schedules list
+
+# Add a daily snapshot-only schedule for one profile
+jamf-reports schedules add --name "Prod daily" --profile prod \
+  --mode snapshot-only --cadence "Daily 06:20"
+
+# Add a weekly, all-profiles backup, skipping one profile
+jamf-reports schedules add --name "Weekly backup" --profile prod --all-profiles \
+  --exclude sandbox --mode backup --cadence "Mon 07:00"
+
+# Remove a schedule by the label `schedules list` prints
+jamf-reports schedules remove com.github.tonyyo11.jamf-reports-community.prod.prod-daily
+
+# Run a schedule (hand-built or managed) right now and wait for it to finish
+jamf-reports schedules run com.github.tonyyo11.jamf-reports-community.multi.managed-freshness
+```
+
+`--cadence` accepts four forms: `"Daily 06:20"`, `"Mon 07:00"` (any weekday name),
+`"Weekdays 09:00"`, and `"Day 15 06:20"` (a day of the month). A schedule added this way is
+picked up by the bundled background item on its next wake, gets the same missed-run
+catch-up as one built in the GUI, and shows up in the dead-man switch.
+
 ## Examples
 
 ```sh
@@ -161,19 +192,24 @@ jamf-reports collect --profile prod && jamf-reports generate --profile prod
 
 ## Scheduling
 
-The app's built-in **Automation** still schedules unattended runs through
-LaunchAgents (see [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation)) — that
-path is unchanged. The CLI is for interactive use and for building your own
-automation. To schedule the CLI yourself, point a `launchd` job or `cron` entry
-at the installed `jamf-reports` command. PDF output is GUI-only; the CLI produces
-`.xlsx` and HTML.
+The app's built-in **Automation** schedules unattended runs from one bundled background
+item (see [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation))
+rather than through the CLI. The CLI is for interactive use, for building your own
+automation, and — via `jamf-reports schedules` above — for editing the very same hand-built
+schedules the background item runs. PDF output is GUI-only; the CLI produces `.xlsx` and
+HTML.
 
-A schedule you build yourself around the CLI **does** get most of the app's automation-trust
-machinery: `collect` and `generate` evaluate metric alerts (collect only), post the `notify:`
-webhook digests, and record to Run History under a `cli-collect` / `cli-generate` label. The
-one exception is the **dead-man switch** — it can only measure "overdue" against a LaunchAgent
-`StartCalendarInterval`, which a cron/launchd job you write yourself does not expose, so it
-cannot tell that your own timer stopped. See
+A schedule added with `jamf-reports schedules add` behaves exactly like one built in the
+GUI: the background item picks it up on its next wake, gives it the same missed-fire
+catch-up, and covers it with the dead-man switch. A schedule you instead build yourself
+around the CLI — a `launchd` job or `cron` entry calling `collect`/`generate` directly —
+**does** get most of the app's automation-trust machinery: metric alerts (collect only),
+the `notify:` webhook digests, and Run History under a `cli-collect` / `cli-generate` label.
+The one exception is the **dead-man switch**, which can only measure "overdue" against a
+schedule the app itself knows about; a cron/launchd job you write yourself is not one, so it
+cannot tell that your own timer stopped. Likewise, an external scheduler calling
+`--scheduled-run` directly gets Run History and webhooks but not the tick's catch-up, since
+only the background item's own wake evaluates missed fires. See
 [Automation Trust → What counts as a scheduled run](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust#what-counts-as-a-scheduled-run)
-for the exact boundary. If you want dead-man coverage too, let the app's Automation screen
-manage the LaunchAgent instead of a self-written cron/launchd job.
+for the exact boundary. If you want dead-man coverage and catch-up without touching the GUI,
+use `jamf-reports schedules add` instead of a self-written cron/launchd job.

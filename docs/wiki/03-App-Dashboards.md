@@ -144,7 +144,7 @@ these interactive dashboards either — it produces a separate generated workboo
 ## Automation
 
 - **Schedules** — when the managed automation policy is on, this tab is the Automation
-  screen: a single policy toggle that installs or removes LaunchAgent jobs for
+  screen: a single policy toggle that determines what the bundled background item runs for
   unattended collection and reporting, an Automation Health section (overdue/failing
   schedules), a Notifications section (Teams/Slack webhook configuration), and
   report-group management for consolidated multi-profile reports. When managed

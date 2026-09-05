@@ -118,13 +118,18 @@ ignores any file whose name is not in canonical form, so no report is ever built
 from a duplicate. Run Check lists them so you can delete them; if they keep
 appearing, raise `min_collect_interval_hours`.
 
-**LaunchAgent plists are never safe to sync.** `~/Library/LaunchAgents/…` stays
-local, always — including on a shared workspace, where only the data moves.
-launchd executes whatever lands on disk without a write-permission check, so a
-synced plist turns a cloud-account compromise into arbitrary scheduled
-execution. The app only ever writes these locally; do not copy them to a share
-yourself. Retired agents that the app archives into the workspace have their
-webhook URLs scrubbed, precisely because that archive often ends up on one.
+**Per-machine scheduling state is never safe to sync.** The background item is
+registered per machine from the app bundle itself — there is no separate file
+for it in the workspace to accidentally sync. `~/Library/Application
+Support/JamfReports/schedules.json`, which holds hand-built schedules, is also
+per machine and must not be synced: launchd-adjacent tooling and the app both
+execute whatever a schedule record names without a write-permission check, so
+a synced schedules.json turns a cloud-account compromise into arbitrary
+scheduled execution on every machine sharing it. Legacy plists imported from a
+pre-2.8.0 install stay local too, always — including on a shared workspace,
+where only the data moves. Legacy plists the app archives into the workspace
+have their webhook URLs scrubbed, precisely because that archive often ends up
+on one.
 
 **`jamf_cli.require_manifest` and a shared workspace don't mix well.** If two
 Macs happen to write a snapshot with the same filename stamp — a same-second
@@ -134,10 +139,10 @@ generate until you delete the manifest by hand. Leave `require_manifest` off
 on a shared workspace.
 
 **A scheduled run needs the folder mounted to start at all.** If the shared
-folder isn't mounted when a LaunchAgent fires, launchd can't start the job and
-nothing is written — no log line, no entry in Run History. The Automation
-Health overdue check is what surfaces this: the schedule simply looks like it
-stopped firing.
+folder isn't mounted when the background item's tick fires, the run can't
+reach its workspace and nothing is written — no log line, no entry in Run
+History. The Automation Health overdue check is what surfaces this: the
+schedule simply looks like it stopped firing.
 
 **`retention.snapshot_keep_count` counts files, not days per Mac.** The count
 floor keeps the newest N snapshot files in a kind's folder regardless of which
@@ -245,8 +250,9 @@ For team access to the same Jamf Pro instance without sharing credentials:
    `prod-dev`).
 2. Authenticate each profile independently via the app's Onboarding flow — each gets its own
    `jamf-cli` credential.
-3. Share only the LaunchAgent `.plist` files (in version control) to keep schedules in sync;
-   each person runs the schedules locally.
+3. Recreate the same schedules on each Mac — with `jamf-reports schedules add` or the
+   Automation screen — rather than sharing `schedules.json` itself; it is per-machine
+   state, not something to check into version control.
 
 Do not share the workspace directory (`~/Jamf-Reports/<profile>/`) or the `jamf-cli` keychain
 credential across team members — use separate profiles and credentials for audit trail
@@ -285,21 +291,24 @@ notification setup this webhook serves.
 
 ## Managed Automation Policy and Validation
 
-**The app's "Automation" policy is declarative, not scriptable.** Setting a master toggle
-installs or removes the managed LaunchAgent plists and validates policy changes in real
-time.
+**The app's "Automation" policy is declarative, not scriptable.** Setting the master toggle
+registers or unregisters the one bundled background item and re-evaluates the policy at
+once — nothing else on disk changes.
 
-- **On enable:** the app installs up to four agents (freshness, scan, reports, backup),
-  signed with your chosen schedule times, and logs the installation to Run History.
-- **On disable:** the app removes those agents and logs the removal.
-- **On change:** the app diffs the policy, applies only the differences, and never
-  overwrites hand-built schedules (exact name match required for ownership).
+- **On enable:** up to four schedules (freshness, scan, reports, backup) are derived from
+  the policy on every wake of the background item — nothing is written for them — and the
+  item is registered if it wasn't already.
+- **On disable:** the derived schedules stop being derived immediately; the background item
+  stays registered only if a hand-built schedule still needs it, and unregisters itself
+  otherwise.
+- **On change:** the next wake simply derives a different set of schedules from the new
+  policy. There is nothing to diff or apply, and a hand-built schedule (exact label match
+  required for ownership) is never touched.
 
 The policy JSON is stored in macOS AppStorage (not visible from the CLI, and there is no
 export/import affordance in Settings). To move an automation policy to another Mac,
-re-create the same settings on the **Automation** screen — reconcile derives and installs
-the same LaunchAgents from the policy on any host running the app, so there is nothing
-else to migrate.
+re-create the same settings on the **Automation** screen — the same four schedules are
+derived on any host running the app, so there is nothing else to migrate.
 
 The same Automation screen that hosts this policy also drives the opt-in Notifications
 webhook and shows Automation Health (the dead-man switch for overdue or failing

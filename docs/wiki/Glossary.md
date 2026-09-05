@@ -319,6 +319,14 @@ headline and severity-tagged findings using Apple's on-device Foundation Model. 
 off by default, and hidden entirely below macOS 27 — one of three AI Insights surfaces
 alongside the Run History failure explainer and the report executive-summary narrative.
 
+### Background item (ticker)
+The one macOS `SMAppService` agent (2.8.0) the app ships inside its own signed bundle —
+shown as "JamfReports" under **Login Items → Allow in the Background**. It wakes every
+five minutes (`JamfReports --tick`) and runs whatever managed or hand-built schedule is
+due, catching up a missed fire on the next wake. Replaces the legacy per-schedule
+*LaunchAgent (historical)* mechanism. *see also: LaunchAgent (historical), Dead-man
+switch.*
+
 ### Claim
 A short lease a run publishes to a shared workspace
 (`automation/.workspace-claim.json`) naming the host, the operation and an
@@ -378,11 +386,14 @@ The mid-cost collection tier — device lists, configuration profiles,
 apps, and EA coverage. Pageable bulk queries; tens of seconds per run.
 *see also: Collection tier.*
 
-### LaunchAgent
-A macOS user-scoped scheduled job at
-`~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist`.
-JamfReports manages these via `LaunchAgentService` / `LaunchAgentWriter`.
-Never installs system-wide LaunchDaemons or requests `sudo`.
+### LaunchAgent (historical)
+Before 2.8.0, a macOS user-scoped scheduled job the app wrote, one per schedule, at the
+legacy path `~/Library/LaunchAgents/com.github.tonyyo11.jamf-reports-community.*.plist`.
+2.8.0 replaced these with the single bundled **Background item (ticker)**; a
+legacy plist found on first launch of that version is imported once into a schedule
+record, then archived when the operator retires it. Never installed system-wide
+LaunchDaemons or requested `sudo`, and still doesn't. *see also: Background item
+(ticker).*
 
 ### Metric alert
 An opt-in `alerts:` config rule that compares a daily-summary metric (e.g. `patch_pct`,

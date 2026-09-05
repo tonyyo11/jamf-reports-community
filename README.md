@@ -162,7 +162,7 @@ worth knowing before you share a bundle:
   IP by hand first.
 - **Profile slugs and schedule labels are not redacted.** They appear verbatim in the
   bundle's manifest, file names, and workspace tree listing. Keep profile slugs and
-  LaunchAgent schedule labels non-identifying (avoid org names, site codes, or personal
+  schedule labels non-identifying (avoid org names, site codes, or personal
   identifiers) so a shared bundle stays tenant-safe.
 
 Found a problem? Open an issue with the error message and the relevant part of your

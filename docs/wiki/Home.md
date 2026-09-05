@@ -17,7 +17,7 @@ unattended runs, and tracks fleet health — all from a GUI. Read these pages in
 4. [Dashboards](https://github.com/tonyyo11/jamf-reports-community/wiki/03-App-Dashboards) — a tour of every screen
 5. [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights) — on-device fleet insights (macOS 27+)
 6. [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates) — `config.yaml`, custom EAs, report templates
-7. [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) — run modes and LaunchAgent jobs
+7. [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) — run modes and the bundled background item
 8. [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust) — metric alerts and the automation dead-man switch
 9. [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) — snapshots and the Trends screen
 10. [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity) — adoption speed and days-behind tracking

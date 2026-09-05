@@ -12,25 +12,26 @@ For how to set up schedules in the first place, see
 
 Two of these features — metric alerts and webhook notifications — plus Run History records
 fire from **any** run of the report machinery, whether it comes from the app's own
-scheduled-run path (a LaunchAgent this app writes, managed or hand-built in the Schedules
-screen) or from the included `jamf-reports` CLI. A `jamf-reports collect` evaluates metric
-alerts and posts the notify digest exactly like a snapshot-only scheduled run; a
-`jamf-reports generate` posts its digest like a jamf-cli-only run (it generates from cache,
-so it does not evaluate alerts). Both record to Run History under a distinct `cli-collect` /
-`cli-generate` label, so a self-scheduled cron/launchd job that calls the CLI is no longer
-invisible.
+schedules (managed or hand-built, run from the bundled background item) or from the
+included `jamf-reports` CLI. A `jamf-reports collect` evaluates metric alerts and posts the
+notify digest exactly like a snapshot-only scheduled run; a `jamf-reports generate` posts
+its digest like a jamf-cli-only run (it generates from cache, so it does not evaluate
+alerts). Both record to Run History under a distinct `cli-collect` / `cli-generate` label,
+so a self-scheduled cron/launchd job that calls the CLI is no longer invisible.
 
 Every scheduled run also records **failing config checks** in its own log. A run collects
 happily against broken column mappings and exits 0, so without this the config rots
 invisibly for weeks. Only genuine failures surface — warnings are for a human reading the
 Config screen, and putting them here would make every run look broken.
 
-The **dead-man switch is the exception** — it can only track LaunchAgent *schedules*. It
-reasons about a `StartCalendarInterval` (an expected fire time it can measure "overdue"
-against), and a cron job or a hand-written `launchd` plist has no such schedule for the app
-to see. So if you drive the CLI from your own cron/launchd, you still get alerts, webhooks,
-and Run History, but the dead-man switch cannot tell that your timer stopped. For dead-man
-coverage, let the app's Automation screen manage the LaunchAgent, or add an external monitor
+The **dead-man switch is the exception** — it can only track a *schedule* the app itself
+knows about (managed, hand-built, or imported from a legacy plist). It measures "overdue"
+against a schedule's own expected fire time, and a cron job or a hand-written `launchd`
+plist you wrote yourself is not one of those — there is no schedule record for the app to
+compare against. So if you drive the CLI from your own cron/launchd, you still get alerts,
+webhooks, and Run History, but the dead-man switch cannot tell that your timer stopped. For
+dead-man coverage, add the schedule to the app instead — the Automation screen, or
+`jamf-reports schedules add` — or add an external monitor
 (see [The honest limitation](#the-honest-limitation)).
 
 ## The data freshness strip
@@ -97,9 +98,9 @@ its log, visible in Run History.
 
 ## The dead-man switch
 
-The dead-man switch treats the **absence** of a run as signal. It looks at every JamfReports
-LaunchAgent — managed or hand-built (hand-built = created in the app's Schedules screen)
-— and flags two conditions:
+The dead-man switch treats the **absence** of a run as signal. It looks at every schedule
+the app knows about — managed, hand-built, or imported from a legacy plist — and flags two
+conditions:
 
 - **Overdue** — the schedule is enabled, it should have fired at some past time, that
   expected fire plus a **60-minute grace window** has elapsed, and no run has recorded a
@@ -107,17 +108,25 @@ LaunchAgent — managed or hand-built (hand-built = created in the app's Schedul
 - **Failing** — a run did record, and its most recent result reported failure.
 
 A schedule can be both; overdue takes precedence, so you see the more urgent "nothing ran"
-state first. Disabled schedules never raise an issue. The grace window absorbs launchd
-jitter, a slow collect, and clock skew without hiding a genuinely missed run.
+state first. Disabled schedules never raise an issue. The grace window absorbs a slow wake,
+a slow collect, and clock skew without hiding a genuinely missed run.
 
-The expected fire time is computed backward from the schedule's `StartCalendarInterval`;
-the last-run result comes from the per-run status records the scheduled-run path writes
-(`<label>_status.json` and the per-profile run status for all-profiles agents).
+The expected fire time is computed backward from the schedule's cadence string; the
+last-run result comes from the per-run status records the scheduled-run body writes
+(`<label>_status.json` and the per-profile run status for all-profiles schedules).
+
+### When the background item itself is off
+
+If Login Items has the JamfReports background item turned off, or it was never approved,
+no per-schedule state can be trusted — nothing is firing at all. Rather than reporting every
+schedule as overdue one at a time, this collapses to a single issue, **Background item
+disabled**, with an **Open Login Items** button that takes you straight to the toggle. Turn
+it on and the per-schedule state resumes on the next check.
 
 ### Where it surfaces
 
-- **Overview banner** — when any schedule is overdue or failing, the Overview screen shows
-  a banner with an **Open Automation** action.
+- **Overview banner** — when any schedule is overdue or failing (or the background item is
+  disabled), the Overview screen shows a banner with an **Open Automation** action.
 - **Automation Health section** — the Automation screen lists each overdue/failing schedule
   with its expected-fire and last-run detail, or "All scheduled runs on time."
 
@@ -125,29 +134,36 @@ the last-run result comes from the per-run status records the scheduled-run path
 
 The health state is recomputed:
 
-- At **app launch**, on the same pass that reconciles managed automation.
+- At **app launch**, on the same pass that registers the background item and applies the
+  automation policy.
 - When the app **returns to the foreground** (Mac wake / app focus).
 - On the **Overview screen's refresh** (its banner recomputes with the tab's data).
+- On **every wake of the background item itself** — every five minutes, whether or not the
+  app is open, right after any due schedules run.
 
 ### Headless coverage
 
-The GUI is not the only thing that checks. Every headless scheduled run, at the end of its
-work, evaluates the whole set of sibling schedules and can post the overdue digest itself —
-so a host that only ever runs on a timer (never opening the app) still gets overdue
-notifications, provided at least one schedule is still firing to do the checking.
+The background item is the primary checker now, not the GUI: every wake evaluates the whole
+set of schedules and can post the overdue digest, whether or not the app has ever been
+opened on that Mac. An external scheduler calling `--scheduled-run` directly also triggers
+the same check at the end of its own run, so a self-written cron/launchd job that drives the
+CLI still contributes to the digest — it just cannot itself be measured for overdueness (see
+[What counts as a scheduled run](#what-counts-as-a-scheduled-run)).
 
 The once-per-day marker for the overdue digest is a file in the workspace
-(`overdue-notify`), shared between the GUI and the headless path, so the digest is sent at
-most once per calendar day no matter which one notices first.
+(`overdue-notify`), shared across every wake and the GUI, so the digest is sent at most once
+per calendar day no matter which one notices first.
 
 ### The honest limitation
 
-If **every** schedule stops firing on a host that **never** opens the app, nothing is left
-to evaluate — the checker itself is a scheduled run, and if all of them are dead, none runs
-to raise the alarm. For that total-silence case, an **external monitor** (an MDM
-extension attribute on the LaunchAgents, a heartbeat check, or a report-freshness alert on
-the output directory) is the only cover. The dead-man switch protects against one schedule
-failing while others keep running; it cannot report its own host going fully dark.
+The one case nothing can check is the background item itself being off — Login Items never
+approved it, or the operator turned it off — on a Mac where nobody ever opens the app to see
+the disabled-item banner. For that case, an **external monitor** (an MDM extension attribute
+on Background Task Management state, a heartbeat check, or a report-freshness alert on the
+output directory) is the only cover. Once the item is registered and approved, the dead-man
+switch itself runs every five minutes regardless of the GUI, so this is now a narrower gap
+than "every scheduled run happened to stop" — it is specifically "the one thing that runs
+everything else was never allowed to run at all."
 
 ## Metric alerts
 
@@ -245,6 +261,6 @@ card becomes a signal that something happened, with the detail kept on the host.
 - [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) — managed automation, the
   per-schedule builder, run modes, and collection cadence.
 - [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations) —
-  the webhook egress and LaunchAgent threat model.
+  the webhook egress model and the background item's threat model.
 - [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting) — the Config Doctor
   and Run History.

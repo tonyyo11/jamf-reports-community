@@ -36,22 +36,40 @@ backs off for the rest of the run if Jamf Pro rate-limits it, and after a
 failed run it waits for its normal weekly cadence rather than retrying every
 hour; Collect now still runs it immediately.
 
-### Fixed
-
-- Managed automation agents now follow the app. The reconcile signature includes
-  the executable path, so launching the installed copy repoints agents that were
-  written by a build-folder or moved copy — before this, an agent stayed pinned
-  to whichever bundle wrote it, and every rebuild of that bundle re-registered
-  the agent with macOS and posted a "Software from … can run in the background"
-  notification. The Automation screen and the Config Doctor now warn when the
-  app is running outside /Applications or ~/Applications rather than letting it
-  write agents that point at itself.
+- `jamf-reports schedules list|add|remove|run` — hand-built schedules are
+  scriptable for the first time.
 
 ### Changed
 
 Connecting a Platform API profile now asks which scope the integration was
 created at — environment (the GA default), tenant, or organization — instead
 of assuming a tenant ID.
+
+- Scheduling no longer writes files into `~/Library/LaunchAgents`. One
+  app-owned background item ("JamfReports" under Login Items › Allow in the
+  Background) wakes every five minutes and runs whatever schedule is due, so
+  a schedule set for 06:20 starts by 06:25. Managed automation and hand-built
+  schedules both run this way; hand-built schedules now live in
+  `~/Library/Application Support/JamfReports/schedules.json` and survive
+  moving or updating the app.
+- On first launch, existing JamfReports LaunchAgents are imported. Managed
+  ones are archived and removed at once; hand-built ones stay loaded until
+  you retire them from the Automation screen, and run twice per fire until
+  you do — the screen says so.
+- A missed run (Mac asleep, logged out) catches up once on the next wake for
+  collect schedules; generate-from-cache and backup schedules only run when
+  the missed time is within the last 15 minutes, as before.
+- If macOS shows the background item as off, the Automation screen and the
+  Overview banner say so with an "Open Login Items" button, instead of every
+  schedule reading as overdue.
+
+### Removed
+
+- The "Software from … can run in the background" notification on every app
+  update, which came from each LaunchAgent being re-registered when its
+  binary changed. The 2.8.0 executable-path check and the Config Doctor
+  "not in an Applications folder" row are gone with the plists; the banner
+  on the Automation screen stays.
 
 ## [2.7.0] - 2026-09-04
 
