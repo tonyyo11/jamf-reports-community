@@ -5,7 +5,8 @@ import Foundation
 /// schedule's own outcome lands in its Run History record, not in this code.
 @Sendable
 func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
-    if let idx = arguments.firstIndex(of: "--now"), idx + 1 < arguments.count {
+    if let idx = arguments.firstIndex(of: "--now"), idx + 1 < arguments.count,
+       !arguments[idx + 1].hasPrefix("--") {
         do { try TickRunner.requestRunNow(label: arguments[idx + 1]) } catch {
             fputs("[error] could not queue run-now: \(error.localizedDescription)\n", stderr)
             return 1

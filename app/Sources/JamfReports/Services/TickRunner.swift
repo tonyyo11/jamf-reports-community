@@ -45,18 +45,36 @@ enum TickRunner {
         process.standardOutput = pipe
         process.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { handle in
-            let text = String(decoding: handle.availableData, as: UTF8.self)
-            guard !text.isEmpty else { return }
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                return
+            }
+            let text = String(decoding: data, as: UTF8.self)
             for line in text.split(separator: "\n") {
                 onLine(CLIBridge.LogLine(timestamp: Date(), level: .info, text: String(line)))
             }
         }
-        do { try process.run() } catch { return 1 }
-        guard wait else { return 0 }
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            process.terminationHandler = { _ in c.resume() }
+
+        guard wait else {
+            do {
+                try process.run()
+                return 0
+            } catch {
+                pipe.fileHandleForReading.readabilityHandler = nil
+                return 1
+            }
         }
-        pipe.fileHandleForReading.readabilityHandler = nil
-        return process.terminationStatus
+
+        return await withCheckedContinuation { (c: CheckedContinuation<Int32, Never>) in
+            process.terminationHandler = { proc in c.resume(returning: proc.terminationStatus) }
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                pipe.fileHandleForReading.readabilityHandler = nil
+                c.resume(returning: 1)
+            }
+        }
     }
 }

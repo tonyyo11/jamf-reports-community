@@ -129,7 +129,6 @@ final class CLISubcommandTests: XCTestCase {
         let result = schoolCheckForProfile(slug)
         XCTAssertEqual(result, 1)
     }
-
 }
 
 // MARK: - Test harness wrappers
