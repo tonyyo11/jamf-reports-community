@@ -89,12 +89,14 @@ struct AuditView: View {
     @State private var unusedGroups: [UnusedGroup] = []
     @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
+    @State private var commandFindings: [AuditFinding] = []
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
     @State private var lastAuditDate: Date?
     @State private var lastHygieneDate: Date?
     @State private var selectedFinding: AuditFinding?
+    @State private var selectedCommandFinding: AuditFinding?
     @State private var newFindingKeys: Set<String> = []
     @State private var resolvedFindings: [AuditFinding] = []
 
@@ -583,7 +585,7 @@ struct AuditView: View {
                     }
                     .padding(16)
                     Divider().background(Theme.Colors.hairline)
-                    ForEach(commandHealthFindings(commandHealth)) { finding in
+                    ForEach(commandFindings) { finding in
                         HStack(spacing: 10) {
                             Pill(text: finding.severity, tone: pillTone(finding.severity))
                                 .frame(width: 86, alignment: .leading)
@@ -592,11 +594,17 @@ struct AuditView: View {
                                 .foregroundStyle(Theme.Colors.fg)
                             Spacer()
                             Text(finding.affectedDisplay).font(.footnote.monospacedDigit())
-                            Button { selectedFinding = finding } label: {
+                            Button { selectedCommandFinding = finding } label: {
                                 Image(systemName: "info.circle")
                             }
                             .buttonStyle(.plain)
                             .help("Recommendation and where to act.")
+                            .popover(item: $selectedCommandFinding) { popoverFinding in
+                                FindingDetailPopover(
+                                    finding: popoverFinding,
+                                    tone: pillTone(popoverFinding.severity)
+                                )
+                            }
                         }
                         .padding(.horizontal, 16).padding(.vertical, 8)
                     }
@@ -969,6 +977,7 @@ struct AuditView: View {
             integritySummary = nil
             duplicateSerials = .empty
             commandHealth = .empty
+            commandFindings = []
             return
         }
 
@@ -981,6 +990,7 @@ struct AuditView: View {
         await loadIntegritySummary()
         duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
         commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
+        commandFindings = commandHealthFindings(commandHealth)
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
