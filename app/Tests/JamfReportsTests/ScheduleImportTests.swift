@@ -81,4 +81,11 @@ final class ScheduleImportTests: XCTestCase {
         XCTAssertEqual(WorkspaceStore.loadSchedules(
             policy: policy, store: store, baseProfile: "alpha").count, 1)
     }
+
+    func testWantsTickerWhenManagedOrAnyHandBuiltSchedule() {
+        var managed = AutomationPolicy(); managed.isManaged = true
+        XCTAssertTrue(WorkspaceStore.wantsTicker(policy: managed, hasHandBuilt: false))
+        XCTAssertTrue(WorkspaceStore.wantsTicker(policy: AutomationPolicy(), hasHandBuilt: true))
+        XCTAssertFalse(WorkspaceStore.wantsTicker(policy: AutomationPolicy(), hasHandBuilt: false))
+    }
 }

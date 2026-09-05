@@ -170,6 +170,12 @@ extension WorkspaceStore {
         AutomationHealthModel.shared.issues
     }
 
+    /// Whether the ticker should be registered: managed automation is on, or
+    /// there's at least one hand-built schedule to fire.
+    nonisolated static func wantsTicker(policy: AutomationPolicy, hasHandBuilt: Bool) -> Bool {
+        policy.isManaged || hasHandBuilt
+    }
+
     /// The policy changed, or the app launched: make Login Items agree with
     /// it. Registered when anything is scheduled; unregistered when nothing
     /// is. Called from the root view's `.task` at launch AND from the
@@ -178,7 +184,12 @@ extension WorkspaceStore {
     /// instead of waiting for the next app launch.
     func applyAutomationPolicy() async {
         guard !demoMode else { return }
-        let wantsTicker = AutomationPolicy.current().isManaged || !ScheduleStore().load().isEmpty
+        if let result = ScheduleImport.runIfNeeded(), !result.managedLabels.isEmpty {
+            _ = LaunchAgentService.archiveAndRemove(
+                labels: result.managedLabels, includingManaged: true)
+        }
+        let wantsTicker = Self.wantsTicker(
+            policy: AutomationPolicy.current(), hasHandBuilt: !ScheduleStore().load().isEmpty)
         do {
             if wantsTicker {
                 try tickerRegistrar.register()

@@ -286,16 +286,16 @@ struct SettingsView: View {
             let applied = try WorkspaceRootStore.set(url)
             workspaceRootPath = applied.path
             workspace.reloadFromDisk()
-            // Actually rewrite the managed plists now. set() only clears the
-            // flag that makes the NEXT reconcile forced, and reloadFromDisk
-            // does not reconcile — so without this the message below would
-            // describe something that had not happened yet.
+            // Register/unregister the ticker against the new root's schedules.
+            // The ticker itself picks up the new root on its next wake, not
+            // synchronously here — the message below reflects that.
             Task { await workspace.applyAutomationPolicy() }
             workspaceRootMessage = url == nil
                 ? "Back to the default location. Profiles already in the previous folder stay "
                     + "there — copy them across if you want them here."
                 : "Workspace location updated. Profiles already elsewhere are not moved; copy "
-                    + "them in if you want them here. Scheduled runs are rewritten to match."
+                    + "them in if you want them here. Scheduled runs use the new folder from "
+                    + "their next run."
         } catch {
             workspaceRootMessage = "Couldn't use that folder: \(error.localizedDescription)"
         }

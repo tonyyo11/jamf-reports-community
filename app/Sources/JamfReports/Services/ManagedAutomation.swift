@@ -296,7 +296,7 @@ enum ManagedAutomation {
 
     /// One-shot migration wrapper: forces a single reconcile pass when
     /// `migrationKey` hasn't been claimed yet (see `WorkspaceStore
-    /// .reconcileManagedAutomation`'s doc for the RunAtLoad-migration
+    /// .applyAutomationPolicy`'s doc for the RunAtLoad-migration
     /// history), and marks it claimed ONLY when every action in that forced
     /// pass succeeded (`migrationShouldComplete`). A partial failure leaves
     /// the flag unset so the NEXT launch or scheduled run retries — silently

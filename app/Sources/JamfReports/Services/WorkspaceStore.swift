@@ -231,12 +231,6 @@ final class WorkspaceStore {
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
-        if !isDemo {
-            if let result = ScheduleImport.runIfNeeded(), !result.managedLabels.isEmpty {
-                _ = LaunchAgentService.archiveAndRemove(
-                    labels: result.managedLabels, includingManaged: true)
-            }
-        }
     }
 
     /// Managed schedules come from the policy; hand-built from the store.

@@ -38,10 +38,10 @@ struct AutomationTab: View {
 /// v2.2.0 Phase 5 — the "set policy, not cron jobs" Automation screen.
 ///
 /// Edits the single app-level `AutomationPolicy` (@AppStorage). When "Manage
-/// automation" is on, `ManagedAutomation.reconcile` (run at launch) installs the
-/// daily-freshness / weekly-scan / reports / backup all-profiles agents from
-/// this policy; turning it off tears them down. Report groups drive the
-/// consolidated fleet report.
+/// automation" is on, the bundled ticker derives the daily-freshness /
+/// weekly-scan / reports / backup schedules from this policy on every wake;
+/// turning it off stops them. Report groups drive the consolidated fleet
+/// report.
 struct AutomationView: View {
     @Environment(WorkspaceStore.self) private var workspace
 
