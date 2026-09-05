@@ -64,7 +64,7 @@ final class CLIBridge {
     /// Use this constant instead of an inline `{ _ in }` closure so the intent
     /// is explicit and the constant type is guaranteed to match the parameter.
     /// `nonisolated` so it can be referenced from nonisolated static functions
-    /// (e.g. `codesignGate` call sites in `LaunchAgentWriter`, `ProfileService`).
+    /// (e.g. `codesignGate` call sites in `ProfileService`).
     nonisolated static let noOpOnLine: @Sendable (LogLine) -> Void = { _ in }
 
     /// Feeds streamed run lines into the in-app `LogBuffer` so the Settings →

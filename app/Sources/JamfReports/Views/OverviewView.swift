@@ -1464,14 +1464,14 @@ struct OverviewView: View {
         let collected = await Task.detached(priority: .utility) {
             TrendStore.readLatestSnapshotMTime(profile: profile) != nil
         }.value
-        // Covered either by a per-profile LaunchAgent, or by managed
-        // automation with this profile not excluded — the all-profiles agents
-        // discover profiles dynamically, so a managed, non-excluded profile
-        // is genuinely scheduled even with no per-profile agent. (The 2026-07
-        // fix dropped a blanket `isManaged` OR entirely because it ticked
-        // EVERY profile under managed automation with no exclusion awareness,
-        // including ones the operator had excluded; this restores the
-        // disjunct scoped to non-excluded profiles only.)
+        // Covered either by a per-profile hand-built schedule, or by managed
+        // automation with this profile not excluded — the ticker discovers
+        // profiles dynamically, so a managed, non-excluded profile is
+        // genuinely scheduled even with no hand-built schedule of its own.
+        // (The 2026-07 fix dropped a blanket `isManaged` OR entirely because
+        // it ticked EVERY profile under managed automation with no exclusion
+        // awareness, including ones the operator had excluded; this restores
+        // the disjunct scoped to non-excluded profiles only.)
         let scheduled = await Task.detached(priority: .utility) {
             let hasAgent = ScheduleStore().load()
                 .map { $0.toSchedule() }

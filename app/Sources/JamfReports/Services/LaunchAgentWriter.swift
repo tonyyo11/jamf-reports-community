@@ -6,26 +6,18 @@ import Foundation
 /// ticker (see `Tick.swift`), not per-kind LaunchAgent plists — this file no
 /// longer writes, loads, or removes plists. What remains is the identity and
 /// parsing vocabulary a handful of other pieces still depend on: the label
-/// format `LaunchAgentService.parse` reads back, the cadence-string grammar
-/// the ticker and the dead-man switch both turn into fire times, and the
-/// `jamf-cli` trust check `CLIBridge`'s codesign gate exercises.
+/// format `LaunchAgentService.parse` reads back, and the cadence-string
+/// grammar the ticker and the dead-man switch both turn into fire times.
 enum LaunchAgentWriter {
 
     static let labelPrefix = "com.github.tonyyo11.jamf-reports-community"
-    static let legacyLabelPrefix = "com.tonyyo.jrc"
 
     enum WriterError: Error, LocalizedError {
-        case invalidProfile(String)
-        case invalidSlug(String)
         case cadenceParseError(String)
-        case outsideSafeDir(URL)
 
         var errorDescription: String? {
             switch self {
-            case .invalidProfile(let p):      "Profile '\(p)' contains invalid characters."
-            case .invalidSlug(let s):          "Name produces invalid slug '\(s)' — use a-z, 0-9, hyphens."
             case .cadenceParseError(let s):    "Cannot parse cadence: \(s)"
-            case .outsideSafeDir(let u):       "Path outside ~/Library/LaunchAgents: \(u.lastPathComponent)"
             }
         }
     }
@@ -45,10 +37,6 @@ enum LaunchAgentWriter {
         guard ProfileService.isValid(schedule.profile) else { return nil }
         let candidate = "\(labelPrefix).\(schedule.profile).\(slug)"
         return isValidLabel(candidate) ? candidate : nil
-    }
-
-    static func isMultiLabel(_ label: String) -> Bool {
-        label.hasPrefix("\(labelPrefix).multi.")
     }
 
     // MARK: - Private helpers
@@ -76,37 +64,6 @@ enum LaunchAgentWriter {
                 return [["Hour": hour, "Minute": minute]]
             }
         }
-    }
-
-    /// True when ``path`` is the same `jamf-cli` executable the app would
-    /// resolve AND that executable passes the M-01 codesign gate.
-    ///
-    /// Path-identity alone is insufficient: a tampered binary placed at the
-    /// expected location would satisfy ``sameResolvedPath`` but must still be
-    /// refused. The codesign gate (mirrored from ``CLIBridge.run``) closes the
-    /// 4th spawn-site identified in the M-01 review.
-    ///
-    /// The ``_testLocatedOverride`` parameter is a test seam, NOT a production
-    /// API: pass nil (default) in production code. Tests pass a fake binary
-    /// URL so the codesign gate is reachable even when the located
-    /// ``jamf-cli`` is absent or signed. The leading underscore signals "do
-    /// not pass from production callers."
-    static func isTrustedJamfCLIExecutable(
-        _ path: String,
-        _testLocatedOverride: URL? = nil
-    ) -> Bool {
-        let expanded = (path as NSString).expandingTildeInPath
-        let candidate = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
-        guard candidate.lastPathComponent == "jamf-cli",
-              FileManager.default.isExecutableFile(atPath: candidate.path),
-              let located = _testLocatedOverride ?? ExecutableLocator.locate("jamf-cli"),
-              sameResolvedPath(candidate, located) else {
-            return false
-        }
-        // M-01 fourth-site closure: refuse to launch even a path-identity-
-        // matching jamf-cli that fails signature verification. Returns nil
-        // when the gate accepts; non-nil (sentinel -1) on rejection.
-        return CLIBridge.codesignGate(executable: candidate, onLine: CLIBridge.noOpOnLine) == nil
     }
 
     /// The launchd `StartCalendarInterval` entries a cadence string denotes —

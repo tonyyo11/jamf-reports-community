@@ -23,8 +23,8 @@ enum LaunchAgentService {
     ///
     /// Safety, in order:
     /// 1. Any reserved managed label (`ManagedAutomation.owns`) is REFUSED — the
-    ///    exact inverse of the managed-reconcile guard, so this path can only
-    ///    ever retire a user-built agent the operator confirmed.
+    ///    exact inverse of that check, so this path can only ever retire a
+    ///    user-built agent the operator confirmed.
     /// 2. Each plist is copied to
     ///    `<workspacesRoot>/_archived-launchagents/<label>.<ts>.plist` BEFORE
     ///    bootout + delete (recoverable, matching the snapshot retention
@@ -486,7 +486,7 @@ enum LaunchAgentService {
     ///
     /// Returns `nil` when the flag is absent (mirrors `tiers(from:)`). An
     /// all-invalid CSV also collapses to `nil` rather than an empty-but-non-nil
-    /// array, so "no exclusions" has one representation for `signature()`.
+    /// array, so "no exclusions" has a single representation.
     private static func excludedProfiles(from args: [String]) -> [String]? {
         guard let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count else {
             return nil
@@ -1036,6 +1036,7 @@ enum LaunchAgentService {
     }
 
     private static func bootout(_ label: String) -> Int32 {
+        guard LaunchAgentWriter.isValidLabel(label) else { return -1 }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         process.arguments = ["bootout", "gui/\(getuid())/\(label)"]

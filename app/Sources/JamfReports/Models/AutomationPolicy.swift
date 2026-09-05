@@ -9,9 +9,8 @@ import Foundation
 /// policy.
 ///
 /// `isManaged` is the master switch and defaults **off**: until the operator
-/// opts in (Phase 5 Automation UI / Phase 6 migration), `ManagedAutomation`
-/// installs nothing and removes nothing, so existing hand-built schedules are
-/// untouched.
+/// opts in (Phase 5 Automation UI / Phase 6 migration), the ticker runs no
+/// managed schedule at all, so existing hand-built schedules are untouched.
 struct AutomationPolicy: Codable, Sendable, Equatable {
 
     /// Report cadence applied uniformly to all profiles.
@@ -125,7 +124,7 @@ struct AutomationPolicy: Codable, Sendable, Equatable {
     }
 
     /// Read the current policy straight from `UserDefaults` — for non-View
-    /// callers (e.g. the launch reconcile) that can't use `@AppStorage`.
+    /// callers (e.g. the ticker) that can't use `@AppStorage`.
     static func current(defaults: UserDefaults = .standard) -> AutomationPolicy {
         guard let raw = defaults.string(forKey: storageKey) else { return AutomationPolicy() }
         return parse(raw)

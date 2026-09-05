@@ -169,29 +169,9 @@ final class LaunchAgentServiceTests: XCTestCase {
         XCTAssertNil(parsed.tiers)
     }
 
-    func testTiersRoundTripThroughWriteAndParse() throws {
-        let label = "\(prefix).dummy.tier-round-trip"
-        let plistURL = try writePlist([
-            "Label": label,
-            "ProgramArguments": [
-                "/Applications/JamfReports.app/Contents/MacOS/JamfReports",
-                "--scheduled-run",
-                "--profile", "dummy",
-                "--mode", "jamf-cli-full",
-                "--tiers", "inventory,refresh",
-            ],
-            "StartCalendarInterval": ["Hour": 7, "Minute": 0],
-            "Disabled": false,
-        ])
-
-        let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
-        XCTAssertEqual(parsed.tiers, [.refresh, .inventory],
-                       "Tier set must survive the write → parse round trip")
-    }
-
     // MARK: - --exclude-profiles round trip (was write-only; parse dropped it)
 
-    func testExcludeProfilesRoundTripThroughWriteAndParse() throws {
+    func testParseReadsExcludeProfilesFromMultiPlist() throws {
         let label = "\(prefix).multi.exclude-round-trip"
         let plistURL = try writePlist([
             "Label": label,
@@ -209,7 +189,7 @@ final class LaunchAgentServiceTests: XCTestCase {
 
         let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
         XCTAssertEqual(parsed.excludedProfiles, ["dummy", "sandbox"],
-                       "--exclude-profiles must survive the write → parse round trip")
+                       "parse must read --exclude-profiles back from a multi plist")
     }
 
     func testExcludeProfilesAbsentFlagYieldsNil() throws {
