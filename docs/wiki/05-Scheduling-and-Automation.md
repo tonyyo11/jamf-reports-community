@@ -169,9 +169,11 @@ moving the app or updating it re-binds the item automatically with no re-registr
 notification.
 
 If you turn the item off there — or if macOS has not yet approved it — nothing runs until
-you turn it back on. The Automation screen and the Overview banner say so directly, with an
-**Open Login Items** button, rather than reporting every schedule as overdue. Turning it
-back on takes effect the next time you bring the app to the foreground.
+you turn it back on. The Overview banner says so directly, with an **Open Automation**
+button that leads to the Automation screen; the Automation screen itself has the
+**Open Login Items** button that opens System Settings — rather than reporting every
+schedule as overdue. Turning it back on takes effect the next time you bring the app to
+the foreground.
 
 Turning **Manage automation** off with no hand-built schedules left unregisters the item
 entirely, so a Mac with automation fully off carries no background item at all.

@@ -59,9 +59,10 @@ of assuming a tenant ID.
 - A missed run (Mac asleep, logged out) catches up once on the next wake for
   collect schedules; generate-from-cache and backup schedules only run when
   the missed time is within the last 15 minutes, as before.
-- If macOS shows the background item as off, the Automation screen and the
-  Overview banner say so with an "Open Login Items" button, instead of every
-  schedule reading as overdue.
+- If macOS shows the background item as off, the Overview banner says so with
+  an "Open Automation" button, and the Automation screen itself has an "Open
+  Login Items" button to fix it — instead of every schedule reading as
+  overdue.
 
 ### Removed
 
