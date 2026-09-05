@@ -7,6 +7,14 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+macOS 15 (Sequoia) or later is now required to run the app; macOS 14 no longer
+receives security updates from Apple, so support for it has been dropped. The
+app and installer are built for Apple silicon (arm64) only — on an Intel Mac,
+build from source instead. CI now also builds on GitHub's Xcode 27 preview
+image as an early warning for the upcoming Xcode 27 release.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added

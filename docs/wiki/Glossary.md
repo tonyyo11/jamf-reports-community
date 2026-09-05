@@ -66,7 +66,7 @@ Enabled by default; reported by Jamf inventory as `On` / `Off` (despite
 older docs showing `Enabled` / `Disabled`).
 
 ### macOS
-Apple's desktop operating system. The app requires macOS 14 (Sonoma) or
+Apple's desktop operating system. The app requires macOS 15 (Sequoia) or
 later and runs on subsequent macOS releases.
 
 ### MDM — Mobile Device Management

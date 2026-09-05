@@ -19,7 +19,7 @@ any changes.
 
 ## What This Project Is
 
-This project is a native macOS app (`app/`) — a SwiftUI GUI (macOS 14+, Swift 6) for fleet
+This project is a native macOS app (`app/`) — a SwiftUI GUI (macOS 15+, Swift 6) for fleet
 reporting against Jamf Pro and Jamf School. It collects data from `jamf-cli` (or a Jamf Pro
 CSV export, or cached snapshots), generates multi-sheet Excel workbooks and self-contained
 HTML reports, schedules unattended runs via LaunchAgents, tracks run history, and surfaces a
@@ -358,7 +358,8 @@ Charts require `columns.operating_system` (OS adoption) and
 ### Swift App Architecture
 
 The macOS app lives in `app/` and is a SwiftPM executable target (`JamfReports`).
-Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
+Build target: macOS 15+ (Sequoia), Swift 6 strict concurrency, Apple silicon only —
+the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 
 #### Key services
 
@@ -578,7 +579,7 @@ parsing, log-line stream routing).
 AppKit run loop a headless CLI lacks; it stays a GUI feature.
 
 **Dispatch gotcha — do not "simplify" it.** CLI dispatch goes through the
-`@available(macOS 14, *) runIncludedCLI()` helper, NOT a bare
+`@available`-annotated `runIncludedCLI()` helper, NOT a bare
 `JamfReportsCLI.main()` at top level. ArgumentParser's async `main`/`run`
 overloads are `@available(macOS 10.15, *)`-gated; in unannotated top-level code
 overload resolution binds to the synchronous overloads, which refuse to run an
@@ -821,7 +822,7 @@ jamf-reports-community/
 ├── THIRD_PARTY_NOTICES.md      # Third-party attribution — canonical; mirrored to Resources
 ├── docs/wiki/                  # GitHub Wiki source files
 ├── app/                        # Native macOS SwiftUI app
-│   ├── Package.swift           # SwiftPM manifest (executable target, macOS 14+, Swift 6)
+│   ├── Package.swift           # SwiftPM manifest (executable target, macOS 15+, Swift 6)
 │   ├── JamfReports.entitlements
 │   ├── build-app.sh            # Produces app/build/JamfReports.app with ad-hoc signing
 │   ├── iconset/                # App icon source and build script

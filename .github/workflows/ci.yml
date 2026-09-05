@@ -9,18 +9,24 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    # Two-leg toolchain matrix for Liquid Glass adoption. Both legs block.
-    #   floor leg  — macOS 15 SDK + Xcode 16.4 (Swift 6.1.x): proves the
-    #                macOS 14/15 fallback path (the #available else-branch)
-    #                builds, AND is the strict-concurrency floor gate (local
-    #                Xcode/Swift 6.3 is more lenient and compiles isolation
-    #                errors this leg catches).
-    #   glass leg  — macOS 26 SDK + Xcode 26.0.1 (Swift 6.2): proves the
-    #                #available(macOS 26, *) glassEffect branch compiles.
-    #                Pinned to the LOWEST 26 so glass code can't lean on a
-    #                26.2+-only API the deployment floor lacks. The existing
-    #                codebase was verified clean on 6.2 before this leg was
-    #                made blocking (CI run 27642973607).
+    # Toolchain matrix for Liquid Glass adoption. The two pinned legs block;
+    # the preview leg does not (see below).
+    #   floor leg   — macOS 15 SDK + Xcode 16.4 (Swift 6.1.x): proves the
+    #                 macOS 14/15 fallback path (the #available else-branch)
+    #                 builds, AND is the strict-concurrency floor gate (local
+    #                 Xcode/Swift 6.3 is more lenient and compiles isolation
+    #                 errors this leg catches).
+    #   glass leg   — macOS 26 SDK + Xcode 26.0.1 (Swift 6.2): proves the
+    #                 #available(macOS 26, *) glassEffect branch compiles.
+    #                 Pinned to the LOWEST 26 so glass code can't lean on a
+    #                 26.2+-only API the deployment floor lacks. The existing
+    #                 codebase was verified clean on 6.2 before this leg was
+    #                 made blocking (CI run 27642973607).
+    #   preview leg — GitHub's `xcode-27` runner image (macOS 26 host, Xcode
+    #                 27.0 beta as the only/default Xcode — no version pin,
+    #                 the image IS the pin). Advance notice of Xcode 27 GA
+    #                 breakage. The image is a preview with limited capacity,
+    #                 so this leg is non-blocking (continue-on-error).
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +35,10 @@ jobs:
             xcode: "16.4"
           - os: macos-26
             xcode: "26.0.1"
+          - os: xcode-27
+            preview: true
+
+    continue-on-error: ${{ matrix.preview == true }}
 
     steps:
       - name: Checkout
@@ -39,10 +49,16 @@ jobs:
       # mixing them produces frontend crashes like the SIGABRT we hit on
       # ZIPFoundation during the first PR-9.5 attempt. The pin also stops
       # runner-image rotation from silently shifting the bundled Swift.
+      # Skipped on the xcode-27 preview leg: that image ships Xcode 27 beta
+      # as its only/default Xcode, so there is nothing to pin it against.
       - name: Pin Xcode ${{ matrix.xcode }}
+        if: matrix.xcode != ''
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90  # v1
         with:
           xcode-version: ${{ matrix.xcode }}
+
+      - name: Print Xcode version
+        run: xcodebuild -version
 
       - name: Print Swift version
         run: swift --version
