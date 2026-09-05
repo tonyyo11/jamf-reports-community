@@ -30,7 +30,7 @@ struct DDMBlueprintView: View {
             DDMBlueprintView.header(kicker: showsPlatformSections
                 ? "Experimental — Platform API" : "Declarative Device Management")
             if !workspace.demoMode && lockState == .unlockedWithData {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory, .scan])
+                CollectNowBanner(source: bannerSource, tiers: [.inventory, .scan])
                 if deviceSnapshot.isDetected {
                     FreshnessChipRow(sourceDates: deviceSnapshot.sourceDates,
                                      expectedKinds: ["ddm-device-status"])
@@ -101,10 +101,32 @@ struct DDMBlueprintView: View {
         }
     }
 
-    /// On-prem profiles never see the Blueprints sections — they read
-    /// Platform-only snapshots that on-prem never collects.
+    /// Whether the Platform data path is reachable at all — demo mode, or
+    /// the experimental flag AND the capability probe both hold. Mirrors the
+    /// `platformPath` local `decideLockState` uses to gate `hasPlatformData`.
+    private var platformPath: Bool {
+        workspace.demoMode || (experimentalFeatures.isEnabled(.platformAPI) && platformAvailable)
+    }
+
+    /// On-prem profiles (or a profile with the experimental flag off) never
+    /// see the Blueprints sections — a snapshot left over from when the flag
+    /// was on must not render once it's off.
     private var showsPlatformSections: Bool {
-        workspace.demoMode || (snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0)
+        DDMBlueprintView.showsPlatformSections(
+            platformPath: platformPath,
+            hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0)
+    }
+
+    static func showsPlatformSections(platformPath: Bool, hasPlatformData: Bool) -> Bool {
+        platformPath && hasPlatformData
+    }
+
+    /// The freshest of the two snapshot sources — an on-prem profile with a
+    /// fresh per-device scan must not read "never fetched live" just because
+    /// the (empty, Platform-only) blueprint snapshot has no date.
+    private var bannerSource: CacheSource {
+        let newest = [snapshot.snapshotDate, deviceSnapshot.snapshotDate].compactMap { $0 }.max()
+        return CacheSource.from(snapshotDate: newest, withinHours: 36)
     }
 
     private static func header(kicker: String) -> some View {
@@ -145,9 +167,9 @@ struct DDMBlueprintView: View {
                 EmptyStateView(
                     systemImage: "doc.badge.gearshape",
                     title: "No DDM snapshots yet",
-                    message: "Run a collect with the Scan tier (or wait for the weekly managed scan) "
-                        + "to populate per-device DDM status. Platform profiles can also run the "
-                        + "blueprint reports.",
+                    message: "Run a collect with the Scan tier (or wait for the weekly managed "
+                        + "scan) to populate per-device DDM status. Platform profiles can also "
+                        + "run the blueprint reports.",
                     commands: ["jamf-reports collect --tiers scan"]
                 )
             }
@@ -237,11 +259,13 @@ struct DDMBlueprintView: View {
                     label: "of \(fleetCounts.total) Macs",
                     value: fleetCounts.total, color: Theme.Colors.fgMuted)
                 DDMBlueprintView.declarationCounter(
-                    label: "Reported", value: deviceSnapshot.ddmReportedCount, color: Theme.Colors.ok)
+                    label: "Reported", value: deviceSnapshot.ddmReportedCount,
+                    color: Theme.Colors.ok)
                 DDMBlueprintView.declarationCounter(
                     label: "Failing declarations",
                     value: deviceSnapshot.failingDeclarationCount,
-                    color: deviceSnapshot.failingDeclarationCount > 0 ? Theme.Colors.danger : Theme.Colors.ok)
+                    color: deviceSnapshot.failingDeclarationCount > 0
+                        ? Theme.Colors.danger : Theme.Colors.ok)
             }
         }
     }
@@ -260,12 +284,17 @@ struct DDMBlueprintView: View {
                         DDMBlueprintView.deviceList(entry.devices)
                     } label: {
                         HStack(spacing: 8) {
-                            Mono(text: DDMBlueprintView.identifierLabel(entry.identifier, blueprints: snapshot.blueprints))
+                            Mono(text: DDMBlueprintView.identifierLabel(
+                                entry.identifier, blueprints: snapshot.blueprints))
                                 .lineLimit(1)
                             Spacer()
                             Pill(text: "\(entry.active) active", tone: .teal)
-                            if entry.inactive > 0 { Pill(text: "\(entry.inactive) inactive", tone: .warn) }
-                            if entry.invalid > 0 { Pill(text: "\(entry.invalid) invalid", tone: .danger) }
+                            if entry.inactive > 0 {
+                                Pill(text: "\(entry.inactive) inactive", tone: .warn)
+                            }
+                            if entry.invalid > 0 {
+                                Pill(text: "\(entry.invalid) invalid", tone: .danger)
+                            }
                             if entry.mixed > 0 { Pill(text: "\(entry.mixed) mixed", tone: .danger) }
                         }
                     }
@@ -286,16 +315,22 @@ struct DDMBlueprintView: View {
                     DisclosureGroup {
                         DDMBlueprintView.deviceList(bucket.devices)
                     } label: {
-                        HStack { Text("Pending \(bucket.version)").font(.footnote.weight(.semibold))
-                                 Spacer(); Pill(text: "\(bucket.devices.count) devices", tone: .gold) }
+                        HStack {
+                            Text("Pending \(bucket.version)").font(.footnote.weight(.semibold))
+                            Spacer()
+                            Pill(text: "\(bucket.devices.count) devices", tone: .gold)
+                        }
                     }
                 }
                 ForEach(deviceSnapshot.failureReasons, id: \.reason) { bucket in
                     DisclosureGroup {
                         DDMBlueprintView.deviceList(bucket.devices)
                     } label: {
-                        HStack { Text(bucket.reason).font(.footnote.weight(.semibold)).lineLimit(2)
-                                 Spacer(); Pill(text: "\(bucket.devices.count) devices", tone: .danger) }
+                        HStack {
+                            Text(bucket.reason).font(.footnote.weight(.semibold)).lineLimit(2)
+                            Spacer()
+                            Pill(text: "\(bucket.devices.count) devices", tone: .danger)
+                        }
                     }
                 }
             }
@@ -303,7 +338,9 @@ struct DDMBlueprintView: View {
     }
 
     /// Blueprint display name when the Platform snapshot knows this identifier, else the UUID.
-    static func identifierLabel(_ identifier: String, blueprints: [DDMBlueprintService.Snapshot.Blueprint]) -> String {
+    static func identifierLabel(
+        _ identifier: String, blueprints: [DDMBlueprintService.Snapshot.Blueprint]
+    ) -> String {
         // Blueprint rows carry no identifier field today; the join is by exact name.
         blueprints.first { $0.name == identifier }?.name ?? identifier
     }
@@ -314,7 +351,8 @@ struct DDMBlueprintView: View {
                 HStack(spacing: 8) { Mono(text: d.id, size: 10.5); Text(d.name).font(.caption) }
             }
             if devices.count > 50 {
-                Text("+ \(devices.count - 50) more — full list in the workbook's DDM Device Status sheet.")
+                Text("+ \(devices.count - 50) more — full list in the workbook's "
+                    + "DDM Device Status sheet.")
                     .font(.caption).foregroundStyle(Theme.Colors.fgMuted)
             }
         }

@@ -95,8 +95,10 @@ final class DDMDeviceStatusServiceTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("computers_20260904T120000.json")
         let json = """
-        [{"id":"1","general":{"name":"A","managementId":"m1","declarativeDeviceManagementEnabled":true}},
-         {"id":"2","general":{"name":"B","managementId":"m2","declarativeDeviceManagementEnabled":false}},
+        [{"id":"1","general":{
+             "name":"A","managementId":"m1","declarativeDeviceManagementEnabled":true}},
+         {"id":"2","general":{
+             "name":"B","managementId":"m2","declarativeDeviceManagementEnabled":false}},
          {"id":"3","general":{"name":"C","managementId":"m3"}}]
         """
         try Data(json.utf8).write(to: url)

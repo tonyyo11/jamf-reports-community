@@ -40,7 +40,8 @@ final class DDMBlueprintViewTests: XCTestCase {
     }
 
     func testPerDeviceSnapshotUnlocksAnOnPremProfile() {
-        XCTAssertEqual(decide(experimental: false, platform: false, deviceData: true), .unlockedWithData)
+        XCTAssertEqual(
+            decide(experimental: false, platform: false, deviceData: true), .unlockedWithData)
     }
 
     func testDDMEnabledCountAloneUnlocksToEmpty() {
@@ -50,12 +51,25 @@ final class DDMBlueprintViewTests: XCTestCase {
 
     func testPlatformDataStillNeedsTheExperimentalGate() {
         XCTAssertEqual(decide(experimental: false, platform: true, platformData: true), .locked)
-        XCTAssertEqual(decide(experimental: true, platform: true, platformData: true), .unlockedWithData)
+        XCTAssertEqual(
+            decide(experimental: true, platform: true, platformData: true), .unlockedWithData)
     }
 
     func testDemoModeBypassesGates() {
-        XCTAssertEqual(decide(demo: true, experimental: false, platform: false, platformData: true), .unlockedWithData)
+        XCTAssertEqual(
+            decide(demo: true, experimental: false, platform: false, platformData: true),
+            .unlockedWithData)
         XCTAssertEqual(decide(demo: true, experimental: false, platform: false), .unlockedNoData)
+    }
+
+    // MARK: - showsPlatformSections
+
+    func testShowsPlatformSectionsRequiresBothPlatformPathAndData() {
+        XCTAssertFalse(DDMBlueprintView.showsPlatformSections(
+            platformPath: false, hasPlatformData: true),
+            "a snapshot left over from when the flag was on must not render once it's off")
+        XCTAssertTrue(DDMBlueprintView.showsPlatformSections(
+            platformPath: true, hasPlatformData: true))
     }
 
     // MARK: - Sort helpers
