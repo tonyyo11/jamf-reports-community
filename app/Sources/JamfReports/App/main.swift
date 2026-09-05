@@ -104,53 +104,6 @@ private func appendFleetLog(_ message: String) {
 // `.notifyMetricAlerts` / `.notifyScheduledRunFailure`; the fleet dead-man
 // overdue digest below stays here — it has no single-run CLI meaning.
 
-/// Pure guard behind `reconcileManagedAutomationHeadless` — extracted so the
-/// "unmanaged → no profile discovery, no filesystem I/O" contract is
-/// unit-testable without touching `AutomationPolicy.current()` or `UserDefaults`.
-func shouldReconcileManagedAutomationHeadless(policy: AutomationPolicy) -> Bool {
-    policy.isManaged
-}
-
-/// Headless managed-automation self-heal (2.6 field-incident fix). Before
-/// this, `ManagedAutomation.reconcile` — including the one-shot RunAtLoad
-/// migration and any policy edit (cadence, exclusions, report grouping) —
-/// only ever ran from a GUI launch or the Automation screen. A host that
-/// never opens the GUI (the whole point of "managed" automation) could sit
-/// on stale plists indefinitely; a fleet Mac was found with a weekend-old
-/// RunAtLoad:false migration that had never applied. Call EXACTLY ONCE per
-/// `--scheduled-run` process, after all per-profile data collection, so
-/// reconcile can never delay or fail the run itself.
-///
-/// No-op when automation isn't managed — bails before any profile discovery
-/// or filesystem I/O, matching `WorkspaceStore.catchUpCollectIfNeeded`'s
-/// early-exit shape. `currentLabel` is this process's OWN LaunchAgent label
-/// (threaded from `--label`); reconcile self-skips bootout/bootstrap for it —
-/// see `ManagedAutomation.reconcile(currentLabel:)`. Best-effort: reconcile
-/// never throws, and every action failure is logged + captured in the
-/// returned outcomes rather than surfaced to the caller.
-@Sendable
-func reconcileManagedAutomationHeadless(
-    currentLabel: String?,
-    policy: AutomationPolicy = AutomationPolicy.current()
-) async {
-    guard shouldReconcileManagedAutomationHeadless(policy: policy) else { return }
-    let outcomes = await ManagedAutomation.reconcileWithMigration(
-        policy: policy, currentLabel: currentLabel
-    )
-    // Failures already reach AppLogger.cli.error inside reconcile(); also name
-    // them on stderr so a headless-only host's failure is visible without
-    // pulling Console logs (mirrors the GUI's toast for the same outcomes).
-    for outcome in outcomes where !outcome.succeeded {
-        let name: String
-        switch outcome.action {
-        case .install(let schedule): name = "install '\(schedule.name)'"
-        case .remove(let label): name = "remove '\(label)'"
-        }
-        let detail = outcome.failureReason ?? "unknown error"
-        fputs("[warn] managed automation reconcile: \(name) failed: \(detail)\n", stderr)
-    }
-}
-
 /// Headless dead-man overdue digest (2.6 "trust trio" #2). The GUI publishes
 /// overdue schedules and posts a once-per-day digest at launch; a host that only
 /// ever runs the LaunchAgent (GUI never opened) would otherwise get zero
@@ -168,7 +121,7 @@ func reconcileManagedAutomationHeadless(
 /// evaluation (~grace period later), and the marker is stamped only after a
 /// confirmed send, so a suppressed day retries on the next run.
 @Sendable
-private func notifyOverdueSchedulesHeadless(
+func notifyOverdueSchedulesHeadless(
     profiles: [String], excluding excluded: Set<String> = []
 ) async {
     // Excluded profiles' own per-profile agents drop out of the fleet digest;
@@ -623,59 +576,66 @@ private func scheduledRun(profile: String) async -> Int32 {
         return args[idx + 1]
     }()
 
-    if allProfiles {
-        // --exclude-profiles <csv> drops profiles from the run-time-discovered
-        // set (run-time exclusion — never a positive --multi-profiles list, so
-        // a managed all-profiles agent still picks up profiles added later).
-        let excludeArg: String? = {
-            guard let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count,
-                  isFlagValue(args[idx + 1]) else {
-                return nil
-            }
-            return args[idx + 1]
-        }()
-        let excluded = ProfileService.parseExclusions(excludeArg)
-        let profiles = ProfileService.applyingExclusions(
-            ProfileService.discoverLocal(), excluding: excluded
-        )
-        guard !profiles.isEmpty else {
-            fputs("[error] --all-profiles: no local profiles found\n", stderr)
-            return 1
+    // --exclude-profiles <csv> drops profiles from the run-time-discovered set
+    // (run-time exclusion — never a positive --multi-profiles list, so a
+    // managed all-profiles agent still picks up profiles added later).
+    let excludeArg: String? = {
+        guard allProfiles,
+              let idx = args.firstIndex(of: "--exclude-profiles"), idx + 1 < args.count,
+              isFlagValue(args[idx + 1]) else {
+            return nil
         }
-        if !excluded.isEmpty {
-            fputs("[info] --all-profiles excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
-        }
-        var anyFailed = false
-        for p in profiles {
-            let code = await scheduledRunSingle(
-                profile: p.name, mode: mode, tiers: tiers, verbose: verbose, label: label
-            )
-            if code != 0 { anyFailed = true }
-        }
-        // v2.2.0 Phase 4: after the per-profile reports run, emit one
-        // consolidated fleet report per configured group. Only for
-        // report-generating modes — the freshness/scan snapshot agents skip it.
-        if mode == .jamfCLIOnly || mode == .jamfCLIFull || mode == .csvAssisted {
-            emitConsolidatedReports()
-        }
-        // Managed-automation self-heal — once per process, after all
-        // per-profile data collection, so a policy edit or the RunAtLoad
-        // migration applies on hosts that never open the GUI.
-        await reconcileManagedAutomationHeadless(currentLabel: label)
-        // Dead-man overdue digest for headless hosts — once per process, after
-        // all per-profile work.
-        await notifyOverdueSchedulesHeadless(profiles: profiles.map(\.name), excluding: excluded)
-        return anyFailed ? 1 : 0
-    }
-
-    let code = await scheduledRunSingle(
-        profile: profile, mode: mode, tiers: tiers, verbose: verbose, label: label
+        return args[idx + 1]
+    }()
+    let schedule = Schedule(
+        name: label ?? mode.rawValue, profile: profile, schedule: "manual", cadence: "custom",
+        mode: mode, next: "—", last: "—", lastStatus: .ok, artifacts: [], enabled: true,
+        launchAgentLabel: label,
+        multiTarget: allProfiles ? MultiTarget(scope: .all, sequential: true) : nil,
+        tiers: tiers,
+        excludedProfiles: allProfiles ? Array(ProfileService.parseExclusions(excludeArg)) : nil
     )
-    // Managed-automation self-heal — once per process, before the overdue digest
-    // so a reconciled agent's next-fire time is reflected in that same pass.
-    await reconcileManagedAutomationHeadless(currentLabel: label)
-    await notifyOverdueSchedulesHeadless(profiles: [profile])
+    let code = await runSchedule(schedule, verbose: verbose)
+    // External-scheduler path only: the tick posts its own digest once per wake.
+    await notifyOverdueSchedulesHeadless(
+        profiles: allProfiles ? ProfileService.discoverLocal().map(\.name) : [profile],
+        excluding: Set(schedule.excludedProfiles ?? []))
     return code
+}
+
+/// One schedule, start to finish: the body every scheduler shares (`--tick`,
+/// `--scheduled-run` from an external cron, Run now). Records under the
+/// schedule's label; a multi schedule fans out over discovered profiles minus
+/// its exclusions and emits the consolidated fleet report for report modes.
+@Sendable
+func runSchedule(_ schedule: Schedule, verbose: Bool) async -> Int32 {
+    let label = schedule.launchAgentLabel
+    guard schedule.isMulti else {
+        return await scheduledRunSingle(
+            profile: schedule.profile, mode: schedule.mode, tiers: schedule.tiers,
+            verbose: verbose, label: label)
+    }
+    let excluded = Set(schedule.excludedProfiles ?? [])
+    let profiles = ProfileService.applyingExclusions(
+        ProfileService.discoverLocal(), excluding: excluded)
+    guard !profiles.isEmpty else {
+        fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
+        return 1
+    }
+    if !excluded.isEmpty {
+        fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
+    }
+    var anyFailed = false
+    for p in profiles {
+        let code = await scheduledRunSingle(
+            profile: p.name, mode: schedule.mode, tiers: schedule.tiers,
+            verbose: verbose, label: label)
+        if code != 0 { anyFailed = true }
+    }
+    if [.jamfCLIOnly, .jamfCLIFull, .csvAssisted].contains(schedule.mode) {
+        emitConsolidatedReports()
+    }
+    return anyFailed ? 1 : 0
 }
 
 // MARK: - check subcommand
@@ -945,7 +905,10 @@ let cliArgs = CommandLine.arguments
 // happens to equal "--scheduled-run" can't divert the process — mirrors
 // LaunchAgentWriter's plist parser (`args[1] == "--scheduled-run"`) and the
 // isKnownSubcommand check below (`cliArgs[1]`).
-if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
+if cliArgs.count > 1, cliArgs[1] == "--tick" {
+    let code = Task.detached { await runTick(arguments: cliArgs) }
+    exit(await code.value)
+} else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
    let profileIdx = cliArgs.firstIndex(of: "--profile"),
    profileIdx + 1 < cliArgs.count,
    isFlagValue(cliArgs[profileIdx + 1]) {

@@ -130,20 +130,6 @@ final class CLISubcommandTests: XCTestCase {
         XCTAssertEqual(result, 1)
     }
 
-    // MARK: - Headless managed-automation self-heal guard
-
-    func testReconcileManagedAutomationHeadlessNoOpWhenUnmanaged() {
-        XCTAssertFalse(
-            shouldReconcileManagedAutomationHeadlessTestable(policy: AutomationPolicy()),
-            "isManaged defaults false — the headless call must bail before any I/O"
-        )
-    }
-
-    func testReconcileManagedAutomationHeadlessRunsWhenManaged() {
-        var managed = AutomationPolicy()
-        managed.isManaged = true
-        XCTAssertTrue(shouldReconcileManagedAutomationHeadlessTestable(policy: managed))
-    }
 }
 
 // MARK: - Test harness wrappers
@@ -249,12 +235,4 @@ func schoolCheckForProfile(_ profile: String) -> Int32 {
     guard let url = ProfileService.workspaceURL(for: profile),
           FileManager.default.fileExists(atPath: url.path) else { return 1 }
     return 0
-}
-
-/// Testable version of `shouldReconcileManagedAutomationHeadless` (2.6 field-
-/// incident fix). Mirrors the same one-line guard so the headless self-heal
-/// entry's "unmanaged → no-op" contract is unit-tested without touching
-/// `AutomationPolicy.current()`/`UserDefaults` or launchctl.
-func shouldReconcileManagedAutomationHeadlessTestable(policy: AutomationPolicy) -> Bool {
-    policy.isManaged
 }
