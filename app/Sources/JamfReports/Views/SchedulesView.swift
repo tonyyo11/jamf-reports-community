@@ -54,6 +54,25 @@ struct SchedulesView: View {
     var body: some View {
         PageScaffold(spacing: 14) {
             header
+            if workspace.tickerStatus == .requiresApproval
+                || workspace.tickerStatus == .notRegistered {
+                InlineBanner(
+                    icon: "exclamationmark.triangle", tone: .danger,
+                    action: .init(label: "Open Login Items") {
+                        workspace.tickerRegistrar.openLoginItems()
+                    }
+                ) {
+                    Text("Automation is off: JamfReports is not allowed to run in the "
+                        + "background. Turn it on under Login Items › Allow in the Background.")
+                        .font(.callout)
+                }
+            } else if workspace.tickerStatus == .unavailable {
+                InlineBanner(icon: "hammer", tone: .info) {
+                    Text("Ticker unavailable in this build — schedules run only via "
+                        + "`JamfReports --tick` until the app is installed.")
+                        .font(.callout)
+                }
+            }
             managedModeCard
             profileFilterStrip
             nextUpCallout
@@ -379,6 +398,7 @@ struct SchedulesView: View {
                         PNPToggle(isOn: .constant(s.enabled)).allowsHitTesting(false)
                     }
                     .buttonStyle(.plain)
+                    .disabled(workspace.demoMode)
                     .accessibilityLabel(s.enabled ? "Disable \(s.name)" : "Enable \(s.name)")
                 }
                 .width(48)
@@ -545,6 +565,7 @@ struct SchedulesView: View {
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {
+        guard !workspace.demoMode else { return }
         guard var record = ScheduleRecord(schedule: schedule) else {
             writeError = "This schedule cannot be edited here."; showWriteError = true; return
         }
@@ -571,6 +592,7 @@ struct SchedulesView: View {
     }
 
     private func saveSchedule(_ form: ScheduleFormState) async {
+        guard !workspace.demoMode else { return }
         guard let record = ScheduleRecord(schedule: form.toSchedule()) else {
             writeError = "Schedule name or profile produces an invalid label."
             showWriteError = true
