@@ -7,6 +7,28 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+The DDM screen now works on every Jamf Pro profile, on-prem included. A new
+per-device scan (weekly, with the other scan-tier collections) asks each
+DDM-enabled Mac for its declaration and software-update status, and the screen
+shows how many Macs have DDM on, how many have reported, which declarations
+are inactive or invalid and on which Macs, and which DDM software updates are
+pending or failing. The Blueprints sections still need a Platform API profile
+and simply do not appear elsewhere.
+
+The same scan reads each Mac's MDM command history. The Health Audit gains two
+"Command health" findings — Macs with a failed command, and Macs with a command
+pending for more than seven days — each routed to the Devices screen, whose
+detail panel now shows a Mac's DDM status and command health beneath its
+inventory. Two workbook sheets, "DDM Device Status" and "MDM Command Health",
+carry one row per Mac. Nothing is changed in Jamf: clearing a failed command
+stays a console action.
+
+Only a fixed set of status-item keys is ever kept; the device's push token and
+per-declaration server tokens are dropped before anything is written. The scan
+honours the "Skip expensive collections" setting.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added

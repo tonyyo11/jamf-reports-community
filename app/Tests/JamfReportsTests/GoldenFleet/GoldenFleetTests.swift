@@ -535,4 +535,42 @@ final class GoldenFleetTests: XCTestCase {
             XCTFail("expected .noSnapshots")
         }
     }
+
+    // MARK: - Case K — DDM per-device status header numbers
+
+    /// One DDM-enabled Mac that reported, one that has not, one Mac without
+    /// DDM. Header strip must read enabled 2 of 3, reported 1, failing 1.
+    func testCaseK_DDMDeviceStatusHeaderNumbers() throws {
+        let root = makeRoot()
+        let dataDir = root.appendingPathComponent("data", isDirectory: true)
+        let stamp = GoldenFleetClock.stamp(anchor)
+        try GoldenFleetWorkspace.writeJSON([
+            ["id": "1", "general": ["name": "A", "managementId": "m1", "declarativeDeviceManagementEnabled": true]],
+            ["id": "2", "general": ["name": "B", "managementId": "m2", "declarativeDeviceManagementEnabled": true]],
+            ["id": "3", "general": ["name": "C", "managementId": "m3", "declarativeDeviceManagementEnabled": false]],
+        ], to: dataDir.appendingPathComponent("computers", isDirectory: true)
+            .appendingPathComponent("computers_\(stamp).json"))
+        try GoldenFleetWorkspace.writeJSON([
+            ["deviceId": "1", "name": "A", "managementId": "m1", "ddmReported": true,
+             "declarations": [["identifier": "D-1", "active": false, "valid": true]],
+             "softwareUpdate": [:]],
+            ["deviceId": "2", "name": "B", "managementId": "m2", "ddmReported": false,
+             "declarations": [], "softwareUpdate": [:]],
+        ], to: dataDir.appendingPathComponent("ddm-device-status", isDirectory: true)
+            .appendingPathComponent("ddm-device-status_\(stamp).json"))
+
+        let counts = DDMDeviceStatusService.fleetDDMCounts(
+            computersURL: FileManager.newestJSONFile(in: dataDir.appendingPathComponent("computers")))
+        XCTAssertEqual(counts.enabled, 2); XCTAssertEqual(counts.total, 3)
+
+        let s = DDMDeviceStatusService.load(
+            url: FileManager.newestJSONFile(in: dataDir.appendingPathComponent("ddm-device-status")))
+        XCTAssertEqual(s.ddmReportedCount, 1)
+        XCTAssertEqual(s.failingDeclarationCount, 1)
+        XCTAssertEqual(
+            DDMBlueprintView.decideLockState(isDemoMode: false, experimentalOn: false, platformAvailable: false,
+                                             hasPlatformData: false, hasDeviceData: !s.records.isEmpty,
+                                             ddmEnabledCount: counts.enabled),
+            .unlockedWithData, "an on-prem profile with a scan snapshot is unlocked")
+    }
 }

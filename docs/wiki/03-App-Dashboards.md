@@ -106,11 +106,13 @@ these interactive dashboards either — it produces a separate generated workboo
   error state. Freshness chips show the age of the underlying data sources.
   Data source: `pro report update-status` plan summaries (tier 2); per-device failures
   from `--scan-failures` (tier 1).
-- **DDM Blueprints** — Declarative Device Management blueprint deployment status and
-  declaration details from the Jamf Platform API. Experimental; requires the same three
-  Platform API gates as Compliance Benchmarks above. Shows a locked state when the gate
-  is closed.
-  Data source: Jamf Platform API blueprint definitions and device assignments (tier 2).
+- **DDM Blueprints** — Declarative Device Management status. On any Jamf Pro
+  profile: DDM enabled N of M Macs, how many have reported, declarations by
+  identifier with the Macs where each is inactive or invalid, and pending or
+  failed DDM software updates — all from the weekly per-device scan. On a
+  Platform API profile the blueprint deployment sections appear as well. Per-Mac
+  detail is in Devices; failed and stuck MDM commands are in Health Audit →
+  Command Health.
 - **Policies & Profiles** — a two-tab screen: policy configuration findings, and
   configuration-profile deployment status.
   Data source: `pro report policy-status` (tier 2) and `pro report profile-status` (tier

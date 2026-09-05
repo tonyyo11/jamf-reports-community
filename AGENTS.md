@@ -223,6 +223,31 @@ toward collecting — an unknown auth method (no jamf-cli, probe failed, profile
 absent from its config) skips nothing, because "we could not ask" must never be
 read as "not platform".
 
+**Per-device scan phase (2.8.0).** `ReportEngine+DeviceScan.runDeviceScanPhase`
+runs at the end of `collect` — after `enforceCollectVerdicts`, before
+`finalizeCollect` — for the scan tier only, and is skipped by
+`skipExpensive`. It walks the `computers` snapshot (`id` top-level,
+`managementId`/`declarativeDeviceManagementEnabled` under `general`) with at
+most `deviceScanConcurrency` (4) jamf-cli processes and writes
+`ddm-device-status` and `mdm-command-health` through `saveSnapshot`, so
+manifest, retention and freshness counters apply unchanged. Rules: a 404 on
+status items is `ddmReported: false`, never an error; exit 5, 8, or 3 on a
+device stops the affected call type for the rest of the run (one log line
+naming the privilege or the refusal — exit 3 stops both call types) and
+records that kind failed WITH the stopping exit code, so a policy refusal
+(exit 8) picks up the existing `DataFreshnessHealth` exit-8 remediation
+exclusion exactly like a stopped collect kind. Strictly more than 25% of
+devices failing a call type records the kind failed and writes nothing;
+otherwise the snapshot lands with `[partial] <kind>: N of M devices did not
+respond`. A fleet with zero DDM-enabled Macs still lands an EMPTY
+`ddm-device-status` snapshot rather than none, so "scanned, nobody has DDM on"
+stays distinguishable from "never scanned." This is the app's first
+per-device fan-out inside `collect` — the jamf-cli feature request for
+server-side equivalents is what retires it. The DDM screen is no longer
+Platform-only: it unlocks from the per-device snapshot or from inventory
+saying DDM is enabled; the Blueprints sections remain Platform-gated and are
+absent, not locked, on-prem.
+
 **Collect honesty (2.7.0).** A kind whose jamf-cli process fails to launch at
 all — not a non-zero exit, the process never starting — now records a
 sentinel outcome (`ReportEngine.launchFailureExitCode`, -1) instead of no
@@ -401,6 +426,8 @@ Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
 | `ProtectDashboardService` | Reads `protect-overview/` + `protect-alerts/` + `protect-computers/` + `protect-insights/` + `protect-plans/`. `isDetected` flag is true when at least one file decoded successfully (even to an empty array) — distinguishes "tenant doesn't run Protect" from "tenant runs Protect, just no current data". Plans (`ProtectPlanRow`) decode from either a bare array or a `{nodes:[]}` GraphQL envelope and surface in the ProtectView "Plans" card. |
 | `CLIDoctorService` | Runs `jamf-cli doctor --output json` for the active profile (v1.18+) and decodes `CLIDoctorReport` (resolved profile, credential-resolution state, HEAD connectivity probe). Derives a health verdict (healthy / credentials-unresolved / unauthorized / unreachable / no-profile). Mirrors `CapabilityService` (`@MainActor @Observable`, injected `CLIExecutor`, pure `nonisolated static parse`). Powers the SourcesView "Connection health" card. Distinct from `ConfigDoctorService`/`DoctorReport`, which diagnose `config.yaml`. |
 | `DuplicateSerialService` | (2.6.0) Reads the `duplicate-serials` snapshot (`pro report duplicate-serials`, jamf-cli 1.23+): records sharing a serial number, grouped per serial with record IDs, names, and last contact. `isDetected` distinguishes "never collected" (older jamf-cli or no collect yet) from "collected, zero duplicates". Powers the AuditView "Duplicate serials" data-integrity section. |
+| `DDMDeviceStatusService` | (2.8.0) Reads the `ddm-device-status` snapshot written by the per-device scan phase: one row per DDM-enabled Mac with its declarations (identifier/active/valid, optional reason) and software-update facts, reduced from `pro ddm-status status-items` through an allow-list of keys — push tokens, server tokens and certificate lists never reach disk. Aggregates per identifier (active/inactive/invalid/mixed, mixed = both states on one device), pending versions, failure reasons; `fleetDDMCounts` reads "enabled N of M" from `computers` alone. Powers the DDM screen on ANY profile, the Devices panel and the "DDM Device Status" sheet. |
+| `MDMCommandHealthService` | (2.8.0) Reads the `mdm-command-health` snapshot: per Mac, failed/pending counts, failed command names and the oldest pending age, reduced from `pro classic-computer-history get <id> --subset commands` (`failed`/`pending`/`completed` are `""` when empty and an object otherwise; a lone `command` is a bare object — see `ComputerHistoryCommands`). Powers the Audit "Command health" findings (7-day pending threshold, fixed), the Devices panel and the "MDM Command Health" sheet. |
 | `MobileFleetService` | Reads `mobile-devices-list/` (light) + `mobile-device-inventory-details/` (rich) + `classic-ios-profiles/`. Surfaces iOS/iPadOS KPIs, OS distribution, compliance signals. |
 | `DiagnosticBundleService` | Native port of Python `cmd_diagnostic_bundle`. Stages recent logs, last-N summaries, redacted config, a workspace tree, and version metadata into a zip under `~/Jamf-Reports/<profile>/diagnostics/` (an allow-listed dir, so `SystemActions.reveal` accepts it). Never executes the bundled script. `DiagnosticRedactor` reproduces the Python redaction behavior: always-on credential patterns, exact-key JSON redaction, and HMAC-SHA256 `<kind>-<8hex>` PII placeholders (per-instance random salt — stable within one bundle only, by design). Also stages a redacted `doctor.json` (`collectDoctor` runs `jamf-cli doctor` for the workspace profile; pure `stageDoctorJSON` parses + redacts — the server hostname is the only PII, stripped via `redactJSON`; best-effort, skipped if the binary/profile is absent or the run fails). Powers SettingsView's "Generate diagnostic bundle now". |
 | `ScheduledRunRecorder` | (v2.2.0) Writes the per-run artifacts the Run History screen and Schedules "Last Run" column read: `automation/logs/<label>.<timestamp>.log` + `automation/<label>_status.json`. Used by the headless `--scheduled-run` path, which both launchd and the GUI "Run now" button invoke. Prunes its own logs at 50 per workspace; never touches legacy `.out.log`/`.err.log` files. |
