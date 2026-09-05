@@ -49,6 +49,9 @@ enum SheetID: String, Sendable, CaseIterable {
     case complianceRules     = "Compliance Rules"
     case ddmStatus           = "DDM Status"
     case blueprintStatus     = "Blueprint Status"
+    // Per-device scan (2.8.0)
+    case ddmDeviceStatus     = "DDM Device Status"
+    case mdmCommandHealth    = "MDM Command Health"
     // Protect
     case protectOverview     = "Protect Overview"
     case protectAlerts       = "Protect Alerts"

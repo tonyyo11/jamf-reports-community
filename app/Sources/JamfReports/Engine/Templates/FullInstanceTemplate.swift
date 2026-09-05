@@ -61,6 +61,8 @@ struct FullInstanceTemplate: ReportTemplate {
             .complianceRules,
             .ddmStatus,
             .blueprintStatus,
+            .ddmDeviceStatus,
+            .mdmCommandHealth,
             // Protect
             .protectOverview,
             .protectAlerts,

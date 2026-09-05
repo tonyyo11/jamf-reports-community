@@ -96,6 +96,8 @@ struct CoreDashboard: Sendable {
             ("Compliance Rules", writeComplianceRules),
             ("DDM Status", writeDDMStatus),
             ("Blueprint Status", writeBlueprintStatus),
+            ("DDM Device Status", writeDDMDeviceStatus),
+            ("MDM Command Health", writeMDMCommandHealth),
             // --- Protect (sheets 32–39, optional) ---
             ("Protect Overview", writeProtectOverview),
             ("Protect Alerts", writeProtectAlerts),
@@ -1808,6 +1810,92 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    // MARK: - DDM Device Status
+    // Source: `ddm-device-status` snapshot (ReportEngine+DeviceScan, jamf-cli
+    // `pro ddm-status status-items` per DDM-enabled Mac). One row per device.
+
+    func writeDDMDeviceStatus() throws {
+        let raw = try loadLatestJSON(names: ["ddm-device-status"])
+        let items = (raw as? [[String: Any]]) ?? []
+        guard !items.isEmpty else { return }
+        let ws = workbook.addSheet("DDM Device Status")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(title: t("DDM Device Status"),
+                                      subtitle: "Generated: \(ts)", ncols: 10)
+        ws.setColumnWidth(0, 0, 10)
+        ws.setColumnWidth(1, 1, 30)
+        ws.setColumnWidth(2, 5, 14)
+        ws.setColumnWidth(6, 9, 26)
+        let hdrs = ["Device ID", "Name", "OS", "Reported", "Declarations", "Failing",
+                    "Pending Version", "Install State", "Failure Reason", "Report Date"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+        for item in items {
+            let decls = (item["declarations"] as? [[String: Any]]) ?? []
+            let failing = decls.filter {
+                ($0["active"] as? Bool) == false || ($0["valid"] as? Bool) == false
+            }.count
+            let reported = (item["ddmReported"] as? Bool) ?? false
+            let su = (item["softwareUpdate"] as? [String: Any]) ?? [:]
+            let failure = su["failureReason"] as? String ?? ""
+            let fmt: CellFormat = (failing > 0 || !failure.isEmpty) ? .yellow : .cell
+            ws.write(item["deviceId"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(item["osVersion"] as? String ?? "", row: row, col: 2, format: .cell)
+            ws.write(reported ? "Yes" : "Not reported", row: row, col: 3,
+                    format: reported ? .cell : .yellow)
+            ws.write(decls.count, row: row, col: 4, format: .cell)
+            ws.write(failing, row: row, col: 5, format: fmt)
+            ws.write(su["pendingOSVersion"] as? String ?? "", row: row, col: 6, format: .cell)
+            ws.write(su["installState"] as? String ?? "", row: row, col: 7, format: .cell)
+            ws.write(failure, row: row, col: 8, format: fmt)
+            ws.write(item["reportDate"] as? String ?? "", row: row, col: 9, format: .cell)
+            row += 1
+        }
+    }
+
+    // MARK: - MDM Command Health
+    // Source: `mdm-command-health` snapshot (ReportEngine+DeviceScan, jamf-cli
+    // `pro classic-computer-history get <id> --subset commands` per Mac).
+
+    func writeMDMCommandHealth() throws {
+        let raw = try loadLatestJSON(names: ["mdm-command-health"])
+        let items = (raw as? [[String: Any]]) ?? []
+        guard !items.isEmpty else { return }
+        let ws = workbook.addSheet("MDM Command Health")
+        let ts = ISO8601DateFormatter().string(from: Date())
+        var row = ws.writeSheetHeader(title: t("MDM Command Health"),
+                                      subtitle: "Generated: \(ts)", ncols: 6)
+        ws.setColumnWidth(0, 0, 10)
+        ws.setColumnWidth(1, 1, 30)
+        ws.setColumnWidth(2, 4, 14)
+        ws.setColumnWidth(5, 5, 60)
+        let hdrs = ["Device ID", "Name", "Failed", "Pending",
+                    "Oldest Pending (days)", "Failed Commands"]
+        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
+        row += 1
+        // Worst first: most failures, then oldest pending.
+        let sorted = items.sorted {
+            let a = (asInt($0["failedCount"]) ?? 0, asInt($0["oldestPendingDays"]) ?? 0)
+            let b = (asInt($1["failedCount"]) ?? 0, asInt($1["oldestPendingDays"]) ?? 0)
+            return a > b
+        }
+        for item in sorted {
+            let failed = asInt(item["failedCount"]) ?? 0
+            let oldest = asInt(item["oldestPendingDays"])
+            let stale = (oldest ?? 0) >= DeviceScanBuilders.pendingAgeThresholdDays
+            ws.write(item["deviceId"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(failed, row: row, col: 2, format: failed > 0 ? .yellow : .cell)
+            ws.write(asInt(item["pendingCount"]) ?? 0, row: row, col: 3, format: .cell)
+            if let oldest { ws.write(oldest, row: row, col: 4, format: stale ? .yellow : .cell) }
+            else { ws.write("", row: row, col: 4, format: .cell) }
+            let names = (item["failedCommands"] as? [String]) ?? []
+            ws.write(names.joined(separator: "; "), row: row, col: 5, format: .cell)
+            row += 1
+        }
+    }
+
     // MARK: - Protect Overview
     // Source: `jamf-cli protect overview --output json` (gated on protect.enabled).
 
@@ -2953,6 +3041,10 @@ struct CoreDashboard: Sendable {
                 + "declaration results.",
             "Blueprint Status": "Blueprint deployment state — failed, pending, "
                 + "succeeded counts.",
+            "DDM Device Status": "Per-device DDM declaration and software-update status "
+                + "(works on-prem; from the per-device scan).",
+            "MDM Command Health": "Per-device failed and pending MDM commands from the "
+                + "Classic command history.",
             "Protect Overview": "Jamf Protect instance summary (requires Protect "
                 + "entitlement).",
             "Protect Alerts": "Open Protect alerts with severity and event type.",
