@@ -31,7 +31,10 @@ Only a fixed set of status-item keys is ever kept; the device's push token and
 per-declaration server tokens are dropped before anything is written. The scan
 honours the "Skip expensive collections" setting. On first launch after
 upgrading, the health strip may show the two new sources as never collected
-until the next scan runs; the weekly scan or Collect now clears it.
+until the next scan runs; the weekly scan or Collect now clears it. The scan
+backs off for the rest of the run if Jamf Pro rate-limits it, and after a
+failed run it waits for its normal weekly cadence rather than retrying every
+hour; Collect now still runs it immediately.
 
 ## [2.7.0] - 2026-09-04
 

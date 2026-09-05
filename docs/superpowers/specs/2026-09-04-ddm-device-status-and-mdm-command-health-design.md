@@ -52,14 +52,13 @@ Two new kinds, one array snapshot each, written once at the end via `saveSnapsho
 (manifest, retention, freshness counters and `[partial]` apply unchanged):
 
 `ddm-device-status` — one row per DDM-enabled device:
-`deviceId, name, managementId, osVersion, osBuild, reportDate, ddmReported (Bool),
-declarations: [{identifier, active, valid, reasonCode?, reasonText?}],
-softwareUpdate: {pendingOSVersion?, pendingBuild?, installState?, installReason?,
-failureReason?, failureAt?, betaEnrollment?}`.
+`deviceId, name, managementId, osVersion, reportDate, ddmReported (Bool),
+declarations: [{identifier, active, valid}],
+softwareUpdate: {pendingOSVersion?, installState?, failureReason?}`.
 A 404 is recorded as `ddmReported: false`, never dropped.
 **Never persisted:** `mdm.push-token`, `mdm.push-magic`, `server-token` values,
 `security.certificate.list`, `content-cache.*` — the collector keeps an explicit
-allow-list of status-item keys, not a deny-list.
+allow-list of 7 status-item keys, not a deny-list.
 
 `mdm-command-health` — one row per device:
 `deviceId, name, failedCount, pendingCount, failedCommands: [String],
@@ -86,11 +85,13 @@ Verified prod shapes (2026-09-04, macOS 27 device, Jamf Pro on-prem):
   `device.operating-system.version` / `.build-version`, `device.model.identifier`.
 - Declarations: `management.declarations.configurations` (and `.activations`) is a
   string of one or more `{active=…, identifier=…, valid=…, server-token=…}` groups.
-  One group was observed; the parser extracts every `{…}` group with a regex and
+  One group was observed; the parser extracts every `{…}` group by brace depth and
   reads `key=value` pairs inside, so a multi-group string needs no second code
-  path. Failure `reasons` (`code=`, `description=`) were not present on a healthy
-  device — the parser tolerates their absence and pins their presence only once a
-  failing capture exists.
+  path. A `reasons={code=…, description=…}` sub-group was not present on a
+  healthy device; the parser skips it entirely rather than persisting it — a
+  nested `{…}` group is dropped by the same brace-depth scan, not read into the
+  declaration's own fields. Nobody reads a declaration's failure reason today, so
+  it is not decoded.
 - History: `{commands: {completed: "" | {command: …}, failed: "" | {command: …},
   pending: "" | {command: …}}}`. **Each of the three buckets is an empty string
   when it holds nothing and an object otherwise**, and inside a bucket `command`
@@ -146,12 +147,18 @@ No HTML section in 2.8.0.
 - Exit 3 → existing auth-dead verdict, unchanged.
 - Exit 5 on the first device of a call type stops that call type for the run;
   one log line names the privilege (Read Computers). The other call type continues.
+- Exit 6 (rate limited) on any device stops that call type for the run, the same
+  as exit 5/8.
 - Exit 8 on a platform profile skips the Classic history call for the run with
   the existing refused-by-policy line.
 - More than 25% of devices failing a call type → that kind is recorded failed and
   nothing is written. Below that, the snapshot is written and the log carries
   `[partial] <kind>: N of M devices did not respond`.
 - No `computers` snapshot → one skip line, loop does nothing.
+- A failed attempt advances the phase's own cadence floor exactly like a
+  success would — self-remediation's hourly retry cannot turn a chronically
+  failing kind into an hourly full fan-out. Manual Collect now (`force: true`)
+  still runs the phase immediately regardless of cadence.
 - Progress line to Run History every 100 devices.
 
 ## 5. Testing
@@ -181,3 +188,5 @@ Force DDM sync, command flush, mobile devices, Updates-screen reason join,
 HTML section, blueprint name cross-reference file, configurable pending threshold.
 Blueprint display names for declaration identifiers — `pro report
 blueprint-status` returns no identifier field to join on; the UUID is shown.
+Declaration failure reasons and the build/install-reason/beta-enrollment status
+items — decoded fields nobody read; add a reader before persisting them.
