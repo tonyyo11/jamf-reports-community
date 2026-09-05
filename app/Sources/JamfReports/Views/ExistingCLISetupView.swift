@@ -315,8 +315,12 @@ struct ExistingCLISetupView: View {
                 )
                 // The user just opted into automation — a ticker Login Items
                 // won't run must not be silently absorbed into "setup complete".
+                // Only the two states an operator can act on: `.unavailable` is
+                // a dev build with no bundled agent, which is not a problem the
+                // Login Items pane can fix.
                 await workspace.applyAutomationPolicy()
-                if workspace.tickerStatus != .enabled {
+                if workspace.tickerStatus == .requiresApproval
+                    || workspace.tickerStatus == .notRegistered {
                     workspace.toast = Toast(
                         message: "Setup finished — allow JamfReports under Login Items › "
                             + "Allow in the Background to start automation",

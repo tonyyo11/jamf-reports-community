@@ -201,7 +201,12 @@ HTML.
 
 A schedule added with `jamf-reports schedules add` behaves exactly like one built in the
 GUI: the background item picks it up on its next wake, gives it the same missed-fire
-catch-up, and covers it with the dead-man switch. A schedule you instead build yourself
+catch-up, and covers it with the dead-man switch.
+
+The background item is registered when the app is launched from its bundle. Running the
+included CLI also attempts registration and runs the one-time import; if the CLI was
+installed as a symlink, confirm under **Login Items › Allow in the Background** that
+JamfReports is listed. A schedule you instead build yourself
 around the CLI — a `launchd` job or `cron` entry calling `collect`/`generate` directly —
 **does** get most of the app's automation-trust machinery: metric alerts (collect only),
 the `notify:` webhook digests, and Run History under a `cli-collect` / `cli-generate` label.

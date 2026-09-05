@@ -76,6 +76,21 @@ final class TickSchedulerTests: XCTestCase {
             now: date(2026, 9, 7, 7, 16)).isEmpty)
     }
 
+    /// A long collect blocks every wake behind it. Measuring the non-catch-up
+    /// window from the wake that finally gets in would silently drop the fires
+    /// that came due while it ran — so it is measured from the first refusal.
+    func testBlockedAnchorKeepsANonCatchUpFireAliveAcrossALongRun() {
+        let backup = schedule("backup", cadence: "Mon 07:00", mode: .backup)  // 09-07 is a Monday
+        let now = date(2026, 9, 7, 7, 40)
+        XCTAssertEqual(TickScheduler.due(
+            schedules: [backup], lastStarted: [:], runNowLabels: [], now: now,
+            nonCatchUpAnchor: date(2026, 9, 7, 6, 58)).map(\.name), ["backup"])
+        // Same wake with no blocked stamp: 40 minutes late, correctly skipped.
+        XCTAssertTrue(TickScheduler.due(
+            schedules: [backup], lastStarted: [:], runNowLabels: [], now: now,
+            nonCatchUpAnchor: now).isEmpty)
+    }
+
     func testDisabledNeverDueAndRunNowAlwaysDue() {
         let s = schedule("collect", cadence: "Daily 06:20", mode: .snapshotOnly, enabled: false)
         XCTAssertTrue(TickScheduler.due(

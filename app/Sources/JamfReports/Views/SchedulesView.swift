@@ -27,7 +27,8 @@ struct SchedulesView: View {
     private let countdownTick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     // Shared with AutomationView: flipping this on re-routes (via AutomationTab)
-    // to the managed-policy editor and reconciles the managed agents.
+    // to the managed-policy editor, whose schedules the ticker derives from the
+    // policy on its next wake.
     @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
 
     @State private var query = ""
@@ -123,8 +124,9 @@ struct SchedulesView: View {
 
     /// The master "Manage automation" toggle, mirrored from AutomationView so the
     /// operator can switch from hand-built schedules to the managed policy without
-    /// losing access to the switch. Flipping it on re-routes (AutomationTab) and
-    /// the policy editor's reconcile installs the managed agents.
+    /// losing access to the switch. Flipping it on re-routes (AutomationTab); the
+    /// managed schedules themselves are derived from the policy on every tick,
+    /// so nothing is installed for them.
     private var managedModeCard: some View {
         Card {
             HStack(alignment: .top, spacing: 12) {
@@ -560,7 +562,11 @@ struct SchedulesView: View {
         }
         runLogLines = buf.lines
         isRunning = false
-        lastRunMessage = "\(schedule.name) · exit \(exit)"
+        // A queued run has not happened yet — reporting "exit 75" would read as
+        // a failure, and reporting "exit 0" would claim a run that never ran.
+        lastRunMessage = exit == TickRunner.queuedExitCode
+            ? "\(schedule.name) · queued — another run is in progress"
+            : "\(schedule.name) · exit \(exit)"
         workspace.reloadFromDisk()
     }
 

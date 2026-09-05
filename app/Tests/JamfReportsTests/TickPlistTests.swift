@@ -5,6 +5,11 @@ import XCTest
 /// cannot ship an agent that never fires or points at the wrong program.
 final class TickPlistTests: XCTestCase {
 
+    /// A missing plist means the bundle ships no agent and nothing is ever
+    /// scheduled — that is the failure this suite exists to catch, so it fails
+    /// rather than skipping (the repo's drift-check convention).
+    private struct MissingAgentPlist: Error {}
+
     private func plistURL() throws -> URL {
         var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
@@ -13,7 +18,8 @@ final class TickPlistTests: XCTestCase {
             if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
             dir = dir.deletingLastPathComponent()
         }
-        throw XCTSkip("bundled agent plist not found above \(#filePath)")
+        XCTFail("bundled agent plist not found above \(#filePath)")
+        throw MissingAgentPlist()
     }
 
     func testBundledAgentPlistShape() throws {

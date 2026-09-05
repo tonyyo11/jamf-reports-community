@@ -44,38 +44,6 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertNil(LaunchAgentWriter.label(for: schedule(name: "daily..snapshot")))
     }
 
-    func testAutomationPathExpectationsMatchPythonGeneratedNames() {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let label = "\(prefix).dummy.daily"
-
-        XCTAssertTrue(
-            LaunchAgentWriter.isExpectedConfigURL(
-                root.appendingPathComponent("config.yaml"),
-                root: root
-            )
-        )
-        XCTAssertFalse(
-            LaunchAgentWriter.isExpectedConfigURL(
-                root.appendingPathComponent("alternate.yaml"),
-                root: root
-            )
-        )
-
-        let status = root
-            .appendingPathComponent("automation", isDirectory: true)
-            .appendingPathComponent("\(label)_status.json")
-        XCTAssertEqual(LaunchAgentWriter.expectedStatusURL(label: label, root: root), status)
-        XCTAssertTrue(LaunchAgentWriter.isExpectedStatusURL(status, label: label, root: root))
-        XCTAssertFalse(
-            LaunchAgentWriter.isExpectedStatusURL(
-                root.appendingPathComponent("config.yaml"),
-                label: label,
-                root: root
-            )
-        )
-    }
-
     func testFilenameComponentMatchesPythonShapeForLaunchAgentLabels() {
         XCTAssertEqual(LaunchAgentWriter.filenameComponent("\(prefix).dummy"), "\(prefix).dummy")
         XCTAssertEqual(LaunchAgentWriter.filenameComponent(" bad/value  "), "bad_value")

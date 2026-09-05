@@ -23,9 +23,27 @@ struct SMAppServiceRegistrar: TickerRegistrar {
     static let plistName = "com.github.tonyyo11.jamf-reports-community.tick.plist"
 
     /// True only for a real .app that ships the agent plist.
+    ///
+    /// Derived from the RESOLVED executable path, not `Bundle.main.bundleURL`:
+    /// the included CLI is normally reached through the `/usr/local/bin`
+    /// symlink `CLIInstaller` writes, and there `bundleURL` is `/usr/local/bin`
+    /// — so registration would be skipped on exactly the headless hosts that
+    /// need it. Resolving the symlink lands back inside the real bundle.
     static func isBundled(
-        bundleURL: URL = Bundle.main.bundleURL, fileManager: FileManager = .default
+        executableURL: URL? = Bundle.main.executableURL?.resolvingSymlinksInPath(),
+        fileManager: FileManager = .default
     ) -> Bool {
+        guard let executableURL else { return false }
+        let bundle = executableURL
+            .deletingLastPathComponent()   // Contents/MacOS
+            .deletingLastPathComponent()   // Contents
+            .deletingLastPathComponent()   // JamfReports.app
+        return isBundled(bundleURL: bundle, fileManager: fileManager)
+    }
+
+    /// The bundle-shaped check itself, kept as its own seam so a test can drive
+    /// it without building a `Contents/MacOS` tree.
+    static func isBundled(bundleURL: URL, fileManager: FileManager = .default) -> Bool {
         guard bundleURL.pathExtension == "app" else { return false }
         let plist = bundleURL.appendingPathComponent(
             "Contents/Library/LaunchAgents/\(plistName)")

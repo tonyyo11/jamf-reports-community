@@ -14,15 +14,20 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
     }
     let lock = TickLock(url: TickLock.defaultURL)
     guard lock.acquire() else {
+        // Stamp the refusal before returning: the non-catch-up window for the
+        // wake that eventually gets in is measured from here, not from that
+        // wake's own clock.
+        TickLock.noteBlocked()
         fputs("[info] tick: another run holds the lock — queued markers run on the next wake\n",
               stderr)
-        return 0
+        return TickRunner.queuedExitCode
     }
     defer { lock.release() }
+    let blockedSince = TickLock.takeBlockedSince()
 
     let policy = AutomationPolicy.current()
     let profiles = ProfileService.discoverLocal()
-    let base = profiles.first { !policy.excludedProfiles.contains($0.name) }?.name
+    let base = ManagedAutomation.managedBaseProfile(profiles: profiles, policy: policy)
     let managed = ManagedAutomation.desiredSchedules(for: policy, baseProfile: base)
     let handBuilt = ScheduleStore().load().map { $0.toSchedule() }
         .sorted { ($0.launchAgentLabel ?? "") < ($1.launchAgentLabel ?? "") }
@@ -31,7 +36,8 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
     var state = TickState.load()
     let due = TickScheduler.due(
         schedules: schedules, lastStarted: state.lastStarted,
-        runNowLabels: TickRunner.consumeRunNowMarkers(), now: now)
+        runNowLabels: TickRunner.consumeRunNowMarkers(), now: now,
+        nonCatchUpAnchor: blockedSince)
     for schedule in due {
         guard let label = schedule.launchAgentLabel else { continue }
         state.lastStarted[label] = Date()

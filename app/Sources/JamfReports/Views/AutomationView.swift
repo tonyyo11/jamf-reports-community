@@ -136,7 +136,7 @@ struct AutomationView: View {
         }
         // Apply policy edits without a relaunch: `.task(id:)` re-runs (cancelling
         // the prior) on every change, so rapid edits debounce and only the
-        // settled state reconciles the managed agents.
+        // settled state refreshes what this screen shows.
         .task(id: policyRaw) { await applyPolicyChange() }
         // Keep the decoded `policy` @State in step with the persisted raw so
         // bindings and visibility gates read the fresh value after any write.
@@ -150,12 +150,12 @@ struct AutomationView: View {
         .task(id: workspace.profile) { await loadDiscoveredProfiles() }
     }
 
-    /// Refresh the consolidation candidates after a policy edit. The managed-
-    /// agent reconcile + toast is owned by `AutomationTab` (the stable parent),
-    /// so this view only recomputes what it displays. Candidate detection is a
-    /// pure label comparison (`ManagedAutomation.owns`), independent of whether
-    /// reconcile has physically (re)installed the managed agents yet, so the two
-    /// tasks need no ordering.
+    /// Refresh the consolidation candidates after a policy edit. Registering
+    /// or unregistering the background item is owned by `AutomationTab` (the
+    /// stable parent), so this view only recomputes what it displays. Candidate
+    /// detection is a pure label comparison (`ManagedAutomation.owns`) over the
+    /// legacy plists still on disk, independent of the ticker, so the two tasks
+    /// need no ordering.
     private func applyPolicyChange() async {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }

@@ -126,7 +126,9 @@ func notifyOverdueSchedulesHeadless(
 ) async {
     // Excluded profiles' own per-profile agents drop out of the fleet digest;
     // isMulti (fleet-wide) entries are never filtered — they cover every profile.
-    let schedules = WorkspaceStore.loadSchedules(baseProfile: profiles.first)
+    let schedules = WorkspaceStore.loadSchedules(
+        baseProfile: ManagedAutomation.managedBaseProfile(
+            names: profiles, policy: AutomationPolicy.current()))
     let inputs = LaunchAgentService.healthInputs(schedules: schedules, statusProfile: nil)
         .filter { $0.isMulti || !excluded.contains($0.profile) }
     let overdue = AutomationHealth.evaluate(inputs: inputs)
@@ -892,6 +894,10 @@ private func schoolScaffoldMappings(from headers: [String]) -> [String: String] 
 /// overloads win, so `AsyncParsableCommand.run()` is actually awaited.
 @available(macOS 14, *)
 func runIncludedCLI(_ arguments: [String]) async {
+    // A host driven only by the CLI has no GUI launch to import legacy plists
+    // or register the background item, so every `jamf-reports` invocation does
+    // both. Both steps are idempotent.
+    WorkspaceStore.bootstrapTickerHeadless()
     await JamfReportsCLI.main(arguments)
 }
 

@@ -74,7 +74,10 @@ struct Schedules: AsyncParsableCommand {
                     mode: mode, cadence: cadence, tiers: tiers, disabled: disabled)
             } catch { CLIRun.fail("\(error)") }
             try ScheduleStore().upsert(record)
-            try? SMAppServiceRegistrar().register()
+            // The launch-time bootstrap ran before this record existed, so on
+            // a zero-schedule host the ticker isn't registered yet; this call
+            // is idempotent and picks it up now instead of the next launch.
+            WorkspaceStore.bootstrapTickerHeadless()
             print("saved \(record.label)")
         }
     }
@@ -95,8 +98,21 @@ struct Schedules: AsyncParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Run a schedule now and wait.")
         @Argument(help: "Full label (hand-built or managed).") var label: String
         func run() async throws {
+            // Reject an unknown label here rather than spawning a tick that
+            // would silently find nothing due and exit 0 — a typo must read as
+            // a typo, not as a successful run.
+            let known = WorkspaceStore.loadSchedules(
+                baseProfile: ProfileService.discoverLocal().first?.name)
+                .compactMap(\.launchAgentLabel)
+            guard known.contains(label) else {
+                CLIRun.fail("no schedule with label '\(label)'")
+            }
             let code = await TickRunner.spawnNow(
                 label: label, wait: true, onLine: CLIRun.printLogLine)
+            if code == TickRunner.queuedExitCode {
+                print("queued — another run is in progress; it runs on the next wake")
+                return
+            }
             if code != 0 { CLIRun.fail("schedule exited \(code)", code: code) }
         }
     }

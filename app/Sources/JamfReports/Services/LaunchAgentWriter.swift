@@ -104,42 +104,6 @@ enum LaunchAgentWriter {
         throw WriterError.cadenceParseError(raw)
     }
 
-    static func isExpectedConfigURL(_ url: URL, root: URL) -> Bool {
-        sameResolvedPath(url, root.appendingPathComponent("config.yaml"))
-    }
-
-    static func expectedStatusURL(label: String, root: URL) -> URL {
-        root
-            .appendingPathComponent("automation", isDirectory: true)
-            .appendingPathComponent("\(filenameComponent(label))_status.json")
-    }
-
-    static func isExpectedStatusURL(_ url: URL, label: String, root: URL) -> Bool {
-        sameResolvedPath(url, expectedStatusURL(label: label, root: root))
-    }
-
-    static func expectedStdoutURL(label: String, root: URL) -> URL {
-        root
-            .appendingPathComponent("automation", isDirectory: true)
-            .appendingPathComponent("logs", isDirectory: true)
-            .appendingPathComponent("\(filenameComponent(label)).out.log")
-    }
-
-    static func expectedStderrURL(label: String, root: URL) -> URL {
-        root
-            .appendingPathComponent("automation", isDirectory: true)
-            .appendingPathComponent("logs", isDirectory: true)
-            .appendingPathComponent("\(filenameComponent(label)).err.log")
-    }
-
-    static func isExpectedStdoutURL(_ url: URL, label: String, root: URL) -> Bool {
-        sameResolvedPath(url, expectedStdoutURL(label: label, root: root))
-    }
-
-    static func isExpectedStderrURL(_ url: URL, label: String, root: URL) -> Bool {
-        sameResolvedPath(url, expectedStderrURL(label: label, root: root))
-    }
-
     /// Swift twin of Python's `_filename_component` for generated status/log paths.
     static func filenameComponent(_ text: String) -> String {
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
@@ -156,66 +120,6 @@ enum LaunchAgentWriter {
         }
         let trimmed = output.trimmingCharacters(in: CharacterSet(charactersIn: "._"))
         return trimmed.isEmpty ? "jamf_report" : trimmed
-    }
-
-    private static func sameResolvedPath(_ lhs: URL, _ rhs: URL) -> Bool {
-        lhs.resolvingSymlinksInPath().standardizedFileURL.path
-            == rhs.resolvingSymlinksInPath().standardizedFileURL.path
-    }
-
-    /// Labels already reported as having a failing run log. These statics are
-    /// process-wide because `write` is, but the latch is keyed by label so a
-    /// second schedule failing in a long-lived GUI is still reported.
-    /// `warnLock` guards them, not the caller's handle lock — that one is
-    /// per-log-file and cannot serialize shared state.
-    private nonisolated(unsafe) static var warnedWriteFailureLabels: Set<String> = []
-    private static let warnLock = NSLock()
-
-    private static func write(
-        _ data: Data, to handle: FileHandle, lock: NSLock, label: String
-    ) {
-        lock.lock()
-        defer { lock.unlock() }
-        // Throwing variant: write(_:) raises an uncatchable ObjC exception when
-        // the underlying write fails, which is reachable once the workspace
-        // lives on a sync provider. A dropped progress line is acceptable; an
-        // aborted process is not — but a silently truncated run log is not
-        // acceptable either, so say so once per label. Matches
-        // ScheduledRunRecorder.appendOrDrop.
-        do {
-            try handle.write(contentsOf: data)
-        } catch {
-            warnLock.lock()
-            defer { warnLock.unlock() }
-            guard warnedWriteFailureLabels.insert(label).inserted else { return }
-            AppLogger.schedule.warning(
-                """
-                LaunchAgentWriter: run-log write failed for \(label, privacy: .public) \
-                — further lines dropped: \(error.localizedDescription, privacy: .public)
-                """
-            )
-        }
-    }
-
-    /// Test seam: lets a regression test observe the warn-once latch without
-    /// leaking state into the next test.
-    static func resetWriteFailureWarnings() {
-        warnLock.lock()
-        defer { warnLock.unlock() }
-        warnedWriteFailureLabels.removeAll()
-    }
-
-    /// Whether `label` has already had a run-log write failure reported.
-    static func hasWarnedWriteFailure(for label: String) -> Bool {
-        warnLock.lock()
-        defer { warnLock.unlock() }
-        return warnedWriteFailureLabels.contains(label)
-    }
-
-    /// Append `data`, reporting a write failure once per label. Exposed so the
-    /// per-label latch is testable.
-    static func appendRunLog(_ data: Data, to handle: FileHandle, label: String) {
-        write(data, to: handle, lock: NSLock(), label: label)
     }
 
     private static func parseHHMM(_ s: String, raw: String) throws -> String {

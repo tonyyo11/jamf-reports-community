@@ -67,9 +67,9 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
 
     /// True when `label` belongs to the reserved managed-automation label set
     /// (`ManagedAutomation.owns`). Only managed rows get the health card's
-    /// one-click "Run now" — a hand-built agent's label was never reserved
-    /// by the managed policy, so kickstarting it here would be surprising;
-    /// that agent's own "Run now" lives on the Schedules screen instead.
+    /// one-click "Run now" — a hand-built schedule's label was never reserved
+    /// by the managed policy, so running it from here would be surprising;
+    /// that schedule's own "Run now" lives on the Schedules screen instead.
     var isManagedAgent: Bool {
         ManagedAutomation.owns(label)
     }
@@ -204,6 +204,37 @@ extension WorkspaceStore {
         policy.isManaged || hasHandBuilt
     }
 
+    /// The one-time legacy-plist import, plus the unasked-for removal of the
+    /// managed plists the policy now owns. Shared by the GUI's
+    /// `applyAutomationPolicy` and the CLI's `bootstrapTickerHeadless` so a
+    /// host that only ever runs `jamf-reports` still migrates.
+    nonisolated static func importLegacySchedulesIfNeeded() {
+        guard let result = ScheduleImport.runIfNeeded(),
+              !result.managedLabels.isEmpty else { return }
+        _ = LaunchAgentService.archiveAndRemove(
+            labels: result.managedLabels, includingManaged: true)
+    }
+
+    /// Ticker bootstrap for the included CLI, which has no `WorkspaceStore`
+    /// and no root view: without this, a host driven only by `jamf-reports`
+    /// would never import its legacy plists and never register the background
+    /// item, so its schedules would sit in the store and never fire.
+    nonisolated static func bootstrapTickerHeadless() {
+        importLegacySchedulesIfNeeded()
+        guard wantsTicker(
+            policy: AutomationPolicy.current(),
+            hasHandBuilt: !ScheduleStore().load().isEmpty
+        ) else { return }
+        do {
+            try SMAppServiceRegistrar().register()
+        } catch {
+            fputs(
+                "[warn] could not register the background item: "
+                    + "\(error.localizedDescription)\n",
+                stderr)
+        }
+    }
+
     /// The policy changed, or the app launched: make Login Items agree with
     /// it. Registered when anything is scheduled; unregistered when nothing
     /// is. Called from the root view's `.task` at launch AND from the
@@ -212,27 +243,29 @@ extension WorkspaceStore {
     /// instead of waiting for the next app launch.
     func applyAutomationPolicy() async {
         guard !demoMode else { return }
-        if let result = ScheduleImport.runIfNeeded(), !result.managedLabels.isEmpty {
-            _ = LaunchAgentService.archiveAndRemove(
-                labels: result.managedLabels, includingManaged: true)
-        }
+        Self.importLegacySchedulesIfNeeded()
         let wantsTicker = Self.wantsTicker(
             policy: AutomationPolicy.current(), hasHandBuilt: !ScheduleStore().load().isEmpty)
-        do {
-            if wantsTicker {
-                try tickerRegistrar.register()
-            } else {
-                try tickerRegistrar.unregister()
+        let registrar = tickerRegistrar
+        // register/unregister and the status read are blocking XPC calls into
+        // the Login Items service — never on the main actor.
+        tickerStatus = await Task.detached(priority: .utility) { () -> TickerStatus in
+            do {
+                if wantsTicker {
+                    try registrar.register()
+                } else {
+                    try registrar.unregister()
+                }
+            } catch {
+                AppLogger.schedule.error(
+                    """
+                    ticker \(wantsTicker ? "register" : "unregister", privacy: .public) failed: \
+                    \(error.localizedDescription, privacy: .public)
+                    """
+                )
             }
-        } catch {
-            AppLogger.schedule.error(
-                """
-                ticker \(wantsTicker ? "register" : "unregister", privacy: .public) failed: \
-                \(error.localizedDescription, privacy: .public)
-                """
-            )
-        }
-        tickerStatus = tickerRegistrar.status
+            return registrar.status
+        }.value
         // The policy/store change above can change what schedules exist and
         // what "should have fired" means — recompute on the same chain so
         // both the schedule list and the dead-man banner reflect it at once.
@@ -253,16 +286,26 @@ extension WorkspaceStore {
         }
         let profile = self.profile
         let schedules = self.schedules
-        let tickerStatus = self.tickerStatus
-        // Scan + evaluate off the main actor; both are pure file reads. Scope to
-        // THIS profile's agents plus the global managed (isMulti) agents so a
+        let registrar = tickerRegistrar
+        // Scan + evaluate off the main actor; the schedule reads are file I/O
+        // and the registrar's status is a blocking XPC call. The status is read
+        // HERE rather than reused from the stored property: this runs at launch,
+        // on foreground, and after every policy change, so re-approving the
+        // background item under Login Items clears the banner on the next
+        // foreground pass instead of only after a relaunch. Scope to THIS
+        // profile's agents plus the global managed (isMulti) agents so a
         // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
-        let issues = await Task.detached(priority: .utility) {
+        typealias HealthPass = (status: TickerStatus, issues: [AutomationHealthIssue])
+        let evaluated = await Task.detached(priority: .utility) { () -> HealthPass in
+            let status = registrar.status
             let inputs = LaunchAgentService.filterHealthInputs(
                 LaunchAgentService.healthInputs(schedules: schedules, statusProfile: profile),
                 forProfile: profile)
-            return AutomationHealth.evaluate(inputs: inputs, tickerStatus: tickerStatus)
+            return (status: status,
+                    issues: AutomationHealth.evaluate(inputs: inputs, tickerStatus: status))
         }.value
+        tickerStatus = evaluated.status
+        let issues = evaluated.issues
         AutomationHealthModel.shared.issues = issues
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
@@ -529,7 +572,8 @@ extension WorkspaceStore {
 
     /// One-click "Run now" for a failing/overdue managed row on the
     /// Automation Health card. Spawns `JamfReports --tick --now <label>`
-    /// (`TickRunner.spawnNow`) so the run records under its real label.
+    /// (`TickRunner.spawnNow`) so the run records under its real label, under
+    /// the same lock and recorder as a scheduled wake.
     /// Returns whether the spawn itself was accepted — NOT whether the
     /// collect/generate it triggers ultimately succeeds, since that
     /// finishes asynchronously.
@@ -539,7 +583,10 @@ extension WorkspaceStore {
     /// manual reconcile, any of which will pick up the kicked-off job's
     /// status file once it finishes and clear the row.
     func runNowFromHealthRow(label: String) async -> Bool {
-        await TickRunner.spawnNow(label: label, wait: false) == 0
+        // Queued counts as accepted: the marker is written and the next wake
+        // consumes it, so the click did what the operator asked.
+        let code = await TickRunner.spawnNow(label: label, wait: false)
+        return code == 0 || code == TickRunner.queuedExitCode
     }
 
     /// Post ONE overdue digest per day when any schedule is overdue AND the

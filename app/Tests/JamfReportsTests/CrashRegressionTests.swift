@@ -128,34 +128,6 @@ final class CrashRegressionTests: XCTestCase {
         XCTAssertTrue(warned)
     }
 
-    /// `LaunchAgentWriter.write` is static, so its warn-once latch is
-    /// process-wide. Keying it by label is what keeps a second schedule's
-    /// failure from being swallowed in a long-lived GUI session.
-    func testRunLogWriteFailureIsReportedOncePerLabel() throws {
-        LaunchAgentWriter.resetWriteFailureWarnings()
-        addTeardownBlock { LaunchAgentWriter.resetWriteFailureWarnings() }
-
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-agentlog-\(UUID().uuidString).log")
-        FileManager.default.createFile(atPath: url.path, contents: nil)
-        defer { try? FileManager.default.removeItem(at: url) }
-        let handle = try FileHandle(forWritingTo: url)
-        try handle.close()   // stands in for a handle the provider invalidated
-
-        let first = "\(LaunchAgentWriter.labelPrefix).acme.daily"
-        let second = "\(LaunchAgentWriter.labelPrefix).acme.weekly"
-
-        XCTAssertFalse(LaunchAgentWriter.hasWarnedWriteFailure(for: first))
-        LaunchAgentWriter.appendRunLog(Data("line".utf8), to: handle, label: first)
-        XCTAssertTrue(LaunchAgentWriter.hasWarnedWriteFailure(for: first),
-                      "the first failure must be reported, not swallowed")
-
-        // A process-global latch would leave this schedule silent.
-        XCTAssertFalse(LaunchAgentWriter.hasWarnedWriteFailure(for: second))
-        LaunchAgentWriter.appendRunLog(Data("line".utf8), to: handle, label: second)
-        XCTAssertTrue(LaunchAgentWriter.hasWarnedWriteFailure(for: second))
-    }
-
     func testSuccessfulLogWriteDoesNotWarn() throws {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".jrc-logwrite-\(UUID().uuidString).log")

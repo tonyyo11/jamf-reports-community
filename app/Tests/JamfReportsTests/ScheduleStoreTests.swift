@@ -28,6 +28,17 @@ final class ScheduleStoreTests: XCTestCase {
         XCTAssertEqual((attrs[.posixPermissions] as? NSNumber)?.int16Value, 0o700)
     }
 
+    /// The store, the tick stamps and the lock all live in this directory, so a
+    /// test that used the real one would edit the developer's own schedules.
+    func testTestRootRedirectsTheAppSupportDirectory() throws {
+        let root = try tempDir()
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        let dir = AppSupport.directory()
+        XCTAssertEqual(dir.path, root.appendingPathComponent(".app-support").path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dir.path))
+    }
+
     func testRecordRoundTripsThroughSchedule() throws {
         let record = try XCTUnwrap(ScheduleRecord(schedule: sample()))
         XCTAssertEqual(record.label, "com.github.tonyyo11.jamf-reports-community.alpha.nightly")

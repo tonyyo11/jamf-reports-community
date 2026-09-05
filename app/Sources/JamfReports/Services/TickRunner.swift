@@ -6,6 +6,13 @@ enum TickRunner {
     static let runNowMarkerDir = AppSupport.directory()
         .appendingPathComponent("run-now", isDirectory: true)
 
+    /// A tick that could not take the lock exits with this (`EX_TEMPFAIL`)
+    /// rather than 0: the requested run has NOT happened yet, and every caller
+    /// that reports an outcome — the Schedules screen, the health-card button,
+    /// `jamf-reports schedules run` — must be able to say "queued" instead of
+    /// claiming a run that only starts on the next wake.
+    static let queuedExitCode: Int32 = 75
+
     /// Leave a marker so the label runs even if this process cannot take the
     /// lock right now (another run is in flight) — the next wake picks it up.
     static func requestRunNow(label: String, dir: URL = runNowMarkerDir) throws {

@@ -26,6 +26,26 @@ final class ManagedAutomationTests: XCTestCase {
         XCTAssertFalse(ManagedAutomation.owns("com.evil.multi.managed-freshness"))
     }
 
+    // MARK: - Base profile
+
+    /// Three call sites derived the managed base profile separately and two
+    /// ignored the exclusions — an excluded profile could end up naming the
+    /// run the policy exists to skip.
+    func testManagedBaseProfileSkipsExcludedAndYieldsNilWhenAllAreExcluded() {
+        let profiles = ["dummy", "prod", "sandbox"].map {
+            JamfCLIProfile(name: $0, url: "(local workspace)", schedules: 0, status: .idle)
+        }
+        var policy = AutomationPolicy()
+        policy.excludedProfiles = ["dummy"]
+        XCTAssertEqual(
+            ManagedAutomation.managedBaseProfile(profiles: profiles, policy: policy), "prod")
+
+        policy.excludedProfiles = ["dummy", "prod", "sandbox"]
+        XCTAssertNil(ManagedAutomation.managedBaseProfile(profiles: profiles, policy: policy))
+        XCTAssertNil(ManagedAutomation.managedBaseProfile(
+            names: profiles.map(\.name), policy: policy))
+    }
+
     // MARK: - Desired specs
 
     func testNoDesiredWhenUnmanaged() {

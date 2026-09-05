@@ -219,7 +219,8 @@ final class WorkspaceStore {
         self.profile = isDemo ? DemoData.org.profile : (realProfiles.first?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
         self.schedules = isDemo ? DemoData.scheduledRuns
-            : Self.loadSchedules(baseProfile: realProfiles.first?.name)
+            : Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
+                profiles: realProfiles, policy: AutomationPolicy.current()))
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
@@ -292,7 +293,8 @@ final class WorkspaceStore {
         } else {
             demoMode = false
             profiles = real
-            schedules = Self.loadSchedules(baseProfile: real.first?.name)
+            schedules = Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
+                profiles: real, policy: AutomationPolicy.current()))
             if !real.contains(where: { $0.name == profile }) {
                 profile = real.first!.name
             }
@@ -336,13 +338,13 @@ final class WorkspaceStore {
                 }
                 if removedAgents > 0 {
                     let suffix = removedAgents == 1 ? "" : "s"
-                    parts.append("\(removedAgents) demo LaunchAgent\(suffix)")
+                    parts.append("\(removedAgents) demo schedule\(suffix)")
                 }
                 return "Removed demo \(parts.joined(separator: " and "))."
             }
         } catch {
             if removedAgents > 0 {
-                return "Removed \(removedAgents) demo LaunchAgent"
+                return "Removed \(removedAgents) demo schedule"
                     + (removedAgents == 1 ? "" : "s")
                     + ", but could not remove workspace \(demoProfile): \(error.localizedDescription)"
             }

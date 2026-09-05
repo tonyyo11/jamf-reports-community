@@ -38,6 +38,13 @@ final class ScheduleCommandsTests: XCTestCase {
             mode: "backup", cadence: "Mon 07:00", tiers: nil, disabled: false))
     }
 
+    /// `schedules run`, the Schedules screen, and the health-card button all
+    /// branch on this exact value to say "queued" instead of reporting a run
+    /// that has not happened. It is a shared contract, not an internal detail.
+    func testQueuedExitCodeIsTempFail() {
+        XCTAssertEqual(TickRunner.queuedExitCode, 75)
+    }
+
     func testSchedulesIsAKnownSubcommand() {
         XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("schedules"))
     }

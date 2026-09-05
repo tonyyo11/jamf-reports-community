@@ -164,9 +164,13 @@ separate, legacy-style file lives in the user's `~/Library/LaunchAgents` for it,
 running app never writes there. macOS shows it as **JamfReports** under **System Settings
 → General → Login Items → Allow in the Background**, and posts a one-time "Background
 Items Added" notification the
-first time it registers. Registration happens on every launch (GUI or included CLI), so
-moving the app or updating it re-binds the item automatically with no re-registration
-notification.
+first time it registers.
+
+The background item is registered when the app is launched from its bundle. Running the
+included CLI also attempts registration and runs the one-time import; if the CLI was
+installed as a symlink, confirm under **Login Items › Allow in the Background** that
+JamfReports is listed. Registration is idempotent, so moving the app or updating it
+re-binds the item on the next launch with no re-registration notification.
 
 If you turn the item off there — or if macOS has not yet approved it — nothing runs until
 you turn it back on. The Overview banner says so directly, with an **Open Automation**

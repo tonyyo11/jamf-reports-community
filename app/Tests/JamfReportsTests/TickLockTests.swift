@@ -31,6 +31,18 @@ final class TickLockTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
     }
 
+    /// Pids are recycled and a run can wedge on a hung network call, so an
+    /// alive-looking holder is not enough to block forever.
+    func testAnOldLockIsTakenOverEvenWhenItsPidLooksAlive() throws {
+        let lock = TickLock(url: lockURL())
+        try Data("4242".utf8).write(to: lock.url)
+        let old = Date().addingTimeInterval(-2 * 60 * 60)
+        try FileManager.default.setAttributes(
+            [.modificationDate: old], ofItemAtPath: lock.url.path)
+        XCTAssertTrue(lock.acquire(pid: 7, isAlive: { _ in true }))
+        XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
+    }
+
     func testGarbageLockFileIsTakenOver() throws {
         let lock = TickLock(url: lockURL())
         try Data("not a pid".utf8).write(to: lock.url)

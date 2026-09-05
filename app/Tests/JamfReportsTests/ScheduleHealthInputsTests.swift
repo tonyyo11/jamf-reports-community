@@ -42,6 +42,59 @@ final class ScheduleHealthInputsTests: XCTestCase {
         XCTAssertNil(inputs.first?.expectedFire)
     }
 
+    /// A managed (multi) schedule records its status once per profile under one
+    /// label. `statusProfile` must read THAT profile's own record: a fleet-wide
+    /// caller takes the newest finish, but a per-profile screen must keep
+    /// showing this profile's failure even when a sibling profile succeeded
+    /// later. Coverage restored after the writer-path test that used to pin the
+    /// status-file naming was deleted with its dead symbols.
+    func testMultiStatusIsReadPerProfileNotNewestWins() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory
+            .appendingPathComponent("jrc-health-\(UUID().uuidString)", isDirectory: true)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+
+        let label = "com.github.tonyyo11.jamf-reports-community.multi.managed-freshness"
+        // Newer SUCCESS on one profile, older FAILURE on the other.
+        try writeStatus(root: root, profile: "winner", label: label,
+                        finished: date(2026, 9, 7, 8, 0), success: true)
+        try writeStatus(root: root, profile: "loser", label: label,
+                        finished: date(2026, 9, 7, 6, 30), success: false)
+
+        let multi = schedule(label, profile: "", multi: true, cadence: "Daily 06:20")
+        let scoped = LaunchAgentService.healthInputs(
+            schedules: [multi], statusProfile: "loser", now: date(2026, 9, 7, 9, 0))
+        XCTAssertEqual(scoped.first?.lastRunSuccess, false,
+                       "a sibling profile's later success must not clear this one's failure")
+
+        let fleetWide = LaunchAgentService.healthInputs(
+            schedules: [multi], statusProfile: nil, now: date(2026, 9, 7, 9, 0))
+        XCTAssertEqual(fleetWide.first?.lastRunSuccess, true,
+                       "the profile-less caller takes the newest finish across profiles")
+    }
+
+    private func writeStatus(
+        root: URL, profile: String, label: String, finished: Date, success: Bool
+    ) throws {
+        let workspace = root.appendingPathComponent(profile, isDirectory: true)
+        let automation = workspace.appendingPathComponent("automation", isDirectory: true)
+        try FileManager.default.createDirectory(at: automation, withIntermediateDirectories: true)
+        // `ProfileService.discoverLocal` (which the profile-less branch scans)
+        // only counts a directory as a profile when it holds a config.yaml.
+        try "".write(to: workspace.appendingPathComponent("config.yaml"),
+                     atomically: true, encoding: .utf8)
+        let payload: [String: Any] = [
+            "finished_at": ISO8601DateFormatter().string(from: finished),
+            "success": success,
+            "exit_code": success ? 0 : 1,
+        ]
+        try JSONSerialization.data(withJSONObject: payload)
+            .write(to: automation.appendingPathComponent("\(label)_status.json"))
+    }
+
     func testTickerDisabledCollapsesEverythingIntoOneIssue() {
         let now = date(2026, 9, 7, 14, 30)
         let overdue = LaunchAgentService.ScheduleHealthInput(
