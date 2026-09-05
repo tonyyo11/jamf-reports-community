@@ -547,7 +547,7 @@ extension WorkspaceStore {
     /// `sendFailed` path (an overdue run is a run-health failure). Skips entirely
     /// when the config can't be loaded or the webhook is off.
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
-        let overdue = issues.filter { $0.kind == .overdue }
+        let overdue = issues.filter { $0.kind == .overdue || $0.kind == .tickerDisabled }
         guard !overdue.isEmpty else { return }
         guard let notify = Self.loadNotifyConfig(profile: profile), notify.isUsable,
               let workspace = ProfileService.workspaceURL(for: profile) else { return }
@@ -561,10 +561,14 @@ extension WorkspaceStore {
         let facts = Self.overdueFacts(
             detail: notify.resolvedDetail, profile: profile, overdue: overdue
         )
+        let tickerDisabled = overdue.contains { $0.kind == .tickerDisabled }
+        let title = tickerDisabled
+            ? "Automation is off — background item disabled"
+            : "Scheduled run overdue — \(overdue.count) schedule"
+                + (overdue.count == 1 ? "" : "s")
         let delivered = await WebhookNotifier.sendFailed(
             config: notify,
-            title: "Scheduled run overdue — \(overdue.count) schedule"
-                + (overdue.count == 1 ? "" : "s"),
+            title: title,
             facts: facts
         )
         // Claim the day only after a confirmed send, so a failed post retries
@@ -592,13 +596,28 @@ extension WorkspaceStore {
         overdue: [AutomationHealthIssue]
     ) -> [WebhookNotifier.Fact] {
         guard detail == .full else {
-            let word = overdue.count == 1 ? "schedule" : "schedules"
+            let tickerFact: WebhookNotifier.Fact
+            if overdue.contains(where: { $0.kind == .tickerDisabled }) {
+                tickerFact = .init(label: "Automation", value: "background item disabled")
+            } else {
+                let word = overdue.count == 1 ? "schedule" : "schedules"
+                tickerFact = .init(
+                    label: "Overdue", value: "\(overdue.count) \(word) missed their run"
+                )
+            }
             return [
                 .init(label: "Profile", value: profile),
-                .init(label: "Overdue", value: "\(overdue.count) \(word) missed their run"),
+                tickerFact,
             ]
         }
         return overdue.prefix(10).map { issue in
+            if issue.kind == .tickerDisabled {
+                return WebhookNotifier.Fact(
+                    label: "Automation",
+                    value: "JamfReports is not allowed to run in the background — enable it "
+                        + "under Login Items › Allow in the Background"
+                )
+            }
             let name: String
             if issue.isMulti {
                 // Fleet-wide by construction — same framing OverviewView uses
