@@ -7,6 +7,8 @@ struct DevicesView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot = DeviceInventorySnapshot.empty
+    @State private var ddmSnapshot: DDMDeviceStatusService.Snapshot = .empty
+    @State private var healthSnapshot: MDMCommandHealthService.Snapshot = .empty
     @State private var query = ""
     @State private var filter: DeviceFilter = .all
     @State private var selectedID: DeviceInventoryRecord.ID?
@@ -478,6 +480,8 @@ struct DevicesView: View {
 
                     priorityRiskSection(for: device)
 
+                    scanSections(for: device)
+
                     VStack(alignment: .leading, spacing: 8) {
                         SectionHeader(title: "Patch")
                         if device.patchFailures.isEmpty {
@@ -846,6 +850,85 @@ struct DevicesView: View {
         }
     }
 
+    struct ScanSectionModel: Equatable {
+        var ddmLines: [(String, String)] = []
+        var mdmLines: [(String, String)] = []
+        var ddmDate: Date?
+        var mdmDate: Date?
+        static func == (l: Self, r: Self) -> Bool {
+            l.ddmLines.map { "\($0.0)=\($0.1)" } == r.ddmLines.map { "\($0.0)=\($0.1)" }
+                && l.mdmLines.map { "\($0.0)=\($0.1)" } == r.mdmLines.map { "\($0.0)=\($0.1)" }
+                && l.ddmDate == r.ddmDate && l.mdmDate == r.mdmDate
+        }
+    }
+
+    /// Snapshot-fed lines for one device. Internal (not private) for tests.
+    static func scanSectionModel(
+        ddm: DDMDeviceStatusService.Snapshot, health: MDMCommandHealthService.Snapshot,
+        jamfID: String?
+    ) -> ScanSectionModel {
+        guard let jamfID, !jamfID.isEmpty else { return ScanSectionModel() }
+        var m = ScanSectionModel(ddmDate: ddm.snapshotDate, mdmDate: health.snapshotDate)
+        if let r = ddm.record(forDeviceId: jamfID) {
+            m.ddmLines.append(("Reported", r.ddmReported ? "Yes" : "Not yet"))
+            let inactive = r.declarations.filter { $0.active == false }.count
+            let invalid = r.declarations.filter { $0.valid == false }.count
+            var decl = "\(r.declarations.count)"
+            var notes: [String] = []
+            if inactive > 0 { notes.append("\(inactive) inactive") }
+            if invalid > 0 { notes.append("\(invalid) invalid") }
+            if !notes.isEmpty { decl += " (" + notes.joined(separator: ", ") + ")" }
+            m.ddmLines.append(("Declarations", decl))
+            if let v = r.softwareUpdate.pendingOSVersion {
+                let state = r.softwareUpdate.installState.map { " (\($0))" } ?? ""
+                m.ddmLines.append(("Pending update", v + state))
+            }
+            if let f = r.softwareUpdate.failureReason { m.ddmLines.append(("Update failure", f)) }
+        }
+        if let h = health.record(forDeviceId: jamfID) {
+            let names = h.failedCommands.isEmpty
+                ? "" : " — " + h.failedCommands.joined(separator: ", ")
+            m.mdmLines.append(("Failed", "\(h.failedCount)\(names)"))
+            let oldest = h.oldestPendingDays.map { ", oldest \($0)d" } ?? ""
+            m.mdmLines.append(("Pending", "\(h.pendingCount)\(oldest)"))
+        }
+        return m
+    }
+
+    @ViewBuilder
+    private func scanSections(for device: DeviceInventoryRecord) -> some View {
+        let m = Self.scanSectionModel(
+            ddm: ddmSnapshot, health: healthSnapshot, jamfID: device.jamfID)
+        if !m.ddmLines.isEmpty {
+            scanSection(title: "DDM", lines: m.ddmLines, date: m.ddmDate)
+        }
+        if !m.mdmLines.isEmpty {
+            scanSection(title: "MDM commands", lines: m.mdmLines, date: m.mdmDate)
+        }
+    }
+
+    private func scanSection(title: String, lines: [(String, String)], date: Date?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                SectionHeader(title: title)
+                Spacer()
+                if let date {
+                    Mono(
+                        text: "snapshot " + date.formatted(date: .abbreviated, time: .shortened),
+                        size: 10.5)
+                }
+            }
+            ForEach(lines, id: \.0) { line in
+                HStack(alignment: .top, spacing: 8) {
+                    Text(line.0).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
+                        .frame(width: 110, alignment: .leading)
+                    Text(line.1).font(.footnote).foregroundStyle(Theme.Colors.fg)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     private func priorityRiskTone(for level: DeviceRisk.Level) -> Pill.Tone {
         switch level {
         case .clean, .low: return .muted
@@ -978,6 +1061,14 @@ struct DevicesView: View {
         sourceDates = await Task.detached(priority: .userInitiated) {
             DeviceInventoryService.sourceDates(profile: profile, demoMode: demoMode)
         }.value
+        if demoMode {
+            ddmSnapshot = .empty; healthSnapshot = .empty
+        } else {
+            ddmSnapshot = await Task.detached(priority: .userInitiated) {
+                DDMDeviceStatusService.load(profile: profile) }.value
+            healthSnapshot = await Task.detached(priority: .userInitiated) {
+                MDMCommandHealthService.load(profile: profile) }.value
+        }
         if selectedID == nil || !loaded.devices.contains(where: { $0.id == selectedID }) {
             selectedID = loaded.devices.first?.id
         }
