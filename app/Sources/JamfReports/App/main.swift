@@ -126,7 +126,8 @@ func notifyOverdueSchedulesHeadless(
 ) async {
     // Excluded profiles' own per-profile agents drop out of the fleet digest;
     // isMulti (fleet-wide) entries are never filtered — they cover every profile.
-    let inputs = LaunchAgentService.healthInputs()
+    let schedules = WorkspaceStore.loadSchedules(baseProfile: profiles.first)
+    let inputs = LaunchAgentService.healthInputs(schedules: schedules, statusProfile: nil)
         .filter { $0.isMulti || !excluded.contains($0.profile) }
     let overdue = AutomationHealth.evaluate(inputs: inputs)
         .filter { $0.kind == .overdue }

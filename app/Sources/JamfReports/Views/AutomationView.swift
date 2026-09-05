@@ -423,15 +423,23 @@ private struct HealthCard: View {
         // fold it into the row's summary label and lose its action.
         HStack(alignment: .top, spacing: 8) {
             healthSummary(issue)
-            // Only a MANAGED row is eligible — a hand-built agent's own
-            // "Run now" lives on the Schedules screen, not here.
-            if issue.isManagedAgent {
-                runNowButton(issue)
-            }
-            // A failing row now has somewhere to GO: the run log that explains
-            // the failure. Overdue rows have no log to read (nothing ran).
-            if issue.kind == .failing {
-                runHistoryButton
+            if issue.kind == .tickerDisabled {
+                // Nothing is firing — the fix is in Login Items, not a re-run.
+                PNPButton(title: "Open Login Items", size: .sm) {
+                    workspace.tickerRegistrar.openLoginItems()
+                }
+            } else {
+                // Only a MANAGED row is eligible — a hand-built agent's own
+                // "Run now" lives on the Schedules screen, not here.
+                if issue.isManagedAgent {
+                    runNowButton(issue)
+                }
+                // A failing row now has somewhere to GO: the run log that
+                // explains the failure. Overdue rows have no log to read
+                // (nothing ran).
+                if issue.kind == .failing {
+                    runHistoryButton
+                }
             }
         }
     }
@@ -456,7 +464,7 @@ private struct HealthCard: View {
 
     private func healthSummary(_ issue: AutomationHealthIssue) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: issue.kind == .overdue ? "clock.badge.xmark" : "xmark.octagon")
+            Image(systemName: healthIcon(issue))
                 .foregroundStyle(Theme.Colors.warn)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -469,7 +477,7 @@ private struct HealthCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Text(issue.kind == .overdue ? "Overdue" : "Failing")
+            Text(healthStatusLabel(issue))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.Colors.warn)
                 .lineLimit(1)
@@ -506,8 +514,22 @@ private struct HealthCard: View {
     }
 
     private func healthAccessibilityLabel(_ issue: AutomationHealthIssue) -> String {
-        let status = issue.kind == .overdue ? "Overdue" : "Failing"
-        return "\(issue.displayName), \(status). \(healthDetail(issue))"
+        "\(issue.displayName), \(healthStatusLabel(issue)). \(healthDetail(issue))"
+    }
+
+    private func healthStatusLabel(_ issue: AutomationHealthIssue) -> String {
+        switch issue.kind {
+        case .overdue: "Overdue"
+        case .failing: "Failing"
+        case .tickerDisabled: "Disabled"
+        }
+    }
+
+    private func healthIcon(_ issue: AutomationHealthIssue) -> String {
+        switch issue.kind {
+        case .overdue: "clock.badge.xmark"
+        case .failing, .tickerDisabled: "xmark.octagon"
+        }
     }
 
     private func healthDetail(_ issue: AutomationHealthIssue) -> String {
@@ -531,6 +553,9 @@ private struct HealthCard: View {
                 "\(CLIBridge.explainExit($0, operation: "Last run")) (\(last))."
             } ?? "Last run reported failure — \(last)."
             return cause + managedRerunHint(issue)
+        case .tickerDisabled:
+            return "Scheduled runs are paused until \"Allow in the Background\" is turned on "
+                + "for JamfReports in Login Items."
         }
     }
 

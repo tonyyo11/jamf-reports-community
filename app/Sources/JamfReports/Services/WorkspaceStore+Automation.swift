@@ -9,6 +9,11 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
     enum Kind: String, Sendable {
         case overdue
         case failing
+        /// The bundled tick isn't running (Login Items "Allow in the
+        /// Background" was turned off or never approved) — every schedule
+        /// is affected the same way, so this collapses to ONE issue rather
+        /// than one per schedule.
+        case tickerDisabled
     }
 
     /// Stable per-agent id (the LaunchAgent label) so SwiftUI keeps row identity.
@@ -80,7 +85,18 @@ enum AutomationHealth {
     /// and clock skew without hiding a genuinely-missed run.
     static let graceSeconds: TimeInterval = 60 * 60
 
+    /// Synthetic label for the collapsed `.tickerDisabled` issue — the ticker
+    /// is one bundled agent, not one of the schedules it evaluates.
+    static let tickerLabel = "\(LaunchAgentWriter.labelPrefix).tick"
+
     /// Evaluate one probe pass. `now` is injected for deterministic tests.
+    ///
+    /// When the ticker requires Login Items approval or was never registered,
+    /// no per-schedule state can be trusted (nothing is firing), so this
+    /// short-circuits to ONE `.tickerDisabled` issue instead of every
+    /// schedule reading `.overdue`. `.unavailable` (a dev build with no
+    /// bundled plist) is NOT treated as disabled — registration simply
+    /// doesn't apply there, and the per-schedule evaluation still runs.
     ///
     /// - `.overdue`: the schedule is enabled, has an expected past fire, that
     ///   fire plus the grace window has elapsed, and there is no run artifact
@@ -93,9 +109,21 @@ enum AutomationHealth {
     /// Disabled schedules never produce an issue.
     static func evaluate(
         inputs: [LaunchAgentService.ScheduleHealthInput],
+        tickerStatus: TickerStatus = .enabled,
         now: Date = Date()
     ) -> [AutomationHealthIssue] {
-        inputs.compactMap { input in
+        if tickerStatus == .requiresApproval || tickerStatus == .notRegistered {
+            return [AutomationHealthIssue(
+                label: tickerLabel,
+                displayName: "Background item disabled",
+                kind: .tickerDisabled,
+                isMulti: true,
+                profile: "",
+                expectedFire: nil,
+                lastRunFinishedAt: nil
+            )]
+        }
+        return inputs.compactMap { input in
             guard input.enabled else { return nil }
 
             if let expected = input.expectedFire,
@@ -224,11 +252,16 @@ extension WorkspaceStore {
             return
         }
         let profile = self.profile
+        let schedules = self.schedules
+        let tickerStatus = self.tickerStatus
         // Scan + evaluate off the main actor; both are pure file reads. Scope to
         // THIS profile's agents plus the global managed (isMulti) agents so a
         // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
         let issues = await Task.detached(priority: .utility) {
-            AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs(for: profile))
+            let inputs = LaunchAgentService.filterHealthInputs(
+                LaunchAgentService.healthInputs(schedules: schedules, statusProfile: profile),
+                forProfile: profile)
+            return AutomationHealth.evaluate(inputs: inputs, tickerStatus: tickerStatus)
         }.value
         AutomationHealthModel.shared.issues = issues
 
@@ -495,20 +528,18 @@ extension WorkspaceStore {
     }
 
     /// One-click "Run now" for a failing/overdue managed row on the
-    /// Automation Health card. Kickstarts the agent's own LaunchAgent job
-    /// off the main actor so the run records under its real label (see
-    /// `LaunchAgentService.kickstartNow`). Returns whether the kickstart
-    /// itself was accepted — NOT whether the collect/generate it triggers
-    /// ultimately succeeds, since that finishes asynchronously.
+    /// Automation Health card. Spawns `JamfReports --tick --now <label>`
+    /// (`TickRunner.spawnNow`) so the run records under its real label.
+    /// Returns whether the spawn itself was accepted — NOT whether the
+    /// collect/generate it triggers ultimately succeeds, since that
+    /// finishes asynchronously.
     ///
     /// No dedicated re-eval timer here: `refreshAutomationHealth` already
     /// runs on the next reconcile, app-foreground (`willBecomeActive`), and
     /// manual reconcile, any of which will pick up the kicked-off job's
     /// status file once it finishes and clear the row.
     func runNowFromHealthRow(label: String) async -> Bool {
-        await Task.detached(priority: .userInitiated) {
-            await LaunchAgentService.kickstartNow(label: label)
-        }.value.succeeded
+        await TickRunner.spawnNow(label: label, wait: false) == 0
     }
 
     /// Post ONE overdue digest per day when any schedule is overdue AND the
