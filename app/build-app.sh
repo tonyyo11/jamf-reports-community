@@ -65,6 +65,12 @@ mkdir -p "$APP_OUT/Contents/Resources"
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
 
+# The one SMAppService agent (2.9.0). Lives outside Sources/ so SwiftPM's
+# .process("Resources") never rewrites it; signed with the bundle below.
+mkdir -p "$APP_OUT/Contents/Library/LaunchAgents"
+cp "LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist" \
+   "$APP_OUT/Contents/Library/LaunchAgents/"
+
 # Copy bundled resource assets directly into Contents/Resources/ so Bundle.main
 # can find them on any Mac. SwiftPM's auto-generated `Bundle.module` accessor
 # is incompatible with macOS .app code-signing rules (it expects the resource
