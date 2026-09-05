@@ -106,6 +106,8 @@ final class LaunchAgentServiceTests: XCTestCase {
 
         let parsed = try XCTUnwrap(LaunchAgentService.parse(plistURL))
         XCTAssertEqual(parsed.tiers, [.refresh, .scan])
+        XCTAssertEqual(
+            parsed.executablePath, "/Applications/JamfReports.app/Contents/MacOS/JamfReports")
     }
 
     func testParseNativePlistWithoutTiersFlagYieldsNil() throws {

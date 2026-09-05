@@ -113,6 +113,11 @@ struct AutomationView: View {
                 Card { Text("Automation is unavailable in demo mode.")
                     .foregroundStyle(Theme.Colors.fgMuted) }
             } else {
+                if let warning = ManagedAutomation.bundleLocationWarning() {
+                    InlineBanner(icon: "exclamationmark.triangle", tone: .warn) {
+                        Text(warning).font(.callout)
+                    }
+                }
                 masterCard
                 if !workspace.automationHealthIssues.isEmpty || policy.isManaged {
                     HealthCard(issues: workspace.automationHealthIssues)

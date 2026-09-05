@@ -51,23 +51,32 @@ enum ManagedAutomation {
     ///   the base is vestigial, but `nativeMultiWrite` requires a valid slug.
     static func desiredSchedules(
         for policy: AutomationPolicy,
-        baseProfile: String?
+        baseProfile: String?,
+        executablePath: String? = Bundle.main.executableURL?.path
     ) -> [Schedule] {
         guard policy.isManaged,
               let baseProfile, ProfileService.isValid(baseProfile) else { return [] }
 
         var out: [Schedule] = []
         if policy.freshnessEnabled {
-            out.append(makeSchedule(.freshness, policy: policy, baseProfile: baseProfile))
+            out.append(makeSchedule(
+                .freshness, policy: policy, baseProfile: baseProfile,
+                executablePath: executablePath))
         }
         if policy.scanEnabled {
-            out.append(makeSchedule(.scan, policy: policy, baseProfile: baseProfile))
+            out.append(makeSchedule(
+                .scan, policy: policy, baseProfile: baseProfile,
+                executablePath: executablePath))
         }
         if policy.reportsCadence != .off {
-            out.append(makeSchedule(.reports, policy: policy, baseProfile: baseProfile))
+            out.append(makeSchedule(
+                .reports, policy: policy, baseProfile: baseProfile,
+                executablePath: executablePath))
         }
         if policy.backupsEnabled {
-            out.append(makeSchedule(.backup, policy: policy, baseProfile: baseProfile))
+            out.append(makeSchedule(
+                .backup, policy: policy, baseProfile: baseProfile,
+                executablePath: executablePath))
         }
         return out
     }
@@ -75,7 +84,8 @@ enum ManagedAutomation {
     private static func makeSchedule(
         _ kind: ManagedKind,
         policy: AutomationPolicy,
-        baseProfile: String
+        baseProfile: String,
+        executablePath: String?
     ) -> Schedule {
         Schedule(
             name: kind.rawValue,
@@ -91,8 +101,24 @@ enum ManagedAutomation {
             launchAgentLabel: label(for: kind),
             multiTarget: MultiTarget(scope: .all, sequential: true),
             tiers: tiers(kind),
-            excludedProfiles: policy.excludedProfiles
+            excludedProfiles: policy.excludedProfiles,
+            executablePath: executablePath
         )
+    }
+
+    /// Non-nil when the running bundle sits outside /Applications or
+    /// ~/Applications. Every plist the app writes points at the copy that wrote
+    /// it, so a scratch or build-folder copy pins fleet automation to itself.
+    static func bundleLocationWarning(
+        executablePath: String? = Bundle.main.executableURL?.path,
+        home: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> String? {
+        guard let executablePath else { return nil }
+        let allowed = ["/Applications/", home.appendingPathComponent("Applications").path + "/"]
+        if allowed.contains(where: executablePath.hasPrefix) { return nil }
+        let bundle = executablePath.components(separatedBy: "/Contents/").first ?? executablePath
+        return "JamfReports is running from \(bundle). Scheduled runs point at whichever copy "
+            + "writes them, so move the app to /Applications before turning automation on."
     }
 
     // MARK: - Plan (pure)
@@ -115,9 +141,11 @@ enum ManagedAutomation {
         for policy: AutomationPolicy,
         installed: [Schedule],
         baseProfile: String?,
-        force: Bool = false
+        force: Bool = false,
+        executablePath: String? = Bundle.main.executableURL?.path
     ) -> [Action] {
-        let desired = desiredSchedules(for: policy, baseProfile: baseProfile)
+        let desired = desiredSchedules(
+            for: policy, baseProfile: baseProfile, executablePath: executablePath)
         let desiredByLabel: [String: Schedule] = Dictionary(
             uniqueKeysWithValues: desired.compactMap { sched in
                 LaunchAgentWriter.label(for: sched).map { ($0, sched) }
@@ -479,14 +507,15 @@ enum ManagedAutomation {
         return names[min(max(0, weekday), 6)]
     }
 
-    /// Stable signature for the "unchanged?" check: mode + cadence string +
+    /// Stable signature for the "unchanged?" check: executable + mode + cadence string +
     /// sorted tiers + sorted exclusions. `LaunchAgentService.parse` now reads
     /// `--exclude-profiles` back into `Schedule.excludedProfiles`, so an
     /// exclusions-only policy edit is detected here instead of being a no-op.
     private static func signature(_ schedule: Schedule) -> String {
         let tierCSV = (schedule.tiers ?? []).map(\.rawValue).sorted().joined(separator: ",")
         let exclCSV = (schedule.excludedProfiles ?? []).sorted().joined(separator: ",")
-        return "\(schedule.mode.rawValue)|\(schedule.schedule)|\(tierCSV)|\(exclCSV)"
+        return "\(schedule.executablePath ?? "")|\(schedule.mode.rawValue)|\(schedule.schedule)"
+            + "|\(tierCSV)|\(exclCSV)"
     }
 
     private static func actionSort(_ lhs: Action, _ rhs: Action) -> Bool {

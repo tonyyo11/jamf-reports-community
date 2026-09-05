@@ -155,7 +155,9 @@ final class ManagedAutomationTests: XCTestCase {
         XCTAssertEqual(installedBack.schedule, desired.schedule,
                        "writer and reader must agree on the monthly cadence string")
 
-        let actions = ManagedAutomation.plan(for: p, installed: [installedBack], baseProfile: "alpha")
+        let actions = ManagedAutomation.plan(
+            for: p, installed: [installedBack], baseProfile: "alpha",
+            executablePath: installedBack.executablePath)
         XCTAssertFalse(
             actions.contains {
                 if case .install(let s) = $0 { return s.launchAgentLabel == desired.launchAgentLabel }
@@ -197,6 +199,44 @@ final class ManagedAutomationTests: XCTestCase {
         )
         XCTAssertEqual(forced.count, installed.count)
         XCTAssertTrue(forced.allSatisfy { if case .install = $0 { return true }; return false })
+    }
+
+    func testPlanReinstallsWhenExecutablePathChanges() {
+        var p = AutomationPolicy(); p.isManaged = true
+        let old = "/Users/dev/scratch/build/JamfReports.app/Contents/MacOS/JamfReports"
+        let new = "/Applications/JamfReports.app/Contents/MacOS/JamfReports"
+        let installed = ManagedAutomation.desiredSchedules(
+            for: p, baseProfile: "alpha", executablePath: old)
+
+        // Same bundle → quiet launch.
+        XCTAssertTrue(ManagedAutomation.plan(
+            for: p, installed: installed, baseProfile: "alpha", executablePath: old).isEmpty)
+        // App now runs from the installed copy → every agent is repointed.
+        let actions = ManagedAutomation.plan(
+            for: p, installed: installed, baseProfile: "alpha", executablePath: new)
+        XCTAssertEqual(actions.count, installed.count)
+        XCTAssertTrue(actions.allSatisfy { if case .install = $0 { return true }; return false })
+    }
+
+    func testBundleLocationWarningOnlyOutsideApplicationsFolders() {
+        let home = URL(fileURLWithPath: "/Users/dev", isDirectory: true)
+        let inApps = "/Applications/JamfReports.app/Contents/MacOS/JamfReports"
+        let inHomeApps = "/Users/dev/Applications/JamfReports.app/Contents/MacOS/JamfReports"
+        let scratch = "/Users/dev/jr-nonnested/app/build/JamfReports.app/Contents/MacOS/JamfReports"
+        XCTAssertNil(ManagedAutomation.bundleLocationWarning(executablePath: inApps, home: home))
+        XCTAssertNil(
+            ManagedAutomation.bundleLocationWarning(executablePath: inHomeApps, home: home))
+        XCTAssertNil(ManagedAutomation.bundleLocationWarning(executablePath: nil, home: home))
+        let warning = try? XCTUnwrap(
+            ManagedAutomation.bundleLocationWarning(executablePath: scratch, home: home))
+        XCTAssertEqual(warning?.contains("/Users/dev/jr-nonnested/app/build/JamfReports.app"), true)
+        XCTAssertEqual(warning?.contains("/Contents/"), false)
+
+        let rows = ConfigDoctorService.evaluateBundleLocation(executablePath: scratch, home: home)
+        XCTAssertEqual(rows.map(\.id), ["automation.bundle-location"])
+        XCTAssertEqual(rows.first?.severity, .warn)
+        XCTAssertTrue(ConfigDoctorService.evaluateBundleLocation(
+            executablePath: inApps, home: home).isEmpty)
     }
 
     func testPlanReinstallsWhenCadenceChanges() {
@@ -288,7 +328,9 @@ final class ManagedAutomationTests: XCTestCase {
         XCTAssertEqual(installedBack.excludedProfiles, ["dummy", "sandbox"],
                        "--exclude-profiles must round-trip so the signature check can see them")
 
-        let actions = ManagedAutomation.plan(for: p, installed: [installedBack], baseProfile: "alpha")
+        let actions = ManagedAutomation.plan(
+            for: p, installed: [installedBack], baseProfile: "alpha",
+            executablePath: installedBack.executablePath)
         XCTAssertFalse(
             actions.contains {
                 if case .install(let s) = $0 { return s.launchAgentLabel == desired.launchAgentLabel }

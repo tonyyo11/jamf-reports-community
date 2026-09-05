@@ -36,6 +36,17 @@ backs off for the rest of the run if Jamf Pro rate-limits it, and after a
 failed run it waits for its normal weekly cadence rather than retrying every
 hour; Collect now still runs it immediately.
 
+### Fixed
+
+- Managed automation agents now follow the app. The reconcile signature includes
+  the executable path, so launching the installed copy repoints agents that were
+  written by a build-folder or moved copy — before this, an agent stayed pinned
+  to whichever bundle wrote it, and every rebuild of that bundle re-registered
+  the agent with macOS and posted a "Software from … can run in the background"
+  notification. The Automation screen and the Config Doctor now warn when the
+  app is running outside /Applications or ~/Applications rather than letting it
+  write agents that point at itself.
+
 ### Changed
 
 Connecting a Platform API profile now asks which scope the integration was

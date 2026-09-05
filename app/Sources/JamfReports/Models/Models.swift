@@ -229,6 +229,10 @@ struct Schedule: Identifiable, Sendable {
     /// (run-time discovery picks up every profile). Ignored for single-profile
     /// schedules.
     var excludedProfiles: [String]? = nil
+    /// `ProgramArguments[0]` as written to the plist. Part of the managed
+    /// reconcile signature, so an agent pinned to a moved or scratch bundle is
+    /// rewritten the next time the app runs from its installed location.
+    var executablePath: String? = nil
 
     var isMulti: Bool { multiTarget != nil }
     var profileDisplayLabel: String { multiTarget?.displayLabel ?? profile }

@@ -373,7 +373,8 @@ enum LaunchAgentService {
             launchAgentLabel: label,
             multiTarget: labelParts.isMulti ? (multiTarget(from: args) ?? MultiTarget(scope: .all)) : nil,
             tiers: tiers(from: args),
-            excludedProfiles: excludedProfiles(from: args)
+            excludedProfiles: excludedProfiles(from: args),
+            executablePath: args.first
         )
     }
 
