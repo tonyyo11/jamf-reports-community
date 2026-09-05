@@ -54,3 +54,36 @@ enum TickScheduler {
         }
     }
 }
+
+/// One tick at a time. A pid file: a live holder blocks, a dead or garbage
+/// holder is taken over — the 300-second wake must never pile a second run
+/// on top of a 20-minute collect.
+struct TickLock: Sendable {
+    static let defaultURL = AppSupport.directory().appendingPathComponent(".tick.lock")
+    let url: URL
+
+    func acquire(
+        pid: Int32 = getpid(),
+        isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM }
+    ) -> Bool {
+        if let text = try? String(contentsOf: url, encoding: .utf8),
+           let holder = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+           holder != pid, isAlive(holder) {
+            return false
+        }
+        do {
+            try Data(String(pid).utf8).write(to: url, options: .atomic)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch {
+            AppLogger.schedule.error(
+                "tick lock could not be written: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    func release() {
+        try? FileManager.default.removeItem(at: url)
+    }
+}
