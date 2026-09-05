@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch off `main` after 2.8.0 ships; never stack on `feat/enhance-ddm`. Version pair becomes 2.9.0 (`build-app.sh` `MARKETING_VERSION` and `AppVersionState.fallbackVersion` together; `AppVersionDriftTests` pins them).
+- Ships in 2.8.0 on `feat/enhance-ddm` (decision 2026-09-05: 2.8.0 releases end of month). The version pair is already 2.8.0; Task 12 writes CHANGELOG entries under `## [2.8.0]`, not `[Unreleased]`, and does not touch the version.
 - Swift 6 strict concurrency. CI's floor leg is Xcode 16.4 / Swift 6.1, stricter than local 6.3: a `static` on a SwiftUI `View` is MainActor-isolated there, so pure statics called from nonisolated tests must be `nonisolated static`.
 - 100-character lines, functions ≤100 lines, no force-unwrap in production paths, no `UIKit`, no new SwiftPM dependencies (`ServiceManagement` is a system framework).
 - Every file path goes through `ProfileService.workspaceURL(for:)` / `WorkspacePaths`; new app-state files live under `AppSupport.directory()` defined in Task 1.
@@ -2100,12 +2100,12 @@ git commit -m "refactor(automation): delete LaunchAgent plist generation, launch
 
 - [ ] **Step 1: Version pair**
 
-`build-app.sh`: `MARKETING_VERSION="${MARKETING_VERSION:-2.9.0}"`. `AppVersionState.fallbackVersion = "2.9.0"`.
+Version pair is already 2.8.0 on this branch — nothing to change; run the drift test as a sanity check.
 
 Run: `cd app && swift test --filter AppVersionDriftTests 2>&1 | grep -E "Executed [0-9]+ tests|error: -" | tail -2`
 Expected: 0 failures.
 
-- [ ] **Step 2: CHANGELOG `[Unreleased]`**
+- [ ] **Step 2: CHANGELOG under `## [2.8.0]`** (merge into its existing Changed/Added sections; add a Removed section)
 
 ```markdown
 ### Changed
@@ -2158,7 +2158,7 @@ Expected: no output.
 ```bash
 git add CLAUDE.md AGENTS.md CHANGELOG.md README.md docs/wiki app/build-app.sh \
         app/Sources/JamfReports/Models/AppVersionState.swift
-git commit -m "docs(2.9.0): one background item replaces LaunchAgents; version pair 2.9.0"
+git commit -m "docs(2.8.0): one background item replaces LaunchAgents"
 ```
 
 ---
