@@ -25,22 +25,10 @@ struct ComputerHistoryCommands: Decodable, Sendable {
         let completed: Bucket
         let failed: Bucket
         let pending: Bucket
-
-        private enum Keys: String, CodingKey { case completed, failed, pending }
-
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: Keys.self)
-            completed = try c.decodeIfPresent(Bucket.self, forKey: .completed) ?? .empty
-            failed = try c.decodeIfPresent(Bucket.self, forKey: .failed) ?? .empty
-            pending = try c.decodeIfPresent(Bucket.self, forKey: .pending) ?? .empty
-        }
     }
 
     struct Bucket: Decodable, Sendable {
         let command: [HistoryCommand]
-        static let empty = Bucket(command: [])
-
-        init(command: [HistoryCommand]) { self.command = command }
 
         private enum Keys: String, CodingKey { case command }
 
@@ -65,33 +53,18 @@ struct ComputerHistoryCommands: Decodable, Sendable {
     struct HistoryCommand: Decodable, Sendable, Equatable {
         let name: String?
         let status: String?
-        let username: String?
         let issuedEpoch: Int?
-        let failedEpoch: Int?
-        let lastPushEpoch: Int?
 
         private enum Keys: String, CodingKey {
-            case name, status, username
+            case name, status
             case issuedEpoch = "issued_epoch"
-            case failedEpoch = "failed_epoch"
-            case lastPushEpoch = "last_push_epoch"
-        }
-
-        init(name: String?, status: String?, username: String? = nil,
-             issuedEpoch: Int? = nil, failedEpoch: Int? = nil, lastPushEpoch: Int? = nil) {
-            self.name = name; self.status = status; self.username = username
-            self.issuedEpoch = issuedEpoch; self.failedEpoch = failedEpoch
-            self.lastPushEpoch = lastPushEpoch
         }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
             name = try c.decodeIfPresent(String.self, forKey: .name)
             status = try c.decodeIfPresent(String.self, forKey: .status)
-            username = try c.decodeIfPresent(String.self, forKey: .username)
             issuedEpoch = try c.decodeIfPresent(AnyCodable.self, forKey: .issuedEpoch)?.intValue
-            failedEpoch = try c.decodeIfPresent(AnyCodable.self, forKey: .failedEpoch)?.intValue
-            lastPushEpoch = try c.decodeIfPresent(AnyCodable.self, forKey: .lastPushEpoch)?.intValue
         }
     }
 }
@@ -106,7 +79,6 @@ struct DDMDeviceStatusRecord: Codable, Sendable, Equatable {
     let name: String
     let managementId: String
     let osVersion: String?
-    let osBuild: String?
     let reportDate: String?
     /// False when the status-items call 404'd: the device is DDM-enabled per
     /// inventory but has never reported. Not an error.
@@ -118,21 +90,14 @@ struct DDMDeviceStatusRecord: Codable, Sendable, Equatable {
         let identifier: String
         let active: Bool?
         let valid: Bool?
-        let reasonCode: String?
-        let reasonText: String?
     }
 
     struct SoftwareUpdate: Codable, Sendable, Equatable {
         let pendingOSVersion: String?
-        let pendingBuild: String?
         let installState: String?
-        let installReason: String?
         let failureReason: String?
-        let failureAt: String?
-        let betaEnrollment: String?
         static let empty = SoftwareUpdate(
-            pendingOSVersion: nil, pendingBuild: nil, installState: nil,
-            installReason: nil, failureReason: nil, failureAt: nil, betaEnrollment: nil)
+            pendingOSVersion: nil, installState: nil, failureReason: nil)
     }
 }
 

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A device the fleet views can deep-link to.
-struct DeviceRef: Sendable, Equatable, Hashable, Identifiable {
+struct DeviceRef: Sendable, Hashable, Identifiable {
     let id: String
     let name: String
 }

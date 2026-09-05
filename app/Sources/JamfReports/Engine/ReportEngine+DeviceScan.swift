@@ -1,5 +1,11 @@
 import Foundation
 
+/// Shared shape a persisted scan row must have so `ReportEngine.landOrReject`
+/// can sort it by device id before writing.
+private protocol DeviceIdentified { var deviceId: String { get } }
+extension MDMCommandHealthRecord: DeviceIdentified {}
+extension DDMDeviceStatusRecord: DeviceIdentified {}
+
 /// 2.8.0 per-device scan phase. Two read-only jamf-cli calls per managed Mac,
 /// bounded to four concurrent processes, reduced through `DeviceScanBuilders`
 /// into the `ddm-device-status` and `mdm-command-health` snapshots.
@@ -27,13 +33,6 @@ extension ReportEngine {
             case name, managementId, declarativeDeviceManagementEnabled
         }
 
-        init(id: String, name: String, managementId: String?, ddmEnabled: Bool) {
-            self.id = id
-            self.name = name
-            self.managementId = managementId
-            self.ddmEnabled = ddmEnabled
-        }
-
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
             id = try c.decodeIfPresent(AnyCodable.self, forKey: .id)?.stringValue ?? ""
@@ -52,7 +51,16 @@ extension ReportEngine {
         }
     }
 
-    private enum CallType: String, Sendable { case history, statusItems }
+    private enum CallType: String, Sendable {
+        case history, statusItems
+
+        var kind: String {
+            switch self {
+            case .history: return ReportEngine.mdmCommandHealthKind
+            case .statusItems: return ReportEngine.ddmDeviceStatusKind
+            }
+        }
+    }
 
     /// One call type's outcome for one device. `.notMade` never counts toward
     /// either "attempted" or "failed" — the call type was stopped, or the
@@ -249,9 +257,7 @@ extension ReportEngine {
             onLine: @Sendable (CLIBridge.LogLine) -> Void
         ) {
             guard stopped[type] == nil else { return }
-            let kind = type == .history
-                ? ReportEngine.mdmCommandHealthKind
-                : ReportEngine.ddmDeviceStatusKind
+            let kind = type.kind
             switch exit {
             case CLIBridge.exitCodePermissionDenied:
                 stopped[type] = exit
@@ -288,9 +294,7 @@ extension ReportEngine {
             _ type: CallType, onLine: @Sendable (CLIBridge.LogLine) -> Void
         ) {
             guard launchFailureLogged.insert(type).inserted else { return }
-            let kind = type == .history
-                ? ReportEngine.mdmCommandHealthKind
-                : ReportEngine.ddmDeviceStatusKind
+            let kind = type.kind
             onLine(.init(
                 timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): jamf-cli failed to launch — counting the device as failed"
@@ -299,6 +303,70 @@ extension ReportEngine {
     }
 
     // MARK: - Reduce + save
+
+    private struct Tally<Row> {
+        var rows: [Row] = []
+        var attempted = 0
+        var failed = 0
+    }
+
+    /// Folds one call type's raw per-device results into rows plus
+    /// attempted/failed counts. `.notMade` counts toward neither — the call
+    /// type was stopped, or the device was never eligible. `.launchFailed`
+    /// counts as attempted-and-failed with no row. `.ran` counts as
+    /// attempted; `row` returning nil counts it as failed (a non-JSON or
+    /// otherwise-undecodable response).
+    private static func tally<Row>(
+        _ results: [DeviceResult],
+        outcome: (DeviceResult) -> CallOutcome,
+        row: (DeviceResult, Int32, Data) -> Row?
+    ) -> Tally<Row> {
+        var t = Tally<Row>()
+        for r in results {
+            switch outcome(r) {
+            case .notMade:
+                continue
+            case .launchFailed:
+                t.attempted += 1
+                t.failed += 1
+            case .ran(let exit, let data):
+                t.attempted += 1
+                if let built = row(r, exit, data) {
+                    t.rows.append(built)
+                } else {
+                    t.failed += 1
+                }
+            }
+        }
+        return t
+    }
+
+    /// Writes the tally's rows, sorted by device id, when under the 25%
+    /// failure budget; otherwise warns and records the kind failed without
+    /// writing anything. `attempted == failed == 0` (nothing to reduce) is
+    /// under budget, so it lands an empty snapshot — a landed, empty result,
+    /// not a failure.
+    private static func landOrReject<Row: Encodable & DeviceIdentified>(
+        _ tally: Tally<Row>, kind: String, dataDir: URL, recordManifest: Bool,
+        stateStore: StateFileStore?, collectStart: Date,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void, saved: inout Set<String>
+    ) {
+        if DeviceScanBuilders.exceedsFailureBudget(failed: tally.failed, total: tally.attempted) {
+            onLine(.init(
+                timestamp: Date(), level: .warn,
+                text: "[warn] \(kind): \(tally.failed) of \(tally.attempted) "
+                    + "devices failed — not written"
+            ))
+            stateStore?.record(.failed(exitCode: nil), report: kind, at: collectStart)
+        } else {
+            let rows = tally.rows.sorted { $0.deviceId < $1.deviceId }
+            save(
+                rows, kind: kind, failed: tally.failed, attempted: tally.attempted,
+                dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
+                collectStart: collectStart, onLine: onLine, saved: &saved
+            )
+        }
+    }
 
     private static func reduceAndSave(
         results: [DeviceResult], stops: [CallType: Int32], dataDir: URL, recordManifest: Bool,
@@ -319,58 +387,20 @@ extension ReportEngine {
                 .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart
             )
         } else {
-            var health: [MDMCommandHealthRecord] = []
-            var ran = 0, launchFailed = 0, decodeFailed = 0
-            for r in results {
-                switch r.history {
-                case .notMade:
-                    continue
-                case .launchFailed:
-                    launchFailed += 1
-                case .ran(let exit, let data):
-                    ran += 1
-                    if exit == 0 || exit == CLIBridge.exitCodePartialFailure,
-                       let decoded = try? JSONDecoder().decode(
-                           ComputerHistoryCommands.self, from: data
-                       ) {
-                        health.append(DeviceScanBuilders.healthRecord(
-                            deviceId: r.target.id, name: r.target.name, history: decoded, now: now
-                        ))
-                    } else {
-                        decodeFailed += 1
-                    }
-                }
-            }
-            // The budget denominator is every device the phase attempted to
-            // reach, not just the ones whose process actually launched — a
-            // launch failure is a failure, and must count toward the total.
-            let attempted = ran + launchFailed
-            let failed = decodeFailed + launchFailed
-            if ran == 0 && launchFailed == 0 {
-                // No history call was ever attempted for this kind — should
-                // not happen once `stops[.history]` is nil (every device
-                // would have hit `.ran` or `.launchFailed`); kept as a
-                // defensive no-write path.
-                stateStore?.record(
-                    .failed(exitCode: nil), report: mdmCommandHealthKind, at: collectStart
-                )
-            } else if DeviceScanBuilders.exceedsFailureBudget(failed: failed, total: attempted) {
-                onLine(.init(
-                    timestamp: Date(), level: .warn,
-                    text: "[warn] \(mdmCommandHealthKind): \(failed) of \(attempted) "
-                        + "devices failed — not written"
-                ))
-                stateStore?.record(
-                    .failed(exitCode: nil), report: mdmCommandHealthKind, at: collectStart
-                )
-            } else {
-                health.sort { $0.deviceId < $1.deviceId }
-                save(
-                    health, kind: mdmCommandHealthKind, failed: failed, attempted: attempted,
-                    dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
-                    collectStart: collectStart, onLine: onLine, saved: &saved
+            let healthTally = tally(results, outcome: \.history) { r, exit, data in
+                guard exit == 0 || exit == CLIBridge.exitCodePartialFailure,
+                      let decoded = try? JSONDecoder().decode(
+                          ComputerHistoryCommands.self, from: data
+                      ) else { return nil }
+                return DeviceScanBuilders.healthRecord(
+                    deviceId: r.target.id, name: r.target.name, history: decoded, now: now
                 )
             }
+            landOrReject(
+                healthTally, kind: mdmCommandHealthKind, dataDir: dataDir,
+                recordManifest: recordManifest, stateStore: stateStore,
+                collectStart: collectStart, onLine: onLine, saved: &saved
+            )
         }
 
         // Status items → ddm-device-status (DDM-enabled devices only).
@@ -384,9 +414,7 @@ extension ReportEngine {
                 .failed(exitCode: stopExit), report: ddmDeviceStatusKind, at: collectStart
             )
         } else {
-            // Belt-and-braces: `scanOne` already gates on `t.ddmEnabled` before
-            // ever making the call, so this filter should be a no-op — but it
-            // costs nothing to keep it as a second guard against that call.
+            // Eligible devices; empty means the fleet has no DDM-enabled Mac with a managementId.
             let ddmTargets = results.filter {
                 $0.target.ddmEnabled && $0.target.managementId != nil
             }
@@ -399,64 +427,27 @@ extension ReportEngine {
                     collectStart: collectStart, onLine: onLine, saved: &saved
                 )
             } else {
-                var rows: [DDMDeviceStatusRecord] = []
-                var ran = 0, launchFailed = 0, decodeFailed = 0
-                for r in ddmTargets {
+                let statusTally = tally(ddmTargets, outcome: \.status) { r, exit, data in
                     let mgmt = r.target.managementId ?? ""
-                    switch r.status {
-                    case .notMade:
-                        continue
-                    case .launchFailed:
-                        launchFailed += 1
-                    case .ran(let exit, let data):
-                        ran += 1
-                        if exit == CLIBridge.exitCodeNotFound {
-                            rows.append(DeviceScanBuilders.ddmRecordNotReported(
-                                deviceId: r.target.id, name: r.target.name, managementId: mgmt
-                            ))
-                        } else if exit == 0 || exit == CLIBridge.exitCodePartialFailure,
-                                  let payload = try? JSONDecoder().decode(
-                                      DDMStatusItemsPayload.self, from: data
-                                  ) {
-                            rows.append(DeviceScanBuilders.ddmRecord(
-                                deviceId: r.target.id, name: r.target.name,
-                                managementId: mgmt, payload: payload
-                            ))
-                        } else {
-                            decodeFailed += 1
-                        }
+                    if exit == CLIBridge.exitCodeNotFound {
+                        return DeviceScanBuilders.ddmRecordNotReported(
+                            deviceId: r.target.id, name: r.target.name, managementId: mgmt
+                        )
                     }
-                }
-                // See the history loop above: the denominator is every device
-                // attempted, launch failures included.
-                let attempted = ran + launchFailed
-                let failed = decodeFailed + launchFailed
-                if ran == 0 && launchFailed == 0 {
-                    // Every DDM-enabled device's status-items call was
-                    // rejected as unsafe before any process ran; nothing was
-                    // ever attempted for this kind.
-                    stateStore?.record(
-                        .failed(exitCode: nil), report: ddmDeviceStatusKind, at: collectStart
-                    )
-                } else if DeviceScanBuilders.exceedsFailureBudget(
-                    failed: failed, total: attempted
-                ) {
-                    onLine(.init(
-                        timestamp: Date(), level: .warn,
-                        text: "[warn] \(ddmDeviceStatusKind): \(failed) of \(attempted) "
-                            + "devices failed — not written"
-                    ))
-                    stateStore?.record(
-                        .failed(exitCode: nil), report: ddmDeviceStatusKind, at: collectStart
-                    )
-                } else {
-                    rows.sort { $0.deviceId < $1.deviceId }
-                    save(
-                        rows, kind: ddmDeviceStatusKind, failed: failed, attempted: attempted,
-                        dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
-                        collectStart: collectStart, onLine: onLine, saved: &saved
+                    guard exit == 0 || exit == CLIBridge.exitCodePartialFailure,
+                          let payload = try? JSONDecoder().decode(
+                              DDMStatusItemsPayload.self, from: data
+                          ) else { return nil }
+                    return DeviceScanBuilders.ddmRecord(
+                        deviceId: r.target.id, name: r.target.name,
+                        managementId: mgmt, payload: payload
                     )
                 }
+                landOrReject(
+                    statusTally, kind: ddmDeviceStatusKind, dataDir: dataDir,
+                    recordManifest: recordManifest, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine, saved: &saved
+                )
             }
         }
         return saved

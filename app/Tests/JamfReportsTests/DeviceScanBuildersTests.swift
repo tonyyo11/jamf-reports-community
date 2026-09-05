@@ -60,7 +60,15 @@ final class DeviceScanBuildersTests: XCTestCase {
         XCTAssertEqual(d[0].identifier, "AAAA-1")
         XCTAssertEqual(d[0].active, true)
         XCTAssertEqual(d[0].valid, true)
-        XCTAssertNil(d[0].reasonCode)
+
+        // A nested `reasons={…}` group must not leak into or corrupt the
+        // declaration — only its own identifier/active/valid are parsed.
+        let nested = DeviceScanBuilders.parseDeclarations(
+            "{active=true, identifier=A, valid=valid, reasons={code=X, description=Y}}")
+        XCTAssertEqual(nested.count, 1)
+        XCTAssertEqual(nested[0].identifier, "A")
+        XCTAssertEqual(nested[0].active, true)
+        XCTAssertEqual(nested[0].valid, true)
     }
 
     func testValidFieldAcceptsProdWordForm() {
@@ -76,25 +84,14 @@ final class DeviceScanBuildersTests: XCTestCase {
         XCTAssertEqual(b[0].valid, false)
     }
 
-    func testParsesSeveralGroupsAndTolerantReasons() {
-        // Multi-group form INFERRED from the single observed group (spec §2);
-        // the reasons sub-group shape is unobserved and parsed tolerantly.
+    func testParsesSeveralGroups() {
+        // Multi-group form INFERRED from the single observed group (spec §2).
         let raw = "{active=true, identifier=A, valid=true}, " +
                   "{active=false, identifier=B, valid=false, " +
                   "reasons={code=Error.Foo, description=bad thing}}"
         let d = DeviceScanBuilders.parseDeclarations(raw)
         XCTAssertEqual(d.map(\.identifier), ["A", "B"])
         XCTAssertEqual(d[1].active, false)
-        XCTAssertEqual(d[1].reasonCode, "Error.Foo")
-        XCTAssertEqual(d[1].reasonText, "bad thing")
-    }
-
-    func testDescriptionOutsideReasonsIsIgnored() {
-        let raw = "{active=true, identifier=A, valid=valid, description=leak, "
-            + "server-token=x}"
-        let d = DeviceScanBuilders.parseDeclarations(raw)
-        XCTAssertEqual(d.count, 1)
-        XCTAssertNil(d[0].reasonText, "description outside reasons={} must not be read")
     }
 
     func testGroupWithoutIdentifierIsDropped() {
@@ -130,11 +127,9 @@ final class DeviceScanBuildersTests: XCTestCase {
 
     func testOldestPendingUsesIssuedEpochAndFloorsDays() {
         let issued = Date(timeIntervalSince1970: 1_700_000_000)
-        let cmds = [
-            ComputerHistoryCommands.HistoryCommand(name: "X", status: "Pending",
-                issuedEpoch: Int(issued.timeIntervalSince1970 * 1000)),
-            ComputerHistoryCommands.HistoryCommand(name: "Y", status: "Pending",
-                issuedEpoch: Int((issued.timeIntervalSince1970 + 3 * 86_400) * 1000)),
+        let cmds: [(name: String, issuedEpoch: Int?)] = [
+            (name: "X", issuedEpoch: Int(issued.timeIntervalSince1970 * 1000)),
+            (name: "Y", issuedEpoch: Int((issued.timeIntervalSince1970 + 3 * 86_400) * 1000)),
         ]
         let h = makeHistory(pending: cmds)
         let now = issued.addingTimeInterval(7 * 86_400 - 1)   // 6.99 days → 6
@@ -148,7 +143,7 @@ final class DeviceScanBuildersTests: XCTestCase {
     }
 
     func testPendingWithoutEpochDoesNotCrashAndReportsNoAge() {
-        let h = makeHistory(pending: [.init(name: "X", status: "Pending")])
+        let h = makeHistory(pending: [(name: "X", issuedEpoch: nil)])
         let rec = DeviceScanBuilders.healthRecord(deviceId: "1", name: "", history: h, now: Date())
         XCTAssertEqual(rec.pendingCount, 1)
         XCTAssertNil(rec.oldestPendingDays)
@@ -167,11 +162,11 @@ final class DeviceScanBuildersTests: XCTestCase {
     // MARK: helpers
 
     private func makeHistory(
-        pending: [ComputerHistoryCommands.HistoryCommand]
+        pending: [(name: String, issuedEpoch: Int?)]
     ) -> ComputerHistoryCommands {
         // Build through JSON so the real decoder path is exercised.
         let rows = pending.map { c -> [String: Any] in
-            var d: [String: Any] = ["name": c.name ?? "", "status": c.status ?? ""]
+            var d: [String: Any] = ["name": c.name, "status": "Pending"]
             if let e = c.issuedEpoch { d["issued_epoch"] = e }
             return d
         }

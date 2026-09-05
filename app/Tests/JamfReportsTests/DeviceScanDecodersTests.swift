@@ -29,7 +29,6 @@ final class DeviceScanDecodersTests: XCTestCase {
         let pending = try XCTUnwrap(h.commands.pending.command.first)
         XCTAssertEqual(pending.name, "ProfileList")
         XCTAssertNotNil(pending.issuedEpoch)
-        XCTAssertNotNil(pending.lastPushEpoch)
     }
 
     func testHistorySingleFailedCommandIsABareObject() throws {
@@ -58,13 +57,11 @@ final class DeviceScanDecodersTests: XCTestCase {
 
     func testPersistedRowsRoundTrip() throws {
         let ddm = DDMDeviceStatusRecord(
-            deviceId: "1", name: "Mac", managementId: "m-1", osVersion: "27.0", osBuild: "27A1",
+            deviceId: "1", name: "Mac", managementId: "m-1", osVersion: "27.0",
             reportDate: "2026-09-04T07:25:58.000", ddmReported: true,
-            declarations: [.init(identifier: "d-1", active: true, valid: true,
-                                 reasonCode: nil, reasonText: nil)],
-            softwareUpdate: .init(pendingOSVersion: "27.1", pendingBuild: nil, installState: "pending",
-                                  installReason: nil, failureReason: nil, failureAt: nil,
-                                  betaEnrollment: nil))
+            declarations: [.init(identifier: "d-1", active: true, valid: true)],
+            softwareUpdate: .init(pendingOSVersion: "27.1", installState: "pending",
+                                  failureReason: nil))
         let data = try JSONEncoder().encode([ddm])
         XCTAssertEqual(try JSONDecoder().decode([DDMDeviceStatusRecord].self, from: data), [ddm])
 

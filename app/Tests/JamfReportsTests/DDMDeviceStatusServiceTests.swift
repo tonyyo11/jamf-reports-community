@@ -17,13 +17,11 @@ final class DDMDeviceStatusServiceTests: XCTestCase {
                      decl: [(String, Bool?, Bool?)] = [],
                      pending: String? = nil, failure: String? = nil) -> DDMDeviceStatusRecord {
         .init(deviceId: id, name: "Mac-\(id)", managementId: "m-\(id)",
-              osVersion: "27.0", osBuild: nil,
+              osVersion: "27.0",
               reportDate: "2026-09-04T07:00:00.000", ddmReported: reported,
-              declarations: decl.map { .init(identifier: $0.0, active: $0.1, valid: $0.2,
-                                             reasonCode: nil, reasonText: nil) },
-              softwareUpdate: .init(pendingOSVersion: pending, pendingBuild: nil, installState: nil,
-                                    installReason: nil, failureReason: failure, failureAt: nil,
-                                    betaEnrollment: nil))
+              declarations: decl.map { .init(identifier: $0.0, active: $0.1, valid: $0.2) },
+              softwareUpdate: .init(pendingOSVersion: pending, installState: nil,
+                                    failureReason: failure))
     }
 
     func testNilURLIsNotDetected() {

@@ -12,16 +12,12 @@ enum DeviceScanBuilders {
     /// adds next year must not leak by default.
     static let statusItemAllowList: Set<String> = [
         "device.operating-system.version",
-        "device.operating-system.build-version",
         "device.model.identifier",
         "management.declarations.configurations",
         "management.declarations.activations",
         "softwareupdate.pending-version.os-version",
-        "softwareupdate.pending-version.build-version",
         "softwareupdate.install-state",
-        "softwareupdate.install-reason.reason",
         "softwareupdate.failure-reason",
-        "softwareupdate.beta-enrollment",
     ]
 
     static func ddmRecord(
@@ -38,68 +34,37 @@ enum DeviceScanBuilders {
         return DDMDeviceStatusRecord(
             deviceId: deviceId, name: name, managementId: managementId,
             osVersion: kept["device.operating-system.version"],
-            osBuild: kept["device.operating-system.build-version"],
             reportDate: newest, ddmReported: true, declarations: declarations,
             softwareUpdate: .init(
                 pendingOSVersion: kept["softwareupdate.pending-version.os-version"],
-                pendingBuild: kept["softwareupdate.pending-version.build-version"],
                 installState: kept["softwareupdate.install-state"],
-                installReason: kept["softwareupdate.install-reason.reason"],
-                failureReason: kept["softwareupdate.failure-reason"],
-                failureAt: payload.statusItems.first {
-                    $0.key == "softwareupdate.failure-reason" && !($0.value ?? "").isEmpty
-                }?.lastUpdateTime,
-                betaEnrollment: kept["softwareupdate.beta-enrollment"]))
+                failureReason: kept["softwareupdate.failure-reason"]))
     }
 
     static func ddmRecordNotReported(
         deviceId: String, name: String, managementId: String
     ) -> DDMDeviceStatusRecord {
         DDMDeviceStatusRecord(deviceId: deviceId, name: name, managementId: managementId,
-                              osVersion: nil, osBuild: nil, reportDate: nil, ddmReported: false,
+                              osVersion: nil, reportDate: nil, ddmReported: false,
                               declarations: [], softwareUpdate: .empty)
     }
 
     // MARK: - Declaration string
 
     /// `{active=true, identifier=…, valid=true, server-token=…}` groups, possibly
-    /// several, possibly with a nested `reasons={code=…, description=…}`.
-    /// Top-level groups are found by brace depth; a group without an
-    /// `identifier` is dropped. `server-token` is read and discarded here.
+    /// several, possibly with a nested `reasons={code=…, description=…}` group
+    /// (skipped — nothing reads it). Top-level groups are found by brace depth;
+    /// a group without an `identifier` is dropped. `server-token` is read and
+    /// discarded here.
     static func parseDeclarations(_ raw: String) -> [DDMDeviceStatusRecord.Declaration] {
         topLevelGroups(raw).compactMap { group in
             let fields = keyValues(group)
             guard let identifier = fields["identifier"], !identifier.isEmpty else { return nil }
-            let reasons = reasonsBody(group)
             return .init(
                 identifier: identifier,
-                active: fields["active"].flatMap(bool),
-                valid: fields["valid"].flatMap(validState),
-                reasonCode: reasons.flatMap { capture(#"code=([^,}]*)"#, in: $0) },
-                reasonText: reasons.flatMap { capture(#"description=([^}]*)"#, in: $0) })
+                active: fields["active"].flatMap(flag),
+                valid: fields["valid"].flatMap(flag))
         }
-    }
-
-    /// The body of a `reasons={…}` sub-group inside a declaration group, or
-    /// nil when absent. `code=`/`description=` are read from THIS substring
-    /// only, so a same-named field elsewhere in the group is never mistaken
-    /// for a failure reason.
-    private static func reasonsBody(_ group: String) -> String? {
-        guard let marker = group.range(of: "reasons={") else { return nil }
-        var depth = 1
-        var idx = marker.upperBound
-        let start = idx
-        while idx < group.endIndex {
-            switch group[idx] {
-            case "{": depth += 1
-            case "}":
-                depth -= 1
-                if depth == 0 { return String(group[start..<idx]) }
-            default: break
-            }
-            idx = group.index(after: idx)
-        }
-        return nil
     }
 
     private static func topLevelGroups(_ s: String) -> [String] {
@@ -139,31 +104,15 @@ enum DeviceScanBuilders {
         return out
     }
 
-    private static func bool(_ s: String) -> Bool? {
+    /// `true`/`false` (the `active` field) or the observed word form
+    /// `valid`/`invalid` (the `valid` field on prod) — one parser for both,
+    /// since neither field's vocabulary overlaps the other's.
+    private static func flag(_ s: String) -> Bool? {
         switch s.lowercased() {
-        case "true": return true
-        case "false": return false
+        case "true", "valid": return true
+        case "false", "invalid": return false
         default: return nil
         }
-    }
-
-    /// `valid` is a WORD on prod (`valid`/`invalid`), not a boolean literal —
-    /// accept both the observed word form and a plain boolean, in case a
-    /// future jamf-cli version emits `true`/`false` here instead.
-    private static func validState(_ s: String) -> Bool? {
-        switch s.lowercased() {
-        case "valid", "true": return true
-        case "invalid", "false": return false
-        default: return nil
-        }
-    }
-
-    private static func capture(_ pattern: String, in s: String) -> String? {
-        guard let r = s.range(of: pattern, options: .regularExpression) else { return nil }
-        let m = String(s[r])
-        guard let eq = m.firstIndex(of: "=") else { return nil }
-        let v = m[m.index(after: eq)...].trimmingCharacters(in: .whitespaces)
-        return v.isEmpty ? nil : v
     }
 
     // MARK: - Command history

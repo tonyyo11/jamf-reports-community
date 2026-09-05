@@ -7,19 +7,14 @@ final class DevicesScanSectionsTests: XCTestCase {
     private func ddmSnapshot() -> DDMDeviceStatusService.Snapshot {
         .init(records: [
             .init(
-                deviceId: "42", name: "Mac", managementId: "m", osVersion: "27.0", osBuild: nil,
+                deviceId: "42", name: "Mac", managementId: "m", osVersion: "27.0",
                 reportDate: "2026-09-04T07:00:00.000", ddmReported: true,
                 declarations: [
-                    .init(
-                        identifier: "D-1", active: true, valid: true,
-                        reasonCode: nil, reasonText: nil),
-                    .init(
-                        identifier: "D-2", active: false, valid: true,
-                        reasonCode: nil, reasonText: nil)
+                    .init(identifier: "D-1", active: true, valid: true),
+                    .init(identifier: "D-2", active: false, valid: true)
                 ],
                 softwareUpdate: .init(
-                    pendingOSVersion: "27.1", pendingBuild: nil, installState: "downloading",
-                    installReason: nil, failureReason: nil, failureAt: nil, betaEnrollment: nil))
+                    pendingOSVersion: "27.1", installState: "downloading", failureReason: nil))
         ], isDetected: true, readFailed: false,
            snapshotDate: Date(timeIntervalSince1970: 1_788_000_000),
            sourceDates: [:])
