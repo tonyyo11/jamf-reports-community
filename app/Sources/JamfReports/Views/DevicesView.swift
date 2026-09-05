@@ -850,16 +850,11 @@ struct DevicesView: View {
         }
     }
 
-    struct ScanSectionModel: Equatable {
+    struct ScanSectionModel {
         var ddmLines: [(String, String)] = []
         var mdmLines: [(String, String)] = []
         var ddmDate: Date?
         var mdmDate: Date?
-        static func == (l: Self, r: Self) -> Bool {
-            l.ddmLines.map { "\($0.0)=\($0.1)" } == r.ddmLines.map { "\($0.0)=\($0.1)" }
-                && l.mdmLines.map { "\($0.0)=\($0.1)" } == r.mdmLines.map { "\($0.0)=\($0.1)" }
-                && l.ddmDate == r.ddmDate && l.mdmDate == r.mdmDate
-        }
     }
 
     /// Snapshot-fed lines for one device. Internal (not private) for tests.
