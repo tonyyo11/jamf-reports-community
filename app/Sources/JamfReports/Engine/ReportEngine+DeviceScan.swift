@@ -124,6 +124,13 @@ extension ReportEngine {
             }
             targets.append(t)
         }
+        guard !targets.isEmpty else {
+            onLine(.init(
+                timestamp: Date(), level: .warn,
+                text: "[warn] device scan: no reachable devices — nothing attempted"
+            ))
+            return []
+        }
         onLine(.init(
             timestamp: Date(), level: .info,
             text: "[info] device scan: \(targets.count) Mac(s), "

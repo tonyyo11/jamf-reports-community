@@ -391,6 +391,22 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertEqual(health.map(\.deviceId), ["2"])
         XCTAssertTrue(lines.contains { $0.contains("unsafe id") }, "\(lines)")
     }
+
+    /// Every device is filtered out by the unsafe-id guard, so `targets` is
+    /// empty. Nothing was attempted: no snapshot lands, and neither the
+    /// success nor the failure counters advance — a run that reaches no
+    /// device is neither a landing nor a failure.
+    func testAllUnsafeIdsAttemptsNothingAndLandsNothing() async throws {
+        try writeComputers([("-rf", "Evil", "m1", false), ("-x", "Also Evil", "m2", false)])
+        let lines = try await runScan()
+        let warning = "[warn] device scan: no reachable devices — nothing attempted"
+        XCTAssertTrue(lines.contains { $0 == warning }, "\(lines)")
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.lastRun(report: "mdm-command-health"))
+        XCTAssertNil(store.failures(report: "mdm-command-health"))
+    }
 }
 
 /// Same helper `CollectHonestyTests` keeps privately; duplicated here rather
