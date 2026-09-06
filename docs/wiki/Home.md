@@ -8,7 +8,7 @@ is the short overview.
 
 ## Getting started
 
-A native SwiftUI app (macOS 14+) that collects data, generates reports, schedules
+A native SwiftUI app (macOS 15+) that collects data, generates reports, schedules
 unattended runs, and tracks fleet health — all from a GUI. Read these pages in order:
 
 1. [Getting Started](https://github.com/tonyyo11/jamf-reports-community/wiki/00-Getting-Started) — zero-context path to a first report

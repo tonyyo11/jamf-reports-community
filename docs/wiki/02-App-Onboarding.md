@@ -98,9 +98,10 @@ sitting in the folder you left behind.
 
 ## First-run checklist
 
-A quick tick-list for a fresh install:
+A quick tick-list for a fresh install. The prebuilt app is an Apple silicon (arm64) build —
+on an Intel Mac, build from source instead.
 
-- [ ] macOS 14 or later
+- [ ] macOS 15 or later
 - [ ] `jamf-cli` installed (`brew install Jamf-Concepts/tap/jamf-cli`)
 - [ ] Jamf Pro URL, API client ID, and secret on hand
 - [ ] `JamfReports.app` in `/Applications`, first launch past Gatekeeper

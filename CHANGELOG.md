@@ -41,6 +41,12 @@ hour; Collect now still runs it immediately.
 
 ### Changed
 
+macOS 15 (Sequoia) or later is now required to run the app; macOS 14 no longer
+receives security updates from Apple, so support for it has been dropped. The
+app and installer are built for Apple silicon (arm64) only — on an Intel Mac,
+build from source instead. CI now also builds on GitHub's Xcode 27 preview
+image as an early warning for the upcoming Xcode 27 release.
+
 Connecting a Platform API profile now asks which scope the integration was
 created at — environment (the GA default), tenant, or organization — instead
 of assuming a tenant ID.
