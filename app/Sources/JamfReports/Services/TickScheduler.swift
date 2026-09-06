@@ -4,7 +4,7 @@ import Foundation
 /// a workspace: the recorder's status file has no start time, and a managed
 /// schedule's status is one file per profile.
 struct TickState: Codable, Sendable {
-    static let defaultURL = AppSupport.directory().appendingPathComponent("tick-state.json")
+    static var defaultURL: URL { AppSupport.directory().appendingPathComponent("tick-state.json") }
 
     var lastStarted: [String: Date] = [:]
 
@@ -66,12 +66,13 @@ enum TickScheduler {
 /// holder is taken over — the 300-second wake must never pile a second run
 /// on top of a 20-minute collect.
 struct TickLock: Sendable {
-    static let defaultURL = AppSupport.directory().appendingPathComponent(".tick.lock")
+    static var defaultURL: URL { AppSupport.directory().appendingPathComponent(".tick.lock") }
 
     /// Where the first blocked wake stamps itself, so the run that eventually
     /// gets in knows how long the queue has been waiting.
-    static let defaultBlockedURL = AppSupport.directory()
-        .appendingPathComponent(".tick.blocked")
+    static var defaultBlockedURL: URL {
+        AppSupport.directory().appendingPathComponent(".tick.blocked")
+    }
 
     /// A lock older than this is taken over even when its pid still looks
     /// alive. Pids are recycled and a run can wedge on a hung network call;
@@ -101,8 +102,21 @@ struct TickLock: Sendable {
         }
     }
 
-    func release() {
+    /// Only removes the file if it still names OUR pid — a takeover by
+    /// another process must not have its lock deleted out from under it.
+    func release(pid: Int32 = getpid()) {
+        guard let text = try? String(contentsOf: url, encoding: .utf8),
+              let holder = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              holder == pid
+        else { return }
         try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Resets the lock file's mtime so a long-running holder never crosses
+    /// `staleAfter` and gets taken over mid-run. Best-effort.
+    func touch(now: Date = Date()) {
+        try? FileManager.default.setAttributes(
+            [.modificationDate: now], ofItemAtPath: url.path)
     }
 
     /// Unreadable attributes fail toward "not stale" — keep blocking rather

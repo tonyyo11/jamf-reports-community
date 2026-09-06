@@ -104,24 +104,6 @@ enum LaunchAgentWriter {
         throw WriterError.cadenceParseError(raw)
     }
 
-    /// Swift twin of Python's `_filename_component` for generated status/log paths.
-    static func filenameComponent(_ text: String) -> String {
-        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
-        var output = ""
-        var previousUnderscore = false
-        for scalar in text.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars {
-            if allowed.contains(scalar) {
-                output.append(String(scalar))
-                previousUnderscore = false
-            } else if !previousUnderscore {
-                output.append("_")
-                previousUnderscore = true
-            }
-        }
-        let trimmed = output.trimmingCharacters(in: CharacterSet(charactersIn: "._"))
-        return trimmed.isEmpty ? "jamf_report" : trimmed
-    }
-
     private static func parseHHMM(_ s: String, raw: String) throws -> String {
         let p = s.split(separator: ":")
         guard p.count == 2, let h = Int(p[0]), let m = Int(p[1]),

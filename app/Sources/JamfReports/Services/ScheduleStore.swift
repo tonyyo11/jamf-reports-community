@@ -78,7 +78,7 @@ struct ScheduleRecord: Codable, Sendable, Equatable {
 /// are atomic and 0o600. Every method re-reads the file, so two processes
 /// (GUI + tick) never overwrite each other's edits with a stale copy.
 struct ScheduleStore: Sendable {
-    static let defaultURL = AppSupport.directory().appendingPathComponent("schedules.json")
+    static var defaultURL: URL { AppSupport.directory().appendingPathComponent("schedules.json") }
     let url: URL
 
     init(url: URL = ScheduleStore.defaultURL) { self.url = url }

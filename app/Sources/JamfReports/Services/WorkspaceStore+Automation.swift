@@ -225,8 +225,12 @@ extension WorkspaceStore {
             policy: AutomationPolicy.current(),
             hasHandBuilt: !ScheduleStore().load().isEmpty
         ) else { return }
+        let registrar = SMAppServiceRegistrar()
+        // requiresApproval means the operator already made a Login Items
+        // choice — the GUI banner is where that gets surfaced, not here.
+        guard registrar.status != .requiresApproval else { return }
         do {
-            try SMAppServiceRegistrar().register()
+            try registrar.register()
         } catch {
             fputs(
                 "[warn] could not register the background item: "

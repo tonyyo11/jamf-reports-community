@@ -101,8 +101,10 @@ struct Schedules: AsyncParsableCommand {
             // Reject an unknown label here rather than spawning a tick that
             // would silently find nothing due and exit 0 — a typo must read as
             // a typo, not as a successful run.
-            let known = WorkspaceStore.loadSchedules(
-                baseProfile: ProfileService.discoverLocal().first?.name)
+            let profiles = ProfileService.discoverLocal()
+            let baseProfile = ManagedAutomation.managedBaseProfile(
+                profiles: profiles, policy: AutomationPolicy.current())
+            let known = WorkspaceStore.loadSchedules(baseProfile: baseProfile)
                 .compactMap(\.launchAgentLabel)
             guard known.contains(label) else {
                 CLIRun.fail("no schedule with label '\(label)'")

@@ -46,6 +46,7 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
                   stderr)
             return 1
         }
+        lock.touch()
         let code = await runSchedule(schedule, verbose: false)
         print("[info] tick: \(label) exit \(code)")
     }

@@ -44,12 +44,6 @@ final class LaunchAgentWriterTests: XCTestCase {
         XCTAssertNil(LaunchAgentWriter.label(for: schedule(name: "daily..snapshot")))
     }
 
-    func testFilenameComponentMatchesPythonShapeForLaunchAgentLabels() {
-        XCTAssertEqual(LaunchAgentWriter.filenameComponent("\(prefix).dummy"), "\(prefix).dummy")
-        XCTAssertEqual(LaunchAgentWriter.filenameComponent(" bad/value  "), "bad_value")
-        XCTAssertEqual(LaunchAgentWriter.filenameComponent("..."), "jamf_report")
-    }
-
     private func schedule(name: String) -> Schedule {
         Schedule(
             name: name,

@@ -3,8 +3,9 @@ import Foundation
 /// Run-now plumbing shared by the GUI and the CLI: a marker the next tick
 /// consumes, plus spawning an immediate tick for it.
 enum TickRunner {
-    static let runNowMarkerDir = AppSupport.directory()
-        .appendingPathComponent("run-now", isDirectory: true)
+    static var runNowMarkerDir: URL {
+        AppSupport.directory().appendingPathComponent("run-now", isDirectory: true)
+    }
 
     /// A tick that could not take the lock exits with this (`EX_TEMPFAIL`)
     /// rather than 0: the requested run has NOT happened yet, and every caller

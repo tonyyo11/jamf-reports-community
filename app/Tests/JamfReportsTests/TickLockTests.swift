@@ -14,7 +14,7 @@ final class TickLockTests: XCTestCase {
         let lock = TickLock(url: lockURL())
         XCTAssertTrue(lock.acquire(pid: 4242, isAlive: { _ in true }))
         XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "4242")
-        lock.release()
+        lock.release(pid: 4242)
         XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
     }
 
@@ -47,5 +47,25 @@ final class TickLockTests: XCTestCase {
         let lock = TickLock(url: lockURL())
         try Data("not a pid".utf8).write(to: lock.url)
         XCTAssertTrue(lock.acquire(pid: 7, isAlive: { _ in true }))
+    }
+
+    /// A takeover must not have its lock deleted by the process it displaced.
+    func testReleaseLeavesAFileOwnedByAnotherPidInPlace() throws {
+        let lock = TickLock(url: lockURL())
+        try Data("7".utf8).write(to: lock.url)
+        lock.release(pid: 4242)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: lock.url.path))
+    }
+
+    func testTouchResetsTheLockFileModificationDate() throws {
+        let lock = TickLock(url: lockURL())
+        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        let old = Date().addingTimeInterval(-2 * 60 * 60)
+        try FileManager.default.setAttributes(
+            [.modificationDate: old], ofItemAtPath: lock.url.path)
+        lock.touch()
+        let attributes = try FileManager.default.attributesOfItem(atPath: lock.url.path)
+        let modified = try XCTUnwrap(attributes[.modificationDate] as? Date)
+        XCTAssertLessThan(abs(modified.timeIntervalSinceNow), 5)
     }
 }
