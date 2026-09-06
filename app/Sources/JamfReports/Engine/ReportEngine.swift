@@ -2038,7 +2038,10 @@ struct ReportEngine: Sendable {
             (["-p", profile, "pro", "report", "blueprint-status", "--output", "json"],
              "blueprint-status"),
             (["-p", profile, "pro", "computers", "list", "--output", "json"], "computers"),
-            (["-p", profile, "pro", "policies", "list", "--output", "json"], "policies"),
+            // `pro policies` has never existed (1.24 and 1.28 verified); the Classic
+            // API command is the only policy list. The on-disk kind stays "policies".
+            (["-p", profile, "pro", "classic-policies", "list", "--output", "json"],
+             "policies"),
             (["-p", profile, "pro", "scripts", "list", "--output", "json"], "scripts"),
             (["-p", profile, "pro", "packages", "list", "--output", "json"], "packages"),
             (["-p", profile, "pro", "computer-groups-smart-groups", "list", "--output", "json"],

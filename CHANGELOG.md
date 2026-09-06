@@ -72,6 +72,14 @@ of assuming a tenant ID.
   "not in an Applications folder" row are gone with the plists; the banner
   on the Automation screen stays.
 
+### Fixed
+
+The `policies` source no longer fails on every collect. The app asked jamf-cli
+for a `pro policies` command that does not exist on any supported version, so
+the source warned with exit 2 on each run, the freshness strip flagged it, and
+the Policies section of the HTML report stayed empty. It now uses
+`pro classic-policies list`; the snapshot keeps its `policies` name on disk.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added
