@@ -155,7 +155,7 @@ final class DeviceScanCollectTests: XCTestCase {
         let ddmDir = try WorkspacePaths.dataDir(for: profile)
             .appendingPathComponent("ddm-device-status")
         let raw = try String(
-            contentsOf: try XCTUnwrap(FileManager.newestJSONFile(in: ddmDir))
+            contentsOf: try XCTUnwrap(FileManager.newestJSONFile(in: ddmDir)), encoding: .utf8
         )
         XCTAssertFalse(raw.contains("SECRET"))
         XCTAssertTrue(lines.contains { $0.hasPrefix("[ok] ddm-device-status") }, "\(lines)")
