@@ -34,7 +34,7 @@ struct OverviewView: View {
     @State private var legacyWorkspaces: [String] = []
     @State private var legacySchedules: [String] = []
     @State private var checklist: GettingStartedChecklist?
-
+    @State private var pendingSharedRoot: URL?
     private var defaultTrendRange: TrendRange {
         TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
     }
@@ -410,12 +410,35 @@ struct OverviewView: View {
                 if workspace.isInitializingWorkspace {
                     ProgressView().controlSize(.small)
                 } else {
+                    PNPButton(title: "Choose existing folder…", icon: "folder", size: .sm) {
+                        chooseExistingRoot()
+                    }
+                    .help("Point the app at a folder that already holds this profile's workspace.")
                     PNPButton(title: "Initialize", style: .gold, size: .sm) {
                         Task { await workspace.initializeWorkspace() }
                     }
                     .help("Create the workspace directory and seed it with a default config.yaml.")
                 }
             }
+        }
+        .sharedFolderConsent(pending: $pendingSharedRoot) { adoptExistingRoot($0) }
+    }
+
+    /// The shell-side twin of the setup screen's "Already have a workspace
+    /// folder?" card: an operator who once pressed Skip never sees that screen
+    /// again, and this banner is where they land instead.
+    private func chooseExistingRoot() {
+        guard let url = WorkspaceFolderPicker.choose() else { return }
+        if CloudStorage.provider(for: url) != nil {
+            pendingSharedRoot = url
+        } else {
+            adoptExistingRoot(url)
+        }
+    }
+
+    private func adoptExistingRoot(_ url: URL) {
+        if let message = workspace.adoptExistingRoot(url) {
+            workspace.workspaceInitMessage = message
         }
     }
 

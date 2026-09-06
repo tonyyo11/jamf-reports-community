@@ -92,6 +92,17 @@ Mac joining a synced team folder. It uses the same folder picker and
 shared-folder consent as Settings, and says exactly which config.yaml path it
 looked for when the folder holds no workspace.
 
+The Overview "Configuration incomplete" banner offers the same "Choose
+existing folder…" action beside Initialize. Skipping the setup screen is
+permanent by design, so a rebuilt Mac that skipped it once landed here with no
+way to point the app at its existing workspace.
+
+Initialize now reports its progress. It seeds the workspace and then runs a
+first collect, but the only status line lived in the banner that disappears as
+soon as the seed succeeds, so the collect ran invisibly for minutes on a large
+tenant. The collect now goes through the same path as Collect now: status bar,
+Run History, completion toast.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added

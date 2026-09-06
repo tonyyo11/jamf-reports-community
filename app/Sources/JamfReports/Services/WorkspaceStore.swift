@@ -439,46 +439,58 @@ final class WorkspaceStore {
     func initializeWorkspace() async {
         guard !demoMode, !isWorkspaceInitialized, !isInitializingWorkspace else { return }
         isInitializingWorkspace = true
+        defer { isInitializingWorkspace = false }
         workspaceInitMessage = "Initializing workspace…"
+        globalStatus = "initializing workspace · profile=\(profile)"
         let bridge = CLIBridge()
-        let initExit: Int32
         do {
-            initExit = try await bridge.initializeWorkspace(profile: profile) { _ in }
+            let exit = try await bridge.initializeWorkspace(
+                profile: profile, onLine: CLIBridge.bufferingOnLine
+            )
+            guard exit == 0 else {
+                workspaceInitFailed("Workspace init failed · exit \(exit)")
+                return
+            }
         } catch {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace init failed · \(error.localizedDescription)"
+            workspaceInitFailed("Workspace init failed · \(error.localizedDescription)")
             return
         }
-        guard initExit == 0 else {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace init failed · exit \(initExit)"
+        globalStatus = nil
+        reloadFromDisk()
+        guard bridge.isJamfCLIAvailable else {
+            toast = Toast(message: "Workspace initialized · jamf-cli not installed", style: .info)
             return
+        }
+        // The banner that carried this method's progress text disappears the
+        // moment init succeeds, so the collect it chains used to run invisibly
+        // for minutes on a large tenant. runFirstCollect owns the status-bar
+        // line, the Run History record, and the completion toast.
+        await runFirstCollect()
+    }
+
+    private func workspaceInitFailed(_ message: String) {
+        globalStatus = nil
+        workspaceInitMessage = message
+        toast = Toast(message: message, style: .danger)
+    }
+
+    /// Point the app at a folder that already holds workspaces. Returns nil when
+    /// a configured profile has a workspace there, otherwise the message to show.
+    /// The root changes either way — it is what the operator asked for.
+    func adoptExistingRoot(_ url: URL) -> String? {
+        do {
+            _ = try WorkspaceRootStore.set(url)
+        } catch {
+            return "Couldn't use that folder: \(error.localizedDescription)"
         }
         reloadFromDisk()
-
-        guard bridge.isJamfCLIAvailable else {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace initialized · jamf-cli not installed"
-            return
+        guard !initializedProfiles.isEmpty else {
+            return ExistingCLISetupFlow.missingWorkspaceMessage(
+                root: WorkspaceRootStore.displayRoot, profiles: profiles.map(\.name)
+            )
         }
-
-        workspaceInitMessage = "Workspace initialized · collecting jamf-cli snapshots…"
-        let collectExit: Int32
-        do {
-            collectExit = try await bridge.collect(profile: profile, force: true) { _ in }
-        } catch {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace initialized · collect failed · \(error.localizedDescription)"
-            return
-        }
-        isInitializingWorkspace = false
-        if collectExit == 0 {
-            workspaceInitMessage = "Workspace initialized · cached snapshots ready"
-            reloadFromDisk()
-        } else {
-            workspaceInitMessage =
-                "Workspace initialized · collect failed · exit \(collectExit) · check jamf-cli auth"
-        }
+        Task { await applyAutomationPolicy() }
+        return nil
     }
 
     func refreshToolStatus() {

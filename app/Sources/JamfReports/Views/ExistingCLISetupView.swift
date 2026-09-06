@@ -40,24 +40,7 @@ struct ExistingCLISetupView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.Colors.winBG)
-        .confirmationDialog(
-            "Everyone with access to this shared folder will be able to read your fleet's "
-                + "device data",
-            isPresented: Binding(
-                get: { pendingSharedRoot != nil },
-                set: { if !$0 { pendingSharedRoot = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Use this folder") {
-                let url = pendingSharedRoot
-                pendingSharedRoot = nil
-                if let url { applyExistingRoot(url) }
-            }
-            Button("Cancel", role: .cancel) { pendingSharedRoot = nil }
-        } message: {
-            Text(SettingsView.sharedFolderConsentMessage)
-        }
+        .sharedFolderConsent(pending: $pendingSharedRoot) { applyExistingRoot($0) }
     }
 
     // MARK: - Existing workspace
@@ -95,14 +78,7 @@ struct ExistingCLISetupView: View {
     }
 
     private func chooseExistingRoot() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Use Folder"
-        panel.message = "Choose the folder that holds your Jamf Reports workspaces."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = WorkspaceFolderPicker.choose() else { return }
         // Same gate as Settings: a synced folder widens who can read raw fleet
         // data, and that is a call the operator makes knowingly, right here.
         if CloudStorage.provider(for: url) != nil {
@@ -119,21 +95,12 @@ struct ExistingCLISetupView: View {
     /// nothing is found the root still changes (it is what the operator asked
     /// for) but the screen stays, saying what it looked for.
     private func applyExistingRoot(_ url: URL) {
-        do {
-            _ = try WorkspaceRootStore.set(url)
-            workspace.reloadFromDisk()
-            guard !workspace.initializedProfiles.isEmpty else {
-                existingRootMessage = ExistingCLISetupFlow.missingWorkspaceMessage(
-                    root: WorkspaceRootStore.displayRoot, profiles: flow.profileNames
-                )
-                return
-            }
-            existingRootMessage = nil
-            Task { await workspace.applyAutomationPolicy() }
-            outcomeRaw = ExistingCLISetupFlow.SetupOutcome.completed.rawValue
-        } catch {
-            existingRootMessage = "Couldn't use that folder: \(error.localizedDescription)"
+        if let message = workspace.adoptExistingRoot(url) {
+            existingRootMessage = message
+            return
         }
+        existingRootMessage = nil
+        outcomeRaw = ExistingCLISetupFlow.SetupOutcome.completed.rawValue
     }
 
     // MARK: - Header
