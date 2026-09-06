@@ -1819,7 +1819,7 @@ struct ReportEngine: Sendable {
         await Self.finalizeCollect(
             profile: profile, tiers: tiers, bin: bin, dataDir: dataDir,
             savedKinds: savedKinds, loadedConfig: loadedConfig,
-            workspacePaths: workspacePaths, onLine: onLine
+            workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
         )
 
         // Stamp this machine's activity so other Macs sharing the folder can
@@ -1922,11 +1922,18 @@ struct ReportEngine: Sendable {
         savedKinds: Set<String>,
         loadedConfig: ReportConfig?,
         workspacePaths: WorkspacePaths.Type,
+        stateStore: StateFileStore?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async {
         // SOFA OS currency: refresh all 4 platform feeds when the "sofa" kind
         // is in the requested tiers. Light network fetch — always in the Refresh tier
         // so snapshot-only and full runs both capture it.
+        //
+        // Both kinds below bypass the per-kind loop, so they must stamp the
+        // state store themselves: without a `.last` the freshness strip reads
+        // them as "never landed" and reports them far behind schedule after
+        // every successful collect, and self-remediation re-collects the whole
+        // refresh tier hourly for nothing.
         var sofaRefreshSucceeded = false
         if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
             onLine(.init(timestamp: Date(), level: .info,
@@ -1936,7 +1943,13 @@ struct ReportEngine: Sendable {
                 onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(w)"))
             }
             sofaRefreshSucceeded = !sofaSnapshot.rows.isEmpty
-            onLine(.init(timestamp: Date(), level: .ok, text: "[ok] sofa: feeds refreshed"))
+            stateStore?.record(
+                sofaRefreshSucceeded ? .landed : .failed(exitCode: nil), report: "sofa", at: Date()
+            )
+            onLine(.init(timestamp: Date(), level: sofaRefreshSucceeded ? .ok : .warn,
+                         text: sofaRefreshSucceeded
+                            ? "[ok] sofa: feeds refreshed"
+                            : "[warn] sofa: no feed data — kept the previous cache"))
         }
 
         // Patch release dates: collect per-title definitions after patch-status.
@@ -1946,8 +1959,14 @@ struct ReportEngine: Sendable {
            tiers.contains(prdTier) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting patch-release-dates for \(profile)"))
-            await collectPatchReleaseDates(
-                profile: profile, bin: bin, dataDir: dataDir, onLine: onLine)
+            if let landed = await collectPatchReleaseDates(
+                profile: profile, bin: bin, dataDir: dataDir, onLine: onLine
+            ) {
+                stateStore?.record(
+                    landed ? .landed : .failed(exitCode: nil),
+                    report: "patch-release-dates", at: Date()
+                )
+            }
         }
 
         // PR-20: also emit summary.json from collect so the snapshot-only schedule
@@ -2446,14 +2465,16 @@ struct ReportEngine: Sendable {
         bin: URL,
         dataDir: URL,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async {
+    ) async -> Bool? {
+        // Returns nil when nothing was attempted (no patch-status to walk),
+        // true when the merged snapshot was written, false when it was not.
         // Read patch-status snapshot to get title list.
         guard let patchData = try? loadLatestSnapshotData(kind: "patch-status", dataDir: dataDir),
               let patchItems = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData)
         else {
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] patch-release-dates: no patch-status snapshot; skipping"))
-            return
+            return nil
         }
 
         let bridge = CLIBridge()
@@ -2526,10 +2547,12 @@ struct ReportEngine: Sendable {
             try payload.write(to: outFile)
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] patch-release-dates: \(merged.count) title(s)"))
+            return true
         } catch {
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] patch-release-dates: could not write snapshot — " +
                                error.localizedDescription))
+            return false
         }
     }
 

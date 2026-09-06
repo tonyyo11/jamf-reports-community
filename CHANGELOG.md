@@ -80,6 +80,12 @@ the source warned with exit 2 on each run, the freshness strip flagged it, and
 the Policies section of the HTML report stayed empty. It now uses
 `pro classic-policies list`; the snapshot keeps its `policies` name on disk.
 
+The freshness strip no longer reports `sofa` and `patch-release-dates` as far
+behind schedule after every collect. Both were fetched on each run but never
+recorded their success, so the strip read them as never collected, Collect now
+could not clear it, and self-remediation re-collected the refresh tier every
+hour for nothing.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added
