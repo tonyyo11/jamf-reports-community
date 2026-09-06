@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Secondary onboarding (#181 follow-on) — shown instead of the main shell on
 /// first launch when jamf-cli is already configured (profiles exist, so the
@@ -15,6 +16,8 @@ struct ExistingCLISetupView: View {
     @AppStorage(ExistingCLISetupFlow.outcomeKey) private var outcomeRaw = ""
     @State private var flow: ExistingCLISetupFlow
     @State private var isFinishing = false
+    @State private var pendingSharedRoot: URL?
+    @State private var existingRootMessage: String?
 
     private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -26,6 +29,7 @@ struct ExistingCLISetupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
+                existingWorkspaceCard
                 profilesCard
                 automationCard
                 runCard
@@ -36,6 +40,100 @@ struct ExistingCLISetupView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.Colors.winBG)
+        .confirmationDialog(
+            "Everyone with access to this shared folder will be able to read your fleet's "
+                + "device data",
+            isPresented: Binding(
+                get: { pendingSharedRoot != nil },
+                set: { if !$0 { pendingSharedRoot = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Use this folder") {
+                let url = pendingSharedRoot
+                pendingSharedRoot = nil
+                if let url { applyExistingRoot(url) }
+            }
+            Button("Cancel", role: .cancel) { pendingSharedRoot = nil }
+        } message: {
+            Text(SettingsView.sharedFolderConsentMessage)
+        }
+    }
+
+    // MARK: - Existing workspace
+
+    /// A rebuilt Mac or a second Mac on a team folder already has a workspace;
+    /// initializing a new one beside it is the wrong first step and, before
+    /// this card existed, the only step offered. Pointing at the folder is what
+    /// Settings › Workspace location does — same picker, same consent.
+    private var existingWorkspaceCard: some View {
+        Card(padding: 22) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Already have a workspace folder?")
+                    .font(.headline)
+                    .foregroundStyle(Theme.Colors.fg)
+                Text("If your reporting workspace already exists — a synced team folder, or a "
+                    + "folder from a previous install — point the app at it and skip the steps "
+                    + "below. Pick the folder that contains the profile folders.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                PNPButton(title: "Choose workspace folder…", icon: "folder", size: .sm) {
+                    chooseExistingRoot()
+                }
+                .disabled(flow.isRunning || isFinishing || flow.didComplete)
+                .help("Use a folder that already holds \(WorkspaceRootStore.displayRoot)-style "
+                    + "profile workspaces.")
+                if let existingRootMessage {
+                    Text(existingRootMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.warnSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func chooseExistingRoot() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Folder"
+        panel.message = "Choose the folder that holds your Jamf Reports workspaces."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Same gate as Settings: a synced folder widens who can read raw fleet
+        // data, and that is a call the operator makes knowingly, right here.
+        if CloudStorage.provider(for: url) != nil {
+            pendingSharedRoot = url
+            return
+        }
+        applyExistingRoot(url)
+    }
+
+    /// Point the app at `url`. When at least one configured profile has a
+    /// workspace there, `ContentView`'s `shouldOffer` turns false on the reload
+    /// and the shell appears; the outcome is recorded `.completed` so a later
+    /// wipe re-offers setup, exactly as a finished initialization would. When
+    /// nothing is found the root still changes (it is what the operator asked
+    /// for) but the screen stays, saying what it looked for.
+    private func applyExistingRoot(_ url: URL) {
+        do {
+            _ = try WorkspaceRootStore.set(url)
+            workspace.reloadFromDisk()
+            guard !workspace.initializedProfiles.isEmpty else {
+                existingRootMessage = ExistingCLISetupFlow.missingWorkspaceMessage(
+                    root: WorkspaceRootStore.displayRoot, profiles: flow.profileNames
+                )
+                return
+            }
+            existingRootMessage = nil
+            Task { await workspace.applyAutomationPolicy() }
+            outcomeRaw = ExistingCLISetupFlow.SetupOutcome.completed.rawValue
+        } catch {
+            existingRootMessage = "Couldn't use that folder: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Header

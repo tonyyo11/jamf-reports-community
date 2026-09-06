@@ -41,6 +41,17 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
     /// Pre-2.2.1 field builds stored a Bool under the legacy key; it maps to
     /// `.completed` so those installs gain the re-offer-on-wipe behavior.
+    func testMissingWorkspaceMessageNamesTheExpectedConfigPath() {
+        let message = ExistingCLISetupFlow.missingWorkspaceMessage(
+            root: "/Volumes/Team/Jamf-Reports", profiles: ["prod", "dev"]
+        )
+        XCTAssertTrue(message.contains("/Volumes/Team/Jamf-Reports/prod/config.yaml"))
+        XCTAssertTrue(message.contains("prod, dev"))
+        // No configured profile at all still yields a path the operator can check.
+        let bare = ExistingCLISetupFlow.missingWorkspaceMessage(root: "/tmp/r", profiles: [])
+        XCTAssertTrue(bare.contains("/tmp/r/<profile>/config.yaml"))
+    }
+
     func testStoredOutcomeHonorsLegacyBoolKey() {
         let suite = "ExistingCLISetupFlowTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

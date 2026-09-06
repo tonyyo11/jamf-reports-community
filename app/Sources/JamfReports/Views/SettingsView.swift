@@ -157,7 +157,8 @@ struct SettingsView: View {
         "one history between them. Keep the default if this Mac is the only one " +
         "reporting."
 
-    private nonisolated static let sharedFolderConsentMessage: String = """
+    /// Shared with `ExistingCLISetupView` — the same folder pick, the same consent.
+    nonisolated static let sharedFolderConsentMessage: String = """
         Device serials, usernames and email addresses are stored in clear text in the \
         raw snapshots and run logs, and any webhook URL you configure is stored in \
         config.yaml. The folder's sharing settings decide who can read all of that — \

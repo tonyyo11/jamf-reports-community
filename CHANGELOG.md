@@ -86,6 +86,12 @@ recorded their success, so the strip read them as never collected, Collect now
 could not clear it, and self-remediation re-collected the refresh tier every
 hour for nothing.
 
+The existing-jamf-cli setup screen now offers "Already have a workspace
+folder?" ahead of initializing a new workspace, for a rebuilt Mac or a second
+Mac joining a synced team folder. It uses the same folder picker and
+shared-folder consent as Settings, and says exactly which config.yaml path it
+looked for when the folder holds no workspace.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added
