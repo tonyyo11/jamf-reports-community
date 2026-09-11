@@ -452,7 +452,8 @@ final class OnboardingFlow {
         let result = try await Self.runWithPTY(
             executable: binary,
             arguments: Self.proOAuth2Arguments(
-                profile: profileName.trimmed, url: url.absoluteString
+                profile: profileName.trimmed, url: url.absoluteString,
+                noVerify: noVerifyFlag(binary: binary)
             ),
             stdin: stdinData
         )
@@ -493,7 +494,8 @@ final class OnboardingFlow {
                 profile: profileName.trimmed,
                 gatewayURL: gatewayURL.trimmed,
                 scope: platformScope,
-                scopeID: platformScopeID.trimmed
+                scopeID: platformScopeID.trimmed,
+                noVerify: noVerifyFlag(binary: binary)
             ),
             stdin: stdinData
         )
@@ -651,14 +653,28 @@ final class OnboardingFlow {
         await registerSchoolProfile()
     }
 
+    /// jamf-cli 1.29 checks a new profile's credentials against the server before
+    /// writing it. `--no-verify` keeps Save a local write on every version, so the
+    /// Validate step stays the connection check and a placeholder pair still
+    /// registers. The flag is unknown before 1.29 (exit 2), hence the gate.
+    private func noVerifyFlag(binary: URL) -> Bool {
+        JamfCLIInstaller.supportsSpecDerivedNames(
+            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
+        )
+    }
+
     // MARK: - Pure argument builders (testable without PTY)
 
     /// Arguments for `jamf-cli config add-profile` using OAuth2 auth.
-    static func proOAuth2Arguments(profile: String, url: String) -> [String] {
-        ["config", "add-profile", profile,
-         "--url", url,
-         "--auth-method", "oauth2",
-         "--no-color"]
+    static func proOAuth2Arguments(
+        profile: String, url: String, noVerify: Bool = false
+    ) -> [String] {
+        var args = ["config", "add-profile", profile,
+                    "--url", url,
+                    "--auth-method", "oauth2",
+                    "--no-color"]
+        if noVerify { args.append("--no-verify") }
+        return args
     }
 
     /// stdin bytes for OAuth2 profile registration (clientID\nclientSecret\n).
@@ -682,7 +698,8 @@ final class OnboardingFlow {
     /// Sends exactly one scope flag (`--environment-id` / `--tenant-id`), or
     /// none for organization scope — the flags are mutually exclusive.
     static func platformGatewayArguments(
-        profile: String, gatewayURL: String, scope: PlatformScope, scopeID: String
+        profile: String, gatewayURL: String, scope: PlatformScope, scopeID: String,
+        noVerify: Bool = false
     ) -> [String] {
         var args = ["config", "add-profile", profile,
                      "--auth-method", "platform"]
@@ -692,6 +709,7 @@ final class OnboardingFlow {
         case .organization: break
         }
         args += ["--url", gatewayURL, "--no-color"]
+        if noVerify { args.append("--no-verify") }
         return args
     }
 

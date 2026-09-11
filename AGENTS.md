@@ -284,6 +284,18 @@ a third field (`recordFailure(exitCode:)`); `lastFailureExitCode(for:)` reads
 it back and is what lets self-remediation tell a retryable failure from a
 usage/credentials-gate one (see `DataFreshnessHealth`).
 
+**Spec-derived command names (2.8.0).** jamf-cli 1.29.0 renamed its `pro` resources after
+their OpenAPI tags; the old names warn on stderr until 2027-03-09 and the new ones exit 2 on
+older binaries. `collect` resolves the installed version once
+(`JamfCLIInstaller.supportsSpecDerivedNames`, true only for a confirmed ≥ 1.29.0, false on nil)
+and passes `specNames` to `collectCommandMatrix` (`device-enrollments` /
+`mobile-devices` vs the old spellings) and to the device scan's `statusItemsArguments`
+(`declarative-device-management` vs `ddm-status`). On-disk kind names never change. The same
+gate adds `--no-verify` to `config add-profile` in onboarding and Reauthenticate, so Save stays
+a local write on 1.29 (which otherwise checks the pair against the server first) and the
+Validate step remains the connection check. When the floor reaches 1.29, delete the gate and
+the old literals rather than keep both.
+
 ### notify config (v2.2.0 — opt-in webhook digest)
 
 ```yaml

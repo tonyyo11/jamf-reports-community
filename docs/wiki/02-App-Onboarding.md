@@ -135,13 +135,15 @@ server access.
 
 The Authenticate step only checks that the fields are well-formed (a URL plus a client ID
 and secret); it does not contact your Jamf Pro server, and registering the profile is a
-local `jamf-cli` config write. The Validate step that follows runs a real connection
-check and will report failure against placeholder values — but advancing past it only
-requires that the profile registered, not that the check passed. So a CSV-only admin can
-complete onboarding with placeholder Jamf Pro values and map a CSV at the CSV-mapping step.
-(A Jamf School-only admin can skip this placeholder workaround entirely by choosing
-**Connect Jamf School** on the Welcome chooser; the older route — placeholder Jamf Pro
-values, then connect Jamf School at **Add products** — still works for existing installs.)
+local `jamf-cli` config write (on jamf-cli 1.29 and later the app passes `--no-verify` to
+keep it that way; from a Terminal, add that flag yourself). The Validate step that follows
+runs a real connection check and will report failure against placeholder values — but
+advancing past it only requires that the profile registered, not that the check passed. So
+a CSV-only admin can complete onboarding with placeholder Jamf Pro values and map a CSV at
+the CSV-mapping step. (A Jamf School-only admin can skip this placeholder workaround
+entirely by choosing **Connect Jamf School** on the Welcome chooser; the older route —
+placeholder Jamf Pro values, then connect Jamf School at **Add products** — still works
+for existing installs.)
 
 To add real credentials later, open **Data Sources → Connection health → Update
 credentials…** — it re-registers the profile's jamf-cli credentials (URL, client ID,

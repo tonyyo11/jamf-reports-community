@@ -104,6 +104,22 @@ final class JamfCLIInstallerTests: XCTestCase {
         XCTAssertTrue(JamfCLIInstaller.isBelowMinimumSupported("v1.14.0"))
     }
 
+    /// jamf-cli 1.29.0 renamed `pro` resources and made `config add-profile` verify
+    /// by default. The new names and `--no-verify` exit 2 on older binaries, so the
+    /// gate is true only for a version confirmed at or above 1.29.0.
+    func test_supportsSpecDerivedNames_onlyFromOneTwentyNine() {
+        XCTAssertTrue(JamfCLIInstaller.supportsSpecDerivedNames("1.29.0"))
+        XCTAssertTrue(JamfCLIInstaller.supportsSpecDerivedNames("v1.29.0"))
+        XCTAssertTrue(JamfCLIInstaller.supportsSpecDerivedNames("1.30.2"))
+        XCTAssertTrue(JamfCLIInstaller.supportsSpecDerivedNames("2.0.0"))
+        XCTAssertFalse(JamfCLIInstaller.supportsSpecDerivedNames("1.28.0"))
+        XCTAssertFalse(JamfCLIInstaller.supportsSpecDerivedNames("1.28.9"))
+        XCTAssertFalse(JamfCLIInstaller.supportsSpecDerivedNames("1.18.0"))
+        XCTAssertFalse(JamfCLIInstaller.supportsSpecDerivedNames(nil),
+                       "unknown version must fail toward the spelling every binary accepts")
+        XCTAssertFalse(JamfCLIInstaller.supportsSpecDerivedNames("garbage"))
+    }
+
     func test_isBelowMinimumSupported_acceptsCurrentAndNewer() {
         XCTAssertFalse(JamfCLIInstaller.isBelowMinimumSupported("1.18.0"),
                        "1.18.0 is the floor — should not flag")

@@ -194,6 +194,21 @@ final class JamfCLIInstaller {
         return compareVersions(installedVersion, environmentScopeVersion) != .orderedAscending
     }
 
+    /// First release whose `pro` resource names come from the OpenAPI spec
+    /// (`device-enrollments`, `declarative-device-management`, …) and whose
+    /// `config add-profile` verifies credentials unless `--no-verify` is passed.
+    /// Older binaries reject both the new names and the flag (exit 2).
+    nonisolated static let specDerivedNamesVersion: String = "1.29.0"
+
+    /// True only when `installedVersion` parses and is at least 1.29.0. An
+    /// unknown version fails toward the old spelling — never send a name or a
+    /// flag an older binary refuses (the `supportsQuietFlags` direction).
+    nonisolated static func supportsSpecDerivedNames(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return false }
+        return compareVersions(installedVersion, specDerivedNamesVersion) != .orderedAscending
+    }
+
     /// Errors raised by `validateAsset(host:name:)` when a release asset
     /// fails the host allow-list, control-char/path-traversal scrub, or
     /// archive-suffix pattern. See P9-A-08 in the security audit.

@@ -113,7 +113,8 @@ these interactive dashboards either — it produces a separate generated workboo
   Platform API profile the blueprint deployment sections appear as well. Per-Mac
   detail is in Devices; failed and stuck MDM commands are in Health Audit →
   Command health.
-  Data source: per-device `pro ddm-status status-items` (tier 1); Jamf Platform API
+  Data source: per-device `pro declarative-device-management status-items` (`pro ddm-status`
+  before jamf-cli 1.29) (tier 1); Jamf Platform API
   blueprint definitions where available (tier 2).
 - **Policies & Profiles** — a two-tab screen: policy configuration findings, and
   configuration-profile deployment status.

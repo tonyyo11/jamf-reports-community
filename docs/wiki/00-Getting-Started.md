@@ -20,7 +20,7 @@ brew install Jamf-Concepts/tap/jamf-cli
 ```
 
 This project supports jamf-cli v1.18.0 or later, with v1.19.0+ recommended for full
-partial-failure handling; the app itself currently tracks v1.28.0. On jamf-cli 1.24.0
+partial-failure handling; the app itself currently tracks v1.29.0. On jamf-cli 1.24.0
 through 1.27.0, the security report requires a Jamf Security Cloud subscription (see Known
 Issues in the CHANGELOG) — this is fixed in 1.28.0, so upgrade to restore Security Posture,
 the security score and the FileVault, SIP, firewall and Gatekeeper figures. Tenants that
@@ -55,7 +55,8 @@ are a manual export-CSV-then-Generate cycle.
 ## 3. Create a read-only API role
 
 `jamf-cli pro setup` (used in the next step) can create the API client for you, or you
-can create one yourself in Jamf Pro first. Either way, use a **read-only** role — this
+can create one yourself in Jamf Pro first (on jamf-cli 1.29 and later, supplying an
+existing client is the default). Either way, use a **read-only** role — this
 project only reads data. See [Installation → Jamf Pro API permissions](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation)
 for the exact privilege table.
 

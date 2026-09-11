@@ -10,6 +10,7 @@ nothing is tracked in two places.
 ## Open epics
 
 - [Epic: Deferred findings — chart interactivity, warranty surface, metric & build-script coverage](https://github.com/tonyyo11/jamf-reports-community/issues/207)
+- [Epic: jamf-cli 1.29.0 follow-ups — one mobile fetch, catalog-driven exit-8 filter, gate removal at floor 1.29](https://github.com/tonyyo11/jamf-reports-community/issues/226)
 
 Closed epics are not listed here — see the
 [closed issues](https://github.com/tonyyo11/jamf-reports-community/issues?q=is%3Aissue+is%3Aclosed+label%3Aenhancement)

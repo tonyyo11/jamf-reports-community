@@ -41,7 +41,8 @@ final class DeviceScanCollectTests: XCTestCase {
     /// Writes `answers/<name>` files and a stub that maps argv to them:
     ///   classic-computer-history get <id>   → answers/hist-<id>
     ///     (exit = first line of answers/hist-<id>.exit if present)
-    ///   ddm-status status-items <mgmt>      → answers/ddm-<mgmt>  (same exit rule)
+    ///   … status-items <mgmt>               → answers/ddm-<mgmt>  (same exit rule; either
+    ///                                          resource spelling — see statusItemsArguments)
     /// Anything else → prints [] exit 0, so the argv matrix's kinds "succeed" harmlessly.
     private func makeStub() throws -> URL {
         let url = binDir.appendingPathComponent("stub-cli")
@@ -53,7 +54,8 @@ final class DeviceScanCollectTests: XCTestCase {
                  [ -f "$f" ] && cat "$f"; exit "$code"; }
         case "$*" in
           *" classic-computer-history get "*) id=$(echo "$*" | sed -E 's/.*classic-computer-history get ([^ ]+).*/\\1/'); emit "hist-$id" ;;
-          *" ddm-status status-items "*) m=$(echo "$*" | sed -E 's/.*status-items ([^ ]+).*/\\1/'); emit "ddm-$m" ;;
+          *" status-items "*) m=$(echo "$*" | sed -E 's/.*status-items ([^ ]+).*/\\1/'); \\
+            emit "ddm-$m" ;;
           *) printf '[]'; exit 0 ;;
         esac
         """

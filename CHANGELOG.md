@@ -51,6 +51,12 @@ app and installer are built for Apple silicon (arm64) only — on an Intel Mac,
 build from source instead. CI now also builds on GitHub's Xcode 27 preview
 image as an early warning for the upcoming Xcode 27 release.
 
+The app tracks jamf-cli 1.29.0. On 1.29.0 and later it uses that release's
+renamed commands for device enrollments, mobile device details and DDM status
+(the old names keep working until March 2027, with a warning on every run), and
+it saves a new profile before checking it, as it does on every earlier
+version. jamf-cli 1.18.0 remains the minimum.
+
 Connecting a Platform API profile now asks which scope the integration was
 created at — environment (the GA default), tenant, or organization — instead
 of assuming a tenant ID.

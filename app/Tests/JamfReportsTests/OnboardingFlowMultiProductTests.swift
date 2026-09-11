@@ -161,6 +161,29 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertEqual(s, "myid\nmysecret\n", "stdin must be clientID\\nclientSecret\\n")
     }
 
+    /// jamf-cli 1.29 verifies a new profile's pair before writing it; the app opts
+    /// out so Save stays a local write and Validate stays the check. The flag is
+    /// unknown on older binaries, so it must be absent unless asked for.
+    func test_addProfileArguments_sendNoVerifyOnlyWhenAsked() {
+        let oauth = OnboardingFlow.proOAuth2Arguments(
+            profile: "p", url: "https://x.jamfcloud.com")
+        XCTAssertFalse(oauth.contains("--no-verify"), "default must fit a pre-1.29 binary")
+        let oauthGated = OnboardingFlow.proOAuth2Arguments(
+            profile: "p", url: "https://x.jamfcloud.com", noVerify: true)
+        XCTAssertEqual(oauthGated.last, "--no-verify")
+        XCTAssertEqual(Array(oauthGated.dropLast()), oauth, "the flag is the only difference")
+
+        let platform = OnboardingFlow.platformGatewayArguments(
+            profile: "p", gatewayURL: "https://us.api.jamfcloud.com",
+            scope: .environment, scopeID: "e")
+        XCTAssertFalse(platform.contains("--no-verify"))
+        let platformGated = OnboardingFlow.platformGatewayArguments(
+            profile: "p", gatewayURL: "https://us.api.jamfcloud.com",
+            scope: .environment, scopeID: "e", noVerify: true)
+        XCTAssertEqual(platformGated.last, "--no-verify")
+        XCTAssertEqual(Array(platformGated.dropLast()), platform)
+    }
+
     func test_platformGatewayArguments_environmentScope_sendsEnvironmentIDOnly() {
         let args = OnboardingFlow.platformGatewayArguments(
             profile: "platform-prod",

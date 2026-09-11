@@ -5,6 +5,42 @@ import XCTest
 /// Tests for the `CollectionTier` enum (Refresh / Inventory / Scan).
 final class CollectionTierLookupTests: XCTestCase {
 
+    // MARK: - jamf-cli 1.29 resource names
+
+    /// Two matrix rows switch spelling with the installed version; their on-disk
+    /// kinds never do. The 1.29 names exit 2 on older binaries and the old names
+    /// stop working after 2027-03-09, so both spellings must be reachable.
+    func testMatrixUsesSpecDerivedNamesOnlyWhenSupported() {
+        func argv(_ kind: String, specNames: Bool) -> [String]? {
+            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
+                .first { $0.kind == kind }?.args
+        }
+        XCTAssertEqual(argv("device-enrollment-instances", specNames: true),
+                       ["-p", "p", "pro", "device-enrollments", "list", "--output", "json"])
+        XCTAssertEqual(argv("device-enrollment-instances", specNames: false),
+                       ["-p", "p", "pro", "device-enrollment-instances", "list",
+                        "--output", "json"])
+        XCTAssertEqual(argv("mobile-device-inventory-details", specNames: true),
+                       ["-p", "p", "pro", "mobile-devices", "list", "--output", "json"])
+        XCTAssertEqual(argv("mobile-device-inventory-details", specNames: false),
+                       ["-p", "p", "pro", "mobile-device-inventory-details", "list",
+                        "--output", "json"])
+        let kinds = { (specNames: Bool) in
+            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames).map(\.kind)
+        }
+        XCTAssertEqual(kinds(true), kinds(false), "the flag changes argv, never a kind name")
+    }
+
+    func testStatusItemsArgumentsFollowTheSameGate() {
+        XCTAssertEqual(
+            ReportEngine.statusItemsArguments(profile: "p", managementId: "m", specNames: true),
+            ["-p", "p", "pro", "declarative-device-management", "status-items", "m",
+             "--output", "json"])
+        XCTAssertEqual(
+            ReportEngine.statusItemsArguments(profile: "p", managementId: "m", specNames: false),
+            ["-p", "p", "pro", "ddm-status", "status-items", "m", "--output", "json"])
+    }
+
     // MARK: - Total lookup contract
 
     /// PR-22 T-1 contract: every kind currently produced by

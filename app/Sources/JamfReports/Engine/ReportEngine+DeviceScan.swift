@@ -84,7 +84,7 @@ extension ReportEngine {
     /// Returns the kinds it wrote. Never throws: the matrix's verdicts have
     /// already run, and a scan problem must not turn a good run red.
     static func runDeviceScanPhase(
-        profile: String, bin: URL, dataDir: URL, tiers: Set<CollectionTier>,
+        profile: String, bin: URL, specNames: Bool, dataDir: URL, tiers: Set<CollectionTier>,
         skipExpensive: Bool, force: Bool, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
         authConfirmationProbe: @escaping AuthConfirmationProbe,
@@ -139,7 +139,8 @@ extension ReportEngine {
         ))
 
         let (results, stops) = await scanDevices(
-            targets, profile: profile, bin: bin, probe: authConfirmationProbe, onLine: onLine
+            targets, profile: profile, bin: bin, specNames: specNames,
+            probe: authConfirmationProbe, onLine: onLine
         )
         return reduceAndSave(
             results: results, stops: stops, dataDir: dataDir,
@@ -170,7 +171,7 @@ extension ReportEngine {
     /// devices (an actor-guarded flag read before each launch); exit 3 abandons
     /// both — a credential that died mid-scan will not come back for device 400.
     private static func scanDevices(
-        _ targets: [DeviceScanTarget], profile: String, bin: URL,
+        _ targets: [DeviceScanTarget], profile: String, bin: URL, specNames: Bool,
         probe: @escaping AuthConfirmationProbe,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> (results: [DeviceResult], stops: [CallType: Int32]) {
@@ -200,7 +201,7 @@ extension ReportEngine {
                 group.addTask {
                     await scanOne(
                         target, profile: profile, bin: bin, bridge: bridge,
-                        gate: gate, onLine: onLine
+                        gate: gate, specNames: specNames, onLine: onLine
                     )
                 }
             }
@@ -209,8 +210,18 @@ extension ReportEngine {
         return (results, await gate.stops())
     }
 
+    /// The status-items argv. `specNames` picks jamf-cli 1.29's resource name;
+    /// the old one warns until 2027-03-09 and the new one exits 2 before 1.29.
+    static func statusItemsArguments(
+        profile: String, managementId: String, specNames: Bool
+    ) -> [String] {
+        let resource = specNames ? "declarative-device-management" : "ddm-status"
+        return ["-p", profile, "pro", resource, "status-items", managementId, "--output", "json"]
+    }
+
     private static func scanOne(
         _ t: DeviceScanTarget, profile: String, bin: URL, bridge: CLIBridge, gate: StopGate,
+        specNames: Bool,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> DeviceResult {
         var history: CallOutcome = .notMade
@@ -226,10 +237,13 @@ extension ReportEngine {
         if t.ddmEnabled {
             if let mgmt = t.managementId, CLIBridge.isSafeDeviceIdentifier(mgmt) {
                 if await gate.allows(.statusItems) {
-                    status = await call(.statusItems, [
-                        "-p", profile, "pro", "ddm-status", "status-items", mgmt,
-                        "--output", "json",
-                    ], bridge: bridge, bin: bin, gate: gate, onLine: onLine)
+                    status = await call(
+                        .statusItems,
+                        statusItemsArguments(
+                            profile: profile, managementId: mgmt, specNames: specNames
+                        ),
+                        bridge: bridge, bin: bin, gate: gate, onLine: onLine
+                    )
                 }
             } else if t.managementId != nil {
                 // Has a managementId, but it fails the safety check — never

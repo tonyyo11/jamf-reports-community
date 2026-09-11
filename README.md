@@ -96,7 +96,7 @@ config, schedules, and generated reports, switchable from the sidebar.
 macOS 15 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) is optional — it
 powers live collection, but the app also works from CSV exports and cached snapshots.
 Minimum supported version is v1.18.0, v1.19.0+ is recommended for full partial-failure
-handling (exit code 7), and this project currently tracks v1.28.0. The prebuilt `.pkg`/`.dmg`
+handling (exit code 7), and this project currently tracks v1.29.0. The prebuilt `.pkg`/`.dmg`
 are Apple silicon (arm64) only — on an Intel Mac, build from source.
 
 Download the latest notarized `.dmg` or `.pkg` from the

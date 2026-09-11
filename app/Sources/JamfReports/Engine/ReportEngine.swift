@@ -1727,7 +1727,11 @@ struct ReportEngine: Sendable {
         // (preflightStrictManifestCheck) has something to verify against.
         let recordManifest = loadedConfig?.jamfCli?.isManifestRequired == true
 
-        let commands = Self.collectCommandMatrix(profile: profile)
+        // Resolved once per run; the matrix, the scan phase and the quiet-flag
+        // gate below all key on it.
+        let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
+        let specNames = JamfCLIInstaller.supportsSpecDerivedNames(detectedVersion)
+        let commands = Self.collectCommandMatrix(profile: profile, specNames: specNames)
 
         let plannedCommands: [(args: [String], kind: String)]
         if skipExpensive {
@@ -1756,7 +1760,6 @@ struct ReportEngine: Sendable {
         // detection fails (nil) — safer than risking unknown flags on an old binary.
         // Scope: pro namespace only. school/protect namespace flag support is unverified;
         // those collect paths are left unmodified until confirmed via `school --help`.
-        let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
         let supportsQuietFlags = detectedVersion.map {
             !JamfCLIInstaller.isBelowMinimumSupported($0)
         } ?? false
@@ -1836,7 +1839,7 @@ struct ReportEngine: Sendable {
         // starts a fleet-wide fan-out) and before finalize (so its kinds count
         // as live in today's summary).
         let scanSaved = await Self.runDeviceScanPhase(
-            profile: profile, bin: bin, dataDir: dataDir, tiers: tiers,
+            profile: profile, bin: bin, specNames: specNames, dataDir: dataDir, tiers: tiers,
             skipExpensive: skipExpensive, force: force, recordManifest: recordManifest,
             stateStore: stateStore, collectStart: collectStart,
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
@@ -2048,10 +2051,14 @@ struct ReportEngine: Sendable {
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
     /// `knownCollectKinds` — `CollectionTierLookupTests` enforces that in CI.
-    private static func collectCommandMatrix(
-        profile: String
+    static func collectCommandMatrix(
+        profile: String, specNames: Bool
     ) -> [(args: [String], kind: String)] {
-        [
+        // jamf-cli 1.29.0 named these two resources after their OpenAPI tags. The old
+        // names warn on stderr until 2027-03-09; the new ones exit 2 before 1.29.
+        let enrollments = specNames ? "device-enrollments" : "device-enrollment-instances"
+        let mobileDetails = specNames ? "mobile-devices" : "mobile-device-inventory-details"
+        return [
             (["-p", profile, "pro", "overview", "--output", "json"], "overview"),
             (["-p", profile, "pro", "report", "security", "--output", "json"], "security"),
             (["-p", profile, "pro", "report", "patch-status", "--output", "json"], "patch-status"),
@@ -2113,9 +2120,9 @@ struct ReportEngine: Sendable {
              "categories"),
             (["-p", profile, "pro", "classic-mobile-config-profiles", "list", "--output", "json"],
              "classic-ios-profiles"),
-            (["-p", profile, "pro", "device-enrollment-instances", "list", "--output", "json"],
+            (["-p", profile, "pro", enrollments, "list", "--output", "json"],
              "device-enrollment-instances"),
-            (["-p", profile, "pro", "mobile-device-inventory-details", "list", "--output", "json"],
+            (["-p", profile, "pro", mobileDetails, "list", "--output", "json"],
              "mobile-device-inventory-details"),
             // Health audit — single cheap server call; matches CLIBridge.audit() shape that
             // AuditView and WorkspaceStore+Refresh all consume as "audit".
