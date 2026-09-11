@@ -57,15 +57,22 @@ final class FleetInsightGeneratorTests: XCTestCase {
         XCTAssertTrue(generator is StubInsightGenerator)
     }
 
+    /// The factory follows the same gate the views use: a Swift 6.4 toolchain on
+    /// macOS 27 constructs the on-device generator; anything else elides the
+    /// FoundationModels branch and resolves to the stub. Asserting the stub by
+    /// toolchain assumption broke the day CI's Xcode 27 runner moved to macOS 27.
     @MainActor
-    func testFactoryReturnsStubOnCurrentToolchain() {
-        // On this host (Swift 6.3, compiler(>=6.4) false) the FM branch elides,
-        // so even an enabled+available config resolves to the stub. On macOS 27
-        // hardware this returns FoundationModelsInsightGenerator.
+    func testFactoryFollowsThePlatformGate() {
         let generator = makeInsightGenerator(
             config: AIConfig(enabled: true), availability: .available
         )
-        XCTAssertTrue(generator is StubInsightGenerator)
+        if ModelAvailability.platformSupported {
+            XCTAssertFalse(generator is StubInsightGenerator,
+                           "macOS 27 with Swift 6.4 must construct the on-device generator")
+        } else {
+            XCTAssertTrue(generator is StubInsightGenerator,
+                          "a pre-27 host or pre-6.4 toolchain elides the FoundationModels branch")
+        }
     }
 
     // MARK: - Selection truth table
