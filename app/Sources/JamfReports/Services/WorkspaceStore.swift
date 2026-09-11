@@ -67,6 +67,15 @@ final class WorkspaceStore {
     /// Note: only guards against concurrent GUI runs; LaunchAgent runs are a separate
     /// process and would require an on-disk lock file (not implemented).
     private var runInProgressFlags: [String: Bool] = [:]
+    /// Profiles with a collect in flight in THIS process — Collect now,
+    /// Initialize, Refresh, or an automatic one. A count, not a flag: two
+    /// overlapping manual actions must not clear each other's mark on exit.
+    private var collectsInFlight: [String: Int] = [:]
+    /// Whether another process (the bundled `--tick` agent) holds the tick
+    /// lock. Injectable so tests never read the real lock file.
+    var tickLockHeldElsewhere: () -> Bool = {
+        TickLock(url: TickLock.defaultURL).isHeldByAnotherLiveProcess()
+    }
     private var didAutoUpdateJamfCLI = false
     /// Dedup guard for `autoRefreshAuditIfStale()` — rapid profile switches or
     /// repeated launch-task firings must not stack concurrent audit runs
@@ -831,6 +840,23 @@ final class WorkspaceStore {
     /// completes, regardless of success or failure.
     func clearRunInProgress(for profile: String) {
         runInProgressFlags[profile] = false
+    }
+
+    // MARK: - Collect overlap guard
+
+    /// True while a collect — or a generate run, which may collect first — is
+    /// in flight for `profile` in this process. The automatic paths stand down.
+    func isCollectInFlight(for profile: String) -> Bool {
+        (collectsInFlight[profile] ?? 0) > 0 || isRunInProgress(for: profile)
+            || coordinatorIsCollecting(for: profile)
+    }
+
+    func beginCollect(for profile: String) {
+        collectsInFlight[profile, default: 0] += 1
+    }
+
+    func endCollect(for profile: String) {
+        collectsInFlight[profile] = max(0, (collectsInFlight[profile] ?? 0) - 1)
     }
 }
 

@@ -115,4 +115,37 @@ final class ScheduleHealthInputsTests: XCTestCase {
         XCTAssertEqual(AutomationHealth.evaluate(
             inputs: [overdue], tickerStatus: .unavailable, now: now).map(\.kind), [.overdue])
     }
+
+    /// The dead-man switch needs to know when a workspace came to exist: a
+    /// per-profile schedule takes its own workspace, a multi schedule the
+    /// `statusProfile` workspace (the one whose status it read), and a missing
+    /// workspace or a profile-less caller yields nil.
+    func testInputsCarryTheWorkspaceCreationDate() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory
+            .appendingPathComponent("jrc-active-\(UUID().uuidString)", isDirectory: true)
+        let alpha = root.appendingPathComponent("alpha", isDirectory: true)
+        try fm.createDirectory(at: alpha, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        let created = try XCTUnwrap(
+            alpha.resourceValues(forKeys: [.creationDateKey]).creationDate)
+
+        let perProfile = schedule("com.github.tonyyo11.jamf-reports-community.alpha.x",
+                                  profile: "alpha", multi: false, cadence: "Daily 06:20")
+        let ghost = schedule("com.github.tonyyo11.jamf-reports-community.ghost.x",
+                             profile: "ghost", multi: false, cadence: "Daily 06:20")
+        let multi = schedule("com.github.tonyyo11.jamf-reports-community.multi.y",
+                             profile: "", multi: true, cadence: "Daily 06:20")
+
+        let scoped = LaunchAgentService.healthInputs(
+            schedules: [perProfile, ghost, multi], statusProfile: "alpha", now: Date())
+        XCTAssertEqual(scoped.map(\.activeSince), [created, nil, created])
+
+        let fleetWide = LaunchAgentService.healthInputs(
+            schedules: [multi], statusProfile: nil, now: Date())
+        XCTAssertNil(fleetWide.first?.activeSince,
+                     "a profile-less caller has no workspace to bound overdue with")
+    }
 }

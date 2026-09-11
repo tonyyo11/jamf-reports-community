@@ -94,13 +94,16 @@ enum AutomationHealth {
     /// When the ticker requires Login Items approval or was never registered,
     /// no per-schedule state can be trusted (nothing is firing), so this
     /// short-circuits to ONE `.tickerDisabled` issue instead of every
-    /// schedule reading `.overdue`. `.unavailable` (a dev build with no
-    /// bundled plist) is NOT treated as disabled — registration simply
-    /// doesn't apply there, and the per-schedule evaluation still runs.
+    /// schedule reading `.overdue` — but only while `wantsTicker`: with
+    /// nothing scheduled an unregistered ticker is the correct state, not a
+    /// fault. `.unavailable` (a dev build with no bundled plist) is NOT
+    /// treated as disabled — registration simply doesn't apply there, and
+    /// the per-schedule evaluation still runs.
     ///
     /// - `.overdue`: the schedule is enabled, has an expected past fire, that
-    ///   fire plus the grace window has elapsed, and there is no run artifact
-    ///   finishing at or after the expected fire.
+    ///   fire plus the grace window has elapsed, the fire is not before the
+    ///   workspace existed (`activeSince` — it never had a chance to run),
+    ///   and there is no run artifact finishing at or after the expected fire.
     /// - `.failing`: a run artifact exists and its success flag is `false`
     ///   (independent of overdue — a run that fired but failed still needs
     ///   attention). A schedule can be both; overdue takes precedence so the
@@ -110,9 +113,11 @@ enum AutomationHealth {
     static func evaluate(
         inputs: [LaunchAgentService.ScheduleHealthInput],
         tickerStatus: TickerStatus = .enabled,
+        wantsTicker: Bool = true,
         now: Date = Date()
     ) -> [AutomationHealthIssue] {
-        if tickerStatus == .requiresApproval || tickerStatus == .notRegistered {
+        let tickerOff = tickerStatus == .requiresApproval || tickerStatus == .notRegistered
+        if wantsTicker, tickerOff {
             return [AutomationHealthIssue(
                 label: tickerLabel,
                 displayName: "Background item disabled",
@@ -128,7 +133,8 @@ enum AutomationHealth {
 
             if let expected = input.expectedFire,
                now.timeIntervalSince(expected) >= graceSeconds,
-               !ranAtOrAfter(input.lastRunFinishedAt, expected) {
+               !ranAtOrAfter(input.lastRunFinishedAt, expected),
+               !predatesWorkspace(expected, input.activeSince) {
                 return AutomationHealthIssue(
                     label: input.label,
                     displayName: input.displayName,
@@ -162,6 +168,13 @@ enum AutomationHealth {
     private static func ranAtOrAfter(_ finished: Date?, _ expected: Date) -> Bool {
         guard let finished else { return false }
         return finished >= expected
+    }
+
+    /// True when the fire came before the workspace existed: nothing could
+    /// have run for it, so the silence is not a missed run.
+    private static func predatesWorkspace(_ expected: Date, _ activeSince: Date?) -> Bool {
+        guard let activeSince else { return false }
+        return expected < activeSince
     }
 }
 
@@ -302,11 +315,16 @@ extension WorkspaceStore {
         typealias HealthPass = (status: TickerStatus, issues: [AutomationHealthIssue])
         let evaluated = await Task.detached(priority: .utility) { () -> HealthPass in
             let status = registrar.status
+            // With nothing scheduled an unregistered ticker is not a fault.
+            let wantsTicker = Self.wantsTicker(
+                policy: AutomationPolicy.current(),
+                hasHandBuilt: !ScheduleStore().load().isEmpty)
             let inputs = LaunchAgentService.filterHealthInputs(
                 LaunchAgentService.healthInputs(schedules: schedules, statusProfile: profile),
                 forProfile: profile)
             return (status: status,
-                    issues: AutomationHealth.evaluate(inputs: inputs, tickerStatus: status))
+                    issues: AutomationHealth.evaluate(
+                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker))
         }.value
         tickerStatus = evaluated.status
         let issues = evaluated.issues
@@ -451,6 +469,7 @@ extension WorkspaceStore {
     ///
     /// Deliberately narrow:
     /// - only when the app is open and the operator can see the banner,
+    /// - never alongside another collect (this process's or the tick's),
     /// - at most once an hour per profile,
     /// - only the tiers that actually have issues,
     /// - `force: false`, so the per-kind cadence filter collects exactly the
@@ -459,13 +478,18 @@ extension WorkspaceStore {
     /// Returns true when a collect was attempted (not whether it fixed
     /// anything — the re-evaluation that follows is the real answer).
     @discardableResult
-    func remediateStaleDataIfNeeded() async -> Bool {
+    func remediateStaleDataIfNeeded(
+        collect: RemediationCollector = defaultRemediationCollector
+    ) async -> Bool {
         guard !demoMode else { return false }
         let issues = AutomationHealthModel.shared.freshnessIssues
         guard !issues.isEmpty else { return false }
         let profile = self.profile
         guard ProfileService.isValid(profile),
               let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+        // Stand down WITHOUT claiming the hour, so the next pass retries once
+        // the running collect is done rather than an hour later.
+        guard !automaticCollectMustWait(for: [profile]) else { return false }
 
         let hourKey = Self.hourKeyFormatter.string(from: Date())
         guard Self.remediationMarker.lastStampedDay(in: workspace) != hourKey else { return false }
@@ -480,6 +504,8 @@ extension WorkspaceStore {
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
         defer { AutomationHealthModel.shared.isRemediating = false }
+        beginCollect(for: profile)
+        defer { endCollect(for: profile) }
 
         AppLogger.collect.notice(
             """
@@ -488,9 +514,30 @@ extension WorkspaceStore {
             \(tiers.map(\.rawValue).sorted().joined(separator: ","), privacy: .public)
             """
         )
-        await Self.remediateOne(profile: profile, tiers: tiers)
+        await Self.remediateOne(profile: profile, tiers: tiers, collect: collect)
         await refreshDataFreshness()
         return true
+    }
+
+    /// The two overlaps an automatic collect must yield to: (a) a collect
+    /// already running in this process for one of `profiles`, (b) a `--tick`
+    /// process mid-run, which holds the tick lock. Logged, because a deferred
+    /// pass otherwise looks identical to one that never fired.
+    func automaticCollectMustWait(for profiles: [String]) -> Bool {
+        if let busy = profiles.first(where: { isCollectInFlight(for: $0) }) {
+            AppLogger.collect.info(
+                """
+                Automatic collect deferred: a collect is already running for \
+                \(busy, privacy: .public)
+                """
+            )
+            return true
+        }
+        if tickLockHeldElsewhere() {
+            AppLogger.collect.info("Automatic collect deferred: the background tick holds the lock")
+            return true
+        }
+        return false
     }
 
     /// Drop issues whose kind's last failure exit code makes retry pointless:
@@ -728,32 +775,59 @@ extension WorkspaceStore {
         return f
     }()
 
+    /// Per-profile catch-up collect closure. Tests inject a spy; production
+    /// routes through `CollectRouter.run` with the daily-freshness tiers.
+    typealias CatchUpCollector = @Sendable (
+        _ profile: String,
+        _ config: ReportConfig?
+    ) async throws -> Void
+
     /// Backstop for laptops that slept through the scheduled freshness run:
     /// when managed freshness is on, collect today's daily-freshness snapshot
     /// (tiers refresh+inventory) for every non-excluded profile if it hasn't
     /// happened yet. Passes `force: false`, so the per-kind cadence filter in
     /// `ReportEngine.collect` no-ops a kind that already ran today.
     ///
-    /// Called from app launch and `willBecomeActive` (Mac wake / app focus).
-    /// Runs off the main actor, sequentially per profile (mirroring
-    /// `--multi-sequential`) so launch doesn't jank and on-prem isn't hit in
-    /// parallel.
-    func catchUpCollectIfNeeded() async {
-        guard !demoMode else { return }
-        let policy = AutomationPolicy.current()
+    /// Called from app launch, `willBecomeActive` (Mac wake / app focus) and
+    /// the periodic re-check. Runs off the main actor, sequentially per
+    /// profile (mirroring `--multi-sequential`) so launch doesn't jank and
+    /// on-prem isn't hit in parallel. Stands down — leaving the day unclaimed
+    /// — while a collect is already running for a target or the tick holds
+    /// its lock. Returns true when a catch-up was attempted.
+    @discardableResult
+    func catchUpCollectIfNeeded(
+        policy: AutomationPolicy = AutomationPolicy.current(),
+        now: Date = Date(),
+        collect: CatchUpCollector = defaultCatchUpCollector
+    ) async -> Bool {
+        guard !demoMode else { return false }
         // Bail before any filesystem scan in the common unmanaged case, and on
         // repeat focuses once today's sweep has been claimed.
-        guard policy.isManaged, policy.freshnessEnabled else { return }
-        let today = Self.dayKeyFormatter.string(from: Date())
-        guard Self.lastCatchUpDay != today else { return }
+        guard policy.isManaged, policy.freshnessEnabled else { return false }
+        let today = Self.dayKeyFormatter.string(from: now)
+        guard Self.lastCatchUpDay != today else { return false }
 
         let targets = Self.catchUpTargets(
             policy: policy, discovered: ProfileService.discoverLocal().map(\.name)
         )
-        guard !targets.isEmpty else { return }
+        guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
 
-        await Self.runCatchUp(profiles: targets)
+        targets.forEach { beginCollect(for: $0) }
+        defer { targets.forEach { endCollect(for: $0) } }
+        await Self.runCatchUp(profiles: targets, collect: collect)
+        return true
+    }
+
+    nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
+        try await CollectRouter.run(
+            profile: profile,
+            tiers: [.refresh, .inventory],
+            skipExpensive: false,
+            force: false,  // per-kind cadence filter: no-op if this kind already ran today
+            config: config,
+            onLine: CLIBridge.noOpOnLine
+        )
     }
 
     /// Profiles eligible for a catch-up collect: only when the policy manages
@@ -768,13 +842,17 @@ extension WorkspaceStore {
     }
 
     /// Sequential per-profile catch-up collect, off the main actor.
-    nonisolated private static func runCatchUp(profiles: [String]) async {
+    nonisolated private static func runCatchUp(
+        profiles: [String], collect: CatchUpCollector
+    ) async {
         for profile in profiles {
-            await catchUpOne(profile)
+            await catchUpOne(profile, collect: collect)
         }
     }
 
-    nonisolated private static func catchUpOne(_ profile: String) async {
+    nonisolated private static func catchUpOne(
+        _ profile: String, collect: CatchUpCollector
+    ) async {
         let config: ReportConfig? = {
             guard let url = ProfileService.workspaceURL(for: profile)?
                 .appendingPathComponent("config.yaml"),
@@ -782,14 +860,7 @@ extension WorkspaceStore {
             return try? ConfigLoader.load(from: url)
         }()
         do {
-            try await CollectRouter.run(
-                profile: profile,
-                tiers: [.refresh, .inventory],
-                skipExpensive: false,
-                force: false,  // per-kind cadence filter: no-op if this kind already ran today
-                config: config,
-                onLine: CLIBridge.noOpOnLine
-            )
+            try await collect(profile, config)
         } catch {
             AppLogger.cli.warning(
                 "Catch-up collect failed for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"

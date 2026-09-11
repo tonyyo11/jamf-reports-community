@@ -263,6 +263,9 @@ enum LaunchAgentService {
         /// numeric one. Drives the plain-language cause on a failing row;
         /// nil falls back to the generic "reported failure" wording.
         let lastRunExitCode: Int32?
+        /// When the workspace this input is evaluated for came into existence —
+        /// a fire before it cannot have been missed. nil when unknown.
+        let activeSince: Date?
 
         init(
             label: String,
@@ -273,7 +276,8 @@ enum LaunchAgentService {
             expectedFire: Date?,
             lastRunFinishedAt: Date?,
             lastRunSuccess: Bool?,
-            lastRunExitCode: Int32? = nil
+            lastRunExitCode: Int32? = nil,
+            activeSince: Date? = nil
         ) {
             self.label = label
             self.displayName = displayName
@@ -284,12 +288,14 @@ enum LaunchAgentService {
             self.lastRunFinishedAt = lastRunFinishedAt
             self.lastRunSuccess = lastRunSuccess
             self.lastRunExitCode = lastRunExitCode
+            self.activeSince = activeSince
         }
     }
 
     /// Health inputs from the schedules the tick evaluates. `statusProfile`
     /// keeps the 2.6 rule: a multi schedule's status is read from THAT
-    /// profile's own record, never a different profile's later success.
+    /// profile's own record, never a different profile's later success — and
+    /// that same profile's workspace is the one whose age bounds "overdue".
     static func healthInputs(
         schedules: [Schedule], statusProfile: String?, now: Date = Date()
     ) -> [ScheduleHealthInput] {
@@ -305,12 +311,21 @@ enum LaunchAgentService {
                     from: statusFileURL(from: [], profile: schedule.profile, label: label),
                     profile: schedule.profile)
             }
+            let owner = schedule.isMulti ? statusProfile : schedule.profile
             return ScheduleHealthInput(
                 label: label, displayName: schedule.name, enabled: schedule.enabled,
                 profile: schedule.profile, isMulti: schedule.isMulti, expectedFire: expected,
                 lastRunFinishedAt: status?.finishedAt, lastRunSuccess: status?.success,
-                lastRunExitCode: status?.exitCode)
+                lastRunExitCode: status?.exitCode,
+                activeSince: owner.flatMap(workspaceCreationDate(profile:)))
         }
+    }
+
+    /// Creation date of a profile's workspace directory; nil when it does not
+    /// exist. Internal so the wiring into `healthInputs` is testable.
+    static func workspaceCreationDate(profile: String) -> Date? {
+        guard let url = ProfileService.workspaceURL(for: profile) else { return nil }
+        return (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate
     }
 
     /// Resolve a MULTI (managed, all-profiles) agent's run status.

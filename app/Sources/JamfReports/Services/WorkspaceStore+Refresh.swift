@@ -35,6 +35,17 @@ extension WorkspaceStore {
 
     private static var coordinatorKey: UInt8 = 0
     private static var foregroundObserverKey: UInt8 = 0
+    private static var periodicRecheckKey: UInt8 = 0
+
+    /// True while the coordinator's own refresh collect runs for `profile`. Reads the
+    /// existing coordinator only, so asking never creates one.
+    func coordinatorIsCollecting(for profile: String) -> Bool {
+        guard let existing = objc_getAssociatedObject(self, &WorkspaceStore.coordinatorKey)
+            as? RefreshCoordinator else { return false }
+        return CollectionTier.allCases.contains {
+            existing.isRefreshing(profile: profile, tier: $0)
+        }
+    }
 
     // MARK: Refresh gate
 
@@ -110,6 +121,8 @@ extension WorkspaceStore {
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         globalStatus = "refreshing \(labels) data · profile=\(activeProfile)"
         defer { globalStatus = nil }
+        beginCollect(for: activeProfile)
+        defer { endCollect(for: activeProfile) }
         do {
             let exit = try await CLIBridge().collect(
                 profile: activeProfile, tiers: Set(tiers), force: true,
@@ -143,6 +156,8 @@ extension WorkspaceStore {
         let activeProfile = profile
         globalStatus = "refreshing data · profile=\(activeProfile)"
         defer { globalStatus = nil }
+        beginCollect(for: activeProfile)
+        defer { endCollect(for: activeProfile) }
         do {
             let exit = try await CLIBridge().collect(
                 profile: activeProfile, tiers: tiers, force: true,
@@ -188,6 +203,8 @@ extension WorkspaceStore {
         let activeProfile = profile
         globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
         defer { globalStatus = nil }
+        beginCollect(for: activeProfile)
+        defer { endCollect(for: activeProfile) }
         // Record the run so the failure toast's "see Run History" is true —
         // this in-process collect previously discarded every per-kind line.
         let recorder = ProfileService.workspaceURL(for: activeProfile).flatMap {
@@ -378,7 +395,9 @@ extension WorkspaceStore {
     /// Called once from the root view's `.task`. Genuinely idempotent: the
     /// observer token is stashed as an associated object and a second call
     /// returns early, so a shell re-mount cannot stack duplicate observers.
+    /// Also starts the periodic re-check loop, which has its own guard.
     func registerForegroundRefresh() {
+        startPeriodicRecheck()
         if objc_getAssociatedObject(self, &WorkspaceStore.foregroundObserverKey) != nil {
             return
         }
@@ -411,6 +430,42 @@ extension WorkspaceStore {
             token,
             .OBJC_ASSOCIATION_RETAIN_NONATOMIC
         )
+    }
+
+    // MARK: Periodic re-check
+
+    /// How often the open app re-runs the wake chain (catch-up, dead-man
+    /// switch, self-remediation) without a foreground event. Each callee is
+    /// day- or hour-guarded, so a shorter interval would buy nothing.
+    nonisolated static let periodicRecheckInterval: TimeInterval = 30 * 60
+
+    /// Start the periodic re-check loop, at most once per store; returns false
+    /// when one already exists. The first pass waits a full interval — launch
+    /// already runs the same chain, and a test that registers must not collect.
+    @discardableResult
+    func startPeriodicRecheck() -> Bool {
+        if objc_getAssociatedObject(self, &WorkspaceStore.periodicRecheckKey) != nil {
+            return false
+        }
+        let loop = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.periodicRecheckInterval))
+                guard let self, !Task.isCancelled else { return }
+                // The callees guard demo mode too; skipping here keeps a demo
+                // session from touching the disk at all.
+                guard !self.demoMode else { continue }
+                await self.catchUpCollectIfNeeded()
+                await self.refreshAutomationHealth()
+                await self.remediateStaleDataIfNeeded()
+            }
+        }
+        objc_setAssociatedObject(
+            self,
+            &WorkspaceStore.periodicRecheckKey,
+            loop,
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+        return true
     }
 }
 

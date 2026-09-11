@@ -128,6 +128,10 @@ struct GlobalHealthBanner: View {
     /// One line summarising the worst thing currently wrong, plus a detail line
     /// naming the specific kinds. Returns nil when everything is healthy.
     ///
+    /// Kinds never attempted on this workspace rank below genuinely stale ones
+    /// and read as information, not alarm — but still above schedule issues,
+    /// because any freshness issue is what makes the button "Collect now".
+    ///
     /// `nonisolated` because `View` conformance MainActor-isolates statics on
     /// Swift 6.1, which would break nonisolated test callers.
     nonisolated static func headline(
@@ -135,7 +139,8 @@ struct GlobalHealthBanner: View {
         automation: [AutomationHealthIssue]
     ) -> Headline? {
         let failing = freshness.filter { $0.kind == .failing }
-        let stale = freshness.filter { $0.kind == .stale }
+        let stale = freshness.filter { $0.kind == .stale && !$0.neverCollected }
+        let neverCollected = freshness.filter { $0.kind == .stale && $0.neverCollected }
 
         if !failing.isEmpty {
             return Headline(
@@ -152,6 +157,14 @@ struct GlobalHealthBanner: View {
                 tone: .warn,
                 text: countPhrase(stale.count, "data source") + " far behind schedule",
                 detail: kindList(stale) + " — a re-scan is needed"
+            )
+        }
+        if !neverCollected.isEmpty {
+            return Headline(
+                icon: "clock",
+                tone: .info,
+                text: countPhrase(neverCollected.count, "data source") + " not collected yet",
+                detail: kindList(neverCollected) + " — not attempted yet on this workspace"
             )
         }
         if !automation.isEmpty {
