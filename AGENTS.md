@@ -782,6 +782,8 @@ fetched from `/v2/patch-policies/{id}/logs/{deviceId}/details` (highest attempt,
 action order). Feeds PatchStatusService, the CoreDashboard "Patch Failures" sheet and the
 HTML report.
 
+`attempt` arrives as a string (`"3"`) on jamf-cli 1.28–1.29; `PatchFailureRow` accepts either form.
+
 **`pro report update-status --output json`**
 ```json
 [{"total": N,
