@@ -55,7 +55,9 @@ reports two conditions, worst first:
 A source is reported once. Failing wins over stale, because a repeatedly-failing source is
 stale *for a known reason* and the cause is the useful thing to show. On a brand-new
 workspace where nothing has collected yet, the strip stays quiet rather than raising an
-alarm per source.
+alarm per source. Once a workspace has collected anything, a source that has never been
+attempted shows as **not collected yet**, as information rather than a warning, and the
+next collect fetches it.
 
 ### It tries to fix it
 
@@ -65,12 +67,24 @@ alarm per source.
 - **Automatic re-collect.** While the app is open, a source that is behind is re-collected
   at most **once an hour**, and only the sources actually behind — healthy sources in the
   same tier are left alone. The rate limit survives a relaunch, so a crash loop cannot
-  hammer an on-premise server.
+  hammer an on-premise server. It looks at launch, when the app comes to the front, and
+  every 30 minutes while the app stays open. It never starts while another collect is
+  running — Initialize, Collect now, a refresh, or the background item — and simply tries
+  again on its next pass.
 - **In-run retry.** Within a single run, a source that fails on a general/network error or
   an HTTP 429 rate limit is retried once after a short pause, rather than waiting for its
   next scheduled turn — which on the weekly scan tier could be another seven days.
   Authentication and permission failures are **never** retried: they cannot succeed on a
-  second attempt, and repeated attempts risk locking the account out.
+  second attempt, and repeated attempts risk locking the account out. The per-device scan
+  is the one exception for authentication: jamf-cli can reject a call because its token
+  expired mid-request while the credentials are fine, so the scan first asks jamf-cli for a
+  fresh token and retries that call once. It stops if no fresh token can be issued or the
+  retried call is rejected again, and once credentials are fixed the next pass scans.
+- **Same-day retries while the app is closed.** The background item retries a collect
+  schedule that failed or came back incomplete — a source did not land — one hour after it
+  started, then two hours after that, then four, and then waits for the schedule's next
+  time. A retry only re-collects what is still due, so sources that already landed are not
+  fetched again. Report-from-cache and backup schedules are not retried.
 - **Two failures are never retried automatically.** A usage or credentials-gate error
   (exit 2) and a refused-by-policy error (exit 8 — the command is outside what this
   profile's API publishes) fail identically every time. Those sources stay in the strip so
@@ -93,8 +107,13 @@ ask" is never read as "not platform".
 
 Per-source success and consecutive-failure counts are kept in the workspace, so "failing
 for three runs" always describes now rather than history — a source that recovers clears
-its own count. A run that served stale cache for any source records a `[partial]` line in
-its log, visible in Run History.
+its own count. A run where any source did not land records a `[partial]` line in its log,
+visible in Run History, and so does a device scan that could not write its data.
+
+A run where every source it tried failed writes no trend point for the day, rather than one
+built from cached snapshots and dated today. The next run that lands data writes it. A later
+run that collects a source the day's point had to take from cache rebuilds that point, and
+sources an earlier run collected keep counting as collected today.
 
 ## The dead-man switch
 
@@ -109,7 +128,9 @@ conditions:
 
 A schedule can be both; overdue takes precedence, so you see the more urgent "nothing ran"
 state first. Disabled schedules never raise an issue. The grace window absorbs a slow wake,
-a slow collect, and clock skew without hiding a genuinely missed run.
+a slow collect, and clock skew without hiding a genuinely missed run. A scheduled time that
+passed before the workspace existed is not a missed run either, so a brand-new workspace
+does not open with every schedule overdue.
 
 The expected fire time is computed backward from the schedule's cadence string; the
 last-run result comes from the per-run status records the scheduled-run body writes
@@ -121,7 +142,9 @@ If Login Items has the JamfReports background item turned off, or it was never a
 no per-schedule state can be trusted — nothing is firing at all. Rather than reporting every
 schedule as overdue one at a time, this collapses to a single issue, **Background item
 disabled**, with an **Open Login Items** button that takes you straight to the toggle. Turn
-it on and the per-schedule state resumes on the next check.
+it on and the per-schedule state resumes on the next check. This applies only when something
+is scheduled: with managed automation off and no hand-built schedules, the background item
+is unregistered on purpose and nothing is reported.
 
 ### Where it surfaces
 
@@ -137,6 +160,7 @@ The health state is recomputed:
 - At **app launch**, on the same pass that registers the background item and applies the
   automation policy.
 - When the app **returns to the foreground** (Mac wake / app focus).
+- **Every 30 minutes** while the app stays open, even without a foreground event.
 - On the **Overview screen's refresh** (its banner recomputes with the tab's data).
 - On **every wake of the background item itself** — every five minutes, whether or not the
   app is open, right after any due schedules run.

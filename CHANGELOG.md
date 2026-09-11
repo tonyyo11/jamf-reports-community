@@ -32,9 +32,13 @@ per-declaration server tokens are dropped before anything is written. The scan
 honours the "Skip expensive collections" setting. On first launch after
 upgrading, the health strip may show the two new sources as never collected
 until the next scan runs; the weekly scan or Collect now clears it. The scan
-backs off for the rest of the run if Jamf Pro rate-limits it, and after a
-failed run it waits for its normal weekly cadence rather than retrying every
-hour; Collect now still runs it immediately.
+backs off for the rest of the run if Jamf Pro rate-limits it. If jamf-cli
+rejects a call part-way through while your credentials are fine — a token that
+expires mid-request, or a token request that hits a network blip — the scan
+gets a fresh token and retries that call once. After a failed run it waits for
+its normal weekly cadence rather than retrying every hour, unless the failure
+was your credentials: once they are fixed, the next pass scans. Collect now
+still runs it immediately.
 
 - `jamf-reports schedules list|add|remove|run` — hand-built schedules are
   scriptable for the first time.
@@ -65,10 +69,23 @@ of assuming a tenant ID.
 - A missed run (Mac asleep, logged out) catches up once on the next wake for
   collect schedules; generate-from-cache and backup schedules only run when
   the missed time is within the last 15 minutes, as before.
+- A collect schedule that fails or comes back incomplete — the Mac was off the
+  VPN, a source did not land — is retried the same day, whether or not the app
+  is open: an hour later, then two hours after that, then four, and then not
+  again until its next scheduled time. A retry only fetches what is still
+  due. Report and backup schedules are not retried.
+- A long run, such as a device scan across hundreds of Macs, no longer lets
+  the next wake start a second run beside it.
 - If macOS shows the background item as off, the Overview banner says so with
   an "Open Automation" button, and the Automation screen itself has an "Open
   Login Items" button to fix it — instead of every schedule reading as
-  overdue.
+  overdue. Neither appears when nothing is scheduled, because the background
+  item is then off on purpose.
+- While the app stays open it re-checks every 30 minutes for data that is
+  behind and schedules that are overdue, not only at launch and when it comes
+  to the front.
+- On a new workspace, sources that have never been collected read as "not
+  collected yet" instead of "far behind schedule".
 
 ### Removed
 
@@ -108,6 +125,52 @@ first collect, but the only status line lived in the banner that disappears as
 soon as the seed succeeds, so the collect ran invisibly for minutes on a large
 tenant. The collect now goes through the same path as Collect now: status bar,
 Run History, completion toast.
+
+A collect whose calls are all rejected now fails with the re-authenticate
+message when your credentials really have stopped working. Its credentials
+check read jamf-cli's cached token, which could still pass after the
+credentials were revoked; it now asks for a fresh token.
+
+A day's trend point is no longer built from old data. When every source a run
+tried failed — the Mac was off the VPN, say — the run still wrote today's
+summary from cached snapshots, charted those numbers as today's and reported
+"Trends updated". It now writes nothing and says so in Run History; the next
+run that lands data writes the day's point.
+
+A later run on the same day now improves that day's trend point. If an earlier
+run had to use cached data for a source and a later run collects it, the day's
+point is rebuilt; sources the earlier run collected still count as collected
+today.
+
+Run History marks a run Partial when the device scan could not write its DDM
+or command-health data. The line for sources that did not land now says so
+plainly instead of claiming stale cache was served — on a first collect there
+is no cache.
+
+The installer now refuses Macs the app cannot run on. 2.8.0 needs macOS 15 and
+Apple silicon, but the installer still accepted macOS 14 and Intel Macs, and the
+app still declared macOS 14, so an unsupported Mac could install it and then fail
+to open it.
+
+A brand-new workspace no longer opens with every schedule marked overdue. A
+scheduled time that passed before the workspace existed is not a missed run.
+
+The automatic re-collect no longer starts while another collect is running —
+Initialize, Collect now, a refresh, or the background item. It waits for its
+next pass instead of fetching the same data twice at once.
+
+Onboarding's last step now collects before it generates. On a new install
+without a CSV it ran generate alone and failed with "No cached jamf-cli data
+found". It now collects refresh and inventory data first; the per-device scans
+follow on their schedule or with Collect now.
+
+Setup and scheduling use plainer words. "Save & continue" replaces "Verify &
+continue", since that step only saves the profile, and a failed validation now
+offers "Continue without validating". The install step points Macs without
+Homebrew to the jamf-cli releases page, a CSV is marked optional, the
+scheduling screens describe the background item instead of LaunchAgents, the
+DDM screen no longer implies it needs the Platform API, and the stale-data
+prompt states its real two-day threshold.
 
 ## [2.7.0] - 2026-09-04
 

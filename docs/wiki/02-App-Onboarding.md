@@ -50,9 +50,12 @@ routes start the same onboarding flow.
    them later from the **Data Sources** screen. (A Jamf School-*only* district should instead
    pick **Connect Jamf School** on the Welcome chooser, which runs the dedicated School path
    below — no Jamf Pro placeholder credentials.)
-8. **First report** — the app generates a first report so the dashboards have data to
-   render. If the output looks off you can **Skip & finish setup** — the workspace is
-   fully configured at this point and you can run reports later from the Reports tab.
+8. **First report** — for Jamf Pro, the app collects a snapshot (refresh and inventory
+   data, not the per-device scans) and then generates a first report, so the
+   dashboards have data to render; the per-device scans run later on schedule or via
+   Collect now on Overview. For Jamf School, this step only generates. If the output
+   looks off you can **Skip & finish setup** — the workspace is fully configured at this
+   point and you can run reports later from the Reports tab.
 
 ### The Jamf School path
 

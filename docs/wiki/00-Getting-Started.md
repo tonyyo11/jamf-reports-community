@@ -89,12 +89,15 @@ full detail on each:
    Attributes). You can **Skip for now** and add one later.
 7. **Add products (optional)** — connect Jamf Protect or Jamf School here if you use
    them, or skip and add them later from the Data Sources screen.
-8. **First report** — the app generates a first report so the dashboards have data to
-   show.
+8. **First report** — for Jamf Pro, the app collects a snapshot (refresh and inventory
+   data, not the per-device scans) and then generates a first report, so the dashboards
+   have data to show. For Jamf School, this step only generates.
 
 ## 6. Your first collect and report
 
-Step 8 above already ran a first collect and generate for you. From here on, use the
+Step 8 above already ran a first collect and generate for you, on the Jamf Pro path. The
+per-device scans (patch and update failure detail, DDM status, MDM command history) haven't
+run yet — they run on the weekly schedule, or on demand via **Collect now** on Overview. From here on, use the
 **Collect now** and **Generate Report** buttons on the Overview screen whenever you want
 fresh data or a new report, or set up
 [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) to run unattended.
