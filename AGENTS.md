@@ -500,7 +500,7 @@ Named constants in `CLIBridge`. Reference: jamf-cli Error Handling & Exit Codes 
 | 7 | `exitCodePartialFailure` | Partial failure (v1.19.0+) — some sub-operations failed, stdout contains valid JSON for the successful subset | Warn; save the returned partial data |
 | 8 | `exitCodeRefusedByPolicy` | Refused by policy (v1.28.0+) — correctly invoked, but the command is outside what this profile's API publishes (a Jamf Pro/Classic command on a Platform gateway profile, or a Platform-only command on an instance profile) | Warn; keep the kind in the health banner; **never** auto-retry — the remedy is a different profile, not another attempt |
 
-The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data. Exit code 7 counts as a success for the auth-dead verdict (auth was accepted; only some sub-operations failed). From jamf-cli 1.28.0 a Platform command's HTTP 403 exits 5 rather than 1, so it lands in the privileges branch instead of the generic one; note the grant it names is a Jamf Account capability permission on a gateway profile and a Jamf Pro API-role privilege on an instance profile.
+The `authGuard` function probes `pro auth token` before any live API command. It skips the probe for Jamf School profiles (`shouldSkipAuthProbe`) because School uses API key auth rather than OAuth2. `exitCodeUnauthorized` (3) is the only code that causes a hard abort — all others warn and fall back to cached data. Exit code 7 counts as a success for the auth-dead verdict (auth was accepted; only some sub-operations failed). From jamf-cli 1.28.0 a Platform command's HTTP 403 exits 5 rather than 1, so it lands in the privileges branch instead of the generic one; note the grant it names is a Jamf Account capability permission on a gateway profile and a Jamf Pro API-role privilege on an instance profile. From v1.29.0 cobra usage errors (stray positionals, unrecognized flags on leaf commands) correctly exit 2 rather than 1, so any malformed invocation now reliably lands in the `exitCodeUsage` branch rather than the generic error branch.
 
 #### Key views (45 Swift view files as of 2.7.0; tables last synced at v2.0 — see Views/ and Services/ for the current set)
 
@@ -647,6 +647,19 @@ nil-guard in `pro device <id>` (PR #185). v1.15 added URL normalization at all e
 which complements `WorkspaceStore.consoleURL`'s defensive scheme prepend. JamfCLIInstaller
 surfaces a Settings notice when the detected jamf-cli is below this floor; the app does not
 hard-fail — most code paths still work, the warning is to nudge updates.
+
+**v1.29.0 compatibility (tracked 2026-09-11).** Two breaking changes; neither affects the app's
+current read-only collect invocations:
+- **`--from-file` replaces `--file`** on all Platform and Security Cloud write commands (41
+  renames). `--file` now exits 2 with a hint. The app performs no Platform/Security Cloud writes,
+  but any future write feature added to `ReportEngine` or `CLIBridge` must use `--from-file`.
+  Upload commands (`--file` carrying a binary payload) are unaffected.
+- **`pro` resource names from the OpenAPI spec**: 163 resources became 135 (38 renamed, 24
+  merged, 13 split). Renamed commands print a deprecation warning to stderr but remain functional
+  until 2027-03-09; 48 specific split-resource invocations exit 2 immediately. All of the app's
+  `pro report *` and resource `list` invocations are unaffected — aliases cover the most common
+  operations, and the app makes no write calls that could conflict with a split. Deprecation
+  warnings appearing in run logs are expected and harmless until the aliases expire.
 
 **`pro report security --output json`**
 ```json

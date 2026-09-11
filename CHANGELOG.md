@@ -7,6 +7,16 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- **jamf-cli dependency**: reviewed and confirmed compatible with jamf-cli v1.29.0. No code
+  changes required — the app's collect invocations are all read-only and unaffected by the two
+  breaking changes in v1.29.0 (Platform/Security Cloud write commands renamed `--file` →
+  `--from-file`; 163 `pro` resource names rationalised to 135, with deprecated aliases remaining
+  functional until 2027-03-09). Deprecation warnings from renamed resources may appear in run
+  logs and are expected. Developer notes added to `CLAUDE.md` and `AGENTS.md` for future
+  Platform API write features.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added
