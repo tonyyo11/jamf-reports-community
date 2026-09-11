@@ -413,7 +413,7 @@ Charts require `columns.operating_system` (OS adoption) and
 ### Swift App Architecture
 
 The macOS app lives in `app/` and is a SwiftPM executable target (`JamfReports`).
-Build target: macOS 15+ (Sequoia), Swift 6 strict concurrency, Apple silicon only —
+Build target: macOS Sequoia 15 or later, Swift 6 strict concurrency, Apple silicon only —
 the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 
 #### Key services
@@ -849,6 +849,9 @@ Groups" sheet.
 - Functions ≤100 lines. Cyclomatic complexity ≤8.
 - 100-character line length.
 - No force-unwrap (`!`) in production paths — use `guard let` / `if let`.
+- macOS names follow Apple's current form, `macOS <Name> <major>`: `macOS Golden Gate 27`,
+  `macOS Tahoe 26`, `macOS Sequoia 15`. Bare `macOS 27` is fine where space is short; a name
+  without its number, `macOS 27 Golden Gate`, or `macOS 15 (Sequoia)` is not.
 - Services must be `@MainActor` or explicitly `Sendable`.
 - Test new services and business logic in `app/Tests/JamfReportsTests/`.
 

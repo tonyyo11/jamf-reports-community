@@ -77,8 +77,8 @@ Every non-core dashboard is toggleable, so unused screens disappear from the sid
   date and how long it took to reach 50%/90% fleet adoption. See
   [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity).
 - **On-device AI insights** — an optional plain-language fleet insight card powered by
-  Apple's on-device Foundation Model. macOS 27+ only, off by default, and hidden entirely
-  on earlier macOS. See
+  Apple's on-device Foundation Model. macOS Golden Gate 27 or later only, off by default,
+  and hidden entirely on earlier macOS. See
   [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
 - **Multi-baseline mSCP tracking** — configure more than one compliance baseline (for
   example NIST 800-53r5 and DISA STIG) and get an independent compliance-band trend

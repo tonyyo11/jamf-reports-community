@@ -586,6 +586,7 @@ struct CompliancePostureView: View {
         case 14: return "macOS Sonoma 14"
         case 15: return "macOS Sequoia 15"
         case 26: return "macOS Tahoe 26"
+        case 27: return "macOS Golden Gate 27"
         default: return "macOS \(major)"
         }
     }

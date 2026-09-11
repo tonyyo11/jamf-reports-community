@@ -13,7 +13,7 @@ All report generation is performed by a native Swift engine (`ReportEngine`); **
 ## Architecture
 
 The macOS app lives in `app/` and is a SwiftPM executable target (`JamfReports`).
-Build target: macOS 15+ (Sequoia), Swift 6 strict concurrency.
+Build target: macOS Sequoia 15 or later, Swift 6 strict concurrency.
 
 ### Two run paths
 
