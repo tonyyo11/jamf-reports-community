@@ -338,10 +338,13 @@ struct ReportEngine: Sendable {
             // Same-day summary is valid. Check whether a fresh build would be strictly
             // better (proxy→real mSCP upgrade, or mscpBands newly populated). If not,
             // keep the existing file so its mtime reflects the first run.
-            if let fresh = buildSummaryFromCLI(date: today, provenance: provenance, liveKinds: liveKinds),
+            if var fresh = buildSummaryFromCLI(
+                date: today, provenance: provenance, liveKinds: liveKinds),
                let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
                Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
-                let upgradeMsg = "[info] summary_\(today).json upgraded (proxy→real mSCP)"
+                fresh.collectionSources = Self.mergedSources(
+                    existing: existing.collectionSources, fresh: fresh.collectionSources)
+                let upgradeMsg = "[info] summary_\(today).json rebuilt with fresher data"
                 AppLogger.collect.info("\(upgradeMsg, privacy: .public)")
                 onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
                 return writeSummaryFile(fresh, to: summaryFile, onLine: onLine)
@@ -405,7 +408,26 @@ struct ReportEngine: Sendable {
         // later collect measures it. Upgrade only; a measured count is never
         // replaced by nil.
         if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
+        // A later run landed a source the existing point took from cache or lacked.
+        if let freshSources = fresh.collectionSources,
+           freshSources.contains(where: {
+               $0.value == "live" && existing.collectionSources?[$0.key] != "live"
+           }) {
+            return true
+        }
         return false
+    }
+
+    /// A rebuilt same-day point keeps "live" for a source an earlier run landed and this run
+    /// read back from cache.
+    static func mergedSources(
+        existing: [String: String]?, fresh: [String: String]?
+    ) -> [String: String]? {
+        guard let fresh else { return existing }
+        guard let existing else { return fresh }
+        return fresh.merging(existing) { freshValue, existingValue in
+            freshValue == "cache" && existingValue == "live" ? "live" : freshValue
+        }
     }
 
     /// Encode and atomically write `summary` to `url`, logging the outcome to
@@ -1550,7 +1572,11 @@ struct ReportEngine: Sendable {
         let probeBridge = CLIBridge()
         guard let (exitCode, _) = try? await probeBridge.runAndCapture(
             executable: bin,
-            arguments: ["-p", profile, "pro", "auth", "token", "--output", "json", "--no-input"],
+            // --refresh forces an exchange; plain `auth token` echoes the cached token file.
+            arguments: [
+                "-p", profile, "pro", "auth", "token", "--refresh",
+                "--output", "json", "--no-input",
+            ],
             environment: CLIBridge.environmentForJamfCLI(),
             onLine: { _ in }
         ) else {
@@ -1596,7 +1622,7 @@ struct ReportEngine: Sendable {
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         skipExpensive: Bool = false,
         force: Bool = false,
-        authConfirmationProbe: AuthConfirmationProbe = defaultAuthConfirmationProbe,
+        authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
@@ -1812,13 +1838,15 @@ struct ReportEngine: Sendable {
         let scanSaved = await Self.runDeviceScanPhase(
             profile: profile, bin: bin, dataDir: dataDir, tiers: tiers,
             skipExpensive: skipExpensive, force: force, recordManifest: recordManifest,
-            stateStore: stateStore, collectStart: collectStart, onLine: onLine
+            stateStore: stateStore, collectStart: collectStart,
+            authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
 
         await Self.finalizeCollect(
             profile: profile, tiers: tiers, bin: bin, dataDir: dataDir,
-            savedKinds: savedKinds, loadedConfig: loadedConfig,
+            savedKinds: savedKinds, nothingLanded: !outcomes.isEmpty && savedKinds.isEmpty,
+            loadedConfig: loadedConfig,
             workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
         )
 
@@ -1904,8 +1932,9 @@ struct ReportEngine: Sendable {
         // Launch failures reach this list too, via `launchFailureExitCode`.
         let unsavedKinds = Self.degradedKinds(outcomes: outcomes, savedKinds: savedKinds)
         if !unsavedKinds.isEmpty {
-            let msg = "[partial] \(unsavedKinds.count) of \(outcomes.count) source(s) served "
-                + "stale cache: \(unsavedKinds.joined(separator: ", "))"
+            let msg = "[partial] \(unsavedKinds.count) of \(outcomes.count) source(s) did not "
+                + "land this run: \(unsavedKinds.joined(separator: ", ")) — earlier snapshots "
+                + "are used where they exist"
             AppLogger.collect.warning("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
@@ -1920,6 +1949,7 @@ struct ReportEngine: Sendable {
         bin: URL,
         dataDir: URL,
         savedKinds: Set<String>,
+        nothingLanded: Bool,
         loadedConfig: ReportConfig?,
         workspacePaths: WorkspacePaths.Type,
         stateStore: StateFileStore?,
@@ -1975,7 +2005,11 @@ struct ReportEngine: Sendable {
         // only other site that produces these files, so the trend chart will
         // simply not advance until the next configured run.
         let unwritten: String?
-        if let config = loadedConfig,
+        if nothingLanded, loadedConfig != nil {
+            // Every attempted source failed: a summary now would stamp cached numbers
+            // with today's date and chart them as a fresh trend point.
+            unwritten = "no source landed this run"
+        } else if let config = loadedConfig,
            let summariesDir = try? workspacePaths.summariesDir(for: profile) {
             let prov = await Provenance.current(
                 profile: config.jamfCli?.resolvedProfile ?? profile,

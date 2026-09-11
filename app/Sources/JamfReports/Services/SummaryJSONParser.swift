@@ -118,7 +118,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
     let mscpBandColumns: [String: String]?
     /// Per-input-kind provenance of this digest: kind -> "live" | "cache" |
     /// "absent". Absent in legacy summaries and generate-time rewrites.
-    let collectionSources: [String: String]?
+    var collectionSources: [String: String]?
     /// Device count from the newest `mobile-devices-list` snapshot at collect
     /// time. Omitted when the mobile-devices snapshot is absent or fails to
     /// decode — unknown is not zero, and every summary already records the
