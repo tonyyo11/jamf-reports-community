@@ -86,6 +86,57 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         XCTAssertEqual(picked[0]["device_id"] as? String, "123")
     }
 
+    // MARK: - jamf-cli 1.29: one document of labelled sections
+
+    /// From 1.29 the command prints one array of `{section, data, fetch_error}`
+    /// objects instead of the heading stream. Same rows, different envelope.
+    private func envelope(devices: String, policyError: String = "",
+                          deviceError: String = "") -> Data {
+        Data("""
+        [
+          {"section": "title_compliance", "data": [{"title": "Firefox", "id": "1"}]},
+          {"section": "policy_failures", "data": [], "fetch_error": "\(policyError)"},
+          {"section": "device_failures", "data": \(devices), "fetch_error": "\(deviceError)"}
+        ]
+        """.utf8)
+    }
+
+    func testEnvelopeSelectsTheDeviceSection() throws {
+        let stream = envelope(devices: """
+        [{"policy": "Firefox 130.0", "policy_id": "42", "device": "mac-001", "device_id": "123"}]
+        """)
+        let picked = try rows(ReportEngine.patchDeviceFailurePayload(from: stream))
+        XCTAssertEqual(picked.count, 1)
+        let row = try XCTUnwrap(picked.first, "no device rows selected")
+        XCTAssertEqual(row["device_id"] as? String, "123",
+                       "must be the device rows, not the section objects or the compliance rows")
+    }
+
+    /// Empty device data with no fetch error is the ordinary healthy tenant on
+    /// 1.29 — a real zero, and no warning (there is nothing ambiguous to say).
+    func testEnvelopeWithNoDeviceRowsIsAnEmptyAnswer() throws {
+        let collector = LineCollector()
+        let picked = try rows(ReportEngine.patchDeviceFailurePayload(
+            from: envelope(devices: "[]"), onLine: collector.append))
+        XCTAssertTrue(picked.isEmpty)
+        XCTAssertTrue(collector.texts.isEmpty, "got: \(collector.texts)")
+    }
+
+    /// A section jamf-cli could not fetch is empty AND says so. That is not a
+    /// clean zero: nil makes the caller record the kind as not landed.
+    func testEnvelopeFetchErrorIsNotACleanZero() throws {
+        let collector = LineCollector()
+        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(
+            from: envelope(devices: "[]", deviceError: "request failed (HTTP 503)"),
+            onLine: collector.append))
+        let line = try XCTUnwrap(collector.texts.first)
+        XCTAssertTrue(line.contains("device_failures") && line.contains("HTTP 503"), "got: \(line)")
+
+        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(
+            from: envelope(devices: "[]", policyError: "request failed (HTTP 401)")),
+            "device rows depend on policy rows upstream, so a policy fetch error is not zero either")
+    }
+
     // MARK: - The guard this must not weaken
 
     /// Genuinely unusable output must still return nil so the caller records a

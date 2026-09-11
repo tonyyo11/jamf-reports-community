@@ -3246,6 +3246,9 @@ struct ReportEngine: Sendable {
     /// no devices), but it is also what an upstream field rename would look
     /// like — and a rename would be indistinguishable from a clean zero without
     /// a line saying which shape produced it.
+    ///
+    /// From jamf-cli 1.29.0 the command prints one document of labelled sections
+    /// instead of the heading stream; `envelopeDeviceRows` reads that shape.
     static func patchDeviceFailurePayload(
         from data: Data,
         onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
@@ -3256,6 +3259,7 @@ struct ReportEngine: Sendable {
             guard let rows = try? JSONSerialization.jsonObject(with: section, options: [])
                     as? [[String: Any]] else { continue }
             guard let first = rows.first else { continue }
+            if first["section"] != nil { return envelopeDeviceRows(rows, onLine: onLine) }
             if first["device_id"] != nil { return section }
         }
         if sections.count > 1 {
@@ -3266,6 +3270,33 @@ struct ReportEngine: Sendable {
             ))
         }
         return Data("[]".utf8)
+    }
+
+    /// The device rows from jamf-cli 1.29's `--scan-failures` document: one array
+    /// of `{section, data, fetch_error}` objects. A non-empty `fetch_error` on
+    /// either failures section means upstream could not ask (device rows depend
+    /// on policy rows), which is not a clean zero — nil lets the caller record
+    /// the kind as not landed.
+    private static func envelopeDeviceRows(
+        _ sections: [[String: Any]],
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> Data? {
+        for section in sections {
+            guard let name = section["section"] as? String,
+                  name == "policy_failures" || name == "device_failures" else { continue }
+            if let error = section["fetch_error"] as? String, !error.isEmpty {
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: "[warn] patch-device-failures: jamf-cli could not fetch \(name): "
+                        + String(error.prefix(200))
+                ))
+                return nil
+            }
+        }
+        guard let device = sections.first(where: { $0["section"] as? String == "device_failures" }),
+              let rows = device["data"] as? [[String: Any]]
+        else { return nil }
+        return try? JSONSerialization.data(withJSONObject: rows, options: [])
     }
 
     static func jsonPayload(from data: Data) -> Data? {

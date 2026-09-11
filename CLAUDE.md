@@ -741,17 +741,25 @@ hard-fail — most code paths still work, the warning is to nudge updates.
 `on_latest` / `on_other` is the canonical shape on v1.14. The pre-v1.4
 `installed`/`total` legacy shape is no longer supported.
 
-**`pro report patch-status --scan-failures --output json`**
+**`pro report patch-status --scan-failures --output json`** (jamf-cli 1.29.0+)
 ```json
-[{"policy": "Firefox 130.0", "policy_id": "42", "device": "MacBook-001",
-  "device_id": "123", "status_date": "2026-04-01", "attempt": 3,
-  "last_action": "Retrying", "serial": "ABC123",
-  "os_version": "15.7.3", "username": "jdoe"}]
+[{"section": "title_compliance", "data": [ ...the patch-status rows... ]},
+ {"section": "policy_failures", "data": [ ... ], "fetch_error": ""},
+ {"section": "device_failures", "fetch_error": "",
+  "data": [{"policy": "Firefox 130.0", "policy_id": "42", "device": "MacBook-001",
+            "device_id": "123", "status_date": "2026-04-01", "attempt": 3,
+            "last_action": "Retrying", "serial": "ABC123",
+            "os_version": "15.7.3", "username": "jdoe"}]}]
 ```
 
-One row per failing device × patch policy. `last_action` is fetched from
-`/v2/patch-policies/{id}/logs/{deviceId}/details` (highest attempt, highest action order).
-Used by `JamfCLIBridge.patch_device_failures()` → CoreDashboard "Patch Failures" sheet.
+One document of labelled sections; `fetch_error` is `""` on success and always present.
+jamf-cli 1.24–1.28 printed the same three arrays as a `── heading ──` stream instead.
+`ReportEngine.patchDeviceFailurePayload` reads both and stores only the `device_failures`
+rows (one per failing device × patch policy) as the `patch-device-failures` snapshot; a
+non-empty `fetch_error` is recorded as not landed, never as zero failures. `last_action` is
+fetched from `/v2/patch-policies/{id}/logs/{deviceId}/details` (highest attempt, highest
+action order). Feeds PatchStatusService, the CoreDashboard "Patch Failures" sheet and the
+HTML report.
 
 **`pro report update-status --output json`**
 ```json

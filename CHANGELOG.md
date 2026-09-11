@@ -97,6 +97,11 @@ of assuming a tenant ID.
 
 ### Fixed
 
+Patch failures no longer disappear on jamf-cli 1.29.0. That release changed the
+layout of the patch failure report and the app read the new layout as "no
+failures". It now reads both layouts, and a section jamf-cli could not fetch is
+treated as missing data rather than as zero failures.
+
 The `policies` source no longer fails on every collect. The app asked jamf-cli
 for a `pro policies` command that does not exist on any supported version, so
 the source warned with exit 2 on each run, the freshness strip flagged it, and
