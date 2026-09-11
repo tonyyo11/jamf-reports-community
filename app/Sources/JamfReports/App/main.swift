@@ -205,7 +205,8 @@ private func scheduledRunSingle(
     mode: Schedule.RunMode,
     tiers: Set<CollectionTier>?,
     verbose: Bool,
-    label: String?
+    label: String?,
+    honesty: CollectHonestyWatcher
 ) async -> Int32 {
     guard ProfileService.isValid(profile) else {
         fputs("[error] Invalid profile '\(profile)'\n", stderr)
@@ -254,8 +255,9 @@ private func scheduledRunSingle(
     // test spies depend on that — so the two facts that make a bare exit 0 a
     // lie arrive on the log stream instead: this Mac stood down for a peer, or
     // the day's summary never reached disk. Watching the stream is what lets
-    // the completion line and the webhook below say which one happened.
-    let honesty = CollectHonestyWatcher()
+    // the completion line and the webhook below say which one happened. The
+    // caller owns `honesty` so it can read `incomplete` after the run and
+    // decide on a same-day retry without the exit code having to change.
     let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
         honesty.observe(line.text)
         recorder?.record(line.text)
@@ -598,7 +600,8 @@ private func scheduledRun(profile: String) async -> Int32 {
         tiers: tiers,
         excludedProfiles: allProfiles ? Array(ProfileService.parseExclusions(excludeArg)) : nil
     )
-    let code = await runSchedule(schedule, verbose: verbose)
+    // The external scheduler sees the exit code alone — retries are the tick's.
+    let code = await runSchedule(schedule, verbose: verbose).exitCode
     // External-scheduler path only: the tick posts its own digest once per wake.
     await notifyOverdueSchedulesHeadless(
         profiles: allProfiles ? ProfileService.discoverLocal().map(\.name) : [profile],
@@ -609,36 +612,44 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// One schedule, start to finish: the body every scheduler shares (`--tick`,
 /// `--scheduled-run` from an external cron, Run now). Records under the
 /// schedule's label; a multi schedule fans out over discovered profiles minus
-/// its exclusions and emits the consolidated fleet report for report modes.
+/// its exclusions and emits the consolidated fleet report for report modes,
+/// and succeeds only when every profile did with none incomplete.
 @Sendable
-func runSchedule(_ schedule: Schedule, verbose: Bool) async -> Int32 {
+func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
     guard schedule.isMulti else {
-        return await scheduledRunSingle(
+        let honesty = CollectHonestyWatcher()
+        let code = await scheduledRunSingle(
             profile: schedule.profile, mode: schedule.mode, tiers: schedule.tiers,
-            verbose: verbose, label: label)
+            verbose: verbose, label: label, honesty: honesty)
+        return ScheduleRunOutcome(exitCode: code, incomplete: honesty.incomplete)
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
     let profiles = ProfileService.applyingExclusions(
         ProfileService.discoverLocal(), excluding: excluded)
     guard !profiles.isEmpty else {
         fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
-        return 1
+        return ScheduleRunOutcome(exitCode: 1, incomplete: false)
     }
     if !excluded.isEmpty {
         fputs("[info] excluding: \(excluded.sorted().joined(separator: ", "))\n", stderr)
     }
     var anyFailed = false
+    var anyIncomplete = false
     for p in profiles {
+        // One watcher per profile: a shared one would carry profile A's
+        // stand-down into profile B's completion line.
+        let honesty = CollectHonestyWatcher()
         let code = await scheduledRunSingle(
             profile: p.name, mode: schedule.mode, tiers: schedule.tiers,
-            verbose: verbose, label: label)
+            verbose: verbose, label: label, honesty: honesty)
         if code != 0 { anyFailed = true }
+        if honesty.incomplete { anyIncomplete = true }
     }
     if [.jamfCLIOnly, .jamfCLIFull, .csvAssisted].contains(schedule.mode) {
         emitConsolidatedReports()
     }
-    return anyFailed ? 1 : 0
+    return ScheduleRunOutcome(exitCode: anyFailed ? 1 : 0, incomplete: anyIncomplete)
 }
 
 // MARK: - check subcommand

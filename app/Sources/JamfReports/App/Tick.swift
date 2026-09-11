@@ -35,24 +35,52 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
 
     var state = TickState.load()
     let due = TickScheduler.due(
-        schedules: schedules, lastStarted: state.lastStarted,
+        schedules: schedules, state: state,
         runNowLabels: TickRunner.consumeRunNowMarkers(), now: now,
         nonCatchUpAnchor: blockedSince)
-    for schedule in due {
-        guard let label = schedule.launchAgentLabel else { continue }
-        state.lastStarted[label] = Date()
-        do { try state.save() } catch {
-            fputs("[error] tick: could not write tick-state.json: \(error.localizedDescription)\n",
-                  stderr)
-            return 1
-        }
+    for run in due {
+        guard let label = run.schedule.launchAgentLabel else { continue }
+        // Stamped BEFORE the run so a crash mid-collect still counts as an
+        // attempt and cannot re-run on every wake.
+        let startedAt = Date()
+        state.noteStarted(label, at: startedAt, reason: run.reason)
+        guard saveTickState(state) else { return 1 }
         lock.touch()
-        let code = await runSchedule(schedule, verbose: false)
-        print("[info] tick: \(label) exit \(code)")
+        let outcome = await lock.keepingAlive { await runSchedule(run.schedule, verbose: false) }
+        if outcome.succeeded {
+            state.noteSucceeded(label, startedAt: startedAt)
+            guard saveTickState(state) else { return 1 }
+        }
+        print(tickResultLine(
+            label: label, reason: run.reason, outcome: outcome,
+            retries: state.retryCount[label] ?? 0))
     }
     // Once per wake, after all runs, so a schedule that just fired is not
     // reported overdue by the same process.
     await notifyOverdueSchedulesHeadless(
         profiles: profiles.map(\.name), excluding: Set(policy.excludedProfiles))
     return 0
+}
+
+/// `[info] tick: <label>[ retry N] exit <code>[ (incomplete|failed)]` — the
+/// line the GUI's Run now streams back, so it names the attempt and the verdict.
+private func tickResultLine(
+    label: String, reason: TickScheduler.Reason, outcome: ScheduleRunOutcome, retries: Int
+) -> String {
+    let attempt = reason == .retry ? " retry \(retries)" : ""
+    let verdict = outcome.succeeded ? "" : (outcome.incomplete ? " (incomplete)" : " (failed)")
+    return "[info] tick: \(label)\(attempt) exit \(outcome.exitCode)\(verdict)"
+}
+
+/// False, with the error on stderr, when the stamps cannot be written. The
+/// caller stops there: a run the state file cannot remember would repeat.
+private func saveTickState(_ state: TickState) -> Bool {
+    do {
+        try state.save()
+        return true
+    } catch {
+        fputs("[error] tick: could not write tick-state.json: \(error.localizedDescription)\n",
+              stderr)
+        return false
+    }
 }
