@@ -103,6 +103,11 @@ of assuming a tenant ID.
 
 ### Fixed
 
+Refresh all now clears the Overview "scan data is missing or more than 2 days
+old" prompt once it has collected the per-device tiers. The prompt kept its
+launch-time verdict until its own button was used, so a toolbar refresh looked
+as if it had skipped the scans it had just run.
+
 Devices, Offline Outreach and the per-device security columns now populate on
 workspaces that collect only through jamf-cli. Collect asks Jamf for the user,
 location, security and disk-encryption inventory sections explicitly; without

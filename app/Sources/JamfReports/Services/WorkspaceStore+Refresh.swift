@@ -151,7 +151,16 @@ extension WorkspaceStore {
     /// Force-collect the given `tiers` and surface progress through `globalStatus`
     /// and a completion/failure toast. No-ops when `tiers` is empty or `canRefresh`
     /// is false. Modelled on `runHeavyTierRefresh`.
-    func runTierRefresh(_ tiers: Set<CollectionTier>) async {
+    func runTierRefresh(
+        _ tiers: Set<CollectionTier>,
+        collect: @Sendable (String, Set<CollectionTier>,
+                            @escaping @Sendable (CLIBridge.LogLine) -> Void)
+            async throws -> Int32 = { profile, tiers, onLine in
+            try await CLIBridge().collect(
+                profile: profile, tiers: tiers, force: true, onLine: onLine
+            )
+        }
+    ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
         let activeProfile = profile
         globalStatus = "refreshing data · profile=\(activeProfile)"
@@ -159,10 +168,7 @@ extension WorkspaceStore {
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
         do {
-            let exit = try await CLIBridge().collect(
-                profile: activeProfile, tiers: tiers, force: true,
-                onLine: CLIBridge.bufferingOnLine
-            )
+            let exit = try await collect(activeProfile, tiers, CLIBridge.bufferingOnLine)
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
@@ -176,6 +182,10 @@ extension WorkspaceStore {
         } catch {
             toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
+        // The Overview scan prompt reads `staleHeavyTiers`, which only the prompt's
+        // own button cleared — so a toolbar refresh that collected every tier left
+        // it on its launch-time verdict (2.8.0 field pass). Re-probe from disk.
+        await checkHeavyTierStaleness()
         await refreshDataFreshness()
     }
 
