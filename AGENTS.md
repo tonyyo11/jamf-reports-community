@@ -509,6 +509,15 @@ the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 
 **Snapshot key contract (Swift HTML report).** `HtmlReport` loads cached snapshots by the canonical on-disk names that `ReportEngine.collect` writes — `computers`, `policies`, `smart-computer-groups`, `patch-device-failures` — with the older alternate names kept as fallback aliases in `loadJSONList(kinds:)` calls. When adding a section that reads a new kind, the kind must also be added to the collect command matrix and `knownCollectKinds` in `ReportEngine.swift` (and `CollectionTier` if it should participate in tiered collection); otherwise the section will silently render its empty-state placeholder forever.
 
+**Computer inventory sections (2.8.0).** `collect` passes `--section` with
+`ReportEngine.computerInventorySections` (General, Hardware, Operating System, User and
+Location, Security, Disk Encryption) to `pro computers list`. Without the flag jamf-cli returns
+the first three only, so `DeviceInventoryService.recordFromComputer` read every device as
+Unassigned with no email and no security state on jamf-cli-only workspaces. The flag is on
+every supported jamf-cli (verified live on 1.18.0 and 1.29.0). When Jamf holds the address in
+Username and leaves Email blank, the record's email falls back to the address-shaped username
+so Offline Outreach has something to mail.
+
 **Compliance benchmark label.** UI surfaces never hardcode a benchmark name. `TrendSeries.Metric.compliance`'s default label is "Compliance Benchmark"; `WorkspaceStore.complianceBenchmarkLabel` overrides it from `compliance.baseline_label` or the first `platform.compliance_benchmarks` entry in the workspace config. mSCP baseline identifiers and the framework preset pickers keep real benchmark names — those are data/user choices, not labels the app asserts.
 
 **EDR agent label (v2.2.0).** Same rule for security-agent vendor names. `TrendSeries.Metric.edrAgent` / `SecurityScore.Metric.edrAgent` default to "EDR Agent Installed/Connected"; `WorkspaceStore.edrAgentName` overrides from the first `security_agents` entry. Both enums keep the legacy `"crowdstrike"` raw value for persisted-selection and summary.json schema compatibility — do not rename the raw value or the `crowdstrikePct` JSON field.

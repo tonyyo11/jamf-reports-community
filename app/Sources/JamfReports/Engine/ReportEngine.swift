@@ -2047,6 +2047,16 @@ struct ReportEngine: Sendable {
         }
     }
 
+    /// Inventory sections `collect` asks `pro computers list` for. Without
+    /// `--section` jamf-cli returns General, Hardware and OS only, so assigned
+    /// user, email and the security columns stayed empty on jamf-cli-only
+    /// workspaces (2.8.0 field pass). The flag exists on every supported
+    /// jamf-cli — verified live on 1.18.0 and 1.29.0.
+    static let computerInventorySections = [
+        "GENERAL", "HARDWARE", "OPERATING_SYSTEM",
+        "USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION",
+    ].joined(separator: ",")
+
     /// The jamf-cli commands `collect` fetches and the snapshot kind each
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
@@ -2097,7 +2107,8 @@ struct ReportEngine: Sendable {
              "ddm-status"),
             (["-p", profile, "pro", "report", "blueprint-status", "--output", "json"],
              "blueprint-status"),
-            (["-p", profile, "pro", "computers", "list", "--output", "json"], "computers"),
+            (["-p", profile, "pro", "computers", "list",
+              "--section", computerInventorySections, "--output", "json"], "computers"),
             // `pro policies` has never existed (1.24 and 1.28 verified); the Classic
             // API command is the only policy list. The on-disk kind stays "policies".
             (["-p", profile, "pro", "classic-policies", "list", "--output", "json"],

@@ -560,6 +560,9 @@ extension DeviceInventoryService {
         record.model = first(flat, ["hardware.modelIdentifier", "hardware.model", "modelIdentifier", "general.model"])
         record.user = first(flat, ["userAndLocation.username", "location.username", "username"])
         record.email = first(flat, ["userAndLocation.email", "userAndLocation.emailAddress", "location.emailAddress"])
+        // Tenants that keep the address in "Username" and leave "Email" blank
+        // (2.8.0 field pass) would otherwise give Offline Outreach nothing to mail.
+        if record.email.isEmpty, record.user.contains("@") { record.email = record.user }
         record.department = first(flat, ["userAndLocation.department", "location.department", "department"])
         record.building = first(flat, ["userAndLocation.building", "location.building", "building"])
         record.site = first(flat, ["general.site.name", "site.name", "site"])

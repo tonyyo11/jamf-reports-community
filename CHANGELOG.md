@@ -103,6 +103,13 @@ of assuming a tenant ID.
 
 ### Fixed
 
+Devices, Offline Outreach and the per-device security columns now populate on
+workspaces that collect only through jamf-cli. Collect asks Jamf for the user,
+location, security and disk-encryption inventory sections explicitly; without
+that, jamf-cli returns only the general, hardware and OS sections, and every
+device read as Unassigned with no email. When Jamf keeps the address in the
+Username field and leaves Email blank, outreach uses that address.
+
 Patch failures no longer disappear on jamf-cli 1.29.0. That release changed the
 layout of the patch failure report and the app read the new layout as "no
 failures". It now reads both layouts, and a section jamf-cli could not fetch is

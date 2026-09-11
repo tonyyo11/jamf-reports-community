@@ -23,6 +23,20 @@ final class DeviceInventoryRecordTests: XCTestCase {
         XCTAssertEqual(record.numericJamfID, "42")
     }
 
+    func testComputerRecordUsesAnAddressShapedUsernameAsTheEmail() {
+        func record(_ userAndLocation: [String: Any]) -> DeviceInventoryRecord {
+            DeviceInventoryService.recordFromComputer([
+                "general": ["id": 7, "name": "MERIDIAN-AB-MBP"],
+                "hardware": ["serialNumber": "C02ABCDEFGHI"],
+                "userAndLocation": userAndLocation,
+            ], source: "computers.json")
+        }
+        XCTAssertEqual(record(["username": "a.b@example.org"]).email, "a.b@example.org")
+        XCTAssertEqual(record(["username": "ab", "email": ""]).email, "")
+        XCTAssertEqual(record(["username": "a.b@example.org", "email": "real@example.org"]).email,
+                       "real@example.org", "an explicit email always wins")
+    }
+
     func testPatchFailureRecordCapturesDeviceID() {
         let item: [String: Any] = [
             "device_id": "123",

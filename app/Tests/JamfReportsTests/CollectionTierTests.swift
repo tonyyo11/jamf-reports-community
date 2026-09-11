@@ -31,6 +31,16 @@ final class CollectionTierLookupTests: XCTestCase {
         XCTAssertEqual(kinds(true), kinds(false), "the flag changes argv, never a kind name")
     }
 
+    func testComputersListAsksForTheSectionsTheDevicesScreenReads() {
+        let argv = ReportEngine.collectCommandMatrix(profile: "p", specNames: true)
+            .first { $0.kind == "computers" }?.args ?? []
+        XCTAssertEqual(argv, ["-p", "p", "pro", "computers", "list", "--section",
+                              ReportEngine.computerInventorySections, "--output", "json"])
+        for section in ["USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION"] {
+            XCTAssertTrue(ReportEngine.computerInventorySections.contains(section), section)
+        }
+    }
+
     func testStatusItemsArgumentsFollowTheSameGate() {
         XCTAssertEqual(
             ReportEngine.statusItemsArguments(profile: "p", managementId: "m", specNames: true),
