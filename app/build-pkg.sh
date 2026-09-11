@@ -101,21 +101,23 @@ pkgbuild \
   "$COMPONENT_PKG"
 
 echo "→ writing Distribution.xml"
-# `hostArchitectures="arm64,x86_64"` lets the installer run on both Intel and
-# Apple Silicon Macs. `allowed-os-versions` enforces macOS 14+ at install time,
+# `hostArchitectures="arm64"` refuses Intel Macs at install time: build-app.sh
+# builds for the host architecture, so the shipped .app is Apple silicon only.
+# ponytail: literal arm64; derive it from `lipo -archs` if the build ever goes universal.
+# `allowed-os-versions` enforces macOS 15+ at install time,
 # matching the .app's LSMinimumSystemVersion. `customize="never"` hides the
 # component picker since there's only one component.
 cat > "$DISTRIBUTION_XML" <<DIST
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <installer-gui-script minSpecVersion="2">
     <title>Jamf Reports</title>
-    <options customize="never" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
     <allowed-os-versions>
-        <os-version min="14.0"/>
+        <os-version min="15.0"/>
     </allowed-os-versions>
     <volume-check>
         <allowed-os-versions>
-            <os-version min="14.0"/>
+            <os-version min="15.0"/>
         </allowed-os-versions>
     </volume-check>
     <choices-outline>

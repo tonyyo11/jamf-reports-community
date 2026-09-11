@@ -139,7 +139,7 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
     <key>JRReleaseChannel</key>
     <string>${RELEASE_CHANNEL}</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>15.0</string>
     <key>LSUIElement</key>
     <false/>
     <key>NSHighResolutionCapable</key>
