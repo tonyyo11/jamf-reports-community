@@ -15,6 +15,9 @@ struct GettingStartedStep: Identifiable, Sendable, Equatable {
     let actionLabel: String
     /// Raw value of the `Tab` to route to when the CTA is tapped.
     let destinationTab: String
+    /// True for a step that isn't required for `GettingStartedChecklist.isComplete`
+    /// (e.g. CSV mapping — jamf-cli data alone is enough for most dashboards).
+    var isOptional: Bool = false
 
     var id: String { kind.rawValue }
 }
@@ -22,7 +25,9 @@ struct GettingStartedStep: Identifiable, Sendable, Equatable {
 struct GettingStartedChecklist: Sendable, Equatable {
     let steps: [GettingStartedStep]
 
-    var isComplete: Bool { steps.allSatisfy(\.done) }
+    /// Ignores optional steps — a workspace with nothing but jamf-cli data
+    /// can still finish the checklist.
+    var isComplete: Bool { steps.filter { !$0.isOptional }.allSatisfy(\.done) }
     var firstIncomplete: GettingStartedStep? { steps.first { !$0.done } }
     var completedCount: Int { steps.filter(\.done).count }
 
@@ -31,7 +36,7 @@ struct GettingStartedChecklist: Sendable, Equatable {
     ///   - connected: At least one jamf-cli profile is configured.
     ///   - collected: At least one trend summary file exists.
     ///   - customized: config.yaml contains at least one column mapping.
-    ///   - scheduled: A LaunchAgent or managed automation is active.
+    ///   - scheduled: A hand-built schedule or managed automation covers this profile.
     ///   - reported: At least one generated report file exists.
     static func build(
         connected: Bool,
@@ -60,10 +65,12 @@ struct GettingStartedChecklist: Sendable, Equatable {
             GettingStartedStep(
                 kind: .customize,
                 title: "Map your columns",
-                detail: "Tell the app which CSV columns match your Jamf field names.",
+                detail: "Tell the app which CSV columns match your Jamf field names. "
+                    + "Optional — jamf-cli data alone covers most dashboards.",
                 done: customized,
                 actionLabel: "Open Config",
-                destinationTab: Tab.config.rawValue
+                destinationTab: Tab.config.rawValue,
+                isOptional: true
             ),
             GettingStartedStep(
                 kind: .schedule,

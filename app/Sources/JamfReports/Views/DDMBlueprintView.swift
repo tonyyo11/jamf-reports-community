@@ -139,7 +139,8 @@ struct DDMBlueprintView: View {
         PageHeader(
             kicker: kicker,
             title: "DDM Blueprints",
-            subtitle: "Browse DDM blueprint deployment and per-source declaration status captured by jamf-cli's Platform API.",
+            subtitle: "Per-device DDM status comes from the weekly device scan (any profile). "
+                + "The Blueprints sections below need a Platform API profile.",
             lastModified: nil
         )
     }

@@ -65,6 +65,11 @@ struct AutomationView: View {
     @State private var selectedForRemoval: Set<String> = []
     @State private var showRemovalConfirm = false
 
+    // Whether any hand-built schedule exists — feeds `tickerDisabledBannerShouldShow`
+    // so the banner doesn't fire when nothing wants the ticker running. Refreshed
+    // alongside `consolidationCandidates`, which already reads the same store.
+    @State private var hasHandBuiltSchedule = false
+
     var body: some View {
         PageScaffold(spacing: 16) {
             PageHeader(
@@ -82,8 +87,10 @@ struct AutomationView: View {
                         Text(warning).font(.callout)
                     }
                 }
-                if workspace.tickerStatus == .requiresApproval
-                    || workspace.tickerStatus == .notRegistered {
+                if tickerDisabledBannerShouldShow(
+                    policy: policy, hasHandBuilt: hasHandBuiltSchedule,
+                    tickerStatus: workspace.tickerStatus
+                ) {
                     InlineBanner(
                         icon: "exclamationmark.triangle", tone: .danger,
                         action: .init(label: "Open Login Items") {
@@ -182,10 +189,12 @@ struct AutomationView: View {
         guard !workspace.demoMode else {
             consolidationCandidates = []
             selectedForRemoval = []
+            hasHandBuiltSchedule = false
             return
         }
         let installed = LaunchAgentService.installedLegacy().schedules
         let storeLabels = Set(ScheduleStore().load().map(\.label))
+        hasHandBuiltSchedule = !storeLabels.isEmpty
         consolidationCandidates = ScheduleConsolidation.stillLoaded(
             installed: installed, storeLabels: storeLabels)
         let live = Set(consolidationCandidates.map(\.label))
@@ -218,9 +227,9 @@ struct AutomationView: View {
                     Text("Manage automation").font(.headline)
                 }
                 .toggleStyle(.switch)
-                Text("When on, the app keeps every profile's jamf-cli data fresh and generates "
-                    + "reports on the cadence below — no hand-built schedules. When off, the app "
-                    + "installs nothing and removes any managed agents.")
+                Text("When on, the background item keeps every profile's jamf-cli data fresh "
+                    + "and generates reports on the cadence below — no hand-built schedules "
+                    + "needed. When off, nothing runs automatically from this policy.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
@@ -520,7 +529,7 @@ private struct HealthCard: View {
             Task { await runNow(issue) }
         }
         .disabled(isRunning)
-        .help("Immediately re-run this schedule's own LaunchAgent job.")
+        .help("Run this schedule now.")
     }
 
     private func runNow(_ issue: AutomationHealthIssue) async {
@@ -755,4 +764,20 @@ private struct ConsolidationCard: View {
             }
         )
     }
+}
+
+// MARK: - Pure helpers (testable)
+
+/// Whether the "Automation is off — not allowed to run in the background"
+/// banner should show. `tickerStatus` alone isn't enough: a ticker that is
+/// `.notRegistered`/`.requiresApproval` because NOTHING wants it running
+/// (managed automation off, no hand-built schedules) is the correct state,
+/// not a problem — only show the banner when something actually needs the
+/// ticker. Shared by `AutomationView` and `SchedulesView` so both surfaces
+/// agree.
+func tickerDisabledBannerShouldShow(
+    policy: AutomationPolicy, hasHandBuilt: Bool, tickerStatus: TickerStatus
+) -> Bool {
+    WorkspaceStore.wantsTicker(policy: policy, hasHandBuilt: hasHandBuilt)
+        && (tickerStatus == .requiresApproval || tickerStatus == .notRegistered)
 }

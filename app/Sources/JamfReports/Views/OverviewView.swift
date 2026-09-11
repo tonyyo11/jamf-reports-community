@@ -253,8 +253,8 @@ struct OverviewView: View {
             return "\(names) data couldn't be collected in the last run — the tenant may "
                 + "not return it (e.g. no update plans). Retry, or check Run History."
         }
-        return "\(names) data is missing or more than a week old — "
-            + "Patch, Updates, and EA dashboards show stale values."
+        return "\(names) data is missing or more than \(WorkspaceStore.heavyTierStaleDays) "
+            + "days old — Patch, Updates, and EA dashboards show stale values."
     }
 
     /// 2.6 dead-man switch banner — one summary of overdue/failing scheduled

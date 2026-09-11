@@ -55,8 +55,11 @@ struct SchedulesView: View {
     var body: some View {
         PageScaffold(spacing: 14) {
             header
-            if workspace.tickerStatus == .requiresApproval
-                || workspace.tickerStatus == .notRegistered {
+            if tickerDisabledBannerShouldShow(
+                policy: AutomationPolicy.parse(automationPolicyRaw),
+                hasHandBuilt: !workspace.schedules.isEmpty,
+                tickerStatus: workspace.tickerStatus
+            ) {
                 InlineBanner(
                     icon: "exclamationmark.triangle", tone: .danger,
                     action: .init(label: "Open Login Items") {
@@ -108,7 +111,7 @@ struct SchedulesView: View {
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
-            Button("Delete LaunchAgent", role: .destructive) {
+            Button("Delete Schedule", role: .destructive) {
                 if let s = pendingDelete { deleteSchedule(s) }
             }
         }
@@ -162,7 +165,7 @@ struct SchedulesView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "macOS LaunchAgent · UserAgent",
+            kicker: "Background item · every 5 min",
             title: "Scheduled Runs",
             subtitle: "\(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s") · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profile\(profileCount == 1 ? "" : "s")"
         ) {
@@ -171,7 +174,7 @@ struct SchedulesView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                     }
-                    .help("Re-scan ~/Library/LaunchAgents for jamfreports schedules.")
+                    .help("Re-read schedules from disk.")
                     PNPButton(title: "New schedule", icon: "plus", style: .gold) {
                         newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                         showNewSchedule = true
@@ -179,7 +182,7 @@ struct SchedulesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? "Available in live mode only"
-                          : "Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
+                          : "Add a schedule the background item runs automatically.")
                 }
             )
         }

@@ -14,6 +14,8 @@ struct OnboardingView: View {
         "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
         "Mobile Apps: Read", "Software Updates: Read", "Computer Groups: Read",
     ]
+    private static let jamfCLIReleases =
+        URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")
 
     var body: some View {
         ScrollView {
@@ -134,7 +136,10 @@ struct OnboardingView: View {
         case .validate: "Validate the profile."
         case .addProducts: "Add more products."
         case .csvMapping: "Map your first CSV export."
-        case .firstReport: "Generate the first report."
+        case .firstReport:
+            flow.productPath == .school
+                ? "Generate the first report."
+                : "Collect and generate the first report."
         case .schoolConnect: "Connect Jamf School."
         }
     }
@@ -159,7 +164,10 @@ struct OnboardingView: View {
         case .csvMapping:
             "CSV imports are accepted from ~/Documents, ~/Downloads, or ~/Desktop. The app's scaffold tool reads the CSV headers and writes the workspace config."
         case .firstReport:
-            "The final step runs generate for the new profile and streams output here."
+            flow.productPath == .school
+                ? "The final step runs generate for the new profile and streams output here."
+                : "Collects a snapshot, then generates the first report. The per-device scans "
+                    + "run later on their schedule, or via Collect now on Overview."
         case .schoolConnect:
             "Registers a jamf-cli Jamf School profile with your Network ID and API key over stdin, then wires school_cli into this workspace's config so reports route to the Jamf School engine."
         }
@@ -209,12 +217,35 @@ struct OnboardingView: View {
                 }
             }
 
+            if showsContinueWithoutValidating {
+                HStack(spacing: 10) {
+                    Text("The profile is saved even though validation failed. Fix the URL, "
+                        + "client ID, or secret later from Data Sources, or continue now.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+                    PNPButton(title: "Continue without validating") {
+                        flow.nextStep()
+                    }
+                }
+            }
+
             logViewer(
                 title: flow.isValidatingConnection ? "jamf-cli validate running" : "jamf-cli validate output",
                 lines: flow.validationOutput,
                 exitCode: flow.validationExitCode
             )
         }
+    }
+
+    /// True only after a validation attempt has failed and the flow already
+    /// permits advancing — `canAdvance` for `.validate` requires the profile
+    /// to be registered and not mid-validation, which is already the policy
+    /// this button exposes (the docs promise it; only the UI lacked it).
+    private var showsContinueWithoutValidating: Bool {
+        guard let exit = flow.validationExitCode, exit != 0 else { return false }
+        return !flow.connectionValidated && flow.canAdvance
     }
 
     private var welcomeStep: some View {
@@ -232,9 +263,9 @@ struct OnboardingView: View {
                         .foregroundStyle(Theme.Colors.fg2)
                         .frame(maxWidth: 640, alignment: .leading)
                     HStack(spacing: 8) {
-                        Pill(text: "700 folders", tone: .teal, icon: "lock.fill")
-                        Pill(text: "stdin secret", tone: .gold, icon: "key.fill")
-                        Pill(text: "no shell install", tone: .muted, icon: "terminal")
+                        Pill(text: "Owner-only folders", tone: .teal, icon: "lock.fill")
+                        Pill(text: "Secret never stored by the app", tone: .gold, icon: "key.fill")
+                        Pill(text: "No Terminal needed", tone: .muted, icon: "terminal")
                     }
                 }
             }
@@ -272,6 +303,18 @@ struct OnboardingView: View {
                 }
                 .padding(14)
                 .background(Theme.Colors.codeBG)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No Homebrew? Download the binary from the jamf-cli GitHub releases "
+                    + "page, place it in /usr/local/bin, then click Re-check above.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let releases = Self.jamfCLIReleases {
+                    Link("Open GitHub releases", destination: releases)
+                        .font(.caption)
+                }
             }
         }
     }
@@ -370,7 +413,7 @@ struct OnboardingView: View {
                 if flow.profileRegistered {
                     Pill(text: "PROFILE REGISTERED", tone: .teal, icon: "checkmark")
                 } else if flow.isRegisteringProfile {
-                    Pill(text: "VERIFYING", tone: .gold, icon: "arrow.clockwise")
+                    Pill(text: "SAVING PROFILE", tone: .gold, icon: "arrow.clockwise")
                 }
             }
         }
@@ -463,7 +506,7 @@ struct OnboardingView: View {
                     if flow.profileRegistered {
                         Pill(text: "PROFILE REGISTERED", tone: .teal, icon: "checkmark")
                     } else if flow.isRegisteringProfile {
-                        Pill(text: "VERIFYING", tone: .gold, icon: "arrow.clockwise")
+                        Pill(text: "SAVING PROFILE", tone: .gold, icon: "arrow.clockwise")
                     }
                 }
             }
@@ -991,7 +1034,7 @@ struct OnboardingView: View {
         case .welcome: "Get started"
         case .installCLI: "Next"
         case .workspace: "Create workspace"
-        case .authenticate: flow.isRegisteringProfile ? "Verifying" : "Verify & continue"
+        case .authenticate: flow.isRegisteringProfile ? "Saving" : "Save & continue"
         case .validate:
             if flow.isValidatingConnection { "Validating" }
             else { flow.connectionValidated ? "Continue" : "Validate" }

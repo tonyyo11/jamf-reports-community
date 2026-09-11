@@ -1348,8 +1348,7 @@ enum TrendDemoSeries {
     }
 }
 
-/// Minimal flow layout for the metric pills row. Uses the `Layout` protocol
-/// introduced in macOS 14 (SwiftUI 4), which is the app's minimum deployment target.
+/// Minimal flow layout for the metric pills row. Uses the `Layout` protocol.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
