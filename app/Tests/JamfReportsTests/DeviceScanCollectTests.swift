@@ -79,6 +79,10 @@ final class DeviceScanCollectTests: XCTestCase {
         )) ?? ""
     }
 
+    private func historyCalls(for id: String) -> Int {
+        callsLog().components(separatedBy: "classic-computer-history get \(id) ").count - 1
+    }
+
     private func computers(
         _ rows: [(id: String, name: String, mgmt: String, ddm: Bool)]
     ) -> String {
@@ -118,13 +122,17 @@ final class DeviceScanCollectTests: XCTestCase {
         + #"{"key":"mdm.push-token","value":"SECRET","#
         + #""lastUpdateTime":"2026-09-04T07:00:00.000"}]}"#
 
-    private func runScan(force: Bool = true, skipExpensive: Bool = false) async throws -> [String] {
+    private func runScan(
+        force: Bool = true, skipExpensive: Bool = false,
+        probe: @escaping ReportEngine.AuthConfirmationProbe =
+            ReportEngine.defaultAuthConfirmationProbe
+    ) async throws -> [String] {
         let stub = try makeStub()
         let collector = LogTextCollector()
         try await ReportEngine.collect(
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.scan], skipExpensive: skipExpensive, force: force,
-            locateJamfCLI: { stub }, onLine: collector.append)
+            authConfirmationProbe: probe, locateJamfCLI: { stub }, onLine: collector.append)
         return collector.texts
     }
 
@@ -194,7 +202,7 @@ final class DeviceScanCollectTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertEqual(store.failures(report: "mdm-command-health")?.count, 1)
         XCTAssertTrue(
-            lines.contains { $0.contains("[warn] mdm-command-health") && $0.contains("2 of 4") },
+            lines.contains { $0.contains("[partial] mdm-command-health") && $0.contains("2 of 4") },
             "\(lines)"
         )
     }
@@ -241,6 +249,22 @@ final class DeviceScanCollectTests: XCTestCase {
         let lines = try await runScan(force: false)
         XCTAssertTrue(lines.contains { $0 == "[skip] device scan: not due" }, "\(lines)")
         XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+    }
+
+    func testCredentialFailureDoesNotHoldTheScanForAWeek() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let now = Date()
+        store.record(.landed, report: "ddm-device-status", at: now)
+        store.record(
+            .landed, report: "mdm-command-health", at: now.addingTimeInterval(-8 * 86_400))
+        store.record(
+            .failed(exitCode: CLIBridge.exitCodeUnauthorized), report: "mdm-command-health",
+            at: now.addingTimeInterval(-86_400))
+        let lines = try await runScan(force: false)
+        XCTAssertFalse(lines.contains { $0 == "[skip] device scan: not due" }, "\(lines)")
+        XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
     }
 
     func testForceIgnoresTheCadenceFloor() async throws {
@@ -317,7 +341,8 @@ final class DeviceScanCollectTests: XCTestCase {
         try writeComputers([("1", "A", "m1", true)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeUnauthorized))
         try answer("ddm-m1", ddmPayload)
-        let lines = try await runScan()
+        // The token check passes but the retry is rejected again: a real 401, so stop.
+        let lines = try await runScan(probe: { _, _ in true })
         XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
         XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
         XCTAssertTrue(
@@ -331,6 +356,82 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertEqual(
             store.lastFailureExitCode(for: "ddm-device-status"), CLIBridge.exitCodeUnauthorized
         )
+        XCTAssertEqual(historyCalls(for: "1"), 2, "a confirmed token gets exactly one retry")
+        XCTAssertTrue(lines.contains {
+            $0.hasPrefix("[partial] mdm-command-health: stopped after exit 3")
+        }, "a kind that was not written must mark the run partial: \(lines)")
+    }
+
+    func testExit3WithAFreshTokenRetriesOnceAndLands() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory, exit: Int(CLIBridge.exitCodeUnauthorized))
+        let answers: URL = self.answers
+        let counter = ProbeCounter()
+        // The fresh token is what fixes the device, so the probe clears its failure.
+        let lines = try await runScan(probe: { _, _ in
+            await counter.record()
+            try? FileManager.default.removeItem(at: answers.appendingPathComponent("hist-1.exit"))
+            return true
+        })
+
+        let health = try XCTUnwrap(
+            try latest("mdm-command-health", as: [MDMCommandHealthRecord].self)
+        )
+        XCTAssertEqual(health.map(\.deviceId), ["1"])
+        XCTAssertFalse(lines.contains { $0.contains("stopping both call types") }, "\(lines)")
+        XCTAssertTrue(lines.contains { $0.contains("got a fresh token") }, "\(lines)")
+        XCTAssertEqual(historyCalls(for: "1"), 2)
+        let probeCalls = await counter.calls
+        XCTAssertEqual(probeCalls, 1)
+    }
+
+    func testExit3WithoutAFreshTokenStopsWithoutRetrying() async throws {
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", "", exit: Int(CLIBridge.exitCodeUnauthorized))
+        try answer("ddm-m1", ddmPayload)
+        let counter = ProbeCounter()
+        let lines = try await runScan(probe: { _, _ in await counter.record(); return false })
+
+        XCTAssertNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
+        XCTAssertNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertTrue(lines.contains { $0.contains("stopping both call types") }, "\(lines)")
+        XCTAssertEqual(historyCalls(for: "1"), 1, "no retry when the token check fails")
+        XCTAssertFalse(callsLog().contains("status-items"), "the DDM call type stopped too")
+        let probeCalls = await counter.calls
+        XCTAssertEqual(probeCalls, 1)
+    }
+
+    func testSimultaneousExit3sShareOneTokenCheck() async throws {
+        let ids = ["1", "2", "3", "4"]
+        try writeComputers(ids.map { (id: $0, name: "M\($0)", mgmt: "m\($0)", ddm: false) })
+        for id in ids {
+            try answer("hist-\(id)", cleanHistory, exit: Int(CLIBridge.exitCodeUnauthorized))
+        }
+        let answers: URL = self.answers
+        let counter = ProbeCounter()
+        // A slow check stays in flight while the other three devices are rejected.
+        _ = try await runScan(probe: { _, _ in
+            await counter.record()
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            for id in ids {
+                try? FileManager.default.removeItem(
+                    at: answers.appendingPathComponent("hist-\(id).exit"))
+            }
+            return true
+        })
+
+        let probeCalls = await counter.calls
+        XCTAssertEqual(probeCalls, 1, "devices rejected together must share one token check")
+        let health = try XCTUnwrap(
+            try latest("mdm-command-health", as: [MDMCommandHealthRecord].self)
+        )
+        XCTAssertEqual(health.count, 4)
+    }
+
+    func testTokenCheckForcesAFreshExchange() async throws {
+        let stub = try makeStub()
+        _ = await ReportEngine.defaultAuthConfirmationProbe(profile, stub)
+        XCTAssertTrue(callsLog().contains("pro auth token --refresh"), callsLog())
     }
 
     func testZeroDDMDevicesLandsAnEmptySnapshot() async throws {
@@ -418,4 +519,10 @@ private final class LogTextCollector: @unchecked Sendable {
         { line in self.lock.lock(); defer { self.lock.unlock() }; self.lines.append(line.text) }
     }
     var texts: [String] { lock.lock(); defer { lock.unlock() }; return lines }
+}
+
+/// Counts confirmation-probe calls from inside a `@Sendable` probe closure.
+private actor ProbeCounter {
+    private(set) var calls = 0
+    func record() { calls += 1 }
 }

@@ -87,6 +87,7 @@ extension ReportEngine {
         profile: String, bin: URL, dataDir: URL, tiers: Set<CollectionTier>,
         skipExpensive: Bool, force: Bool, recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
+        authConfirmationProbe: @escaping AuthConfirmationProbe,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> Set<String> {
         guard tiers.contains(.scan), !skipExpensive else { return [] }
@@ -138,7 +139,7 @@ extension ReportEngine {
         ))
 
         let (results, stops) = await scanDevices(
-            targets, profile: profile, bin: bin, onLine: onLine
+            targets, profile: profile, bin: bin, probe: authConfirmationProbe, onLine: onLine
         )
         return reduceAndSave(
             results: results, stops: stops, dataDir: dataDir,
@@ -154,9 +155,12 @@ extension ReportEngine {
     /// `force: true` (manual Collect now) bypasses this via the `!force`
     /// guard above.
     private static func lastAttemptDate(for kind: String, stateStore: StateFileStore?) -> Date? {
-        [stateStore?.lastRun(report: kind), stateStore?.failures(report: kind)?.last]
-            .compactMap { $0 }
-            .max()
+        // A credentials failure is not an attempt: once they are fixed, scan on the next
+        // pass rather than a week later. Every other failure keeps holding the floor.
+        let authFailure =
+            stateStore?.lastFailureExitCode(for: kind) == CLIBridge.exitCodeUnauthorized
+        let failure = authFailure ? nil : stateStore?.failures(report: kind)?.last
+        return [stateStore?.lastRun(report: kind), failure].compactMap { $0 }.max()
     }
 
     // MARK: - Fan-out
@@ -167,10 +171,11 @@ extension ReportEngine {
     /// both — a credential that died mid-scan will not come back for device 400.
     private static func scanDevices(
         _ targets: [DeviceScanTarget], profile: String, bin: URL,
+        probe: @escaping AuthConfirmationProbe,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> (results: [DeviceResult], stops: [CallType: Int32]) {
         let bridge = CLIBridge()
-        let gate = StopGate()
+        let gate = StopGate(probe: probe, profile: profile, bin: bin)
         var results: [DeviceResult] = []
         results.reserveCapacity(targets.count)
         var done = 0
@@ -182,7 +187,9 @@ extension ReportEngine {
                     inFlight -= 1
                     results.append(r)
                     done += 1
-                    if done % progressEvery == 0 {
+                    // After a stop the remaining devices return without calling
+                    // jamf-cli, so a running count would read as scanning continuing.
+                    if done % progressEvery == 0, await gate.stillScanning() {
                         onLine(.init(
                             timestamp: Date(), level: .info,
                             text: "[info] device scan: \(done) of \(targets.count)"
@@ -210,31 +217,19 @@ extension ReportEngine {
         var status: CallOutcome = .notMade
 
         if await gate.allows(.history) {
-            if let h = await run(bridge, bin, [
+            history = await call(.history, [
                 "-p", profile, "pro", "classic-computer-history", "get", t.id,
                 "--subset", "commands", "--output", "json",
-            ]) {
-                history = .ran(exit: h.0, data: h.1)
-                await gate.observe(h.0, for: .history, onLine: onLine)
-            } else {
-                history = .launchFailed
-                await gate.noteLaunchFailure(.history, onLine: onLine)
-            }
+            ], bridge: bridge, bin: bin, gate: gate, onLine: onLine)
         }
 
         if t.ddmEnabled {
             if let mgmt = t.managementId, CLIBridge.isSafeDeviceIdentifier(mgmt) {
                 if await gate.allows(.statusItems) {
-                    if let s = await run(bridge, bin, [
+                    status = await call(.statusItems, [
                         "-p", profile, "pro", "ddm-status", "status-items", mgmt,
                         "--output", "json",
-                    ]) {
-                        status = .ran(exit: s.0, data: s.1)
-                        await gate.observe(s.0, for: .statusItems, onLine: onLine)
-                    } else {
-                        status = .launchFailed
-                        await gate.noteLaunchFailure(.statusItems, onLine: onLine)
-                    }
+                    ], bridge: bridge, bin: bin, gate: gate, onLine: onLine)
                 }
             } else if t.managementId != nil {
                 // Has a managementId, but it fails the safety check — never
@@ -251,6 +246,28 @@ extension ReportEngine {
         return DeviceResult(target: t, history: history, status: status)
     }
 
+    /// Runs one device call. On exit 3 the gate forces a fresh token; if that works, the
+    /// call is retried once in a new jamf-cli process, which reads the new token.
+    private static func call(
+        _ type: CallType, _ args: [String], bridge: CLIBridge, bin: URL, gate: StopGate,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) async -> CallOutcome {
+        guard var result = await run(bridge, bin, args) else {
+            await gate.noteLaunchFailure(type, onLine: onLine)
+            return .launchFailed
+        }
+        if result.0 == CLIBridge.exitCodeUnauthorized,
+           await gate.credentialsConfirmed(onLine: onLine) {
+            guard let retry = await run(bridge, bin, args) else {
+                await gate.noteLaunchFailure(type, onLine: onLine)
+                return .launchFailed
+            }
+            result = retry
+        }
+        await gate.observe(result.0, for: type, onLine: onLine)
+        return .ran(exit: result.0, data: result.1)
+    }
+
     private static func run(
         _ bridge: CLIBridge, _ bin: URL, _ args: [String]
     ) async -> (Int32, Data)? {
@@ -264,12 +281,53 @@ extension ReportEngine {
     /// triggered the stop, plus a one-shot log guard for launch failures. An
     /// actor so the four in-flight tasks agree on the decision without a lock.
     private actor StopGate {
+        private let probe: AuthConfirmationProbe
+        private let profile: String
+        private let bin: URL
         private var stopped: [CallType: Int32] = [:]
         private var launchFailureLogged: Set<CallType> = []
+        private var tokenCheck: Task<Bool, Never>?
+        private var tokenCheckLogged = false
+
+        init(probe: @escaping AuthConfirmationProbe, profile: String, bin: URL) {
+            self.probe = probe
+            self.profile = profile
+            self.bin = bin
+        }
 
         func allows(_ type: CallType) -> Bool { stopped[type] == nil }
 
+        /// False once both call types are stopped — no device will call jamf-cli again.
+        func stillScanning() -> Bool { stopped[.history] == nil || stopped[.statusItems] == nil }
+
         func stops() -> [CallType: Int32] { stopped }
+
+        /// One forced token exchange shared by every device that hit exit 3 at the same
+        /// moment; true means jamf-cli could still get a token.
+        // ponytail: no per-run cap. A retry that exits 3 again stops the scan, so each
+        // burst costs at most one extra token plus one extra call per device.
+        func credentialsConfirmed(onLine: @Sendable (CLIBridge.LogLine) -> Void) async -> Bool {
+            let check: Task<Bool, Never>
+            if let tokenCheck {
+                check = tokenCheck
+            } else {
+                check = Task { [probe, profile, bin] in await probe(profile, bin) }
+                tokenCheck = check
+            }
+            let valid = await check.value
+            if tokenCheck == check { tokenCheck = nil }
+            if !tokenCheckLogged {
+                tokenCheckLogged = true
+                onLine(.init(
+                    timestamp: Date(), level: .warn,
+                    text: valid
+                        ? "[warn] device scan: a device call was rejected (exit 3) but jamf-cli "
+                            + "got a fresh token — retrying"
+                        : "[warn] device scan: exit 3, and jamf-cli could not get a fresh token"
+                ))
+            }
+            return valid
+        }
 
         func observe(
             _ exit: Int32, for type: CallType,
@@ -380,7 +438,7 @@ extension ReportEngine {
         if DeviceScanBuilders.exceedsFailureBudget(failed: tally.failed, total: tally.attempted) {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[warn] \(kind): \(tally.failed) of \(tally.attempted) "
+                text: "[partial] \(kind): \(tally.failed) of \(tally.attempted) "
                     + "devices failed — not written"
             ))
             stateStore?.record(.failed(exitCode: nil), report: kind, at: collectStart)
@@ -406,7 +464,7 @@ extension ReportEngine {
         if let stopExit = stops[.history] {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[warn] \(mdmCommandHealthKind): stopped after exit "
+                text: "[partial] \(mdmCommandHealthKind): stopped after exit "
                     + "\(stopExit) — not written"
             ))
             stateStore?.record(
@@ -435,7 +493,7 @@ extension ReportEngine {
         if let stopExit = stops[.statusItems] {
             onLine(.init(
                 timestamp: Date(), level: .warn,
-                text: "[warn] \(ddmDeviceStatusKind): stopped after exit "
+                text: "[partial] \(ddmDeviceStatusKind): stopped after exit "
                     + "\(stopExit) — not written"
             ))
             stateStore?.record(
