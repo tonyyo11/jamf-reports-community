@@ -731,8 +731,11 @@ private extension DeviceDetail {
             let section = firstString(row, ["section", "category", "group", "type"]) ?? defaultSection
             let label = firstString(row, ["resource", "name", "label", "field", "key", "title"])
                 ?? fallbackLabel(row)
+            // A row that carries a `value` key, even an empty one, has said what its
+            // value is; hunting for a fallback echoed the `resource` label back as
+            // the value ("Department: Department", 2.8.0 field pass).
             let value = firstString(row, ["value", "status", "result", "state", "last_action", "date"])
-                ?? fallbackValue(row)
+                ?? (row["value"] == nil ? fallbackValue(row) : nil)
             let note = firstString(row, ["detail", "details", "message", "updated", "timestamp"]) ?? ""
             let labelText = label ?? ""
             let valueText = value ?? ""

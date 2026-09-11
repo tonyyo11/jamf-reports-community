@@ -34,6 +34,23 @@ struct DeviceDetailHistoryDecodeTests {
         #expect(erase.value == "PENDING")
     }
 
+    /// 2.8.0 field pass: jamf-cli emits `Department`/`Building` rows with an
+    /// empty `value`; the fallback scan then handed the `resource` label back
+    /// as the value, so the panel read "Department: Department".
+    @Test("An explicit but empty value reads N/A, never the row's own label")
+    func emptyValueDoesNotEchoTheLabel() throws {
+        let json = """
+        [
+          {"section": "User & Location", "resource": "Department", "value": ""},
+          {"section": "User & Location", "resource": "Username", "value": "jdoe"}
+        ]
+        """
+        let detail = try DeviceDetail.decode(from: Data(json.utf8), lookupID: "42")
+        let section = try #require(detail.sections.first { $0.title == "User & Location" })
+        #expect(section.items.first { $0.label == "Department" }?.value == "N/A")
+        #expect(section.items.first { $0.label == "Username" }?.value == "jdoe")
+    }
+
     @Test("Policy history rows surface the combined status + completion date")
     func policyHistoryRowDecodes() throws {
         let json = """

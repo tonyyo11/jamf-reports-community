@@ -118,6 +118,9 @@ OS Updates now reads the weekly update-device-failures scan, so the failed-plan
 and error-device tables fill in and the freshness chip stops saying "never"
 after a scan has landed.
 
+The device detail panel no longer shows a field's own name as its value when
+Jamf has nothing for it; those rows now read N/A.
+
 Patch failures no longer disappear on jamf-cli 1.29.0. That release changed the
 layout of the patch failure report and the app read the new layout as "no
 failures". It now reads both layouts, and a section jamf-cli could not fetch is
