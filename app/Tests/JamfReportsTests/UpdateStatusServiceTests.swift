@@ -143,6 +143,44 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertEqual(failedPlan.error, "Insufficient disk space")
     }
 
+    /// 2.8.0: the weekly `--scan-failures` kind lives in its own directory. The
+    /// summary supplies totals; the scan supplies the failure tables and its
+    /// own freshness date.
+    func testLoadMergesTheScanDirectoryIntoTheSummary() throws {
+        let summary = """
+        [{"total": 150, "status_summary": [{"status": "COMPLETED", "count": 150}],
+          "plan_total": 8, "plan_state_summary": [{"state": "PlanCompleted", "count": 8}]}]
+        """
+        let scan = """
+        [{"total": 100, "status_summary": [{"status": "ERROR", "count": 1}],
+          "error_devices": [{"name": "MacBook-001", "serial": "ABC123",
+            "device_type": "Computer", "os_version": "15.2.1", "username": "jdoe",
+            "status": "ERROR", "product_key": "macOS Sequoia 15.3",
+            "updated": "2026-05-10T10:30:00Z"}],
+          "plan_total": 5, "plan_state_summary": [{"state": "PlanFailed", "count": 1}],
+          "failed_plans": []}]
+        """
+        let tmp = FileManager.default.temporaryDirectory
+        let statusURL = tmp.appendingPathComponent("us-\(UUID().uuidString).json")
+        let scanURL = tmp.appendingPathComponent("udf-\(UUID().uuidString).json")
+        try Data(summary.utf8).write(to: statusURL)
+        try Data(scan.utf8).write(to: scanURL)
+        defer {
+            try? FileManager.default.removeItem(at: statusURL)
+            try? FileManager.default.removeItem(at: scanURL)
+        }
+
+        let merged = UpdateStatusService.load(statusURL: statusURL, failuresURL: scanURL)
+        XCTAssertEqual(merged.total, 150, "totals come from the summary")
+        XCTAssertEqual(merged.errorDevices.count, 1, "failure tables come from the scan")
+        XCTAssertTrue(merged.scanFailuresAvailable)
+        XCTAssertNotNil(merged.sourceDates["update-device-failures"])
+
+        let summaryOnly = UpdateStatusService.load(statusURL: statusURL, failuresURL: nil)
+        XCTAssertFalse(summaryOnly.scanFailuresAvailable)
+        XCTAssertNil(summaryOnly.sourceDates["update-device-failures"])
+    }
+
     /// Tests color mapping for plan states.
     func testUpdateStatusServiceSliceColorMapping() throws {
         let json = """

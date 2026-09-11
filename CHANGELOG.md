@@ -114,6 +114,10 @@ Patch Compliance shows device failures again. jamf-cli writes the attempt number
 as text and the app accepted only a number, so the whole failure list decoded as
 empty — "Devices with Failures: 0" beside 85 failing titles.
 
+OS Updates now reads the weekly update-device-failures scan, so the failed-plan
+and error-device tables fill in and the freshness chip stops saying "never"
+after a scan has landed.
+
 Patch failures no longer disappear on jamf-cli 1.29.0. That release changed the
 layout of the patch failure report and the app read the new layout as "no
 failures". It now reads both layouts, and a section jamf-cli could not fetch is
