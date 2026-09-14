@@ -136,12 +136,30 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertNotEqual(sentinel, CLIBridge.exitCodeUnauthorized)
 
         let launchFailed = [ReportEngine.CollectOutcome(kind: "security", exitCode: sentinel)]
-        XCTAssertTrue(ReportEngine.isCollectDead(launchFailed),
+        XCTAssertTrue(ReportEngine.isCollectDead(launchFailed, savedKinds: []),
                       "an all-launch-failure run is a total outage")
         XCTAssertFalse(ReportEngine.isCollectAuthDead(launchFailed),
                        "a launch failure says nothing about credentials")
-        XCTAssertFalse(ReportEngine.isCollectDead(launchFailed, skippedNotDueCount: 1),
-                       "the not-due veto must still apply")
+        XCTAssertFalse(
+            ReportEngine.isCollectDead(launchFailed, savedKinds: [], skippedNotDueCount: 1),
+            "the not-due veto must still apply"
+        )
+    }
+
+    /// Every command exited 0 and printed nothing, so nothing was saved: the run fetched no
+    /// data and must not read as healthy.
+    func testExitZeroWithNothingSavedIsADeadCollect() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let stub = try makeStub(exitCode: 0, stdout: "")
+
+        do {
+            try await ReportEngine.collect(
+                profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
+                force: true, locateJamfCLI: { stub }, onLine: { _ in })
+            XCTFail("a run that saved nothing must not succeed")
+        } catch ReportEngineError.collectDead(_, let failedCount, _) {
+            XCTAssertEqual(failedCount, 2)
+        }
     }
 
     /// A 401 alongside a launch failure is still auth-dead: the sentinel must

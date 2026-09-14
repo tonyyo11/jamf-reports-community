@@ -1525,15 +1525,14 @@ struct ReportEngine: Sendable {
     ///   excluded from the "failure" evidence; an all-exit-2 run is a broken invocation,
     ///   not an outage, and only warns per-kind.
     ///
-    /// Returns false for an empty outcome set, for any outcome set that includes at least
-    /// one `exit 0` or `exit 7` (partial failure) success, for any run where at least one
-    /// kind was skipped as not-due, and for a failure set that is exit-2-only.
-    static func isCollectDead(_ outcomes: [CollectOutcome], skippedNotDueCount: Int = 0) -> Bool {
-        guard !outcomes.isEmpty else { return false }
-        let anySuccess = outcomes.contains {
-            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
-        }
-        guard !anySuccess else { return false }
+    /// Returns false for an empty outcome set, when any kind landed a snapshot this run, when
+    /// at least one kind was skipped as not due, and for a failure set that is exit-2-only.
+    /// An exit code is not evidence of success: `pro report update-status` exits 0 after both
+    /// its fetches fail (connection-access spec §13.2), so success means data reached disk.
+    static func isCollectDead(
+        _ outcomes: [CollectOutcome], savedKinds: Set<String>, skippedNotDueCount: Int = 0
+    ) -> Bool {
+        guard !outcomes.isEmpty, savedKinds.isEmpty else { return false }
         guard skippedNotDueCount == 0 else { return false }
         return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
     }
@@ -1957,7 +1956,9 @@ struct ReportEngine: Sendable {
         // entirely stale cache. Abort BEFORE SOFA/summary for the same reason as
         // auth-dead: no degraded snapshot should be promoted as fresh data. See
         // isCollectDead's doc comment for the field defect this veto set fixes.
-        if Self.isCollectDead(outcomes, skippedNotDueCount: skippedNotDueCount) {
+        if Self.isCollectDead(
+            outcomes, savedKinds: savedKinds, skippedNotDueCount: skippedNotDueCount
+        ) {
             let error = ReportEngineError.collectDead(
                 profile: profile, failedCount: outcomes.count, cause: Self.deadRunCause(outcomes)
             )
@@ -2928,6 +2929,7 @@ struct ReportEngine: Sendable {
 
         let bridge = CLIBridge()
         var schoolOutcomes: [CollectOutcome] = []
+        var schoolSaved: Set<String> = []
         for (args, kind) in commands {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
@@ -2956,6 +2958,7 @@ struct ReportEngine: Sendable {
                     continue
                 }
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                schoolSaved.insert(kind)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
             } else {
@@ -2969,7 +2972,7 @@ struct ReportEngine: Sendable {
         // Checked after the full loop (same as Jamf Pro collect) so partial failures
         // still warm the cache. Launch-failures (nil schoolResult) are excluded from
         // schoolOutcomes intentionally — they carry no exit code signal.
-        if Self.isCollectDead(schoolOutcomes) {
+        if Self.isCollectDead(schoolOutcomes, savedKinds: schoolSaved) {
             let failedCount = schoolOutcomes.count
             let msg = "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
                 "'\(profile)' — server unreachable or credentials broken. No snapshot written."

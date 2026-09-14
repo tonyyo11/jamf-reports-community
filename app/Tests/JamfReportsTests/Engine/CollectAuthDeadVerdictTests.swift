@@ -256,7 +256,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("patch-status", 4),
             outcome("policy-status", 5),
         ]
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
     }
 
     /// All non-zero exits, some are exit 6 (rate-limited) → still collect-dead.
@@ -265,7 +265,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("overview", 6),
             outcome("security", 6),
         ]
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
     }
 
     /// All calls fail with 401 included — auth-dead wins at the call site; isCollectDead
@@ -280,7 +280,7 @@ final class CollectDeadVerdictTests: XCTestCase {
         ]
         // Auth-dead wins at call site — but isCollectDead is also true.
         XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
     }
 
     /// One success + failures → partial failure, cache is warmed; neither verdict fires.
@@ -290,13 +290,15 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("security", 1),
             outcome("patch-status", 4),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: ["overview"]))
     }
 
-    /// exit 7 (partial failure, v1.19.0+) counts as a success for the outage
-    /// verdict — partial data was returned and saved, so the run is not dead.
+    /// exit 7 (partial failure, v1.19.0+) is not collect-dead: a saved partial
+    /// result is not an outage.
     func testExit7IsNotCollectDead() {
-        XCTAssertFalse(ReportEngine.isCollectDead([outcome("security", 7)]))
+        XCTAssertFalse(ReportEngine.isCollectDead(
+            [outcome("security", 7)], savedKinds: ["security"]
+        ))
     }
 
     /// All calls succeed → not collect-dead.
@@ -306,13 +308,15 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("security", 0),
             outcome("computers", 0),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectDead(
+            outcomes, savedKinds: ["overview", "security", "computers"]
+        ))
     }
 
     /// An empty outcome set (no live calls attempted, e.g. tier skipped everything)
     /// is never collect-dead — there is no evidence of a failure.
     func testEmpty_isNotCollectDead() {
-        XCTAssertFalse(ReportEngine.isCollectDead([]))
+        XCTAssertFalse(ReportEngine.isCollectDead([], savedKinds: []))
     }
 
     /// A single exit-0 among otherwise-all-failures → cache is warmed; not collect-dead.
@@ -324,7 +328,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("policy-status", 1),
             outcome("inventory-summary", 1),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: ["overview"]))
     }
 
     // MARK: - skippedNotDueCount veto (field defect, jamf-cli 1.21.1, 2026-07)
@@ -343,7 +347,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("ddm-status", 1),
             outcome("duplicate-serials", 2),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 4))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: [], skippedNotDueCount: 4))
     }
 
     /// All failures are exit 2 (usage — bad flags / unrecognized subcommand), no
@@ -354,7 +358,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("duplicate-serials", 2),
             outcome("some-new-command", 2),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: [], skippedNotDueCount: 0))
     }
 
     /// Zero successes, zero skips, and at least one non-exit-2 failure → still dead.
@@ -365,14 +369,22 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("duplicate-serials", 2),
             outcome("compliance-devices", 1),
         ]
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: [], skippedNotDueCount: 0))
     }
 
-    /// exit 7 (partial failure) still counts as success evidence even when the
-    /// skippedNotDueCount veto isn't in play — a saved partial result is not an outage.
+    /// A saved partial result still counts as success even when the
+    /// skippedNotDueCount veto isn't in play — it is not an outage.
     func testExit7CountsAsSuccessRegardlessOfSkips_isNotCollectDead() {
         let outcomes = [outcome("ea-results", 7), outcome("compliance-devices", 1)]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+        XCTAssertFalse(ReportEngine.isCollectDead(
+            outcomes, savedKinds: ["ea-results"], skippedNotDueCount: 0
+        ))
+    }
+
+    /// Exit 0 is not evidence: some jamf-cli reports exit 0 after every fetch failed.
+    func testExitZeroThatLandedNothingIsCollectDead() {
+        let outcomes = [outcome("update-status", 0), outcome("security", 1)]
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
     }
 
     // MARK: - Dead-run cause (spec §9.6)
