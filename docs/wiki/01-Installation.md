@@ -63,42 +63,24 @@ instances (estimated for the second half of 2027), and the create path depends o
 
 If you use the Jamf Platform API, jamf-cli also offers `jamf-cli platform setup`, which
 creates a Platform Gateway profile that enables both the Pro and Platform API command
-sets. When you run multiple Jamf Pro instances, give each its own profile and select it
-with `jamf-cli -p <profile>`.
+sets. Create its integration in Jamf Account at the platform environment level, with read
+permissions only, before you run it. When you run multiple Jamf Pro instances, give each
+its own profile and select it with `jamf-cli -p <profile>`.
 
-## Jamf Pro API permissions
+## Permissions
 
-If you create the API role yourself rather than letting `jamf-cli pro setup` do it, the
-client needs only read access. A dedicated role with these privileges is enough:
+The app only reads from Jamf. Give its credential read access and nothing more — never a
+full-administrator API client, and never a Jamf Account integration with write
+permissions.
 
-| Resource | Privilege |
-|---|---|
-| Computers | Read |
-| Mobile Devices | Read |
-| Mobile Device Configuration Profiles | Read |
-| Computer Extension Attributes | Read |
-| Policies | Read |
-| Patch Management | Read |
-| Mobile Device Applications | Read |
-| Managed Software Updates | Read |
-| Computer Groups | Read |
+[Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)
+lists what each report area needs: Jamf Pro API role privileges for a direct connection,
+Jamf Account permissions for a Jamf Platform API integration, and where Jamf Protect and
+Jamf School credentials come from. It also walks through creating a Platform API
+integration at the right scope level.
 
-This is the minimum read-only set the project's reports need. jamf-cli itself does not
-publish a canonical required-privileges list — Jamf's
-[Privileges and Deprecations](https://developer.jamf.com/jamf-pro/docs/privileges-and-deprecations)
-reference is the authoritative privilege catalog. Do not use a full-administrator API
-client for scheduled reporting.
-
-On newer jamf-cli releases, a `403 Forbidden` response names the specific missing
-privilege in its error text rather than only the generic exit code — check the app's
-Run History output for that detail before guessing from the table above.
-
-**Exception: the `patch-managed` command.** The `patch-managed` CLI command issues PATCH
-writes to bulk-update managed/unmanaged status on computers. It requires additional
-privilege: **Computers → Update**. This is the only write-path command in the project; it
-is optional and disabled by default. If you use `patch-managed`, create a separate API
-role granted to read the initial inventory plus write to Computers, and use that credential
-only for that command.
+A `403 Forbidden` exits 5, and jamf-cli names the missing privilege or permission in the
+vocabulary of the connection that refused it. The same page explains how to read it.
 
 ## Verify
 

@@ -38,9 +38,18 @@ routes start the same onboarding flow.
    client ID, client secret) or a Platform API scope (environment ID, or tenant ID for
    a legacy integration; organization scope needs no ID). The secret is passed to
    `jamf-cli` over a controlling TTY and cleared immediately; the app never persists it.
-   `jamf-cli` stores the resulting token in the macOS keychain.
+   `jamf-cli` stores the resulting token in the macOS keychain. For a Platform API
+   connection, create the integration in Jamf Account first — at the platform environment
+   level, scoped to one environment, with read permissions only.
+   [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)
+   has the steps. The form's first instruction says "account.jamf.com → API Clients"; in
+   Jamf Account the page is **Integrations**.
 5. **Validate** — the app runs `jamf-cli config validate` against the new profile and
-   reports success or a redacted error.
+   reports success or a redacted error. For a Platform API profile this never sends the
+   environment or tenant ID, so a mistyped ID passes here and then fails every collect.
+   Run the
+   [scope ID check](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access#check-the-scope-id)
+   once after setup.
 6. **CSV mapping** — optionally pick a Jamf Pro CSV export. The app scaffolds a
    `config.yaml` with best-guess column mappings from the export's headers. You can also
    **Skip for now** — the app writes a minimal config and works from `jamf-cli` data

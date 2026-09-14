@@ -57,8 +57,10 @@ are a manual export-CSV-then-Generate cycle.
 `jamf-cli pro setup` (used in the next step) can create the API client for you, or you
 can create one yourself in Jamf Pro first (on jamf-cli 1.29 and later, supplying an
 existing client is the default). Either way, use a **read-only** role — this
-project only reads data. See [Installation → Jamf Pro API permissions](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation)
-for the exact privilege table.
+project only reads data. If you connect through the Jamf Platform API instead, create an
+integration in Jamf Account at the platform environment level, with read permissions
+only. [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)
+lists the exact privileges and permissions for each report area.
 
 ## 4. Launch the app and start onboarding
 

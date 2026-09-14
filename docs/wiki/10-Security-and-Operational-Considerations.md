@@ -78,6 +78,16 @@ shared workspace gets none of the stand-down or claim behavior above — School
 collects on its own schedule with no cross-Mac awareness. Jamf Protect data is
 collected inside the same run as Jamf Pro, so it is covered in practice.
 
+**Every Mac must reach Jamf the same way under the same profile name.** The workspace's
+`config.yaml` names the jamf-cli profile collects use (`jamf_cli.profile`), but each Mac
+looks that name up in its own jamf-cli configuration and keychain, which never sync. Give
+every Mac a jamf-cli profile of that name that reaches the same Jamf Pro instance the same
+way: all direct, or all through the Jamf Platform API with the same environment ID. If one
+Mac's profile points elsewhere, its collects either write another instance's data into the
+shared history or fail where the others succeed, and each screen shows whichever Mac
+collected last. The app does not detect the mismatch, so compare `jamf-cli config list` on
+each Mac when you add it.
+
 ### What a shared workspace still costs you
 
 **Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
@@ -189,7 +199,7 @@ themselves do not need version control — only the input config.
 logs in `~/Jamf-Reports/<profile>/automation/logs/` and cleans up older ones automatically.
 
 **In regulated environments**, collect and ship logs to your SIEM (Splunk, Elastic, etc.)
-for a durable audit trail, especially for the write-path `patch-managed` command:
+for a durable audit trail:
 
 ```bash
 # Example: tail-ship logs to syslog
@@ -197,8 +207,8 @@ tail -f ~/Jamf-Reports/<profile>/automation/logs/*.log | nc -q1 siem.example.com
 ```
 
 Logs include timestamps, profile name, command, exit status, and error details — but NOT
-credential/secret material (always redacted). The `patch-managed` command logs device IDs
-affected and the managed-state change requested.
+credential/secret material (always redacted). JamfReports makes no changes in Jamf, so there
+are no write operations to audit.
 
 ## Diagnostic Bundle Redaction Scope
 
@@ -242,21 +252,29 @@ file, not access-controlled.
 
 ## Multi-Tenant and Team Access
 
-**Each profile is an isolated workspace; one person can manage multiple profiles.**
+**Credentials belong to one person or one Mac; data can be pooled.** Keep the two apart.
 
-For team access to the same Jamf Pro instance without sharing credentials:
+- **Never share a credential.** Give each administrator, or each reporting Mac, its own Jamf
+  Pro API client or Jamf Account integration, with read access only (see
+  [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)).
+  Separate credentials keep Jamf's own audit trail attributable and let you revoke one
+  without breaking the rest. The jamf-cli configuration (`~/.config/jamf-cli/`) and its
+  keychain items stay on each Mac; never sync or copy them.
+- **Share data deliberately.** Keep one workspace per person or role (for example
+  `prod-ops` and `prod-audit`), or pool several Macs into one history with a
+  [shared workspace](#shared-workspace-several-macs-one-history). Never copy a workspace
+  folder between machines. A shared workspace also needs every Mac to use the same profile
+  name and connection, described in that section.
+- **Schedules are per Mac.** Recreate them on each Mac with `jamf-reports schedules add` or
+  the Automation screen rather than sharing `schedules.json`; it is per-machine state, not
+  something to check into version control.
 
-1. Create one `config.yaml` and workspace per person or role (e.g., `prod-ops`, `prod-audit`,
-   `prod-dev`).
-2. Authenticate each profile independently via the app's Onboarding flow — each gets its own
-   `jamf-cli` credential.
-3. Recreate the same schedules on each Mac — with `jamf-reports schedules add` or the
-   Automation screen — rather than sharing `schedules.json` itself; it is per-machine
-   state, not something to check into version control.
-
-Do not share the workspace directory (`~/Jamf-Reports/<profile>/`) or the `jamf-cli` keychain
-credential across team members — use separate profiles and credentials for audit trail
-isolation.
+**Scope Platform API integrations narrowly.** One Jamf Account can list several
+environments and tenants — test, production, beta, and instances hosted in different
+places — and Jamf Account lets one integration apply to more than one of them. Create each
+JamfReports integration for the single environment its profile reports on, with read
+permissions only. An integration spanning every environment, or carrying write permissions,
+turns a secret leaked from one Mac into access to all of them.
 
 ## Webhook Egress
 
@@ -323,3 +341,23 @@ Posture, the weighted security score, and every FileVault, SIP, firewall and Gat
 figure derived from it show their last collected values. jamf-cli 1.28.0 resolves the
 report as Jamf Pro again, so upgrading restores all of it. If you cannot move past 1.27.0,
 pin jamf-cli to 1.23.x instead; see the CHANGELOG's Known Issues entry.
+
+**Compliance Benchmarks never fill.** jamf-cli's `pro report compliance-rules` and
+`compliance-devices` need a benchmark title, and the app runs them without one. Both fail on
+every collect on a Jamf Platform API profile (exit 2), the health strip lists them as
+failing, and **Collect now** cannot fix it. A fix that collects each benchmark by name is
+planned.
+
+**The app's Platform API guidance is out of date in three places.** The onboarding form says
+to create credentials under "account.jamf.com → API Clients"; Jamf Account calls the page
+**Integrations**. The explanation for a permission error (exit 5) always says to change the
+Jamf Pro API role, which is the wrong place on a Platform API profile — grant the permission
+on the integration in Jamf Account. And neither saving nor validating a profile checks the
+environment or tenant ID. [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access) covers all three until the
+app is updated.
+
+**HTML reports assume Jamf Pro data.** Every HTML section renders whether or not its source
+has data, so a report whose sources are unreachable is mostly empty placeholders rather than
+leaving those sections out. A Jamf School profile's HTML report uses the same Jamf Pro layout
+and comes out empty; only its Excel workbook is School-specific. Reports that choose their
+sections from what the profile can reach are planned.

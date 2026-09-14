@@ -208,6 +208,13 @@ run on the device during `recon`, by a value the admin sets, or by an LDAP
 lookup. JamfReports' Custom EA dashboard sheets are driven entirely by
 `config.yaml` mappings. *see also: ea-results, recon.*
 
+### Integration (Jamf Account)
+The credential record behind a Platform API profile, created under **Integrations** in Jamf
+Account. It has one scope level, the environments or tenants it applies to, permissions
+picked per capability (for example *Inventory > Devices: Read*), and a client ID and secret.
+The secret is shown once, and an integration is valid for six months. Distinct from a Jamf
+Pro API client, whose access comes from an API role. *see also: Platform API, Scope level.*
+
 ### Patch Policy
 A Jamf Pro automation that updates a software title across a scope on a
 schedule. Distinct from a *patch title* (the software) and a *patch
@@ -219,13 +226,24 @@ Edge"). Each title has versions; the latest version is what compliance
 percentages measure against.
 
 ### Platform API
-Jamf's newer REST/JSON API spanning Pro, Protect, and other surfaces. Different
-from the Pro API; uses Platform Gateway authentication (`auth-method = platform`
-in jamf-cli profiles) instead of per-tenant OAuth2, at
-`https://{region}.api.jamfcloud.com`. Four JamfReports data sources are served
-only by this API — compliance devices, compliance rules, DDM status and
-blueprint status — and are skipped on a profile that authenticates any other
-way. *see also: Pro API, Classic API, Refused by policy.*
+Jamf's API gateway at `https://{region}.api.jamfcloud.com` (US, EU or APAC). It
+authenticates with OAuth 2.0 client credentials from an integration created in Jamf
+Account (`auth-method = platform` in jamf-cli profiles). It serves Platform-only APIs
+and, when the integration's environment includes a Jamf Pro tenant, that tenant's Pro
+and Classic APIs too — so one Platform API profile can feed most reports without a
+direct Jamf Pro connection, given the right permissions. Four JamfReports data sources
+are served only by this API — compliance devices, compliance rules, DDM status and
+blueprint status — and are skipped on a profile that authenticates any other way.
+*see also: Integration (Jamf Account), Platform environment, Scope level, Pro API,
+Classic API, Refused by policy.*
+
+### Platform environment
+A group of tenants an organization has across Jamf products, defined in Jamf Account.
+The Platform-only APIs JamfReports reads — compliance benchmarks, blueprints and
+declaration reporting — declare this level, so it is the level to create a JamfReports
+integration at. The ID travels in the `X-Environment-Id` header; copy it by clicking the
+environment pill in the integration's details panel in Jamf Account. *see also: Scope
+level.*
 
 ### Policy
 A Jamf Pro automated workflow that runs on devices (install a package, run
@@ -242,6 +260,15 @@ Platform API.*
 The `jamf recon` command devices run (manually or on a schedule) to push
 their current inventory to Jamf Pro. EA scripts execute during recon. A
 device that hasn't reconned in N days is *stale*. *see also: stale device.*
+
+### Scope level (Platform API)
+The level a Jamf Account integration is created at, which its credential is locked to:
+**organization** (Jamf Account administration only, nothing JamfReports reads), **platform
+environment** (recommended), or **tenant** (a single tenant, the legacy level). An ID of the
+wrong kind fails every request: an environment ID the gateway does not know answers 404
+`ENVIRONMENT_NOT_FOUND`, and a tenant ID it will not accept answers 403
+`OWNERSHIP_FORBIDDEN`. Unrelated to a policy's *scope*. *see also: Platform environment,
+Scope vs Target.*
 
 ### Scope vs Target
 Two related but distinct Jamf concepts. **Scope** (Pro): who a policy or

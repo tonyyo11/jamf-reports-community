@@ -125,11 +125,44 @@ The app falls back to CSV-only / cached-snapshot mode when jamf-cli is absent an
 notice.
 
 **`401 Unauthorized` / token expired.** The OAuth token jamf-cli stored has expired or
-been revoked. Re-authenticate:
+been revoked. Re-authenticate from **Data Sources → Connection health → Update
+credentials…**, or in Terminal:
 
 ```bash
 jamf-cli pro setup --url https://your-instance.jamfcloud.com
 ```
+
+For a Jamf Platform API profile, run `jamf-cli platform setup --profile-name <profile>`
+instead. Jamf Account integrations are valid for six months, so one created longer ago than
+that needs replacing.
+
+**Every Jamf Pro source fails with `resource not found (HTTP 404)` on a Platform API
+profile.** The gateway reads the scope ID before it routes anything, and an environment ID
+it does not recognise answers 404 on every request. The usual cause is a tenant ID pasted
+into the environment field. Saving and validating a profile never send the ID, so onboarding
+cannot catch this. Run the
+[scope ID check](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access#check-the-scope-id),
+then correct the ID in **Update credentials…**. If the ID is right, confirm the environment
+includes your Jamf Pro instance.
+
+**`OWNERSHIP_FORBIDDEN` in a 403.** The scope ID does not match the level the integration
+was created at: an environment ID on a tenant-level integration, the reverse, or an ID from
+another organization. The permissions are not the problem; correct the scope level and ID
+in **Update credentials…**.
+
+**Permission denied (exit 5).** The credential lacks a privilege the command needs. Grant
+it on the API role in Jamf Pro for a direct connection, or on the integration in Jamf
+Account for a Platform API profile — the app's own explanation currently names the Jamf Pro
+API role either way. Run History shows jamf-cli's error message but not the hint that names
+the exact grant, so run the failing command yourself and keep the output short. For
+example, for the scripts source:
+
+```bash
+jamf-cli -p <profile> pro scripts list --output json | head -c 1500
+```
+
+[Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)
+lists what each report area needs.
 
 **Profile slug rejected.** A profile name must match `^[a-z0-9][a-z0-9._-]*$` — no
 spaces, capitals, or leading punctuation. Use a name like `prod` or `tenant-east`.
@@ -186,7 +219,7 @@ remembers the choice.
 | 2 | Bad flags / missing args | Caller bug — logged as an error |
 | 3 | Unauthorized (HTTP 401) | Hard fail — re-authenticate |
 | 4 | Not found (HTTP 404) | Warn; use cached data |
-| 5 | Permission denied (HTTP 403) | Warn; use cached data |
+| 5 | Permission denied (HTTP 403) | Warn; use cached data. Grant read access — see [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access) |
 | 6 | Rate limited (HTTP 429) | Warn; use cached data |
 | 7 | Partial failure (jamf-cli v1.19+) | Some sub-operations failed but the successful subset's JSON is saved, with a warning |
 | 8 | Refused by policy (jamf-cli v1.28+) | The command is outside what this profile's API publishes — warn, keep the source visible, never retry automatically |
