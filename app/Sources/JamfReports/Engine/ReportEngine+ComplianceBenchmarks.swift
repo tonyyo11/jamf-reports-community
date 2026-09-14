@@ -136,6 +136,8 @@ extension ReportEngine {
         }
 
         var pieces: [BenchmarkPiece] = []
+        // Exit 7 on any title makes the merged kind partial, not a clean success.
+        var sawPartialFailure = false
         for title in titles {
             let captured = await invokeWithRetry(
                 kind: kind, arguments: benchmarkReportArguments(arguments, title: title),
@@ -152,19 +154,21 @@ extension ReportEngine {
                     dataDir: dataDir, stateStore: stateStore, collectStart: collectStart,
                     onLine: onLine)
             }
+            if exitCode == CLIBridge.exitCodePartialFailure { sawPartialFailure = true }
             pieces.append((title: title, data: data))
         }
 
-        let success = CollectOutcome(kind: kind, exitCode: 0)
+        let mergedExitCode = sawPartialFailure ? CLIBridge.exitCodePartialFailure : 0
+        let success = CollectOutcome(kind: kind, exitCode: mergedExitCode)
         guard let merged = mergedBenchmarkPayload(pieces) else {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                     + "command on this jamf-cli?) — snapshot not saved"))
-            stateStore?.record(.failed(exitCode: 0), report: kind, at: collectStart)
+            stateStore?.record(.failed(exitCode: success.exitCode), report: kind, at: collectStart)
             return KindCollectResult(outcome: success, saved: false)
         }
         return try saveCollectedPayload(
-            kind: kind, data: merged, outcome: success, isPartialFailure: false,
+            kind: kind, data: merged, outcome: success, isPartialFailure: sawPartialFailure,
             dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
             collectStart: collectStart, onLine: onLine
         )

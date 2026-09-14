@@ -159,11 +159,13 @@ final class ComplianceBenchmarkCollectTests: XCTestCase {
         return log.split(separator: "\n").map(String.init)
     }
 
-    private func collectInventory() async throws {
+    private func collectInventory(
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void = { _ in }
+    ) async throws {
         let stub = try makeStub()
         try await ReportEngine.collect(
             profile: profile, workspacePaths: WorkspacePaths.self,
-            tiers: [.inventory], force: true, locateJamfCLI: { stub }, onLine: { _ in })
+            tiers: [.inventory], force: true, locateJamfCLI: { stub }, onLine: onLine)
     }
 
     private func rows(_ kind: String) throws -> [[String: Any]] {
@@ -235,5 +237,42 @@ final class ComplianceBenchmarkCollectTests: XCTestCase {
 
         XCTAssertEqual(try rows("compliance-rules").count, 0)
         XCTAssertEqual(try rows("compliance-devices").count, 0)
+    }
+
+    /// Exit 7: some sub-operations failed, but stdout carries valid JSON for the rest.
+    /// The exit-code contract for 7 is "warn; save the returned partial data".
+    func testAPartialTitleWarnsAndSavesWhatLanded() async throws {
+        try writeConfig("platform:\n  compliance_benchmarks:\n    - \"STIG-High\"\n")
+        try answer("list", #"[{"id":"1","title":"CIS-L1"},{"id":"2","title":"STIG-High"}]"#)
+        try answer("rules-STIG-High", #"[{"rule":"FileVault","ruleId":"r7","passed":5}]"#, exit: 7)
+        try answer("devices-STIG-High", "[]")
+        let log = BenchmarkLogCollector()
+
+        try await collectInventory(onLine: log.append)
+
+        XCTAssertEqual(try rows("compliance-rules").map { $0["ruleId"] as? String }, ["r7"])
+        XCTAssertTrue(
+            log.texts.contains { $0.contains("compliance-rules: exit 7 (partial failure)") },
+            "\(log.texts)")
+    }
+}
+
+/// Thread-safe collector for streamed log-line text — `onLine` is `@Sendable`,
+/// so a plainly captured `var` is not.
+private final class BenchmarkLogCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    /// Usable directly as an `onLine` handler.
+    var append: @Sendable (CLIBridge.LogLine) -> Void {
+        { line in
+            self.lock.lock(); defer { self.lock.unlock() }
+            self.lines.append(line.text)
+        }
+    }
+
+    var texts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return lines
     }
 }
