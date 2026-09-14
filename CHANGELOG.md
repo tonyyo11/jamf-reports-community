@@ -206,6 +206,21 @@ scheduling screens describe the background item instead of LaunchAgents, the
 DDM screen no longer implies it needs the Platform API, and the stale-data
 prompt states its real two-day threshold.
 
+### Security
+
+A final review before release closed four small gaps. Run History reads a run's
+exit code only from the app's own footer line, and every logged line is one
+line, so error text from jamf-cli or Jamf Pro can neither stand in for a run's
+result nor forge a second entry. A `schedules.json` that cannot be read is moved
+aside as `schedules.json.broken-<stamp>` instead of being replaced by the next
+save. The OS Updates failed-plan and error-device tables give each row its own
+identity, so a Mac with several failed plans no longer collapses to one row.
+
+Collect now stores the full user and location, security and disk-encryption
+inventory sections, which include real names, job titles, phone numbers, rooms
+and the list of FileVault-enabled accounts. The shared-folder consent names
+them, and diagnostic bundles redact them.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added

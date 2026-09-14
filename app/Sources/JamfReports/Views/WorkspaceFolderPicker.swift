@@ -30,9 +30,10 @@ enum WorkspaceFolderPicker {
     }
 
     nonisolated static let consentMessage: String = """
-        Device serials, usernames and email addresses are stored in clear text in the \
-        raw snapshots and run logs, and any webhook URL you configure is stored in \
-        config.yaml. The folder's sharing settings decide who can read all of that — \
+        Device serials, usernames, real names, email addresses, job titles, phone \
+        numbers and rooms are stored in clear text in the raw snapshots and run logs, \
+        and any webhook URL you configure is stored in config.yaml. The folder's sharing \
+        settings decide who can read all of that — \
         this app cannot restrict it, and the file permissions it sets are not carried \
         across by the sync provider.
 

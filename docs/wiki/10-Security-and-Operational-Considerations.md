@@ -81,9 +81,10 @@ collected inside the same run as Jamf Pro, so it is covered in practice.
 ### What a shared workspace still costs you
 
 **Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
-snapshots and `automation/logs/` hold device serials, hostnames, usernames and
-email addresses in the clear, and `config.yaml` holds any webhook URL you have
-configured. The app writes them `0600` inside `0700` directories, but POSIX
+snapshots and `automation/logs/` hold device serials, hostnames, usernames, real
+names, email addresses, job titles, phone numbers and rooms in the clear, and
+`config.yaml` holds any webhook URL you have configured. The app writes them
+`0600` inside `0700` directories, but POSIX
 permissions are enforced by the local kernel — a sync provider does not
 replicate them. Whoever can open the SharePoint site can read the files, the
 server-side search index can surface their contents, and a Windows client has no
