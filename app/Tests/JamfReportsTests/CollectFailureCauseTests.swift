@@ -104,6 +104,8 @@ final class CollectFailureCauseTests: XCTestCase {
     }
 
     /// A 403 on the first attempt must not stick to a retry that fails for another reason.
+    /// The retry exits 0 with empty stdout so a stale latched flag (watcher not reset per
+    /// attempt) would misclassify it as `.missingPermission` instead of `.other`.
     /// Exit 1 is retryable; only `patch-device-failures`'s own invocations touch the counter.
     func testARetryIsClassifiedOnItsOwnStderr() async throws {
         let counter = root.appendingPathComponent("patch-attempts")
@@ -116,8 +118,9 @@ final class CollectFailureCauseTests: XCTestCase {
             echo "$n" > "\(counter.path)"
             if [ "$n" -eq 1 ]; then
               echo "permission denied (HTTP 403)" >&2
+              exit 1
             fi
-            exit 1
+            exit 0
             ;;
           *)
             printf '[]'

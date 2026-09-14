@@ -106,6 +106,13 @@ final class FailureCauseTests: XCTestCase {
         XCTAssertEqual(cause.kind, .missingPermission)
     }
 
+    /// The stderr 403 signal only applies to a swallowed (exit 0) failure — a non-zero exit
+    /// has its own classification and must not pick up a stale 403 line from an earlier call.
+    func testAForbiddenStderrLineOnANonZeroExitIsIgnored() {
+        let cause = FailureCause.classify(exitCode: 1, stdout: Data(), sawForbiddenOnStderr: true)
+        XCTAssertEqual(cause.kind, .other)
+    }
+
     // Rule 8 (tester log)
 
     func testABare404OnAJamfProCommandIsOther() {

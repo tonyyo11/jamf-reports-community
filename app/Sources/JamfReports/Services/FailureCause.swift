@@ -102,7 +102,7 @@ struct FailureCause: Codable, Equatable, Sendable {
             }
             return cause(.missingPermission)
         }
-        return cause(sawForbiddenOnStderr ? .missingPermission : .other)
+        return cause(exitCode == 0 && sawForbiddenOnStderr ? .missingPermission : .other)
     }
 
     /// Gateway hints name permissions between `in Jamf Account: ` and `. Names are`,

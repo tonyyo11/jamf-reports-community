@@ -41,6 +41,16 @@ final class ComplianceBenchmarkSelectionTests: XCTestCase {
         XCTAssertEqual(selection.ambiguous, ["Dup"])
     }
 
+    /// A title starting with "-" would be parsed as a jamf-cli flag in the report's
+    /// positional slot, so it is excluded and reported separately, not merged into titles.
+    func testALeadingDashTitleIsExcludedAndReportedAsUnsafe() throws {
+        let list = #"[{"id":"1","title":"CIS Level 1"},{"id":"2","title":"--help"}]"#
+        let selection = try XCTUnwrap(
+            ReportEngine.benchmarkSelection(fromListOutput: data(list), configured: []))
+        XCTAssertEqual(selection.titles, ["CIS Level 1"])
+        XCTAssertEqual(selection.unsafe, ["--help"])
+    }
+
     func testBlankOutputIsATenantWithNoBenchmarks() throws {
         let selection = try XCTUnwrap(
             ReportEngine.benchmarkSelection(fromListOutput: data("\n"), configured: []))

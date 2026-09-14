@@ -16,6 +16,8 @@ extension ReportEngine {
         let missing: [String]
         /// Held by more than one benchmark ID; jamf-cli refuses these by name.
         let ambiguous: [String]
+        /// Starts with "-"; jamf-cli would parse it as a flag, not a title.
+        var unsafe: [String] = []
     }
 
     /// The once-per-run benchmark listing, shared by both compliance kinds.
@@ -43,14 +45,17 @@ extension ReportEngine {
             idsByTitle[title, default: []].insert(item["id"] as? String ?? "row-\(index)")
         }
         let ambiguous = listed.filter { (idsByTitle[$0]?.count ?? 0) > 1 }
-        let usable = listed.filter { !ambiguous.contains($0) }
+        let unsafe = listed.filter { !CLIBridge.isSafeDeviceIdentifier($0) }
+        let usable = listed.filter { !ambiguous.contains($0) && !unsafe.contains($0) }
         guard !configured.isEmpty else {
-            return BenchmarkSelection(titles: usable, missing: [], ambiguous: ambiguous)
+            return BenchmarkSelection(
+                titles: usable, missing: [], ambiguous: ambiguous, unsafe: unsafe)
         }
         return BenchmarkSelection(
             titles: configured.filter { usable.contains($0) },
             missing: configured.filter { idsByTitle[$0] == nil },
-            ambiguous: ambiguous.filter { configured.contains($0) }
+            ambiguous: ambiguous.filter { configured.contains($0) },
+            unsafe: unsafe.filter { configured.contains($0) }
         )
     }
 
@@ -116,7 +121,7 @@ extension ReportEngine {
             resolved = cached
         } else {
             resolved = await discoverBenchmarks(
-                profile: profile, configuredTitles: configuredTitles,
+                kind: kind, profile: profile, configuredTitles: configuredTitles,
                 supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge, onLine: onLine)
             discovery = resolved
         }
@@ -175,6 +180,7 @@ extension ReportEngine {
     }
 
     static func discoverBenchmarks(
+        kind: String,
         profile: String,
         configuredTitles: [String],
         supportsQuietFlags: Bool,
@@ -183,7 +189,7 @@ extension ReportEngine {
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> BenchmarkDiscovery {
         let captured = await invokeWithRetry(
-            kind: "compliance-benchmarks", arguments: benchmarkListArguments(profile: profile),
+            kind: kind, arguments: benchmarkListArguments(profile: profile),
             supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge, onLine: onLine)
         guard let (exitCode, data) = captured else { return .launchFailed }
         guard exitCode == 0,
@@ -199,6 +205,10 @@ extension ReportEngine {
         if !selection.ambiguous.isEmpty {
             info("[info] compliance benchmarks sharing a title, skipped (jamf-cli selects by "
                 + "title): " + selection.ambiguous.joined(separator: ", "))
+        }
+        if !selection.unsafe.isEmpty {
+            info("[info] compliance benchmarks with a title starting with \"-\", skipped: "
+                + selection.unsafe.joined(separator: ", "))
         }
         return .selected(selection)
     }
