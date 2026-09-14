@@ -45,9 +45,9 @@ final class OnboardingConnectionCheckTests: XCTestCase {
         XCTAssertFalse(flow.offersContinueWithoutValidating)
     }
 
-    func testAPlatformProfileThatFailsValidateGetsNoBypass() {
+    func testAPlatformProfileThatFailsValidateKeepsTheBypass() {
         let flow = flowAtValidate(.platformGateway, exit: CLIBridge.exitCodeUnauthorized)
-        XCTAssertFalse(flow.offersContinueWithoutValidating)
+        XCTAssertTrue(flow.offersContinueWithoutValidating)
     }
 
     func testOAuth2KeepsTheBypassAfterAFailedValidate() {

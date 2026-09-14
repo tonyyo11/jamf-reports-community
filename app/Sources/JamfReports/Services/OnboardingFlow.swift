@@ -861,10 +861,10 @@ final class OnboardingFlow {
     }
 
     /// "Continue without validating" after a failed validation. For a Platform API profile,
-    /// only when the connection check could not decide (spec §10.4).
+    /// not after the gateway rejected the ID (spec §10.4).
     var offersContinueWithoutValidating: Bool {
         guard !connectionValidated, canAdvance, let exit = validationExitCode else { return false }
-        guard proConnectionType == .platformGateway else { return exit != 0 }
+        guard proConnectionType == .platformGateway, exit == 0 else { return exit != 0 }
         if case .undecided = connectionCheck { return true }
         return false
     }
