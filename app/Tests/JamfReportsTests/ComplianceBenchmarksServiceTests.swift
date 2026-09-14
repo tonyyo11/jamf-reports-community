@@ -145,4 +145,48 @@ final class ComplianceBenchmarksServiceTests: XCTestCase {
             XCTFail("Expected .stale, got \(snapshot.cacheSource)")
         }
     }
+
+    // MARK: - Per-benchmark rows (2.8.1)
+
+    func testRowsKeepTheirBenchmarkAndStayUniqueAcrossBenchmarks() throws {
+        let rulesURL = tempDir.appendingPathComponent("rules.json")
+        let json = """
+        [
+          {"benchmark": "CIS", "rule": "FileVault", "ruleId": "r1", "passed": 9, "failed": 1,
+           "unknown": 0, "devices": 10, "passRate": "90.0%"},
+          {"benchmark": "STIG", "rule": "FileVault", "ruleId": "r1", "passed": 5, "failed": 5,
+           "unknown": 0, "devices": 10, "passRate": "50.0%"}
+        ]
+        """
+        try Data(json.utf8).write(to: rulesURL)
+        let snapshot = ComplianceBenchmarksService.load(rulesURL: rulesURL, devicesURL: nil)
+        XCTAssertEqual(snapshot.rules.map(\.benchmark), ["CIS", "STIG"])
+        XCTAssertEqual(Set(snapshot.rules.map(\.id)).count, 2,
+                       "duplicate ForEach IDs crash SwiftUI (#185)")
+        XCTAssertEqual(snapshot.benchmarks, ["CIS", "STIG"])
+    }
+
+    func testFilteredKeepsOneBenchmarksRows() throws {
+        let devicesURL = tempDir.appendingPathComponent("devices.json")
+        let json = """
+        [
+          {"benchmark": "CIS", "device": "MacA", "deviceId": "1", "rulesPassed": 9,
+           "rulesFailed": 1, "compliance": "90%"},
+          {"benchmark": "STIG", "device": "MacA", "deviceId": "1", "rulesPassed": 5,
+           "rulesFailed": 5, "compliance": "50%"}
+        ]
+        """
+        try Data(json.utf8).write(to: devicesURL)
+        let snapshot = ComplianceBenchmarksService.load(rulesURL: nil, devicesURL: devicesURL)
+        let stig = snapshot.filtered(to: "STIG")
+        XCTAssertEqual(stig.devices.map(\.benchmark), ["STIG"])
+        XCTAssertEqual(stig.totalDevices, 1)
+    }
+
+    func testSnapshotsWithoutABenchmarkFieldHaveNoBenchmarks() throws {
+        let rulesURL = tempDir.appendingPathComponent("rules.json")
+        try Data(#"[{"rule": "FileVault", "passed": 1}]"#.utf8).write(to: rulesURL)
+        let snapshot = ComplianceBenchmarksService.load(rulesURL: rulesURL, devicesURL: nil)
+        XCTAssertEqual(snapshot.benchmarks, [])
+    }
 }

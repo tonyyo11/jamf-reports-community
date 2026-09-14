@@ -32,7 +32,11 @@ struct ComplianceBenchmarksService: Sendable {
             let unknown: Int
             let devices: Int
             let passRate: String
-            var id: String { rule }
+            var ruleId: String = ""
+            /// Benchmark title the row was collected under; empty before 2.8.1.
+            var benchmark: String = ""
+            /// A rule appears once per benchmark that contains it.
+            var id: String { "\(benchmark)|\(ruleId.isEmpty ? rule : ruleId)" }
         }
 
         struct Device: Sendable, Equatable, Identifiable {
@@ -41,11 +45,31 @@ struct ComplianceBenchmarksService: Sendable {
             let rulesPassed: Int
             let rulesFailed: Int?
             let compliance: String
-            var id: String { deviceId.isEmpty ? device : deviceId }
+            var benchmark: String = ""
+            /// A device appears once per benchmark it was evaluated against.
+            var id: String { "\(benchmark)|\(deviceId.isEmpty ? device : deviceId)" }
         }
 
         var totalRules: Int { rules.count }
         var totalDevices: Int { devices.count }
+
+        /// Benchmark titles in first-seen order; empty for snapshots from before 2.8.1.
+        var benchmarks: [String] {
+            var seen: Set<String> = []
+            return (rules.map(\.benchmark) + devices.map(\.benchmark))
+                .filter { !$0.isEmpty && seen.insert($0).inserted }
+        }
+
+        /// This snapshot limited to one benchmark's rows.
+        func filtered(to benchmark: String) -> Snapshot {
+            Snapshot(
+                rules: rules.filter { $0.benchmark == benchmark },
+                devices: devices.filter { $0.benchmark == benchmark },
+                rulesSourceFile: rulesSourceFile,
+                devicesSourceFile: devicesSourceFile,
+                snapshotDate: snapshotDate
+            )
+        }
 
         /// Pass / Fail / Unknown across all rules. "Unknown" covers rules
         /// where the upstream returned no `failed` key — distinct from
@@ -146,7 +170,9 @@ struct ComplianceBenchmarksService: Sendable {
                 failed: raw.failed,
                 unknown: raw.unknown ?? 0,
                 devices: raw.devices ?? 0,
-                passRate: raw.passRate ?? ""
+                passRate: raw.passRate ?? "",
+                ruleId: raw.ruleId ?? "",
+                benchmark: raw.benchmark ?? ""
             )
         }
     }
@@ -162,7 +188,8 @@ struct ComplianceBenchmarksService: Sendable {
                 deviceId: raw.deviceId ?? "",
                 rulesPassed: raw.rulesPassed ?? 0,
                 rulesFailed: raw.rulesFailed,
-                compliance: raw.compliance ?? ""
+                compliance: raw.compliance ?? "",
+                benchmark: raw.benchmark ?? ""
             )
         }
     }
@@ -174,6 +201,8 @@ struct ComplianceBenchmarksService: Sendable {
         let unknown: Int?
         let devices: Int?
         let passRate: String?
+        let ruleId: String?
+        let benchmark: String?
     }
 
     private struct RawDevice: Decodable {
@@ -182,5 +211,6 @@ struct ComplianceBenchmarksService: Sendable {
         let rulesPassed: Int?
         let rulesFailed: Int?
         let compliance: String?
+        let benchmark: String?
     }
 }

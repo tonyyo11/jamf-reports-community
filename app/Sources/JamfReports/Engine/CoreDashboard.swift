@@ -1701,28 +1701,29 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Compliance Devices")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Compliance Devices"),
-                                      subtitle: "Generated: \(ts)", ncols: 5)
-        ws.setColumnWidth(0, 0, 28)
-        ws.setColumnWidth(1, 1, 14)
-        ws.setColumnWidth(2, 3, 14)
-        ws.setColumnWidth(4, 4, 14)
-        let hdrs = ["Device", "Device ID", "Rules Passed", "Rules Failed", "Compliance %"]
+                                      subtitle: "Generated: \(ts)", ncols: 6)
+        ws.setColumnWidth(0, 0, 24)
+        ws.setColumnWidth(1, 1, 28)
+        ws.setColumnWidth(2, 5, 14)
+        let hdrs = ["Benchmark", "Device", "Device ID", "Rules Passed", "Rules Failed",
+                    "Compliance %"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
             let compliance = item["compliance"] as? String ?? ""
             let fmt: CellFormat = compliance.isEmpty ? .yellow : .cell
-            ws.write(item["device"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["deviceId"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(asInt(item["rulesPassed"]) ?? 0, row: row, col: 2, format: .cell)
-            ws.write(asInt(item["rulesFailed"]) ?? 0, row: row, col: 3, format: .cell)
-            ws.write(compliance, row: row, col: 4, format: fmt)
+            ws.write(item["benchmark"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["device"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(item["deviceId"] as? String ?? "", row: row, col: 2, format: .cell)
+            ws.write(asInt(item["rulesPassed"]) ?? 0, row: row, col: 3, format: .cell)
+            ws.write(asInt(item["rulesFailed"]) ?? 0, row: row, col: 4, format: .cell)
+            ws.write(compliance, row: row, col: 5, format: fmt)
             row += 1
         }
     }
 
     // MARK: - Compliance Rules
-    // Source: `jamf-cli pro report compliance-rules --output json` (Platform feature).
+    // Source: `jamf-cli pro report compliance-rules <title> --output json`, one run per benchmark.
 
     func writeComplianceRules() throws {
         let raw = try loadLatestJSON(names: ["compliance-rules"])
@@ -1731,21 +1732,22 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Compliance Rules")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Compliance Rules"),
-                                      subtitle: "Generated: \(ts)", ncols: 6)
-        ws.setColumnWidth(0, 0, 40)
-        ws.setColumnWidth(1, 4, 12)
-        ws.setColumnWidth(5, 5, 12)
-        let hdrs = ["Rule", "Passed", "Failed", "Unknown", "Devices", "Pass Rate"]
+                                      subtitle: "Generated: \(ts)", ncols: 7)
+        ws.setColumnWidth(0, 0, 24)
+        ws.setColumnWidth(1, 1, 40)
+        ws.setColumnWidth(2, 6, 12)
+        let hdrs = ["Benchmark", "Rule", "Passed", "Failed", "Unknown", "Devices", "Pass Rate"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
             let pctStr = item["passRate"] as? String ?? ""
-            ws.write(item["rule"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(asInt(item["passed"]) ?? 0, row: row, col: 1, format: .cell)
-            ws.write(asInt(item["failed"]) ?? 0, row: row, col: 2, format: .cell)
-            ws.write(asInt(item["unknown"]) ?? 0, row: row, col: 3, format: .cell)
-            ws.write(asInt(item["devices"]) ?? 0, row: row, col: 4, format: .cell)
-            ws.write(pctStr, row: row, col: 5, format: colorForPctString(pctStr))
+            ws.write(item["benchmark"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["rule"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(asInt(item["passed"]) ?? 0, row: row, col: 2, format: .cell)
+            ws.write(asInt(item["failed"]) ?? 0, row: row, col: 3, format: .cell)
+            ws.write(asInt(item["unknown"]) ?? 0, row: row, col: 4, format: .cell)
+            ws.write(asInt(item["devices"]) ?? 0, row: row, col: 5, format: .cell)
+            ws.write(pctStr, row: row, col: 6, format: colorForPctString(pctStr))
             row += 1
         }
     }

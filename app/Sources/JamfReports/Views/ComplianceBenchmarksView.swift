@@ -14,6 +14,7 @@ struct ComplianceBenchmarksView: View {
     @State private var platformCapability: PlatformCapabilityService?
     @State private var platformAvailable = false
     @State private var bridge = CLIBridge()
+    @State private var selectedBenchmark = ""
 
     /// Tri-state lock decision the view's body switches on.
     enum LockState: Equatable {
@@ -85,6 +86,7 @@ struct ComplianceBenchmarksView: View {
         case .unlockedNoData:
             unlockedEmptyCard
         case .unlockedWithData:
+            if snapshot.benchmarks.count > 1 { benchmarkPicker }
             ruleAggregateCard
             ruleDistributionCard
             deviceTableCard
@@ -129,10 +131,12 @@ struct ComplianceBenchmarksView: View {
                 EmptyStateView(
                     systemImage: "checkmark.shield",
                     title: "No compliance snapshots yet",
-                    message: "Run `jamf-cli pro report compliance-rules` and `compliance-devices` to populate this screen.",
+                    message: "Collect this workspace to list its compliance benchmarks and "
+                        + "fetch each one's rule and device results.",
                     commands: [
-                        "jamf-cli pro report compliance-rules --output json",
-                        "jamf-cli pro report compliance-devices --output json",
+                        "jamf-cli pro compliance-benchmarks list --output json",
+                        "jamf-cli pro report compliance-rules \"<title>\" --output json",
+                        "jamf-cli pro report compliance-devices \"<title>\" --output json",
                     ]
                 )
             }
@@ -141,12 +145,72 @@ struct ComplianceBenchmarksView: View {
 
     // MARK: - Unlocked sections
 
+    /// What the unlocked cards draw; see `displayed`.
+    private var shown: ComplianceBenchmarksService.Snapshot {
+        Self.displayed(snapshot, selected: selectedBenchmark)
+    }
+
+    /// The benchmark on screen when the snapshot holds several, else nil.
+    nonisolated static func activeBenchmark(
+        in snapshot: ComplianceBenchmarksService.Snapshot, selected: String
+    ) -> String? {
+        let benchmarks = snapshot.benchmarks
+        guard benchmarks.count > 1 else { return nil }
+        return benchmarks.contains(selected) ? selected : benchmarks[0]
+    }
+
+    /// One benchmark's rows when there are several (aggregates across benchmarks would
+    /// double-count devices), all rows when there is one or none.
+    nonisolated static func displayed(
+        _ snapshot: ComplianceBenchmarksService.Snapshot, selected: String
+    ) -> ComplianceBenchmarksService.Snapshot {
+        activeBenchmark(in: snapshot, selected: selected).map(snapshot.filtered(to:)) ?? snapshot
+    }
+
+    private var benchmarkPicker: some View {
+        let active = Self.activeBenchmark(in: snapshot, selected: selectedBenchmark) ?? ""
+        return Menu {
+            ForEach(snapshot.benchmarks, id: \.self) { name in
+                Button {
+                    selectedBenchmark = name
+                } label: {
+                    if name == active {
+                        Label(name, systemImage: "checkmark")
+                    } else {
+                        Text(name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist").font(.system(size: 10, weight: .semibold))
+                Text(active).font(.callout.weight(.medium))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 22)
+            .foregroundStyle(Theme.Colors.fg2)
+            .background(Color.white.opacity(0.07),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityLabel("Compliance benchmark")
+        .accessibilityValue(active)
+        .help("Switch which compliance benchmark this screen shows")
+    }
+
     private var ruleAggregateCard: some View {
-        let agg = snapshot.ruleAggregate
+        let agg = shown.ruleAggregate
         return Card {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Rule Pass / Fail", trailing: "\(snapshot.totalRules) rules")
+                    SectionHeader(title: "Rule Pass / Fail", trailing: "\(shown.totalRules) rules")
                     Spacer()
                     ComplianceBenchmarksView.experimentalBadge()
                 }
@@ -169,10 +233,10 @@ struct ComplianceBenchmarksView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Per-Rule Distribution")
-                ForEach(snapshot.rules.prefix(20)) { rule in
+                ForEach(shown.rules.prefix(20)) { rule in
                     ComplianceBenchmarksView.ruleBar(rule, contrast: contrast)
                 }
-                if snapshot.rules.count > 20 {
+                if shown.rules.count > 20 {
                     Text("Showing the first 20 rules. Full data is in the Excel workbook (\"Compliance Rules\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -182,10 +246,10 @@ struct ComplianceBenchmarksView: View {
     }
 
     private var deviceTableCard: some View {
-        let agg = snapshot.deviceAggregate
+        let agg = shown.deviceAggregate
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Devices", trailing: "\(snapshot.totalDevices) devices")
+                SectionHeader(title: "Devices", trailing: "\(shown.totalDevices) devices")
                 HStack(spacing: 10) {
                     ComplianceBenchmarksView.deviceCounter(label: "Failing",
                                                            value: agg.failing,
@@ -197,10 +261,10 @@ struct ComplianceBenchmarksView: View {
                                                            value: agg.unknown,
                                                            color: Theme.Colors.warn)
                 }
-                ForEach(snapshot.devices.prefix(30)) { device in
+                ForEach(shown.devices.prefix(30)) { device in
                     ComplianceBenchmarksView.deviceRow(device, contrast: contrast)
                 }
-                if snapshot.devices.count > 30 {
+                if shown.devices.count > 30 {
                     Text("Showing the first 30 devices. Full data is in the Excel workbook (\"Compliance Devices\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
