@@ -1601,8 +1601,8 @@ struct ReportEngine: Sendable {
         return exitCode == 0
     }
 
-    /// What `collect` must do once an `isCollectAuthDead(outcomes)` verdict has
-    /// been resolved with the confirmation probe.
+    /// What `collect` must do once an `isCollectAuthDead(outcomes, savedKinds:)`
+    /// verdict has been resolved with the confirmation probe.
     enum AuthDeadDecision: Equatable {
         /// The probe confirmed credentials are alive — warn (naming the 401'd
         /// kinds) and let the run continue as an ordinary partial failure.

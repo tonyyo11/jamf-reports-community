@@ -2,7 +2,8 @@ import XCTest
 @testable import JamfReports
 
 /// Spec 2026-09-12 §10.4: a rejected ID blocks setup; "Continue without validating" is offered
-/// for a Platform API profile only when the check could not decide. OAuth2 is unchanged.
+/// for a Platform API profile when Validate fails or the check could not decide. OAuth2 is
+/// unchanged.
 @MainActor
 final class OnboardingConnectionCheckTests: XCTestCase {
 

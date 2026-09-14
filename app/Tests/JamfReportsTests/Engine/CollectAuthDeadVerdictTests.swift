@@ -81,9 +81,8 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
     }
 
     /// A landed kind proves auth was accepted even with an empty body, so a 401
-    /// alongside it is transient (not auth-dead) — mirrors the Python tally,
-    /// which counts any non-raising call as a success.
-    func testExitZeroCountsAsSuccessEvenEmpty_isNotAuthDead() {
+    /// alongside it is transient (not auth-dead).
+    func testALandedKindCountsAsSuccess_isNotAuthDead() {
         let outcomes = [
             outcome("ea-results", 0),
             outcome("security", 3),
