@@ -549,7 +549,10 @@ struct OnboardingView: View {
                 if !flow.protectConnected {
                     Divider().background(Theme.Colors.hairline)
 
-                    Text("Create API client credentials in your Jamf Protect console under Administrative → API Clients.")
+                    Text("""
+                        Create API client credentials in your Jamf Protect console under \
+                        Administrative → API Clients.
+                        """)
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
 
