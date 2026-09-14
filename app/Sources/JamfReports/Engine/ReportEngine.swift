@@ -2240,7 +2240,8 @@ struct ReportEngine: Sendable {
         let stderrWatcher = ForbiddenStderrWatcher()
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
-            bin: bin, bridge: bridge, onLine: stderrWatcher.forwarding(to: onLine)
+            bin: bin, bridge: bridge, onLine: stderrWatcher.forwarding(to: onLine),
+            beforeRetry: { stderrWatcher.reset() }
         )
 
         guard let (exitCode, data) = captureResult else {
@@ -2322,7 +2323,8 @@ struct ReportEngine: Sendable {
         supportsQuietFlags: Bool,
         bin: URL,
         bridge: CLIBridge,
-        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void,
+        beforeRetry: @Sendable () -> Void = {}
     ) async -> (Int32, Data)? {
         // --no-hints suppresses interactive usage tips; --no-version-check
         // suppresses the "new version available" banner that jamf-cli 1.18+
@@ -2357,6 +2359,7 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): \(reason) — retrying once"))
             try? await Task.sleep(nanoseconds: Self.retryDelayNanoseconds)
+            beforeRetry()
             if let retried = await invoke() { captureResult = retried }
         }
         return captureResult

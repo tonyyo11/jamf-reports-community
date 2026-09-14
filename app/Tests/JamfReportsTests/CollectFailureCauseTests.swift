@@ -102,6 +102,37 @@ final class CollectFailureCauseTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertEqual(store.cause(for: "update-device-failures")?.kind, .missingPermission)
     }
+
+    /// A 403 on the first attempt must not stick to a retry that fails for another reason.
+    /// Exit 1 is retryable; only `patch-device-failures`'s own invocations touch the counter.
+    func testARetryIsClassifiedOnItsOwnStderr() async throws {
+        let counter = root.appendingPathComponent("patch-attempts")
+        let stub = root.appendingPathComponent("stub-cli")
+        let script = """
+        #!/bin/sh
+        case "$*" in
+          *patch-status*--scan-failures*)
+            n=$(( $(cat "\(counter.path)" 2>/dev/null || echo 0) + 1 ))
+            echo "$n" > "\(counter.path)"
+            if [ "$n" -eq 1 ]; then
+              echo "permission denied (HTTP 403)" >&2
+            fi
+            exit 1
+            ;;
+          *)
+            printf '[]'
+            exit 0
+            ;;
+        esac
+        """
+        try script.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        try? await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
+            force: true, locateJamfCLI: { stub }, onLine: { _ in })
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.cause(for: "patch-device-failures")?.kind, .other)
+    }
 }
 
 private final class CauseLogCollector: @unchecked Sendable {

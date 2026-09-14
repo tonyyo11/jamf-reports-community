@@ -137,6 +137,9 @@ final class ForbiddenStderrWatcher: @unchecked Sendable {
 
     var sawForbidden: Bool { lock.withLock { seen } }
 
+    /// A retried attempt is classified on its own stderr, not the first attempt's.
+    func reset() { lock.withLock { seen = false } }
+
     func forwarding(
         to onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) -> @Sendable (CLIBridge.LogLine) -> Void {
