@@ -14,8 +14,9 @@ and a source that fails for want of a permission says which one.
 
 - Compliance Benchmarks fill on Jamf Platform API profiles. Each collect lists the tenant's
   benchmarks and fetches rule and device results for each; with several, the screen has a
-  benchmark picker and the workbook sheets a Benchmark column. List titles under
-  `platform.compliance_benchmarks` to collect only those.
+  benchmark picker, and the workbook sheets gain a Benchmark column. Leave
+  `platform.compliance_benchmarks` empty to collect every benchmark, or list titles to collect
+  only those.
 - Validating a Jamf Platform API profile checks the environment or tenant ID with the gateway,
   in onboarding and in Update credentials. A rejected ID stops setup and says where the right one
   is; an ID with no Jamf Pro behind it is a warning.

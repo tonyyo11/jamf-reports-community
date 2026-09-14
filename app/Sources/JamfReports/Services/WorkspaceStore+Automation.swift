@@ -497,9 +497,9 @@ extension WorkspaceStore {
         // slow collect cannot start a parallel one.
         Self.remediationMarker.stamp(day: hourKey, in: workspace)
 
-        // Kinds whose last failure was a usage/credentials-gate error (jamf-cli
-        // exit 2) cannot be fixed by retrying — filtered before tier targeting,
-        // but left in `issues`/the banner so the operator still sees them.
+        // Kinds whose last failure cannot be fixed by retrying — a usage or credentials gate
+        // (exit 2), a policy refusal (exit 8), or a permanent recorded cause — are filtered
+        // before tier targeting, but left in `issues`/the banner so the operator still sees them.
         let remediable = Self.excludingPermanentUsageFailures(issues, profile: profile)
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
@@ -542,9 +542,10 @@ extension WorkspaceStore {
 
     /// Drop issues whose last failure makes retry pointless until someone changes the
     /// credential: `exitCodeUsage` (2, a usage or credentials gate), `exitCodeRefusedByPolicy`
-    /// (8, outside the profile's API), or a permanent `FailureCause` — a rejected scope ID, an
-    /// endpoint this connection does not serve, or a missing permission (spec §9.5). Only
-    /// `tiersToRemediate`'s input narrows; the banner still shows every issue.
+    /// (8, outside the profile's API), or a permanent `FailureCause` — a rejected scope ID or
+    /// unknown environment ID, an endpoint this connection does not serve, or a missing
+    /// permission (spec §9.5). Only `tiersToRemediate`'s input narrows; the banner still shows
+    /// every issue.
     nonisolated static func excludingPermanentUsageFailures(
         _ issues: [DataFreshnessIssue], profile: String
     ) -> [DataFreshnessIssue] {

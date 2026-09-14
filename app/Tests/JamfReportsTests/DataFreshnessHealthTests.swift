@@ -196,8 +196,11 @@ final class DataFreshnessHealthTests: XCTestCase {
     // 1.24–1.27 Security Cloud gate on `pro report security`); an exit 8
     // (1.28+) is a policy refusal — the command is outside what the profile's
     // API publishes. Both fail identically on every retry, so remediation must
-    // not spend a collect on either. They stay visible: the banner reads
-    // `issues`, which is never filtered — only the re-collect tiers are.
+    // not spend a collect on either.
+    // A permanent recorded failure cause (rejected scope ID, unknown environment ID, endpoint
+    // not served, missing permission) is excluded the same way (2.8.1).
+    // They stay visible: the banner reads `issues`, which is never filtered — only the
+    // re-collect tiers are.
 
     func testNeverRetryableFailuresAreExcludedFromRemediationTargeting() throws {
         let profile = "exittwofilter"
