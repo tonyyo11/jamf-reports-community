@@ -271,7 +271,8 @@ struct UpdateErrorDevice: Decodable, Sendable, Identifiable {
     let productKey: String
     let updated: String
 
-    var id: String { serial }
+    // One device can appear once per product; a bare serial collides.
+    var id: String { "\(serial)|\(name)|\(productKey)|\(status)|\(updated)" }
 
     private enum CodingKeys: String, CodingKey {
         case name, serial
@@ -295,7 +296,8 @@ struct UpdateFailedPlan: Decodable, Sendable, Identifiable {
     let error: String
     let lastEvent: String
 
-    var id: String { serial }
+    // failed_plans is one row per PLAN; a device with many plans shares a serial.
+    var id: String { "\(serial)|\(name)|\(version)|\(state)|\(action)|\(lastEvent)" }
 
     private enum CodingKeys: String, CodingKey {
         case name, serial

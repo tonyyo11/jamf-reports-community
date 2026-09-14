@@ -156,13 +156,19 @@ struct UpdateStatusService: Sendable {
             planTotal: failures.planTotal ?? 0,
             statusBreakdown: makeStatusSlices(from: failures.statusSummary),
             planStateBreakdown: makePlanStateSlices(from: failures.planStateSummary ?? []),
-            errorDevices: failures.errorDevices,
-            failedPlans: failures.failedPlans,
+            errorDevices: uniqueByID(failures.errorDevices),
+            failedPlans: uniqueByID(failures.failedPlans),
             sourceFile: url,
             snapshotDate: mtime,
             sourceDates: sourceDates,
             scanFailuresAvailable: true
         )
+    }
+
+    /// A SwiftUI `Table` needs unique row ids; two byte-identical rows say nothing twice.
+    private static func uniqueByID<Row: Identifiable>(_ rows: [Row]) -> [Row] {
+        var seen = Set<Row.ID>()
+        return rows.filter { seen.insert($0.id).inserted }
     }
 
     private static func decode(status: UpdateStatusReport, url: URL) -> Snapshot {

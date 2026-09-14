@@ -146,6 +146,34 @@ final class UpdateStatusServiceTests: XCTestCase {
     /// 2.8.0: the weekly `--scan-failures` kind lives in its own directory. The
     /// summary supplies totals; the scan supplies the failure tables and its
     /// own freshness date.
+    /// failed_plans is one row per plan, so one Mac with several failed plans
+    /// shares a serial; the rows still need distinct Table identities, and a
+    /// byte-identical duplicate row is dropped rather than rendered twice.
+    func testRowsSharingASerialKeepDistinctIdentities() throws {
+        func plan(_ version: String) -> String {
+            """
+            {"name": "MacBook-001", "serial": "ABC123", "device_type": "Computer",
+             "os_version": "15.2.1", "username": "", "state": "PlanFailed",
+             "action": "DOWNLOAD_INSTALL_RESTART", "version": "\(version)",
+             "error": "EXISTING_PLAN_FOR_DEVICE_IN_PROGRESS", "last_event": "2026-05-10T10:30:00Z"}
+            """
+        }
+        let json = """
+        [{"total": 1, "status_summary": [], "error_devices": [],
+          "plan_total": 3, "plan_state_summary": [],
+          "failed_plans": [\(plan("26.5")), \(plan("26.6")), \(plan("26.6"))]}]
+        """
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("update-failures-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: url))
+        XCTAssertEqual(snapshot.failedPlans.count, 2)
+        XCTAssertEqual(Set(snapshot.failedPlans.map(\.id)).count, 2)
+        XCTAssertEqual(snapshot.failedPlans.map(\.serial), ["ABC123", "ABC123"])
+    }
+
     func testLoadMergesTheScanDirectoryIntoTheSummary() throws {
         let summary = """
         [{"total": 150, "status_summary": [{"status": "COMPLETED", "count": 150}],
