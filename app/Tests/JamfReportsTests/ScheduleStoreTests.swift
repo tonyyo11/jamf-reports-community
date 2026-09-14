@@ -79,6 +79,21 @@ final class ScheduleStoreTests: XCTestCase {
         XCTAssertEqual(ScheduleStore(url: url).load(), [])
     }
 
+    /// A corrupt file reads as empty, but the operator's only copy is kept: the
+    /// next save would otherwise replace it with just the new record.
+    func testCorruptStoreIsMovedAsideBeforeTheNextSaveCanOverwriteIt() throws {
+        let dir = try tempDir()
+        let url = dir.appendingPathComponent("schedules.json")
+        try Data("not json".utf8).write(to: url)
+        XCTAssertEqual(ScheduleStore(url: url).load(), [])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+        let aside = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasPrefix("schedules.json.broken-") }
+        XCTAssertEqual(aside.count, 1)
+        let kept = try Data(contentsOf: dir.appendingPathComponent(try XCTUnwrap(aside.first)))
+        XCTAssertEqual(kept, Data("not json".utf8))
+    }
+
     func testUpsertReplacesByLabelAndRemoveDeletes() throws {
         let url = try tempDir().appendingPathComponent("schedules.json")
         let store = ScheduleStore(url: url)

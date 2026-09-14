@@ -88,13 +88,28 @@ struct ScheduleStore: Sendable {
         do {
             return try JSONDecoder().decode([ScheduleRecord].self, from: data)
         } catch {
+            let aside = setAsideCorruptFile()
             AppLogger.schedule.error(
                 """
                 schedules.json could not be decoded: \
-                \(error.localizedDescription, privacy: .public)
+                \(error.localizedDescription, privacy: .public) — moved to \
+                \(aside?.lastPathComponent ?? "(move failed)", privacy: .public)
                 """
             )
             return []
+        }
+    }
+
+    /// The next `upsert`/`remove` rewrites the whole file, so a corrupt one is
+    /// moved to `schedules.json.broken-<stamp>` first rather than overwritten.
+    private func setAsideCorruptFile() -> URL? {
+        let stamp = ScheduledRunRecorder.timestamp(from: Date())
+        let aside = url.appendingPathExtension("broken-\(stamp)")
+        do {
+            try FileManager.default.moveItem(at: url, to: aside)
+            return aside
+        } catch {
+            return nil
         }
     }
 
