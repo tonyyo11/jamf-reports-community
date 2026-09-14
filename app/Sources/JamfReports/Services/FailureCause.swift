@@ -128,3 +128,23 @@ struct FailureCause: Codable, Equatable, Sendable {
             .filter { !$0.isEmpty }
     }
 }
+
+/// Watches one kind's streamed stderr for jamf-cli's 403 line, for commands that swallow a
+/// failed request and exit 0 without data (spec §9.1).
+final class ForbiddenStderrWatcher: @unchecked Sendable {
+    private let lock = NSLock()
+    private var seen = false
+
+    var sawForbidden: Bool { lock.withLock { seen } }
+
+    func forwarding(
+        to onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+    ) -> @Sendable (CLIBridge.LogLine) -> Void {
+        { line in
+            if line.text.contains(FailureCause.forbiddenStderrMarker) {
+                self.lock.withLock { self.seen = true }
+            }
+            onLine(line)
+        }
+    }
+}

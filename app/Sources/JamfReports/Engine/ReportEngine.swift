@@ -2211,9 +2211,10 @@ struct ReportEngine: Sendable {
             timestamp: Date(), level: .info,
             text: "[info] collecting \(kind) for \(profile)"
         ))
+        let stderrWatcher = ForbiddenStderrWatcher()
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
-            bin: bin, bridge: bridge, onLine: onLine
+            bin: bin, bridge: bridge, onLine: stderrWatcher.forwarding(to: onLine)
         )
 
         guard let (exitCode, data) = captureResult else {
@@ -2230,7 +2231,8 @@ struct ReportEngine: Sendable {
         let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
         guard exitCode == 0 || isPartialFailure, !data.isEmpty else {
             return try Self.recordUnlandedAttempt(
-                kind: kind, exitCode: exitCode, data: data, useCachedData: useCachedData,
+                kind: kind, exitCode: exitCode, data: data,
+                sawForbidden: stderrWatcher.sawForbidden, useCachedData: useCachedData,
                 dataDir: dataDir, stateStore: stateStore, collectStart: collectStart,
                 onLine: onLine
             )
@@ -2243,24 +2245,30 @@ struct ReportEngine: Sendable {
         )
     }
 
-    /// An attempt that produced nothing to save: count it, say why, and keep the cache, or
-    /// fail the run under `use_cached_data: false`. Shared with the per-benchmark reports.
+    /// An attempt that produced nothing to save: classify it, count it, say why, and keep the
+    /// cache, or fail the run under `use_cached_data: false`. Shared with the per-benchmark
+    /// reports.
     static func recordUnlandedAttempt(
         kind: String,
         exitCode: Int32,
         data: Data,
+        sawForbidden: Bool = false,
         useCachedData: Bool,
         dataDir: URL,
         stateStore: StateFileStore?,
         collectStart: Date,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) throws -> KindCollectResult {
+        let cause = FailureCause.classify(
+            exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden)
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
+        stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
+                           cause: cause)
         guard useCachedData else {
-            stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
             onLine(.init(
                 timestamp: Date(), level: .fail,
-                text: "[error] \(kind): exit \(exitCode) — failing (use_cached_data=false)"
+                text: "[error] \(kind): exit \(exitCode)\(Self.causeSuffix(cause)) "
+                    + "— failing (use_cached_data=false)"
             ))
             throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
         }
@@ -2270,13 +2278,11 @@ struct ReportEngine: Sendable {
         let cacheNote = FileManager.newestJSONFile(in: kindDir) != nil
             ? "skipped (using cached)"
             : "no cached snapshot available"
-        // Persisting the failure is what lets DataFreshnessHealth report a kind that has
-        // failed nightly for months without anyone opening its screen.
-        stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
         // jamf-cli's own reason beats a bare exit code in Run History.
         let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
         onLine(.init(timestamp: Date(), level: .warn,
-                     text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"))
+                     text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"
+                        + Self.causeSuffix(cause)))
         return KindCollectResult(outcome: outcome, saved: false)
     }
 
@@ -3210,6 +3216,16 @@ struct ReportEngine: Sendable {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return trimmed.count > limit ? String(trimmed.prefix(limit)) + "…" : trimmed
+    }
+
+    /// The cause and jamf-cli's whole hint for a Run History line (spec §10.3). The 300-character
+    /// cap applies to jamf-cli's message, not to this.
+    static func causeSuffix(_ cause: FailureCause) -> String {
+        var suffix = cause.kind == .other ? "" : " — cause: \(cause.label)"
+        if let hint = cause.hint {
+            suffix += " — hint: " + hint.components(separatedBy: .newlines).joined(separator: " ")
+        }
+        return suffix
     }
 
     static func isJSONSnapshot(_ data: Data) -> Bool {
