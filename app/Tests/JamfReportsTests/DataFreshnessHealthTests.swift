@@ -470,6 +470,15 @@ final class DataFreshnessHealthTests: XCTestCase {
         XCTAssertTrue(issue.neverCollected)
         XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(issues), [issue.tier])
     }
+
+    func testAnIssueCarriesItsKindsRecordedCause() {
+        let cause = FailureCause(kind: .unknownEnvironment, names: [], hint: nil, exitCode: 4)
+        let issues = DataFreshnessHealth.evaluate(
+            states: [KindCollectionState(kind: "security", lastSuccess: nil,
+                                         consecutiveFailures: 2, lastFailure: now, cause: cause)],
+            hasCollectedBefore: true, now: now)
+        XCTAssertEqual(issues.first?.cause, cause)
+    }
 }
 
 /// Thread-safe call recorder for `WorkspaceStore.RemediationCollector` spies —

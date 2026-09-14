@@ -136,4 +136,50 @@ final class GlobalHealthBannerTests: XCTestCase {
             .openAutomation
         )
     }
+
+    // MARK: - Cause in the detail line (2.8.1)
+
+    private func failing(_ kind: String, _ cause: FailureCause?) -> DataFreshnessIssue {
+        DataFreshnessIssue(
+            snapshotKind: kind, tier: .inventory, kind: .failing,
+            lastSuccess: nil, consecutiveFailures: 2, lastFailure: nil, cause: cause
+        )
+    }
+
+    private func permission(_ names: [String]) -> FailureCause {
+        FailureCause(kind: .missingPermission, names: names, hint: nil, exitCode: 5)
+    }
+
+    func testASharedMissingPermissionIsNamed() throws {
+        let grant = "Compliance > Compliance Benchmarks: Read (compliance-benchmarks:read)"
+        let headline = try XCTUnwrap(GlobalHealthBanner.headline(
+            freshness: [failing("compliance-rules", permission([grant])),
+                        failing("compliance-devices", permission([grant]))],
+            automation: []))
+        XCTAssertEqual(headline.detail,
+                       "compliance-rules, compliance-devices — missing permission: " + grant)
+    }
+
+    func testASharedRejectedEnvironmentIDIsNamed() throws {
+        let unknown = FailureCause(kind: .unknownEnvironment, names: [], hint: nil, exitCode: 4)
+        let headline = try XCTUnwrap(GlobalHealthBanner.headline(
+            freshness: [failing("security", unknown), failing("computers", unknown)],
+            automation: []))
+        XCTAssertEqual(headline.detail,
+                       "security, computers — the gateway does not recognise the environment ID")
+    }
+
+    func testMixedOrMissingCausesKeepTheGeneralWording() throws {
+        let headline = try XCTUnwrap(GlobalHealthBanner.headline(
+            freshness: [failing("security", permission([])), failing("computers", nil)],
+            automation: []))
+        XCTAssertEqual(headline.detail,
+                       "security, computers — data on screens using them is out of date")
+    }
+
+    func testManyPermissionNamesCollapse() {
+        let reason = GlobalHealthBanner.failingReason(
+            [failing("a", permission(["P1", "P2"])), failing("b", permission(["P2", "P3", "P4"]))])
+        XCTAssertEqual(reason, "missing permission: P1; P2; P3 +1 more")
+    }
 }

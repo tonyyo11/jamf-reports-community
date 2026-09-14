@@ -249,7 +249,8 @@ struct StateFileStore: Sendable {
                 kind: kind,
                 lastSuccess: lastRun(report: kind),
                 consecutiveFailures: failure?.count ?? 0,
-                lastFailure: failure?.last
+                lastFailure: failure?.last,
+                cause: cause(for: kind)
             )
         }
     }

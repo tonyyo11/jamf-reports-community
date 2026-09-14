@@ -147,8 +147,7 @@ struct GlobalHealthBanner: View {
                 icon: "exclamationmark.triangle.fill",
                 tone: .danger,
                 text: countPhrase(failing.count, "data source") + " failing to collect",
-                detail: kindList(failing) + " — data on screens using "
-                    + (failing.count == 1 ? "it" : "them") + " is out of date"
+                detail: kindList(failing) + " — " + failingReason(failing)
             )
         }
         if !stale.isEmpty {
@@ -185,6 +184,24 @@ struct GlobalHealthBanner: View {
 
     nonisolated private static func countPhrase(_ n: Int, _ noun: String) -> String {
         n == 1 ? "1 \(noun) is" : "\(n) \(noun)s are"
+    }
+
+    /// The cause when every failing kind recorded the same one (spec §10.1), with the
+    /// permission names for a missing permission; otherwise the general wording.
+    nonisolated static func failingReason(_ failing: [DataFreshnessIssue]) -> String {
+        let causes = failing.compactMap(\.cause)
+        guard causes.count == failing.count, let first = causes.first, first.kind != .other,
+              causes.allSatisfy({ $0.kind == first.kind }) else {
+            return "data on screens using " + (failing.count == 1 ? "it" : "them")
+                + " is out of date"
+        }
+        guard first.kind == .missingPermission else { return first.label }
+        var seen: Set<String> = []
+        let names = causes.flatMap(\.names).filter { seen.insert($0).inserted }
+        guard !names.isEmpty else { return first.label }
+        let extra = names.count - min(names.count, maxNamedKinds)
+        return "missing permission: " + names.prefix(maxNamedKinds).joined(separator: "; ")
+            + (extra > 0 ? " +\(extra) more" : "")
     }
 
     /// How many kinds the detail line names before collapsing to "+N more".

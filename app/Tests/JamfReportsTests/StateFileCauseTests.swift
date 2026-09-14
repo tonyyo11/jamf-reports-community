@@ -62,4 +62,10 @@ final class StateFileCauseTests: XCTestCase {
         try Data("not json".utf8).write(to: tempDir.appendingPathComponent("security.cause.json"))
         XCTAssertNil(store.cause(for: "security"))
     }
+
+    func testCollectionStatesCarryTheCause() {
+        store.record(.failed(exitCode: 5), report: "security", at: t0, cause: permission)
+        XCTAssertEqual(store.collectionStates(for: ["security"]).first?.cause?.kind,
+                       .missingPermission)
+    }
 }
