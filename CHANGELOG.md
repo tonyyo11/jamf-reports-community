@@ -7,6 +7,28 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+Jamf Platform API profiles collect Compliance Benchmarks, setup catches a wrong environment ID,
+and a source that fails for want of a permission says which one.
+
+### Fixed
+
+- Compliance Benchmarks fill on Jamf Platform API profiles. Each collect lists the tenant's
+  benchmarks and fetches rule and device results for each; with several, the screen has a
+  benchmark picker and the workbook sheets a Benchmark column. List titles under
+  `platform.compliance_benchmarks` to collect only those.
+- Validating a Jamf Platform API profile checks the environment or tenant ID with the gateway,
+  in onboarding and in Update credentials. A rejected ID stops setup and says where the right one
+  is; an ID with no Jamf Pro behind it is a warning.
+- A source that fails because the credential lacks a permission, or because the gateway rejected
+  the ID, is named in the health strip and in the Run History warning line with jamf-cli's full
+  hint, and is no longer retried every hour.
+- When every source fails, the error says whether the gateway rejected the ID or nothing was
+  readable instead of blaming the network, and a collect where commands exited 0 but nothing
+  was saved is reported as failed.
+- Setup instructions name Jamf Account's Integrations page and Jamf Protect's Administrative →
+  API Clients. The permission-denied explanation names both the Jamf Pro API role and the Jamf
+  Account integration; the expired-credentials explanation notes integrations last six months.
+
 ## [2.8.0] - 2026-09-14
 
 ### Added
