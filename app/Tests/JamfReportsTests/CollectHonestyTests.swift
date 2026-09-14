@@ -138,7 +138,7 @@ final class CollectHonestyTests: XCTestCase {
         let launchFailed = [ReportEngine.CollectOutcome(kind: "security", exitCode: sentinel)]
         XCTAssertTrue(ReportEngine.isCollectDead(launchFailed, savedKinds: []),
                       "an all-launch-failure run is a total outage")
-        XCTAssertFalse(ReportEngine.isCollectAuthDead(launchFailed),
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(launchFailed, savedKinds: []),
                        "a launch failure says nothing about credentials")
         XCTAssertFalse(
             ReportEngine.isCollectDead(launchFailed, savedKinds: [], skippedNotDueCount: 1),
@@ -171,7 +171,7 @@ final class CollectHonestyTests: XCTestCase {
             ReportEngine.CollectOutcome(
                 kind: "computers", exitCode: CLIBridge.exitCodeUnauthorized),
         ]
-        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes, savedKinds: []))
     }
 
     /// S3: the `[partial]` line names every kind whose data did not land, and a

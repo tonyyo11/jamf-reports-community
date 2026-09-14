@@ -1481,23 +1481,15 @@ struct ReportEngine: Sendable {
     /// Whether a collect's per-command outcomes mean the profile's credentials are
     /// dead (vs a partial failure that should fall back to cache).
     ///
-    /// Auth-dead requires BOTH: zero successful live calls (no `exit 0` with a
-    /// non-empty body) AND at least one `exit 3` (HTTP 401 — expired/revoked).
-    /// A single 401 among successes is NOT auth-dead: a working call proves auth is
-    /// alive, so the 401 is transient/per-endpoint and falls back to cache. Chronic
-    /// non-auth failures (Platform-API 404 → exit 1 on on-prem) carry no 401 and
-    /// cannot trip this on their own. An empty outcome set (no auth-bearing command
-    /// ran) is never auth-dead.
-    static func isCollectAuthDead(_ outcomes: [CollectOutcome]) -> Bool {
-        guard !outcomes.isEmpty else { return false }
-        // exit 0 and exit 7 (partial failure, v1.19.0+) both prove auth was accepted
-        // (auth precedes the response body), so both count as success here. A single
-        // such success means auth is alive, so a co-occurring 401 is transient.
-        let anySuccess = outcomes.contains {
-            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
-        }
-        let anyAuthFailure = outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
-        return !anySuccess && anyAuthFailure
+    /// Auth-dead requires no kind to have landed this run (`savedKinds.isEmpty`) and
+    /// at least one `exit 3` (HTTP 401 — expired/revoked). A landed kind proves the
+    /// credentials work, so a co-occurring 401 is transient/per-endpoint and falls
+    /// back to cache. An exit code alone proves nothing — some commands exit 0 after
+    /// a failed fetch (spec §13.2) — so `savedKinds` is the only evidence of success.
+    /// An empty outcome set is never auth-dead.
+    static func isCollectAuthDead(_ outcomes: [CollectOutcome], savedKinds: Set<String>) -> Bool {
+        guard !outcomes.isEmpty, savedKinds.isEmpty else { return false }
+        return outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
     }
 
     /// Whether a collect's per-command outcomes represent a total outage where live
@@ -1620,17 +1612,18 @@ struct ReportEngine: Sendable {
     }
 
     /// Resolves the auth-dead branch: runs the confirmation `probe` ONLY when
-    /// `isCollectAuthDead(outcomes)` is true (never for a healthy run or one with
-    /// no 401 evidence), and returns `nil` when there is nothing to resolve.
-    /// Isolated from the process-spawning `collect` loop so it is directly
+    /// `isCollectAuthDead(outcomes, savedKinds:)` is true (never for a healthy run
+    /// or one with no 401 evidence), and returns `nil` when there is nothing to
+    /// resolve. Isolated from the process-spawning `collect` loop so it is directly
     /// testable with a spy probe — no jamf-cli binary required.
     static func evaluateAuthDead(
         outcomes: [CollectOutcome],
+        savedKinds: Set<String>,
         profile: String,
         bin: URL,
         probe: AuthConfirmationProbe
     ) async -> AuthDeadDecision? {
-        guard Self.isCollectAuthDead(outcomes) else { return nil }
+        guard Self.isCollectAuthDead(outcomes, savedKinds: savedKinds) else { return nil }
         let authFailedKinds = outcomes
             .filter { $0.exitCode == CLIBridge.exitCodeUnauthorized }
             .map(\.kind)
@@ -1927,7 +1920,8 @@ struct ReportEngine: Sendable {
         // defect this fixes): one endpoint's 401 is not proof credentials are dead.
         // evaluateAuthDead only calls the probe when isCollectAuthDead is true.
         if let decision = await Self.evaluateAuthDead(
-            outcomes: outcomes, profile: profile, bin: bin, probe: authConfirmationProbe
+            outcomes: outcomes, savedKinds: savedKinds, profile: profile, bin: bin,
+            probe: authConfirmationProbe
         ) {
             switch decision {
             case .confirmedAlive(let warnedKinds):
