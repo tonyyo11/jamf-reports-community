@@ -272,6 +272,10 @@ struct ReauthenticateSheet: View {
             }
         }
 
+        if let check = flow.connectionCheck {
+            ConnectionCheckBanner(verdict: check)
+        }
+
         if flow.connectionValidated {
             Pill(text: "CREDENTIALS VERIFIED & SAVED", tone: .teal, icon: "checkmark")
         } else if flow.profileRegistered {

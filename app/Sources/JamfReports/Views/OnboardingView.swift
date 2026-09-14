@@ -217,7 +217,11 @@ struct OnboardingView: View {
                 }
             }
 
-            if showsContinueWithoutValidating {
+            if let check = flow.connectionCheck {
+                ConnectionCheckBanner(verdict: check)
+            }
+
+            if flow.offersContinueWithoutValidating {
                 HStack(spacing: 10) {
                     Text("The profile is saved even though validation failed. Fix the URL, "
                         + "client ID, or secret later from Data Sources, or continue now.")
@@ -237,15 +241,6 @@ struct OnboardingView: View {
                 exitCode: flow.validationExitCode
             )
         }
-    }
-
-    /// True only after a validation attempt has failed and the flow already
-    /// permits advancing — `canAdvance` for `.validate` requires the profile
-    /// to be registered and not mid-validation, which is already the policy
-    /// this button exposes (the docs promise it; only the UI lacked it).
-    private var showsContinueWithoutValidating: Bool {
-        guard let exit = flow.validationExitCode, exit != 0 else { return false }
-        return !flow.connectionValidated && flow.canAdvance
     }
 
     private var welcomeStep: some View {
@@ -432,9 +427,14 @@ struct OnboardingView: View {
                             .foregroundStyle(Theme.Colors.fg)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("1. Go to account.jamf.com → API Clients")
-                        Text("2. Create an API Client and note the Client ID")
-                        Text("3. Generate a Client Secret (shown only once)")
+                        Text("1. In account.jamf.com, open Integrations → Create integration")
+                        Text("2. Scope level: Platform environment, choosing only the "
+                            + "environment that holds your Jamf Pro tenant")
+                        Text("3. Permissions: Read only, for the report areas you want")
+                        Text("4. Copy the client ID and the client secret (shown only once)")
+                        Text("5. Copy the environment ID: open the integration and click the "
+                            + "environment pill")
+                        Text("6. Integrations are valid for six months")
                     }
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
@@ -549,7 +549,7 @@ struct OnboardingView: View {
                 if !flow.protectConnected {
                     Divider().background(Theme.Colors.hairline)
 
-                    Text("Create API client credentials in your Jamf Protect console under Settings → API Clients.")
+                    Text("Create API client credentials in your Jamf Protect console under Administrative → API Clients.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
 

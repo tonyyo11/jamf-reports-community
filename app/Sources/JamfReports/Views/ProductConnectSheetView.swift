@@ -94,7 +94,7 @@ struct ProductConnectSheetView: View {
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
                     }
-                    Text("Create API client credentials in your Jamf Protect console under Settings → API Clients.")
+                    Text("Create API client credentials in your Jamf Protect console under Administrative → API Clients.")
                         .font(.footnote)
                         .foregroundStyle(Theme.Colors.fg2)
                 }

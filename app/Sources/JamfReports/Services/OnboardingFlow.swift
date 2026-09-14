@@ -197,6 +197,9 @@ final class OnboardingFlow {
     var lastError: String?
     var validationOutput: [CLIBridge.LogLine] = []
     var validationExitCode: Int32?
+    /// The gateway's answer about a Platform API profile's scope ID; nil for OAuth2 profiles
+    /// and before validation.
+    var connectionCheck: ConnectionCheck.Verdict?
     var csvOutput: [CLIBridge.LogLine] = []
     var firstReportOutput: [CLIBridge.LogLine] = []
 
@@ -468,6 +471,7 @@ final class OnboardingFlow {
         connectionValidated = false
         validationExitCode = nil
         validationOutput.removeAll()
+        connectionCheck = nil
         lastError = nil
     }
 
@@ -510,6 +514,7 @@ final class OnboardingFlow {
         connectionValidated = false
         validationExitCode = nil
         validationOutput.removeAll()
+        connectionCheck = nil
         lastError = nil
     }
 
@@ -798,6 +803,7 @@ final class OnboardingFlow {
         validationOutput.removeAll()
         validationExitCode = nil
         connectionValidated = false
+        connectionCheck = nil
         lastError = nil
 
         let profile = profileName.trimmed
@@ -821,11 +827,46 @@ final class OnboardingFlow {
         }
 
         validationExitCode = exit
-        if exit == 0 {
-            connectionValidated = true
-        } else {
-            lastError = "jamf-cli config validate failed for \(profile). Review the URL, client ID, secret, and API role privileges, then retry."
+        guard exit == 0 else {
+            lastError = "jamf-cli config validate failed for \(profile). Review the URL, "
+                + "client ID, secret, and API role privileges, then retry."
+            return
         }
+        guard proConnectionType == .platformGateway else {
+            connectionValidated = true
+            return
+        }
+        applyConnectionCheck(await runConnectionCheck(profile: profile))
+    }
+
+    private func runConnectionCheck(profile: String) async -> ConnectionCheck.Verdict {
+        guard let binary = ExecutableLocator.locate("jamf-cli"),
+              let runner = ConnectionCheck.liveRunner() else {
+            return .undecided(exitCode: nil)
+        }
+        let specNames = JamfCLIInstaller.supportsSpecDerivedNames(
+            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
+        )
+        return await ConnectionCheck.run(profile: profile, specNames: specNames, runner: runner)
+    }
+
+    /// A rejected or unconfirmed ID stays unvalidated; an ID the gateway accepted validates even
+    /// when no Jamf Pro answered, which the banner reports as a warning.
+    func applyConnectionCheck(_ verdict: ConnectionCheck.Verdict) {
+        connectionCheck = verdict
+        switch verdict {
+        case .accepted, .noJamfPro: connectionValidated = true
+        case .rejectedID, .undecided: connectionValidated = false
+        }
+    }
+
+    /// "Continue without validating" after a failed validation. For a Platform API profile,
+    /// only when the connection check could not decide (spec §10.4).
+    var offersContinueWithoutValidating: Bool {
+        guard !connectionValidated, canAdvance, let exit = validationExitCode else { return false }
+        guard proConnectionType == .platformGateway else { return exit != 0 }
+        if case .undecided = connectionCheck { return true }
+        return false
     }
 
     func scaffoldCSV(from url: URL) async {
