@@ -360,7 +360,6 @@ enum ConfigDoctorService {
         var rows: [DoctorRow] = []
         rows += complianceStructuralRows(config)
         rows += duplicateColumnRows(config)
-        rows += platformRows(config)
         rows += customEAStructuralRows(config)
         return rows
     }
@@ -402,16 +401,6 @@ enum ConfigDoctorService {
                 hint: "Each CSV column should map to a single logical field."
             )
         }
-    }
-
-    private static func platformRows(_ config: ReportConfig) -> [DoctorRow] {
-        guard let platform = config.platform, platform.isEnabled,
-              platform.benchmarkTitles.isEmpty else { return [] }
-        return [DoctorRow(
-            id: "platform.benchmarks", severity: .warn, title: "Platform enabled",
-            detail: "Platform is on but no compliance_benchmarks are listed.",
-            hint: "Add at least one benchmark title, or disable platform."
-        )]
     }
 
     private static func customEAStructuralRows(_ config: ReportConfig) -> [DoctorRow] {

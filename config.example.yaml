@@ -488,26 +488,21 @@ ai:
 # still emerging. It uses the same selected jamf-cli profile, but that profile
 # must also have working Platform gateway auth in the jamf-cli build you use.
 #
-# List each benchmark title in compliance_benchmarks. Each entry generates two
-# sheets: one for per-rule pass/fail stats and one for per-device results.
-# Orgs commonly run multiple benchmarks (e.g. an enforced baseline and an audit
-# baseline, or separate baselines per department). Leave the list empty to skip
-# compliance sheets while still including the Blueprint and DDM Status sheets.
-#
-# Sheet names are derived from the benchmark title (truncated to fit Excel's
-# 31-character limit), e.g. "NIST 800-53r5 Moderate Rules" and
-# "NIST 800-53r5 Moderate Devices".
+# Leave compliance_benchmarks empty to collect every benchmark on the tenant, or
+# list titles to collect only those. Titles match exactly and are case-sensitive;
+# a title shared by two benchmarks is skipped. Results land in one Compliance
+# Rules sheet and one Compliance Devices sheet with a Benchmark column, and the
+# Compliance Benchmarks screen shows one benchmark at a time.
 
 platform:
   # Set true to opt this profile into Platform API reports. Required, but
   # not sufficient on its own — v2.1.0 also requires the experimental flag
   # below (experimental.platform_features_enabled) AND a jamf-cli profile
   # with auth-method: platform. All three checks must pass before any
-  # Platform sheet is written; a "[skip] Platform API gate closed" line
-  # surfaces in the run log if any check fails.
+  # Platform sheet is written.
   enabled: false
   # List of benchmark titles for the Platform compliance sheets.
-  # Each entry produces a Rules sheet and a Devices sheet.
+  # Empty collects every benchmark; listed titles narrow it (exact, case-sensitive).
   compliance_benchmarks:
     # - "NIST 800-53r5 Moderate"
     # - "DISA STIG"

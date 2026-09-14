@@ -285,7 +285,7 @@ final class ConfigDoctorServiceTests: XCTestCase {
 
     // MARK: - platform
 
-    func testPlatformEnabledWithoutBenchmarksWarns() throws {
+    func testPlatformEnabledWithoutBenchmarksRaisesNoRow() throws {
         let yaml = """
         platform:
           enabled: true
@@ -296,7 +296,7 @@ final class ConfigDoctorServiceTests: XCTestCase {
             config: config, parseError: nil, csvHeaders: nil,
             csvFamily: nil, eaCoverageNames: []
         )
-        XCTAssertEqual(row(rows, id: "platform.benchmarks")?.severity, .warn)
+        XCTAssertNil(row(rows, id: "platform.benchmarks"))
     }
 
     // MARK: - security_agents
