@@ -244,6 +244,41 @@ final class DataFreshnessHealthTests: XCTestCase {
         XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(remediable), [.inventory])
     }
 
+    /// Spec §9.5: a rejected scope ID, an unserved endpoint and a missing permission cannot be
+    /// fixed by retrying; a gateway edge block can.
+    func testPermanentFailureCausesAreExcludedFromRemediationTargeting() throws {
+        let profile = "causefilter"
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Cause-\(UUID().uuidString)", isDirectory: true)
+        let workspacesRoot = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspacesRoot.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        func record(_ report: String, _ kind: FailureCause.Kind, exit: Int32) {
+            store.record(.failed(exitCode: exit), report: report, at: now,
+                         cause: FailureCause(kind: kind, names: [], hint: nil, exitCode: exit))
+        }
+        record("security", .missingPermission, exit: 5)
+        record("computers", .unknownEnvironment, exit: 4)
+        record("policies", .edgeBlocked, exit: 5)
+
+        let issues = ["security", "computers", "policies"].map {
+            DataFreshnessIssue(
+                snapshotKind: $0, tier: .inventory, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            )
+        }
+        let remediable = WorkspaceStore.excludingPermanentUsageFailures(issues, profile: profile)
+        XCTAssertEqual(remediable.map(\.snapshotKind), ["policies"])
+    }
+
     func testNoExitTwoFailureLeavesIssuesUntouched() throws {
         let profile = "exittwofilter-none"
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)

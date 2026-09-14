@@ -540,11 +540,11 @@ extension WorkspaceStore {
         return false
     }
 
-    /// Drop issues whose kind's last failure exit code makes retry pointless:
-    /// `exitCodeUsage` (2, a usage/credentials gate — e.g. jamf-cli 1.24–1.27 on
-    /// `pro report security`) and `exitCodeRefusedByPolicy` (8, 1.28+ — outside
-    /// the profile's published API). Only `tiersToRemediate`'s input narrows;
-    /// `issues` — and so the banner — is untouched, the operator still sees them.
+    /// Drop issues whose last failure makes retry pointless until someone changes the
+    /// credential: `exitCodeUsage` (2, a usage or credentials gate), `exitCodeRefusedByPolicy`
+    /// (8, outside the profile's API), or a permanent `FailureCause` — a rejected scope ID, an
+    /// endpoint this connection does not serve, or a missing permission (spec §9.5). Only
+    /// `tiersToRemediate`'s input narrows; the banner still shows every issue.
     nonisolated static func excludingPermanentUsageFailures(
         _ issues: [DataFreshnessIssue], profile: String
     ) -> [DataFreshnessIssue] {
@@ -555,12 +555,13 @@ extension WorkspaceStore {
             let code = store.lastFailureExitCode(for: $0.snapshotKind)
             return code == CLIBridge.exitCodeUsage
                 || code == CLIBridge.exitCodeRefusedByPolicy
+                || store.cause(for: $0.snapshotKind)?.isPermanent == true
         }
         guard !permanent.isEmpty else { return issues }
         AppLogger.collect.notice(
             """
-            Skipping remediation for \(permanent.count, privacy: .public) kind(s) with a \
-            permanent usage/credentials-gate or policy-refusal failure: \
+            Skipping remediation for \(permanent.count, privacy: .public) kind(s) whose last \
+            failure cannot succeed on retry (usage gate, policy refusal, scope or permission): \
             \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .public)
             """
         )
