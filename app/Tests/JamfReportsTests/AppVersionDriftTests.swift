@@ -22,6 +22,29 @@ final class AppVersionDriftTests: XCTestCase {
         )
     }
 
+    /// CI never runs build-app.sh or build-pkg.sh, so their floor can drift from Package.swift.
+    func testMinimumMacOSMatchesPackageManifest() throws {
+        let appDir = try locateBuildAppScript().deletingLastPathComponent()
+        func read(_ name: String) throws -> String {
+            try String(contentsOf: appDir.appendingPathComponent(name), encoding: .utf8)
+        }
+        let major = try XCTUnwrap(
+            Self.captures(#"\.macOS\(\.v([0-9]+)\)"#, in: try read("Package.swift")).first,
+            "platforms .macOS(.vNN) not found in Package.swift; update the pattern"
+        )
+        let floor = "\(major).0"
+        let plistMin = #"<key>LSMinimumSystemVersion</key>\s*<string>([0-9.]+)</string>"#
+        XCTAssertEqual(
+            Self.captures(plistMin, in: try read("build-app.sh")), [floor],
+            "build-app.sh LSMinimumSystemVersion must match Package.swift .macOS(.v\(major))"
+        )
+        XCTAssertEqual(
+            Set(Self.captures(#"<os-version min="([0-9.]+)"/>"#, in: try read("build-pkg.sh"))),
+            [floor],
+            "build-pkg.sh allowed-os-versions must match Package.swift .macOS(.v\(major))"
+        )
+    }
+
     /// Extracts the default from `MARKETING_VERSION="${MARKETING_VERSION:-X.Y.Z}"`.
     static func marketingVersion(in script: String) throws -> String {
         let pattern = #"MARKETING_VERSION="\$\{MARKETING_VERSION:-([0-9]+\.[0-9]+(?:\.[0-9]+)?)\}""#
@@ -41,6 +64,13 @@ final class AppVersionDriftTests: XCTestCase {
             )
         }
         return String(script[r])
+    }
+
+    static func captures(_ pattern: String, in text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            match in Range(match.range(at: 1), in: text).map { String(text[$0]) }
+        }
     }
 
     /// Walks up from this test file to find `app/build-app.sh`, so the test is

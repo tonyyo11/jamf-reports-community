@@ -26,6 +26,10 @@ struct DataFreshnessIssue: Identifiable, Sendable, Equatable {
     let consecutiveFailures: Int
     let lastFailure: Date?
 
+    /// Never attempted on this workspace: no success AND no failure recorded.
+    /// A property rather than a `Kind` case because views switch over `kind`.
+    var neverCollected: Bool { lastSuccess == nil && lastFailure == nil }
+
     /// Plain-language reason for the banner and the Automation health card.
     var summary: String {
         switch kind {

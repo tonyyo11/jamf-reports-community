@@ -1,0 +1,144 @@
+{
+  "statusItems": [
+    {
+      "key": "device.identifier.serial-number",
+      "value": "C02FIXTURE01",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "device.identifier.udid",
+      "value": "00000000-0000-0000-0000-000000000001",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "device.model.identifier",
+      "value": "Mac16,8",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "device.model.marketing-name",
+      "value": "MacBook Pro (14-inch, Nov 2024)",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "device.operating-system.build-version",
+      "value": "26A5421a",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "device.operating-system.marketing-name",
+      "value": "macOS 27.0",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "device.operating-system.version",
+      "value": "27.0",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "device.power.battery-health",
+      "value": "normal",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "diskmanagement.filevault.enabled",
+      "value": "true",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "management.client-capabilities.supported-features",
+      "value": null,
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "management.client-capabilities.supported-versions",
+      "value": "1.0.0",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "management.declarations.activations",
+      "value": "{active=true, identifier=4b8b9a6a-c5a3-4b59-97c1-2bc88b62ecc1, valid=valid, server-token=0000000000000000000000000000000000000000000000000000000000000001}",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "management.declarations.assets",
+      "value": "",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "management.declarations.configurations",
+      "value": "{active=true, identifier=b27bda08-d863-4607-9a12-54260f85518f, valid=valid, server-token=0000000000000000000000000000000000000000000000000000000000000002}",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "management.declarations.management",
+      "value": "",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "mdm.enrollment-type",
+      "value": "supervised",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "mdm.is-awaiting-configuration",
+      "value": "false",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "security.lockdown-mode",
+      "value": "false",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.beta-enrollment",
+      "value": "macOS 27 Golden Gate AppleSeed Beta",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.device-id",
+      "value": "J614sAP",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.failure-reason",
+      "value": null,
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.install-reason.reason",
+      "value": "notification",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.install-state",
+      "value": "prepared",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.pending-version",
+      "value": null,
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.pending-version.build-version",
+      "value": "26A5425a",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "softwareupdate.pending-version.os-version",
+      "value": "27.0",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "mdm.push-token",
+      "value": "FIXTURE-PUSH-TOKEN-MUST-NEVER-PERSIST",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    },
+    {
+      "key": "mdm.push-magic",
+      "value": "FIXTURE-PUSH-MAGIC",
+      "lastUpdateTime": "2026-09-04T07:25:58.000"
+    }
+  ]
+}

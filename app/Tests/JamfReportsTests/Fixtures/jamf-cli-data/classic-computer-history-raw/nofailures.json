@@ -1,0 +1,109 @@
+{
+  "commands": {
+    "completed": {
+      "command": [
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1788547383154,
+          "completed_utc": "2026-09-04T14:43:03.154-0400",
+          "name": "CertificateList",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1788547382593,
+          "completed_utc": "2026-09-04T14:43:02.593-0400",
+          "name": "ProfileList",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1788547381705,
+          "completed_utc": "2026-09-04T14:43:01.705-0400",
+          "name": "Install Configuration Profile Platform SSO + Kerberos",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1788547372549,
+          "completed_utc": "2026-09-04T14:42:52.549-0400",
+          "name": "Remove Configuration Profile Platform SSO + Kerberos",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1788454130996,
+          "completed_utc": "2026-09-03T12:48:50.996-0400",
+          "name": "UnlockUserAccount",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1787756509982,
+          "completed_utc": "2026-08-26T11:01:49.982-0400",
+          "name": "Install App - Example App",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1784670698657,
+          "completed_utc": "2026-07-21T17:51:38.657-0400",
+          "name": "ScheduleOSUpdate",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1784054219348,
+          "completed_utc": "2026-07-14T14:36:59.348-0400",
+          "name": "DeclarativeManagement",
+          "username": ""
+        },
+        {
+          "completed": "Today at 8:00 AM",
+          "completed_epoch": 1788469773992,
+          "completed_utc": "2026-09-03T17:09:33.992-0400",
+          "name": "iTunes Account Info",
+          "username": ""
+        }
+      ]
+    },
+    "failed": "",
+    "pending": {
+      "command": [
+        {
+          "issued": "Today at 12:46 PM",
+          "issued_epoch": 1788540419542,
+          "issued_utc": "2026-09-04T12:46:59.542-0400",
+          "last_push": "25 minutes ago",
+          "last_push_epoch": 1788546798928,
+          "last_push_utc": "2026-09-04T14:33:18.928-0400",
+          "name": "ProfileList",
+          "status": "Pending",
+          "username": ""
+        },
+        {
+          "issued": "Today at 12:46 PM",
+          "issued_epoch": 1788540419542,
+          "issued_utc": "2026-09-04T12:46:59.542-0400",
+          "last_push": "25 minutes ago",
+          "last_push_epoch": 1788546798928,
+          "last_push_utc": "2026-09-04T14:33:18.928-0400",
+          "name": "iTunes Account Status",
+          "status": "Pending",
+          "username": ""
+        },
+        {
+          "issued": "Today at 12:46 PM",
+          "issued_epoch": 1788540419542,
+          "issued_utc": "2026-09-04T12:46:59.542-0400",
+          "last_push": "25 minutes ago",
+          "last_push_epoch": 1788546798928,
+          "last_push_utc": "2026-09-04T14:33:18.928-0400",
+          "name": "iTunes Account Info",
+          "status": "Pending",
+          "username": ""
+        }
+      ]
+    }
+  }
+}

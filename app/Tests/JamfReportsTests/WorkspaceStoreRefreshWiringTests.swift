@@ -62,6 +62,25 @@ final class WorkspaceStoreRefreshWiringTests: XCTestCase {
         store.registerForegroundRefresh()
     }
 
+    /// The open app re-runs the wake chain on a timer. One loop per store: a
+    /// second registration (shell remount) must not double the cadence. The
+    /// loop's first pass is a full interval away, so nothing collects here.
+    func testPeriodicRecheckStartsAtMostOncePerStore() {
+        let store = WorkspaceStore(demoMode: false)
+        XCTAssertTrue(store.startPeriodicRecheck(), "first call starts the loop")
+        XCTAssertFalse(store.startPeriodicRecheck(), "second call finds it running")
+    }
+
+    func testRegisterForegroundRefreshStartsThePeriodicRecheck() {
+        let store = WorkspaceStore(demoMode: false)
+        store.registerForegroundRefresh()
+        XCTAssertFalse(store.startPeriodicRecheck(), "registration already started the loop")
+    }
+
+    func testPeriodicRecheckIntervalIsThirtyMinutes() {
+        XCTAssertEqual(WorkspaceStore.periodicRecheckInterval, 1_800)
+    }
+
     /// `autoRefreshAuditIfStale` guards re-entry so rapid profile switches or
     /// repeated launch-task firings can't stack concurrent audit runs. Setting
     /// the flag directly (rather than racing two real async calls) makes the

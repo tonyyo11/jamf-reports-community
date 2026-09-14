@@ -140,7 +140,8 @@ final class AutomationHealthTests: XCTestCase {
         expectedFire: Date?,
         lastRunFinishedAt: Date?,
         lastRunSuccess: Bool?,
-        lastRunExitCode: Int32? = nil
+        lastRunExitCode: Int32? = nil,
+        activeSince: Date? = nil
     ) -> LaunchAgentService.ScheduleHealthInput {
         LaunchAgentService.ScheduleHealthInput(
             label: label,
@@ -151,7 +152,8 @@ final class AutomationHealthTests: XCTestCase {
             expectedFire: expectedFire,
             lastRunFinishedAt: lastRunFinishedAt,
             lastRunSuccess: lastRunSuccess,
-            lastRunExitCode: lastRunExitCode
+            lastRunExitCode: lastRunExitCode,
+            activeSince: activeSince
         )
     }
 
@@ -544,5 +546,91 @@ final class AutomationHealthTests: XCTestCase {
             lastRunFinishedAt: nil
         )
         XCTAssertFalse(issue.isManagedAgent)
+    }
+
+    // MARK: - "Never had a chance" (workspace younger than the expected fire)
+
+    /// A brand-new workspace showed every schedule overdue: the 06:00 fire
+    /// had "passed" for a folder that did not exist until 11:00. A fire from
+    /// before `activeSince` was never missable.
+    func testFireBeforeWorkspaceExistedIsNotOverdue() {
+        let now = referenceNow()  // 14:30
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let created = date(year: 2026, month: 7, day: 6, hour: 11, minute: 0)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(expectedFire: expected, lastRunFinishedAt: nil,
+                           lastRunSuccess: nil, activeSince: created)],
+            now: now
+        )
+        XCTAssertTrue(issues.isEmpty, "a fire before the workspace existed is not a missed run")
+    }
+
+    func testFireAfterWorkspaceExistedIsStillOverdue() {
+        let now = referenceNow()
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let created = date(year: 2026, month: 7, day: 5, hour: 11, minute: 0)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(expectedFire: expected, lastRunFinishedAt: nil,
+                           lastRunSuccess: nil, activeSince: created)],
+            now: now
+        )
+        XCTAssertEqual(issues.map(\.kind), [.overdue])
+    }
+
+    /// The rule silences only `.overdue`: a run that fired after the workspace
+    /// appeared and failed is still a failure, exit code and all.
+    func testFailingIsStillReportedWhenTheFirePredatesTheWorkspace() {
+        let now = referenceNow()
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let created = date(year: 2026, month: 7, day: 6, hour: 11, minute: 0)
+        let ran = date(year: 2026, month: 7, day: 6, hour: 12, minute: 0)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(expectedFire: expected, lastRunFinishedAt: ran,
+                           lastRunSuccess: false, lastRunExitCode: 3, activeSince: created)],
+            now: now
+        )
+        XCTAssertEqual(issues.map(\.kind), [.failing])
+        XCTAssertEqual(issues.first?.lastRunExitCode, 3)
+    }
+
+    /// Boundary: a fire AT the creation instant is not before it — strict `<`.
+    func testFireAtWorkspaceCreationInstantIsOverdue() {
+        let now = referenceNow()
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(expectedFire: expected, lastRunFinishedAt: nil,
+                           lastRunSuccess: nil, activeSince: expected)],
+            now: now
+        )
+        XCTAssertEqual(issues.map(\.kind), [.overdue])
+    }
+
+    // MARK: - wantsTicker gate on the collapsed ticker issue
+
+    /// "Background item disabled" appeared with nothing scheduled: an
+    /// unregistered ticker is the correct state then, not a fault.
+    func testDisabledTickerIsNotAnIssueWhenNothingWantsIt() {
+        for status in [TickerStatus.notRegistered, .requiresApproval] {
+            let unwanted = AutomationHealth.evaluate(
+                inputs: [], tickerStatus: status, wantsTicker: false, now: referenceNow()
+            )
+            XCTAssertTrue(unwanted.isEmpty, "\(status) with nothing scheduled")
+            let wanted = AutomationHealth.evaluate(
+                inputs: [], tickerStatus: status, wantsTicker: true, now: referenceNow()
+            )
+            XCTAssertEqual(wanted.map(\.kind), [.tickerDisabled], "\(status) with schedules")
+        }
+    }
+
+    /// `wantsTicker` gates only the collapsed ticker issue; the per-schedule
+    /// evaluation still runs on whatever inputs there are.
+    func testWantsTickerFalseStillEvaluatesSchedules() {
+        let now = referenceNow()
+        let expected = date(year: 2026, month: 7, day: 6, hour: 6, minute: 0)
+        let issues = AutomationHealth.evaluate(
+            inputs: [input(expectedFire: expected, lastRunFinishedAt: nil, lastRunSuccess: nil)],
+            tickerStatus: .notRegistered, wantsTicker: false, now: now
+        )
+        XCTAssertEqual(issues.map(\.kind), [.overdue])
     }
 }

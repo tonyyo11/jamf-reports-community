@@ -387,6 +387,7 @@ final class CoreDashboardTests: XCTestCase {
             "Device Security State", "Mobile Supervision Status",
             // Platform / DDM (optional)
             "Compliance Devices", "Compliance Rules", "DDM Status", "Blueprint Status",
+            "DDM Device Status", "MDM Command Health",
             // Protect (optional)
             "Protect Overview", "Protect Alerts", "Protect Computers", "Protect Insights",
             "Protect Plans", "Protect Threat Overview",

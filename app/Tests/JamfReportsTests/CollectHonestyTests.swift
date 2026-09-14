@@ -263,7 +263,8 @@ final class CollectHonestyTests: XCTestCase {
         let watcher = CollectHonestyWatcher()
         for line in ["[info] collecting security for prod",
                      "[ok] security: 1024 bytes",
-                     "[partial] 1 of 30 source(s) served stale cache: groups",
+                     "[partial] 1 of 30 source(s) did not land this run: groups — earlier "
+                        + "snapshots are used where they exist",
                      "[ok] wrote summary_2026-09-02.json — trend chart and StaleDataBanner "
                         + "will reflect this run"] {
             watcher.observe(line)
@@ -271,6 +272,29 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertFalse(watcher.stoodDown)
         XCTAssertFalse(watcher.summaryWriteFailed)
         XCTAssertTrue(watcher.producedFreshSnapshot)
+    }
+
+    /// Drives the background item's same-day retry: a source or summary that did not land
+    /// is incomplete; a stand-down or a report's sheet failures are not.
+    func testWatcherFlagsOnlyMissingDataAsIncomplete() {
+        let degraded = CollectHonestyWatcher()
+        degraded.observe("[ok] security: 1024 bytes")
+        XCTAssertFalse(degraded.incomplete)
+        degraded.observe("[partial] 1 of 30 source(s) did not land this run: groups")
+        XCTAssertTrue(degraded.incomplete)
+        XCTAssertTrue(degraded.producedFreshSnapshot, "a degraded source still advances Trends")
+
+        let lostSummary = CollectHonestyWatcher()
+        lostSummary.observe("\(ReportEngine.summaryNotWrittenMarker) no source landed this run")
+        XCTAssertTrue(lostSummary.incomplete)
+
+        let stoodDown = CollectHonestyWatcher()
+        stoodDown.observe(ReportEngine.standDownLine(reason: "[info] peer collected recently"))
+        XCTAssertFalse(stoodDown.incomplete, "another Mac collected; there is nothing to retry")
+
+        let sheets = CollectHonestyWatcher()
+        sheets.observe(partialRunMarker(sheetFailures: 2))
+        XCTAssertFalse(sheets.incomplete, "sheet failures are a report problem, not missing data")
     }
 
     // MARK: - S2: a summary that never landed
@@ -369,7 +393,7 @@ final class CollectHonestyTests: XCTestCase {
             $0.hasPrefix(ReportEngine.summaryNotWrittenMarker)
         }
         XCTAssertEqual(marker.count, 1, "got: \(collector.texts)")
-        XCTAssertTrue(try XCTUnwrap(marker.first).contains("no jamf-cli snapshots"),
+        XCTAssertTrue(try XCTUnwrap(marker.first).contains("no source landed"),
                       "got: \(marker)")
 
         let summaries = try WorkspacePaths.summariesDir(for: profile)
@@ -381,6 +405,39 @@ final class CollectHonestyTests: XCTestCase {
         collector.texts.forEach(watcher.observe)
         XCTAssertFalse(watcher.producedFreshSnapshot,
                        "the scheduled caller must not claim Trends updated for this run")
+    }
+
+    /// A snapshot from yesterday sits on disk and every attempted source fails: writing a
+    /// summary would chart yesterday's numbers as today's trend point.
+    func testNothingLandedDoesNotStampCachedDataAsToday() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let secDir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        let stampFormatter = DateFormatter()
+        stampFormatter.locale = Locale(identifier: "en_US_POSIX")
+        stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let payload: [[String: Any]] = [["section": "summary", "data": [
+            "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
+            "sip_enabled": 249, "firewall_enabled": 245,
+        ]]]
+        try JSONSerialization.data(withJSONObject: payload)
+            .write(to: secDir.appendingPathComponent("security_\(stamp).json"))
+        let stub = try makeStub(exitCode: 2, stdout: "")
+        let collector = LogTextCollector()
+
+        try await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
+            force: true, locateJamfCLI: { stub }, onLine: collector.append
+        )
+
+        XCTAssertTrue(collector.texts.contains {
+            $0.hasPrefix(ReportEngine.summaryNotWrittenMarker) && $0.contains("no source landed")
+        }, "got: \(collector.texts)")
+        let summaries = try WorkspacePaths.summariesDir(for: profile)
+        let written = (try? FileManager.default.contentsOfDirectory(atPath: summaries.path)) ?? []
+        XCTAssertTrue(written.isEmpty, "a cache-only summary must not be written: \(written)")
     }
 
     /// A workspace with no config.yaml skips the emit entirely — also a run that

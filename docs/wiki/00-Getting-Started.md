@@ -20,7 +20,7 @@ brew install Jamf-Concepts/tap/jamf-cli
 ```
 
 This project supports jamf-cli v1.18.0 or later, with v1.19.0+ recommended for full
-partial-failure handling; the app itself currently tracks v1.28.0. On jamf-cli 1.24.0
+partial-failure handling; the app itself currently tracks v1.29.0. On jamf-cli 1.24.0
 through 1.27.0, the security report requires a Jamf Security Cloud subscription (see Known
 Issues in the CHANGELOG) — this is fixed in 1.28.0, so upgrade to restore Security Posture,
 the security score and the FileVault, SIP, firewall and Gatekeeper figures. Tenants that
@@ -55,7 +55,8 @@ are a manual export-CSV-then-Generate cycle.
 ## 3. Create a read-only API role
 
 `jamf-cli pro setup` (used in the next step) can create the API client for you, or you
-can create one yourself in Jamf Pro first. Either way, use a **read-only** role — this
+can create one yourself in Jamf Pro first (on jamf-cli 1.29 and later, supplying an
+existing client is the default). Either way, use a **read-only** role — this
 project only reads data. See [Installation → Jamf Pro API permissions](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation)
 for the exact privilege table.
 
@@ -80,7 +81,8 @@ full detail on each:
    shared team folder so several Macs build one pooled history — see
    [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 4. **Authenticate** — connect Jamf Pro with your API client credentials (or a Platform
-   Gateway tenant ID). The secret is never persisted by the app; `jamf-cli` stores the
+   API scope — environment ID, or tenant ID for a legacy integration; organization
+   scope needs no ID). The secret is never persisted by the app; `jamf-cli` stores the
    resulting token in the macOS keychain.
 5. **Validate** — the app confirms the connection works.
 6. **CSV mapping** — optionally add a Jamf Pro CSV export for the sheets that need
@@ -88,12 +90,15 @@ full detail on each:
    Attributes). You can **Skip for now** and add one later.
 7. **Add products (optional)** — connect Jamf Protect or Jamf School here if you use
    them, or skip and add them later from the Data Sources screen.
-8. **First report** — the app generates a first report so the dashboards have data to
-   show.
+8. **First report** — for Jamf Pro, the app collects a snapshot (refresh and inventory
+   data, not the per-device scans) and then generates a first report, so the dashboards
+   have data to show. For Jamf School, this step only generates.
 
 ## 6. Your first collect and report
 
-Step 8 above already ran a first collect and generate for you. From here on, use the
+Step 8 above already ran a first collect and generate for you, on the Jamf Pro path. The
+per-device scans (patch and update failure detail, DDM status, MDM command history) haven't
+run yet — they run on the weekly schedule, or on demand via **Collect now** on Overview. From here on, use the
 **Collect now** and **Generate Report** buttons on the Overview screen whenever you want
 fresh data or a new report, or set up
 [Scheduling & Automation](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation) to run unattended.

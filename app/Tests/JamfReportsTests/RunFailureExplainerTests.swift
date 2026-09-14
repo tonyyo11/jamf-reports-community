@@ -147,13 +147,20 @@ final class RunFailureExplainerTests: XCTestCase {
         XCTAssertTrue(explainer is StubRunFailureExplainer)
     }
 
+    /// Same gate as the views: Swift 6.4 on macOS 27 constructs the on-device
+    /// explainer; anything else resolves to the stub. See the matching test in
+    /// FleetInsightGeneratorTests for why this is not asserted by toolchain.
     @MainActor
-    func testFactoryReturnsStubOnCurrentToolchain() {
-        // On this host (Swift 6.3, compiler(>=6.4) false) the FM branch elides;
-        // on macOS 27 this returns FoundationModelsRunFailureExplainer.
+    func testFactoryFollowsThePlatformGate() {
         let explainer = makeRunFailureExplainer(
             config: AIConfig(enabled: true), availability: .available
         )
-        XCTAssertTrue(explainer is StubRunFailureExplainer)
+        if ModelAvailability.platformSupported {
+            XCTAssertFalse(explainer is StubRunFailureExplainer,
+                           "macOS 27 with Swift 6.4 must construct the on-device explainer")
+        } else {
+            XCTAssertTrue(explainer is StubRunFailureExplainer,
+                          "a pre-27 host or pre-6.4 toolchain elides the FoundationModels branch")
+        }
     }
 }

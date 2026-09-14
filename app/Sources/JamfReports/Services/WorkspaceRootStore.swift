@@ -19,10 +19,10 @@ enum WorkspaceRootStore {
     /// UserDefaults key holding the operator's chosen root. Absent = default.
     static let defaultsKey = "workspacesRootPath"
 
-    /// Environment override consulted before UserDefaults. Set by the LaunchAgent
-    /// plists the app writes, so a scheduled run never depends on the GUI's
-    /// preferences being readable, and settable by hand for the included CLI
-    /// (`JRC_WORKSPACES_ROOT=… jamf-reports check --profile prod`).
+    /// Environment override consulted before UserDefaults. Settable by hand for
+    /// the included CLI (`JRC_WORKSPACES_ROOT=… jamf-reports check --profile
+    /// prod`) when a scheduled run shouldn't depend on the GUI's preferences
+    /// being readable.
     static let environmentKey = "JRC_WORKSPACES_ROOT"
 
     enum Validation: Equatable {
@@ -185,15 +185,7 @@ enum WorkspaceRootStore {
             )
         }
 
-        let previous = current(defaults: defaults, environment: [:])
         defaults.set(resolved.path, forKey: defaultsKey)
-        if previous.resolvingSymlinksInPath().standardizedFileURL.path != resolved.path {
-            // Managed LaunchAgent plists embed the old root in WorkingDirectory
-            // and their run environment, and a root move changes neither mode,
-            // cadence, tiers nor exclusions — so the reconcile signature would
-            // find them unchanged and leave them pointing at the old location.
-            ManagedAutomation.invalidateManagedPlists(defaults: defaults)
-        }
         AppLogger.platform.notice(
             "workspace root set to \(resolved.path, privacy: .public)"
         )

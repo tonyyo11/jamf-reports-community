@@ -115,9 +115,39 @@ final class OnboardingFlow {
     /// True when the secure field has keystrokes but `clientSecret` is not yet finalized.
     var secretFieldHasText = false
 
+    /// The Platform API scope level: which flag `config add-profile` sends.
+    enum PlatformScope: String, CaseIterable, Sendable {
+        case environment, tenant, organization
+
+        var label: String {
+            switch self {
+            case .environment: "Environment"
+            case .tenant: "Tenant (legacy)"
+            case .organization: "Organization"
+            }
+        }
+
+        /// Organization scope sends no ID flag at all.
+        var needsID: Bool { self != .organization }
+
+        var idFieldLabel: String {
+            switch self {
+            case .environment: "Environment ID"
+            case .tenant, .organization: "Tenant ID"
+            }
+        }
+
+        /// GA default is environment; a detected pre-1.28 jamf-cli would reject
+        /// `--environment-id` (exit 2), so it starts on the legacy flag instead.
+        static func defaultScope(forCLIVersion version: String?) -> PlatformScope {
+            JamfCLIInstaller.supportsEnvironmentScope(version) ? .environment : .tenant
+        }
+    }
+
     // Platform Gateway additional fields
     var gatewayURL = "https://us.api.jamfcloud.com"
-    var tenantID = ""
+    var platformScope: PlatformScope = .environment
+    var platformScopeID = ""
     var platformClientID = ""
     var platformClientSecret = ""
     var platformSecretFieldHasText = false
@@ -188,6 +218,7 @@ final class OnboardingFlow {
             Self.pendingProductPath = nil
         }
         refreshJamfCLIStatus()
+        platformScope = PlatformScope.defaultScope(forCLIVersion: jamfCLIVersion)
     }
 
     /// The ordered steps for the active `productPath`.
@@ -230,7 +261,8 @@ final class OnboardingFlow {
                 isProfileNameValid && isJamfURLValid && !clientID.trimmed.isEmpty
                     && (!clientSecret.isEmpty || secretFieldHasText) && !isRegisteringProfile
             case .platformGateway:
-                isProfileNameValid && isGatewayURLValid && !tenantID.trimmed.isEmpty
+                isProfileNameValid && isGatewayURLValid
+                    && (!platformScope.needsID || !platformScopeID.trimmed.isEmpty)
                     && !platformClientID.trimmed.isEmpty
                     && (!platformClientSecret.isEmpty || platformSecretFieldHasText)
                     && !isRegisteringProfile
@@ -420,7 +452,8 @@ final class OnboardingFlow {
         let result = try await Self.runWithPTY(
             executable: binary,
             arguments: Self.proOAuth2Arguments(
-                profile: profileName.trimmed, url: url.absoluteString
+                profile: profileName.trimmed, url: url.absoluteString,
+                noVerify: noVerifyFlag(binary: binary)
             ),
             stdin: stdinData
         )
@@ -460,7 +493,9 @@ final class OnboardingFlow {
             arguments: Self.platformGatewayArguments(
                 profile: profileName.trimmed,
                 gatewayURL: gatewayURL.trimmed,
-                tenantID: tenantID.trimmed
+                scope: platformScope,
+                scopeID: platformScopeID.trimmed,
+                noVerify: noVerifyFlag(binary: binary)
             ),
             stdin: stdinData
         )
@@ -618,14 +653,28 @@ final class OnboardingFlow {
         await registerSchoolProfile()
     }
 
+    /// jamf-cli 1.29 checks a new profile's credentials against the server before
+    /// writing it. `--no-verify` keeps Save a local write on every version, so the
+    /// Validate step stays the connection check and a placeholder pair still
+    /// registers. The flag is unknown before 1.29 (exit 2), hence the gate.
+    private func noVerifyFlag(binary: URL) -> Bool {
+        JamfCLIInstaller.supportsSpecDerivedNames(
+            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
+        )
+    }
+
     // MARK: - Pure argument builders (testable without PTY)
 
     /// Arguments for `jamf-cli config add-profile` using OAuth2 auth.
-    static func proOAuth2Arguments(profile: String, url: String) -> [String] {
-        ["config", "add-profile", profile,
-         "--url", url,
-         "--auth-method", "oauth2",
-         "--no-color"]
+    static func proOAuth2Arguments(
+        profile: String, url: String, noVerify: Bool = false
+    ) -> [String] {
+        var args = ["config", "add-profile", profile,
+                    "--url", url,
+                    "--auth-method", "oauth2",
+                    "--no-color"]
+        if noVerify { args.append("--no-verify") }
+        return args
     }
 
     /// stdin bytes for OAuth2 profile registration (clientID\nclientSecret\n).
@@ -646,14 +695,22 @@ final class OnboardingFlow {
     }
 
     /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth.
+    /// Sends exactly one scope flag (`--environment-id` / `--tenant-id`), or
+    /// none for organization scope — the flags are mutually exclusive.
     static func platformGatewayArguments(
-        profile: String, gatewayURL: String, tenantID: String
+        profile: String, gatewayURL: String, scope: PlatformScope, scopeID: String,
+        noVerify: Bool = false
     ) -> [String] {
-        ["config", "add-profile", profile,
-         "--auth-method", "platform",
-         "--tenant-id", tenantID,
-         "--url", gatewayURL,
-         "--no-color"]
+        var args = ["config", "add-profile", profile,
+                     "--auth-method", "platform"]
+        switch scope {
+        case .environment: args += ["--environment-id", scopeID]
+        case .tenant: args += ["--tenant-id", scopeID]
+        case .organization: break
+        }
+        args += ["--url", gatewayURL, "--no-color"]
+        if noVerify { args.append("--no-verify") }
+        return args
     }
 
     /// stdin bytes for Platform Gateway profile registration (clientID\nclientSecret\n).
@@ -853,7 +910,8 @@ final class OnboardingFlow {
             try ScaffoldService.writeMinimalConfig(to: outputConfig, profile: profile)
             csvOutput.append(.init(
                 timestamp: Date(), level: .ok,
-                text: "[ok] config.yaml written — edit column mappings before running generate"
+                text: "[ok] minimal config.yaml written — jamf-cli data is enough; add a CSV "
+                    + "later from Data Sources for per-device sheets"
             ))
             csvMappingSkipped = true
         } catch {
@@ -861,38 +919,85 @@ final class OnboardingFlow {
         }
     }
 
-    func runFirstReport(workspaceStore: WorkspaceStore) async {
+    /// One first-report stage (collect or generate) for a profile, streaming log lines.
+    typealias FirstReportStep = (
+        String, @escaping @Sendable (CLIBridge.LogLine) -> Void
+    ) async throws -> Int32
+
+    /// Runs the first report. The Jamf Pro path collects (refresh + inventory
+    /// tiers only) before generating, so a fresh workspace with no CSV has
+    /// cached data to render — `generate` alone throws `noCachedData` on a
+    /// brand-new workspace. The per-device scan tier is skipped here so a
+    /// large fleet's first report doesn't wait on it; it runs later on
+    /// schedule or via Collect now. The Jamf School path is unchanged:
+    /// `schoolGenerate` fetches its own data at generate time.
+    ///
+    /// `collect` / `generate` default to the real `CLIBridge` calls; tests
+    /// inject spies to prove ordering without spawning jamf-cli.
+    func runFirstReport(
+        workspaceStore: WorkspaceStore,
+        collect: @escaping FirstReportStep = { profile, onLine in
+            try await CLIBridge().collect(
+                profile: profile, tiers: [.refresh, .inventory], force: true, onLine: onLine
+            )
+        },
+        generate: @escaping FirstReportStep = { profile, onLine in
+            try await CLIBridge().generate(profile: profile, csvPath: nil, onLine: onLine)
+        }
+    ) async {
         firstReportOutput.removeAll()
         firstReportExitCode = nil
         lastError = nil
 
-        let bridge = CLIBridge()
-
         isRunningFirstReport = true
         defer { isRunningFirstReport = false }
 
-        let exit: Int32
-        do {
-            // Route by product: a School-only workspace generates the standalone
-            // Jamf School workbook (schoolGenerate), not the Jamf Pro workbook.
-            // `bridge.generate` is Pro-only; schoolGenerate loads the same
-            // workspace config (school_cli.profile) and skips the OAuth2 auth
-            // probe for API-key profiles.
-            if productPath == .school {
-                exit = try await bridge.schoolGenerate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
-                    Task { @MainActor in self?.firstReportOutput.append(line) }
-                }
-            } else {
-                exit = try await bridge.generate(profile: profileName.trimmed, csvPath: nil) { [weak self] line in
-                    Task { @MainActor in self?.firstReportOutput.append(line) }
-                }
+        let profile = profileName.trimmed
+        let onLine: @Sendable (CLIBridge.LogLine) -> Void = { [weak self] line in
+            Task { @MainActor in self?.firstReportOutput.append(line) }
+        }
+
+        if productPath == .school {
+            let exit: Int32
+            do {
+                exit = try await CLIBridge().schoolGenerate(
+                    profile: profile, csvPath: nil, onLine: onLine)
+            } catch {
+                firstReportExitCode = -1
+                lastError = error.localizedDescription
+                return
             }
+            finishFirstReport(exit: exit, workspaceStore: workspaceStore)
+            return
+        }
+
+        let collectExit: Int32
+        do {
+            collectExit = try await collect(profile, onLine)
         } catch {
             firstReportExitCode = -1
             lastError = error.localizedDescription
             return
         }
+        guard collectExit == 0 else {
+            firstReportExitCode = collectExit
+            lastError = "Collect exited \(collectExit) — check the log above."
+            return
+        }
 
+        let exit: Int32
+        do {
+            exit = try await generate(profile, onLine)
+        } catch {
+            firstReportExitCode = -1
+            lastError = error.localizedDescription
+            return
+        }
+        finishFirstReport(exit: exit, workspaceStore: workspaceStore)
+    }
+
+    /// Shared "generate finished" bookkeeping for both product paths.
+    private func finishFirstReport(exit: Int32, workspaceStore: WorkspaceStore) {
         firstReportExitCode = exit
         if exit == 0 {
             UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)

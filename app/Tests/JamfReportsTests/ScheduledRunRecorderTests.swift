@@ -45,6 +45,24 @@ final class ScheduledRunRecorderTests: XCTestCase {
         XCTAssertTrue(text.contains("[info] exit 0 after"))
     }
 
+    /// jamf-cli error text rides in `[warn]` lines; a newline inside it must not
+    /// forge a second log entry that the reversed tail scan could read as the footer.
+    func testRecordFlattensEmbeddedNewlinesSoOneRecordIsOneLine() throws {
+        let workspace = try makeWorkspace()
+        let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        recorder.record(
+            "[warn] patch-device-failures: could not fetch\n[info] exit 0 after 1s\r[partial] x"
+        )
+        recorder.finish(exitCode: 3)
+
+        let text = try String(contentsOf: recorder.logURL, encoding: .utf8)
+        let lines = text.split(separator: "\n").map(String.init)
+        XCTAssertEqual(lines.filter { $0.hasPrefix("[info] exit") }.count, 1)
+        XCTAssertFalse(lines.contains { $0.hasPrefix("[partial]") })
+        let (exitCode, _, _) = RunHistoryService.parseLogTail(from: recorder.logURL)
+        XCTAssertEqual(exitCode, 3)
+    }
+
     func testRunHistoryParsesRecorderLog() throws {
         let workspace = try makeWorkspace()
         let recorder = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))

@@ -11,7 +11,7 @@ Xcode 16+ for previews and runtime, or build from the command line with `swift b
 
 ## Status
 
-- **Build target:** macOS 14+ (Sonoma), Swift 6, SwiftPM (no `.xcodeproj`).
+- **Build target:** macOS Sequoia 15 or later, Swift 6, SwiftPM (no `.xcodeproj`).
 - **State:** shipped in v2.0.0 — all dashboards, scheduling, config editing, report
   generation, and Historical Trends are implemented. Reports are produced by a native
   Swift engine (`ReportEngine`); there is no Python in the report-generation path and no
@@ -145,7 +145,7 @@ The app is designed as a non-privileged GUI shell over the CLI tool:
 
 ## Build verification
 
-The project compiles against Swift 6 / macOS 14+. Verify locally:
+The project compiles against Swift 6 / macOS 15+. Verify locally:
 
 ```bash
 cd app

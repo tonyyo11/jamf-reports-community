@@ -12,7 +12,7 @@ Featured in the [jamf-cli Community Showcase](https://github.com/Jamf-Concepts/j
 
 ## The macOS app
 
-The native SwiftUI app (macOS 14+) is a complete reporting console: collect data from Jamf
+The native SwiftUI app (macOS 15+) is a complete reporting console: collect data from Jamf
 Pro, generate workbooks and HTML reports, schedule unattended runs, and review fleet health
 over time — all from a GUI.
 
@@ -77,8 +77,8 @@ Every non-core dashboard is toggleable, so unused screens disappear from the sid
   date and how long it took to reach 50%/90% fleet adoption. See
   [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity).
 - **On-device AI insights** — an optional plain-language fleet insight card powered by
-  Apple's on-device Foundation Model. macOS 27+ only, off by default, and hidden entirely
-  on earlier macOS. See
+  Apple's on-device Foundation Model. macOS Golden Gate 27 or later only, off by default,
+  and hidden entirely on earlier macOS. See
   [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
 - **Multi-baseline mSCP tracking** — configure more than one compliance baseline (for
   example NIST 800-53r5 and DISA STIG) and get an independent compliance-band trend
@@ -93,10 +93,11 @@ config, schedules, and generated reports, switchable from the sidebar.
 
 ### Requirements and install
 
-macOS 14 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) is optional — it
+macOS 15 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) is optional — it
 powers live collection, but the app also works from CSV exports and cached snapshots.
 Minimum supported version is v1.18.0, v1.19.0+ is recommended for full partial-failure
-handling (exit code 7), and this project currently tracks v1.28.0.
+handling (exit code 7), and this project currently tracks v1.29.0. The prebuilt `.pkg`/`.dmg`
+are Apple silicon (arm64) only — on an Intel Mac, build from source.
 
 Download the latest notarized `.dmg` or `.pkg` from the
 [Releases page](https://github.com/tonyyo11/jamf-reports-community/releases), or build from
@@ -162,7 +163,7 @@ worth knowing before you share a bundle:
   IP by hand first.
 - **Profile slugs and schedule labels are not redacted.** They appear verbatim in the
   bundle's manifest, file names, and workspace tree listing. Keep profile slugs and
-  LaunchAgent schedule labels non-identifying (avoid org names, site codes, or personal
+  schedule labels non-identifying (avoid org names, site codes, or personal
   identifiers) so a shared bundle stays tenant-safe.
 
 Found a problem? Open an issue with the error message and the relevant part of your

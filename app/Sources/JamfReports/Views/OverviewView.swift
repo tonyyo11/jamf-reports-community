@@ -34,7 +34,7 @@ struct OverviewView: View {
     @State private var legacyWorkspaces: [String] = []
     @State private var legacySchedules: [String] = []
     @State private var checklist: GettingStartedChecklist?
-
+    @State private var pendingSharedRoot: URL?
     private var defaultTrendRange: TrendRange {
         TrendRange(rawValue: defaultTrendRangeRaw) ?? .w4
     }
@@ -253,8 +253,8 @@ struct OverviewView: View {
             return "\(names) data couldn't be collected in the last run — the tenant may "
                 + "not return it (e.g. no update plans). Retry, or check Run History."
         }
-        return "\(names) data is missing or more than a week old — "
-            + "Patch, Updates, and EA dashboards show stale values."
+        return "\(names) data is missing or more than \(WorkspaceStore.heavyTierStaleDays) "
+            + "days old — Patch, Updates, and EA dashboards show stale values."
     }
 
     /// 2.6 dead-man switch banner — one summary of overdue/failing scheduled
@@ -282,6 +282,10 @@ struct OverviewView: View {
 
     private var automationHealthMessage: String {
         let issues = workspace.automationHealthIssues
+        if issues.contains(where: { $0.kind == .tickerDisabled }) {
+            return "Automation is off — JamfReports is not allowed to run in the "
+                + "background. Open Automation to fix it."
+        }
         let overdue = issues.filter { $0.kind == .overdue }
         let failing = issues.filter { $0.kind == .failing }
         // Shared by BOTH branches: the failing branch used to show no timestamp
@@ -406,12 +410,35 @@ struct OverviewView: View {
                 if workspace.isInitializingWorkspace {
                     ProgressView().controlSize(.small)
                 } else {
+                    PNPButton(title: "Choose existing folder…", icon: "folder", size: .sm) {
+                        chooseExistingRoot()
+                    }
+                    .help("Point the app at a folder that already holds this profile's workspace.")
                     PNPButton(title: "Initialize", style: .gold, size: .sm) {
                         Task { await workspace.initializeWorkspace() }
                     }
                     .help("Create the workspace directory and seed it with a default config.yaml.")
                 }
             }
+        }
+        .sharedFolderConsent(pending: $pendingSharedRoot) { adoptExistingRoot($0) }
+    }
+
+    /// The shell-side twin of the setup screen's "Already have a workspace
+    /// folder?" card: an operator who once pressed Skip never sees that screen
+    /// again, and this banner is where they land instead.
+    private func chooseExistingRoot() {
+        guard let url = WorkspaceFolderPicker.choose() else { return }
+        if CloudStorage.provider(for: url) != nil {
+            pendingSharedRoot = url
+        } else {
+            adoptExistingRoot(url)
+        }
+    }
+
+    private func adoptExistingRoot(_ url: URL) {
+        if let message = workspace.adoptExistingRoot(url) {
+            workspace.workspaceInitMessage = message
         }
     }
 
@@ -440,9 +467,10 @@ struct OverviewView: View {
 
     private func loadLegacyItems() {
         legacyWorkspaces = ProfileService.dottedLegacyWorkspaces()
-        legacySchedules = LaunchAgentService.dottedLegacyAgents().map {
-            URL(fileURLWithPath: $0).lastPathComponent
-        }
+        // Legacy dotted LaunchAgent detection retired with the plist mechanism
+        // (2.8.0) — the bundled SMAppService ticker has no per-agent plists to
+        // scan for the pre-PR-3 dotted-slug label bug.
+        legacySchedules = []
     }
 
     private var liveWorkspaceState: some View {
@@ -1459,16 +1487,18 @@ struct OverviewView: View {
         let collected = await Task.detached(priority: .utility) {
             TrendStore.readLatestSnapshotMTime(profile: profile) != nil
         }.value
-        // Covered either by a per-profile LaunchAgent, or by managed
-        // automation with this profile not excluded — the all-profiles agents
-        // discover profiles dynamically, so a managed, non-excluded profile
-        // is genuinely scheduled even with no per-profile agent. (The 2026-07
-        // fix dropped a blanket `isManaged` OR entirely because it ticked
-        // EVERY profile under managed automation with no exclusion awareness,
-        // including ones the operator had excluded; this restores the
-        // disjunct scoped to non-excluded profiles only.)
+        // Covered either by a per-profile hand-built schedule, or by managed
+        // automation with this profile not excluded — the ticker discovers
+        // profiles dynamically, so a managed, non-excluded profile is
+        // genuinely scheduled even with no hand-built schedule of its own.
+        // (The 2026-07 fix dropped a blanket `isManaged` OR entirely because
+        // it ticked EVERY profile under managed automation with no exclusion
+        // awareness, including ones the operator had excluded; this restores
+        // the disjunct scoped to non-excluded profiles only.)
         let scheduled = await Task.detached(priority: .utility) {
-            let hasAgent = LaunchAgentService.list().contains { $0.profile == profile }
+            let hasAgent = ScheduleStore().load()
+                .map { $0.toSchedule() }
+                .contains { $0.profile == profile }
             let policy = AutomationPolicy.current()
             let excluded = policy.excludedProfiles.contains(profile)
             return scheduleCovered(hasAgent: hasAgent, policyIsManaged: policy.isManaged, excluded: excluded)

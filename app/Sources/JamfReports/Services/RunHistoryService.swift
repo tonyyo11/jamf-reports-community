@@ -257,9 +257,11 @@ enum RunHistoryService {
         return logTailText.contains("[partial]")
     }
 
+    /// Matches only the recorder's footer (`exit N after 5s`), never an `exit N`
+    /// that jamf-cli or Jamf Pro put inside a warning line.
     static func exitCode(from line: String) -> Int32? {
         guard let range = line.range(
-            of: #"exit\s+(-?\d+)"#,
+            of: #"exit\s+(-?\d+)(?=\s+after\b)"#,
             options: [.regularExpression, .caseInsensitive]
         ) else {
             return nil

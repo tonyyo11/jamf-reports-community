@@ -7,6 +7,220 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-09-14
+
+### Added
+
+The DDM screen now works on every Jamf Pro profile, on-prem included. A new
+per-device scan (weekly, with the other scan-tier collections) asks each
+DDM-enabled Mac for its declaration and software-update status, and the screen
+shows how many Macs have DDM on, how many have reported, which declarations
+are inactive or invalid and on which Macs, and which DDM software updates are
+pending or failing. The Blueprints sections still need a Platform API profile
+and simply do not appear elsewhere.
+
+The same scan reads each Mac's MDM command history. The Health Audit gains two
+"Command health" findings — Macs with a failed command, and Macs with a command
+pending for more than seven days — each routed to the Devices screen, whose
+detail panel now shows a Mac's DDM status and command health beneath its
+inventory. Two workbook sheets, "DDM Device Status" and "MDM Command Health",
+carry one row per Mac. Nothing is changed in Jamf: clearing a failed command
+stays a console action.
+
+Only a fixed set of status-item keys is ever kept; the device's push token and
+per-declaration server tokens are dropped before anything is written. The scan
+honours the "Skip expensive collections" setting. On first launch after
+upgrading, the health strip may show the two new sources as never collected
+until the next scan runs; the weekly scan or Collect now clears it. The scan
+backs off for the rest of the run if Jamf Pro rate-limits it. If jamf-cli
+rejects a call part-way through while your credentials are fine — a token that
+expires mid-request, or a token request that hits a network blip — the scan
+gets a fresh token and retries that call once. After a failed run it waits for
+its normal weekly cadence rather than retrying every hour, unless the failure
+was your credentials: once they are fixed, the next pass scans. Collect now
+still runs it immediately.
+
+- `jamf-reports schedules list|add|remove|run` — hand-built schedules are
+  scriptable for the first time.
+
+### Changed
+
+macOS Sequoia 15 or later is now required to run the app; macOS 14 no longer
+receives security updates from Apple, so support for it has been dropped. The
+app and installer are built for Apple silicon (arm64) only — on an Intel Mac,
+build from source instead. CI now also builds on GitHub's Xcode 27 preview
+image as an early warning for the upcoming Xcode 27 release.
+
+The app tracks jamf-cli 1.29.0. On 1.29.0 and later it uses that release's
+renamed commands for device enrollments, mobile device details and DDM status
+(the old names keep working until March 2027, with a warning on every run), and
+it saves a new profile before checking it, as it does on every earlier
+version. jamf-cli 1.18.0 remains the minimum.
+
+Connecting a Platform API profile now asks which scope the integration was
+created at — environment (the GA default), tenant, or organization — instead
+of assuming a tenant ID.
+
+- Scheduling no longer writes files into `~/Library/LaunchAgents`. One
+  app-owned background item ("JamfReports" under Login Items › Allow in the
+  Background) wakes every five minutes and runs whatever schedule is due, so
+  a schedule set for 06:20 starts by 06:25. Managed automation and hand-built
+  schedules both run this way; hand-built schedules now live in
+  `~/Library/Application Support/JamfReports/schedules.json` and survive
+  moving or updating the app.
+- On first launch, existing JamfReports LaunchAgents are imported. Managed
+  ones are archived and removed at once; hand-built ones stay loaded until
+  you retire them from the Automation screen, and run twice per fire until
+  you do — the screen says so.
+- A missed run (Mac asleep, logged out) catches up once on the next wake for
+  collect schedules; generate-from-cache and backup schedules only run when
+  the missed time is within the last 15 minutes, as before.
+- A collect schedule that fails or comes back incomplete — the Mac was off the
+  VPN, a source did not land — is retried the same day, whether or not the app
+  is open: an hour later, then two hours after that, then four, and then not
+  again until its next scheduled time. A retry only fetches what is still
+  due. Report and backup schedules are not retried.
+- A long run, such as a device scan across hundreds of Macs, no longer lets
+  the next wake start a second run beside it.
+- If macOS shows the background item as off, the Overview banner says so with
+  an "Open Automation" button, and the Automation screen itself has an "Open
+  Login Items" button to fix it — instead of every schedule reading as
+  overdue. Neither appears when nothing is scheduled, because the background
+  item is then off on purpose.
+- While the app stays open it re-checks every 30 minutes for data that is
+  behind and schedules that are overdue, not only at launch and when it comes
+  to the front.
+- On a new workspace, sources that have never been collected read as "not
+  collected yet" instead of "far behind schedule".
+
+### Removed
+
+- The "Software from … can run in the background" notification on every app
+  update, which came from each LaunchAgent being re-registered when its
+  binary changed. The 2.8.0 executable-path check and the Config Doctor
+  "not in an Applications folder" row are gone with the plists; the banner
+  on the Automation screen stays.
+
+### Fixed
+
+Refresh all now clears the Overview "scan data is missing or more than 2 days
+old" prompt once it has collected the per-device tiers. The prompt kept its
+launch-time verdict until its own button was used, so a toolbar refresh looked
+as if it had skipped the scans it had just run.
+
+Devices, Offline Outreach and the per-device security columns now populate on
+workspaces that collect only through jamf-cli. Collect asks Jamf for the user,
+location, security and disk-encryption inventory sections explicitly; without
+that, jamf-cli returns only the general, hardware and OS sections, and every
+device read as Unassigned with no email. When Jamf keeps the address in the
+Username field and leaves Email blank, outreach uses that address.
+
+Patch Compliance shows device failures again. jamf-cli writes the attempt number
+as text and the app accepted only a number, so the whole failure list decoded as
+empty — "Devices with Failures: 0" beside 85 failing titles.
+
+OS Updates now reads the weekly update-device-failures scan, so the failed-plan
+and error-device tables fill in and the freshness chip stops saying "never"
+after a scan has landed.
+
+The device detail panel no longer shows a field's own name as its value when
+Jamf has nothing for it; those rows now read N/A.
+
+Patch failures no longer disappear on jamf-cli 1.29.0. That release changed the
+layout of the patch failure report and the app read the new layout as "no
+failures". It now reads both layouts, and a section jamf-cli could not fetch is
+treated as missing data rather than as zero failures.
+
+The `policies` source no longer fails on every collect. The app asked jamf-cli
+for a `pro policies` command that does not exist on any supported version, so
+the source warned with exit 2 on each run, the freshness strip flagged it, and
+the Policies section of the HTML report stayed empty. It now uses
+`pro classic-policies list`; the snapshot keeps its `policies` name on disk.
+
+The freshness strip no longer reports `sofa` and `patch-release-dates` as far
+behind schedule after every collect. Both were fetched on each run but never
+recorded their success, so the strip read them as never collected, Collect now
+could not clear it, and self-remediation re-collected the refresh tier every
+hour for nothing.
+
+The existing-jamf-cli setup screen now offers "Already have a workspace
+folder?" ahead of initializing a new workspace, for a rebuilt Mac or a second
+Mac joining a synced team folder. It uses the same folder picker and
+shared-folder consent as Settings, and says exactly which config.yaml path it
+looked for when the folder holds no workspace.
+
+The Overview "Configuration incomplete" banner offers the same "Choose
+existing folder…" action beside Initialize. Skipping the setup screen is
+permanent by design, so a rebuilt Mac that skipped it once landed here with no
+way to point the app at its existing workspace.
+
+Initialize now reports its progress. It seeds the workspace and then runs a
+first collect, but the only status line lived in the banner that disappears as
+soon as the seed succeeds, so the collect ran invisibly for minutes on a large
+tenant. The collect now goes through the same path as Collect now: status bar,
+Run History, completion toast.
+
+A collect whose calls are all rejected now fails with the re-authenticate
+message when your credentials really have stopped working. Its credentials
+check read jamf-cli's cached token, which could still pass after the
+credentials were revoked; it now asks for a fresh token.
+
+A day's trend point is no longer built from old data. When every source a run
+tried failed — the Mac was off the VPN, say — the run still wrote today's
+summary from cached snapshots, charted those numbers as today's and reported
+"Trends updated". It now writes nothing and says so in Run History; the next
+run that lands data writes the day's point.
+
+A later run on the same day now improves that day's trend point. If an earlier
+run had to use cached data for a source and a later run collects it, the day's
+point is rebuilt; sources the earlier run collected still count as collected
+today.
+
+Run History marks a run Partial when the device scan could not write its DDM
+or command-health data. The line for sources that did not land now says so
+plainly instead of claiming stale cache was served — on a first collect there
+is no cache.
+
+The installer now refuses Macs the app cannot run on. 2.8.0 needs macOS 15 and
+Apple silicon, but the installer still accepted macOS 14 and Intel Macs, and the
+app still declared macOS 14, so an unsupported Mac could install it and then fail
+to open it.
+
+A brand-new workspace no longer opens with every schedule marked overdue. A
+scheduled time that passed before the workspace existed is not a missed run.
+
+The automatic re-collect no longer starts while another collect is running —
+Initialize, Collect now, a refresh, or the background item. It waits for its
+next pass instead of fetching the same data twice at once.
+
+Onboarding's last step now collects before it generates. On a new install
+without a CSV it ran generate alone and failed with "No cached jamf-cli data
+found". It now collects refresh and inventory data first; the per-device scans
+follow on their schedule or with Collect now.
+
+Setup and scheduling use plainer words. "Save & continue" replaces "Verify &
+continue", since that step only saves the profile, and a failed validation now
+offers "Continue without validating". The install step points Macs without
+Homebrew to the jamf-cli releases page, a CSV is marked optional, the
+scheduling screens describe the background item instead of LaunchAgents, the
+DDM screen no longer implies it needs the Platform API, and the stale-data
+prompt states its real two-day threshold.
+
+### Security
+
+A final review before release closed four small gaps. Run History reads a run's
+exit code only from the app's own footer line, and every logged line is one
+line, so error text from jamf-cli or Jamf Pro can neither stand in for a run's
+result nor forge a second entry. A `schedules.json` that cannot be read is moved
+aside as `schedules.json.broken-<stamp>` instead of being replaced by the next
+save. The OS Updates failed-plan and error-device tables give each row its own
+identity, so a Mac with several failed plans no longer collapses to one row.
+
+Collect now stores the full user and location, security and disk-encryption
+inventory sections, which include real names, job titles, phone numbers, rooms
+and the list of FileVault-enabled accounts. The shared-folder consent names
+them, and diagnostic bundles redact them.
+
 ## [2.7.0] - 2026-09-04
 
 ### Added

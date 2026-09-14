@@ -134,6 +134,17 @@ final class ExistingCLISetupFlow {
         !demoMode && outcome != .skipped && profileCount > 0 && initializedProfileCount == 0
     }
 
+    /// Copy shown when the operator pointed the app at a folder holding no
+    /// workspace for any configured profile — names the exact path the app
+    /// looked for, since "nothing found" alone leaves them guessing whether
+    /// they picked the parent folder or the profile folder.
+    nonisolated static func missingWorkspaceMessage(root: String, profiles: [String]) -> String {
+        let example = "\(root)/\(profiles.first ?? "<profile>")/config.yaml"
+        return "No workspace for \(profiles.joined(separator: ", ")) under \(root) — "
+            + "expected \(example). Pick the folder that contains the profile folders, "
+            + "or initialize a new workspace below."
+    }
+
     // MARK: - Automation policy
 
     /// The policy completing the setup writes. Starts from the currently

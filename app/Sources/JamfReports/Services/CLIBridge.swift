@@ -64,7 +64,7 @@ final class CLIBridge {
     /// Use this constant instead of an inline `{ _ in }` closure so the intent
     /// is explicit and the constant type is guaranteed to match the parameter.
     /// `nonisolated` so it can be referenced from nonisolated static functions
-    /// (e.g. `codesignGate` call sites in `LaunchAgentWriter`, `ProfileService`).
+    /// (e.g. `codesignGate` call sites in `ProfileService`).
     nonisolated static let noOpOnLine: @Sendable (LogLine) -> Void = { _ in }
 
     /// Feeds streamed run lines into the in-app `LogBuffer` so the Settings →
@@ -794,7 +794,9 @@ final class CLIBridge {
                 + "failures."
         case exitCodeUsage:
             detail = "internal argument error (exit 2) — please report this along with this "
-                + "run's log output."
+                + "run's log output. On a Platform API profile, exit 2 is also the retired "
+                + "`apigw.jamf.com` host or an environment/tenant scope conflict — run "
+                + "`jamf-cli config validate`."
         case exitCodeRefusedByPolicy:
             detail = "refused by policy (exit 8) — the command is outside what this "
                 + "profile's API publishes: on a Platform gateway profile, a Jamf Pro or "
@@ -1849,106 +1851,6 @@ final class CLIBridge {
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
         return 0
-    }
-
-    /// - Parameter applyToRunningJob: When `false`, only the plist FILE is
-    ///   written — `launchctl bootout`/`bootstrap` are skipped entirely. Used
-    ///   exclusively when `schedule`'s own label is the LaunchAgent label of
-    ///   the CURRENTLY-RUNNING scheduled-run process: a bootout of your own
-    ///   label kills the process mid-run. launchd re-reads `RunAtLoad` /
-    ///   `StartCalendarInterval` from the plist at job LOAD time (next
-    ///   login/reload), so the in-memory job keeps running on its old
-    ///   schedule until then — sufficient for a policy edit or migration to
-    ///   apply on the schedule's NEXT fire without killing this one.
-    func setupLaunchAgent(
-        _ schedule: Schedule,
-        load: Bool,
-        applyToRunningJob: Bool = true,
-        onLine: @Sendable @escaping (LogLine) -> Void
-    ) async throws -> Int32 {
-        if schedule.isMulti {
-            return try await setupMultiLaunchAgent(
-                schedule, load: load, applyToRunningJob: applyToRunningJob, onLine: onLine
-            )
-        }
-
-        guard await ensureWorkspace(profile: schedule.profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: schedule.profile)
-        }
-
-        let plan: LaunchAgentWriter.SetupPlan
-        do {
-            plan = try LaunchAgentWriter.nativeSingleWrite(for: schedule, load: load)
-        } catch {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
-            throw CLIBridgeError.launchFailed(reason: error.localizedDescription)
-        }
-
-        let action = load ? "writing and loading" : "writing disabled"
-        onLine(.init(timestamp: Date(), level: .info, text: "[info] \(action) LaunchAgent \(plan.label)"))
-        guard applyToRunningJob else {
-            onLine(.init(timestamp: Date(), level: .info,
-                         text: "[info] wrote \(plan.label) file-only — running job untouched"))
-            return 0
-        }
-        _ = await LaunchAgentWriter.unload(plan.label)
-        if load {
-            let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)
-            if exit != 0 {
-                onLine(.init(timestamp: Date(), level: .warn,
-                             text: "[warn] launchctl bootstrap returned \(exit) — plist written but not loaded"))
-            }
-            return exit
-        }
-        return 0
-    }
-
-    private func setupMultiLaunchAgent(
-        _ schedule: Schedule,
-        load: Bool,
-        applyToRunningJob: Bool = true,
-        onLine: @Sendable @escaping (LogLine) -> Void
-    ) async throws -> Int32 {
-        guard LaunchAgentWriter.label(for: schedule) != nil else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid schedule name for multi-profile label"))
-            throw CLIBridgeError.invalidArgument("invalid schedule name for multi-profile label")
-        }
-        guard ProfileService.isValid(schedule.profile) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] multi-profile schedules need a base workspace profile"))
-            throw CLIBridgeError.invalidProfile(schedule.profile)
-        }
-        guard let execURL = Bundle.main.executableURL else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] cannot resolve app executable path"))
-            throw CLIBridgeError.executableNotFound
-        }
-        do {
-            let plan = try LaunchAgentWriter.nativeMultiWrite(
-                for: schedule,
-                executableURL: execURL,
-                load: load
-            )
-            let action = load ? "writing and loading" : "writing disabled"
-            onLine(.init(timestamp: Date(), level: .info,
-                         text: "[info] \(action) multi-profile LaunchAgent \(plan.label)"))
-            guard applyToRunningJob else {
-                onLine(.init(timestamp: Date(), level: .info,
-                             text: "[info] file-only write for \(plan.label) — not reloading the running job"))
-                return 0
-            }
-            _ = await LaunchAgentWriter.unload(plan.label)
-            if load {
-                let exit = await LaunchAgentWriter.loadPlist(at: plan.plistURL)
-                if exit != 0 {
-                    onLine(.init(timestamp: Date(), level: .warn,
-                                 text: "[warn] launchctl bootstrap returned \(exit) — plist written but not loaded"))
-                }
-                return exit
-            }
-            return 0
-        } catch {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] \(error.localizedDescription)"))
-            throw CLIBridgeError.launchFailed(reason: error.localizedDescription)
-        }
     }
 
     func runMulti(

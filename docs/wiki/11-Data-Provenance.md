@@ -20,6 +20,9 @@ Tier 1 kinds include:
 - `computers` (device inventory) and `mobile-device-inventory-details`
 - `patch-device-failures` and `update-device-failures` — per-device scan failures
 - `compliance-devices` — Jamf Platform API per-device control compliance
+- `ddm-device-status` — one row per DDM-enabled device's declaration and
+  software-update status
+- `mdm-command-health` — one row per device's failed and pending MDM command counts
 
 Feeds these screens:
 

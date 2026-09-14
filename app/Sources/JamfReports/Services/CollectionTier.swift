@@ -147,5 +147,9 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         // Daily automation runs refresh+inventory; scan runs weekly only.
         "patch-device-failures":          .scan,
         "update-device-failures":         .scan,
+
+        // 2.8.0 per-device scan phase: one or two jamf-cli calls per Mac.
+        "ddm-device-status":              .scan,
+        "mdm-command-health":             .scan,
     ]
 }

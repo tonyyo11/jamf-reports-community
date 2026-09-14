@@ -13,7 +13,7 @@ Scope basis: full repo (`app/`, CI workflows, scripts)
 ## 1. Scope and System Model
 
 ### In scope
-- Native macOS app under `app/` (Swift 6, SwiftPM, macOS 14+).
+- Native macOS app under `app/` (Swift 6, SwiftPM, macOS 15+).
 - Build/release tooling: `app/build-app.sh`, `app/build-pkg.sh`, `app/scripts/` (sign/notarize/package).
 - GitHub Actions workflows in `.github/workflows/`.
 - Per-profile workspaces at `~/Jamf-Reports/<profile>/`.

@@ -168,19 +168,20 @@ struct Schedule: Identifiable, Sendable {
             }
         }
 
-        /// Whether the LaunchAgent for this mode should set `RunAtLoad`.
+        /// Whether this mode may CATCH UP a fire it missed (`TickScheduler.due`).
         ///
-        /// The collect modes (which gather jamf-cli data) run at login so a Mac
-        /// that was asleep or logged out at the scheduled time catches up its
-        /// missed collection as soon as the user logs in. This is safe because
+        /// The collect modes (which gather jamf-cli data) run however late so a
+        /// Mac that was asleep or logged out at the scheduled time catches up its
+        /// missed collection on the next wake. This is safe because
         /// `ReportEngine.collect` is idempotent per its cadence — a non-forced
         /// collect skips every kind that isn't due, so repeated logins on the
         /// same day do no redundant work; only a genuinely-missed collect runs.
         ///
         /// `jamf-cli-only` (re-render from cache) and `backup` return false —
-        /// regenerating a workbook or cutting a `pro backup` at every login is
-        /// pure churn with no freshness benefit; a missed one simply runs on its
-        /// next scheduled fire.
+        /// regenerating a workbook or cutting a `pro backup` hours late is pure
+        /// churn with no freshness benefit, so they run only within
+        /// `TickScheduler.nonCatchUpWindow` of the fire; a missed one simply runs
+        /// on its next scheduled fire.
         var runsAtLoad: Bool {
             switch self {
             case .snapshotOnly, .jamfCLIFull, .csvAssisted: true
@@ -223,11 +224,10 @@ struct Schedule: Identifiable, Sendable {
     /// PR-23 omit the `--tiers` flag, and `main.swift` defaults a missing
     /// value to all tiers so their behavior is unchanged.
     var tiers: Set<CollectionTier>? = nil
-    /// Profiles excluded from a multi-profile (`--all-profiles`) run. Emitted
-    /// as `--exclude-profiles <csv>` by `nativeMultiWrite` so the managed
-    /// freshness/scan agents can skip a dummy/test tenant. Empty/nil → no flag
-    /// (run-time discovery picks up every profile). Ignored for single-profile
-    /// schedules.
+    /// Profiles excluded from a multi-profile (`--all-profiles`) run, so the
+    /// managed freshness/scan agents can skip a dummy/test tenant. Empty/nil
+    /// → none excluded (run-time discovery picks up every profile). Ignored
+    /// for single-profile schedules.
     var excludedProfiles: [String]? = nil
 
     var isMulti: Bool { multiTarget != nil }
@@ -731,8 +731,11 @@ private extension DeviceDetail {
             let section = firstString(row, ["section", "category", "group", "type"]) ?? defaultSection
             let label = firstString(row, ["resource", "name", "label", "field", "key", "title"])
                 ?? fallbackLabel(row)
+            // A row that carries a `value` key, even an empty one, has said what its
+            // value is; hunting for a fallback echoed the `resource` label back as
+            // the value ("Department: Department", 2.8.0 field pass).
             let value = firstString(row, ["value", "status", "result", "state", "last_action", "date"])
-                ?? fallbackValue(row)
+                ?? (row["value"] == nil ? fallbackValue(row) : nil)
             let note = firstString(row, ["detail", "details", "message", "updated", "timestamp"]) ?? ""
             let labelText = label ?? ""
             let valueText = value ?? ""

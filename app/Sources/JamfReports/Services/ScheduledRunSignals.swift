@@ -339,8 +339,12 @@ enum ScheduledRunSignals {
 /// `contains("[partial]")` scan recognizes a partially-failed CLI `generate`
 /// the same way it does a scheduled one.
 func partialRunMarker(sheetFailures: Int) -> String {
-    "[partial] \(sheetFailures) sheet failure(s) — see lines above"
+    "[partial] \(sheetFailures) \(sheetFailureMarkerSuffix)"
 }
+
+/// Shared with `CollectHonestyWatcher`, which must not read a report's sheet failures as
+/// data that did not land.
+let sheetFailureMarkerSuffix = "sheet failure(s) — see lines above"
 
 /// Watches a run's log lines for the two engine markers that mean a run exiting
 /// 0 did NOT do what "success" implies: it stood down for another machine
@@ -356,6 +360,7 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     private let lock = NSLock()
     private var standDown = false
     private var summaryFailed = false
+    private var partial = false
 
     init() {}
 
@@ -363,8 +368,13 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     func observe(_ line: String) {
         if line.hasPrefix(ReportEngine.standDownMarker) {
             lock.withLock { standDown = true }
-        } else if line.hasPrefix(ReportEngine.summaryNotWrittenMarker) {
-            lock.withLock { summaryFailed = true }
+            return
+        }
+        guard line.hasPrefix("[partial]"), !line.hasSuffix(sheetFailureMarkerSuffix) else { return }
+        let summary = line.hasPrefix(ReportEngine.summaryNotWrittenMarker)
+        lock.withLock {
+            partial = true
+            if summary { summaryFailed = true }
         }
     }
 
@@ -374,6 +384,10 @@ final class CollectHonestyWatcher: @unchecked Sendable {
 
     /// The summary write failed, so the trend chart did not advance.
     var summaryWriteFailed: Bool { lock.withLock { summaryFailed } }
+
+    /// A source or the summary did not land, so a same-day retry is worth it. A stand-down
+    /// and a report's sheet failures are not missing data and never set it.
+    var incomplete: Bool { lock.withLock { partial } }
 
     /// Whether the run may claim it refreshed the fleet's data. False for
     /// either marker: both mean today's summary is not this run's work.

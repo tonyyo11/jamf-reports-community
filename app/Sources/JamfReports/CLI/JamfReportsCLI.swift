@@ -18,7 +18,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
         subcommands: [
             Generate.self, Collect.self, Html.self, Backup.self, Scaffold.self,
             Check.self, Capabilities.self, DiagnosticBundleCommand.self, Device.self,
-            SchoolCheck.self, SchoolScaffold.self,
+            SchoolCheck.self, SchoolScaffold.self, Schedules.self,
         ]
     )
 
@@ -28,6 +28,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
     static let subcommandNames: Set<String> = [
         "generate", "collect", "html", "backup", "scaffold", "check",
         "capabilities", "diagnostic-bundle", "device", "school-check", "school-scaffold",
+        "schedules",
     ]
 
     static func isKnownSubcommand(_ arg: String) -> Bool {

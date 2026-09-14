@@ -388,6 +388,53 @@ final class DataFreshnessHealthTests: XCTestCase {
         let summary = try? XCTUnwrap(issues.first).summary
         XCTAssertEqual(summary, "update-device-failures has never been collected successfully")
     }
+
+    // MARK: - neverCollected (never attempted vs never landed)
+
+    /// Both dates nil means the kind was never attempted here. One recorded
+    /// failure is an attempt; one recorded success is obviously not "never".
+    func testNeverCollectedIsTrueOnlyWhenNoSuccessAndNoFailureAreRecorded() {
+        func issue(success: Date?, failure: Date?) -> DataFreshnessIssue {
+            DataFreshnessIssue(
+                snapshotKind: "computers", tier: .inventory, kind: .stale,
+                lastSuccess: success, consecutiveFailures: failure == nil ? 0 : 1,
+                lastFailure: failure
+            )
+        }
+        XCTAssertTrue(issue(success: nil, failure: nil).neverCollected)
+        XCTAssertFalse(issue(success: nil, failure: now).neverCollected)
+        XCTAssertFalse(issue(success: now, failure: nil).neverCollected)
+        XCTAssertFalse(issue(success: now, failure: now).neverCollected)
+    }
+
+    /// The evaluator threads both dates through, so a kind never attempted on
+    /// an established workspace reads `neverCollected` while a kind that keeps
+    /// failing (an attempt) does not — even though neither has ever landed.
+    func testEvaluateDistinguishesNeverAttemptedFromNeverLanded() {
+        let issues = DataFreshnessHealth.evaluate(
+            states: [
+                state("overview", successAgo: 600),
+                state("update-device-failures"),
+                state("computers", failures: 3),
+            ],
+            hasCollectedBefore: true, now: now
+        )
+        let byKind = Dictionary(uniqueKeysWithValues: issues.map { ($0.snapshotKind, $0) })
+        XCTAssertEqual(byKind["update-device-failures"]?.neverCollected, true)
+        XCTAssertEqual(byKind["computers"]?.neverCollected, false)
+    }
+
+    /// Never-attempted kinds are still collect work: remediation and the
+    /// banner's "Collect now" must keep targeting their tiers.
+    func testNeverCollectedKindsStillTargetTheirTierForRemediation() throws {
+        let issues = DataFreshnessHealth.evaluate(
+            states: [state("overview", successAgo: 600), state("update-device-failures")],
+            hasCollectedBefore: true, now: now
+        )
+        let issue = try XCTUnwrap(issues.first)
+        XCTAssertTrue(issue.neverCollected)
+        XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(issues), [issue.tier])
+    }
 }
 
 /// Thread-safe call recorder for `WorkspaceStore.RemediationCollector` spies —

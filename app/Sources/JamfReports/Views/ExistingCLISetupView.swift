@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Secondary onboarding (#181 follow-on) — shown instead of the main shell on
 /// first launch when jamf-cli is already configured (profiles exist, so the
@@ -15,6 +16,8 @@ struct ExistingCLISetupView: View {
     @AppStorage(ExistingCLISetupFlow.outcomeKey) private var outcomeRaw = ""
     @State private var flow: ExistingCLISetupFlow
     @State private var isFinishing = false
+    @State private var pendingSharedRoot: URL?
+    @State private var existingRootMessage: String?
 
     private static let weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -26,6 +29,7 @@ struct ExistingCLISetupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
+                existingWorkspaceCard
                 profilesCard
                 automationCard
                 runCard
@@ -36,6 +40,67 @@ struct ExistingCLISetupView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.Colors.winBG)
+        .sharedFolderConsent(pending: $pendingSharedRoot) { applyExistingRoot($0) }
+    }
+
+    // MARK: - Existing workspace
+
+    /// A rebuilt Mac or a second Mac on a team folder already has a workspace;
+    /// initializing a new one beside it is the wrong first step and, before
+    /// this card existed, the only step offered. Pointing at the folder is what
+    /// Settings › Workspace location does — same picker, same consent.
+    private var existingWorkspaceCard: some View {
+        Card(padding: 22) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Already have a workspace folder?")
+                    .font(.headline)
+                    .foregroundStyle(Theme.Colors.fg)
+                Text("If your reporting workspace already exists — a synced team folder, or a "
+                    + "folder from a previous install — point the app at it and skip the steps "
+                    + "below. Pick the folder that contains the profile folders.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                PNPButton(title: "Choose workspace folder…", icon: "folder", size: .sm) {
+                    chooseExistingRoot()
+                }
+                .disabled(flow.isRunning || isFinishing || flow.didComplete)
+                .help("Use a folder that already holds \(WorkspaceRootStore.displayRoot)-style "
+                    + "profile workspaces.")
+                if let existingRootMessage {
+                    Text(existingRootMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.warnSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func chooseExistingRoot() {
+        guard let url = WorkspaceFolderPicker.choose() else { return }
+        // Same gate as Settings: a synced folder widens who can read raw fleet
+        // data, and that is a call the operator makes knowingly, right here.
+        if CloudStorage.provider(for: url) != nil {
+            pendingSharedRoot = url
+            return
+        }
+        applyExistingRoot(url)
+    }
+
+    /// Point the app at `url`. When at least one configured profile has a
+    /// workspace there, `ContentView`'s `shouldOffer` turns false on the reload
+    /// and the shell appears; the outcome is recorded `.completed` so a later
+    /// wipe re-offers setup, exactly as a finished initialization would. When
+    /// nothing is found the root still changes (it is what the operator asked
+    /// for) but the screen stays, saying what it looked for.
+    private func applyExistingRoot(_ url: URL) {
+        if let message = workspace.adoptExistingRoot(url) {
+            existingRootMessage = message
+            return
+        }
+        existingRootMessage = nil
+        outcomeRaw = ExistingCLISetupFlow.SetupOutcome.completed.rawValue
     }
 
     // MARK: - Header
@@ -301,9 +366,9 @@ struct ExistingCLISetupView: View {
         )
     }
 
-    /// Persist the automation policy (when enabled), reconcile the managed
-    /// agents, and only then record the completed outcome that re-routes
-    /// ContentView to the shell — an unawaited reconcile would race the view
+    /// Persist the automation policy (when enabled), apply it (registers the
+    /// ticker), and only then record the completed outcome that re-routes
+    /// ContentView to the shell — an unawaited apply would race the view
     /// swap (see the AutomationTab relocation note, 6101086).
     private func finish() {
         guard !isFinishing else { return }
@@ -313,20 +378,17 @@ struct ExistingCLISetupView: View {
                 UserDefaults.standard.set(
                     flow.configuredPolicy().serialize(), forKey: AutomationPolicy.storageKey
                 )
-                // The user just opted into managed automation — a failed agent
-                // install must not be silently absorbed into "setup complete"
-                // (mirrors AutomationView's outcome handling).
-                let failed = await workspace.reconcileManagedAutomation()
-                    .filter { !$0.succeeded }
-                if !failed.isEmpty {
-                    for outcome in failed {
-                        AppLogger.schedule.error(
-                            "Setup reconcile failure: \(outcome.failureReason ?? "unknown error", privacy: .public)"
-                        )
-                    }
+                // The user just opted into automation — a ticker Login Items
+                // won't run must not be silently absorbed into "setup complete".
+                // Only the two states an operator can act on: `.unavailable` is
+                // a dev build with no bundled agent, which is not a problem the
+                // Login Items pane can fix.
+                await workspace.applyAutomationPolicy()
+                if workspace.tickerStatus == .requiresApproval
+                    || workspace.tickerStatus == .notRegistered {
                     workspace.toast = Toast(
-                        message: "Setup finished, but \(failed.count) automation agent\(failed.count == 1 ? "" : "s") "
-                            + "failed to install — check the Automation tab",
+                        message: "Setup finished — allow JamfReports under Login Items › "
+                            + "Allow in the Background to start automation",
                         style: .danger
                     )
                 }

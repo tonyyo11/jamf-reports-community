@@ -88,6 +88,8 @@ final class DiagnosticRedactor {
         // Redact the full value under the "user" category.
         "operatoruserhost": "user",
         "email": "email", "emailaddress": "email", "email_address": "email",
+        "phone": "user", "phonenumber": "user", "phone_number": "user",
+        "filevault2enabledusernames": "user",
         "building": "org", "department": "org", "room": "org", "position": "org",
     ]
 
@@ -177,10 +179,15 @@ final class DiagnosticRedactor {
                     out[key] = "REDACTED_\(keyLower.uppercased())"
                     continue
                 }
-                if let category = Self.piiJSONKeys[keyLower],
-                   piiEnabled(category), let str = val as? String, !str.isEmpty {
-                    out[key] = placeholder(category, str)
-                    continue
+                if let category = Self.piiJSONKeys[keyLower], piiEnabled(category) {
+                    if let str = val as? String, !str.isEmpty {
+                        out[key] = placeholder(category, str)
+                        continue
+                    }
+                    if let names = val as? [String] {
+                        out[key] = names.map { $0.isEmpty ? $0 : placeholder(category, $0) }
+                        continue
+                    }
                 }
                 out[key] = redactJSON(val)
             }

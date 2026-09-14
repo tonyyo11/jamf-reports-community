@@ -53,13 +53,9 @@ final class WorkspaceStore {
     var isUpdatingJamfCLI: Bool = false
     var isInitializingWorkspace: Bool = false
     var workspaceInitMessage: String?
-    var launchAgentCleanupMessage: String?
-    /// Labels of JRC LaunchAgent plists whose recorded executable no longer
-    /// exists on disk. Populated by `LaunchAgentService.staleExecutableLabels`
-    /// during workspace refresh and on init. Drives the
-    /// SchedulesView "stale executable" warning banner (PR-15). Empty when
-    /// every plist's executable resolves cleanly.
-    var launchAgentStaleLabels: [String] = []
+    /// Seam for tests; production uses the real SMAppService registrar.
+    let tickerRegistrar: any TickerRegistrar
+    var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
     var toast: Toast? = nil
     /// Last known auth probe result for the active profile. `nil` while not yet
@@ -71,6 +67,15 @@ final class WorkspaceStore {
     /// Note: only guards against concurrent GUI runs; LaunchAgent runs are a separate
     /// process and would require an on-disk lock file (not implemented).
     private var runInProgressFlags: [String: Bool] = [:]
+    /// Profiles with a collect in flight in THIS process — Collect now,
+    /// Initialize, Refresh, or an automatic one. A count, not a flag: two
+    /// overlapping manual actions must not clear each other's mark on exit.
+    private var collectsInFlight: [String: Int] = [:]
+    /// Whether another process (the bundled `--tick` agent) holds the tick
+    /// lock. Injectable so tests never read the real lock file.
+    var tickLockHeldElsewhere: () -> Bool = {
+        TickLock(url: TickLock.defaultURL).isHeldByAnotherLiveProcess()
+    }
     private var didAutoUpdateJamfCLI = false
     /// Dedup guard for `autoRefreshAuditIfStale()` — rapid profile switches or
     /// repeated launch-task firings must not stack concurrent audit runs
@@ -199,7 +204,8 @@ final class WorkspaceStore {
 
     // MARK: Init
 
-    init(demoMode: Bool? = nil) {
+    init(demoMode: Bool? = nil, tickerRegistrar: any TickerRegistrar = SMAppServiceRegistrar()) {
+        self.tickerRegistrar = tickerRegistrar
         // MFS-2: one-shot Spotlight + permissions backfill on existing
         // workspaces. Gated on a per-version UserDefaults sentinel so the
         // walk runs at most once per app version. Wave 1 covers the
@@ -207,9 +213,7 @@ final class WorkspaceStore {
         // covers the pre-existing-workspace case.
         WorkspaceMigration.runIfNeeded()
 
-        let cleanup = LaunchAgentService.cleanupLegacyAgents()
         let realProfiles = ProfileService.discoverLocal()
-        let realSchedules = LaunchAgentService.list()
         // First-launch chooser: an empty real-profile list no longer implies
         // demo mode. Only an explicit `demoMode:` override (tests) or the
         // persisted `forceDemoModeKey` (user previously chose demo) enables
@@ -223,7 +227,9 @@ final class WorkspaceStore {
         self.org = isDemo ? DemoData.org : Self.org(for: realProfiles.first)
         self.profile = isDemo ? DemoData.org.profile : (realProfiles.first?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
-        self.schedules = isDemo ? DemoData.scheduledRuns : realSchedules
+        self.schedules = isDemo ? DemoData.scheduledRuns
+            : Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
+                profiles: realProfiles, policy: AutomationPolicy.current()))
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
@@ -235,8 +241,18 @@ final class WorkspaceStore {
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
-        self.launchAgentCleanupMessage = cleanup.message
-        self.launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
+    }
+
+    /// Managed schedules come from the policy; hand-built from the store.
+    nonisolated static func loadSchedules(
+        policy: AutomationPolicy = AutomationPolicy.current(),
+        store: ScheduleStore = ScheduleStore(),
+        baseProfile: String?
+    ) -> [Schedule] {
+        let managed = ManagedAutomation.desiredSchedules(for: policy, baseProfile: baseProfile)
+        let handBuilt = store.load().map { $0.toSchedule() }
+            .sorted { ($0.launchAgentLabel ?? "") < ($1.launchAgentLabel ?? "") }
+        return managed + handBuilt
     }
 
     // MARK: Profile switching
@@ -253,7 +269,8 @@ final class WorkspaceStore {
             observeProfileSwitchRefresh(for: id)
         }
         if !demoMode {
-            schedules = LaunchAgentService.list().filter { $0.profile == id }
+            schedules = Self.loadSchedules(baseProfile: id)
+                .filter { $0.isMulti || $0.profile == id }
             Task {
                 do { try await loadConfig() } catch {
                     configError = error.localizedDescription
@@ -285,8 +302,8 @@ final class WorkspaceStore {
         } else {
             demoMode = false
             profiles = real
-            schedules = LaunchAgentService.list()
-            launchAgentStaleLabels = LaunchAgentService.staleExecutableLabels()
+            schedules = Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
+                profiles: real, policy: AutomationPolicy.current()))
             if !real.contains(where: { $0.name == profile }) {
                 profile = real.first!.name
             }
@@ -307,30 +324,37 @@ final class WorkspaceStore {
             let cleanupMessage = cleanupDemoProfileArtifacts()
             reloadFromDisk()
             if let cleanupMessage {
-                launchAgentCleanupMessage = cleanupMessage
+                toast = Toast(message: cleanupMessage, style: .success)
             }
         }
     }
 
     private func cleanupDemoProfileArtifacts() -> String? {
         let demoProfile = DemoData.org.profile
-        let removedAgents = LaunchAgentService.removeAgents(profile: demoProfile)
+        let store = ScheduleStore()
+        let all = store.load()
+        let kept = all.filter { $0.profile != demoProfile }
+        let removedAgents = all.count - kept.count
+        if removedAgents > 0 {
+            try? store.save(kept)
+        }
         do {
             let removedWorkspace = try ProfileService.removeLocalWorkspace(profile: demoProfile)
-            if removedWorkspace || !removedAgents.isEmpty {
+            if removedWorkspace || removedAgents > 0 {
                 var parts: [String] = []
                 if removedWorkspace {
                     parts.append("workspace \(demoProfile)")
                 }
-                if !removedAgents.isEmpty {
-                    parts.append("\(removedAgents.count) demo LaunchAgent\(removedAgents.count == 1 ? "" : "s")")
+                if removedAgents > 0 {
+                    let suffix = removedAgents == 1 ? "" : "s"
+                    parts.append("\(removedAgents) demo schedule\(suffix)")
                 }
                 return "Removed demo \(parts.joined(separator: " and "))."
             }
         } catch {
-            if !removedAgents.isEmpty {
-                return "Removed \(removedAgents.count) demo LaunchAgent"
-                    + (removedAgents.count == 1 ? "" : "s")
+            if removedAgents > 0 {
+                return "Removed \(removedAgents) demo schedule"
+                    + (removedAgents == 1 ? "" : "s")
                     + ", but could not remove workspace \(demoProfile): \(error.localizedDescription)"
             }
             return "Could not remove demo workspace \(demoProfile): \(error.localizedDescription)"
@@ -424,46 +448,58 @@ final class WorkspaceStore {
     func initializeWorkspace() async {
         guard !demoMode, !isWorkspaceInitialized, !isInitializingWorkspace else { return }
         isInitializingWorkspace = true
+        defer { isInitializingWorkspace = false }
         workspaceInitMessage = "Initializing workspace…"
+        globalStatus = "initializing workspace · profile=\(profile)"
         let bridge = CLIBridge()
-        let initExit: Int32
         do {
-            initExit = try await bridge.initializeWorkspace(profile: profile) { _ in }
+            let exit = try await bridge.initializeWorkspace(
+                profile: profile, onLine: CLIBridge.bufferingOnLine
+            )
+            guard exit == 0 else {
+                workspaceInitFailed("Workspace init failed · exit \(exit)")
+                return
+            }
         } catch {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace init failed · \(error.localizedDescription)"
+            workspaceInitFailed("Workspace init failed · \(error.localizedDescription)")
             return
         }
-        guard initExit == 0 else {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace init failed · exit \(initExit)"
+        globalStatus = nil
+        reloadFromDisk()
+        guard bridge.isJamfCLIAvailable else {
+            toast = Toast(message: "Workspace initialized · jamf-cli not installed", style: .info)
             return
+        }
+        // The banner that carried this method's progress text disappears the
+        // moment init succeeds, so the collect it chains used to run invisibly
+        // for minutes on a large tenant. runFirstCollect owns the status-bar
+        // line, the Run History record, and the completion toast.
+        await runFirstCollect()
+    }
+
+    private func workspaceInitFailed(_ message: String) {
+        globalStatus = nil
+        workspaceInitMessage = message
+        toast = Toast(message: message, style: .danger)
+    }
+
+    /// Point the app at a folder that already holds workspaces. Returns nil when
+    /// a configured profile has a workspace there, otherwise the message to show.
+    /// The root changes either way — it is what the operator asked for.
+    func adoptExistingRoot(_ url: URL) -> String? {
+        do {
+            _ = try WorkspaceRootStore.set(url)
+        } catch {
+            return "Couldn't use that folder: \(error.localizedDescription)"
         }
         reloadFromDisk()
-
-        guard bridge.isJamfCLIAvailable else {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace initialized · jamf-cli not installed"
-            return
+        guard !initializedProfiles.isEmpty else {
+            return ExistingCLISetupFlow.missingWorkspaceMessage(
+                root: WorkspaceRootStore.displayRoot, profiles: profiles.map(\.name)
+            )
         }
-
-        workspaceInitMessage = "Workspace initialized · collecting jamf-cli snapshots…"
-        let collectExit: Int32
-        do {
-            collectExit = try await bridge.collect(profile: profile, force: true) { _ in }
-        } catch {
-            isInitializingWorkspace = false
-            workspaceInitMessage = "Workspace initialized · collect failed · \(error.localizedDescription)"
-            return
-        }
-        isInitializingWorkspace = false
-        if collectExit == 0 {
-            workspaceInitMessage = "Workspace initialized · cached snapshots ready"
-            reloadFromDisk()
-        } else {
-            workspaceInitMessage =
-                "Workspace initialized · collect failed · exit \(collectExit) · check jamf-cli auth"
-        }
+        Task { await applyAutomationPolicy() }
+        return nil
     }
 
     func refreshToolStatus() {
@@ -804,6 +840,23 @@ final class WorkspaceStore {
     /// completes, regardless of success or failure.
     func clearRunInProgress(for profile: String) {
         runInProgressFlags[profile] = false
+    }
+
+    // MARK: - Collect overlap guard
+
+    /// True while a collect — or a generate run, which may collect first — is
+    /// in flight for `profile` in this process. The automatic paths stand down.
+    func isCollectInFlight(for profile: String) -> Bool {
+        (collectsInFlight[profile] ?? 0) > 0 || isRunInProgress(for: profile)
+            || coordinatorIsCollecting(for: profile)
+    }
+
+    func beginCollect(for profile: String) {
+        collectsInFlight[profile, default: 0] += 1
+    }
+
+    func endCollect(for profile: String) {
+        collectsInFlight[profile] = max(0, (collectsInFlight[profile] ?? 0) - 1)
     }
 }
 

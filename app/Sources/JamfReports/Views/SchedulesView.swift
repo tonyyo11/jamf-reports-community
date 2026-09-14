@@ -13,7 +13,6 @@ struct SchedulesView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var profileFilter: String = "All"
-    @State private var bridge = CLIBridge()
     @State private var isRunning = false
     @State private var lastRunMessage: String? = nil
     @State private var runLogLines: [CLIBridge.LogLine] = []
@@ -28,7 +27,8 @@ struct SchedulesView: View {
     private let countdownTick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     // Shared with AutomationView: flipping this on re-routes (via AutomationTab)
-    // to the managed-policy editor and reconciles the managed agents.
+    // to the managed-policy editor, whose schedules the ticker derives from the
+    // policy on its next wake.
     @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
 
     @State private var query = ""
@@ -55,13 +55,29 @@ struct SchedulesView: View {
     var body: some View {
         PageScaffold(spacing: 14) {
             header
+            if tickerDisabledBannerShouldShow(
+                policy: AutomationPolicy.parse(automationPolicyRaw),
+                hasHandBuilt: !workspace.schedules.isEmpty,
+                tickerStatus: workspace.tickerStatus
+            ) {
+                InlineBanner(
+                    icon: "exclamationmark.triangle", tone: .danger,
+                    action: .init(label: "Open Login Items") {
+                        workspace.tickerRegistrar.openLoginItems()
+                    }
+                ) {
+                    Text("Automation is off: JamfReports is not allowed to run in the "
+                        + "background. Turn it on under Login Items › Allow in the Background.")
+                        .font(.callout)
+                }
+            } else if workspace.tickerStatus == .unavailable {
+                InlineBanner(icon: "hammer", tone: .info) {
+                    Text("Ticker unavailable in this build — schedules run only via "
+                        + "`JamfReports --tick` until the app is installed.")
+                        .font(.callout)
+                }
+            }
             managedModeCard
-            if let message = workspace.launchAgentCleanupMessage {
-                legacyCleanupBanner(message)
-            }
-            if !workspace.launchAgentStaleLabels.isEmpty {
-                staleExecutableBanner(workspace.launchAgentStaleLabels)
-            }
             profileFilterStrip
             nextUpCallout
             schedulesTable
@@ -95,7 +111,7 @@ struct SchedulesView: View {
             isPresented: $showDeleteConfirm,
             titleVisibility: .visible
         ) {
-            Button("Delete LaunchAgent", role: .destructive) {
+            Button("Delete Schedule", role: .destructive) {
                 if let s = pendingDelete { deleteSchedule(s) }
             }
         }
@@ -111,8 +127,9 @@ struct SchedulesView: View {
 
     /// The master "Manage automation" toggle, mirrored from AutomationView so the
     /// operator can switch from hand-built schedules to the managed policy without
-    /// losing access to the switch. Flipping it on re-routes (AutomationTab) and
-    /// the policy editor's reconcile installs the managed agents.
+    /// losing access to the switch. Flipping it on re-routes (AutomationTab); the
+    /// managed schedules themselves are derived from the policy on every tick,
+    /// so nothing is installed for them.
     private var managedModeCard: some View {
         Card {
             HStack(alignment: .top, spacing: 12) {
@@ -148,7 +165,7 @@ struct SchedulesView: View {
 
     private var header: some View {
         PageHeader(
-            kicker: "macOS LaunchAgent · UserAgent",
+            kicker: "Background item · every 5 min",
             title: "Scheduled Runs",
             subtitle: "\(workspace.schedules.count) schedule\(workspace.schedules.count == 1 ? "" : "s") · \(workspace.schedules.filter(\.enabled).count) enabled · across \(profileCount) jamf-cli profile\(profileCount == 1 ? "" : "s")"
         ) {
@@ -157,7 +174,7 @@ struct SchedulesView: View {
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                     }
-                    .help("Re-scan ~/Library/LaunchAgents for jamfreports schedules.")
+                    .help("Re-read schedules from disk.")
                     PNPButton(title: "New schedule", icon: "plus", style: .gold) {
                         newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                         showNewSchedule = true
@@ -165,47 +182,9 @@ struct SchedulesView: View {
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
                           ? "Available in live mode only"
-                          : "Create a new LaunchAgent that runs jamf-cli on a cron-style schedule.")
+                          : "Add a schedule the background item runs automatically.")
                 }
             )
-        }
-    }
-
-    private func legacyCleanupBanner(_ message: String) -> some View {
-        GlassPane(borderColor: Theme.Colors.warn.opacity(0.35)) {
-            HStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
-                Text(message)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg2)
-                Spacer()
-            }
-        }
-    }
-
-    /// Warn about LaunchAgent plists whose recorded executable no longer
-    /// exists on disk — typically because the .app bundle was rebuilt at a
-    /// different path. macOS will run the plist anyway and the spawn will
-    /// fail with ENOENT, leaving a confusing stderr trail. PR-15.
-    private func staleExecutableBanner(_ labels: [String]) -> some View {
-        let count = labels.count
-        let preview = labels.prefix(2).joined(separator: ", ")
-        let suffix = count > 2 ? " (+\(count - 2) more)" : ""
-        let copy = """
-            \(count) scheduled run\(count == 1 ? "" : "s") reference a missing executable and will fail at next trigger: \
-            \(preview)\(suffix). Re-create them via "New schedule" or remove the stale plists from ~/Library/LaunchAgents/.
-            """
-        return GlassPane(borderColor: Theme.Colors.warn.opacity(0.35)) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Theme.Colors.warn)
-                Text(copy)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
         }
     }
 
@@ -424,6 +403,7 @@ struct SchedulesView: View {
                         PNPToggle(isOn: .constant(s.enabled)).allowsHitTesting(false)
                     }
                     .buttonStyle(.plain)
+                    .disabled(workspace.demoMode)
                     .accessibilityLabel(s.enabled ? "Disable \(s.name)" : "Enable \(s.name)")
                 }
                 .width(48)
@@ -574,108 +554,65 @@ struct SchedulesView: View {
     }
 
     private func runScheduleNow(_ schedule: Schedule) async {
+        guard !workspace.demoMode,
+              let label = LaunchAgentWriter.label(for: schedule) else { return }
         isRunning = true
         runLogLines = []
         let buf = LineBuffer()
-
-        guard let agentLabel = LaunchAgentWriter.label(for: schedule),
-              schedule.isMulti || ProfileService.isValid(schedule.profile)
-        else {
-            lastRunMessage = "invalid schedule label"
-            isRunning = false
-            return
-        }
-
-        let exit = await LaunchAgentWriter.runNow(agentLabel) { line in
+        let exit = await TickRunner.spawnNow(label: label, wait: true) { line in
             buf.append(line)
             Task { @MainActor in runLogLines = buf.lines }
         }
-
         runLogLines = buf.lines
         isRunning = false
-        lastRunMessage = "\(schedule.name) · exit \(exit)"
+        // A queued run has not happened yet — reporting "exit 75" would read as
+        // a failure, and reporting "exit 0" would claim a run that never ran.
+        lastRunMessage = exit == TickRunner.queuedExitCode
+            ? "\(schedule.name) · queued — another run is in progress"
+            : "\(schedule.name) · exit \(exit)"
         workspace.reloadFromDisk()
     }
 
     private func toggleSchedule(_ schedule: Schedule) async {
         guard !workspace.demoMode else { return }
-        guard let idx = workspace.schedules.firstIndex(where: { $0.id == schedule.id }) else { return }
-
-        let original = workspace.schedules[idx].enabled
-        guard let agentLabel = LaunchAgentWriter.label(for: workspace.schedules[idx]) else {
-            writeError = "Schedule name or profile produces an invalid LaunchAgent label."
-            showWriteError = true
-            return
+        guard var record = ScheduleRecord(schedule: schedule) else {
+            writeError = "This schedule cannot be edited here."; showWriteError = true; return
         }
-        workspace.schedules[idx].enabled.toggle()
-        let nowEnabled = workspace.schedules[idx].enabled
-
-        let exitCode: Int32
-        do {
-            exitCode = try await bridge.setupLaunchAgent(
-                workspace.schedules[idx],
-                load: nowEnabled
-            ) { _ in }
-        } catch {
-            workspace.schedules[idx].enabled = original
-            writeError = "Could not update LaunchAgent \(agentLabel) · \(error.localizedDescription)"
-            showWriteError = true
-            return
+        record.enabled.toggle()
+        do { try ScheduleStore().upsert(record) } catch {
+            writeError = error.localizedDescription; showWriteError = true; return
         }
-
-        if exitCode != 0 {
-            workspace.schedules[idx].enabled = original
-            writeError = "Could not update LaunchAgent \(agentLabel) · exit \(exitCode)"
-            showWriteError = true
-        } else {
-            workspace.reloadFromDisk()
-        }
+        workspace.reloadFromDisk()
     }
 
     private func deleteSchedule(_ schedule: Schedule) {
-        guard !workspace.demoMode else { return }
-        guard let label = LaunchAgentWriter.label(for: schedule) else {
-            writeError = "Schedule name or profile produces an invalid LaunchAgent label."
-            showWriteError = true
-            return
-        }
-        // Epic #103: the manual editor must never remove a managed agent —
-        // parity with LaunchAgentService.archiveAndRemove's refusal. Normally
-        // unreachable (managed agents are torn down on entry to manual mode),
-        // but the two-mode Automation router makes this table reachable.
+        guard !workspace.demoMode,
+              let label = LaunchAgentWriter.label(for: schedule) else { return }
         guard !ManagedAutomation.owns(label) else {
             writeError = "\(schedule.name) is a managed automation agent — "
                 + "turn off Manage automation to remove it."
             showWriteError = true
             return
         }
-        Task {
-            _ = await LaunchAgentWriter.unload(label)
-            do {
-                try LaunchAgentWriter.delete(label)
-                workspace.schedules.removeAll { $0.id == schedule.id }
-            } catch {
-                writeError = error.localizedDescription; showWriteError = true
-            }
+        do { try ScheduleStore().remove(label: label) } catch {
+            writeError = error.localizedDescription; showWriteError = true; return
         }
+        Task { await workspace.applyAutomationPolicy() }
     }
 
     private func saveSchedule(_ form: ScheduleFormState) async {
-        let schedule = form.toSchedule()
-        let exitCode: Int32
-        do {
-            exitCode = try await bridge.setupLaunchAgent(schedule, load: schedule.enabled) { _ in }
-        } catch {
-            writeError = "Could not create LaunchAgent · \(error.localizedDescription)"
+        guard !workspace.demoMode else { return }
+        guard let record = ScheduleRecord(schedule: form.toSchedule()) else {
+            writeError = "Schedule name or profile produces an invalid label."
             showWriteError = true
             return
         }
-        if exitCode == 0 {
-            workspace.reloadFromDisk()
-        } else {
-            writeError = "Could not create LaunchAgent · exit \(exitCode)"
+        do { try ScheduleStore().upsert(record) } catch {
+            writeError = "Could not save schedule · \(error.localizedDescription)"
             showWriteError = true
+            return
         }
+        await workspace.applyAutomationPolicy()
     }
 
     // MARK: - Helpers
@@ -852,31 +789,22 @@ struct ScheduleFormState {
         tiers = mode.defaultTiers
     }
 
-    // Multi-profile targeting
+    // Multi-profile targeting. The native runner only ever honours
+    // `--all-profiles` + exclusions (`ScheduleRecord.allProfiles` is a Bool),
+    // so this stays a two-way choice rather than modeling scopes the store
+    // cannot persist.
     enum ProfileMode: String, CaseIterable, Identifiable {
         case single = "Single profile"
         case all = "All profiles"
-        case filter = "Profile filter (glob)"
-        case list = "Specific profiles"
         var id: String { rawValue }
     }
     var profileMode: ProfileMode = .single
-    var multiFilter = ""          // for .filter
-    var multiList = ""            // for .list, comma-separated
     var multiSequential = false
 
     var resolvedMultiTarget: MultiTarget? {
         switch profileMode {
         case .single: return nil
         case .all:    return MultiTarget(scope: .all, sequential: multiSequential)
-        case .filter:
-            let g = multiFilter.trimmingCharacters(in: .whitespaces)
-            guard !g.isEmpty else { return MultiTarget(scope: .all, sequential: multiSequential) }
-            return MultiTarget(scope: .filter(g), sequential: multiSequential)
-        case .list:
-            let ps = multiList.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            guard !ps.isEmpty else { return MultiTarget(scope: .all, sequential: multiSequential) }
-            return MultiTarget(scope: .list(ps), sequential: multiSequential)
         }
     }
 
@@ -913,8 +841,6 @@ struct ScheduleFormState {
         switch profileMode {
         case .single:  return !profile.isEmpty
         case .all:     return true
-        case .filter:  return !multiFilter.trimmingCharacters(in: .whitespaces).isEmpty
-        case .list:    return !multiList.trimmingCharacters(in: .whitespaces).isEmpty
         }
     }
 
@@ -1006,15 +932,6 @@ private struct NewScheduleSheet: View {
                             }
                             .labelsHidden()
                             .frame(maxWidth: .infinity)
-                        }
-                    } else if form.profileMode == .filter {
-                        formRow(label: "Glob pattern") {
-                            PNPTextField(value: $form.multiFilter, placeholder: "e.g. prod-*", mono: true)
-                        }
-                    } else if form.profileMode == .list {
-                        formRow(label: "Profiles") {
-                            PNPTextField(value: $form.multiList,
-                                         placeholder: "production,staging", mono: true)
                         }
                     }
 

@@ -365,7 +365,8 @@ struct SourcesView: View {
                 .padding(.vertical, 6)
         case .notInstalled:
             doctorMessageRow(
-                "jamf-cli is not installed — install it from the Sources screen to run diagnostics.",
+                "jamf-cli is not installed — install it via Homebrew or from the jamf-cli "
+                    + "GitHub releases page, then click Re-check above.",
                 tone: .warn)
         case .failed(let reason):
             doctorMessageRow(reason, tone: .danger)

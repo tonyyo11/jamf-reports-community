@@ -125,6 +125,12 @@ final class AuditHygieneTests: XCTestCase {
         XCTAssertEqual(auditActionDestination(for: finding("Stale check-in (>14 days)", category: "Compliance"))?.tab, .outreach)
         XCTAssertEqual(auditActionDestination(for: finding("Policies with no scope", category: "Hygiene"))?.tab, .policyProfile)
         XCTAssertEqual(auditActionDestination(for: finding("Gatekeeper disabled"))?.tab, .securityPosture)
+        let failedFinding = finding("Devices with failed MDM commands", category: "Command health")
+        XCTAssertEqual(auditActionDestination(for: failedFinding)?.tab, .devices)
+        let staleFinding = finding(
+            "MDM commands pending more than 7 days", category: "Command health"
+        )
+        XCTAssertEqual(auditActionDestination(for: staleFinding)?.tab, .devices)
     }
 
     func testAuditActionDestinationCategoryFallback() {

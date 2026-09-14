@@ -11,7 +11,7 @@ CONFIG="${1:-release}"
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
 # This is the single source of truth for the user-facing semver; keep it in
 # sync with AppVersionState.fallbackVersion (a test enforces this).
-MARKETING_VERSION="${MARKETING_VERSION:-2.7.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.8.0}"
 
 # Build number (CFBundleVersion). Always a monotonically increasing integer
 # (git commit count), independent of the marketing version — this matches
@@ -64,6 +64,12 @@ mkdir -p "$APP_OUT/Contents/Resources"
 
 cp "$BIN" "$APP_OUT/Contents/MacOS/JamfReports"
 chmod +x "$APP_OUT/Contents/MacOS/JamfReports"
+
+# The one SMAppService agent (2.8.0). Lives outside Sources/ so SwiftPM's
+# .process("Resources") never rewrites it; signed with the bundle below.
+mkdir -p "$APP_OUT/Contents/Library/LaunchAgents"
+cp "LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist" \
+   "$APP_OUT/Contents/Library/LaunchAgents/"
 
 # Copy bundled resource assets directly into Contents/Resources/ so Bundle.main
 # can find them on any Mac. SwiftPM's auto-generated `Bundle.module` accessor
@@ -133,7 +139,7 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
     <key>JRReleaseChannel</key>
     <string>${RELEASE_CHANNEL}</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>15.0</string>
     <key>LSUIElement</key>
     <false/>
     <key>NSHighResolutionCapable</key>

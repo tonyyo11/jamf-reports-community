@@ -462,6 +462,43 @@ final class SummaryJSONEmitTests: XCTestCase {
                        "nil → nil mobileDeviceCount is not an upgrade")
     }
 
+    // MARK: - freshSummaryIsBetter source upgrade rules
+
+    func testFreshSummaryIsBetter_sourceCacheToLive_returnsTrue() {
+        let existing = makeSummary(
+            complianceIsProxy: false, hasBands: true,
+            collectionSources: ["security": "cache", "patch-status": "live"])
+        let fresh = makeSummary(
+            complianceIsProxy: false, hasBands: true,
+            collectionSources: ["security": "live", "patch-status": "cache"])
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
+    }
+
+    func testFreshSummaryIsBetter_sameLiveSources_returnsFalse() {
+        let sources = ["security": "live", "patch-status": "cache"]
+        let existing = makeSummary(
+            complianceIsProxy: false, hasBands: true, collectionSources: sources)
+        let fresh = makeSummary(
+            complianceIsProxy: false, hasBands: true, collectionSources: sources)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
+    }
+
+    func testFreshSummaryIsBetter_existingWithoutSourcesUpgradesOnALiveSource() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true)
+        let fresh = makeSummary(
+            complianceIsProxy: false, hasBands: true, collectionSources: ["security": "live"])
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
+    }
+
+    func testMergedSourcesKeepsAnEarlierLiveSourceReadBackFromCache() {
+        let merged = ReportEngine.mergedSources(
+            existing: ["security": "live", "patch-status": "cache", "groups": "live"],
+            fresh: ["security": "cache", "patch-status": "live", "ea-results": "absent"])
+        XCTAssertEqual(merged, [
+            "security": "live", "patch-status": "live", "ea-results": "absent", "groups": "live",
+        ])
+    }
+
     // MARK: - emitSummaryJSON upgrade behavior (integration)
 
     /// Existing proxy summary + fresh real-mSCP summary → file overwritten with real data.
@@ -574,6 +611,33 @@ final class SummaryJSONEmitTests: XCTestCase {
                        "Real summary must not be overwritten when fresh run is equally real (skip preserved)")
     }
 
+    func testEmitRebuildKeepsSourcesAnEarlierRunCollectedToday() throws {
+        let dataDir = tmpDir.appendingPathComponent("rebuild-data", isDirectory: true)
+        let localEngine = ReportEngine(config: ReportConfig(), dataDir: dataDir)
+        try writeMinimalSecuritySnapshot(to: dataDir)
+        try writeMobileDevicesListSnapshot(to: dataDir, count: 7)
+
+        let localSummaries = tmpDir.appendingPathComponent("rebuild-summaries", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: localSummaries, withIntermediateDirectories: true)
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let summaryFile = localSummaries.appendingPathComponent("summary_\(today).json")
+        // An earlier run today collected security live but had no mobile count yet.
+        let earlier = makeSummary(
+            complianceIsProxy: true, hasBands: false, date: today,
+            collectionSources: ["security": "live"])
+        try JSONEncoder().encode(earlier).write(to: summaryFile, options: .atomic)
+
+        // This run collected only the mobile list; security is read back from disk.
+        localEngine.emitSummaryJSON(
+            summariesDir: localSummaries, liveKinds: ["mobile-devices-list"])
+
+        let rebuilt = try SummaryJSONParser.parse(summaryFile)
+        XCTAssertEqual(rebuilt.mobileDeviceCount, 7, "the later run's data must land")
+        XCTAssertEqual(rebuilt.collectionSources?["security"], "live",
+                       "a source collected earlier today must not be relabelled as cache")
+    }
+
     // MARK: - Helpers
 
     private func makeSummary(
@@ -582,7 +646,8 @@ final class SummaryJSONEmitTests: XCTestCase {
         date: String = "2026-06-05",
         totalDevices: Int = 100,
         staleCount: Int? = 5,
-        mobileDeviceCount: Int? = nil
+        mobileDeviceCount: Int? = nil,
+        collectionSources: [String: String]? = nil
     ) -> DailySummary {
         let bands: [String: MSCPBandCounts]? = hasBands
             ? ["NIST": MSCPBandCounts(pass: 80, low: 10, medLow: 5, medium: 3, high: 2, noData: 0)]
@@ -599,6 +664,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             source: "jamf-cli",
             complianceIsProxy: complianceIsProxy,
             mscpBands: bands,
+            collectionSources: collectionSources,
             mobileDeviceCount: mobileDeviceCount
         )
     }

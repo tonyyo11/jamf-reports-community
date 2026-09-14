@@ -74,6 +74,17 @@ final class RunHistoryServiceTests: XCTestCase {
                      "a log with no footer and no failure marker must not fabricate an exit code")
     }
 
+    /// Only the recorder's footer carries the exit code. An `exit 0` that jamf-cli
+    /// or the server put inside a warning line must not stand in for it.
+    func testExitCodeIgnoresAnExitTokenInsideAWarningLine() throws {
+        let warn = "[warn] patch-device-failures: jamf-cli could not fetch device_failures: "
+            + "exit 0 upstream"
+        XCTAssertNil(RunHistoryService.exitCode(from: warn))
+        let logURL = try writeLog("[info] started\n\(warn)\n")
+        let (exitCode, _, _) = RunHistoryService.parseLogTail(from: logURL)
+        XCTAssertNil(exitCode, "a crashed run with server text in its tail must not read as exit 0")
+    }
+
     /// A fatal marker with no footer must still read as a failure (unchanged).
     func testParseLogTailNoFooterWithFailureMarkerReturnsOne() throws {
         let logURL = try writeLog("[info] started\n[error] something broke\n")

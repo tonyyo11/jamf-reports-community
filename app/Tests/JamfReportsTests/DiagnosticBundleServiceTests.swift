@@ -118,6 +118,28 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue((out["username"] as? String ?? "").hasPrefix("user-"))
     }
 
+    /// 2.8.0 collects the user-and-location and disk-encryption sections; the
+    /// phone key and the FileVault account list (an array) must placeholder too.
+    func testWiderInventorySectionsRedactPhoneAndFileVaultUserList() {
+        let r = DiagnosticRedactor()
+        let json: [String: Any] = [
+            "userAndLocation": ["phone": "555-0100", "realname": "Jane Doe"],
+            "diskEncryption": [
+                "fileVault2EnabledUserNames": ["jdoe", "admin"], "fileVault2Enabled": true,
+            ],
+        ]
+        guard let out = r.redactJSON(json) as? [String: Any],
+              let ual = out["userAndLocation"] as? [String: Any],
+              let disk = out["diskEncryption"] as? [String: Any]
+        else { return XCTFail("not a dict") }
+        XCTAssertTrue((ual["phone"] as? String ?? "").hasPrefix("user-"))
+        XCTAssertTrue((ual["realname"] as? String ?? "").hasPrefix("user-"))
+        let names = disk["fileVault2EnabledUserNames"] as? [String] ?? []
+        XCTAssertEqual(names.count, 2)
+        XCTAssertTrue(names.allSatisfy { $0.hasPrefix("user-") }, "got \(names)")
+        XCTAssertEqual(disk["fileVault2Enabled"] as? Bool, true, "non-PII key must survive")
+    }
+
     func testOperatorUserHostRedactedInSummaryJSON() {
         // operatorUserHost ("user@machine") is not caught by the email regex (no TLD)
         // or any other pattern; it must be covered by piiJSONKeys["operatoruserhost"].

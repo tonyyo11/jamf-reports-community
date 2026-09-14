@@ -157,19 +157,6 @@ struct SettingsView: View {
         "one history between them. Keep the default if this Mac is the only one " +
         "reporting."
 
-    private nonisolated static let sharedFolderConsentMessage: String = """
-        Device serials, usernames and email addresses are stored in clear text in the \
-        raw snapshots and run logs, and any webhook URL you configure is stored in \
-        config.yaml. The folder's sharing settings decide who can read all of that — \
-        this app cannot restrict it, and the file permissions it sets are not carried \
-        across by the sync provider.
-
-        Confirm the folder is shared only with people cleared to see device-level \
-        inventory. If a wider audience only needs the reports, cancel and set \
-        Output & Branding's output folder to the shared location instead — that \
-        publishes finished reports without sharing the raw data.
-        """
-
     private nonisolated static func providerLabel(_ name: String) -> String {
         "On \(name) — multi-Mac coordination turns on automatically. Run Check on the Config screen reports who else writes here."
     }
@@ -226,35 +213,13 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Workspace location")
-        .confirmationDialog(
-            sharedFolderConsentTitle,
-            isPresented: Binding(
-                get: { pendingSharedRoot != nil },
-                set: { if !$0 { pendingSharedRoot = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Use this folder") {
-                let url = pendingSharedRoot
-                pendingSharedRoot = nil
-                if let url { applyWorkspaceRoot(url) }
-            }
-            Button("Cancel", role: .cancel) { pendingSharedRoot = nil }
-        } message: {
-            Text(Self.sharedFolderConsentMessage)
-        }
+        .sharedFolderConsent(pending: $pendingSharedRoot) { applyWorkspaceRoot($0) }
     }
 
     private func chooseWorkspaceRoot() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Use Folder"
-        panel.message = "Choose the folder that holds your Jamf Reports workspaces."
-        panel.directoryURL = URL(fileURLWithPath: workspaceRootPath)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let url = WorkspaceFolderPicker.choose(
+            startingAt: URL(fileURLWithPath: workspaceRootPath), allowCreate: true
+        ) else { return }
 
         // Choosing a synced folder widens who can read raw fleet data. That is
         // the operator's call to make — but it must be a call they knowingly
@@ -267,16 +232,6 @@ struct SettingsView: View {
         applyWorkspaceRoot(url)
     }
 
-    /// Named for what it actually shares, not for the feature.
-    private var sharedFolderConsentTitle: String {
-        guard let url = pendingSharedRoot,
-              let provider = CloudStorage.provider(for: url) else {
-            return "Use this shared folder?"
-        }
-        return "Everyone with access to this \(provider.displayName) folder will be able to "
-            + "read your fleet's device data"
-    }
-
     /// Existing workspaces are deliberately NOT moved. Relocating gigabytes of
     /// snapshots onto a synced volume on a button press is not recoverable in
     /// one click, so the operator either points at a folder that already holds
@@ -286,16 +241,16 @@ struct SettingsView: View {
             let applied = try WorkspaceRootStore.set(url)
             workspaceRootPath = applied.path
             workspace.reloadFromDisk()
-            // Actually rewrite the managed plists now. set() only clears the
-            // flag that makes the NEXT reconcile forced, and reloadFromDisk
-            // does not reconcile — so without this the message below would
-            // describe something that had not happened yet.
-            Task { await workspace.reconcileManagedAutomation() }
+            // Register/unregister the ticker against the new root's schedules.
+            // The ticker itself picks up the new root on its next wake, not
+            // synchronously here — the message below reflects that.
+            Task { await workspace.applyAutomationPolicy() }
             workspaceRootMessage = url == nil
                 ? "Back to the default location. Profiles already in the previous folder stay "
                     + "there — copy them across if you want them here."
                 : "Workspace location updated. Profiles already elsewhere are not moved; copy "
-                    + "them in if you want them here. Scheduled runs are rewritten to match."
+                    + "them in if you want them here. Scheduled runs use the new folder from "
+                    + "their next run."
         } catch {
             workspaceRootMessage = "Couldn't use that folder: \(error.localizedDescription)"
         }

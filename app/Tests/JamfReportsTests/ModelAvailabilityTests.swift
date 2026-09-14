@@ -25,8 +25,9 @@ final class ModelAvailabilityTests: XCTestCase {
         }
     }
 
-    func testRequiresMacOS27MessageMentionsMacOS27() {
-        XCTAssertTrue(ModelAvailability.requiresMacOS27.message.contains("macOS 27"))
+    /// Apple's form is `macOS <Name> <major>`; the number must survive.
+    func testRequiresMacOS27MessageNamesTheRelease() {
+        XCTAssertTrue(ModelAvailability.requiresMacOS27.message.contains("macOS Golden Gate 27"))
     }
 
     func testUnknownMessageCarriesTheDetail() {

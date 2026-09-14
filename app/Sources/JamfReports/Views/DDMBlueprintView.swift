@@ -11,6 +11,8 @@ struct DDMBlueprintView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var snapshot: DDMBlueprintService.Snapshot = .empty
+    @State private var deviceSnapshot: DDMDeviceStatusService.Snapshot = .empty
+    @State private var fleetCounts: (enabled: Int, total: Int) = (0, 0)
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var platformCapability: PlatformCapabilityService?
     @State private var platformAvailable = false
@@ -25,9 +27,14 @@ struct DDMBlueprintView: View {
 
     var body: some View {
         PageScaffold {
-            DDMBlueprintView.header()
+            DDMBlueprintView.header(kicker: showsPlatformSections
+                ? "Experimental — Platform API" : "Declarative Device Management")
             if !workspace.demoMode && lockState == .unlockedWithData {
-                CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
+                CollectNowBanner(source: bannerSource, tiers: [.inventory, .scan])
+                if deviceSnapshot.isDetected {
+                    FreshnessChipRow(sourceDates: deviceSnapshot.sourceDates,
+                                     expectedKinds: ["ddm-device-status"])
+                }
             }
             content
         }
@@ -50,30 +57,29 @@ struct DDMBlueprintView: View {
             isDemoMode: workspace.demoMode,
             experimentalOn: experimentalFeatures.isEnabled(.platformAPI),
             platformAvailable: platformAvailable,
-            hasData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0
-        )
+            hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0,
+            hasDeviceData: !deviceSnapshot.records.isEmpty,
+            ddmEnabledCount: fleetCounts.enabled,
+            hasDeviceSnapshot: deviceSnapshot.isDetected)
     }
 
-    /// Pure state-machine function. Inputs:
-    /// - ``isDemoMode``: in demo mode the gate is bypassed entirely and
-    ///   the demo dataset always renders.
-    /// - ``experimentalOn``: ``ExperimentalFeatureService.platformAPI``
-    ///   toggle from Settings.
-    /// - ``platformAvailable``: result of ``PlatformCapabilityService``
-    ///   probe for the active profile.
-    /// - ``hasData``: any cached blueprint or DDM data on disk.
-    static func decideLockState(
-        isDemoMode: Bool,
-        experimentalOn: Bool,
-        platformAvailable: Bool,
-        hasData: Bool
+    /// Four inputs can unlock the screen: the Platform blueprint snapshot
+    /// (still behind the experimental gate + capability probe), the per-device
+    /// scan snapshot (any profile), inventory saying DDM is enabled on at
+    /// least one Mac (any profile — "the scan has not run yet" is empty, not
+    /// locked), and a per-device scan snapshot that ran and found nothing to
+    /// report (an empty result is still a result). Locked only when none of
+    /// them exists.
+    nonisolated static func decideLockState(
+        isDemoMode: Bool, experimentalOn: Bool, platformAvailable: Bool,
+        hasPlatformData: Bool, hasDeviceData: Bool, ddmEnabledCount: Int,
+        hasDeviceSnapshot: Bool
     ) -> LockState {
-        if isDemoMode {
-            return hasData ? .unlockedWithData : .unlockedNoData
-        }
-        guard experimentalOn else { return .locked }
-        guard platformAvailable else { return .locked }
-        return hasData ? .unlockedWithData : .unlockedNoData
+        if isDemoMode { return hasPlatformData ? .unlockedWithData : .unlockedNoData }
+        let platformPath = experimentalOn && platformAvailable
+        if hasDeviceData || (platformPath && hasPlatformData) { return .unlockedWithData }
+        if platformPath || ddmEnabledCount > 0 || hasDeviceSnapshot { return .unlockedNoData }
+        return .locked
     }
 
     // MARK: - Body fragments
@@ -86,17 +92,55 @@ struct DDMBlueprintView: View {
         case .unlockedNoData:
             unlockedEmptyCard
         case .unlockedWithData:
-            adoptionCard
-            blueprintTableCard
-            declarationTableCard
+            if !workspace.demoMode {
+                headerStrip
+            }
+            if showsPlatformSections {
+                adoptionCard
+                blueprintTableCard
+                declarationTableCard
+            }
+            if deviceSnapshot.isDetected {
+                deviceDeclarationsCard
+                softwareUpdatesCard
+            }
         }
     }
 
-    private static func header() -> some View {
+    /// Whether the Platform data path is reachable at all — demo mode, or
+    /// the experimental flag AND the capability probe both hold. Mirrors the
+    /// `platformPath` local `decideLockState` uses to gate `hasPlatformData`.
+    private var platformPath: Bool {
+        workspace.demoMode || (experimentalFeatures.isEnabled(.platformAPI) && platformAvailable)
+    }
+
+    /// On-prem profiles (or a profile with the experimental flag off) never
+    /// see the Blueprints sections — a snapshot left over from when the flag
+    /// was on must not render once it's off.
+    private var showsPlatformSections: Bool {
+        DDMBlueprintView.showsPlatformSections(
+            platformPath: platformPath,
+            hasPlatformData: snapshot.totalBlueprints > 0 || snapshot.totalDeclarationSources > 0)
+    }
+
+    nonisolated static func showsPlatformSections(platformPath: Bool, hasPlatformData: Bool) -> Bool {
+        platformPath && hasPlatformData
+    }
+
+    /// The freshest of the two snapshot sources — an on-prem profile with a
+    /// fresh per-device scan must not read "never fetched live" just because
+    /// the (empty, Platform-only) blueprint snapshot has no date.
+    private var bannerSource: CacheSource {
+        let newest = [snapshot.snapshotDate, deviceSnapshot.snapshotDate].compactMap { $0 }.max()
+        return CacheSource.from(snapshotDate: newest, withinHours: 36)
+    }
+
+    private static func header(kicker: String) -> some View {
         PageHeader(
-            kicker: "Experimental — Platform API",
+            kicker: kicker,
             title: "DDM Blueprints",
-            subtitle: "Browse DDM blueprint deployment and per-source declaration status captured by jamf-cli's Platform API.",
+            subtitle: "Per-device DDM status comes from the weekly device scan (any profile). "
+                + "The Blueprints sections below need a Platform API profile.",
             lastModified: nil
         )
     }
@@ -126,16 +170,25 @@ struct DDMBlueprintView: View {
     private var unlockedEmptyCard: some View {
         Card(padding: 24) {
             VStack(alignment: .leading, spacing: 14) {
-                DDMBlueprintView.experimentalBadge()
-                EmptyStateView(
-                    systemImage: "doc.badge.gearshape",
-                    title: "No DDM snapshots yet",
-                    message: "Run `jamf-cli pro report blueprint-status` and `ddm-status` to populate this screen.",
-                    commands: [
-                        "jamf-cli pro report blueprint-status --output json",
-                        "jamf-cli pro report ddm-status --output json",
-                    ]
-                )
+                if platformPath { DDMBlueprintView.experimentalBadge() }
+                if deviceSnapshot.isDetected && fleetCounts.enabled == 0 {
+                    EmptyStateView(
+                        systemImage: "checkmark.circle",
+                        title: "No DDM-enabled Macs",
+                        message: "The per-device scan ran; no Mac in this inventory has "
+                            + "Declarative Device Management enabled.",
+                        commands: []
+                    )
+                } else {
+                    EmptyStateView(
+                        systemImage: "doc.badge.gearshape",
+                        title: "No DDM snapshots yet",
+                        message: "Run a collect with the Scan tier (or wait for the weekly "
+                            + "managed scan) to populate per-device DDM status. Platform "
+                            + "profiles can also run the blueprint reports.",
+                        commands: ["jamf-reports collect --tiers inventory,scan"]
+                    )
+                }
             }
         }
     }
@@ -213,12 +266,122 @@ struct DDMBlueprintView: View {
         }
     }
 
+    private var headerStrip: some View {
+        Card(padding: 14) {
+            HStack(spacing: 10) {
+                DDMBlueprintView.declarationCounter(
+                    label: "DDM enabled",
+                    value: fleetCounts.enabled, color: Theme.Colors.teal)
+                DDMBlueprintView.declarationCounter(
+                    label: "Macs in inventory",
+                    value: fleetCounts.total, color: Theme.Colors.fgMuted)
+                DDMBlueprintView.declarationCounter(
+                    label: "Reported", value: deviceSnapshot.ddmReportedCount,
+                    color: Theme.Colors.ok)
+                DDMBlueprintView.declarationCounter(
+                    label: "Failing declarations",
+                    value: deviceSnapshot.failingDeclarationCount,
+                    color: deviceSnapshot.failingDeclarationCount > 0
+                        ? Theme.Colors.danger : Theme.Colors.ok)
+            }
+        }
+    }
+
+    private var deviceDeclarationsCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Declarations by identifier",
+                              trailing: "\(deviceSnapshot.byIdentifier.count) identifiers")
+                if deviceSnapshot.byIdentifier.isEmpty {
+                    Text("No declarations reported by any DDM-enabled Mac yet.")
+                        .font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+                ForEach(deviceSnapshot.byIdentifier.prefix(30)) { entry in
+                    DisclosureGroup {
+                        DDMBlueprintView.deviceList(entry.devices)
+                    } label: {
+                        HStack(spacing: 8) {
+                            // Blueprint names cannot be joined: BlueprintStatusRow
+                            // carries no identifier field to join on.
+                            Mono(text: entry.identifier)
+                                .lineLimit(1)
+                            Spacer()
+                            Pill(text: "\(entry.active) active", tone: .teal)
+                            if entry.inactive > 0 {
+                                Pill(text: "\(entry.inactive) inactive", tone: .warn)
+                            }
+                            if entry.invalid > 0 {
+                                Pill(text: "\(entry.invalid) invalid", tone: .danger)
+                            }
+                            if entry.mixed > 0 { Pill(text: "\(entry.mixed) mixed", tone: .danger) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var softwareUpdatesCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Software updates (DDM)")
+                if deviceSnapshot.pendingVersions.isEmpty && deviceSnapshot.failureReasons.isEmpty {
+                    Text("No pending DDM software updates and no failures reported.")
+                        .font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+                ForEach(deviceSnapshot.pendingVersions, id: \.version) { bucket in
+                    DisclosureGroup {
+                        DDMBlueprintView.deviceList(bucket.devices)
+                    } label: {
+                        HStack {
+                            Text("Pending \(bucket.version)").font(.footnote.weight(.semibold))
+                            Spacer()
+                            Pill(text: "\(bucket.devices.count) devices", tone: .gold)
+                        }
+                    }
+                }
+                ForEach(deviceSnapshot.failureReasons, id: \.reason) { bucket in
+                    DisclosureGroup {
+                        DDMBlueprintView.deviceList(bucket.devices)
+                    } label: {
+                        HStack {
+                            Text(bucket.reason).font(.footnote.weight(.semibold)).lineLimit(2)
+                            Spacer()
+                            Pill(text: "\(bucket.devices.count) devices", tone: .danger)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    static func deviceList(_ devices: [DeviceRef]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(devices.prefix(50)) { d in
+                HStack(spacing: 8) { Mono(text: d.id, size: 10.5); Text(d.name).font(.caption) }
+            }
+            if devices.count > 50 {
+                Text("+ \(devices.count - 50) more — full list in the workbook's "
+                    + "DDM Device Status sheet.")
+                    .font(.caption).foregroundStyle(Theme.Colors.fgMuted)
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.vertical, 4)
+    }
+
     // MARK: - Helpers
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : DDMBlueprintService.load(profile: workspace.profile)
+        if workspace.demoMode {
+            snapshot = Self.demoSnapshot
+            deviceSnapshot = .empty
+            fleetCounts = (0, 0)
+            return
+        }
+        snapshot = DDMBlueprintService.load(profile: workspace.profile)
+        deviceSnapshot = DDMDeviceStatusService.load(profile: workspace.profile)
+        fleetCounts = DDMDeviceStatusService.fleetDDMCounts(profile: workspace.profile)
     }
 
     private func probePlatformAvailability() async {
@@ -237,7 +400,7 @@ struct DDMBlueprintView: View {
 
     private static let setupCommands: [String] = [
         "jamf-cli config add-profile <name> --auth-method platform \\",
-        "  --url <gateway-url> --tenant-id <id>",
+        "  --url <gateway-url> --environment-id <id>",
         "Then enable both platform.enabled: true and experimental.platform_features_enabled: true",
     ]
 

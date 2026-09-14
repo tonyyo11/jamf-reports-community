@@ -1,8 +1,8 @@
 # AI Insights
 
 Opt-in, on-device fleet insights using Apple's Foundation Models framework. Off by
-default. Requires macOS 27 or later — on any earlier macOS, every AI surface is hidden
-entirely, not shown as unavailable.
+default. Requires macOS Golden Gate 27 or later — on any earlier macOS, every AI surface
+is hidden entirely, not shown as unavailable.
 
 ## What it is
 
@@ -20,7 +20,7 @@ Three surfaces, all built from data the app has already collected:
 
 ## Requirements and honesty about what runs where
 
-- Requires macOS 27+ with Apple Intelligence available on the Mac.
+- Requires macOS Golden Gate 27 or later with Apple Intelligence available on the Mac.
 - On macOS 26 and earlier, the Overview card and the Settings "AI Insights" panel do not
   appear at all — the app doesn't advertise a feature it can't run there.
 - **The app runs the on-device Apple Foundation Model only. No fleet data leaves the
@@ -53,7 +53,7 @@ Three surfaces, all built from data the app has already collected:
 
 ## Turning it on
 
-Settings → **AI Insights** (only visible on a macOS 27+ host):
+Settings → **AI Insights** (only visible on a macOS Golden Gate 27 or later host):
 
 - **Enable AI insights** — the master toggle; off by default.
 - **Model — On-device** — a statement, not a control. Apple Foundation Models runs

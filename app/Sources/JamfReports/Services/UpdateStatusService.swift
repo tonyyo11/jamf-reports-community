@@ -13,8 +13,8 @@ struct UpdateStatusService: Sendable {
         let planTotal: Int
         let statusBreakdown: [Slice]
         let planStateBreakdown: [Slice]
-        let errorDevices: [UpdateErrorDevice]
-        let failedPlans: [UpdateFailedPlan]
+        var errorDevices: [UpdateErrorDevice]
+        var failedPlans: [UpdateFailedPlan]
         let sourceFile: URL?
         let snapshotDate: Date?
         /// Per-kind newest-file dates for the freshness chip row. Keyed by the
@@ -85,11 +85,30 @@ struct UpdateStatusService: Sendable {
         guard let dir = (try? WorkspacePaths.dataDir(for: profile)) else {
             return .empty
         }
-        let updateDir = dir.appendingPathComponent("update-status", isDirectory: true)
-        guard let newest = FileManager.newestJSONFile(in: updateDir) else {
-            return .empty
+        return load(
+            statusURL: FileManager.newestJSONFile(
+                in: dir.appendingPathComponent("update-status", isDirectory: true)),
+            failuresURL: FileManager.newestJSONFile(
+                in: dir.appendingPathComponent("update-device-failures", isDirectory: true))
+        )
+    }
+
+    /// The summary kind lands twice a day; the `--scan-failures` kind lands
+    /// weekly under its own directory, which this loader never read before
+    /// 2.8.0 — the failed-plan tables stayed empty and the chip read "never"
+    /// on every jamf-cli-only workspace. Totals come from the summary when it
+    /// exists; the failure arrays only ever come from the scan.
+    static func load(statusURL: URL?, failuresURL: URL?) -> Snapshot {
+        let scan = failuresURL.flatMap { load(from: $0) }
+        guard var merged = statusURL.flatMap({ load(from: $0) }) ?? scan else { return .empty }
+        if let scan, scan.scanFailuresAvailable {
+            merged.errorDevices = scan.errorDevices
+            merged.failedPlans = scan.failedPlans
+            merged.scanFailuresAvailable = true
+            merged.sourceDates["update-device-failures"] =
+                scan.sourceDates["update-device-failures"]
         }
-        return load(from: newest) ?? .empty
+        return merged
     }
 
     /// Test seam: load directly from an arbitrary file URL.
@@ -137,13 +156,19 @@ struct UpdateStatusService: Sendable {
             planTotal: failures.planTotal ?? 0,
             statusBreakdown: makeStatusSlices(from: failures.statusSummary),
             planStateBreakdown: makePlanStateSlices(from: failures.planStateSummary ?? []),
-            errorDevices: failures.errorDevices,
-            failedPlans: failures.failedPlans,
+            errorDevices: uniqueByID(failures.errorDevices),
+            failedPlans: uniqueByID(failures.failedPlans),
             sourceFile: url,
             snapshotDate: mtime,
             sourceDates: sourceDates,
             scanFailuresAvailable: true
         )
+    }
+
+    /// A SwiftUI `Table` needs unique row ids; two byte-identical rows say nothing twice.
+    private static func uniqueByID<Row: Identifiable>(_ rows: [Row]) -> [Row] {
+        var seen = Set<Row.ID>()
+        return rows.filter { seen.insert($0.id).inserted }
     }
 
     private static func decode(status: UpdateStatusReport, url: URL) -> Snapshot {

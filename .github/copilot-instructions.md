@@ -4,7 +4,7 @@ This file provides context for GitHub Copilot and other AI coding assistants wor
 
 ## Project Overview
 
-A native macOS app (`app/`) — a SwiftUI GUI (macOS 14+, Swift 6) for fleet reporting against Jamf Pro and Jamf School. It collects data from `jamf-cli` (or a Jamf Pro CSV export, or cached snapshots), generates multi-sheet Excel workbooks and self-contained HTML reports, schedules unattended runs via LaunchAgents, tracks run history, and surfaces a Historical Trends screen built on archived `summary.json` snapshots.
+A native macOS app (`app/`) — a SwiftUI GUI (macOS 15+, Swift 6) for fleet reporting against Jamf Pro and Jamf School. It collects data from `jamf-cli` (or a Jamf Pro CSV export, or cached snapshots), generates multi-sheet Excel workbooks and self-contained HTML reports, schedules unattended runs via LaunchAgents, tracks run history, and surfaces a Historical Trends screen built on archived `summary.json` snapshots.
 
 All report generation is performed by a native Swift engine (`ReportEngine`); **there is no Python in the report-generation path.** The app is config-driven: users map their CSV column names to logical field names in `config.yaml` (edited through the GUI), with no code changes needed for normal use. It is a SwiftPM project (`app/Package.swift`), not a hand-rolled `.xcodeproj`.
 
@@ -13,7 +13,7 @@ All report generation is performed by a native Swift engine (`ReportEngine`); **
 ## Architecture
 
 The macOS app lives in `app/` and is a SwiftPM executable target (`JamfReports`).
-Build target: macOS 14+ (Sonoma), Swift 6 strict concurrency.
+Build target: macOS Sequoia 15 or later, Swift 6 strict concurrency.
 
 ### Two run paths
 

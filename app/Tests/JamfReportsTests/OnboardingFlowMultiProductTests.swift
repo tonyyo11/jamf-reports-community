@@ -71,13 +71,24 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         )
     }
 
-    func test_platformGateway_missingTenantID_blocksAdvance() {
+    func test_platformGateway_missingScopeID_blocksAdvance() {
         let flow = makeValidPlatformGatewayFlow()
-        flow.tenantID = ""
+        flow.platformScopeID = ""
         flow.platformSecretFieldHasText = true
         XCTAssertFalse(
             flow.canAdvance,
-            "Platform Gateway: canAdvance must be false when tenantID is empty"
+            "Platform Gateway: canAdvance must be false when environment/tenant scope ID is empty"
+        )
+    }
+
+    func test_platformGateway_organizationScope_advancesWithNoScopeID() {
+        let flow = makeValidPlatformGatewayFlow()
+        flow.platformScope = .organization
+        flow.platformScopeID = ""
+        flow.platformSecretFieldHasText = true
+        XCTAssertTrue(
+            flow.canAdvance,
+            "Organization scope needs no ID, so canAdvance must be true"
         )
     }
 
@@ -150,19 +161,103 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertEqual(s, "myid\nmysecret\n", "stdin must be clientID\\nclientSecret\\n")
     }
 
-    func test_platformGatewayArguments_containsExpectedFlags() {
+    /// jamf-cli 1.29 verifies a new profile's pair before writing it; the app opts
+    /// out so Save stays a local write and Validate stays the check. The flag is
+    /// unknown on older binaries, so it must be absent unless asked for.
+    func test_addProfileArguments_sendNoVerifyOnlyWhenAsked() {
+        let oauth = OnboardingFlow.proOAuth2Arguments(
+            profile: "p", url: "https://x.jamfcloud.com")
+        XCTAssertFalse(oauth.contains("--no-verify"), "default must fit a pre-1.29 binary")
+        let oauthGated = OnboardingFlow.proOAuth2Arguments(
+            profile: "p", url: "https://x.jamfcloud.com", noVerify: true)
+        XCTAssertEqual(oauthGated.last, "--no-verify")
+        XCTAssertEqual(Array(oauthGated.dropLast()), oauth, "the flag is the only difference")
+
+        let platform = OnboardingFlow.platformGatewayArguments(
+            profile: "p", gatewayURL: "https://us.api.jamfcloud.com",
+            scope: .environment, scopeID: "e")
+        XCTAssertFalse(platform.contains("--no-verify"))
+        let platformGated = OnboardingFlow.platformGatewayArguments(
+            profile: "p", gatewayURL: "https://us.api.jamfcloud.com",
+            scope: .environment, scopeID: "e", noVerify: true)
+        XCTAssertEqual(platformGated.last, "--no-verify")
+        XCTAssertEqual(Array(platformGated.dropLast()), platform)
+    }
+
+    func test_platformGatewayArguments_environmentScope_sendsEnvironmentIDOnly() {
         let args = OnboardingFlow.platformGatewayArguments(
             profile: "platform-prod",
             gatewayURL: "https://us.api.jamfcloud.com",
-            tenantID: "my-tenant"
+            scope: .environment,
+            scopeID: "my-env"
         )
         XCTAssertTrue(args.contains("config"), "must include 'config'")
         XCTAssertTrue(args.contains("add-profile"), "must include 'add-profile'")
         XCTAssertTrue(args.contains("--auth-method"), "must include --auth-method")
         XCTAssertTrue(args.contains("platform"), "auth method must be platform")
+        XCTAssertTrue(args.contains("--environment-id"), "must include --environment-id")
+        XCTAssertTrue(args.contains("my-env"), "must include environment ID value")
+        XCTAssertTrue(args.contains("--url"), "must include --url")
+        XCTAssertTrue(args.contains("https://us.api.jamfcloud.com"), "must include gateway URL")
+        XCTAssertTrue(args.contains("--no-color"), "must include --no-color")
+        XCTAssertFalse(args.contains("--tenant-id"), "environment scope must not send --tenant-id")
+    }
+
+    func test_platformGatewayArguments_tenantScope_sendsTenantIDOnly() {
+        let args = OnboardingFlow.platformGatewayArguments(
+            profile: "platform-prod",
+            gatewayURL: "https://us.api.jamfcloud.com",
+            scope: .tenant,
+            scopeID: "my-tenant"
+        )
         XCTAssertTrue(args.contains("--tenant-id"), "must include --tenant-id")
         XCTAssertTrue(args.contains("my-tenant"), "must include tenant ID value")
-        XCTAssertTrue(args.contains("--no-color"), "must include --no-color")
+        XCTAssertFalse(args.contains("--environment-id"), "tenant scope must not send --environment-id")
+    }
+
+    func test_platformGatewayArguments_organizationScope_sendsNoScopeFlag() {
+        let args = OnboardingFlow.platformGatewayArguments(
+            profile: "platform-prod",
+            gatewayURL: "https://us.api.jamfcloud.com",
+            scope: .organization,
+            scopeID: ""
+        )
+        XCTAssertFalse(args.contains("--environment-id"), "organization scope sends no ID flag")
+        XCTAssertFalse(args.contains("--tenant-id"), "organization scope sends no ID flag")
+        XCTAssertTrue(args.contains("--auth-method"), "must still include --auth-method")
+        XCTAssertTrue(args.contains("platform"), "auth method must be platform")
+        XCTAssertTrue(args.contains("--url"), "must still include --url")
+        XCTAssertTrue(args.contains("--no-color"), "must still include --no-color")
+    }
+
+    func test_platformGatewayArguments_neverSendsBothScopeFlags() {
+        for scope in OnboardingFlow.PlatformScope.allCases {
+            let args = OnboardingFlow.platformGatewayArguments(
+                profile: "p", gatewayURL: "https://us.api.jamfcloud.com", scope: scope, scopeID: "x"
+            )
+            let hasEnv = args.contains("--environment-id")
+            let hasTenant = args.contains("--tenant-id")
+            XCTAssertFalse(hasEnv && hasTenant, "must never send both scope flags (\(scope))")
+        }
+    }
+
+    func test_platformScope_defaultFollowsJamfCLIVersion() {
+        typealias Scope = OnboardingFlow.PlatformScope
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.24.0"), .tenant)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.27.9"), .tenant)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.28.0"), .environment)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "1.30.1"), .environment)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: nil), .environment)
+        XCTAssertEqual(Scope.defaultScope(forCLIVersion: "garbage"), .environment)
+    }
+
+    func test_platformScope_needsID_falseOnlyForOrganization() {
+        for scope in OnboardingFlow.PlatformScope.allCases {
+            XCTAssertEqual(
+                scope.needsID, scope != .organization,
+                "needsID must be false only for organization scope (\(scope))"
+            )
+        }
     }
 
     /// jamf-cli refuses the retired `{region}.apigw.jamf.com` gateway by name
@@ -261,7 +356,7 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         // PTY result. We test via the fact that argument builders do NOT embed
         // the secret in args (it goes via stdin only).
         let args = OnboardingFlow.platformGatewayArguments(
-            profile: "p", gatewayURL: "https://us.api.jamfcloud.com", tenantID: "tid"
+            profile: "p", gatewayURL: "https://us.api.jamfcloud.com", scope: .environment, scopeID: "tid"
         )
         let argsJoined = args.joined(separator: " ")
         XCTAssertFalse(
@@ -685,7 +780,8 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         flow.proConnectionType = .platformGateway
         flow.profileName = "testprofile"
         flow.gatewayURL = "https://us.api.jamfcloud.com"
-        flow.tenantID = "my-tenant"
+        flow.platformScope = .environment
+        flow.platformScopeID = "my-env"
         flow.platformClientID = "platform-client-id"
         flow.platformClientSecret = ""
         flow.platformSecretFieldHasText = false

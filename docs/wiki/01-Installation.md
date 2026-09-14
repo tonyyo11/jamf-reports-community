@@ -6,9 +6,10 @@ This page covers installing the macOS app and `jamf-cli`.
 
 | Component | Requirement |
 |---|---|
-| macOS | 14 (Sonoma) or later — to run the app |
-| jamf-cli | v1.18.0 or later — optional; powers live collection (v1.19.0+ recommended for partial-failure handling; the project tracks v1.28.0) |
+| macOS | macOS Sequoia 15 or later — to run the app |
+| jamf-cli | v1.18.0 or later — optional; powers live collection (v1.19.0+ recommended for partial-failure handling; the project tracks v1.29.0) |
 | Xcode | 16 or later — only needed to build the app from source |
+| Architecture | Apple silicon (arm64) — the prebuilt `.pkg`/`.dmg` are arm64-only; Intel Macs build from source |
 
 `jamf-cli` is optional. The app works from a Jamf Pro CSV export
 and cached snapshots with no jamf-cli installed — jamf-cli adds live collection and the
@@ -54,6 +55,11 @@ jamf-cli pro setup --url https://your-instance.jamfcloud.com
 Follow the prompts. `jamf-cli pro setup` can create an API client for you — choose the
 **read-only** scope when offered, since this project only reads data. Credentials are
 stored in the macOS keychain, not in shell history.
+
+On jamf-cli 1.29.0 and later, `pro setup` first asks whether to use an API client you
+already hold (the default) or to create one from a Jamf Pro account. Prefer an existing
+client: Jamf plans to remove local, SAML and LDAP administrator sign-in on cloud-hosted
+instances (estimated for the second half of 2027), and the create path depends on it.
 
 If you use the Jamf Platform API, jamf-cli also offers `jamf-cli platform setup`, which
 creates a Platform Gateway profile that enables both the Pro and Platform API command

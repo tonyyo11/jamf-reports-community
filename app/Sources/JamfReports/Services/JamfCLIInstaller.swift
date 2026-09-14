@@ -182,6 +182,33 @@ final class JamfCLIInstaller {
         return compareVersions(installedVersion, minimumSupportedVersion) == .orderedAscending
     }
 
+    /// First release whose `config add-profile --auth-method platform` accepts
+    /// `--environment-id` (GA scope). Older binaries only know `--tenant-id`.
+    nonisolated static let environmentScopeVersion: String = "1.28.0"
+
+    /// True unless `installedVersion` parses and is below 1.28.0 — an unknown
+    /// version fails toward the GA default rather than the legacy flag.
+    nonisolated static func supportsEnvironmentScope(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return true }
+        return compareVersions(installedVersion, environmentScopeVersion) != .orderedAscending
+    }
+
+    /// First release whose `pro` resource names come from the OpenAPI spec
+    /// (`device-enrollments`, `declarative-device-management`, …) and whose
+    /// `config add-profile` verifies credentials unless `--no-verify` is passed.
+    /// Older binaries reject both the new names and the flag (exit 2).
+    nonisolated static let specDerivedNamesVersion: String = "1.29.0"
+
+    /// True only when `installedVersion` parses and is at least 1.29.0. An
+    /// unknown version fails toward the old spelling — never send a name or a
+    /// flag an older binary refuses (the `supportsQuietFlags` direction).
+    nonisolated static func supportsSpecDerivedNames(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return false }
+        return compareVersions(installedVersion, specDerivedNamesVersion) != .orderedAscending
+    }
+
     /// Errors raised by `validateAsset(host:name:)` when a release asset
     /// fails the host allow-list, control-char/path-traversal scrub, or
     /// archive-suffix pattern. See P9-A-08 in the security audit.

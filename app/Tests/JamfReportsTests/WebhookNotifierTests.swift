@@ -406,4 +406,25 @@ final class WebhookNotifierTests: XCTestCase {
         XCTAssertEqual(minimal.first { $0.label == "Overdue" }?.value,
                        "1 schedule missed their run")
     }
+
+    /// A `.tickerDisabled` issue is a distinct doorbell fact, not a schedule
+    /// name — full mode names the remedy, minimal mode never says "missed
+    /// their run" (nothing was scheduled to run; the background item itself
+    /// is disabled).
+    func testOverdueFactsTickerDisabledNamesLoginItemsNotAScheduleMiss() {
+        let issues = [
+            AutomationHealthIssue(
+                label: AutomationHealth.tickerLabel, displayName: "Background item disabled",
+                kind: .tickerDisabled, isMulti: true, profile: "",
+                expectedFire: nil, lastRunFinishedAt: nil),
+        ]
+        let full = WorkspaceStore.overdueFacts(detail: .full, profile: "prod", overdue: issues)
+        XCTAssertTrue(full.contains { $0.value.contains("Login Items") })
+
+        let minimal = WorkspaceStore.overdueFacts(
+            detail: .minimal, profile: "prod", overdue: issues
+        )
+        XCTAssertTrue(minimal.contains { $0.value == "background item disabled" })
+        XCTAssertFalse(minimal.contains { $0.value.contains("missed their run") })
+    }
 }

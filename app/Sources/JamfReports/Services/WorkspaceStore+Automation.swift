@@ -9,6 +9,11 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
     enum Kind: String, Sendable {
         case overdue
         case failing
+        /// The bundled tick isn't running (Login Items "Allow in the
+        /// Background" was turned off or never approved) — every schedule
+        /// is affected the same way, so this collapses to ONE issue rather
+        /// than one per schedule.
+        case tickerDisabled
     }
 
     /// Stable per-agent id (the LaunchAgent label) so SwiftUI keeps row identity.
@@ -62,9 +67,9 @@ struct AutomationHealthIssue: Identifiable, Sendable, Equatable {
 
     /// True when `label` belongs to the reserved managed-automation label set
     /// (`ManagedAutomation.owns`). Only managed rows get the health card's
-    /// one-click "Run now" — a hand-built agent's label was never reserved
-    /// by the managed policy, so kickstarting it here would be surprising;
-    /// that agent's own "Run now" lives on the Schedules screen instead.
+    /// one-click "Run now" — a hand-built schedule's label was never reserved
+    /// by the managed policy, so running it from here would be surprising;
+    /// that schedule's own "Run now" lives on the Schedules screen instead.
     var isManagedAgent: Bool {
         ManagedAutomation.owns(label)
     }
@@ -80,11 +85,25 @@ enum AutomationHealth {
     /// and clock skew without hiding a genuinely-missed run.
     static let graceSeconds: TimeInterval = 60 * 60
 
+    /// Synthetic label for the collapsed `.tickerDisabled` issue — the ticker
+    /// is one bundled agent, not one of the schedules it evaluates.
+    static let tickerLabel = "\(LaunchAgentWriter.labelPrefix).tick"
+
     /// Evaluate one probe pass. `now` is injected for deterministic tests.
     ///
+    /// When the ticker requires Login Items approval or was never registered,
+    /// no per-schedule state can be trusted (nothing is firing), so this
+    /// short-circuits to ONE `.tickerDisabled` issue instead of every
+    /// schedule reading `.overdue` — but only while `wantsTicker`: with
+    /// nothing scheduled an unregistered ticker is the correct state, not a
+    /// fault. `.unavailable` (a dev build with no bundled plist) is NOT
+    /// treated as disabled — registration simply doesn't apply there, and
+    /// the per-schedule evaluation still runs.
+    ///
     /// - `.overdue`: the schedule is enabled, has an expected past fire, that
-    ///   fire plus the grace window has elapsed, and there is no run artifact
-    ///   finishing at or after the expected fire.
+    ///   fire plus the grace window has elapsed, the fire is not before the
+    ///   workspace existed (`activeSince` — it never had a chance to run),
+    ///   and there is no run artifact finishing at or after the expected fire.
     /// - `.failing`: a run artifact exists and its success flag is `false`
     ///   (independent of overdue — a run that fired but failed still needs
     ///   attention). A schedule can be both; overdue takes precedence so the
@@ -93,14 +112,29 @@ enum AutomationHealth {
     /// Disabled schedules never produce an issue.
     static func evaluate(
         inputs: [LaunchAgentService.ScheduleHealthInput],
+        tickerStatus: TickerStatus = .enabled,
+        wantsTicker: Bool = true,
         now: Date = Date()
     ) -> [AutomationHealthIssue] {
-        inputs.compactMap { input in
+        let tickerOff = tickerStatus == .requiresApproval || tickerStatus == .notRegistered
+        if wantsTicker, tickerOff {
+            return [AutomationHealthIssue(
+                label: tickerLabel,
+                displayName: "Background item disabled",
+                kind: .tickerDisabled,
+                isMulti: true,
+                profile: "",
+                expectedFire: nil,
+                lastRunFinishedAt: nil
+            )]
+        }
+        return inputs.compactMap { input in
             guard input.enabled else { return nil }
 
             if let expected = input.expectedFire,
                now.timeIntervalSince(expected) >= graceSeconds,
-               !ranAtOrAfter(input.lastRunFinishedAt, expected) {
+               !ranAtOrAfter(input.lastRunFinishedAt, expected),
+               !predatesWorkspace(expected, input.activeSince) {
                 return AutomationHealthIssue(
                     label: input.label,
                     displayName: input.displayName,
@@ -134,6 +168,13 @@ enum AutomationHealth {
     private static func ranAtOrAfter(_ finished: Date?, _ expected: Date) -> Bool {
         guard let finished else { return false }
         return finished >= expected
+    }
+
+    /// True when the fire came before the workspace existed: nothing could
+    /// have run for it, so the silence is not a missed run.
+    private static func predatesWorkspace(_ expected: Date, _ activeSince: Date?) -> Bool {
+        guard let activeSince else { return false }
+        return expected < activeSince
     }
 }
 
@@ -170,33 +211,83 @@ extension WorkspaceStore {
         AutomationHealthModel.shared.issues
     }
 
-    /// Reconcile the managed-automation LaunchAgents from the saved
-    /// `AutomationPolicy`. Called from the root view's `.task` at launch AND
-    /// from the Automation screen whenever the policy changes, so enabling
-    /// "Manage automation" (or editing the cadence) takes effect immediately
+    /// Whether the ticker should be registered: managed automation is on, or
+    /// there's at least one hand-built schedule to fire.
+    nonisolated static func wantsTicker(policy: AutomationPolicy, hasHandBuilt: Bool) -> Bool {
+        policy.isManaged || hasHandBuilt
+    }
+
+    /// The one-time legacy-plist import, plus the unasked-for removal of the
+    /// managed plists the policy now owns. Shared by the GUI's
+    /// `applyAutomationPolicy` and the CLI's `bootstrapTickerHeadless` so a
+    /// host that only ever runs `jamf-reports` still migrates.
+    nonisolated static func importLegacySchedulesIfNeeded() {
+        guard let result = ScheduleImport.runIfNeeded(),
+              !result.managedLabels.isEmpty else { return }
+        _ = LaunchAgentService.archiveAndRemove(
+            labels: result.managedLabels, includingManaged: true)
+    }
+
+    /// Ticker bootstrap for the included CLI, which has no `WorkspaceStore`
+    /// and no root view: without this, a host driven only by `jamf-reports`
+    /// would never import its legacy plists and never register the background
+    /// item, so its schedules would sit in the store and never fire.
+    nonisolated static func bootstrapTickerHeadless() {
+        importLegacySchedulesIfNeeded()
+        guard wantsTicker(
+            policy: AutomationPolicy.current(),
+            hasHandBuilt: !ScheduleStore().load().isEmpty
+        ) else { return }
+        let registrar = SMAppServiceRegistrar()
+        // requiresApproval means the operator already made a Login Items
+        // choice — the GUI banner is where that gets surfaced, not here.
+        guard registrar.status != .requiresApproval else { return }
+        do {
+            try registrar.register()
+        } catch {
+            fputs(
+                "[warn] could not register the background item: "
+                    + "\(error.localizedDescription)\n",
+                stderr)
+        }
+    }
+
+    /// The policy changed, or the app launched: make Login Items agree with
+    /// it. Registered when anything is scheduled; unregistered when nothing
+    /// is. Called from the root view's `.task` at launch AND from the
+    /// Automation screen whenever the policy changes, so enabling "Manage
+    /// automation" (or adding a hand-built schedule) takes effect immediately
     /// instead of waiting for the next app launch.
-    ///
-    /// No-ops in demo mode. Safe to call when automation is unmanaged: the
-    /// reconcile plan is then empty for a user who never opted in, and tears
-    /// down any leftover managed agents if the operator turned the policy off.
-    /// Returns the install/remove actions it applied (empty when nothing
-    /// changed) so callers can surface confirmation.
-    ///
-    /// The one-time RunAtLoad migration (agents installed before that change
-    /// were written with RunAtLoad:false; the reconcile signature ignores
-    /// RunAtLoad so only a forced pass rewrites them) is shared with the
-    /// headless `--scheduled-run` self-heal via
-    /// `ManagedAutomation.reconcileWithMigration` — see its doc.
-    @discardableResult
-    func reconcileManagedAutomation() async -> [ManagedAutomation.ActionOutcome] {
-        guard !demoMode else { return [] }
-        let outcomes = await ManagedAutomation.reconcileWithMigration(
-            policy: AutomationPolicy.current()
-        )
-        // The install/remove above can change what "should have fired" — recompute
-        // the dead-man state on the same chain so the banner reflects it at once.
+    func applyAutomationPolicy() async {
+        guard !demoMode else { return }
+        Self.importLegacySchedulesIfNeeded()
+        let wantsTicker = Self.wantsTicker(
+            policy: AutomationPolicy.current(), hasHandBuilt: !ScheduleStore().load().isEmpty)
+        let registrar = tickerRegistrar
+        // register/unregister and the status read are blocking XPC calls into
+        // the Login Items service — never on the main actor.
+        tickerStatus = await Task.detached(priority: .utility) { () -> TickerStatus in
+            do {
+                if wantsTicker {
+                    try registrar.register()
+                } else {
+                    try registrar.unregister()
+                }
+            } catch {
+                AppLogger.schedule.error(
+                    """
+                    ticker \(wantsTicker ? "register" : "unregister", privacy: .public) failed: \
+                    \(error.localizedDescription, privacy: .public)
+                    """
+                )
+            }
+            return registrar.status
+        }.value
+        // The policy/store change above can change what schedules exist and
+        // what "should have fired" means — recompute on the same chain so
+        // both the schedule list and the dead-man banner reflect it at once.
+        reloadFromDisk()
         await refreshAutomationHealth()
-        return outcomes
     }
 
     // MARK: - Dead-man switch compute
@@ -211,12 +302,32 @@ extension WorkspaceStore {
             return
         }
         let profile = self.profile
-        // Scan + evaluate off the main actor; both are pure file reads. Scope to
-        // THIS profile's agents plus the global managed (isMulti) agents so a
+        let schedules = self.schedules
+        let registrar = tickerRegistrar
+        // Scan + evaluate off the main actor; the schedule reads are file I/O
+        // and the registrar's status is a blocking XPC call. The status is read
+        // HERE rather than reused from the stored property: this runs at launch,
+        // on foreground, and after every policy change, so re-approving the
+        // background item under Login Items clears the banner on the next
+        // foreground pass instead of only after a relaunch. Scope to THIS
+        // profile's agents plus the global managed (isMulti) agents so a
         // DIFFERENT profile's hand-built schedule can't bleed onto this Overview.
-        let issues = await Task.detached(priority: .utility) {
-            AutomationHealth.evaluate(inputs: LaunchAgentService.healthInputs(for: profile))
+        typealias HealthPass = (status: TickerStatus, issues: [AutomationHealthIssue])
+        let evaluated = await Task.detached(priority: .utility) { () -> HealthPass in
+            let status = registrar.status
+            // With nothing scheduled an unregistered ticker is not a fault.
+            let wantsTicker = Self.wantsTicker(
+                policy: AutomationPolicy.current(),
+                hasHandBuilt: !ScheduleStore().load().isEmpty)
+            let inputs = LaunchAgentService.filterHealthInputs(
+                LaunchAgentService.healthInputs(schedules: schedules, statusProfile: profile),
+                forProfile: profile)
+            return (status: status,
+                    issues: AutomationHealth.evaluate(
+                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker))
         }.value
+        tickerStatus = evaluated.status
+        let issues = evaluated.issues
         AutomationHealthModel.shared.issues = issues
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
@@ -358,6 +469,7 @@ extension WorkspaceStore {
     ///
     /// Deliberately narrow:
     /// - only when the app is open and the operator can see the banner,
+    /// - never alongside another collect (this process's or the tick's),
     /// - at most once an hour per profile,
     /// - only the tiers that actually have issues,
     /// - `force: false`, so the per-kind cadence filter collects exactly the
@@ -366,13 +478,18 @@ extension WorkspaceStore {
     /// Returns true when a collect was attempted (not whether it fixed
     /// anything — the re-evaluation that follows is the real answer).
     @discardableResult
-    func remediateStaleDataIfNeeded() async -> Bool {
+    func remediateStaleDataIfNeeded(
+        collect: RemediationCollector = defaultRemediationCollector
+    ) async -> Bool {
         guard !demoMode else { return false }
         let issues = AutomationHealthModel.shared.freshnessIssues
         guard !issues.isEmpty else { return false }
         let profile = self.profile
         guard ProfileService.isValid(profile),
               let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+        // Stand down WITHOUT claiming the hour, so the next pass retries once
+        // the running collect is done rather than an hour later.
+        guard !automaticCollectMustWait(for: [profile]) else { return false }
 
         let hourKey = Self.hourKeyFormatter.string(from: Date())
         guard Self.remediationMarker.lastStampedDay(in: workspace) != hourKey else { return false }
@@ -387,6 +504,8 @@ extension WorkspaceStore {
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
         defer { AutomationHealthModel.shared.isRemediating = false }
+        beginCollect(for: profile)
+        defer { endCollect(for: profile) }
 
         AppLogger.collect.notice(
             """
@@ -395,9 +514,30 @@ extension WorkspaceStore {
             \(tiers.map(\.rawValue).sorted().joined(separator: ","), privacy: .public)
             """
         )
-        await Self.remediateOne(profile: profile, tiers: tiers)
+        await Self.remediateOne(profile: profile, tiers: tiers, collect: collect)
         await refreshDataFreshness()
         return true
+    }
+
+    /// The two overlaps an automatic collect must yield to: (a) a collect
+    /// already running in this process for one of `profiles`, (b) a `--tick`
+    /// process mid-run, which holds the tick lock. Logged, because a deferred
+    /// pass otherwise looks identical to one that never fired.
+    func automaticCollectMustWait(for profiles: [String]) -> Bool {
+        if let busy = profiles.first(where: { isCollectInFlight(for: $0) }) {
+            AppLogger.collect.info(
+                """
+                Automatic collect deferred: a collect is already running for \
+                \(busy, privacy: .public)
+                """
+            )
+            return true
+        }
+        if tickLockHeldElsewhere() {
+            AppLogger.collect.info("Automatic collect deferred: the background tick holds the lock")
+            return true
+        }
+        return false
     }
 
     /// Drop issues whose kind's last failure exit code makes retry pointless:
@@ -482,20 +622,22 @@ extension WorkspaceStore {
     }
 
     /// One-click "Run now" for a failing/overdue managed row on the
-    /// Automation Health card. Kickstarts the agent's own LaunchAgent job
-    /// off the main actor so the run records under its real label (see
-    /// `LaunchAgentService.kickstartNow`). Returns whether the kickstart
-    /// itself was accepted — NOT whether the collect/generate it triggers
-    /// ultimately succeeds, since that finishes asynchronously.
+    /// Automation Health card. Spawns `JamfReports --tick --now <label>`
+    /// (`TickRunner.spawnNow`) so the run records under its real label, under
+    /// the same lock and recorder as a scheduled wake.
+    /// Returns whether the spawn itself was accepted — NOT whether the
+    /// collect/generate it triggers ultimately succeeds, since that
+    /// finishes asynchronously.
     ///
     /// No dedicated re-eval timer here: `refreshAutomationHealth` already
     /// runs on the next reconcile, app-foreground (`willBecomeActive`), and
     /// manual reconcile, any of which will pick up the kicked-off job's
     /// status file once it finishes and clear the row.
     func runNowFromHealthRow(label: String) async -> Bool {
-        await Task.detached(priority: .userInitiated) {
-            await LaunchAgentService.kickstartNow(label: label)
-        }.value.succeeded
+        // Queued counts as accepted: the marker is written and the next wake
+        // consumes it, so the click did what the operator asked.
+        let code = await TickRunner.spawnNow(label: label, wait: false)
+        return code == 0 || code == TickRunner.queuedExitCode
     }
 
     /// Post ONE overdue digest per day when any schedule is overdue AND the
@@ -503,7 +645,7 @@ extension WorkspaceStore {
     /// `sendFailed` path (an overdue run is a run-health failure). Skips entirely
     /// when the config can't be loaded or the webhook is off.
     private func maybeNotifyOverdue(issues: [AutomationHealthIssue], profile: String) async {
-        let overdue = issues.filter { $0.kind == .overdue }
+        let overdue = issues.filter { $0.kind == .overdue || $0.kind == .tickerDisabled }
         guard !overdue.isEmpty else { return }
         guard let notify = Self.loadNotifyConfig(profile: profile), notify.isUsable,
               let workspace = ProfileService.workspaceURL(for: profile) else { return }
@@ -517,10 +659,14 @@ extension WorkspaceStore {
         let facts = Self.overdueFacts(
             detail: notify.resolvedDetail, profile: profile, overdue: overdue
         )
+        let tickerDisabled = overdue.contains { $0.kind == .tickerDisabled }
+        let title = tickerDisabled
+            ? "Automation is off — background item disabled"
+            : "Scheduled run overdue — \(overdue.count) schedule"
+                + (overdue.count == 1 ? "" : "s")
         let delivered = await WebhookNotifier.sendFailed(
             config: notify,
-            title: "Scheduled run overdue — \(overdue.count) schedule"
-                + (overdue.count == 1 ? "" : "s"),
+            title: title,
             facts: facts
         )
         // Claim the day only after a confirmed send, so a failed post retries
@@ -548,13 +694,28 @@ extension WorkspaceStore {
         overdue: [AutomationHealthIssue]
     ) -> [WebhookNotifier.Fact] {
         guard detail == .full else {
-            let word = overdue.count == 1 ? "schedule" : "schedules"
+            let tickerFact: WebhookNotifier.Fact
+            if overdue.contains(where: { $0.kind == .tickerDisabled }) {
+                tickerFact = .init(label: "Automation", value: "background item disabled")
+            } else {
+                let word = overdue.count == 1 ? "schedule" : "schedules"
+                tickerFact = .init(
+                    label: "Overdue", value: "\(overdue.count) \(word) missed their run"
+                )
+            }
             return [
                 .init(label: "Profile", value: profile),
-                .init(label: "Overdue", value: "\(overdue.count) \(word) missed their run"),
+                tickerFact,
             ]
         }
         return overdue.prefix(10).map { issue in
+            if issue.kind == .tickerDisabled {
+                return WebhookNotifier.Fact(
+                    label: "Automation",
+                    value: "JamfReports is not allowed to run in the background — enable it "
+                        + "under Login Items › Allow in the Background"
+                )
+            }
             let name: String
             if issue.isMulti {
                 // Fleet-wide by construction — same framing OverviewView uses
@@ -614,32 +775,59 @@ extension WorkspaceStore {
         return f
     }()
 
+    /// Per-profile catch-up collect closure. Tests inject a spy; production
+    /// routes through `CollectRouter.run` with the daily-freshness tiers.
+    typealias CatchUpCollector = @Sendable (
+        _ profile: String,
+        _ config: ReportConfig?
+    ) async throws -> Void
+
     /// Backstop for laptops that slept through the scheduled freshness run:
     /// when managed freshness is on, collect today's daily-freshness snapshot
     /// (tiers refresh+inventory) for every non-excluded profile if it hasn't
     /// happened yet. Passes `force: false`, so the per-kind cadence filter in
     /// `ReportEngine.collect` no-ops a kind that already ran today.
     ///
-    /// Called from app launch and `willBecomeActive` (Mac wake / app focus).
-    /// Runs off the main actor, sequentially per profile (mirroring
-    /// `--multi-sequential`) so launch doesn't jank and on-prem isn't hit in
-    /// parallel.
-    func catchUpCollectIfNeeded() async {
-        guard !demoMode else { return }
-        let policy = AutomationPolicy.current()
+    /// Called from app launch, `willBecomeActive` (Mac wake / app focus) and
+    /// the periodic re-check. Runs off the main actor, sequentially per
+    /// profile (mirroring `--multi-sequential`) so launch doesn't jank and
+    /// on-prem isn't hit in parallel. Stands down — leaving the day unclaimed
+    /// — while a collect is already running for a target or the tick holds
+    /// its lock. Returns true when a catch-up was attempted.
+    @discardableResult
+    func catchUpCollectIfNeeded(
+        policy: AutomationPolicy = AutomationPolicy.current(),
+        now: Date = Date(),
+        collect: CatchUpCollector = defaultCatchUpCollector
+    ) async -> Bool {
+        guard !demoMode else { return false }
         // Bail before any filesystem scan in the common unmanaged case, and on
         // repeat focuses once today's sweep has been claimed.
-        guard policy.isManaged, policy.freshnessEnabled else { return }
-        let today = Self.dayKeyFormatter.string(from: Date())
-        guard Self.lastCatchUpDay != today else { return }
+        guard policy.isManaged, policy.freshnessEnabled else { return false }
+        let today = Self.dayKeyFormatter.string(from: now)
+        guard Self.lastCatchUpDay != today else { return false }
 
         let targets = Self.catchUpTargets(
             policy: policy, discovered: ProfileService.discoverLocal().map(\.name)
         )
-        guard !targets.isEmpty else { return }
+        guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
 
-        await Self.runCatchUp(profiles: targets)
+        targets.forEach { beginCollect(for: $0) }
+        defer { targets.forEach { endCollect(for: $0) } }
+        await Self.runCatchUp(profiles: targets, collect: collect)
+        return true
+    }
+
+    nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
+        try await CollectRouter.run(
+            profile: profile,
+            tiers: [.refresh, .inventory],
+            skipExpensive: false,
+            force: false,  // per-kind cadence filter: no-op if this kind already ran today
+            config: config,
+            onLine: CLIBridge.noOpOnLine
+        )
     }
 
     /// Profiles eligible for a catch-up collect: only when the policy manages
@@ -654,13 +842,17 @@ extension WorkspaceStore {
     }
 
     /// Sequential per-profile catch-up collect, off the main actor.
-    nonisolated private static func runCatchUp(profiles: [String]) async {
+    nonisolated private static func runCatchUp(
+        profiles: [String], collect: CatchUpCollector
+    ) async {
         for profile in profiles {
-            await catchUpOne(profile)
+            await catchUpOne(profile, collect: collect)
         }
     }
 
-    nonisolated private static func catchUpOne(_ profile: String) async {
+    nonisolated private static func catchUpOne(
+        _ profile: String, collect: CatchUpCollector
+    ) async {
         let config: ReportConfig? = {
             guard let url = ProfileService.workspaceURL(for: profile)?
                 .appendingPathComponent("config.yaml"),
@@ -668,14 +860,7 @@ extension WorkspaceStore {
             return try? ConfigLoader.load(from: url)
         }()
         do {
-            try await CollectRouter.run(
-                profile: profile,
-                tiers: [.refresh, .inventory],
-                skipExpensive: false,
-                force: false,  // per-kind cadence filter: no-op if this kind already ran today
-                config: config,
-                onLine: CLIBridge.noOpOnLine
-            )
+            try await collect(profile, config)
         } catch {
             AppLogger.cli.warning(
                 "Catch-up collect failed for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"

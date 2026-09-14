@@ -1,0 +1,57 @@
+{
+  "commands": {
+    "completed": {
+      "command": [
+        {
+          "completed": "Today at 12:17 PM",
+          "completed_epoch": 1788538628695,
+          "completed_utc": "2026-09-04T12:17:08.695-0400",
+          "name": "UserList",
+          "username": ""
+        },
+        {
+          "completed": "Today at 12:17 PM",
+          "completed_epoch": 1788538628283,
+          "completed_utc": "2026-09-04T12:17:08.283-0400",
+          "name": "ContentCachingInformation",
+          "username": ""
+        },
+        {
+          "completed": "Today at 12:17 PM",
+          "completed_epoch": 1788538626548,
+          "completed_utc": "2026-09-04T12:17:06.548-0400",
+          "name": "SecurityInfo",
+          "username": ""
+        },
+        {
+          "completed": "Today at 12:16 PM",
+          "completed_epoch": 1788538618449,
+          "completed_utc": "2026-09-04T12:16:58.449-0400",
+          "name": "InstalledApplicationList",
+          "username": ""
+        },
+        {
+          "completed": "Today at 12:16 PM",
+          "completed_epoch": 1788538617950,
+          "completed_utc": "2026-09-04T12:16:57.950-0400",
+          "name": "CertificateList",
+          "username": ""
+        }
+      ]
+    },
+    "failed": {
+      "command": {
+        "failed": "2026/08/23 at 12:31 AM",
+        "failed_epoch": 1787459494532,
+        "failed_utc": "2026-08-23T00:31:34.532-0400",
+        "issued": "2026/08/23 at 12:31 AM",
+        "issued_epoch": 1787459479479,
+        "issued_utc": "2026-08-23T00:31:19.479-0400",
+        "name": "Install App - Fixture App",
+        "status": "AppStore request (submitVPPRequest) timed out",
+        "username": ""
+      }
+    },
+    "pending": ""
+  }
+}

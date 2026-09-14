@@ -38,7 +38,7 @@ enum ModelAvailability: Sendable, Equatable {
         case .available:
             return "On-device intelligence is ready."
         case .requiresMacOS27:
-            return "Requires macOS 27."
+            return "Requires macOS Golden Gate 27."
         case .disabledByConfig:
             return "AI insights are off. Enable them in this profile's config.yaml (ai: enabled)."
         case .deviceNotEligible:

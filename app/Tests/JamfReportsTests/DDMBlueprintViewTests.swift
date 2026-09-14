@@ -25,76 +25,58 @@ final class DDMBlueprintViewTests: XCTestCase {
 
     // MARK: - decideLockState semantics
 
-    func testLockedWhenExperimentalFlagOff() {
-        XCTAssertEqual(
-            DDMBlueprintView.decideLockState(
-                isDemoMode: false,
-                experimentalOn: false,
-                platformAvailable: true,
-                hasData: true
-            ),
-            .locked
-        )
+    private func decide(demo: Bool = false, experimental: Bool = true, platform: Bool = true,
+                        platformData: Bool = false, deviceData: Bool = false, enabled: Int = 0,
+                        deviceSnapshot: Bool = false) -> DDMBlueprintView.LockState {
+        DDMBlueprintView.decideLockState(
+            isDemoMode: demo, experimentalOn: experimental, platformAvailable: platform,
+            hasPlatformData: platformData, hasDeviceData: deviceData, ddmEnabledCount: enabled,
+            hasDeviceSnapshot: deviceSnapshot)
     }
 
-    func testLockedWhenPlatformCapabilityUnavailable() {
-        XCTAssertEqual(
-            DDMBlueprintView.decideLockState(
-                isDemoMode: false,
-                experimentalOn: true,
-                platformAvailable: false,
-                hasData: true
-            ),
-            .locked
-        )
+    func testLockedOnlyWhenNoInputExists() {
+        XCTAssertEqual(decide(experimental: false, platform: false), .locked)
+        XCTAssertEqual(decide(experimental: true, platform: true), .unlockedNoData,
+                       "a platform profile with no snapshots yet is empty, not locked")
     }
 
-    func testUnlockedNoDataWhenBothChecksPassButNoSnapshots() {
+    func testPerDeviceSnapshotUnlocksAnOnPremProfile() {
         XCTAssertEqual(
-            DDMBlueprintView.decideLockState(
-                isDemoMode: false,
-                experimentalOn: true,
-                platformAvailable: true,
-                hasData: false
-            ),
-            .unlockedNoData
-        )
+            decide(experimental: false, platform: false, deviceData: true), .unlockedWithData)
     }
 
-    func testUnlockedWithDataWhenAllConditionsMet() {
-        XCTAssertEqual(
-            DDMBlueprintView.decideLockState(
-                isDemoMode: false,
-                experimentalOn: true,
-                platformAvailable: true,
-                hasData: true
-            ),
-            .unlockedWithData
-        )
+    func testDDMEnabledCountAloneUnlocksToEmpty() {
+        XCTAssertEqual(decide(experimental: false, platform: false, enabled: 6), .unlockedNoData,
+                       "inventory says DDM is on; the scan has not run yet")
     }
 
-    func testDemoModeBypassesGatesAndShowsData() {
+    func testEmptyDeviceSnapshotUnlocksToEmptyNotLocked() {
         XCTAssertEqual(
-            DDMBlueprintView.decideLockState(
-                isDemoMode: true,
-                experimentalOn: false,
-                platformAvailable: false,
-                hasData: true
-            ),
-            .unlockedWithData
-        )
+            decide(experimental: false, platform: false, deviceSnapshot: true), .unlockedNoData,
+            "the scan ran and found no DDM-enabled Macs — that's an empty result, not locked")
     }
 
-    func testDemoModeWithoutDataIsEmptyNotLocked() {
+    func testPlatformDataStillNeedsTheExperimentalGate() {
+        XCTAssertEqual(decide(experimental: false, platform: true, platformData: true), .locked)
         XCTAssertEqual(
-            DDMBlueprintView.decideLockState(
-                isDemoMode: true,
-                experimentalOn: false,
-                platformAvailable: false,
-                hasData: false
-            ),
-            .unlockedNoData
-        )
+            decide(experimental: true, platform: true, platformData: true), .unlockedWithData)
+    }
+
+    func testDemoModeBypassesGates() {
+        XCTAssertEqual(
+            decide(demo: true, experimental: false, platform: false, platformData: true),
+            .unlockedWithData)
+        XCTAssertEqual(decide(demo: true, experimental: false, platform: false), .unlockedNoData)
+    }
+
+    // MARK: - showsPlatformSections
+
+    func testShowsPlatformSectionsRequiresBothPlatformPathAndData() {
+        XCTAssertFalse(DDMBlueprintView.showsPlatformSections(
+            platformPath: false, hasPlatformData: true),
+            "a snapshot left over from when the flag was on must not render once it's off")
+        XCTAssertTrue(DDMBlueprintView.showsPlatformSections(
+            platformPath: true, hasPlatformData: true))
     }
 
     // MARK: - Sort helpers

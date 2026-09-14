@@ -35,7 +35,8 @@ routes start the same onboarding flow.
    [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)
    before you do, because everyone with access to that folder can read raw device data.
 4. **Authenticate** — connect Jamf Pro with either OAuth2 API client credentials (URL,
-   client ID, client secret) or a Platform Gateway tenant ID. The secret is passed to
+   client ID, client secret) or a Platform API scope (environment ID, or tenant ID for
+   a legacy integration; organization scope needs no ID). The secret is passed to
    `jamf-cli` over a controlling TTY and cleared immediately; the app never persists it.
    `jamf-cli` stores the resulting token in the macOS keychain.
 5. **Validate** — the app runs `jamf-cli config validate` against the new profile and
@@ -49,9 +50,12 @@ routes start the same onboarding flow.
    them later from the **Data Sources** screen. (A Jamf School-*only* district should instead
    pick **Connect Jamf School** on the Welcome chooser, which runs the dedicated School path
    below — no Jamf Pro placeholder credentials.)
-8. **First report** — the app generates a first report so the dashboards have data to
-   render. If the output looks off you can **Skip & finish setup** — the workspace is
-   fully configured at this point and you can run reports later from the Reports tab.
+8. **First report** — for Jamf Pro, the app collects a snapshot (refresh and inventory
+   data, not the per-device scans) and then generates a first report, so the
+   dashboards have data to render; the per-device scans run later on schedule or via
+   Collect now on Overview. For Jamf School, this step only generates. If the output
+   looks off you can **Skip & finish setup** — the workspace is fully configured at this
+   point and you can run reports later from the Reports tab.
 
 ### The Jamf School path
 
@@ -97,9 +101,10 @@ sitting in the folder you left behind.
 
 ## First-run checklist
 
-A quick tick-list for a fresh install:
+A quick tick-list for a fresh install. The prebuilt app is an Apple silicon (arm64) build —
+on an Intel Mac, build from source instead.
 
-- [ ] macOS 14 or later
+- [ ] macOS 15 or later
 - [ ] `jamf-cli` installed (`brew install Jamf-Concepts/tap/jamf-cli`)
 - [ ] Jamf Pro URL, API client ID, and secret on hand
 - [ ] `JamfReports.app` in `/Applications`, first launch past Gatekeeper
@@ -130,13 +135,15 @@ server access.
 
 The Authenticate step only checks that the fields are well-formed (a URL plus a client ID
 and secret); it does not contact your Jamf Pro server, and registering the profile is a
-local `jamf-cli` config write. The Validate step that follows runs a real connection
-check and will report failure against placeholder values — but advancing past it only
-requires that the profile registered, not that the check passed. So a CSV-only admin can
-complete onboarding with placeholder Jamf Pro values and map a CSV at the CSV-mapping step.
-(A Jamf School-only admin can skip this placeholder workaround entirely by choosing
-**Connect Jamf School** on the Welcome chooser; the older route — placeholder Jamf Pro
-values, then connect Jamf School at **Add products** — still works for existing installs.)
+local `jamf-cli` config write (on jamf-cli 1.29 and later the app passes `--no-verify` to
+keep it that way; from a Terminal, add that flag yourself). The Validate step that follows
+runs a real connection check and will report failure against placeholder values — but
+advancing past it only requires that the profile registered, not that the check passed. So
+a CSV-only admin can complete onboarding with placeholder Jamf Pro values and map a CSV at
+the CSV-mapping step. (A Jamf School-only admin can skip this placeholder workaround
+entirely by choosing **Connect Jamf School** on the Welcome chooser; the older route —
+placeholder Jamf Pro values, then connect Jamf School at **Add products** — still works
+for existing installs.)
 
 To add real credentials later, open **Data Sources → Connection health → Update
 credentials…** — it re-registers the profile's jamf-cli credentials (URL, client ID,

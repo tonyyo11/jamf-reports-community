@@ -26,58 +26,22 @@ struct AutomationTab: View {
         .task(id: policyRaw) { await reconcileOnPolicyChange() }
     }
 
-    /// Debounce, then reconcile the managed LaunchAgents and toast the result.
+    /// Debounce, then make Login Items agree with the policy. No toast — there
+    /// are no per-plist install/remove counts any more, just one ticker.
     private func reconcileOnPolicyChange() async {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
-        let outcomes = await workspace.reconcileManagedAutomation()
-        guard !outcomes.isEmpty else { return }
-        // Reflect the install/remove in any visible schedule list (the manual
-        // SchedulesView table reads workspace.schedules) so the table doesn't
-        // show agents the reconcile just added or removed until a manual refresh.
-        workspace.reloadFromDisk()
-
-        let succeeded = outcomes.filter(\.succeeded)
-        let failed = outcomes.filter { !$0.succeeded }
-        let installs = succeeded.filter(\.isInstall).count
-        let removes = succeeded.count - installs
-
-        var parts: [String] = []
-        if installs > 0 { parts.append("\(installs) installed") }
-        if removes > 0 { parts.append("\(removes) removed") }
-
-        if failed.isEmpty {
-            workspace.toast = Toast(
-                message: "Automation applied — \(parts.joined(separator: ", "))", style: .success
-            )
-        } else {
-            let suffix = parts.isEmpty ? "" : "\(parts.joined(separator: ", ")), "
-            workspace.toast = Toast(
-                message: "Automation applied — \(suffix)\(failed.count) failed — see log",
-                style: .danger
-            )
-            for outcome in failed {
-                let label: String
-                switch outcome.action {
-                case .install(let sched): label = sched.launchAgentLabel ?? sched.name
-                case .remove(let lbl): label = lbl
-                }
-                let reason = outcome.failureReason ?? "unknown error"
-                AppLogger.schedule.error(
-                    "Reconcile failure for \(label, privacy: .public): \(reason, privacy: .public)"
-                )
-            }
-        }
+        await workspace.applyAutomationPolicy()
     }
 }
 
 /// v2.2.0 Phase 5 — the "set policy, not cron jobs" Automation screen.
 ///
 /// Edits the single app-level `AutomationPolicy` (@AppStorage). When "Manage
-/// automation" is on, `ManagedAutomation.reconcile` (run at launch) installs the
-/// daily-freshness / weekly-scan / reports / backup all-profiles agents from
-/// this policy; turning it off tears them down. Report groups drive the
-/// consolidated fleet report.
+/// automation" is on, the bundled ticker derives the daily-freshness /
+/// weekly-scan / reports / backup schedules from this policy on every wake;
+/// turning it off stops them. Report groups drive the consolidated fleet
+/// report.
 struct AutomationView: View {
     @Environment(WorkspaceStore.self) private var workspace
 
@@ -101,6 +65,11 @@ struct AutomationView: View {
     @State private var selectedForRemoval: Set<String> = []
     @State private var showRemovalConfirm = false
 
+    // Whether any hand-built schedule exists — feeds `tickerDisabledBannerShouldShow`
+    // so the banner doesn't fire when nothing wants the ticker running. Refreshed
+    // alongside `consolidationCandidates`, which already reads the same store.
+    @State private var hasHandBuiltSchedule = false
+
     var body: some View {
         PageScaffold(spacing: 16) {
             PageHeader(
@@ -113,6 +82,33 @@ struct AutomationView: View {
                 Card { Text("Automation is unavailable in demo mode.")
                     .foregroundStyle(Theme.Colors.fgMuted) }
             } else {
+                if let warning = ManagedAutomation.bundleLocationWarning() {
+                    InlineBanner(icon: "exclamationmark.triangle", tone: .warn) {
+                        Text(warning).font(.callout)
+                    }
+                }
+                if tickerDisabledBannerShouldShow(
+                    policy: policy, hasHandBuilt: hasHandBuiltSchedule,
+                    tickerStatus: workspace.tickerStatus
+                ) {
+                    InlineBanner(
+                        icon: "exclamationmark.triangle", tone: .danger,
+                        action: .init(label: "Open Login Items") {
+                            workspace.tickerRegistrar.openLoginItems()
+                        }
+                    ) {
+                        Text("Automation is off: JamfReports is not allowed to run in the "
+                            + "background. Turn it on under Login Items › Allow in the "
+                            + "Background.")
+                            .font(.callout)
+                    }
+                } else if workspace.tickerStatus == .unavailable {
+                    InlineBanner(icon: "hammer", tone: .info) {
+                        Text("Ticker unavailable in this build — schedules run only via "
+                            + "`JamfReports --tick` until the app is installed.")
+                            .font(.callout)
+                    }
+                }
                 masterCard
                 if !workspace.automationHealthIssues.isEmpty || policy.isManaged {
                     HealthCard(issues: workspace.automationHealthIssues)
@@ -133,20 +129,21 @@ struct AutomationView: View {
                         onRemove: removeGroup,
                         onAdd: addGroup
                     )
-                    if !consolidationCandidates.isEmpty {
-                        ConsolidationCard(
-                            candidates: consolidationCandidates,
-                            selectedForRemoval: $selectedForRemoval,
-                            showRemovalConfirm: $showRemovalConfirm,
-                            onConfirmRemoval: { Task { await removeSelectedAgents() } }
-                        )
-                    }
+                }
+                // About imported legacy plists, not the policy — shows in both modes.
+                if !consolidationCandidates.isEmpty {
+                    ConsolidationCard(
+                        candidates: consolidationCandidates,
+                        selectedForRemoval: $selectedForRemoval,
+                        showRemovalConfirm: $showRemovalConfirm,
+                        onConfirmRemoval: { Task { await removeSelectedAgents() } }
+                    )
                 }
             }
         }
         // Apply policy edits without a relaunch: `.task(id:)` re-runs (cancelling
         // the prior) on every change, so rapid edits debounce and only the
-        // settled state reconciles the managed agents.
+        // settled state refreshes what this screen shows.
         .task(id: policyRaw) { await applyPolicyChange() }
         // Keep the decoded `policy` @State in step with the persisted raw so
         // bindings and visibility gates read the fresh value after any write.
@@ -160,12 +157,12 @@ struct AutomationView: View {
         .task(id: workspace.profile) { await loadDiscoveredProfiles() }
     }
 
-    /// Refresh the consolidation candidates after a policy edit. The managed-
-    /// agent reconcile + toast is owned by `AutomationTab` (the stable parent),
-    /// so this view only recomputes what it displays. Candidate detection is a
-    /// pure label comparison (`ManagedAutomation.owns`), independent of whether
-    /// reconcile has physically (re)installed the managed agents yet, so the two
-    /// tasks need no ordering.
+    /// Refresh the consolidation candidates after a policy edit. Registering
+    /// or unregistering the background item is owned by `AutomationTab` (the
+    /// stable parent), so this view only recomputes what it displays. Candidate
+    /// detection is a pure label comparison (`ManagedAutomation.owns`) over the
+    /// legacy plists still on disk, independent of the ticker, so the two tasks
+    /// need no ordering.
     private func applyPolicyChange() async {
         guard !workspace.demoMode else { return }
         do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
@@ -185,17 +182,21 @@ struct AutomationView: View {
         discoveredProfiles = names
     }
 
-    /// Recompute the hand-built agents the active policy duplicates. Reads the
-    /// installed agents once (synchronous directory I/O) per call.
+    /// Recompute imported plists still loaded by launchd. About legacy
+    /// plists, not the managed policy — reads the installed agents once
+    /// (synchronous directory I/O) per call.
     private func refreshConsolidationCandidates() {
-        guard !workspace.demoMode, policy.isManaged else {
+        guard !workspace.demoMode else {
             consolidationCandidates = []
             selectedForRemoval = []
+            hasHandBuiltSchedule = false
             return
         }
-        let installed = LaunchAgentService.list()
-        consolidationCandidates = ScheduleConsolidation.candidates(installed: installed, policy: policy)
-        // Drop selections that no longer correspond to a live candidate.
+        let installed = LaunchAgentService.installedLegacy().schedules
+        let storeLabels = Set(ScheduleStore().load().map(\.label))
+        hasHandBuiltSchedule = !storeLabels.isEmpty
+        consolidationCandidates = ScheduleConsolidation.stillLoaded(
+            installed: installed, storeLabels: storeLabels)
         let live = Set(consolidationCandidates.map(\.label))
         selectedForRemoval = selectedForRemoval.intersection(live)
     }
@@ -226,9 +227,9 @@ struct AutomationView: View {
                     Text("Manage automation").font(.headline)
                 }
                 .toggleStyle(.switch)
-                Text("When on, the app keeps every profile's jamf-cli data fresh and generates "
-                    + "reports on the cadence below — no hand-built schedules. When off, the app "
-                    + "installs nothing and removes any managed agents.")
+                Text("When on, the background item keeps every profile's jamf-cli data fresh "
+                    + "and generates reports on the cadence below — no hand-built schedules "
+                    + "needed. When off, nothing runs automatically from this policy.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fgMuted)
             }
@@ -454,15 +455,23 @@ private struct HealthCard: View {
         // fold it into the row's summary label and lose its action.
         HStack(alignment: .top, spacing: 8) {
             healthSummary(issue)
-            // Only a MANAGED row is eligible — a hand-built agent's own
-            // "Run now" lives on the Schedules screen, not here.
-            if issue.isManagedAgent {
-                runNowButton(issue)
-            }
-            // A failing row now has somewhere to GO: the run log that explains
-            // the failure. Overdue rows have no log to read (nothing ran).
-            if issue.kind == .failing {
-                runHistoryButton
+            if issue.kind == .tickerDisabled {
+                // Nothing is firing — the fix is in Login Items, not a re-run.
+                PNPButton(title: "Open Login Items", size: .sm) {
+                    workspace.tickerRegistrar.openLoginItems()
+                }
+            } else {
+                // Only a MANAGED row is eligible — a hand-built agent's own
+                // "Run now" lives on the Schedules screen, not here.
+                if issue.isManagedAgent {
+                    runNowButton(issue)
+                }
+                // A failing row now has somewhere to GO: the run log that
+                // explains the failure. Overdue rows have no log to read
+                // (nothing ran).
+                if issue.kind == .failing {
+                    runHistoryButton
+                }
             }
         }
     }
@@ -487,7 +496,7 @@ private struct HealthCard: View {
 
     private func healthSummary(_ issue: AutomationHealthIssue) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: issue.kind == .overdue ? "clock.badge.xmark" : "xmark.octagon")
+            Image(systemName: healthIcon(issue))
                 .foregroundStyle(Theme.Colors.warn)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -500,7 +509,7 @@ private struct HealthCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            Text(issue.kind == .overdue ? "Overdue" : "Failing")
+            Text(healthStatusLabel(issue))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.Colors.warn)
                 .lineLimit(1)
@@ -520,7 +529,7 @@ private struct HealthCard: View {
             Task { await runNow(issue) }
         }
         .disabled(isRunning)
-        .help("Immediately re-run this schedule's own LaunchAgent job.")
+        .help("Run this schedule now.")
     }
 
     private func runNow(_ issue: AutomationHealthIssue) async {
@@ -537,8 +546,22 @@ private struct HealthCard: View {
     }
 
     private func healthAccessibilityLabel(_ issue: AutomationHealthIssue) -> String {
-        let status = issue.kind == .overdue ? "Overdue" : "Failing"
-        return "\(issue.displayName), \(status). \(healthDetail(issue))"
+        "\(issue.displayName), \(healthStatusLabel(issue)). \(healthDetail(issue))"
+    }
+
+    private func healthStatusLabel(_ issue: AutomationHealthIssue) -> String {
+        switch issue.kind {
+        case .overdue: "Overdue"
+        case .failing: "Failing"
+        case .tickerDisabled: "Disabled"
+        }
+    }
+
+    private func healthIcon(_ issue: AutomationHealthIssue) -> String {
+        switch issue.kind {
+        case .overdue: "clock.badge.xmark"
+        case .failing, .tickerDisabled: "xmark.octagon"
+        }
     }
 
     private func healthDetail(_ issue: AutomationHealthIssue) -> String {
@@ -562,6 +585,9 @@ private struct HealthCard: View {
                 "\(CLIBridge.explainExit($0, operation: "Last run")) (\(last))."
             } ?? "Last run reported failure — \(last)."
             return cause + managedRerunHint(issue)
+        case .tickerDisabled:
+            return "Scheduled runs are paused until \"Allow in the Background\" is turned on "
+                + "for JamfReports in Login Items."
         }
     }
 
@@ -677,7 +703,8 @@ private struct AddGroupForm: View {
 
 // MARK: - Consolidation
 
-/// Offers to retire hand-built schedules the managed policy now duplicates.
+/// Offers to retire imported LaunchAgent plists still loaded by launchd now
+/// that their schedules run from the JamfReports background item.
 private struct ConsolidationCard: View {
     let candidates: [ScheduleConsolidation.Candidate]
     @Binding var selectedForRemoval: Set<String>
@@ -687,17 +714,19 @@ private struct ConsolidationCard: View {
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                AutomationCardShared.sectionTitle("Consolidate Schedules")
-                Text("These hand-built schedules do work managed automation now covers for "
-                    + "every profile — retiring them stops duplicate collection. Each is "
-                    + "archived to _archived-launchagents before removal, so it is recoverable.")
+                AutomationCardShared.sectionTitle("Schedules now run by JamfReports")
+                Text("These schedules were imported and now run from the JamfReports "
+                    + "background item, but their old LaunchAgent files are still loaded — "
+                    + "each runs twice per fire until retired. Retiring archives the file to "
+                    + "_archived-launchagents first.")
                     .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
 
                 ForEach(candidates) { candidate in
                     Toggle(isOn: removalBinding(candidate.label)) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(candidate.displayName).font(.callout.weight(.semibold))
-                            Text("\(candidate.mode.displayTitle) · now covered by \(candidate.coveredBy)")
+                            Text("\(candidate.mode.displayTitle) · now run by "
+                                + candidate.coveredBy)
                                 .font(.footnote).foregroundStyle(Theme.Colors.fgMuted)
                         }
                     }
@@ -723,8 +752,7 @@ private struct ConsolidationCard: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Each schedule is archived to _archived-launchagents and can be restored by "
-                + "copying its plist back to ~/Library/LaunchAgents. Managed agents are never "
-                + "affected.")
+                + "copying its plist back to ~/Library/LaunchAgents.")
         }
     }
 
@@ -736,4 +764,20 @@ private struct ConsolidationCard: View {
             }
         )
     }
+}
+
+// MARK: - Pure helpers (testable)
+
+/// Whether the "Automation is off — not allowed to run in the background"
+/// banner should show. `tickerStatus` alone isn't enough: a ticker that is
+/// `.notRegistered`/`.requiresApproval` because NOTHING wants it running
+/// (managed automation off, no hand-built schedules) is the correct state,
+/// not a problem — only show the banner when something actually needs the
+/// ticker. Shared by `AutomationView` and `SchedulesView` so both surfaces
+/// agree.
+func tickerDisabledBannerShouldShow(
+    policy: AutomationPolicy, hasHandBuilt: Bool, tickerStatus: TickerStatus
+) -> Bool {
+    WorkspaceStore.wantsTicker(policy: policy, hasHandBuilt: hasHandBuilt)
+        && (tickerStatus == .requiresApproval || tickerStatus == .notRegistered)
 }

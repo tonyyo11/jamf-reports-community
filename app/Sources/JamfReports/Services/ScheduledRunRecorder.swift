@@ -67,7 +67,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         self.logURL = logsDir.appendingPathComponent("\(label).\(stamp).log")
         self.statusURL = automationDir.appendingPathComponent("\(label)_status.json")
 
-        // 0600 atomically at create — same contract as LaunchAgentWriter.appendHandle.
+        // 0600 atomically at create — never the process umask default.
         guard fm.createFile(
             atPath: logURL.path,
             contents: nil,
@@ -94,7 +94,10 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             }
             return
         }
-        guard let data = (text + "\n").data(using: .utf8) else { return }
+        // One record is one line: jamf-cli error text rides in some lines, and a
+        // newline inside it would forge a second entry for the reversed tail scan.
+        let flat = text.replacingOccurrences(of: #"\p{Cc}"#, with: " ", options: .regularExpression)
+        guard let data = (flat + "\n").data(using: .utf8) else { return }
         Self.appendOrDrop(data, to: handle, label: label, warned: &hasWarnedWriteFailed)
     }
 
