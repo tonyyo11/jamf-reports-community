@@ -7,7 +7,7 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
-## [2.8.0] - 2026-09-05
+## [2.8.0] - 2026-09-14
 
 ### Added
 

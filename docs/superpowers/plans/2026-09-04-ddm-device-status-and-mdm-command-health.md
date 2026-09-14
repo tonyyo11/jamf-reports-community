@@ -46,8 +46,8 @@
 | `app/Tests/JamfReportsTests/Fixtures/jamf-cli-data/{ddm-status-items-raw,classic-computer-history-raw}/` (create) | The three scrubbed prod captures. |
 | Tests | `DeviceScanDecodersTests`, `DeviceScanBuildersTests`, `DDMDeviceStatusServiceTests`, `MDMCommandHealthServiceTests`, `DeviceScanCollectTests`, `DeviceScanSheetsTests`, plus edits to `CollectionTierTests`, `PlatformOnlyKindTests`, `DDMBlueprintViewTests`, `GoldenFleetTests`. |
 
-Fixture sources (already scrubbed, sitting in this session's scratchpad — copy, do not re-scrub):
-`/private/tmp/claude-503/-Users-alyoung-Documents-GitHub-jamf-reports-community--claude-worktrees-explore-2-8-0-capability-b1bf42/71c96050-ccc1-410a-bd17-9d1b5617d63b/scratchpad/fixtures/` →
+Fixture sources (already scrubbed, staged outside the repo — copy, do not re-scrub):
+`<staging-dir>/fixtures/` →
 `ddm-status-items-prod-macos27.json`, `classic-computer-history-commands-prod-nofailures.json`, `classic-computer-history-commands-prod-onefailed.json`.
 
 Run tests from `app/`: `swift test --filter <ClassName>`; never run two `swift test` processes at once.
@@ -68,7 +68,7 @@ Run tests from `app/`: `swift test --filter <ClassName>`; never run two `swift t
 - [ ] **Step 1: Copy fixtures into the repo**
 
 ```bash
-S="/private/tmp/claude-503/-Users-alyoung-Documents-GitHub-jamf-reports-community--claude-worktrees-explore-2-8-0-capability-b1bf42/71c96050-ccc1-410a-bd17-9d1b5617d63b/scratchpad/fixtures"
+S="<staging-dir>/fixtures"
 F=app/Tests/JamfReportsTests/Fixtures/jamf-cli-data
 mkdir -p "$F/ddm-status-items-raw" "$F/classic-computer-history-raw"
 cp "$S/ddm-status-items-prod-macos27.json" "$F/ddm-status-items-raw/"
