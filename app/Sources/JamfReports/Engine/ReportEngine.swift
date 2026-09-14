@@ -1779,6 +1779,8 @@ struct ReportEngine: Sendable {
         // about server reachability. Feeds isCollectDead's veto: a run that skipped
         // fresh-cache kinds and failed only the chronic residue is not an outage.
         var skippedNotDueCount = 0
+        // Listed at most once per run, by whichever compliance kind runs first.
+        var benchmarkDiscovery: BenchmarkDiscovery?
         for (args, kind) in plannedCommands {
             // Platform-only filter. Recorded nowhere: a kind this profile's API
             // cannot serve is not a failure, so it must not advance a failure
@@ -1818,13 +1820,26 @@ struct ReportEngine: Sendable {
 
             // Every kind that got this far produces an outcome, launch failures
             // included — see `launchFailureExitCode` for why that matters.
-            let result = try await Self.collectOneKind(
-                kind: kind, profile: profile, arguments: args,
-                supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
-                dataDir: dataDir, recordManifest: recordManifest,
-                useCachedData: useCachedData, stateStore: stateStore,
-                collectStart: collectStart, onLine: onLine
-            )
+            let result: KindCollectResult
+            if Self.benchmarkReportKinds.contains(kind) {
+                result = try await Self.collectBenchmarkReport(
+                    kind: kind, profile: profile, arguments: args,
+                    configuredTitles: loadedConfig?.platform?.benchmarkTitles ?? [],
+                    discovery: &benchmarkDiscovery,
+                    supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
+                    dataDir: dataDir, recordManifest: recordManifest,
+                    useCachedData: useCachedData, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine
+                )
+            } else {
+                result = try await Self.collectOneKind(
+                    kind: kind, profile: profile, arguments: args,
+                    supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
+                    dataDir: dataDir, recordManifest: recordManifest,
+                    useCachedData: useCachedData, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine
+                )
+            }
             outcomes.append(result.outcome)
             if result.saved { savedKinds.insert(kind) }
         }
@@ -2165,7 +2180,7 @@ struct ReportEngine: Sendable {
 
     /// What one kind's attempt produced: the outcome that feeds the post-loop
     /// verdicts, and whether a snapshot actually reached disk.
-    private struct KindCollectResult: Sendable {
+    struct KindCollectResult: Sendable {
         let outcome: CollectOutcome
         let saved: Bool
     }
@@ -2213,39 +2228,35 @@ struct ReportEngine: Sendable {
         }
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
         let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
-        if (exitCode == 0 || isPartialFailure), !data.isEmpty {
-            return try Self.saveCollectedPayload(
-                kind: kind, data: data, outcome: outcome,
-                isPartialFailure: isPartialFailure, dataDir: dataDir,
-                recordManifest: recordManifest, stateStore: stateStore,
-                collectStart: collectStart, onLine: onLine
+        guard exitCode == 0 || isPartialFailure, !data.isEmpty else {
+            return try Self.recordUnlandedAttempt(
+                kind: kind, exitCode: exitCode, data: data, useCachedData: useCachedData,
+                dataDir: dataDir, stateStore: stateStore, collectStart: collectStart,
+                onLine: onLine
             )
-        } else if useCachedData {
-            // use_cached_data=true: warn and skip. Only claim "using cached" when a
-            // cached snapshot for this kind actually exists on disk — otherwise the
-            // generate step has nothing to fall back to and the copy would mislead.
-            let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
-            let hasCachedSnapshot = FileManager.newestJSONFile(in: kindDir) != nil
-            let cacheNote = hasCachedSnapshot
-                ? "skipped (using cached)"
-                : "no cached snapshot available"
-            // THE swallow this whole track exists to close: before the
-            // counter, this warn line was the only trace that a kind failed,
-            // and the run still exited 0. Persisting it is what lets
-            // DataFreshnessHealth report a kind that has been failing nightly
-            // for months without anyone opening its screen.
-            stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
-            // jamf-cli reports its own reason as a JSON error object; an
-            // exit code alone sends the operator hunting. "exit 2 — no
-            // cached snapshot available" is very nearly useless next to
-            // "needs Jamf Security Cloud credentials", which is what
-            // actually stopped the fleet security report on a live tenant.
-            let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
-            onLine(.init(timestamp: Date(), level: .warn,
-                         text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"))
-            return KindCollectResult(outcome: outcome, saved: false)
-        } else {
-            // use_cached_data=false: treat collect failure as fatal for this kind.
+        }
+        return try Self.saveCollectedPayload(
+            kind: kind, data: data, outcome: outcome,
+            isPartialFailure: isPartialFailure, dataDir: dataDir,
+            recordManifest: recordManifest, stateStore: stateStore,
+            collectStart: collectStart, onLine: onLine
+        )
+    }
+
+    /// An attempt that produced nothing to save: count it, say why, and keep the cache, or
+    /// fail the run under `use_cached_data: false`. Shared with the per-benchmark reports.
+    static func recordUnlandedAttempt(
+        kind: String,
+        exitCode: Int32,
+        data: Data,
+        useCachedData: Bool,
+        dataDir: URL,
+        stateStore: StateFileStore?,
+        collectStart: Date,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) throws -> KindCollectResult {
+        let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
+        guard useCachedData else {
             stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
             onLine(.init(
                 timestamp: Date(), level: .fail,
@@ -2253,13 +2264,27 @@ struct ReportEngine: Sendable {
             ))
             throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
         }
+        // Only claim "using cached" when a cached snapshot for this kind exists; otherwise
+        // the generate step has nothing to fall back to and the copy would mislead.
+        let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
+        let cacheNote = FileManager.newestJSONFile(in: kindDir) != nil
+            ? "skipped (using cached)"
+            : "no cached snapshot available"
+        // Persisting the failure is what lets DataFreshnessHealth report a kind that has
+        // failed nightly for months without anyone opening its screen.
+        stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+        // jamf-cli's own reason beats a bare exit code in Run History.
+        let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
+        onLine(.init(timestamp: Date(), level: .warn,
+                     text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"))
+        return KindCollectResult(outcome: outcome, saved: false)
     }
 
     /// One kind's jamf-cli invocation plus the single in-run retry. nil means
     /// the process never launched — twice.
     ///
     /// Split out of `collectOneKind` for length only; a pure move.
-    private static func invokeWithRetry(
+    static func invokeWithRetry(
         kind: String,
         arguments: [String],
         supportsQuietFlags: Bool,
@@ -2311,7 +2336,7 @@ struct ReportEngine: Sendable {
     /// Split out of `collectOneKind` only for length; the two together are the
     /// original loop body verbatim, in the original order. Not `async` — every
     /// step here is synchronous file work.
-    private static func saveCollectedPayload(
+    static func saveCollectedPayload(
         kind: String,
         data: Data,
         outcome: CollectOutcome,
