@@ -1474,6 +1474,8 @@ struct ReportEngine: Sendable {
     struct CollectOutcome: Equatable, Sendable {
         let kind: String
         let exitCode: Int32
+        /// The failed attempt's classified cause; nil for successes and launch failures.
+        var cause: FailureCause.Kind? = nil
     }
 
     /// Whether a collect's per-command outcomes mean the profile's credentials are
@@ -1534,6 +1536,29 @@ struct ReportEngine: Sendable {
         guard !anySuccess else { return false }
         guard skippedNotDueCount == 0 else { return false }
         return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
+    }
+
+    /// What a dead run's failures say, for its message (spec §9.6).
+    enum DeadRunCause: Equatable, Sendable {
+        case outage
+        /// Every failure was a missing permission: Jamf answered, nothing was readable.
+        case noPermission
+        /// A failure named a rejected scope ID. One is enough: Jamf Pro commands on a gateway
+        /// profile drop the 404 body (spec §14.1), so they never name it themselves.
+        case rejectedID
+    }
+
+    /// Exit-2 outcomes are left out, as in `isCollectDead`: a usage error says nothing about
+    /// access.
+    static func deadRunCause(_ outcomes: [CollectOutcome]) -> DeadRunCause {
+        let causes = outcomes.filter { $0.exitCode != CLIBridge.exitCodeUsage }.map(\.cause)
+        if causes.contains(where: { $0 == .scopeRejected || $0 == .unknownEnvironment }) {
+            return .rejectedID
+        }
+        if !causes.isEmpty, causes.allSatisfy({ $0 == .missingPermission }) {
+            return .noPermission
+        }
+        return .outage
     }
 
     /// Confirmation probe run before honoring an `isCollectAuthDead` verdict — one
@@ -1933,12 +1958,13 @@ struct ReportEngine: Sendable {
         // auth-dead: no degraded snapshot should be promoted as fresh data. See
         // isCollectDead's doc comment for the field defect this veto set fixes.
         if Self.isCollectDead(outcomes, skippedNotDueCount: skippedNotDueCount) {
-            let failedCount = outcomes.count
-            let msg = "[error] all \(failedCount) live jamf-cli call(s) failed for '\(profile)' " +
-                "(server unreachable or jamf-cli broken) — no snapshot written."
+            let error = ReportEngineError.collectDead(
+                profile: profile, failedCount: outcomes.count, cause: Self.deadRunCause(outcomes)
+            )
+            let msg = "[error] " + (error.errorDescription ?? "collect failed")
             AppLogger.collect.error("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
-            throw ReportEngineError.collectDead(profile: profile, failedCount: failedCount)
+            throw error
         }
 
         // Degraded-run summary. A run where some kinds fell back to cache is not
@@ -2261,7 +2287,7 @@ struct ReportEngine: Sendable {
     ) throws -> KindCollectResult {
         let cause = FailureCause.classify(
             exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden)
-        let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
+        let outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
         stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
                            cause: cause)
         guard useCachedData else {
@@ -3850,7 +3876,7 @@ enum ReportEngineError: Error, LocalizedError {
     /// `emitSummaryJSON` so no stale-cache summary is promoted as fresh data.
     /// Partial failures (≥1 success) do NOT reach this — they warm the cache
     /// and the run continues normally.
-    case collectDead(profile: String, failedCount: Int)
+    case collectDead(profile: String, failedCount: Int, cause: ReportEngine.DeadRunCause = .outage)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -3881,10 +3907,22 @@ enum ReportEngineError: Error, LocalizedError {
             return "Authentication failed for profile '\(p)': all \(n) live Jamf Pro call(s) " +
                 "returned 401 (expired or revoked credentials) and none succeeded. " +
                 "Re-authenticate with: jamf-cli -p \(p) pro auth token. No snapshot was written."
-        case .collectDead(let p, let n):
-            return "All \(n) live jamf-cli call(s) failed for profile '\(p)' (server unreachable " +
-                "or jamf-cli broken). No snapshot was written. Check network connectivity and " +
-                "jamf-cli health, then re-run collect."
+        case .collectDead(let p, let n, let cause):
+            switch cause {
+            case .outage:
+                return "All \(n) live jamf-cli call(s) failed for profile '\(p)' (server " +
+                    "unreachable or jamf-cli broken). No snapshot was written. Check network " +
+                    "connectivity and jamf-cli health, then re-run collect."
+            case .noPermission:
+                return "All \(n) live jamf-cli call(s) failed for profile '\(p)': the connection " +
+                    "reached Jamf but cannot read any data source. No snapshot was written. " +
+                    "Grant read permissions to the profile's API role or integration; the " +
+                    "Permissions & Access wiki page lists them per report area."
+            case .rejectedID:
+                return "All \(n) live jamf-cli call(s) failed for profile '\(p)': the Jamf " +
+                    "Platform gateway rejected the profile's environment or tenant ID. No " +
+                    "snapshot was written. Correct the ID with Update credentials in Data Sources."
+            }
         case .snapshotIntegrityViolation(let summary, let dataDir):
             var parts: [String] = []
             if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }

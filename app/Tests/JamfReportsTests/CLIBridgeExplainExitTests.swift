@@ -88,4 +88,15 @@ final class CLIBridgeExplainExitTests: XCTestCase {
             CLIBridge.explainExit(CLIBridge.exitCodeRefusedByPolicy, operation: "X"),
             CLIBridge.explainExit(CLIBridge.exitCodeUsage, operation: "X"))
     }
+
+    func testPermissionDeniedNamesBothPlacesAGrantLives() {
+        let msg = CLIBridge.explainExit(CLIBridge.exitCodePermissionDenied, operation: "Collect")
+        XCTAssertTrue(msg.contains("API role in Jamf Pro"), msg)
+        XCTAssertTrue(msg.contains("integration in Jamf Account"), msg)
+    }
+
+    func testUnauthorizedNotesThatIntegrationsExpire() {
+        let msg = CLIBridge.explainExit(CLIBridge.exitCodeUnauthorized, operation: "Collect")
+        XCTAssertTrue(msg.contains("six months"), msg)
+    }
 }

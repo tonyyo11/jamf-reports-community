@@ -90,7 +90,7 @@ final class CollectHonestyTests: XCTestCase {
                 onLine: collector.append
             )
             XCTFail("a run that could not launch jamf-cli at all must not succeed")
-        } catch ReportEngineError.collectDead(_, let failedCount) {
+        } catch ReportEngineError.collectDead(_, let failedCount, _) {
             XCTAssertEqual(failedCount, 2, "both scan-tier kinds must count as failures")
         }
 

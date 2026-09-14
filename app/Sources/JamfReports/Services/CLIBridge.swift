@@ -778,11 +778,15 @@ final class CLIBridge {
         let detail: String
         switch code {
         case exitCodeUnauthorized:
-            detail = "authentication failed (401) — this profile's Jamf Pro credentials are "
-                + "invalid or expired. Re-authenticate it from Data Sources."
+            detail = "authentication failed (401) — this profile's credentials are invalid or "
+                + "expired. Re-authenticate it from Data Sources. A Jamf Platform API "
+                + "integration is valid for six months; an expired one needs a replacement in "
+                + "Jamf Account."
         case exitCodePermissionDenied:
-            detail = "permission denied (403) — this profile's API account lacks the required "
-                + "privileges. Grant read/reporting privileges to its API role in Jamf Pro."
+            detail = "permission denied (403) — this profile lacks a required permission. For a "
+                + "Jamf Pro API client, grant the privilege to its API role in Jamf Pro; for a "
+                + "Jamf Platform API integration, grant the permission to the integration in "
+                + "Jamf Account."
         case exitCodeNotFound:
             detail = "not found (404) — the server didn't have the requested resource."
         case exitCodeRateLimited:
@@ -824,8 +828,17 @@ final class CLIBridge {
         if case ReportEngineError.authExpired = error {
             return explainExit(exitCodeUnauthorized, operation: operation)   // 3 / 401
         }
-        if case ReportEngineError.collectDead = error {
-            return explainExit(1, operation: operation)                       // all kinds failed
+        if case let ReportEngineError.collectDead(_, _, cause) = error {
+            switch cause {
+            case .outage:
+                return explainExit(1, operation: operation)                   // all kinds failed
+            case .noPermission:
+                return explainExit(exitCodePermissionDenied, operation: operation)
+            case .rejectedID:
+                return "\(operation) failed: the Jamf Platform gateway rejected this profile's "
+                    + "environment or tenant ID. Correct it with Update credentials in Data "
+                    + "Sources; the environment ID is in the integration's details in Jamf Account."
+            }
         }
         return "\(operation) failed — \(error.localizedDescription)"
     }

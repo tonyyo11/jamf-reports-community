@@ -374,4 +374,36 @@ final class CollectDeadVerdictTests: XCTestCase {
         let outcomes = [outcome("ea-results", 7), outcome("compliance-devices", 1)]
         XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
     }
+
+    // MARK: - Dead-run cause (spec §9.6)
+
+    private func failed(
+        _ kind: String, _ exit: Int32, _ cause: FailureCause.Kind?
+    ) -> ReportEngine.CollectOutcome {
+        ReportEngine.CollectOutcome(kind: kind, exitCode: exit, cause: cause)
+    }
+
+    /// Jamf Pro commands on a gateway profile drop the 404 body, so one named rejection is
+    /// enough.
+    func testAnyRejectedIDNamesTheDeadRun() {
+        let outcomes = [failed("security", 4, .other),
+                        failed("compliance-rules", 4, .unknownEnvironment)]
+        XCTAssertEqual(ReportEngine.deadRunCause(outcomes), .rejectedID)
+    }
+
+    func testEveryFailureAMissingPermissionNamesTheDeadRun() {
+        let outcomes = [failed("security", 5, .missingPermission),
+                        failed("computers", 5, .missingPermission),
+                        failed("duplicate-serials", 2, .other)]
+        XCTAssertEqual(ReportEngine.deadRunCause(outcomes), .noPermission,
+                       "a usage error says nothing about access and is left out")
+    }
+
+    func testAnythingElseIsAnOutage() {
+        XCTAssertEqual(ReportEngine.deadRunCause(
+            [failed("security", 5, .missingPermission), failed("computers", 1, .other)]), .outage)
+        XCTAssertEqual(ReportEngine.deadRunCause(
+            [failed("security", ReportEngine.launchFailureExitCode, nil)]), .outage)
+        XCTAssertEqual(ReportEngine.deadRunCause([]), .outage)
+    }
 }
