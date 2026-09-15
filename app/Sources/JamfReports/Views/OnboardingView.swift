@@ -468,19 +468,18 @@ struct OnboardingView: View {
                         Text(
                             "Environment is where a GA integration is usually created "
                                 + "(needs jamf-cli 1.28 or later). Tenant is the legacy "
-                                + "single-tenant level. Organization sends no scope at all."
+                                + "single-tenant level and cannot reach Compliance Benchmarks "
+                                + "or blueprint status."
                         )
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.fg2)
-                        if flow.platformScope.needsID {
-                            FieldLabel(label: flow.platformScope.idFieldLabel)
-                            PNPTextField(
-                                value: binding(\.platformScopeID),
-                                placeholder: flow.platformScope == .environment
-                                    ? "your-environment-id" : "your-tenant-id",
-                                mono: true
-                            )
-                        }
+                        FieldLabel(label: flow.platformScope.idFieldLabel)
+                        PNPTextField(
+                            value: binding(\.platformScopeID),
+                            placeholder: flow.platformScope == .environment
+                                ? "your-environment-id" : "your-tenant-id",
+                            mono: true
+                        )
                     }
 
                     HStack(alignment: .top, spacing: 12) {

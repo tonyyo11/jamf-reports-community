@@ -115,25 +115,22 @@ final class OnboardingFlow {
     /// True when the secure field has keystrokes but `clientSecret` is not yet finalized.
     var secretFieldHasText = false
 
-    /// The Platform API scope level: which flag `config add-profile` sends.
+    /// The Platform API scope level: which flag `config add-profile` sends. Organization level is
+    /// not offered: it sends no scope header, and every call the app makes needs one.
     enum PlatformScope: String, CaseIterable, Sendable {
-        case environment, tenant, organization
+        case environment, tenant
 
         var label: String {
             switch self {
             case .environment: "Environment"
             case .tenant: "Tenant (legacy)"
-            case .organization: "Organization"
             }
         }
-
-        /// Organization scope sends no ID flag at all.
-        var needsID: Bool { self != .organization }
 
         var idFieldLabel: String {
             switch self {
             case .environment: "Environment ID"
-            case .tenant, .organization: "Tenant ID"
+            case .tenant: "Tenant ID"
             }
         }
 
@@ -265,7 +262,7 @@ final class OnboardingFlow {
                     && (!clientSecret.isEmpty || secretFieldHasText) && !isRegisteringProfile
             case .platformGateway:
                 isProfileNameValid && isGatewayURLValid
-                    && (!platformScope.needsID || !platformScopeID.trimmed.isEmpty)
+                    && !platformScopeID.trimmed.isEmpty
                     && !platformClientID.trimmed.isEmpty
                     && (!platformClientSecret.isEmpty || platformSecretFieldHasText)
                     && !isRegisteringProfile
@@ -699,9 +696,8 @@ final class OnboardingFlow {
         return data
     }
 
-    /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth.
-    /// Sends exactly one scope flag (`--environment-id` / `--tenant-id`), or
-    /// none for organization scope — the flags are mutually exclusive.
+    /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth. Sends exactly one
+    /// scope flag (`--environment-id` / `--tenant-id`); the flags are mutually exclusive.
     static func platformGatewayArguments(
         profile: String, gatewayURL: String, scope: PlatformScope, scopeID: String,
         noVerify: Bool = false
@@ -711,7 +707,6 @@ final class OnboardingFlow {
         switch scope {
         case .environment: args += ["--environment-id", scopeID]
         case .tenant: args += ["--tenant-id", scopeID]
-        case .organization: break
         }
         args += ["--url", gatewayURL, "--no-color"]
         if noVerify { args.append("--no-verify") }
@@ -850,7 +845,7 @@ final class OnboardingFlow {
         return await ConnectionCheck.run(profile: profile, specNames: specNames, runner: runner)
     }
 
-    /// A rejected or unconfirmed ID stays unvalidated; an ID the gateway accepted validates even
+    /// A rejected or unconfirmed ID stays unvalidated; an ID the gateway recognised validates even
     /// when no Jamf Pro answered, which the banner reports as a warning.
     func applyConnectionCheck(_ verdict: ConnectionCheck.Verdict) {
         connectionCheck = verdict
