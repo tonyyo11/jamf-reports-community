@@ -37,6 +37,18 @@ final class FailureCauseTests: XCTestCase {
         XCTAssertEqual(classify("forbidden", hint: hint, exit: 5).kind, .scopeRejected)
     }
 
+    /// No scope header (organization level). Body from jamfplatform-go-sdk WIRE-FACTS (2026-09-03,
+    /// trace ID zeroed) in jamf-cli 1.29.0's Jamf Pro 400 wrapper, exit 1.
+    func testAMissingScopeHeaderIsAScopeRejection() {
+        let message = "request failed (HTTP 400): {\"httpStatus\":400,\"traceId\":"
+            + "\"00000000000000000000000000000000\",\"errors\":[{\"code\":"
+            + "\"REQUEST_CONTEXT_NOT_PROVIDED\",\"field\":\"\",\"description\":"
+            + "\"The request context could not be detected.\",\"id\":\"\"}]}"
+        let cause = classify(message, exit: 1)
+        XCTAssertEqual(cause.kind, .scopeRejected)
+        XCTAssertTrue(cause.isPermanent, "an hourly retry cannot add a scope header")
+    }
+
     // Rule 2 (tester log)
 
     func testEnvironmentNotFoundIsAnUnknownEnvironment() {

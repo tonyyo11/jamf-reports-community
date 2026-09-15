@@ -14,7 +14,7 @@ enum ConnectionCheck {
         case accepted(jamfProVersion: String?)
         /// The gateway refused the ID; setup must not continue with it.
         case rejectedID(FailureCause.Kind)
-        /// The gateway accepted the ID, but no Jamf Pro answered in this environment.
+        /// The gateway recognised the ID, but no Jamf Pro answered for it.
         case noJamfPro
         /// The check could not tell.
         case undecided(exitCode: Int32?)
@@ -56,8 +56,15 @@ enum ConnectionCheck {
         switch second.kind {
         case .scopeRejected, .unknownEnvironment: return .rejectedID(second.kind)
         case .missingPermission: return .noJamfPro
-        case .edgeBlocked, .notServed, .other: return .undecided(exitCode: probe.exitCode)
+        case .edgeBlocked, .notServed, .other:
+            return namesNoTenant(probe.stdout) ? .noJamfPro : .undecided(exitCode: probe.exitCode)
         }
+    }
+
+    /// `404 TENANT_NOT_FOUND`: the environment exists but holds no tenant. `devices` returns it
+    /// even for an environment the integration does not own, so it does not prove ownership.
+    private static func namesNoTenant(_ stdout: Data) -> Bool {
+        JamfCLIErrorEnvelope.parse(stdout)?.message?.contains("TENANT_NOT_FOUND") == true
     }
 
     static func run(profile: String, specNames: Bool, runner: Runner) async -> Verdict {
@@ -112,9 +119,9 @@ extension ConnectionCheck.Verdict {
                 + "integration needs its environment ID, and a tenant-level (legacy) integration "
                 + "its tenant ID. Correct the scope level or the ID, then save again."
         case .noJamfPro:
-            return "The gateway accepted the ID, but no Jamf Pro server answered in this "
-                + "environment. Jamf Pro screens stay empty unless this is the environment that "
-                + "holds your Jamf Pro tenant."
+            return "The gateway recognises this ID, but no Jamf Pro server answered for it. Jamf "
+                + "Pro screens stay empty unless the ID is for the environment that holds your "
+                + "Jamf Pro tenant."
         case .undecided(let exitCode):
             return "The connection check could not confirm the ID"
                 + (exitCode.map { " (exit \($0))" } ?? "")

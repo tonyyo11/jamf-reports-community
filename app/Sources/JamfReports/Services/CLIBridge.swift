@@ -781,7 +781,8 @@ final class CLIBridge {
             detail = "authentication failed (401) — this profile's credentials are invalid or "
                 + "expired. Re-authenticate it from Data Sources. A Jamf Platform API "
                 + "integration is valid for six months; an expired one needs a replacement in "
-                + "Jamf Account."
+                + "Jamf Account. A gateway URL in a different region (US, EU, APAC) from the "
+                + "integration fails the same way."
         case exitCodePermissionDenied:
             detail = "permission denied (403) — this profile lacks a required permission. For a "
                 + "Jamf Pro API client, grant the privilege to its API role in Jamf Pro; for a "

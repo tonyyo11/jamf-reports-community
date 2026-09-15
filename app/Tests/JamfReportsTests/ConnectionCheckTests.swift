@@ -65,6 +65,31 @@ final class ConnectionCheckTests: XCTestCase {
         XCTAssertEqual(ConnectionCheck.verdict(version: bare404, probe: probe), .noJamfPro)
     }
 
+    /// Organization level sends no scope header; every scoped call answers 400.
+    func testAMissingScopeHeaderOnStepOneBlocks() {
+        let version = failure(1, "request failed (HTTP 400): {\"httpStatus\":400,\"traceId\":"
+            + "\"00000000000000000000000000000000\",\"errors\":[{\"code\":"
+            + "\"REQUEST_CONTEXT_NOT_PROVIDED\",\"field\":\"\",\"description\":"
+            + "\"The request context could not be detected.\",\"id\":\"\"}]}")
+        let verdict = ConnectionCheck.verdict(version: version, probe: nil)
+        XCTAssertEqual(verdict, .rejectedID(.scopeRejected))
+        XCTAssertTrue(verdict.blocksContinue)
+    }
+
+    /// `404 TENANT_NOT_FOUND` (jamfplatform-go-sdk WIRE-FACTS, 2026-09-01): the environment exists
+    /// but holds no tenant. Its description is not captured yet; the check reads only the code.
+    func testNoTenantOnStepTwoMeansNoJamfProInThisEnvironment() {
+        let probe = failure(4, "API request failed with status 404 Not Found, traceId "
+            + "0000000000000000 (method=GET, "
+            + "url=https://us.api.jamfcloud.com/devices/v1/devices): [TENANT_NOT_FOUND]")
+        XCTAssertEqual(ConnectionCheck.verdict(version: bare404, probe: probe), .noJamfPro)
+    }
+
+    /// `devices` answers TENANT_NOT_FOUND even for an environment the integration does not own.
+    func testTheNoJamfProWarningDoesNotSayTheIDWasAccepted() {
+        XCTAssertFalse(ConnectionCheck.Verdict.noJamfPro.message.contains("accepted"))
+    }
+
     func testAnythingElseIsUndecided() {
         XCTAssertEqual(ConnectionCheck.verdict(version: nil, probe: nil),
                        .undecided(exitCode: nil))

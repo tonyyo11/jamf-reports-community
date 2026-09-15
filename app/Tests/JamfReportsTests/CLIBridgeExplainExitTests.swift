@@ -99,4 +99,10 @@ final class CLIBridgeExplainExitTests: XCTestCase {
         let msg = CLIBridge.explainExit(CLIBridge.exitCodeUnauthorized, operation: "Collect")
         XCTAssertTrue(msg.contains("six months"), msg)
     }
+
+    /// A gateway URL in another region answers 401 exactly like a wrong secret.
+    func testUnauthorizedNamesAWrongRegion() {
+        let msg = CLIBridge.explainExit(CLIBridge.exitCodeUnauthorized, operation: "Collect")
+        XCTAssertTrue(msg.contains("region"), msg)
+    }
 }

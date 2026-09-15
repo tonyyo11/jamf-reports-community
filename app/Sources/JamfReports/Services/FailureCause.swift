@@ -17,7 +17,8 @@ struct JamfCLIErrorEnvelope: Decodable, Equatable, Sendable {
 struct FailureCause: Codable, Equatable, Sendable {
 
     enum Kind: String, Codable, Sendable {
-        /// Rule 1: the integration's scope level or ID does not match what was sent.
+        /// Rule 1: the integration's scope level or ID does not match what was sent, or no scope
+        /// ID was sent.
         case scopeRejected
         /// Rule 2: the gateway does not know the environment ID.
         case unknownEnvironment
@@ -81,6 +82,7 @@ struct FailureCause: Codable, Equatable, Sendable {
             FailureCause(kind: kind, names: names, hint: cappedHint, exitCode: exitCode)
         }
         if message.contains("OWNERSHIP_FORBIDDEN")
+            || message.contains("REQUEST_CONTEXT_NOT_PROVIDED")
             || hint.hasPrefix("The credential's scope level does not match") {
             return cause(.scopeRejected)
         }
