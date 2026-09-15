@@ -68,8 +68,9 @@ struct SchoolDashboard: Sendable {
     // MARK: - School Overview
 
     func writeSchoolOverview() throws {
+        // jamf-cli prints one {section, resource, value} row per overview line.
         let raw = try loadSchoolJSON(names: ["school-overview", "school_overview"])
-        let items = (raw as? [[String: Any]]) ?? []
+        let items = flattenSchoolList(raw)
         let ws = workbook.addSheet("School Overview")
         ws.setColumnWidth(0, 0, 36)
         ws.setColumnWidth(1, 1, 24)
@@ -82,12 +83,9 @@ struct SchoolDashboard: Sendable {
         ws.write("Value", row: row, col: 1, format: .header)
         row += 1
         for item in items {
-            for (key, value) in item {
-                ws.write(key.replacingOccurrences(of: "_", with: " ").capitalized,
-                         row: row, col: 0, format: .cell)
-                ws.write("\(value)", row: row, col: 1, format: .cell)
-                row += 1
-            }
+            ws.write(stringField(item, ["resource"]), row: row, col: 0, format: .cell)
+            ws.write(stringField(item, ["value"]), row: row, col: 1, format: .cell)
+            row += 1
         }
     }
 
@@ -105,7 +103,7 @@ struct SchoolDashboard: Sendable {
             subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             ncols: 3
         )
-        let hdrs = ["Group Name", "Device Count", "Locations"]
+        let hdrs = ["Group Name", "Device Count", "Location ID"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         let sorted = items.sorted { lhs, rhs in
@@ -115,16 +113,7 @@ struct SchoolDashboard: Sendable {
             ws.write(stringField(item, ["name", "groupName", "group_name"]),
                      row: row, col: 0, format: .cell)
             ws.write(countFrom(item), row: row, col: 1, format: .cell)
-            let loc = item["locations"] ?? item["location_names"] ?? item["locationNames"]
-            let locStr: String
-            if let arr = loc as? [Any] {
-                locStr = arr.map { "\($0)" }.joined(separator: ", ")
-            } else if let s = loc as? String {
-                locStr = s
-            } else {
-                locStr = ""
-            }
-            ws.write(locStr, row: row, col: 2, format: .cell)
+            ws.write(stringField(item, ["locationId"]), row: row, col: 2, format: .cell)
             row += 1
         }
     }
@@ -144,7 +133,8 @@ struct SchoolDashboard: Sendable {
             subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             ncols: 6
         )
-        let hdrs = ["Username", "First Name", "Last Name", "Email", "Location", "Role"]
+        // jamf-cli has no user role, only an account status.
+        let hdrs = ["Username", "First Name", "Last Name", "Email", "Location ID", "Status"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -152,8 +142,8 @@ struct SchoolDashboard: Sendable {
             ws.write(stringField(item, ["firstName", "first_name"]), row: row, col: 1, format: .cell)
             ws.write(stringField(item, ["lastName", "last_name"]), row: row, col: 2, format: .cell)
             ws.write(stringField(item, ["email", "emailAddress"]), row: row, col: 3, format: .cell)
-            ws.write(stringField(item, ["location", "locationName"]), row: row, col: 4, format: .cell)
-            ws.write(stringField(item, ["role", "userRole"]), row: row, col: 5, format: .cell)
+            ws.write(stringField(item, ["locationId"]), row: row, col: 4, format: .cell)
+            ws.write(stringField(item, ["status"]), row: row, col: 5, format: .cell)
             row += 1
         }
     }
@@ -171,15 +161,16 @@ struct SchoolDashboard: Sendable {
             subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             ncols: 4
         )
-        let hdrs = ["Class Name", "Student Count", "Teacher", "Location"]
+        // jamf-cli has a teacher headcount, not teacher names.
+        let hdrs = ["Class Name", "Student Count", "Teacher Count", "Location ID"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
             ws.write(stringField(item, ["name", "className"]), row: row, col: 0, format: .cell)
             ws.write(intField(item, ["studentCount", "student_count", "students"]),
                      row: row, col: 1, format: .cell)
-            ws.write(stringField(item, ["teacher", "teacherName"]), row: row, col: 2, format: .cell)
-            ws.write(stringField(item, ["location", "locationName"]), row: row, col: 3, format: .cell)
+            ws.write(intField(item, ["teacherCount"]), row: row, col: 2, format: .cell)
+            ws.write(stringField(item, ["locationId"]), row: row, col: 3, format: .cell)
             row += 1
         }
     }
@@ -192,22 +183,22 @@ struct SchoolDashboard: Sendable {
         let ws = workbook.addSheet("Apps")
         ws.setColumnWidth(0, 0, 40)
         ws.setColumnWidth(1, 1, 20)
-        ws.setColumnWidth(2, 3, 16)
+        ws.setColumnWidth(2, 3, 20)
         var row = ws.writeSheetHeader(
             title: "Apps",
             subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             ncols: 4
         )
-        let hdrs = ["App Name", "Bundle ID", "Installed", "Managed"]
+        // jamf-cli has no install or managed count per app.
+        let hdrs = ["App Name", "Bundle ID", "Vendor", "Platform"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
             ws.write(stringField(item, ["name", "appName"]), row: row, col: 0, format: .cell)
             ws.write(stringField(item, ["bundleId", "bundle_id", "bundleID"]),
                      row: row, col: 1, format: .cell)
-            ws.write(intField(item, ["installed", "deviceCount", "device_count"]),
-                     row: row, col: 2, format: .cell)
-            ws.write(intField(item, ["managed"]), row: row, col: 3, format: .cell)
+            ws.write(stringField(item, ["vendor"]), row: row, col: 2, format: .cell)
+            ws.write(stringField(item, ["platform"]), row: row, col: 3, format: .cell)
             row += 1
         }
     }
@@ -219,22 +210,22 @@ struct SchoolDashboard: Sendable {
         let items = flattenSchoolList(raw)
         let ws = workbook.addSheet("Profiles")
         ws.setColumnWidth(0, 0, 40)
-        ws.setColumnWidth(1, 1, 18)
+        ws.setColumnWidth(1, 1, 34)
         ws.setColumnWidth(2, 3, 16)
         var row = ws.writeSheetHeader(
             title: "Profiles",
             subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             ncols: 4
         )
-        let hdrs = ["Profile Name", "Category", "Devices", "Enabled"]
+        // jamf-cli has no category, device count or enabled flag per profile.
+        let hdrs = ["Profile Name", "Identifier", "Platform", "Location ID"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
             ws.write(stringField(item, ["name", "profileName"]), row: row, col: 0, format: .cell)
-            ws.write(stringField(item, ["category"]), row: row, col: 1, format: .cell)
-            ws.write(intField(item, ["deviceCount", "device_count", "devices"]),
-                     row: row, col: 2, format: .cell)
-            ws.write(boolField(item, ["enabled"]), row: row, col: 3, format: .cell)
+            ws.write(stringField(item, ["identifier"]), row: row, col: 1, format: .cell)
+            ws.write(stringField(item, ["platform"]), row: row, col: 2, format: .cell)
+            ws.write(stringField(item, ["locationId"]), row: row, col: 3, format: .cell)
             row += 1
         }
     }
@@ -252,13 +243,14 @@ struct SchoolDashboard: Sendable {
             subtitle: "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             ncols: 3
         )
-        let hdrs = ["Location Name", "Device Count", "Address"]
+        // jamf-cli has no device count or street address per location.
+        let hdrs = ["Location Name", "Is District", "City"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
             ws.write(stringField(item, ["name", "locationName"]), row: row, col: 0, format: .cell)
-            ws.write(intField(item, ["deviceCount", "device_count"]), row: row, col: 1, format: .cell)
-            ws.write(stringField(item, ["address", "streetAddress"]), row: row, col: 2, format: .cell)
+            ws.write(boolField(item, ["isDistrict"]), row: row, col: 1, format: .cell)
+            ws.write(stringField(item, ["city"]), row: row, col: 2, format: .cell)
             row += 1
         }
     }
@@ -342,8 +334,8 @@ struct SchoolDashboard: Sendable {
             ws.write(stringField(item, ["name", "deviceName"]), row: row, col: 0, format: .cell)
             ws.write(stringField(item, ["serialNumber", "serial"]), row: row, col: 1, format: .cell)
             ws.write(stringField(item, ["model"]), row: row, col: 2, format: .cell)
-            ws.write(stringField(item, ["osVersion", "os_version"]), row: row, col: 3, format: .cell)
-            ws.write(boolField(item, ["managed"]), row: row, col: 4, format: .cell)
+            ws.write(stringField(item, ["os"]), row: row, col: 3, format: .cell)
+            ws.write(boolField(item, ["isManaged"]), row: row, col: 4, format: .cell)
             ws.write(stringField(item, ["lastCheckin", "last_checkin", "lastContactTime"]),
                      row: row, col: 5, format: .cell)
             row += 1
@@ -357,9 +349,8 @@ struct SchoolDashboard: Sendable {
         let items = flattenSchoolList(raw)
         var counts: [String: Int] = [:]
         for item in items {
-            let ver = stringField(item, ["osVersion", "os_version"])
-            let major = ver.isEmpty ? "Unknown" : String(ver.prefix(while: { $0.isNumber || $0 == "." }).split(separator: ".").first.map(String.init) ?? "Unknown")
-            counts[major, default: 0] += 1
+            let os = stringField(item, ["os"])
+            counts[majorVersion(from: os), default: 0] += 1
         }
         let ws = workbook.addSheet("OS Versions")
         ws.setColumnWidth(0, 0, 20)
@@ -388,8 +379,8 @@ struct SchoolDashboard: Sendable {
         var unmanaged = 0
         var supervised = 0
         for item in items {
-            if let b = item["managed"] as? Bool { b ? (managed += 1) : (unmanaged += 1) }
-            if let b = item["supervised"] as? Bool, b { supervised += 1 }
+            if let b = item["isManaged"] as? Bool { b ? (managed += 1) : (unmanaged += 1) }
+            if let b = item["isSupervised"] as? Bool, b { supervised += 1 }
         }
         let ws = workbook.addSheet("Device Status")
         ws.setColumnWidth(0, 0, 28)
@@ -422,7 +413,7 @@ struct SchoolDashboard: Sendable {
         let items = flattenSchoolList(raw)
         let stale = items.filter { item -> Bool in
             let checkin = stringField(item, ["lastCheckin", "last_checkin", "lastContactTime"])
-            let days = daysSinceISODate(checkin)
+            let days = daysSince(checkin)
             return days > staleThreshold
         }
         let ws = workbook.addSheet("Stale Devices")
@@ -443,7 +434,7 @@ struct SchoolDashboard: Sendable {
             ws.write(stringField(item, ["name", "deviceName"]), row: row, col: 0, format: .cell)
             ws.write(stringField(item, ["serialNumber", "serial"]), row: row, col: 1, format: .cell)
             ws.write(checkin, row: row, col: 2, format: .cell)
-            ws.write(daysSinceISODate(checkin), row: row, col: 3, format: .red)
+            ws.write(daysSince(checkin), row: row, col: 3, format: .red)
             row += 1
         }
     }
@@ -518,17 +509,22 @@ struct SchoolDashboard: Sendable {
     }
 
     private func countFrom(_ item: [String: Any]) -> Int {
-        intField(item, ["deviceCount", "device_count", "count", "totalDevices", "total_devices"])
+        intField(item, ["members"])
     }
 
-    private func daysSinceISODate(_ isoString: String) -> Int {
-        guard !isoString.isEmpty else { return 0 }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: isoString)
-            ?? ISO8601DateFormatter().date(from: isoString)
-        guard let date else { return 0 }
+    /// jamf-cli's `lastCheckin` is "yyyy-MM-dd HH:mm:ss", which `DateParser` reads.
+    private func daysSince(_ dateString: String) -> Int {
+        guard !dateString.isEmpty else { return 0 }
+        guard let date = DateParser().parse(dateString) else { return 0 }
         return Int(Date().timeIntervalSince(date) / 86400)
+    }
+
+    /// The major version in jamf-cli's `os`, which reads "Prefix Version" (e.g. "macOS 14.3").
+    private func majorVersion(from os: String) -> String {
+        guard let start = os.firstIndex(where: { $0.isNumber }) else { return "Unknown" }
+        let numeric = os[start...].prefix(while: { $0.isNumber || $0 == "." })
+        guard let major = numeric.split(separator: ".").first else { return "Unknown" }
+        return String(major)
     }
 }
 
