@@ -125,6 +125,50 @@ final class FailureCauseTests: XCTestCase {
         XCTAssertEqual(cause.kind, .other)
     }
 
+    /// `pro report ddm-status` skips refused device reports and says only that it found nothing.
+    func testNoDeclarationDataOnStderrIsItsOwnPermanentCause() {
+        let cause = FailureCause.classify(
+            exitCode: 0, stdout: Data(), sawNoDeclarationDataOnStderr: true)
+        XCTAssertEqual(cause.kind, .noDeclarationData)
+        XCTAssertTrue(cause.isPermanent)
+        XCTAssertTrue(cause.label.contains("Deployment > Declarations reporting"), cause.label)
+    }
+
+    func testASwallowed403WinsOverNoDeclarationData() {
+        let cause = FailureCause.classify(
+            exitCode: 0, stdout: Data(), sawForbiddenOnStderr: true,
+            sawNoDeclarationDataOnStderr: true)
+        XCTAssertEqual(cause.kind, .missingPermission)
+    }
+
+    func testNoDeclarationDataOnANonZeroExitIsIgnored() {
+        let cause = FailureCause.classify(
+            exitCode: 1, stdout: Data(), sawNoDeclarationDataOnStderr: true)
+        XCTAssertEqual(cause.kind, .other)
+    }
+
+    /// jamf-cli 1.29 writes `fetch_error` into a document it exits 0 on.
+    func testAFetchError403IsAMissingPermissionCarryingTheText() {
+        let text = "fetching page 0: permission denied (HTTP 403)"
+        let cause = FailureCause.fetchError(text, exitCode: 0)
+        XCTAssertEqual(cause.kind, .missingPermission)
+        XCTAssertEqual(cause.hint, text)
+        XCTAssertEqual(
+            FailureCause.fetchError("request failed (HTTP 503)", exitCode: 0).kind, .other)
+    }
+
+    func testTheWatcherSeesEachLineAndAResetClearsThem() {
+        let watcher = StderrSignalWatcher()
+        let forward = watcher.forwarding(to: { _ in })
+        forward(.init(timestamp: Date(), level: .warn, text: "No blueprints found."))
+        forward(.init(timestamp: Date(), level: .warn, text: "No DDM declaration data found."))
+        XCTAssertTrue(watcher.sawNoBlueprints)
+        XCTAssertTrue(watcher.sawNoDeclarationData)
+        XCTAssertFalse(watcher.sawForbidden)
+        watcher.reset()
+        XCTAssertFalse(watcher.sawNoBlueprints || watcher.sawNoDeclarationData)
+    }
+
     // Rule 8 (tester log)
 
     func testABare404OnAJamfProCommandIsOther() {

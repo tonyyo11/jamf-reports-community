@@ -136,6 +136,94 @@ final class CollectFailureCauseTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertEqual(store.cause(for: "patch-device-failures")?.kind, .other)
     }
+
+    // MARK: - Exit 0 without data: what jamf-cli's stderr says
+
+    /// A stub that answers from the given `case` arms and prints `[]` for everything else.
+    private func collectInventory(_ arms: String) async throws -> [String] {
+        let stub = root.appendingPathComponent("stub-cli")
+        let script = """
+        #!/bin/sh
+        case "$*" in
+        \(arms)
+          *) printf '[]'; exit 0 ;;
+        esac
+        """
+        try script.write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        let collector = CauseLogCollector()
+        try? await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.inventory],
+            force: true, locateJamfCLI: { stub }, onLine: collector.append)
+        return collector.texts
+    }
+
+    private func snapshotRows(_ kind: String) throws -> [Any]? {
+        let dir = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent(kind, isDirectory: true)
+        guard let url = FileManager.newestJSONFile(in: dir) else { return nil }
+        return try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [Any]
+    }
+
+    /// A failed blueprint listing exits non-zero (jamf-cli pro_report_platform.go:96-99), so
+    /// exit 0 with this line is an environment with no blueprints.
+    func testNoBlueprintsLandsAnEmptySnapshot() async throws {
+        let log = try await collectInventory("""
+          *"report blueprint-status"*) echo "No blueprints found." >&2; exit 0 ;;
+        """)
+        XCTAssertEqual(try snapshotRows("blueprint-status")?.count, 0)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNotNil(store.lastRun(report: "blueprint-status"))
+        XCTAssertNil(store.cause(for: "blueprint-status"))
+        XCTAssertTrue(
+            log.contains { $0.contains("blueprint-status: jamf-cli found no blueprints") },
+            "\(log)")
+    }
+
+    /// Without jamf-cli's line, blank output may be output that went missing: still a failure.
+    func testBlankBlueprintOutputWithoutTheLineIsNotAnEmptyAnswer() async throws {
+        _ = try await collectInventory("""
+          *"report blueprint-status"*) exit 0 ;;
+        """)
+        XCTAssertNil(try snapshotRows("blueprint-status"))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.lastRun(report: "blueprint-status"))
+    }
+
+    /// jamf-cli skips each refused device report silently (pro_report_platform.go:447-451), so
+    /// blank DDM output means no declarations or a missing permission.
+    func testNoDeclarationDataRecordsACauseNamingBothPossibilities() async throws {
+        let log = try await collectInventory("""
+          *"report ddm-status"*) echo "No DDM declaration data found." >&2; exit 0 ;;
+        """)
+        XCTAssertNil(try snapshotRows("ddm-status"))
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let cause = try XCTUnwrap(store.cause(for: "ddm-status"))
+        XCTAssertEqual(cause.kind, .noDeclarationData)
+        XCTAssertTrue(cause.isPermanent, "an hourly retry repeats one refused request per device")
+        let warn = try XCTUnwrap(log.first { $0.hasPrefix("[warn] ddm-status: exit 0") }, "\(log)")
+        XCTAssertTrue(warn.contains("Declarations reporting"), warn)
+    }
+
+    /// jamf-cli 1.29 exits 0 with `fetch_error` when it cannot list patch policies
+    /// (pro_report_patch.go:67-70): one line with the cause, and no "not JSON" line.
+    func testAPatchFetchErrorIsRecordedWithItsCause() async throws {
+        let document = """
+        [{"section": "title_compliance", "data": []},
+         {"section": "policy_failures", "data": [],
+          "fetch_error": "fetching page 0: permission denied (HTTP 403)"},
+         {"section": "device_failures", "data": [], "fetch_error": ""}]
+        """
+        let log = try await runScan(stdout: document, stderr: "", exit: 0)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.cause(for: "patch-device-failures")?.kind, .missingPermission)
+        let lines = log.filter { $0.contains("patch-device-failures") }
+        XCTAssertTrue(lines.contains {
+            $0.contains("could not fetch policy_failures")
+                && $0.contains("cause: missing permission")
+        }, "\(lines)")
+        XCTAssertFalse(lines.contains { $0.contains("not JSON") }, "\(lines)")
+    }
 }
 
 private final class CauseLogCollector: @unchecked Sendable {

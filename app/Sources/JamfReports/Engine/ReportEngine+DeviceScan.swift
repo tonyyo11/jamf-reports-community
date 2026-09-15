@@ -60,6 +60,17 @@ extension ReportEngine {
             case .statusItems: return ReportEngine.ddmDeviceStatusKind
             }
         }
+
+        /// What exit 5 needs when jamf-cli's hint names nothing: the Jamf Pro API role
+        /// privilege, or the Jamf Account permission of a Platform API integration.
+        var permissionFallback: String {
+            switch self {
+            case .history:
+                return "Read Computers (API role) or Inventory > Device history (Jamf Account)"
+            case .statusItems:
+                return "Read Computers (API role) or Inventory > Devices (Jamf Account)"
+            }
+        }
     }
 
     /// One call type's outcome for one device. `.notMade` never counts toward
@@ -278,7 +289,7 @@ extension ReportEngine {
             }
             result = retry
         }
-        await gate.observe(result.0, for: type, onLine: onLine)
+        await gate.observe(result.0, stdout: result.1, for: type, onLine: onLine)
         return .ran(exit: result.0, data: result.1)
     }
 
@@ -344,7 +355,7 @@ extension ReportEngine {
         }
 
         func observe(
-            _ exit: Int32, for type: CallType,
+            _ exit: Int32, stdout: Data, for type: CallType,
             onLine: @Sendable (CLIBridge.LogLine) -> Void
         ) {
             guard stopped[type] == nil else { return }
@@ -352,10 +363,15 @@ extension ReportEngine {
             switch exit {
             case CLIBridge.exitCodePermissionDenied:
                 stopped[type] = exit
+                // jamf-cli's hint names the grant in the terms of the API that answered.
+                let cause = FailureCause.classify(exitCode: exit, stdout: stdout)
+                let reason = cause.kind == .missingPermission && cause.names.isEmpty
+                    ? "needs " + type.permissionFallback
+                    : cause.label
                 onLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): exit 5 from a device — the API "
-                        + "role needs Read Computers; skipping the rest of the run"
+                    text: "[warn] \(kind): exit 5 from a device — \(reason); "
+                        + "skipping the rest of the run"
                 ))
             case CLIBridge.exitCodeRefusedByPolicy:
                 stopped[type] = exit

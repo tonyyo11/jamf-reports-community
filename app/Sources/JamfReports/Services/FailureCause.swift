@@ -28,6 +28,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         case notServed
         /// Rules 5–7: a missing permission or privilege.
         case missingPermission
+        /// `pro report ddm-status` found no declaration data. jamf-cli skips refused device
+        /// reports silently, so the environment has none or the permission is missing.
+        case noDeclarationData
         /// Rule 8: anything else; the exit-code handling that existed before applies.
         case other
     }
@@ -44,12 +47,17 @@ struct FailureCause: Codable, Equatable, Sendable {
     static let hintByteLimit = 4_096
     /// What jamf-cli prints on stderr when a command swallows a 403 and exits 0.
     static let forbiddenStderrMarker = "permission denied (HTTP 403)"
+    /// `pro report blueprint-status` prints this and exits 0 when the environment has none.
+    static let noBlueprintsStderrMarker = "No blueprints found."
+    /// `pro report ddm-status` prints this and exits 0 when no declaration report came back.
+    static let noDeclarationDataStderrMarker = "No DDM declaration data found."
 
-    /// Retrying cannot help until someone changes the credential, its scope ID or its
-    /// permissions (spec §9.5). Edge blocks stay retryable.
+    /// Retrying within the hour cannot help (spec §9.5): the credential, its scope ID, its
+    /// permissions or the environment's data has to change first. Edge blocks stay retryable.
     var isPermanent: Bool {
         switch kind {
-        case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission: true
+        case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
+             .noDeclarationData: true
         case .edgeBlocked, .other: false
         }
     }
@@ -65,12 +73,16 @@ struct FailureCause: Codable, Equatable, Sendable {
             names.isEmpty
                 ? "missing permission"
                 : "missing permission: " + names.joined(separator: "; ")
+        case .noDeclarationData:
+            "no DDM declaration data: the environment has none, or each device's report was "
+                + "refused (Deployment > Declarations reporting)"
         case .other: "exit \(exitCode)"
         }
     }
 
     static func classify(
-        exitCode: Int32, stdout: Data, sawForbiddenOnStderr: Bool = false
+        exitCode: Int32, stdout: Data, sawForbiddenOnStderr: Bool = false,
+        sawNoDeclarationDataOnStderr: Bool = false
     ) -> FailureCause {
         let envelope = JamfCLIErrorEnvelope.parse(stdout)
         let message = envelope?.message ?? ""
@@ -104,7 +116,17 @@ struct FailureCause: Codable, Equatable, Sendable {
             }
             return cause(.missingPermission)
         }
-        return cause(exitCode == 0 && sawForbiddenOnStderr ? .missingPermission : .other)
+        guard exitCode == 0 else { return cause(.other) }
+        if sawForbiddenOnStderr { return cause(.missingPermission) }
+        return cause(sawNoDeclarationDataOnStderr ? .noDeclarationData : .other)
+    }
+
+    /// A section jamf-cli 1.29 could not fetch (`fetch_error`) in a document it exited 0 on.
+    static func fetchError(_ text: String, exitCode: Int32) -> FailureCause {
+        FailureCause(
+            kind: text.contains(forbiddenStderrMarker) ? .missingPermission : .other,
+            names: [], hint: String(decoding: text.utf8.prefix(hintByteLimit), as: UTF8.self),
+            exitCode: exitCode)
     }
 
     /// Gateway hints name permissions between `in Jamf Account: ` and `. Names are`,
@@ -131,23 +153,40 @@ struct FailureCause: Codable, Equatable, Sendable {
     }
 }
 
-/// Watches one kind's streamed stderr for jamf-cli's 403 line, for commands that swallow a
-/// failed request and exit 0 without data (spec §9.1).
-final class ForbiddenStderrWatcher: @unchecked Sendable {
+/// Watches one kind's streamed stderr for the jamf-cli lines that explain an exit 0 without
+/// data (spec §9.1): a swallowed 403, an empty blueprint listing, or no declaration data.
+final class StderrSignalWatcher: @unchecked Sendable {
     private let lock = NSLock()
-    private var seen = false
+    private var forbidden = false
+    private var noBlueprints = false
+    private var noDeclarationData = false
 
-    var sawForbidden: Bool { lock.withLock { seen } }
+    var sawForbidden: Bool { lock.withLock { forbidden } }
+    var sawNoBlueprints: Bool { lock.withLock { noBlueprints } }
+    var sawNoDeclarationData: Bool { lock.withLock { noDeclarationData } }
 
     /// A retried attempt is classified on its own stderr, not the first attempt's.
-    func reset() { lock.withLock { seen = false } }
+    func reset() {
+        lock.withLock {
+            forbidden = false
+            noBlueprints = false
+            noDeclarationData = false
+        }
+    }
 
     func forwarding(
         to onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) -> @Sendable (CLIBridge.LogLine) -> Void {
         { line in
-            if line.text.contains(FailureCause.forbiddenStderrMarker) {
-                self.lock.withLock { self.seen = true }
+            let text = line.text
+            self.lock.withLock {
+                if text.contains(FailureCause.forbiddenStderrMarker) { self.forbidden = true }
+                if text.contains(FailureCause.noBlueprintsStderrMarker) {
+                    self.noBlueprints = true
+                }
+                if text.contains(FailureCause.noDeclarationDataStderrMarker) {
+                    self.noDeclarationData = true
+                }
             }
             onLine(line)
         }

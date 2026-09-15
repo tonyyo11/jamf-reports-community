@@ -123,18 +123,20 @@ final class PatchScanFailureSectionsTests: XCTestCase {
     }
 
     /// A section jamf-cli could not fetch is empty AND says so. That is not a
-    /// clean zero: nil makes the caller record the kind as not landed.
+    /// clean zero: nil makes the caller record the kind as not landed, and
+    /// `patchFetchError` tells it which section failed and why.
     func testEnvelopeFetchErrorIsNotACleanZero() throws {
-        let collector = LineCollector()
-        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(
-            from: envelope(devices: "[]", deviceError: "request failed (HTTP 503)"),
-            onLine: collector.append))
-        let line = try XCTUnwrap(collector.texts.first)
-        XCTAssertTrue(line.contains("device_failures") && line.contains("HTTP 503"), "got: \(line)")
+        let deviceFailure = envelope(devices: "[]", deviceError: "request failed (HTTP 503)")
+        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: deviceFailure))
+        let found = try XCTUnwrap(ReportEngine.patchFetchError(in: deviceFailure))
+        XCTAssertEqual(found.section, "device_failures")
+        XCTAssertEqual(found.error, "request failed (HTTP 503)")
 
-        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(
-            from: envelope(devices: "[]", policyError: "request failed (HTTP 401)")),
+        let policyFailure = envelope(devices: "[]", policyError: "request failed (HTTP 401)")
+        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: policyFailure),
             "device rows depend on policy rows upstream, so a policy fetch error is not zero either")
+        XCTAssertEqual(ReportEngine.patchFetchError(in: policyFailure)?.section, "policy_failures")
+        XCTAssertNil(ReportEngine.patchFetchError(in: envelope(devices: "[]")))
     }
 
     // MARK: - The guard this must not weaken

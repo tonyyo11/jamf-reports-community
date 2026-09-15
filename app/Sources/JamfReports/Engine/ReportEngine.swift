@@ -2249,7 +2249,7 @@ struct ReportEngine: Sendable {
             timestamp: Date(), level: .info,
             text: "[info] collecting \(kind) for \(profile)"
         ))
-        let stderrWatcher = ForbiddenStderrWatcher()
+        let stderrWatcher = StderrSignalWatcher()
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
             bin: bin, bridge: bridge, onLine: stderrWatcher.forwarding(to: onLine),
@@ -2268,16 +2268,28 @@ struct ReportEngine: Sendable {
         }
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
         let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
-        guard exitCode == 0 || isPartialFailure, !data.isEmpty else {
+        // A failed blueprint listing exits non-zero, so exit 0 with jamf-cli's
+        // "No blueprints found." line is a real empty answer, not lost output.
+        let noBlueprints = exitCode == 0 && data.isEmpty && stderrWatcher.sawNoBlueprints
+        if noBlueprints {
+            onLine(.init(
+                timestamp: Date(), level: .info,
+                text: "[info] \(kind): jamf-cli found no blueprints — saving an empty list"
+            ))
+        }
+        let payload = noBlueprints ? Data("[]".utf8) : data
+        guard exitCode == 0 || isPartialFailure, !payload.isEmpty else {
             return try Self.recordUnlandedAttempt(
                 kind: kind, exitCode: exitCode, data: data,
-                sawForbidden: stderrWatcher.sawForbidden, useCachedData: useCachedData,
+                sawForbidden: stderrWatcher.sawForbidden,
+                sawNoDeclarationData: stderrWatcher.sawNoDeclarationData,
+                useCachedData: useCachedData,
                 dataDir: dataDir, stateStore: stateStore, collectStart: collectStart,
                 onLine: onLine
             )
         }
         return try Self.saveCollectedPayload(
-            kind: kind, data: data, outcome: outcome,
+            kind: kind, data: payload, outcome: outcome,
             isPartialFailure: isPartialFailure, dataDir: dataDir,
             recordManifest: recordManifest, stateStore: stateStore,
             collectStart: collectStart, onLine: onLine
@@ -2292,6 +2304,7 @@ struct ReportEngine: Sendable {
         exitCode: Int32,
         data: Data,
         sawForbidden: Bool = false,
+        sawNoDeclarationData: Bool = false,
         useCachedData: Bool,
         dataDir: URL,
         stateStore: StateFileStore?,
@@ -2299,7 +2312,8 @@ struct ReportEngine: Sendable {
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) throws -> KindCollectResult {
         let cause = FailureCause.classify(
-            exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden)
+            exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
+            sawNoDeclarationDataOnStderr: sawNoDeclarationData)
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
         stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
                            cause: cause)
@@ -2415,6 +2429,13 @@ struct ReportEngine: Sendable {
             ? Self.patchDeviceFailurePayload(from: data, onLine: onLine)
             : jsonPayload(from: data)
         guard let payload = salvaged else {
+            if sectionedCollectKinds.contains(kind), let fetch = Self.patchFetchError(in: data) {
+                return Self.recordSectionFetchError(
+                    kind: kind, section: fetch.section, error: fetch.error,
+                    exitCode: outcome.exitCode, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine
+                )
+            }
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                     + "command on this jamf-cli?) — snapshot not saved"))
@@ -3361,7 +3382,7 @@ struct ReportEngine: Sendable {
             guard let rows = try? JSONSerialization.jsonObject(with: section, options: [])
                     as? [[String: Any]] else { continue }
             guard let first = rows.first else { continue }
-            if first["section"] != nil { return envelopeDeviceRows(rows, onLine: onLine) }
+            if first["section"] != nil { return envelopeDeviceRows(rows) }
             if first["device_id"] != nil { return section }
         }
         if sections.count > 1 {
@@ -3378,27 +3399,58 @@ struct ReportEngine: Sendable {
     /// of `{section, data, fetch_error}` objects. A non-empty `fetch_error` on
     /// either failures section means upstream could not ask (device rows depend
     /// on policy rows), which is not a clean zero — nil lets the caller record
-    /// the kind as not landed.
-    private static func envelopeDeviceRows(
-        _ sections: [[String: Any]],
-        onLine: @Sendable (CLIBridge.LogLine) -> Void
-    ) -> Data? {
-        for section in sections {
-            guard let name = section["section"] as? String,
-                  name == "policy_failures" || name == "device_failures" else { continue }
-            if let error = section["fetch_error"] as? String, !error.isEmpty {
-                onLine(.init(
-                    timestamp: Date(), level: .warn,
-                    text: "[warn] patch-device-failures: jamf-cli could not fetch \(name): "
-                        + String(error.prefix(200))
-                ))
-                return nil
-            }
-        }
+    /// the kind as not landed, with `patchFetchError` saying why.
+    private static func envelopeDeviceRows(_ sections: [[String: Any]]) -> Data? {
+        guard sectionFetchError(in: sections) == nil else { return nil }
         guard let device = sections.first(where: { $0["section"] as? String == "device_failures" }),
               let rows = device["data"] as? [[String: Any]]
         else { return nil }
         return try? JSONSerialization.data(withJSONObject: rows, options: [])
+    }
+
+    /// The first failures section a jamf-cli 1.29 `--scan-failures` document could not fetch.
+    static func patchFetchError(in data: Data) -> (section: String, error: String)? {
+        for chunk in jsonSections(from: data) {
+            guard let sections = try? JSONSerialization.jsonObject(with: chunk, options: [])
+                    as? [[String: Any]],
+                  sections.first?["section"] != nil,
+                  let found = sectionFetchError(in: sections) else { continue }
+            return found
+        }
+        return nil
+    }
+
+    private static func sectionFetchError(
+        in sections: [[String: Any]]
+    ) -> (section: String, error: String)? {
+        for section in sections {
+            guard let name = section["section"] as? String,
+                  name == "policy_failures" || name == "device_failures",
+                  let error = section["fetch_error"] as? String, !error.isEmpty else { continue }
+            return (name, error)
+        }
+        return nil
+    }
+
+    /// Records a section jamf-cli could not fetch as the kind's cause, in one Run History line,
+    /// rather than calling the output unreadable.
+    static func recordSectionFetchError(
+        kind: String, section: String, error: String, exitCode: Int32,
+        stateStore: StateFileStore?, collectStart: Date,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> KindCollectResult {
+        let cause = FailureCause.fetchError(error, exitCode: exitCode)
+        stateStore?.record(
+            .failed(exitCode: exitCode), report: kind, at: collectStart, cause: cause)
+        onLine(.init(
+            timestamp: Date(), level: .warn,
+            text: "[warn] \(kind): jamf-cli could not fetch \(section) — snapshot not saved"
+                + Self.causeSuffix(cause)
+        ))
+        return KindCollectResult(
+            outcome: CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind),
+            saved: false
+        )
     }
 
     static func jsonPayload(from data: Data) -> Data? {

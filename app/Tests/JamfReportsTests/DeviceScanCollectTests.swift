@@ -308,6 +308,8 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self),
                         "the history call type carried on")
         XCTAssertTrue(lines.contains { $0.contains("Read Computers") }, "\(lines)")
+        XCTAssertTrue(lines.contains { $0.contains("Inventory > Devices (Jamf Account)") },
+                      "a gateway profile needs the Jamf Account permission: \(lines)")
 
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertEqual(
@@ -315,6 +317,27 @@ final class DeviceScanCollectTests: XCTestCase {
             CLIBridge.exitCodePermissionDenied
         )
         XCTAssertNotNil(store.lastRun(report: "mdm-command-health"))
+    }
+
+    /// jamf-cli's hint names the grant for the API that answered; the scan passes it on.
+    func testExit5NamesThePermissionFromJamfCLIsHint() async throws {
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory)
+        let hint = "grant the Jamf Platform API integration these permissions in Jamf Account: "
+            + "Inventory > Devices: Read (devices:read). Names are as the permission picker "
+            + "shows them: <map URL>"
+        let envelope: [String: Any] = [
+            "error": "request failed", "message": "permission denied (HTTP 403)",
+            "exitCode": 5, "exitCodeName": "permission", "hint": hint,
+        ]
+        let body = String(
+            decoding: try JSONSerialization.data(withJSONObject: envelope), as: UTF8.self)
+        try answer("ddm-m1", body, exit: Int(CLIBridge.exitCodePermissionDenied))
+        let lines = try await runScan()
+        let warn = try XCTUnwrap(lines.first { $0.contains("exit 5 from a device") }, "\(lines)")
+        XCTAssertTrue(
+            warn.contains("missing permission: Inventory > Devices: Read (devices:read)"), warn)
+        XCTAssertFalse(warn.contains("Read Computers"), warn)
     }
 
     func testExit8SkipsHistoryForTheRun() async throws {
