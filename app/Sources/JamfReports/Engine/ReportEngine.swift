@@ -1380,6 +1380,14 @@ struct ReportEngine: Sendable {
         "blueprint-status",
     ]
 
+    /// Kinds Jamf Account cannot grant a tenant-level Platform API integration: it offers neither
+    /// the Compliance Benchmarks nor the Blueprints permission at that level.
+    static let environmentLevelKinds: Set<String> = [
+        "compliance-devices",
+        "compliance-rules",
+        "blueprint-status",
+    ]
+
     /// The profile's auth method when it positively rules out
     /// `platformOnlyKinds`; nil for a platform profile and — deliberately —
     /// for an unknown method. Unknown fails toward collecting: never skip a
@@ -1782,9 +1790,9 @@ struct ReportEngine: Sendable {
         } ?? false
 
         // Resolved once per run, not per kind — it spawns `config list`.
-        let nonPlatformAuth = Self.nonPlatformAuthMethod(
-            ProfileAuthMethod.resolve(profile: profile, binary: bin)
-        )
+        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        let nonPlatformAuth = Self.nonPlatformAuthMethod(profileAuth?.authMethod)
+        let tenantLevel = profileAuth?.isTenantLevel == true
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -1807,6 +1815,15 @@ struct ReportEngine: Sendable {
                     timestamp: Date(), level: .info,
                     text: "[skip] \(kind): requires a Platform API profile "
                         + "(auth-method is \(nonPlatformAuth))"
+                ))
+                continue
+            }
+            // Same rule for kinds Jamf Account cannot grant a tenant-level integration.
+            if tenantLevel, Self.environmentLevelKinds.contains(kind) {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): needs a platform environment integration "
+                        + "(this profile is tenant level)"
                 ))
                 continue
             }

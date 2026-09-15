@@ -13,6 +13,7 @@ struct ComplianceBenchmarksView: View {
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var platformCapability: PlatformCapabilityService?
     @State private var platformAvailable = false
+    @State private var platformTenantLevel = false
     @State private var bridge = CLIBridge()
     @State private var selectedBenchmark = ""
 
@@ -21,6 +22,8 @@ struct ComplianceBenchmarksView: View {
         case locked
         case unlockedNoData
         case unlockedWithData
+        /// A tenant-level integration, which Jamf Account cannot grant Compliance Benchmarks.
+        case needsEnvironmentLevel
     }
 
     var body: some View {
@@ -50,7 +53,8 @@ struct ComplianceBenchmarksView: View {
             isDemoMode: workspace.demoMode,
             experimentalOn: experimentalFeatures.isEnabled(.platformAPI),
             platformAvailable: platformAvailable,
-            hasData: snapshot.totalRules > 0 || snapshot.totalDevices > 0
+            hasData: snapshot.totalRules > 0 || snapshot.totalDevices > 0,
+            tenantLevel: platformTenantLevel
         )
     }
 
@@ -62,18 +66,21 @@ struct ComplianceBenchmarksView: View {
     /// - ``platformAvailable``: result of ``PlatformCapabilityService``
     ///   probe for the active profile.
     /// - ``hasData``: any cached rule or device data on disk.
+    /// - ``tenantLevel``: the profile's integration is tenant level, so collect skips benchmarks.
     static func decideLockState(
         isDemoMode: Bool,
         experimentalOn: Bool,
         platformAvailable: Bool,
-        hasData: Bool
+        hasData: Bool,
+        tenantLevel: Bool = false
     ) -> LockState {
         if isDemoMode {
             return hasData ? .unlockedWithData : .unlockedNoData
         }
         guard experimentalOn else { return .locked }
         guard platformAvailable else { return .locked }
-        return hasData ? .unlockedWithData : .unlockedNoData
+        if hasData { return .unlockedWithData }
+        return tenantLevel ? .needsEnvironmentLevel : .unlockedNoData
     }
 
     // MARK: - Body fragments
@@ -85,6 +92,8 @@ struct ComplianceBenchmarksView: View {
             lockedCard
         case .unlockedNoData:
             unlockedEmptyCard
+        case .needsEnvironmentLevel:
+            environmentLevelCard
         case .unlockedWithData:
             if snapshot.benchmarks.count > 1 { benchmarkPicker }
             ruleAggregateCard
@@ -138,6 +147,24 @@ struct ComplianceBenchmarksView: View {
                         "jamf-cli pro report compliance-rules \"<title>\" --output json",
                         "jamf-cli pro report compliance-devices \"<title>\" --output json",
                     ]
+                )
+            }
+        }
+    }
+
+    private var environmentLevelCard: some View {
+        Card(padding: 24) {
+            VStack(alignment: .leading, spacing: 14) {
+                ComplianceBenchmarksView.experimentalBadge()
+                EmptyStateView(
+                    systemImage: "lock.shield",
+                    title: "Needs a platform environment integration",
+                    message: "This profile's Jamf Account integration is tenant level, and "
+                        + "Jamf Account does not offer the Compliance Benchmarks permission at "
+                        + "that level, so collect skips benchmarks. Create an integration at "
+                        + "platform environment level, then switch this profile to it with "
+                        + "Update credentials in Data Sources.",
+                    commands: []
                 )
             }
         }
@@ -284,6 +311,7 @@ struct ComplianceBenchmarksView: View {
     private func probePlatformAvailability() async {
         guard !workspace.demoMode, !workspace.profile.isEmpty else {
             platformAvailable = false
+            platformTenantLevel = false
             return
         }
         let service = platformCapability ?? PlatformCapabilityService(
@@ -291,6 +319,10 @@ struct ComplianceBenchmarksView: View {
         )
         if platformCapability == nil { platformCapability = service }
         platformAvailable = await service.isAvailable(for: workspace.profile)
+        let profile = workspace.profile
+        platformTenantLevel = await Task.detached {
+            ProfileAuthMethod.resolve(profile: profile)?.isTenantLevel == true
+        }.value
     }
 
     // MARK: - Static rendering helpers (kept static to keep view body type-check cheap)

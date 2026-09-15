@@ -123,6 +123,7 @@ final class ComplianceBenchmarkCollectTests: XCTestCase {
     }
 
     /// NOT named `jamf-cli` (codesign gate). Maps argv to answer files:
+    ///   config list                       → answers/config (empty when absent)
     ///   compliance-benchmarks list        → answers/list
     ///   report compliance-rules <title>   → answers/rules-<title>
     ///   report compliance-devices <title> → answers/devices-<title>
@@ -136,6 +137,7 @@ final class ComplianceBenchmarkCollectTests: XCTestCase {
         emit() { f="$A/$1"; if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
                  [ -f "$f" ] && cat "$f"; exit "$code"; }
         case "$*" in
+          "config list"*) emit config ;;
           *" compliance-benchmarks list "*) emit list ;;
           *" report compliance-rules "*)
             t=$(echo "$*" | sed -E 's/.* compliance-rules ([^ ]+) .*/\\1/'); emit "rules-$t" ;;
@@ -264,6 +266,33 @@ final class ComplianceBenchmarkCollectTests: XCTestCase {
         XCTAssertTrue(
             log.texts.contains { $0.contains("compliance-rules: exit 7 (partial failure)") },
             "\(log.texts)")
+    }
+
+    /// Jamf Account cannot grant a tenant-level integration Compliance Benchmarks or Blueprints,
+    /// so collect does not ask for them, says why, and records nothing.
+    func testATenantLevelProfileSkipsBenchmarksAndBlueprints() async throws {
+        try writeConfig()
+        let row: [String: Any] = ["name": profile, "auth-method": "platform",
+                                  "tenant-id": "00000000-0000-0000-0000-000000000000"]
+        let config = try JSONSerialization.data(withJSONObject: [row])
+        try answer("config", String(decoding: config, as: UTF8.self))
+        try answer("list", #"[{"id":"1","title":"CIS-L1"}]"#)
+        let log = BenchmarkLogCollector()
+
+        try await collectInventory(onLine: log.append)
+
+        let requested = calls()
+        for command in ["compliance-benchmarks", "compliance-rules", "compliance-devices",
+                        "blueprint-status"] {
+            XCTAssertFalse(requested.contains { $0.contains(command) }, "\(command): \(requested)")
+        }
+        XCTAssertTrue(requested.contains { $0.contains("ddm-status") },
+                      "DDM reporting still answered tenant credentials, so it is still collected")
+        XCTAssertTrue(log.texts.contains {
+            $0.contains("[skip] compliance-rules: needs a platform environment integration")
+        }, "\(log.texts)")
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.failures(report: "compliance-rules"), "a skipped kind records nothing")
     }
 }
 

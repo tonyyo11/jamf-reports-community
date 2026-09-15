@@ -96,6 +96,26 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
         )
     }
 
+    /// Collect skips benchmarks on a tenant-level profile, so "collect this workspace" would be a
+    /// dead end; the screen names the integration level instead.
+    func testATenantLevelProfileWithoutDataNeedsAnEnvironmentIntegration() {
+        XCTAssertEqual(
+            ComplianceBenchmarksView.decideLockState(
+                isDemoMode: false, experimentalOn: true, platformAvailable: true,
+                hasData: false, tenantLevel: true),
+            .needsEnvironmentLevel
+        )
+    }
+
+    func testSnapshotsCollectedBeforeASwitchToTenantLevelStillShow() {
+        XCTAssertEqual(
+            ComplianceBenchmarksView.decideLockState(
+                isDemoMode: false, experimentalOn: true, platformAvailable: true,
+                hasData: true, tenantLevel: true),
+            .unlockedWithData
+        )
+    }
+
     // MARK: - Per-benchmark display (2.8.1)
 
     func testSeveralBenchmarksShowOneAtATime() {

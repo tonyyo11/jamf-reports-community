@@ -374,9 +374,11 @@ extension WorkspaceStore {
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return [] }
         let store = StateFileStore(directory: stateDir)
         let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
+        let auth = ProfileAuthMethod.resolve(profile: profile)
         let kinds = expectedKinds(
             skipExpensive: skipExpensive,
-            authMethod: ProfileAuthMethod.resolve(profile: profile)
+            authMethod: auth?.authMethod,
+            tenantLevel: auth?.isTenantLevel == true
         )
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
@@ -390,21 +392,26 @@ extension WorkspaceStore {
     /// Which kinds this profile is expected to collect, and so which may be
     /// reported as failing or stale.
     ///
-    /// Two exclusions, both about not alarming on an absence that is intended:
+    /// Three exclusions, all about not alarming on an absence that is intended:
     /// the Settings toggle makes the four per-device kinds deliberately absent
-    /// (the false-alarm class `FreshnessChipRow` already guards), and a Jamf
-    /// Pro instance profile can never serve the Platform-only kinds. The
-    /// second is applied regardless of the `.fail` counters on disk: a
+    /// (the false-alarm class `FreshnessChipRow` already guards), a Jamf Pro
+    /// instance profile can never serve the Platform-only kinds, and a
+    /// tenant-level integration can never be granted `environmentLevelKinds`.
+    /// The last two apply regardless of the `.fail` counters on disk: a
     /// workspace that ran for months before the collect-side skip has a
     /// standing pile of them, and reading those back is exactly what kept the
     /// banner red.
     nonisolated static func expectedKinds(
         skipExpensive: Bool,
-        authMethod: String?
+        authMethod: String?,
+        tenantLevel: Bool = false
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
         return ReportEngine.knownCollectKinds.filter { kind in
             if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
+                return false
+            }
+            if tenantLevel, ReportEngine.environmentLevelKinds.contains(kind) {
                 return false
             }
             return !(skipsPlatform && ReportEngine.platformOnlyKinds.contains(kind))
