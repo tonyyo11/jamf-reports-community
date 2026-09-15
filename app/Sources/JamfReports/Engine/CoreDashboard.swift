@@ -1900,6 +1900,7 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Protect Overview
     // Source: `jamf-cli protect overview --output json` (gated on protect.enabled).
+    // Rows carry section, resource and value, plus `status` when jamf-cli highlights a line.
 
     func writeProtectOverview() throws {
         let raw = try loadLatestJSON(names: ["protect-overview"])
@@ -1908,23 +1909,27 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Protect Overview")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Protect Overview"),
-                                      subtitle: "Generated: \(ts)", ncols: 2)
-        ws.setColumnWidth(0, 0, 36)
-        ws.setColumnWidth(1, 1, 24)
-        ws.write("Resource", row: row, col: 0, format: .header)
-        ws.write("Value", row: row, col: 1, format: .header)
+                                      subtitle: "Generated: \(ts)", ncols: 3)
+        ws.setColumnWidth(0, 0, 24)
+        ws.setColumnWidth(1, 1, 32)
+        ws.setColumnWidth(2, 2, 24)
+        for (col, h) in ["Section", "Resource", "Value"].enumerated() {
+            ws.write(h, row: row, col: col, format: .header)
+        }
         row += 1
         for item in items {
-            for (key, value) in item.sorted(by: { $0.key < $1.key }) {
-                ws.write(key, row: row, col: 0, format: .cell)
-                ws.write("\(value)", row: row, col: 1, format: .cell)
-                row += 1
-            }
+            let status = (item["status"] as? String ?? "").lowercased()
+            let fmt: CellFormat = status == "red" ? .red : status == "yellow" ? .yellow : .cell
+            ws.write(item["section"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["resource"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(item["value"] as? String ?? "", row: row, col: 2, format: fmt)
+            row += 1
         }
     }
 
     // MARK: - Protect Alerts
     // Source: `jamf-cli protect alerts list --output json` (gated on protect.enabled).
+    // `computer` is the host name and `analytics` the fired analytics' names, comma-joined.
 
     func writeProtectAlerts() throws {
         let raw = try loadLatestJSON(names: ["protect-alerts"])
@@ -1935,22 +1940,18 @@ struct CoreDashboard: Sendable {
         var row = ws.writeSheetHeader(title: t("Protect Alerts"),
                                       subtitle: "Generated: \(ts)", ncols: 6)
         ws.setColumnWidth(0, 0, 28)
-        ws.setColumnWidth(1, 1, 20)
+        ws.setColumnWidth(1, 1, 36)
         ws.setColumnWidth(2, 3, 16)
         ws.setColumnWidth(4, 5, 22)
-        let hdrs = ["Host", "Serial", "Severity", "Status", "Event Type", "Created"]
+        let hdrs = ["Host", "Analytics", "Severity", "Status", "Event Type", "Created"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
             let severity = (item["severity"] as? String ?? "").lowercased()
             let fmt: CellFormat = severity == "high" || severity == "critical" ? .red
                 : severity == "medium" ? .yellow : .cell
-            // computer may be nested as {hostName, serial}
-            let computer = item["computer"] as? [String: Any]
-            let host = computer?["hostName"] as? String ?? item["hostName"] as? String ?? ""
-            let serial = computer?["serial"] as? String ?? item["serial"] as? String ?? ""
-            ws.write(host, row: row, col: 0, format: .cell)
-            ws.write(serial, row: row, col: 1, format: .cell)
+            ws.write(item["computer"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["analytics"] as? String ?? "", row: row, col: 1, format: .cell)
             ws.write(item["severity"] as? String ?? "", row: row, col: 2, format: fmt)
             ws.write(item["status"] as? String ?? "", row: row, col: 3, format: .cell)
             ws.write(item["eventType"] as? String ?? "", row: row, col: 4, format: .cell)
@@ -1961,19 +1962,11 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Protect Computers
     // Source: `jamf-cli protect computers list --output json` (gated on protect.enabled).
+    // `hostname` is lower case, `plan` is the plan's name, `fullDiskAccess` is Protect's status.
 
     func writeProtectComputers() throws {
         let raw = try loadLatestJSON(names: ["protect-computers"])
-        let items: [[String: Any]]
-        // Protect computers may come as an array or an envelope {nodes: [...]}
-        if let arr = raw as? [[String: Any]] {
-            items = arr
-        } else if let dict = raw as? [String: Any],
-                  let nodes = dict["nodes"] as? [[String: Any]] {
-            items = nodes
-        } else {
-            return
-        }
+        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
         let ws = workbook.addSheet("Protect Computers")
         let ts = ISO8601DateFormatter().string(from: Date())
@@ -1990,7 +1983,6 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
-            let plan = (item["plan"] as? [String: Any])?["name"] as? String ?? ""
             let osMajor = asInt(item["osMajor"])
             let osMinor = asInt(item["osMinor"])
             let osPatch = asInt(item["osPatch"])
@@ -2000,24 +1992,27 @@ struct CoreDashboard: Sendable {
             } else {
                 osStr = item["osString"] as? String ?? ""
             }
-            ws.write(item["hostName"] as? String ?? "", row: row, col: 0, format: .cell)
+            ws.write(item["hostname"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(plan, row: row, col: 2, format: .cell)
+            ws.write(item["plan"] as? String ?? "", row: row, col: 2, format: .cell)
             ws.write(osStr, row: row, col: 3, format: .cell)
             ws.write(item["connectionStatus"] as? String ?? "", row: row, col: 4, format: .cell)
             ws.write(item["lastConnection"] as? String ?? "", row: row, col: 5, format: .cell)
-            let webFmt: CellFormat = (item["webProtectionActive"] as? Bool == false) ? .yellow : .cell
-            let diskFmt: CellFormat = (item["fullDiskAccess"] as? Bool == false) ? .yellow : .cell
+            let webFmt: CellFormat =
+                (item["webProtectionActive"] as? Bool == false) ? .yellow : .cell
+            let access = item["fullDiskAccess"] as? String
+            let diskFmt: CellFormat =
+                ProtectComputerRow.fullDiskAccessGranted(access) == false ? .yellow : .cell
             ws.write(asBool(item["webProtectionActive"]).map { $0 ? "Yes" : "No" } ?? "",
                      row: row, col: 6, format: webFmt)
-            ws.write(asBool(item["fullDiskAccess"]).map { $0 ? "Yes" : "No" } ?? "",
-                     row: row, col: 7, format: diskFmt)
+            ws.write(access ?? "", row: row, col: 7, format: diskFmt)
             row += 1
         }
     }
 
     // MARK: - Protect Insights
     // Source: `jamf-cli protect insights list --output json` (gated on protect.enabled).
+    // Rows carry no description; `cisIDs` holds the CIS benchmark IDs, comma-joined.
 
     func writeProtectInsights() throws {
         let raw = try loadLatestJSON(names: ["protect-insights"])
@@ -2030,7 +2025,7 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(0, 0, 40)
         ws.setColumnWidth(1, 2, 20)
         ws.setColumnWidth(3, 5, 14)
-        let hdrs = ["Label", "Section", "Description", "Pass", "Fail", "Enabled"]
+        let hdrs = ["Label", "Section", "CIS IDs", "Pass", "Fail", "Enabled"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in items {
@@ -2038,7 +2033,7 @@ struct CoreDashboard: Sendable {
             let fmt: CellFormat = fail > 0 ? .yellow : .cell
             ws.write(item["label"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["section"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["description"] as? String ?? "", row: row, col: 2, format: .cell)
+            ws.write(item["cisIDs"] as? String ?? "", row: row, col: 2, format: .cell)
             ws.write(asInt(item["totalPass"]) ?? 0, row: row, col: 3, format: .cell)
             ws.write(fail, row: row, col: 4, format: fmt)
             ws.write(asBool(item["enabled"]).map { $0 ? "Yes" : "No" } ?? "",
@@ -2049,18 +2044,11 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Protect Plans
     // Source: `jamf-cli protect plans list --output json` (gated on protect data present).
+    // Reference columns are names; jamf-cli omits a reference that is not assigned.
 
     func writeProtectPlans() throws {
         let raw = try loadLatestJSON(names: ["protect-plans"])
-        let items: [[String: Any]]
-        if let arr = raw as? [[String: Any]] {
-            items = arr
-        } else if let dict = raw as? [String: Any],
-                  let nodes = dict["nodes"] as? [[String: Any]] {
-            items = nodes
-        } else {
-            throw CoreDashboardError.noCachedData(names: ["protect-plans"])
-        }
+        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["protect-plans"])
         }
@@ -2068,24 +2056,14 @@ struct CoreDashboard: Sendable {
         let ws = workbook.addSheet("Protect Plans")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Protect Plans"),
-                                      subtitle: "Generated: \(ts)", ncols: 14)
+                                      subtitle: "Generated: \(ts)", ncols: 7)
         ws.setColumnWidth(0, 0, 28)
-        ws.setColumnWidth(1, 1, 36)
-        ws.setColumnWidth(2, 2, 40)
-        ws.setColumnWidth(3, 4, 20)
-        ws.setColumnWidth(5, 5, 12)
-        ws.setColumnWidth(6, 6, 12)
-        ws.setColumnWidth(7, 7, 22)
-        ws.setColumnWidth(8, 8, 14)
-        ws.setColumnWidth(9, 9, 60)
-        ws.setColumnWidth(10, 10, 32)
-        ws.setColumnWidth(11, 11, 32)
-        ws.setColumnWidth(12, 13, 14)
+        ws.setColumnWidth(1, 2, 12)
+        ws.setColumnWidth(3, 5, 28)
+        ws.setColumnWidth(6, 6, 48)
 
-        let hdrs = ["Plan Name", "UUID", "Description", "Created", "Updated",
-                    "Log Level", "Auto Update", "Threat Prevention Strategy",
-                    "Profile Version", "Custom Engine Config", "Exception Sets",
-                    "Analytic Sets", "Telemetry", "Telemetry V2"]
+        let hdrs = ["Plan Name", "Log Level", "Auto Update", "Action Configuration",
+                    "Telemetry", "USB Control Set", "Unified Logging Filter Sets"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
@@ -2095,34 +2073,14 @@ struct CoreDashboard: Sendable {
             return a < b
         }
         for item in sorted {
-            let cec = item["customEngineConfig"] as? [String: Any]
-            let cecSummary: String
-            if let cec, !cec.isEmpty {
-                cecSummary = cec.keys.sorted().joined(separator: ", ")
-            } else {
-                cecSummary = ""
-            }
-            let exceptionSets = formatNamedList(item["exceptionSets"])
-            let analyticSets = formatAnalyticSets(item["analyticSets"])
-            let autoUpdate = boolToYesNo(item["autoUpdate"])
-            let telemetry = boolToYesNo(item["telemetry"])
-            let telemetryV2 = boolToYesNo(item["telemetryV2"])
-            let profileVersion = item["profileVersion"].flatMap { asInt($0) }
-                .map { "\($0)" } ?? ""
+            let logFilterSets = item["unifiedLoggingFilterSets"] as? String ?? ""
             ws.write(item["name"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["uuid"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["description"] as? String ?? "", row: row, col: 2, format: .cell)
-            ws.write(item["created"] as? String ?? "", row: row, col: 3, format: .cell)
-            ws.write(item["updated"] as? String ?? "", row: row, col: 4, format: .cell)
-            ws.write(item["logLevel"] as? String ?? "", row: row, col: 5, format: .cell)
-            ws.write(autoUpdate, row: row, col: 6, format: .cell)
-            ws.write(item["threatPreventionStrategy"] as? String ?? "", row: row, col: 7, format: .cell)
-            ws.write(profileVersion, row: row, col: 8, format: .cell)
-            ws.write(cecSummary, row: row, col: 9, format: .cell)
-            ws.write(exceptionSets, row: row, col: 10, format: .cell)
-            ws.write(analyticSets, row: row, col: 11, format: .cell)
-            ws.write(telemetry, row: row, col: 12, format: .cell)
-            ws.write(telemetryV2, row: row, col: 13, format: .cell)
+            ws.write(item["logLevel"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(boolToYesNo(item["autoUpdate"]), row: row, col: 2, format: .cell)
+            ws.write(item["actionConfig"] as? String ?? "", row: row, col: 3, format: .cell)
+            ws.write(item["telemetry"] as? String ?? "", row: row, col: 4, format: .cell)
+            ws.write(item["usbControlSet"] as? String ?? "", row: row, col: 5, format: .cell)
+            ws.write(logFilterSets, row: row, col: 6, format: .cell)
             row += 1
         }
     }
@@ -2142,17 +2100,13 @@ struct CoreDashboard: Sendable {
             "critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4,
         ]
         let rows = items.map { item -> [String: String] in
-            let computer = item["computer"] as? [String: Any]
-            let host = computer?["hostName"] as? String
-                ?? item["hostName"] as? String ?? ""
-            let actions = extractActionsString(item["actions"])
             return [
-                "Device": host,
+                "Device": item["computer"] as? String ?? "",
                 "Type": item["eventType"] as? String ?? "",
                 "Severity": item["severity"] as? String ?? "",
                 "Date": item["created"] as? String ?? "",
                 "Status": item["status"] as? String ?? "",
-                "Action Taken": actions,
+                "Analytics": item["analytics"] as? String ?? "",
             ]
         }.sorted { a, b in
             let ra = severityRank[(a["Severity"] ?? "").lowercased()] ?? 99
@@ -2172,7 +2126,7 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(4, 4, 14)
         ws.setColumnWidth(5, 5, 28)
 
-        let hdrs = ["Device", "Type", "Severity", "Date", "Status", "Action Taken"]
+        let hdrs = ["Device", "Type", "Severity", "Date", "Status", "Analytics"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
@@ -2185,7 +2139,7 @@ struct CoreDashboard: Sendable {
             ws.write(r["Severity"] ?? "", row: row, col: 2, format: fmt)
             ws.write(r["Date"] ?? "", row: row, col: 3, format: .cell)
             ws.write(r["Status"] ?? "", row: row, col: 4, format: .cell)
-            ws.write(r["Action Taken"] ?? "", row: row, col: 5, format: .cell)
+            ws.write(r["Analytics"] ?? "", row: row, col: 5, format: .cell)
             row += 1
         }
     }
@@ -2632,55 +2586,12 @@ struct CoreDashboard: Sendable {
         return counts
     }
 
-    // MARK: - Protect Plans / Threat Overview helpers
-
-    /// Format a list of named objects or bare strings into a comma-joined string.
-    /// Handles both `[{name: "foo"}]` and `["foo"]` element shapes.
-    private func formatNamedList(_ value: Any?) -> String {
-        guard let arr = value as? [Any] else { return "" }
-        let names = arr.compactMap { elem -> String? in
-            if let dict = elem as? [String: Any], let name = dict["name"] as? String {
-                return name
-            }
-            if let s = elem as? String { return s }
-            return nil
-        }
-        return names.joined(separator: ", ")
-    }
-
-    /// Format analytic sets (shape: `[{analyticSet: {name: "foo"}}]` or `[{name: "foo"}]`).
-    private func formatAnalyticSets(_ value: Any?) -> String {
-        guard let arr = value as? [Any] else { return "" }
-        let names = arr.compactMap { elem -> String? in
-            if let dict = elem as? [String: Any] {
-                if let nested = dict["analyticSet"] as? [String: Any],
-                   let name = nested["name"] as? String { return name }
-                if let name = dict["name"] as? String { return name }
-            }
-            if let s = elem as? String { return s }
-            return nil
-        }
-        return names.joined(separator: ", ")
-    }
+    // MARK: - Protect Plans helper
 
     /// Convert a Bool/Int/String value to "Yes" / "No" / "".
     private func boolToYesNo(_ value: Any?) -> String {
         guard let b = asBool(value) else { return "" }
         return b ? "Yes" : "No"
-    }
-
-    /// Extract actions into a comma-joined string.
-    /// Handles both `[{name: "Quarantine"}]` and `["Notify"]` element shapes.
-    private func extractActionsString(_ value: Any?) -> String {
-        guard let arr = value as? [Any] else { return "" }
-        let names = arr.compactMap { elem -> String? in
-            if let dict = elem as? [String: Any], let name = dict["name"] as? String {
-                return name
-            }
-            if let s = elem as? String { return s }
-            return nil
-        }
-        return names.joined(separator: ", ")
     }
 
     // MARK: - Executive Summary sheet

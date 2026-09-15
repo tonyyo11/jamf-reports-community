@@ -170,20 +170,12 @@ struct ProtectView: View {
 
     private static let demoPlans: [ProtectPlanRow] = [
         ProtectPlanRow(
-            name: "Standard", uuid: "11111111-1111-1111-1111-111111111111",
-            description: "Baseline detection + telemetry", logLevel: "INFO",
-            autoUpdate: true, threatPreventionStrategy: "BALANCED",
-            profileVersion: 3, telemetry: true),
+            name: "Standard", logLevel: "INFO", autoUpdate: true,
+            telemetry: "Standard Telemetry"),
         ProtectPlanRow(
-            name: "Premium", uuid: "22222222-2222-2222-2222-222222222222",
-            description: "Aggressive prevention for high-risk fleet", logLevel: "DEBUG",
-            autoUpdate: true, threatPreventionStrategy: "AGGRESSIVE",
-            profileVersion: 4, telemetry: true),
-        ProtectPlanRow(
-            name: "Lab", uuid: "33333333-3333-3333-3333-333333333333",
-            description: "Detection-only, no auto-update", logLevel: "INFO",
-            autoUpdate: false, threatPreventionStrategy: "DETECT_ONLY",
-            profileVersion: 2, telemetry: false),
+            name: "Premium", logLevel: "DEBUG", autoUpdate: true,
+            telemetry: "Extended Telemetry"),
+        ProtectPlanRow(name: "Lab", logLevel: "INFO", autoUpdate: false, telemetry: nil),
     ]
 
     // MARK: - Sections
@@ -355,9 +347,7 @@ struct ProtectView: View {
         var seen = Set<String>()
         var ordered: [String] = []
         for alert in snapshot.alerts {
-            let key = alert.hostName?.trimmingCharacters(in: .whitespaces)
-                ?? alert.serial?.trimmingCharacters(in: .whitespaces)
-                ?? ""
+            let key = alert.hostName?.trimmingCharacters(in: .whitespaces) ?? ""
             guard !key.isEmpty, !seen.contains(key.lowercased()) else { continue }
             seen.insert(key.lowercased())
             ordered.append(key)
@@ -982,31 +972,25 @@ struct ProtectView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                if let strategy = plan.threatPreventionStrategy, !strategy.isEmpty {
-                    Pill(text: strategy, tone: .teal)
-                }
-            }
-            if let description = plan.description, !description.isEmpty {
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
             HStack(spacing: 10) {
                 if let level = plan.logLevel, !level.isEmpty {
                     planTag("Log: \(level)")
                 }
-                if let version = plan.profileVersion {
-                    planTag("Profile v\(version)")
-                }
                 planTag(plan.autoUpdate == true ? "Auto-update on" : "Auto-update off")
-                planTag(plan.telemetry == true ? "Telemetry on" : "Telemetry off")
+                planTag(Self.telemetryTag(plan.telemetry))
                 Spacer()
             }
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "\(plan.name ?? "Unnamed plan"), strategy \(plan.threatPreventionStrategy ?? "unknown")")
+        .accessibilityLabel("\(plan.name ?? "Unnamed plan"), \(Self.telemetryTag(plan.telemetry))")
+    }
+
+    /// Plan card telemetry tag: the assigned configuration's name, or "No telemetry".
+    nonisolated static func telemetryTag(_ telemetry: String?) -> String {
+        guard let telemetry, !telemetry.isEmpty else { return "No telemetry" }
+        return "Telemetry: \(telemetry)"
     }
 
     private func planTag(_ text: String) -> some View {
@@ -1047,16 +1031,6 @@ struct ProtectView: View {
             relativeFormatter.unitsStyle = .abbreviated
             return relativeFormatter.localizedString(for: date, relativeTo: now)
         }
-    }
-}
-
-// MARK: - Helper extension for service access in view
-private extension ProtectDashboardService {
-    /// Expose the connection check for use in view logic
-    static func isConnected(_ status: String?) -> Bool {
-        guard let status else { return false }
-        let lower = status.lowercased()
-        return lower.contains("connected") || lower.contains("online")
     }
 }
 

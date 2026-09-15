@@ -4,6 +4,14 @@ import XCTest
 @MainActor
 final class ProtectDashboardServiceTests: XCTestCase {
 
+    /// Writes `json` to a uniquely named temp file; the caller removes it.
+    private func writeTemp(_ json: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("protect-\(UUID().uuidString).json")
+        try json.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
     func testViewInstantiationInDemoMode() throws {
         let workspace = WorkspaceStore()
         workspace.demoMode = true
@@ -46,13 +54,11 @@ final class ProtectDashboardServiceTests: XCTestCase {
     }
 
     func testLoadPlansDecodesArrayShapeAndMarksDetected() throws {
-        let dir = FileManager.default.temporaryDirectory
-        let url = dir.appendingPathComponent("plans-array-\(UUID().uuidString).json")
+        let url = try writeTemp("""
+        [{"actionConfig":"Default Actions","autoUpdate":true,"logLevel":"INFO",
+          "name":"Standard","telemetry":"Standard Telemetry","unifiedLoggingFilterSets":""}]
+        """)
         defer { try? FileManager.default.removeItem(at: url) }
-        try #"""
-        [{"name":"Standard","uuid":"u1","threatPreventionStrategy":"BALANCED",
-          "logLevel":"INFO","autoUpdate":true,"telemetry":true,"profileVersion":3}]
-        """#.write(to: url, atomically: true, encoding: .utf8)
 
         let snapshot = ProtectDashboardService.load(
             overviewURL: nil, alertsURL: nil, computersURL: nil, insightsURL: nil, plansURL: url)
@@ -60,163 +66,101 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.isDetected, "a decoded plans file should mark Protect detected")
         XCTAssertEqual(snapshot.plans.count, 1)
         XCTAssertEqual(snapshot.plans.first?.name, "Standard")
-        XCTAssertEqual(snapshot.plans.first?.threatPreventionStrategy, "BALANCED")
+        XCTAssertEqual(snapshot.plans.first?.telemetry, "Standard Telemetry")
         XCTAssertEqual(snapshot.plans.first?.autoUpdate, true)
     }
 
-    func testLoadPlansDecodesNodesEnvelope() throws {
-        let dir = FileManager.default.temporaryDirectory
-        let url = dir.appendingPathComponent("plans-nodes-\(UUID().uuidString).json")
-        defer { try? FileManager.default.removeItem(at: url) }
-        try #"{"nodes":[{"name":"Premium","threatPreventionStrategy":"AGGRESSIVE"}]}"#
-            .write(to: url, atomically: true, encoding: .utf8)
-
+    func testLoadsJamfCLIFixturesIntoAggregates() throws {
+        // The fixtures are jamf-cli flatten rows: enum fullDiskAccess, Connected or Disconnected,
+        // one alert with no computer and one plan with no telemetry.
+        let fixtures = TestFixtures.dir("jamf-cli-data")
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil, alertsURL: nil, computersURL: nil, insightsURL: nil, plansURL: url)
+            overviewURL: nil,
+            alertsURL: fixtures.appendingPathComponent("protect-alerts/alerts_happy.json"),
+            computersURL: fixtures.appendingPathComponent("protect-computers/computers_happy.json"),
+            insightsURL: fixtures.appendingPathComponent("protect-insights/insights_happy.json"),
+            plansURL: fixtures.appendingPathComponent("protect-plans/plans_happy.json")
+        )
 
-        XCTAssertEqual(snapshot.plans.count, 1)
-        XCTAssertEqual(snapshot.plans.first?.name, "Premium")
+        XCTAssertTrue(snapshot.isDetected)
+        XCTAssertEqual(snapshot.alerts.count, 4)
+        XCTAssertEqual(snapshot.computers.count, 3)
+        XCTAssertEqual(snapshot.insights.count, 3)
+        XCTAssertEqual(snapshot.plans.count, 3)
+        XCTAssertEqual(snapshot.webProtectionActiveCount, 1)
+        XCTAssertEqual(snapshot.fullDiskAccessCount, 1, "only Authorized counts as granted")
+        XCTAssertEqual(snapshot.connectedCount, 2, "Disconnected must not count as connected")
+        XCTAssertEqual(snapshot.highAlerts, 1)
+        XCTAssertEqual(snapshot.mediumAlerts, 1)
+        XCTAssertEqual(snapshot.lowAlerts, 1)
+        XCTAssertEqual(snapshot.failingInsights, 2)
+        XCTAssertNotNil(snapshot.sourceFile)
+        XCTAssertNotNil(snapshot.snapshotDate)
     }
 
-    func testDecodeParityWithMockData() throws {
-        let tempDir = FileManager.default.temporaryDirectory
-        let alertsFile = tempDir.appendingPathComponent("alerts-test.json")
-        let computersFile = tempDir.appendingPathComponent("computers-test.json")
-
-        // Mock alerts JSON
-        let alertsJSON = """
-        [
-            {
-                "uuid": "alert1",
-                "created": "2024-05-12T10:00:00Z",
-                "severity": "Critical",
-                "status": "Open",
-                "eventType": "Malware",
-                "hostName": "TestMac",
-                "serial": "TEST123"
-            },
-            {
-                "uuid": "alert2",
-                "created": "2024-05-12T09:00:00Z",
-                "severity": "High",
-                "status": "Investigating",
-                "eventType": "Network",
-                "hostName": "TestMac2",
-                "serial": "TEST456"
-            },
-            {
-                "uuid": "alert3",
-                "created": "2024-05-12T08:00:00Z",
-                "severity": "Medium",
-                "status": "Resolved",
-                "eventType": "Policy",
-                "hostName": "TestMac3",
-                "serial": "TEST789"
-            }
-        ]
-        """
-
-        // Mock computers JSON
-        let computersJSON = """
-        [
-            {
-                "uuid": "comp1",
-                "hostName": "TestMac1",
-                "serial": "TEST123",
-                "webProtectionActive": true,
-                "fullDiskAccess": true,
-                "connectionStatus": "Connected"
-            },
-            {
-                "uuid": "comp2",
-                "hostName": "TestMac2",
-                "serial": "TEST456",
-                "webProtectionActive": false,
-                "fullDiskAccess": true,
-                "connectionStatus": "Disconnected"
-            },
-            {
-                "uuid": "comp3",
-                "hostName": "TestMac3",
-                "serial": "TEST789",
-                "webProtectionActive": true,
-                "fullDiskAccess": false,
-                "connectionStatus": "Online"
-            }
-        ]
-        """
-
-        try alertsJSON.write(to: alertsFile, atomically: true, encoding: .utf8)
-        try computersJSON.write(to: computersFile, atomically: true, encoding: .utf8)
-
+    func testOddFieldTypeCostsTheFieldNotTheList() throws {
+        // Each odd value is the shape the old decoders expected; the other rows must still load.
+        let alerts = try writeTemp("""
+        [{"computer":{"hostName":"old-shape.example"},"severity":"High","uuid":"a1"},
+         {"computer":"lab-mac-01.example","severity":"Low","uuid":"a2"}]
+        """)
+        let computers = try writeTemp("""
+        [{"fullDiskAccess":true,"hostname":"old-shape.example","uuid":"c1"},
+         {"fullDiskAccess":"Authorized","hostname":"lab-mac-01.example","uuid":"c2"}]
+        """)
+        let plans = try writeTemp("""
+        [{"autoUpdate":true,"logLevel":"INFO","name":"Alpha","telemetry":true,
+          "unifiedLoggingFilterSets":""},
+         {"autoUpdate":false,"logLevel":"INFO","name":"Beta","telemetry":"Standard Telemetry",
+          "unifiedLoggingFilterSets":""}]
+        """)
         defer {
-            try? FileManager.default.removeItem(at: alertsFile)
-            try? FileManager.default.removeItem(at: computersFile)
+            for url in [alerts, computers, plans] { try? FileManager.default.removeItem(at: url) }
         }
 
         let snapshot = ProtectDashboardService.load(
-            overviewURL: nil,
-            alertsURL: alertsFile,
-            computersURL: computersFile,
-            insightsURL: nil
-        )
+            overviewURL: nil, alertsURL: alerts, computersURL: computers,
+            insightsURL: nil, plansURL: plans)
 
-        XCTAssertTrue(snapshot.isDetected, "Should be detected when valid data exists")
-        XCTAssertEqual(snapshot.alerts.count, 3)
-        XCTAssertEqual(snapshot.computers.count, 3)
-        XCTAssertEqual(snapshot.totalComputers, 3)
-
-        // Web protection: 2 out of 3 computers have it active
-        XCTAssertEqual(snapshot.webProtectionActiveCount, 2)
-
-        // Full disk access: 2 out of 3 computers have it
-        XCTAssertEqual(snapshot.fullDiskAccessCount, 2)
-
-        // Connected: "Connected" and "Online" should both count as connected
-        XCTAssertEqual(snapshot.connectedCount, 2)
-
-        // Alert severity breakdown
-        XCTAssertEqual(snapshot.criticalAlerts, 1)
-        XCTAssertEqual(snapshot.highAlerts, 1)
-        XCTAssertEqual(snapshot.mediumAlerts, 1)
-        XCTAssertEqual(snapshot.lowAlerts, 0)
-
-        // Should have a source file (most recent between alerts and computers)
-        XCTAssertNotNil(snapshot.sourceFile)
-        XCTAssertNotNil(snapshot.snapshotDate)
+        XCTAssertEqual(snapshot.alerts.map(\.hostName), [nil, "lab-mac-01.example"])
+        XCTAssertEqual(snapshot.alerts.map(\.severity), ["High", "Low"])
+        XCTAssertEqual(snapshot.computers.map(\.hostName),
+                       ["old-shape.example", "lab-mac-01.example"])
+        XCTAssertEqual(snapshot.computers.map(\.fullDiskAccess), [nil, true])
+        XCTAssertEqual(snapshot.plans.map(\.name), ["Alpha", "Beta"])
+        XCTAssertEqual(snapshot.plans.map(\.telemetry), [nil, "Standard Telemetry"])
     }
 
     func testConnectionPredicateCaseInsensitivity() throws {
         let tempDir = FileManager.default.temporaryDirectory
         let computersFile = tempDir.appendingPathComponent("computers-connection-test.json")
 
-        // Mock computers JSON with various connection statuses
+        // jamf-cli prints Protect's Connected or Disconnected status
         let computersJSON = """
         [
             {
                 "uuid": "1",
-                "hostName": "Mac1",
-                "connectionStatus": "connected"
+                "hostname": "mac-1.example",
+                "connectionStatus": "Connected"
             },
             {
                 "uuid": "2",
-                "hostName": "Mac2",
-                "connectionStatus": "CONNECTED"
+                "hostname": "mac-2.example",
+                "connectionStatus": "connected"
             },
             {
                 "uuid": "3",
-                "hostName": "Mac3",
-                "connectionStatus": "Online"
+                "hostname": "mac-3.example",
+                "connectionStatus": "CONNECTED"
             },
             {
                 "uuid": "4",
-                "hostName": "Mac4",
-                "connectionStatus": "ONLINE"
+                "hostname": "mac-4.example",
+                "connectionStatus": "Disconnected"
             },
             {
                 "uuid": "5",
-                "hostName": "Mac5",
-                "connectionStatus": "Disconnected"
+                "hostname": "mac-5.example"
             }
         ]
         """
@@ -234,9 +178,15 @@ final class ProtectDashboardServiceTests: XCTestCase {
             insightsURL: nil
         )
 
-        // Verify that all case variations are recognized as connected (4 out of 5)
-        XCTAssertEqual(snapshot.connectedCount, 4, "Should recognize 'connected', 'CONNECTED', 'Online', 'ONLINE' as connected")
+        // Connected counts in any case; Disconnected and a missing status do not.
+        XCTAssertEqual(snapshot.connectedCount, 3, "Should recognize 'Connected' in any case")
         XCTAssertEqual(snapshot.totalComputers, 5)
+    }
+
+    func testIsConnectedMatchesProtectConnectionStatus() {
+        XCTAssertTrue(ProtectDashboardService.isConnected("Connected"))
+        XCTAssertFalse(ProtectDashboardService.isConnected("Disconnected"))
+        XCTAssertFalse(ProtectDashboardService.isConnected(nil))
     }
 
     func testEmptyInputArraysWithDetectedTrue() throws {
@@ -275,33 +225,17 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let tempDir = FileManager.default.temporaryDirectory
         let insightsFile = tempDir.appendingPathComponent("insights-test.json")
 
-        // Mock insights JSON with mixed pass/fail counts
+        // flattenInsight rows with mixed pass/fail counts
         let insightsJSON = """
         [
-            {
-                "uuid": "i1",
-                "label": "Test1",
-                "totalPass": 10,
-                "totalFail": 0
-            },
-            {
-                "uuid": "i2",
-                "label": "Test2",
-                "totalPass": 8,
-                "totalFail": 2
-            },
-            {
-                "uuid": "i3",
-                "label": "Test3",
-                "totalPass": 5,
-                "totalFail": 5
-            },
-            {
-                "uuid": "i4",
-                "label": "Test4",
-                "totalPass": 0,
-                "totalFail": 0
-            }
+            {"cisIDs": "1.1.1", "enabled": true, "label": "Test1", "section": "Sharing",
+             "totalFail": 0, "totalNone": 0, "totalPass": 10},
+            {"cisIDs": "1.1.2", "enabled": true, "label": "Test2", "section": "Sharing",
+             "totalFail": 2, "totalNone": 0, "totalPass": 8},
+            {"cisIDs": "1.1.3", "enabled": true, "label": "Test3", "section": "Network",
+             "totalFail": 5, "totalNone": 0, "totalPass": 5},
+            {"cisIDs": "", "enabled": false, "label": "Test4", "section": "Network",
+             "totalFail": 0, "totalNone": 0, "totalPass": 0}
         ]
         """
 
@@ -318,7 +252,8 @@ final class ProtectDashboardServiceTests: XCTestCase {
             insightsURL: insightsFile
         )
 
-        XCTAssertEqual(snapshot.failingInsights, 2, "Should count insights with totalFail > 0 (i2 and i3)")
+        XCTAssertEqual(snapshot.failingInsights, 2,
+                       "Should count insights with totalFail > 0 (Test2 and Test3)")
         XCTAssertEqual(snapshot.insights.count, 4)
     }
 
@@ -402,11 +337,21 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let alertsFile = tempDir.appendingPathComponent("alerts-kc-test.json")
         let alertsJSON = """
         [
-          {"uuid": "a1", "eventType": "Malware", "severity": "high"},
-          {"uuid": "a2", "eventType": "Malware", "severity": "high"},
-          {"uuid": "a3", "eventType": "Network", "severity": "medium"},
-          {"uuid": "a4", "eventType": "Policy", "severity": "low"},
-          {"uuid": "a5", "severity": "low"}
+          {"created": "2026-05-01T08:00:00.000Z", "eventType": "GPProcessEvent",
+           "received": "2026-05-01T08:00:01.000Z", "severity": "High", "status": "New",
+           "uuid": "a1"},
+          {"created": "2026-05-01T09:00:00.000Z", "eventType": "GPProcessEvent",
+           "received": "2026-05-01T09:00:01.000Z", "severity": "High", "status": "New",
+           "uuid": "a2"},
+          {"created": "2026-05-01T10:00:00.000Z", "eventType": "GPFSEvent",
+           "received": "2026-05-01T10:00:01.000Z", "severity": "Medium", "status": "New",
+           "uuid": "a3"},
+          {"created": "2026-05-01T11:00:00.000Z", "eventType": "GPUSBEvent",
+           "received": "2026-05-01T11:00:01.000Z", "severity": "Low", "status": "New",
+           "uuid": "a4"},
+          {"created": "2026-05-01T12:00:00.000Z", "eventType": "",
+           "received": "2026-05-01T12:00:01.000Z", "severity": "Low", "status": "New",
+           "uuid": "a5"}
         ]
         """
         try alertsJSON.write(to: alertsFile, atomically: true, encoding: .utf8)
@@ -417,7 +362,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         )
         let buckets = ProtectDashboardService.killChainBuckets(snapshot.alerts)
         XCTAssertEqual(buckets.count, 4)
-        XCTAssertEqual(buckets[0].stage, "Malware")
+        XCTAssertEqual(buckets[0].stage, "GPProcessEvent")
         XCTAssertEqual(buckets[0].count, 2)
         let unknown = buckets.first { $0.stage == "Unknown" }
         XCTAssertEqual(unknown?.count, 1)
@@ -434,10 +379,10 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let computersFile = tempDir.appendingPathComponent("computers-ver-test.json")
         let computersJSON = """
         [
-          {"uuid": "c1", "hostName": "h1", "version": "4.6.0"},
-          {"uuid": "c2", "hostName": "h2", "version": "4.6.0"},
-          {"uuid": "c3", "hostName": "h3", "version": "4.5.2"},
-          {"uuid": "c4", "hostName": "h4"}
+          {"hostname": "h1.example", "uuid": "c1", "version": "6.1.0.2"},
+          {"hostname": "h2.example", "uuid": "c2", "version": "6.1.0.2"},
+          {"hostname": "h3.example", "uuid": "c3", "version": "6.0.4.1"},
+          {"hostname": "h4.example", "uuid": "c4"}
         ]
         """
         try computersJSON.write(to: computersFile, atomically: true, encoding: .utf8)
@@ -448,7 +393,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         )
         let versions = ProtectDashboardService.agentVersionDistribution(snapshot.computers)
         XCTAssertEqual(versions.count, 3)
-        XCTAssertEqual(versions[0].version, "4.6.0")
+        XCTAssertEqual(versions[0].version, "6.1.0.2")
         XCTAssertEqual(versions[0].count, 2)
         let unknown = versions.first { $0.version == "Unknown" }
         XCTAssertEqual(unknown?.count, 1)
@@ -465,9 +410,10 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let alertsFile = tempDir.appendingPathComponent("alerts-timeline-test.json")
         let alertsJSON = """
         [
-          {"uuid": "a1", "hostName": "Mac-001", "created": "2026-05-01T08:00:00Z"},
-          {"uuid": "a2", "hostName": "mac-001", "created": "2026-05-03T08:00:00Z"},
-          {"uuid": "a3", "hostName": "Mac-002", "created": "2026-05-02T08:00:00Z"}
+          {"computer": "Mac-001.example", "created": "2026-05-01T08:00:00.000Z", "uuid": "a1"},
+          {"computer": "mac-001.example", "created": "2026-05-03T08:00:00.000Z", "uuid": "a2"},
+          {"computer": "Mac-002.example", "created": "2026-05-02T08:00:00.000Z", "uuid": "a3"},
+          {"created": "2026-05-04T08:00:00.000Z", "uuid": "a4"}
         ]
         """
         try alertsJSON.write(to: alertsFile, atomically: true, encoding: .utf8)
@@ -476,10 +422,10 @@ final class ProtectDashboardServiceTests: XCTestCase {
         let snapshot = ProtectDashboardService.load(
             overviewURL: nil, alertsURL: alertsFile, computersURL: nil, insightsURL: nil
         )
-        let timeline = ProtectDashboardService.alertTimeline(for: "mac-001", in: snapshot.alerts)
-        XCTAssertEqual(timeline.count, 2)
-        XCTAssertEqual(timeline.first?.uuid, "a2")
-        XCTAssertEqual(timeline.last?.uuid, "a1")
+        let timeline = ProtectDashboardService.alertTimeline(
+            for: "mac-001.example", in: snapshot.alerts)
+        XCTAssertEqual(snapshot.alerts.count, 4)
+        XCTAssertEqual(timeline.map(\.uuid), ["a2", "a1"])
     }
 
     func testAlertTimelineEmptyForUnknownDevice() {

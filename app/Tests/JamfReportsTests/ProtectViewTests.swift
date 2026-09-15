@@ -55,4 +55,11 @@ final class ProtectViewTests: XCTestCase {
         let on = ExperimentalFeatureService(defaults: defaults)
         XCTAssertTrue(on.isEnabled(.protect))
     }
+
+    func testPlanTelemetryTagNamesTheAssignedConfiguration() {
+        XCTAssertEqual(ProtectView.telemetryTag("Standard Telemetry"),
+                       "Telemetry: Standard Telemetry")
+        XCTAssertEqual(ProtectView.telemetryTag(nil), "No telemetry")
+        XCTAssertEqual(ProtectView.telemetryTag(""), "No telemetry")
+    }
 }

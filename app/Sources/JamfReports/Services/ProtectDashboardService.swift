@@ -219,23 +219,14 @@ struct ProtectDashboardService: Sendable {
         return decoded
     }
 
-    /// Plans arrive either as a bare array or a `{ "nodes": [...] }` GraphQL
-    /// envelope (same two shapes the workbook's `writeProtectPlans` handles).
     private static func loadPlans(
         from url: URL?, success: inout Bool
     ) -> [ProtectPlanRow] {
-        guard let url, let data = try? Data(contentsOf: url) else { return [] }
-        let decoder = JSONDecoder()
-        if let rows = try? decoder.decode([ProtectPlanRow].self, from: data) {
-            success = true
-            return rows
-        }
-        struct Envelope: Decodable { let nodes: [ProtectPlanRow] }
-        if let env = try? decoder.decode(Envelope.self, from: data) {
-            success = true
-            return env.nodes
-        }
-        return []
+        guard let url, let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([ProtectPlanRow].self, from: data)
+        else { return [] }
+        success = true
+        return decoded
     }
 
     /// Connection predicate: matches the canonical positive states only.
@@ -245,7 +236,8 @@ struct ProtectDashboardService: Sendable {
     /// `Self.connectedStates` rather than loosening the predicate.
     private static let connectedStates: Set<String> = ["connected", "online"]
 
-    private static func isConnected(_ status: String?) -> Bool {
+    /// ProtectView's connection pill uses this too, so the rows and the KPI agree.
+    static func isConnected(_ status: String?) -> Bool {
         guard let status else { return false }
         let normalized = status.lowercased().trimmingCharacters(in: .whitespaces)
         return Self.connectedStates.contains(normalized)
@@ -292,20 +284,15 @@ struct ProtectDashboardService: Sendable {
             }
     }
 
-    /// Chronological alert timeline for a specific device, identified by
-    /// hostname OR serial (case-insensitive). Returned newest-first so the
-    /// detail panel renders the most recent event at the top.
+    /// Chronological alert timeline for one device, matched on host name (case-insensitive),
+    /// newest first. jamf-cli's alert rows carry no serial number.
     static func alertTimeline(
         for deviceIdentifier: String,
         in alerts: [ProtectAlertRow]
     ) -> [ProtectAlertRow] {
         let needle = deviceIdentifier.lowercased().trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return [] }
-        let matching = alerts.filter { alert in
-            let host = alert.hostName?.lowercased() ?? ""
-            let serial = alert.serial?.lowercased() ?? ""
-            return host == needle || serial == needle
-        }
+        let matching = alerts.filter { ($0.hostName?.lowercased() ?? "") == needle }
         return matching.sorted { ($0.created ?? "") > ($1.created ?? "") }
     }
 

@@ -573,9 +573,21 @@ final class CoreDashboardTests: XCTestCase {
 
     // MARK: - Protect writers
 
-    /// No `protect-overview` fixture exists in the corpus, so write a small inline
-    /// fixture into the temp dataDir for this test only. ProtectOverview is a
-    /// loose [{ key: value }] shape — the writer iterates whatever keys are present.
+    /// Text of one sheet row: strings as written, integers in decimal, "" for anything else.
+    private func rowText(_ ws: Worksheet, row: Int, columns: Int) -> [String] {
+        var text = Array(repeating: "", count: columns)
+        for cell in ws.dedupedCells where cell.row == row && cell.col < columns {
+            switch cell.value {
+            case .string(let value): text[cell.col] = value
+            case .int(let value): text[cell.col] = String(value)
+            default: break
+            }
+        }
+        return text
+    }
+
+    /// No `protect-overview` fixture exists in the corpus, so write jamf-cli's overview
+    /// shape inline: section, resource and value, plus `status` on highlighted lines.
     func testWriteProtectOverview() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-test-\(UUID().uuidString)")
@@ -584,12 +596,21 @@ final class CoreDashboardTests: XCTestCase {
         let subdir = tmp.appendingPathComponent("protect-overview", isDirectory: true)
         try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
         let json = """
-        [{"Devices Enrolled":42,"Plans Active":3,"Alerts (Open)":5}]
+        [{"resource":"Computers","section":"Endpoints","value":"1,204"},
+         {"resource":"Alerts","section":"Endpoints","status":"yellow",
+          "value":"3 New  1 In Progress"},
+         {"resource":"Plans","section":"Security Configuration","value":"4"}]
         """
         try Data(json.utf8).write(to: subdir.appendingPathComponent("protect-overview.json"))
 
         let dash = makeDashboard(dataDir: tmp)
         XCTAssertNoThrow(try dash.writeProtectOverview())
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Overview"))
+        XCTAssertEqual(rowText(ws, row: 3, columns: 3), ["Section", "Resource", "Value"])
+        XCTAssertEqual(rowText(ws, row: 4, columns: 3), ["Endpoints", "Computers", "1,204"])
+        XCTAssertEqual(rowText(ws, row: 6, columns: 3), ["Security Configuration", "Plans", "4"])
+        let highlighted = ws.dedupedCells.first { $0.row == 5 && $0.col == 2 }
+        XCTAssertEqual(highlighted?.format, .yellow)
     }
 
     /// Protect writer fixture dirs contain both `*_empty.json` and `*_happy.json`.
@@ -609,6 +630,15 @@ final class CoreDashboardTests: XCTestCase {
 
         let dash = makeDashboard(dataDir: dataDir)
         XCTAssertNoThrow(try dash.writeProtectAlerts())
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Alerts"))
+        XCTAssertEqual(rowText(ws, row: 3, columns: 6),
+                       ["Host", "Analytics", "Severity", "Status", "Event Type", "Created"])
+        XCTAssertEqual(rowText(ws, row: 4, columns: 6), [
+            "lab-mac-01.example", "Suspicious Process Execution, Unsigned Binary Launch",
+            "High", "New", "GPProcessEvent", "2026-05-01T08:00:00.000Z",
+        ])
+        // The fixture's last alert has no computer, so its Host cell is empty.
+        XCTAssertEqual(rowText(ws, row: 7, columns: 2), ["", "Gatekeeper Override"])
     }
 
     func testWriteProtectComputers() throws {
@@ -622,6 +652,19 @@ final class CoreDashboardTests: XCTestCase {
 
         let dash = makeDashboard(dataDir: dataDir)
         XCTAssertNoThrow(try dash.writeProtectComputers())
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Computers"))
+        XCTAssertEqual(rowText(ws, row: 4, columns: 8), [
+            "lab-mac-01.example", "SYNTH0000001", "Engineering Lab", "15.7.3", "Connected",
+            "2026-05-01T09:45:00.000Z", "Yes", "Authorized",
+        ])
+        XCTAssertEqual(Array(rowText(ws, row: 5, columns: 8)[6...7]), ["No", "Unauthorized"])
+        // The third computer has no plan or web protection value, and Unknown access.
+        XCTAssertEqual(rowText(ws, row: 6, columns: 8), [
+            "build-mini-02.example", "SYNTH0000003", "", "14.7.6", "Connected",
+            "2026-05-01T09:50:00.000Z", "", "Unknown",
+        ])
+        let denied = ws.dedupedCells.first { $0.row == 5 && $0.col == 7 }
+        XCTAssertEqual(denied?.format, .yellow, "Unauthorized full disk access is highlighted")
     }
 
     func testWriteProtectInsights() throws {
@@ -635,6 +678,12 @@ final class CoreDashboardTests: XCTestCase {
 
         let dash = makeDashboard(dataDir: dataDir)
         XCTAssertNoThrow(try dash.writeProtectInsights())
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Insights"))
+        XCTAssertEqual(rowText(ws, row: 3, columns: 6),
+                       ["Label", "Section", "CIS IDs", "Pass", "Fail", "Enabled"])
+        XCTAssertEqual(rowText(ws, row: 4, columns: 6), [
+            "Bluetooth sharing disabled", "Sharing", "2.3.1, 2.3.2", "88", "12", "Yes",
+        ])
     }
 
     // Negative cases: (1) no fixture dir at all → loadLatestJSON throws
