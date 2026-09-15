@@ -19,7 +19,14 @@ and a source that fails for want of a permission says which one.
   only those.
 - Validating a Jamf Platform API profile checks the environment or tenant ID with the gateway,
   in onboarding and in Update credentials. A rejected ID stops setup and says where the right one
-  is; an ID with no Jamf Pro behind it is a warning.
+  is; an ID with no Jamf Pro behind it, including an environment with no tenant in it, is a
+  warning.
+- Tenant-level Jamf Platform API profiles no longer try to collect Compliance Benchmarks or
+  blueprint status, which Jamf Account does not let a tenant-level integration read. Run History
+  and the Compliance Benchmarks screen say why.
+- Onboarding and Update credentials no longer offer the Organization scope level, which reaches
+  no Jamf Pro data. A profile already set up that way now reports that the gateway rejected its
+  scope level, and is no longer retried every hour.
 - A source that fails because the credential lacks a permission, or because the gateway rejected
   the ID, is named in the health strip and in the Run History warning line with jamf-cli's full
   hint, and is no longer retried every hour.
@@ -28,7 +35,8 @@ and a source that fails for want of a permission says which one.
   was saved is reported as failed.
 - Setup instructions name Jamf Account's Integrations page and Jamf Protect's Administrative →
   API Clients. The permission-denied explanation names both the Jamf Pro API role and the Jamf
-  Account integration; the expired-credentials explanation notes integrations last six months.
+  Account integration; the expired-credentials explanation notes integrations last six months
+  and that a gateway URL in another region fails the same way.
 
 ## [2.8.0] - 2026-09-14
 
