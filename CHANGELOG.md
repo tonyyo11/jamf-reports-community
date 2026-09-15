@@ -37,6 +37,22 @@ and a source that fails for want of a permission says which one.
   API Clients. The permission-denied explanation names both the Jamf Pro API role and the Jamf
   Account integration; the expired-credentials explanation notes integrations last six months
   and that a gateway URL in another region fails the same way.
+- An environment with no blueprints saves an empty blueprint list instead of failing every run.
+- When DDM status comes back empty, Run History says the environment may have no declarations
+  or the integration may lack Deployment > Declarations reporting, and it is no longer retried
+  every hour.
+- When jamf-cli cannot read patch policies, Run History gives its reason, and a missing
+  permission is no longer retried every hour. It no longer calls the output unreadable.
+- The device scan's permission warning names what jamf-cli reports as missing, or both the Jamf
+  Pro API role privilege and the Jamf Account permission when it names nothing.
+- Jamf School workbooks show each device's OS, managed and supervised state, device group member
+  counts and stale devices, and School Overview lists one row per line. Columns jamf-cli never
+  provides (app install counts, profile categories, location addresses, user roles, teacher
+  names) show what it does provide instead, and location columns are labelled as IDs.
+- Jamf Protect alerts and computers appear on the Protect screen, which had never loaded them,
+  and plans load even when a plan has telemetry assigned. A disconnected Mac reads Offline
+  instead of Online, and the Protect sheets show what Jamf Protect provides (alert analytics, CIS
+  IDs, plan telemetry) in place of fields it never returns.
 
 ## [2.8.0] - 2026-09-14
 
