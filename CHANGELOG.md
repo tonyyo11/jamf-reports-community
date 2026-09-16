@@ -53,6 +53,20 @@ and a source that fails for want of a permission says which one.
   and plans load even when a plan has telemetry assigned. A disconnected Mac reads Offline
   instead of Online, and the Protect sheets show what Jamf Protect provides (alert analytics, CIS
   IDs, plan telemetry) in place of fields it never returns.
+- The HTML report's Protect Alerts and Insights Drift sections read the snapshots a collect
+  writes, so they show collected data instead of an empty state. An alert row names the Mac, the
+  event type and the day it arrived; Insights Drift compares failing-device counts per insight.
+  Both empty states point at Collect now rather than a jamf-cli command that does not exist.
+- The Protect screen counts High alerts where it counted a Critical severity Jamf Protect never
+  sends, includes Informational alerts in the severity totals, and shows alert status as New,
+  In Progress, Resolved or Auto Resolved with colours that match. Demo data uses values Jamf
+  Protect actually sends.
+
+### Removed
+
+- `protect.data_dir`. Its only reader was the HTML report path that looked in the wrong place;
+  Protect snapshots live with every other snapshot under `jamf_cli.data_dir`. A workspace that
+  still sets the key is unaffected — it is simply ignored.
 
 ## [2.8.0] - 2026-09-14
 

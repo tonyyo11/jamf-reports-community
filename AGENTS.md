@@ -536,7 +536,7 @@ the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 
 **Report templates.** `Engine/Templates/` defines the `ReportTemplate` protocol plus the shipping templates (Full Instance Report, Executive, Operational, Compliance, Asset, Security Posture, School, Custom), resolved by `TemplateResolver`. Each template lists its `includedSheets` (`SheetID` raw values must match `CoreDashboard.sheetPlan` names exactly) and `htmlSections` (`SectionID` → `HtmlReport.buildSectionMap`). **`FullInstanceTemplate` (`full-instance`) is the default** for both GUI generation (GenerateSheet) and engine-level `generateAll`/`generate` calls; it includes every sheet and section. `CustomTemplate` (`custom`) lets users select any subset of sheets for single-sheet or focused reports, with the selected sheet list persisted in AppStorage. Adding a new sheet/section: add the enum case, register the builder, and add it to FullInstanceTemplate (a test asserts FullInstanceTemplate covers all SectionID cases).
 
-**Snapshot key contract (Swift HTML report).** `HtmlReport` loads cached snapshots by the canonical on-disk names that `ReportEngine.collect` writes — `computers`, `policies`, `smart-computer-groups`, `patch-device-failures` — with the older alternate names kept as fallback aliases in `loadJSONList(kinds:)` calls. When adding a section that reads a new kind, the kind must also be added to the collect command matrix and `knownCollectKinds` in `ReportEngine.swift` (and `CollectionTier` if it should participate in tiered collection); otherwise the section will silently render its empty-state placeholder forever.
+**Snapshot key contract (Swift HTML report).** `HtmlReport` loads cached snapshots by the canonical on-disk names that `ReportEngine.collect` writes — `computers`, `policies`, `smart-computer-groups`, `patch-device-failures` — with the older alternate names kept as fallback aliases in `loadJSONList(kinds:)` calls. When adding a section that reads a new kind, the kind must also be added to the collect command matrix and `knownCollectKinds` in `ReportEngine.swift` (and `CollectionTier` if it should participate in tiered collection); otherwise the section will silently render its empty-state placeholder forever. Protect is no exception: its sections read the `protect-alerts` and `protect-insights` kind dirs under the same `jamf_cli.data_dir` as everything else. `protect.data_dir` was removed in 2.8.1 — it named a directory nothing ever wrote.
 
 **Computer inventory sections (2.8.0).** `collect` passes `--section` with
 `ReportEngine.computerInventorySections` (General, Hardware, Operating System, User and
@@ -878,7 +878,8 @@ Protect: an alert's `computer` is a host name and `analytics` a comma-joined lis
 `signaturesVersion`/`insightsStatsFail` are numbers; a plan carries `name`, `logLevel`,
 `autoUpdate` and the names of its `actionConfig`/`telemetry`/`usbControlSet`; an insight carries
 `label`, `section`, `enabled` and `totalPass`/`totalFail`/`totalNone`. Neither a plan nor an
-insight has a `uuid`. School: a device carries `os` ("macOS 14.3"), `isManaged`, `isSupervised`
+insight has a `uuid`. An alert's `severity` is High, Medium, Low or Informational (there is no
+Critical) and its `status` is New, InProgress, Resolved or AutoResolved. School: a device carries `os` ("macOS 14.3"), `isManaged`, `isSupervised`
 and `lastCheckin` ("yyyy-MM-dd HH:mm:ss"); a device group carries `members` and `locationId`.
 `protect overview` and `school overview` print `{section, resource, value}` rows. The keys are the
 same at 1.18.0 and 1.29.0, except a plan's `unifiedLoggingFilterSets`, which 1.18.0 lacks.
