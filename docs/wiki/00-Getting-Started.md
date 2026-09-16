@@ -20,7 +20,7 @@ brew install Jamf-Concepts/tap/jamf-cli
 ```
 
 This project supports jamf-cli v1.18.0 or later, with v1.19.0+ recommended for full
-partial-failure handling; the app itself currently tracks v1.29.0. On jamf-cli 1.24.0
+partial-failure handling; the app itself currently tracks v1.30.0. On jamf-cli 1.24.0
 through 1.27.0, the security report requires a Jamf Security Cloud subscription (see Known
 Issues in the CHANGELOG) — this is fixed in 1.28.0, so upgrade to restore Security Posture,
 the security score and the FileVault, SIP, firewall and Gatekeeper figures. Tenants that

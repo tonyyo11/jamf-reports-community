@@ -68,6 +68,13 @@ and a source that fails for want of a permission says which one.
   Protect snapshots live with every other snapshot under `jamf_cli.data_dir`. A workspace that
   still sets the key is unaffected — it is simply ignored.
 
+### Changed
+
+- Tracks jamf-cli v1.30.0 (was v1.29.0). Nothing the app runs changed: no command was renamed
+  or withdrawn, every flag it passes is still there, and the same reports come back byte for
+  byte. v1.30.0's breaking change is to the Classic `scope` command, which this app never calls.
+  The supported floor stays v1.18.0.
+
 ## [2.8.0] - 2026-09-14
 
 ### Added
