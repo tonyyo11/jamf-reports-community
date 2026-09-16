@@ -44,10 +44,10 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.webProtectionActiveCount, 0)
         XCTAssertEqual(snapshot.fullDiskAccessCount, 0)
         XCTAssertEqual(snapshot.connectedCount, 0)
-        XCTAssertEqual(snapshot.criticalAlerts, 0)
         XCTAssertEqual(snapshot.highAlerts, 0)
         XCTAssertEqual(snapshot.mediumAlerts, 0)
         XCTAssertEqual(snapshot.lowAlerts, 0)
+        XCTAssertEqual(snapshot.informationalAlerts, 0)
         XCTAssertEqual(snapshot.failingInsights, 0)
         XCTAssertNil(snapshot.sourceFile)
         XCTAssertNil(snapshot.snapshotDate)
@@ -93,9 +93,31 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.highAlerts, 1)
         XCTAssertEqual(snapshot.mediumAlerts, 1)
         XCTAssertEqual(snapshot.lowAlerts, 1)
+        XCTAssertEqual(snapshot.informationalAlerts, 1, "the fixture's 4th alert is Informational")
         XCTAssertEqual(snapshot.failingInsights, 2)
         XCTAssertNotNil(snapshot.sourceFile)
         XCTAssertNotNil(snapshot.snapshotDate)
+    }
+
+    /// Protect's real SEVERITY values, mixed-case, proving informational is
+    /// counted (case-insensitive "info" prefix) alongside the other three tiers.
+    func testAlertSeverityCountsIncludesInformationalCaseInsensitive() throws {
+        let url = try writeTemp("""
+        [{"severity":"High","uuid":"a1"},
+         {"severity":"medium","uuid":"a2"},
+         {"severity":"LOW","uuid":"a3"},
+         {"severity":"Informational","uuid":"a4"},
+         {"severity":"informational","uuid":"a5"}]
+        """)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = ProtectDashboardService.load(
+            overviewURL: nil, alertsURL: url, computersURL: nil, insightsURL: nil)
+
+        XCTAssertEqual(snapshot.highAlerts, 1)
+        XCTAssertEqual(snapshot.mediumAlerts, 1)
+        XCTAssertEqual(snapshot.lowAlerts, 1)
+        XCTAssertEqual(snapshot.informationalAlerts, 2)
     }
 
     func testOddFieldTypeCostsTheFieldNotTheList() throws {
@@ -215,7 +237,7 @@ final class ProtectDashboardServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.webProtectionActiveCount, 0)
         XCTAssertEqual(snapshot.fullDiskAccessCount, 0)
         XCTAssertEqual(snapshot.connectedCount, 0)
-        XCTAssertEqual(snapshot.criticalAlerts, 0)
+        XCTAssertEqual(snapshot.informationalAlerts, 0)
         XCTAssertEqual(snapshot.failingInsights, 0)
         XCTAssertNotNil(snapshot.sourceFile)
         XCTAssertNotNil(snapshot.snapshotDate)
@@ -271,10 +293,10 @@ final class ProtectDashboardServiceTests: XCTestCase {
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
             connectedCount: 0,
-            criticalAlerts: 0,
             highAlerts: 0,
             mediumAlerts: 0,
             lowAlerts: 0,
+            informationalAlerts: 0,
             failingInsights: 0,
             sourceFile: nil,
             snapshotDate: nil
@@ -295,10 +317,10 @@ final class ProtectDashboardServiceTests: XCTestCase {
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
             connectedCount: 0,
-            criticalAlerts: 0,
             highAlerts: 0,
             mediumAlerts: 0,
             lowAlerts: 0,
+            informationalAlerts: 0,
             failingInsights: 0,
             sourceFile: nil,
             snapshotDate: recent
@@ -319,10 +341,10 @@ final class ProtectDashboardServiceTests: XCTestCase {
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
             connectedCount: 0,
-            criticalAlerts: 0,
             highAlerts: 0,
             mediumAlerts: 0,
             lowAlerts: 0,
+            informationalAlerts: 0,
             failingInsights: 0,
             sourceFile: nil,
             snapshotDate: stale

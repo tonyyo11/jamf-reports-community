@@ -62,4 +62,31 @@ final class ProtectViewTests: XCTestCase {
         XCTAssertEqual(ProtectView.telemetryTag(nil), "No telemetry")
         XCTAssertEqual(ProtectView.telemetryTag(""), "No telemetry")
     }
+
+    /// Protect's real ALERT_STATUS values get a spaced display form; an
+    /// unrecognised value passes through unchanged; empty/nil is "Unknown".
+    func testStatusLabelMapsRealAlertStatusValues() {
+        XCTAssertEqual(ProtectView.statusLabel("New"), "New")
+        XCTAssertEqual(ProtectView.statusLabel("InProgress"), "In Progress")
+        XCTAssertEqual(ProtectView.statusLabel("Resolved"), "Resolved")
+        XCTAssertEqual(ProtectView.statusLabel("AutoResolved"), "Auto Resolved")
+        XCTAssertEqual(ProtectView.statusLabel("SomeFutureStatus"), "SomeFutureStatus")
+        XCTAssertEqual(ProtectView.statusLabel(nil), "Unknown")
+        XCTAssertEqual(ProtectView.statusLabel(""), "Unknown")
+    }
+
+    /// Demo data must stay inside Jamf Protect's own enums — the screen shipped
+    /// with Critical/Open/Investigating/Closed, none of which Protect sends, so
+    /// the demo tenant advertised states the real one can never reach.
+    func testDemoAlertsUseValuesProtectActuallySends() {
+        let severities: Set<String> = ["High", "Medium", "Low", "Informational"]
+        let statuses: Set<String> = ["New", "InProgress", "Resolved", "AutoResolved"]
+        for alert in ProtectView.demoDemoAlerts {
+            XCTAssertTrue(severities.contains(alert.severity),
+                          "\(alert.severity) is not a Protect SEVERITY")
+            XCTAssertTrue(statuses.contains(alert.status),
+                          "\(alert.status) is not a Protect ALERT_STATUS")
+        }
+    }
+
 }

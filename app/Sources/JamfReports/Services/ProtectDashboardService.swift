@@ -21,10 +21,11 @@ struct ProtectDashboardService: Sendable {
         let webProtectionActiveCount: Int
         let fullDiskAccessCount: Int
         let connectedCount: Int
-        let criticalAlerts: Int
         let highAlerts: Int
         let mediumAlerts: Int
         let lowAlerts: Int
+        /// Protect's SEVERITY enum has no Critical; Informational is its lowest tier.
+        let informationalAlerts: Int
         let failingInsights: Int
 
         let sourceFile: URL?
@@ -53,10 +54,10 @@ struct ProtectDashboardService: Sendable {
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
             connectedCount: 0,
-            criticalAlerts: 0,
             highAlerts: 0,
             mediumAlerts: 0,
             lowAlerts: 0,
+            informationalAlerts: 0,
             failingInsights: 0,
             sourceFile: nil,
             snapshotDate: nil
@@ -69,10 +70,10 @@ struct ProtectDashboardService: Sendable {
             lhs.webProtectionActiveCount == rhs.webProtectionActiveCount &&
             lhs.fullDiskAccessCount == rhs.fullDiskAccessCount &&
             lhs.connectedCount == rhs.connectedCount &&
-            lhs.criticalAlerts == rhs.criticalAlerts &&
             lhs.highAlerts == rhs.highAlerts &&
             lhs.mediumAlerts == rhs.mediumAlerts &&
             lhs.lowAlerts == rhs.lowAlerts &&
+            lhs.informationalAlerts == rhs.informationalAlerts &&
             lhs.failingInsights == rhs.failingInsights &&
             lhs.plans.count == rhs.plans.count &&
             lhs.sourceFile == rhs.sourceFile &&
@@ -136,7 +137,7 @@ struct ProtectDashboardService: Sendable {
         let fullDiskAccessCount = computers.filter { $0.fullDiskAccess == true }.count
         let connectedCount = computers.filter { isConnected($0.connectionStatus) }.count
 
-        let (critical, high, medium, low) = alertSeverityCounts(alerts)
+        let (high, medium, low, informational) = alertSeverityCounts(alerts)
         let failingInsights = insights.filter { ($0.totalFail ?? 0) > 0 }.count
 
         // Per-kind freshness for the chip row, based on file presence — honest
@@ -166,10 +167,10 @@ struct ProtectDashboardService: Sendable {
             webProtectionActiveCount: webProtectionActiveCount,
             fullDiskAccessCount: fullDiskAccessCount,
             connectedCount: connectedCount,
-            criticalAlerts: critical,
             highAlerts: high,
             mediumAlerts: medium,
             lowAlerts: low,
+            informationalAlerts: informational,
             failingInsights: failingInsights,
             sourceFile: sourceFile,
             snapshotDate: snapshotDate,
@@ -296,26 +297,29 @@ struct ProtectDashboardService: Sendable {
         return matching.sorted { ($0.created ?? "") > ($1.created ?? "") }
     }
 
-    /// Count alerts by severity level (case-insensitive).
-    private static func alertSeverityCounts(_ alerts: [ProtectAlertRow]) -> (critical: Int, high: Int, medium: Int, low: Int) {
-        var critical = 0, high = 0, medium = 0, low = 0
+    /// Count alerts by severity level (case-insensitive). Protect's SEVERITY
+    /// enum is High/Medium/Low/Informational — there is no Critical.
+    private static func alertSeverityCounts(
+        _ alerts: [ProtectAlertRow]
+    ) -> (high: Int, medium: Int, low: Int, informational: Int) {
+        var high = 0, medium = 0, low = 0, informational = 0
 
         for alert in alerts {
             guard let severity = alert.severity?.lowercased() else { continue }
             switch severity {
-            case let s where s.contains("critical"):
-                critical += 1
             case let s where s.contains("high"):
                 high += 1
             case let s where s.contains("medium") || s.contains("med"):
                 medium += 1
             case let s where s.contains("low"):
                 low += 1
+            case let s where s.hasPrefix("info"):
+                informational += 1
             default:
                 break
             }
         }
 
-        return (critical, high, medium, low)
+        return (high, medium, low, informational)
     }
 }

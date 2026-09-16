@@ -87,11 +87,13 @@ struct ProtectView: View {
 
     private var subtitle: String? {
         guard snapshot.isDetected else { return nil }
+        let severityAlertCount = snapshot.highAlerts + snapshot.mediumAlerts
+            + snapshot.lowAlerts + snapshot.informationalAlerts
         let parts: [String] = [
             snapshot.totalComputers > 0 ? "\(snapshot.totalComputers) computer\(snapshot.totalComputers == 1 ? "" : "s")" : nil,
             !snapshot.alerts.isEmpty ? "\(snapshot.alerts.count) alert\(snapshot.alerts.count == 1 ? "" : "s")" :
-                (snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts > 0 ?
-                 "\(snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts) alert\(snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts == 1 ? "" : "s")" : nil),
+                (severityAlertCount > 0 ?
+                 "\(severityAlertCount) alert\(severityAlertCount == 1 ? "" : "s")" : nil),
             !snapshot.insights.isEmpty ? "\(snapshot.insights.count) insight\(snapshot.insights.count == 1 ? "" : "s")" : nil
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
@@ -122,10 +124,10 @@ struct ProtectView: View {
         webProtectionActiveCount: 10,
         fullDiskAccessCount: 9,
         connectedCount: 10,
-        criticalAlerts: 2,
         highAlerts: 2,
         mediumAlerts: 2,
         lowAlerts: 2,
+        informationalAlerts: 2,
         failingInsights: 3,
         sourceFile: nil,
         snapshotDate: Date()
@@ -133,15 +135,20 @@ struct ProtectView: View {
 
     // MARK: - Demo Data Helpers
 
-    private static let demoDemoAlerts: [(severity: String, eventType: String, hostName: String, created: String, status: String)] = [
-            ("Critical", "Malware", "MacBook-001", "2024-05-12T09:30:00Z", "Open"),
-            ("High", "Suspicious Network", "MacBook-002", "2024-05-12T08:15:00Z", "Investigating"),
-            ("Medium", "Policy Violation", "iMac-003", "2024-05-11T16:45:00Z", "Resolved"),
-            ("Low", "Anomaly", "MacBook-004", "2024-05-11T14:20:00Z", "Closed"),
-            ("Critical", "Ransomware", "MacBook-005", "2024-05-11T11:30:00Z", "Open"),
-            ("High", "Data Exfil", "iMac-006", "2024-05-11T10:00:00Z", "Investigating"),
-            ("Medium", "Unauthorized Access", "MacBook-007", "2024-05-10T18:30:00Z", "Open"),
-            ("Low", "Config Change", "iMac-008", "2024-05-10T15:45:00Z", "Resolved")
+    // Severities and statuses match Protect's real SEVERITY / ALERT_STATUS enums;
+    // counts (2 each) match demoSnapshot's highAlerts/mediumAlerts/lowAlerts/informationalAlerts.
+    static let demoDemoAlerts: [(
+        severity: String, eventType: String, hostName: String,
+        created: String, status: String
+    )] = [
+            ("High", "GPProcessEvent", "MacBook-001", "2026-05-12T09:30:00Z", "New"),
+            ("High", "GPDownloadEvent", "MacBook-002", "2026-05-12T08:15:00Z", "InProgress"),
+            ("Medium", "GPFSEvent", "iMac-003", "2026-05-11T16:45:00Z", "Resolved"),
+            ("Medium", "GPScreenshotEvent", "MacBook-004", "2026-05-11T14:20:00Z", "AutoResolved"),
+            ("Low", "GPKeylogRegisterEvent", "MacBook-005", "2026-05-11T11:30:00Z", "New"),
+            ("Low", "GPFSEvent", "iMac-006", "2026-05-11T10:00:00Z", "Resolved"),
+            ("Informational", "GPFSEvent", "MacBook-007", "2026-05-10T18:30:00Z", "AutoResolved"),
+            ("Informational", "GPClickEvent", "iMac-008", "2026-05-10T15:45:00Z", "Resolved")
         ]
 
     private static let demoDemoComputers: [(hostName: String, osString: String, planName: String, webProtection: Bool, fullDisk: Bool, connected: Bool, lastConnection: String)] = [
@@ -398,8 +405,8 @@ struct ProtectView: View {
 
             if !snapshot.alerts.isEmpty {
                 StatTile(
-                    label: "Critical Alerts",
-                    value: "\(snapshot.criticalAlerts)"
+                    label: "High Alerts",
+                    value: "\(snapshot.highAlerts)"
                 )
             }
 
@@ -415,7 +422,8 @@ struct ProtectView: View {
     private var alertsBySeverityCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                let totalAlerts = snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts
+                let totalAlerts = snapshot.highAlerts + snapshot.mediumAlerts
+                    + snapshot.lowAlerts + snapshot.informationalAlerts
                 HStack {
                     SectionHeader(title: "Alerts by Severity")
                     if totalAlerts > 0 {
@@ -432,9 +440,6 @@ struct ProtectView: View {
                 }
                 if totalAlerts > 0 {
                     VStack(spacing: 6) {
-                        if snapshot.criticalAlerts > 0 {
-                            alertSeverityBar(label: "Critical", count: snapshot.criticalAlerts, total: totalAlerts, color: Theme.Severity.critical.inApp)
-                        }
                         if snapshot.highAlerts > 0 {
                             alertSeverityBar(label: "High", count: snapshot.highAlerts, total: totalAlerts, color: Theme.Severity.high.inApp)
                         }
@@ -444,6 +449,12 @@ struct ProtectView: View {
                         if snapshot.lowAlerts > 0 {
                             alertSeverityBar(label: "Low", count: snapshot.lowAlerts, total: totalAlerts, color: Theme.Severity.low.inApp)
                         }
+                        if snapshot.informationalAlerts > 0 {
+                            alertSeverityBar(
+                                label: "Informational", count: snapshot.informationalAlerts,
+                                total: totalAlerts, color: Theme.Severity.informational.inApp
+                            )
+                        }
                     }
                 }
             }
@@ -451,18 +462,20 @@ struct ProtectView: View {
     }
 
     private func exportAlertSeverityChart() {
-        let critical = snapshot.criticalAlerts
         let high = snapshot.highAlerts
         let medium = snapshot.mediumAlerts
         let low = snapshot.lowAlerts
-        let total = critical + high + medium + low
+        let informational = snapshot.informationalAlerts
+        let total = high + medium + low + informational
         let result = DashboardChartExport.run(
             title: "Alerts by Severity",
             subtitle: "Jamf Protect",
             footnote: "Source: jamf-cli protect alerts · \(total) alert\(total == 1 ? "" : "s")",
             suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile)
         ) {
-            ProtectAlertsSeverityExport(critical: critical, high: high, medium: medium, low: low)
+            ProtectAlertsSeverityExport(
+                high: high, medium: medium, low: low, informational: informational
+            )
         }
         if case .failure(let error) = result {
             workspace.toast = Toast(message: error.userMessage, style: .danger)
@@ -621,10 +634,13 @@ struct ProtectView: View {
         let text = severity?.capitalized ?? "Unknown"
         let (tone, icon): (Pill.Tone, String) = {
             guard let sev = severity?.lowercased() else { return (.muted, "circle.fill") }
-            if sev.contains("critical") { return (Theme.Severity.critical.pillTone, Theme.Severity.critical.systemImage) }
             if sev.contains("high") { return (Theme.Severity.high.pillTone, Theme.Severity.high.systemImage) }
             if sev.contains("medium") || sev.contains("med") { return (Theme.Severity.medium.pillTone, Theme.Severity.medium.systemImage) }
             if sev.contains("low") { return (Theme.Severity.low.pillTone, Theme.Severity.low.systemImage) }
+            if sev.hasPrefix("info") {
+                let info = Theme.Severity.informational
+                return (info.pillTone, info.systemImage)
+            }
             return (.muted, "circle.fill")
         }()
 
@@ -633,25 +649,40 @@ struct ProtectView: View {
     }
 
     private func statusPill(_ status: String?) -> some View {
-        let text = status?.capitalized ?? "Unknown"
+        let text = Self.statusLabel(status)
         let (tone, icon): (Pill.Tone, String) = {
             guard let stat = status?.lowercased() else { return (.muted, "info.circle") }
-            if stat.contains("resolved") { return (.teal, "checkmark.circle") }
-            if stat.contains("closed") { return (.teal, "checkmark") }
-            if stat.contains("open") { return (.warn, "exclamationmark.circle") }
-            if stat.contains("investigating") { return (.gold, "magnifyingglass") }
-            return (.muted, "info.circle")
+            switch stat {
+            case "new": return (.warn, "exclamationmark.circle")
+            case "inprogress": return (.gold, "magnifyingglass")
+            case "resolved", "autoresolved": return (.teal, "checkmark.circle")
+            default: return (.muted, "info.circle")
+            }
         }()
 
         return Pill(text: text, tone: tone, icon: icon)
     }
 
+    /// Status pill text: New/InProgress/Resolved/AutoResolved (Protect's real
+    /// ALERT_STATUS values) get a spaced display form; anything else passes
+    /// through unchanged; empty/nil is "Unknown".
+    nonisolated static func statusLabel(_ status: String?) -> String {
+        guard let status, !status.isEmpty else { return "Unknown" }
+        switch status.lowercased() {
+        case "new": return "New"
+        case "inprogress": return "In Progress"
+        case "resolved": return "Resolved"
+        case "autoresolved": return "Auto Resolved"
+        default: return status
+        }
+    }
+
     private func severityIcon(for label: String) -> String {
         switch label.lowercased() {
-        case "critical": Theme.Severity.critical.systemImage
         case "high": Theme.Severity.high.systemImage
         case "medium": Theme.Severity.medium.systemImage
         case "low": Theme.Severity.low.systemImage
+        case "informational": Theme.Severity.informational.systemImage
         default: "circle.fill"
         }
     }
@@ -1037,14 +1068,14 @@ struct ProtectView: View {
 // MARK: - Export-only chart
 
 /// Light-mode export rendering of the Protect alert severity bars. Hardcodes
-/// light-mode-legible severity colors (red/orange/gold/teal) — the
+/// light-mode-legible severity colors (orange/gold/teal/gray) — the
 /// in-dashboard view uses Theme tokens which read poorly on the light export
 /// canvas.
 private struct ProtectAlertsSeverityExport: View {
-    let critical: Int
     let high: Int
     let medium: Int
     let low: Int
+    let informational: Int
 
     private struct Row: Identifiable {
         let label: String
@@ -1055,14 +1086,15 @@ private struct ProtectAlertsSeverityExport: View {
 
     private var rows: [Row] {
         [
-            Row(label: "Critical", count: critical, color: Theme.Severity.critical.export),
-            Row(label: "High",     count: high,     color: Theme.Severity.high.export),
-            Row(label: "Medium",   count: medium,   color: Theme.Severity.medium.export),
-            Row(label: "Low",      count: low,      color: Theme.Severity.low.export)
+            Row(label: "High",          count: high,          color: Theme.Severity.high.export),
+            Row(label: "Medium",        count: medium,        color: Theme.Severity.medium.export),
+            Row(label: "Low",           count: low,           color: Theme.Severity.low.export),
+            Row(label: "Informational", count: informational,
+                color: Theme.Severity.informational.export)
         ].filter { $0.count > 0 }
     }
 
-    private var total: Int { critical + high + medium + low }
+    private var total: Int { high + medium + low + informational }
 
     var body: some View {
         VStack(spacing: 10) {
