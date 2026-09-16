@@ -671,7 +671,8 @@ extension HtmlReport {
     // MARK: - 12. protectAlerts
 
     /// Protect alerts grouped by severity, capped by `html.section_limits.protect_alerts`
-    /// (default 25, bounded [1, 200]).
+    /// (default 25, bounded [1, 200]). Reads jamf-cli's flattened alert rows from the
+    /// `protect-alerts` kind directory `ReportEngine.protectCollect` writes.
     func buildProtectAlerts(protectDataDir: URL?) -> String {
         let f = HtmlSectionFormatters.self
         let cap = config.html?.sectionLimits?.resolvedProtectAlerts ?? 25
@@ -686,14 +687,14 @@ extension HtmlReport {
             """
         }
 
-        let alerts = loadProtectJSON(kind: "alerts", dataDir: dir)
+        let alerts = loadProtectJSON(kind: "protect-alerts", dataDir: dir)
 
         guard !alerts.isEmpty else {
             return """
             <section class="content-section" id="protect-alerts">
               <h2>Protect Alerts</h2>
-              \(f.emptyState("No Protect alerts found in the cache at \(dir.lastPathComponent)/. " +
-                "Run jamf-cli protect collect to populate alert data."))
+              \(f.emptyState("No Protect alerts found. Run a collect (Sources tab → " +
+                "Collect now) with Protect enabled to populate alert data."))
             </section>
             """
         }
@@ -704,7 +705,8 @@ extension HtmlReport {
             bySeverity[sev, default: []].append(alert)
         }
 
-        let severityOrder = ["critical", "high", "medium", "low", "info", "unknown"]
+        // Protect's severity enum: High, Medium, Low, Informational (no Critical).
+        let severityOrder = ["high", "medium", "low", "informational"]
         let orderedKeys = severityOrder.filter { bySeverity[$0] != nil }
             + bySeverity.keys.filter { !severityOrder.contains($0) }.sorted()
 
@@ -717,13 +719,15 @@ extension HtmlReport {
 
             let pill = f.renderSeverityPill(sev)
             let alertRows = sevAlerts.prefix(take).map { alert -> String in
-                let rawDevice = alert["device"] as? String
-                    ?? alert["computer_name"] as? String ?? ""
-                let description = alert["name"] as? String
-                    ?? alert["title"] as? String
-                    ?? alert["description"] as? String ?? "—"
-                let date = alert["created"] as? String
-                    ?? alert["timestamp"] as? String ?? "—"
+                // jamf-cli's flattened row: `computer` is the host name (string,
+                // absent when the alert has no computer); `eventType` names the
+                // alert, falling back to the comma-joined `analytics` list.
+                let rawDevice = alert["computer"] as? String ?? ""
+                let eventType = alert["eventType"] as? String ?? ""
+                let description = !eventType.isEmpty
+                    ? eventType
+                    : ((alert["analytics"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "—")
+                let date = (alert["created"] as? String).map { String($0.prefix(10)) } ?? "—"
 
                 // Wrap device cell in a link to its audit-evidence anchor when known.
                 let deviceCell: String
@@ -736,7 +740,7 @@ extension HtmlReport {
                 }
                 return "<tr>\(deviceCell)" +
                     "<td>\(f.escapeHTML(description))</td>" +
-                    "<td>\(f.escapeHTML(String(date.prefix(10))))</td></tr>"
+                    "<td>\(f.escapeHTML(date))</td></tr>"
             }
             let alertTable = """
             <table class="data-table">
@@ -765,6 +769,8 @@ extension HtmlReport {
 
     /// Protect insights snapshot comparison, using up to
     /// `html.section_limits.insights_drift_snapshots` (default 2, bounded [1, 12]) snapshots.
+    /// Values are failing-device counts (`totalFail`) per insight, read from the
+    /// `protect-insights` kind directory `ReportEngine.protectCollect` writes.
     ///
     /// When more than two snapshots are requested, the table gains one column per additional
     /// snapshot labelled "N ago" (oldest first, current last).
@@ -790,8 +796,8 @@ extension HtmlReport {
             <section class="content-section" id="insights-drift">
               <h2>Insights Drift</h2>
               \(f.emptyState("Comparison requires N≥2 cached snapshots; " +
-                "\(count) snapshot\(count == 1 ? "" : "s") found. " +
-                "Run jamf-cli protect collect on two or more separate days to enable drift charts."))
+                "\(count) snapshot\(count == 1 ? "" : "s") found. Run a collect " +
+                "(Sources tab → Collect now) with Protect enabled on two or more days."))
             </section>
             """
         }
@@ -799,7 +805,7 @@ extension HtmlReport {
         // Take the most recent `snapshotCap` snapshots; fall back to all available if fewer.
         let window = Array(allSnapshots.suffix(snapshotCap))
 
-        // Collect all insight keys across the window.
+        // Collect all insight labels across the window.
         var insightKeys: [String] = []
         for snapshot in window {
             for key in snapshot.keys where !insightKeys.contains(key) {
@@ -832,6 +838,7 @@ extension HtmlReport {
         return """
         <section class="content-section" id="insights-drift">
           <h2>Insights Drift (\(window.count) of \(allSnapshots.count) snapshots)</h2>
+          <p class="empty-hint">Values are failing-device counts per insight.</p>
           \(f.renderTable(headers: headers, rows: tableRows))
         </section>
         """
@@ -914,7 +921,8 @@ extension HtmlReport {
 
     // MARK: - Protect helpers
 
-    /// Load JSON from the Protect-specific data directory.
+    /// Load JSON for a Protect kind (e.g. `protect-alerts`) from `dataDir`.
+    /// Same algorithm as `loadJSON(kind:)`, parameterized for test callers.
     private func loadProtectJSON(kind: String, dataDir: URL) -> [[String: Any]] {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
@@ -956,10 +964,11 @@ extension HtmlReport {
         return result
     }
 
-    /// Load all Protect insight snapshot files, returning them in chronological order.
-    private func loadProtectInsightSnapshots(dataDir: URL) -> [[String: Any]] {
+    /// Load Protect insights snapshots, reduced to failing-device counts
+    /// (`totalFail`) per insight label, oldest first.
+    private func loadProtectInsightSnapshots(dataDir: URL) -> [[String: Int]] {
         let fm = FileManager.default
-        let subdir = dataDir.appendingPathComponent("insights", isDirectory: true)
+        let subdir = dataDir.appendingPathComponent("protect-insights", isDirectory: true)
         guard fm.fileExists(atPath: subdir.path),
               let files = try? fm.contentsOfDirectory(
                 at: subdir,
@@ -975,7 +984,7 @@ extension HtmlReport {
             // an extra day of drift.
             .filter(FileManager.isSelectableSnapshot)
             .sorted { FileManager.isOlderSnapshot($0, than: $1) }
-            .compactMap { url -> [String: Any]? in
+            .compactMap { url -> [String: Int]? in
                 let data: Data
                 do {
                     data = try Data(contentsOf: url)
@@ -986,13 +995,21 @@ extension HtmlReport {
                     )
                     return nil
                 }
-                guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                // jamf-cli's flattened row: label, section, enabled,
+                // totalPass/totalFail/totalNone, cisIDs — a bare array, not a dict.
+                let parsed = try? JSONSerialization.jsonObject(with: data)
+                guard let rows = parsed as? [[String: Any]] else {
                     AppLogger.platform.debug(
                         "loadProtectInsightSnapshots: JSON parse failed for '\(url.path, privacy: .private)'"
                     )
                     return nil
                 }
-                return parsed
+                var byLabel: [String: Int] = [:]
+                for row in rows {
+                    guard let label = row["label"] as? String else { continue }
+                    byLabel[label] = asInt(row["totalFail"]) ?? 0
+                }
+                return byLabel
             }
     }
 
@@ -1588,14 +1605,9 @@ extension HtmlReport {
         let firewallPct = computePct(asInt(secData["firewall_enabled"]),
                                      total: totalDevices)
 
-        let protectDir: URL? = {
-            guard config.protect?.isEnabled == true else { return nil }
-            let dir = config.protect?.resolvedDataDir ?? "jamf-cli-data/protect"
-            if dir.hasPrefix("/") {
-                return URL(fileURLWithPath: dir)
-            }
-            return dataDir.deletingLastPathComponent().appendingPathComponent(dir)
-        }()
+        // Protect kind dirs (protect-alerts, protect-insights) live under the
+        // same jamf-cli data dir every other snapshot uses.
+        let protectDir: URL? = config.protect?.isEnabled == true ? dataDir : nil
 
         return [
             .execSummary: buildExecSummary(

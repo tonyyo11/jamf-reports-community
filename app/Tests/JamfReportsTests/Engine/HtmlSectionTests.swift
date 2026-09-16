@@ -574,6 +574,40 @@ final class HtmlSectionTests: XCTestCase {
         let report = makeReport()
         let html = report.buildProtectAlerts(protectDataDir: tmp)
         XCTAssertTrue(html.contains("class=\"empty\""))
+        XCTAssertFalse(html.contains("jamf-cli protect collect"),
+            "the empty state must not name a command jamf-cli does not have")
+    }
+
+    /// Jamf Protect's severity enum is High, Medium, Low, Informational — there
+    /// is no Critical. Informational must be styled as a real severity and
+    /// ordered last, not dropped into the unknown bucket at the end.
+    func testProtectAlertsOrdersAndStylesProtectSeverities() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProtectAlertsSeverity-\(UUID().uuidString)", isDirectory: true)
+        let alertsDir = tmp.appendingPathComponent("protect-alerts", isDirectory: true)
+        try FileManager.default.createDirectory(at: alertsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let alerts: [[String: Any]] = [
+            ["severity": "Informational", "eventType": "GPFSEvent", "computer": "Mac-Info",
+             "created": "2026-04-01T00:00:00Z"],
+            ["severity": "Low", "eventType": "GPClickEvent", "computer": "Mac-Low",
+             "created": "2026-04-01T00:00:00Z"],
+            ["severity": "High", "eventType": "GPProcessEvent", "computer": "Mac-High",
+             "created": "2026-04-01T00:00:00Z"],
+        ]
+        try JSONSerialization.data(withJSONObject: alerts)
+            .write(to: alertsDir.appendingPathComponent("protect-alerts_20260401T000000.json"))
+
+        let html = makeReport().buildProtectAlerts(protectDataDir: tmp)
+
+        XCTAssertTrue(html.contains("sev-pill sev-info\">informational"),
+            "Informational is a Protect severity, not an unknown one")
+        let high = try XCTUnwrap(html.range(of: "Mac-High"))
+        let low = try XCTUnwrap(html.range(of: "Mac-Low"))
+        let info = try XCTUnwrap(html.range(of: "Mac-Info"))
+        XCTAssertLessThan(high.lowerBound, low.lowerBound, "High leads")
+        XCTAssertLessThan(low.lowerBound, info.lowerBound, "Informational is last of the four")
     }
 
     func testProtectAlertsStableOutput() {
@@ -581,6 +615,40 @@ final class HtmlSectionTests: XCTestCase {
         let a = report.buildProtectAlerts(protectDataDir: nil)
         let b = report.buildProtectAlerts(protectDataDir: nil)
         XCTAssertEqual(a, b)
+    }
+
+    /// jamf-cli's real flattened alert row shape (v1.29.0): `computer` is the
+    /// host name string, `eventType` names the alert, `analytics` is a
+    /// comma-joined fallback list, and `computer` is absent (not empty) when
+    /// the alert has no associated device.
+    func testProtectAlertsRendersRealJamfCLIShape() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ProtectAlertsShape-\(UUID().uuidString)", isDirectory: true)
+        let alertsDir = tmp.appendingPathComponent("protect-alerts", isDirectory: true)
+        try FileManager.default.createDirectory(at: alertsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let alerts: [[String: Any]] = [
+            ["uuid": "a1", "status": "New", "severity": "High",
+             "eventType": "Malware Detected", "computer": "Mac-Dev-01",
+             "received": "2026-04-01T00:00:00Z", "created": "2026-04-01T12:00:00Z"],
+            ["uuid": "a2", "status": "New", "severity": "High",
+             "eventType": "", "analytics": "Suspicious Script, Persistence",
+             "created": "2026-04-02T08:00:00Z"],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: alerts)
+        try data.write(to: alertsDir.appendingPathComponent("protect-alerts_20260402T000000.json"))
+
+        let report = makeReport()
+        let html = report.buildProtectAlerts(protectDataDir: tmp)
+
+        XCTAssertTrue(html.contains("Mac-Dev-01"), "Should render the computer host name")
+        XCTAssertTrue(html.contains("Malware Detected"), "Should render eventType as the alert")
+        XCTAssertTrue(html.contains("2026-04-01"), "Date should be the first 10 chars of created")
+        XCTAssertTrue(html.contains("Suspicious Script, Persistence"),
+            "Should fall back to analytics when eventType is empty")
+        XCTAssertTrue(html.contains("<td>—</td><td>Suspicious Script, Persistence</td>"),
+            "An alert with no computer must still render its row")
     }
 
     // MARK: - insightsDrift
@@ -595,14 +663,18 @@ final class HtmlSectionTests: XCTestCase {
     func testInsightsDriftInsufficientSnapshots() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("InsightsDriftTest-\(UUID().uuidString)", isDirectory: true)
-        let insightsDir = tmp.appendingPathComponent("insights", isDirectory: true)
+        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
         try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        // Write exactly one snapshot
-        let snap: [String: Any] = ["total_devices": 100, "critical_count": 3]
+        // Write exactly one snapshot — jamf-cli's array-of-rows shape.
+        let snap: [[String: Any]] = [
+            ["label": "FileVault Enabled", "section": "Encryption", "enabled": true,
+             "totalPass": 97, "totalFail": 3, "totalNone": 0],
+        ]
         let data = try JSONSerialization.data(withJSONObject: snap)
-        try data.write(to: insightsDir.appendingPathComponent("snap_2026-01-01.json"))
+        let name = "protect-insights_20260101T000000.json"
+        try data.write(to: insightsDir.appendingPathComponent(name))
 
         let report = makeReport()
         let html = report.buildInsightsDrift(protectDataDir: tmp)
@@ -613,29 +685,65 @@ final class HtmlSectionTests: XCTestCase {
     func testInsightsDriftWithTwoSnapshots() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("InsightsDriftTest2-\(UUID().uuidString)", isDirectory: true)
-        let insightsDir = tmp.appendingPathComponent("insights", isDirectory: true)
+        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
         try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let snap1: [String: Any] = ["critical_count": 3]
-        let snap2: [String: Any] = ["critical_count": 1]
+        let snap1: [[String: Any]] = [
+            ["label": "FileVault Enabled", "section": "Encryption", "enabled": true,
+             "totalPass": 90, "totalFail": 10, "totalNone": 0],
+        ]
+        let snap2: [[String: Any]] = [
+            ["label": "FileVault Enabled", "section": "Encryption", "enabled": true,
+             "totalPass": 99, "totalFail": 1, "totalNone": 0],
+        ]
         let d1 = try JSONSerialization.data(withJSONObject: snap1)
         let d2 = try JSONSerialization.data(withJSONObject: snap2)
-        let url1 = insightsDir.appendingPathComponent("snap_2026-01-01.json")
-        let url2 = insightsDir.appendingPathComponent("snap_2026-02-01.json")
+        // Canonical stamped filenames order deterministically — no mtime needed.
+        let url1 = insightsDir.appendingPathComponent("protect-insights_20260101T000000.json")
+        let url2 = insightsDir.appendingPathComponent("protect-insights_20260201T000000.json")
         try d1.write(to: url1)
-        // Ensure url2 has a later mtime
         try d2.write(to: url2)
-        // Touch url2 to guarantee later mtime
-        let attrs = [FileAttributeKey.modificationDate:
-                        Date().addingTimeInterval(5)]
-        try? FileManager.default.setAttributes(attrs, ofItemAtPath: url2.path)
 
         let report = makeReport()
         let html = report.buildInsightsDrift(protectDataDir: tmp)
         XCTAssertTrue(html.contains("insights-drift"))
         XCTAssertTrue(html.contains("<table"))
-        XCTAssertTrue(html.contains("critical_count"))
+        XCTAssertTrue(html.contains("FileVault Enabled"))
+    }
+
+    /// jamf-cli's real insights row shape is a bare ARRAY of {label, section,
+    /// enabled, totalPass, totalFail, totalNone, cisIDs} objects, not a single
+    /// dict — the drift table must reduce each day to failing-device counts
+    /// per insight label, and say plainly what the numbers mean.
+    func testInsightsDriftRendersFailingDeviceCountsFromRealShape() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("InsightsDriftShape-\(UUID().uuidString)", isDirectory: true)
+        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
+        try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let day1: [[String: Any]] = [
+            ["label": "Unsigned Kernel Extension", "section": "Kernel", "enabled": true,
+             "totalPass": 90, "totalFail": 10, "totalNone": 0, "cisIDs": ""],
+        ]
+        let day2: [[String: Any]] = [
+            ["label": "Unsigned Kernel Extension", "section": "Kernel", "enabled": true,
+             "totalPass": 97, "totalFail": 3, "totalNone": 0, "cisIDs": ""],
+        ]
+        let url1 = insightsDir.appendingPathComponent("protect-insights_20260401T000000.json")
+        let url2 = insightsDir.appendingPathComponent("protect-insights_20260402T000000.json")
+        try JSONSerialization.data(withJSONObject: day1).write(to: url1)
+        try JSONSerialization.data(withJSONObject: day2).write(to: url2)
+
+        let report = makeReport()
+        let html = report.buildInsightsDrift(protectDataDir: tmp)
+
+        XCTAssertTrue(html.contains("Unsigned Kernel Extension"))
+        XCTAssertTrue(html.contains("failing-device counts"),
+            "Table must say plainly that the numbers are failing-device counts")
+        XCTAssertTrue(html.contains(">10<"), "Previous day's totalFail (10) must render")
+        XCTAssertTrue(html.contains(">3<"), "Current day's totalFail (3) must render")
     }
 
     // MARK: - agentHealth

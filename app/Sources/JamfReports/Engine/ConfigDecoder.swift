@@ -701,16 +701,13 @@ struct BrandingConfig: Decodable, Sendable {
 struct ProtectConfig: Decodable, Sendable {
     var enabled: Bool?
     var profile: String?
-    var dataDir: String?
 
     private enum CodingKeys: String, CodingKey {
         case enabled, profile
-        case dataDir = "data_dir"
     }
 
     var isEnabled: Bool { enabled ?? false }
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
-    var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data/protect" }
 }
 
 // MARK: - school_cli
