@@ -296,6 +296,20 @@ a local write on 1.29 (which otherwise checks the pair against the server first)
 Validate step remains the connection check. When the floor reaches 1.29, delete the gate and
 the old literals rather than keep both.
 
+**v1.30.0 (2026-09-16) — Classic scope by ID, Jamf Pro 11.32.** `pro classic-*` commands
+now accept scope as an integer `id` and expose per-resource `categories`; the change is marked
+breaking (`feat!`) in the upstream changelog. The `list` commands used in
+`collectCommandMatrix` (`classic-computer-groups`, `classic-mobile-device-groups`,
+`classic-macos-config-profiles`, `classic-mobile-config-profiles`, `classic-policies`)
+do not pass scope parameters — their invocation and JSON output shape are unaffected. A new
+`pro open` command opens a product's web UI at a named section; not used by the app. SDK
+upgraded to ingests Jamf Pro 11.32 — no breaking shape changes for fields the app reads.
+
+**v1.31.0 (2026-09-18) — MCP server and HTML fleet dashboard.** jamf-cli now ships an MCP
+server (`jamf-cli mcp`) and can generate cross-product HTML fleet dashboards. The app has its
+own `HtmlReport` engine and `ReportEngine.generate` pipeline; these additions are purely
+additive and do not conflict. No changes to existing command flags or JSON output shapes.
+
 ### notify config (v2.2.0 — opt-in webhook digest)
 
 ```yaml
