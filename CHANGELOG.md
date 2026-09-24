@@ -61,6 +61,16 @@ and a source that fails for want of a permission says which one.
   sends, includes Informational alerts in the severity totals, and shows alert status as New,
   In Progress, Resolved or Auto Resolved with colours that match. Demo data uses values Jamf
   Protect actually sends.
+- Demo mode no longer shows the health strip from the profile you were using before you switched
+  to it, with its failing sources and a Collect now button that did nothing. Device Lookup's field
+  and button are disabled in demo mode instead of offering a lookup that could not run.
+- Demo mode's numbers agree with each other: the fleet is 524 Macs on every card (the Active
+  Devices tile said 527), the EDR score card matches the CrowdStrike agent card, the Security
+  Score card has a trend instead of "--", and demo headers no longer warn that a deliberately
+  fixed dataset was "updated 151 days ago".
+- Fleet Overview's summary tiles line up and share one height, and a profile card's stability
+  score is no longer hidden under the card's chevron.
+- The stale-days control on Devices is its natural size instead of stretching across the header.
 
 ### Removed
 
