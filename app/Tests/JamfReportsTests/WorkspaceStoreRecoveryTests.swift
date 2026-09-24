@@ -77,6 +77,51 @@ final class WorkspaceStoreRecoveryTests: XCTestCase {
                        "a refresh that landed both probe kinds must clear the prompt")
     }
 
+    // MARK: - runHeavyTierRefresh
+
+    /// The prompt's own button cleared `staleHeavyTiers` on any exit 0, so a run whose
+    /// scan probe kind failed while other kinds landed hid the prompt anyway. It now
+    /// re-probes from disk like `runTierRefresh`. Runs under a temporary workspaces root,
+    /// so nothing lands in the real one.
+    func testRunHeavyTierRefreshKeepsATierWhoseProbeKindDidNotLand() async throws {
+        let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-HeavyRefresh-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", temp.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: temp)
+        }
+        let slug = "heavyrefresh"
+        let root = try XCTUnwrap(ProfileService.workspaceURL(for: slug))
+        let store = makeStore(slug: slug)
+        let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
+        let old = computersDir.appendingPathComponent("computers_old.json")
+        try "[]".write(to: old, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -8 * 86_400)], ofItemAtPath: old.path
+        )
+
+        await store.checkHeavyTierStaleness()
+        XCTAssertEqual(store.staleHeavyTiers, [.inventory, .scan], "precondition: prompt is up")
+
+        // Exit 0, but of the scan tier only `patch-device-failures` landed — its probe
+        // kind, `update-device-failures`, did not.
+        await store.runHeavyTierRefresh { _, _, _ in
+            for kind in ["computers", "patch-device-failures"] {
+                let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try "[]".write(to: dir.appendingPathComponent("\(kind)_fresh.json"),
+                               atomically: true, encoding: .utf8)
+            }
+            return 0
+        }
+
+        XCTAssertEqual(store.staleHeavyTiers, [.scan],
+                       "only the tier whose probe kind landed may leave the prompt")
+    }
+
     // MARK: - runFirstCollect
 
     func testRunFirstCollectRecordsRunAndReportsPartialFailure() async throws {

@@ -112,9 +112,18 @@ extension WorkspaceStore {
         heavyTiersWithNoData = noData
     }
 
-    /// Collect the currently-stale heavy tiers, then clear the prompt.
-    /// Surfaces progress through `globalStatus` and a completion toast.
-    func runHeavyTierRefresh() async {
+    /// Collect the currently-stale heavy tiers, then re-probe the prompt from
+    /// disk. Surfaces progress through `globalStatus` and a completion toast.
+    /// `collect` is injectable for tests, like `runTierRefresh`'s.
+    func runHeavyTierRefresh(
+        collect: @Sendable (String, Set<CollectionTier>,
+                            @escaping @Sendable (CLIBridge.LogLine) -> Void)
+            async throws -> Int32 = { profile, tiers, onLine in
+            try await CLIBridge().collect(
+                profile: profile, tiers: tiers, force: true, onLine: onLine
+            )
+        }
+    ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
         let activeProfile = profile
@@ -124,14 +133,10 @@ extension WorkspaceStore {
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
         do {
-            let exit = try await CLIBridge().collect(
-                profile: activeProfile, tiers: Set(tiers), force: true,
-                onLine: CLIBridge.bufferingOnLine
-            )
+            let exit = try await collect(activeProfile, Set(tiers), CLIBridge.bufferingOnLine)
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
-                staleHeavyTiers = []
                 toast = Toast(message: "\(labels) data refreshed", style: .success)
             } else {
                 toast = Toast(
@@ -142,6 +147,10 @@ extension WorkspaceStore {
         } catch {
             toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
         }
+        // Re-probe rather than clear: exit 0 means the run finished, not that each
+        // tier's probe kind landed, so clearing on exit 0 hid the prompt for a tier
+        // whose probe kind failed while other kinds landed.
+        await checkHeavyTierStaleness()
         // Success or failure, the health strip must describe the run that just
         // happened — before 2.7.0 it kept its launch-time verdict until the app
         // was backgrounded, so a manual refresh appeared to change nothing.
