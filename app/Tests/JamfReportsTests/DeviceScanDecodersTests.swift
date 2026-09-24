@@ -10,7 +10,7 @@ final class DeviceScanDecodersTests: XCTestCase {
     func testStatusItemsDecodeWithNullValues() throws {
         let payload = try JSONDecoder().decode(
             DDMStatusItemsPayload.self,
-            from: fixture("ddm-status-items-raw/ddm-status-items-prod-macos27.json"))
+            from: fixture("ddm-status-items-raw/ddm-status-items-synthetic-macos27.json"))
         XCTAssertGreaterThan(payload.statusItems.count, 10)
         let failure = payload.statusItems.first { $0.key == "softwareupdate.failure-reason" }
         XCTAssertNotNil(failure, "fixture carries the key")
