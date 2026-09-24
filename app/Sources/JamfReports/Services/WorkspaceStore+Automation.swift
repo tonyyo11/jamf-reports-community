@@ -378,7 +378,9 @@ extension WorkspaceStore {
         let kinds = expectedKinds(
             skipExpensive: skipExpensive,
             authMethod: auth?.authMethod,
-            tenantLevel: auth?.isTenantLevel == true
+            tenantLevel: auth?.isTenantLevel == true,
+            collectSkip: ReportEngine.collectSkipKinds(
+                loadReportConfig(profile: profile)?.jamfCli?.collectSkip)
         )
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
@@ -392,19 +394,22 @@ extension WorkspaceStore {
     /// Which kinds this profile is expected to collect, and so which may be
     /// reported as failing or stale.
     ///
-    /// Three exclusions, all about not alarming on an absence that is intended:
+    /// Four exclusions, all about not alarming on an absence that is intended:
     /// the Settings toggle makes the four per-device kinds deliberately absent
     /// (the false-alarm class `FreshnessChipRow` already guards), a Jamf Pro
-    /// instance profile can never serve the Platform-only kinds, and a
-    /// tenant-level integration can never be granted `environmentLevelKinds`.
-    /// The last two apply regardless of the `.fail` counters on disk: a
+    /// instance profile can never serve the Platform-only kinds, a
+    /// tenant-level integration can never be granted `environmentLevelKinds`,
+    /// and `collect` never runs a kind listed in `jamf_cli.collect_skip`
+    /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set).
+    /// The last three apply regardless of the `.fail` counters on disk: a
     /// workspace that ran for months before the collect-side skip has a
     /// standing pile of them, and reading those back is exactly what kept the
     /// banner red.
     nonisolated static func expectedKinds(
         skipExpensive: Bool,
         authMethod: String?,
-        tenantLevel: Bool = false
+        tenantLevel: Bool = false,
+        collectSkip: Set<String> = []
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
         return ReportEngine.knownCollectKinds.filter { kind in
@@ -414,6 +419,7 @@ extension WorkspaceStore {
             if tenantLevel, ReportEngine.environmentLevelKinds.contains(kind) {
                 return false
             }
+            if collectSkip.contains(kind) { return false }
             return !(skipsPlatform && ReportEngine.platformOnlyKinds.contains(kind))
         }
     }
@@ -762,14 +768,19 @@ extension WorkspaceStore {
     /// Load just the `notify:` block for a profile's config.yaml. Best-effort —
     /// returns nil when the workspace has no config or it fails to decode.
     nonisolated private static func loadNotifyConfig(profile: String) -> NotifyConfig? {
+        loadReportConfig(profile: profile)?.notify
+    }
+
+    /// A profile's decoded config.yaml. Best-effort — nil when the workspace has
+    /// no config or it fails to decode.
+    nonisolated private static func loadReportConfig(profile: String) -> ReportConfig? {
         guard ProfileService.isValid(profile),
               let url = ProfileService.workspaceURL(for: profile)?
                 .appendingPathComponent("config.yaml"),
-              FileManager.default.fileExists(atPath: url.path),
-              let config = try? ConfigLoader.load(from: url) else {
+              FileManager.default.fileExists(atPath: url.path) else {
             return nil
         }
-        return config.notify
+        return try? ConfigLoader.load(from: url)
     }
 
     // MARK: - Catch-up-on-wake

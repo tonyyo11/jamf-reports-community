@@ -1797,6 +1797,7 @@ struct ReportEngine: Sendable {
         let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
         let nonPlatformAuth = Self.nonPlatformAuthMethod(profileAuth?.authMethod)
         let tenantLevel = profileAuth?.isTenantLevel == true
+        let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -1828,6 +1829,15 @@ struct ReportEngine: Sendable {
                     timestamp: Date(), level: .info,
                     text: "[skip] \(kind): needs a platform environment integration "
                         + "(this profile is tenant level)"
+                ))
+                continue
+            }
+            // And for kinds the operator listed in jamf_cli.collect_skip to keep an
+            // on-prem server from stalling — even on a forced collect.
+            if collectSkip.contains(kind) {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): listed in jamf_cli.collect_skip"
                 ))
                 continue
             }

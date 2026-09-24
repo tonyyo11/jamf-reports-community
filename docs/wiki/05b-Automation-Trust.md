@@ -104,6 +104,10 @@ says so. They never appear in the strip and the hourly repair never retries them
 profile whose authentication method cannot be determined is *not* skipped: "we could not
 ask" is never read as "not platform".
 
+Sources you list in `jamf_cli.collect_skip` — any of the four per-device-heavy reports that
+stall some on-premise servers — are handled the same way: never attempted, even by
+**Collect now**, never counted as failures, and left out of the strip.
+
 ### Where the state lives
 
 Per-source success and consecutive-failure counts are kept in the workspace, so "failing

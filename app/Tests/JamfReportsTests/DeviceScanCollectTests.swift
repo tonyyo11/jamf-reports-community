@@ -552,6 +552,28 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNil(store.lastRun(report: "mdm-command-health"))
         XCTAssertNil(store.failures(report: "mdm-command-health"))
     }
+
+    // MARK: - jamf_cli.collect_skip
+
+    /// A listed kind never reaches jamf-cli, even on a forced collect, and records
+    /// nothing — like the Platform-only skip, it is not a failure. The scan tier's
+    /// other argv kind still runs.
+    func testCollectSkipKeepsAListedKindAwayFromJamfCLI() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [patch_device_failures]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let lines = try await runScan()
+
+        XCTAssertTrue(
+            lines.contains("[skip] patch-device-failures: listed in jamf_cli.collect_skip"),
+            "\(lines)")
+        let calls = callsLog()
+        XCTAssertFalse(calls.contains("patch-status --scan-failures"), calls)
+        XCTAssertTrue(calls.contains("update-status --scan-failures"), calls)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.lastRun(report: "patch-device-failures"))
+        XCTAssertNil(store.failures(report: "patch-device-failures"))
+    }
 }
 
 /// Same helper `CollectHonestyTests` keeps privately; duplicated here rather

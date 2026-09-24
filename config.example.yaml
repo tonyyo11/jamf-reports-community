@@ -233,6 +233,14 @@ jamf_cli:
   # (.absent/.omitted) are tolerated. AuditView surfaces verify results
   # regardless of this setting. Threat-model T-11.
   require_manifest: false
+  # Report types collect never runs — a stall guard for on-prem Jamf Pro. Accepts
+  # any of patch-device-failures, profile-status, update-status and
+  # update-device-failures, the per-device-heavy queries known to stall an
+  # on-prem server; underscores and hyphens are interchangeable. Anything else is
+  # ignored, so core inventory always runs. A listed source is skipped even by a
+  # manual collect and is left out of the data freshness strip.
+  # Example: collect_skip: [update-status, update-device-failures]
+  collect_skip: []
 
 
 # ---------------------------------------------------------------------------

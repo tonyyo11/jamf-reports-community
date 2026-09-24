@@ -158,8 +158,14 @@ Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` |
 See [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights) for what the feature does and its in-app Settings
 panel.
 
-### jamf-cli cache & integrity (`jamf_cli`)
+### jamf-cli collection, cache & integrity (`jamf_cli`)
 
+- **`collect_skip`** (default empty) — report types a collect never runs, a stall guard
+  for on-premise Jamf Pro: any of `patch-device-failures`, `profile-status`,
+  `update-status` and `update-device-failures`, the per-device-heavy queries known to
+  stall a server (underscores work in place of hyphens). Anything else in the list is
+  ignored, so core inventory always runs. A listed source is skipped even by a manual
+  collect, the run log says so, and the data freshness strip does not wait for it.
 - **`max_cache_age_hours`** (default 168, one week) — how old a cached snapshot can be
   before the daily summary digest treats it as absent rather than serving it as
   current. `0` (or any value `<= 0`) keeps cache forever. This only affects the daily

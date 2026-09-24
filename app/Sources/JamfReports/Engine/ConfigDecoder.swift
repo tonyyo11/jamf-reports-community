@@ -250,9 +250,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Legacy list of jamf-cli report kinds to skip during collect.
-    /// Still read so existing config.yaml files continue to work;
-    /// the GUI no longer emits this key.
+    /// Report kinds `collect` never runs — the on-prem stall guard. Only the four
+    /// per-device-heavy kinds count (`ReportEngine.collectSkipKinds`); the GUI does
+    /// not write this key, and a Config screen save keeps it.
     var collectSkip: [String]?
 
     private enum CodingKeys: String, CodingKey {
