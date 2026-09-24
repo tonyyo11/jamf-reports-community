@@ -126,7 +126,9 @@ final class JamfCLIInstaller {
     private static let githubLatestReleaseURL =
         URL(string: "https://api.github.com/repos/Jamf-Concepts/jamf-cli/releases/latest")!
 
-    private static let githubReleasesURL =
+    /// The jamf-cli releases page: named when a release has no macOS asset, and linked from
+    /// onboarding for installing without Homebrew. One copy, so the two cannot drift.
+    nonisolated static let githubReleasesURL: URL =
         URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")!
 
     /// Hosts allowed to serve a `jamf-cli` release asset. Even though the URL

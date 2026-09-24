@@ -14,8 +14,6 @@ struct OnboardingView: View {
         "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
         "Mobile Apps: Read", "Software Updates: Read", "Computer Groups: Read",
     ]
-    private static let jamfCLIReleases =
-        URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")
 
     var body: some View {
         ScrollView {
@@ -306,10 +304,8 @@ struct OnboardingView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                if let releases = Self.jamfCLIReleases {
-                    Link("Open GitHub releases", destination: releases)
-                        .font(.caption)
-                }
+                Link("Open GitHub releases", destination: JamfCLIInstaller.githubReleasesURL)
+                    .font(.caption)
             }
         }
     }
