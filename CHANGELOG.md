@@ -27,6 +27,11 @@ tenant's real data in every section, and you choose what it shows.
 - The EDR agent score card, its trend and the security score's EDR weight fill on jamf-cli
   profiles, from the first security agent in Config and its extension attribute. They were always
   empty there before.
+- Run Check says when a custom extension attribute has no CSV export to build its report sheet
+  from. It warns, or only suggests when that attribute is already collected and usable in period
+  reports.
+- The Managed Devices trend shows mobile devices for days before 2.6.0, from the dated mobile
+  device snapshots already in your workspace.
 
 ### Fixed
 
@@ -104,12 +109,33 @@ tenant's real data in every section, and you choose what it shows.
   longer drops the declarations after it.
 - The OS Updates error-devices table shows the first 50 devices and how many more there are, like
   the failed-plans table beside it.
+- While the app is open, a source whose credentials were rejected is no longer re-collected every
+  hour. It stays in the health strip until you re-authenticate and press **Collect now**, or a
+  scheduled run tries again.
+- The Overview's Inventory/Scan refresh prompt no longer disappears after a refresh that finished
+  without collecting the scan data. It stays until that data lands.
+- A **Run now** request queued behind a long run is no longer lost if the background item stops
+  before reaching it. If the background item cannot record that a schedule started, it skips only
+  that schedule, still runs the rest and sends the overdue digest, and logs the problem to Console.
+- `jamf_cli.collect_skip` works again; it had been read and then ignored. Listing
+  `patch-device-failures`, `profile-status`, `update-status` or `update-device-failures` stops
+  collect from running those per-device-heavy reports, which can stall an on-premises server, and
+  the health strip no longer reports them as missing.
+- On a shared workspace, Jamf Protect is no longer collected when this Mac stands down for another
+  Mac or when today's collect already ran. The run log says Protect was skipped.
+- `jamf-reports help <command>` prints that command's help, as the Command Line guide says,
+  instead of opening the app.
+- Building from source: `build-pkg.sh` rejects a malformed app version such as `2x8`, and
+  `package-dmg.sh` rejects a build number that is not a whole number.
 
 ### Removed
 
 - `protect.data_dir`. Its only reader was the HTML report path that looked in the wrong place;
   Protect snapshots live with every other snapshot under `jamf_cli.data_dir`. A workspace that
   still sets the key is unaffected — it is simply ignored.
+- The `jamf-reports school-scaffold` command. It wrote a `school_columns` section that the app
+  never read, so it never affected a report. `school-check` is unchanged, and a config.yaml that
+  still has `school_columns` keeps working; the section is ignored.
 
 ### Changed
 
@@ -117,6 +143,9 @@ tenant's real data in every section, and you choose what it shows.
   or withdrawn, every flag it passes is still there, and the same reports come back byte for
   byte. v1.30.0's breaking change is to the Classic `scope` command, which this app never calls.
   The supported floor stays v1.18.0.
+- The patch figure in period reports, fleet insights and the workbook's trend chart is labelled
+  as an average per patch title, since it is not weighted by devices like the Patch screen and the
+  Executive Summary.
 
 ### Security
 
