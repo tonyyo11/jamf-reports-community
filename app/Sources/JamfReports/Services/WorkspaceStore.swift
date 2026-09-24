@@ -360,6 +360,10 @@ final class WorkspaceStore {
 
     private func cleanupDemoProfileArtifacts() -> String? {
         let demoProfile = DemoData.org.profile
+        // A real jamf-cli profile can carry the demo's name. Its workspace and
+        // schedules are the operator's, not what an older demo build left.
+        guard !ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:])
+            .contains(where: { $0.name == demoProfile }) else { return nil }
         let store = ScheduleStore()
         let all = store.load()
         let kept = all.filter { $0.profile != demoProfile }
@@ -563,7 +567,8 @@ final class WorkspaceStore {
     }
 
     func autoUpdateJamfCLIIfNeeded() async {
-        guard !didAutoUpdateJamfCLI else { return }
+        // Demo mode runs no jamf-cli, and Settings disables the update controls there.
+        guard !didAutoUpdateJamfCLI, !demoMode else { return }
         didAutoUpdateJamfCLI = true
         guard UserDefaults.standard.bool(forKey: "autoUpdateJamfCLI") else { return }
         await updateJamfCLI()
