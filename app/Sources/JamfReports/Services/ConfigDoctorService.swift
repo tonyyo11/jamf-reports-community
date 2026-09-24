@@ -142,6 +142,7 @@ enum ConfigDoctorService {
             // No CSV to validate against: fall back to config-presence checks.
             rows += requiredColumnRows(config)
             rows += securityAgentStructuralRows(config)
+            rows += customEANoCSVRows(config, eaCoverageNames: eaCoverageNames)
         }
         rows += structuralRows(config)
         rows += baselineRows(config, eaCoverageNames: eaCoverageNames)
@@ -284,6 +285,40 @@ enum ConfigDoctorService {
                 id: id, severity: .fail, title: "EA: \(ea.name)",
                 detail: "'\(column)' not found in CSV.",
                 hint: "Re-run scaffold or fix the custom_eas column."
+            )
+        }
+    }
+
+    /// The no-CSV counterpart of `customEARows`. A custom EA's workbook sheet is
+    /// built from the CSV export alone, so without one the EA silently renders
+    /// nothing. Never `.fail`: only fail rows reach the run log, and a jamf-cli-only
+    /// workspace with EAs configured is a valid setup. A column that names a
+    /// collected extension attribute (case-insensitive, as `baselineRows` matches)
+    /// only rates a `.suggest` — those values exist, and the period report reads them.
+    private static func customEANoCSVRows(
+        _ config: ReportConfig,
+        eaCoverageNames: [String]
+    ) -> [DoctorRow] {
+        let collected = Set(eaCoverageNames.map { $0.lowercased() })
+        return (config.customEas ?? []).compactMap { ea in
+            let column = ea.column.trimmingCharacters(in: .whitespaces)
+            guard !column.isEmpty else { return nil }
+            let id = "custom_ea.\(ea.name).no_csv"
+            if collected.contains(column.lowercased()) {
+                return DoctorRow(
+                    id: id, severity: .suggest, title: "EA: \(ea.name)",
+                    detail: "No CSV export, so no workbook sheet — but '\(column)' is among "
+                        + "the collected extension attributes, so the period report can "
+                        + "still use it.",
+                    hint: "Drop a Jamf Pro CSV export with a '\(column)' column into "
+                        + "csv-inbox for the sheet."
+                )
+            }
+            return DoctorRow(
+                id: id, severity: .warn, title: "EA: \(ea.name)",
+                detail: "No CSV export to read, so this EA produces nothing — its sheet is "
+                    + "built from the CSV column '\(column)'.",
+                hint: "Drop a Jamf Pro CSV export with a '\(column)' column into csv-inbox."
             )
         }
     }
