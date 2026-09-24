@@ -6,13 +6,18 @@ import TipKit
 /// when it is off the operator manages hand-built LaunchAgents directly
 /// (`SchedulesView`). The master toggle lives in BOTH screens so switching modes
 /// is always reachable — flipping it here re-routes and reconciles.
+///
+/// Demo mode always gets `SchedulesView`, which lists the demo's schedules
+/// with every control disabled. This Mac's own policy used to pick the demo's
+/// screen, and in managed mode that was a card saying automation was
+/// unavailable in demo mode.
 struct AutomationTab: View {
     @Environment(WorkspaceStore.self) private var workspace
     @AppStorage(AutomationPolicy.storageKey) private var policyRaw: String = ""
 
     var body: some View {
         Group {
-            if AutomationPolicy.parse(policyRaw).isManaged {
+            if !workspace.demoMode && AutomationPolicy.parse(policyRaw).isManaged {
                 AutomationView()
             } else {
                 SchedulesView()

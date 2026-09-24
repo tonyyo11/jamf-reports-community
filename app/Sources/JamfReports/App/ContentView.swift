@@ -238,7 +238,10 @@ struct ContentView: View {
         case .deviceLookup:      "LOOKUP"
         case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
         case .audit:             "HEALTH & HYGIENE"
-        case .schedules:         AutomationPolicy.parse(automationPolicyRaw).isManaged ? "POLICY" : "SCHEDULES"
+        // Demo mode always shows the schedules list (see `AutomationTab`).
+        case .schedules:
+            !workspace.demoMode && AutomationPolicy.parse(automationPolicyRaw).isManaged
+                ? "POLICY" : "SCHEDULES"
         case .runs:              "STDOUT"
         case .config:            "CONFIG.YAML"
         case .customize:         "SHEETS"
