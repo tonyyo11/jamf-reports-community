@@ -140,7 +140,7 @@ struct BackupsView: View {
                             diffSelected()
                         }
                         .disabled(workspace.demoMode || isRunningBackup || isRunningDiff || selectedBackups.count != 2)
-                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                         PNPButton(
                             title: isRunningBackup ? "Backing Up..." : "New Backup",
                             icon: "externaldrive.badge.plus",
@@ -149,7 +149,7 @@ struct BackupsView: View {
                             runBackup()
                         }
                         .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
-                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     }
                 }
             )
@@ -228,13 +228,13 @@ struct BackupsView: View {
                                 diff(backup, against: latestBackup)
                             }
                             .disabled(workspace.demoMode || isRunningDiff || latestBackup?.id == backup.id)
-                            .help(workspace.demoMode ? "Available in live mode only" : "")
+                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                             PNPButton(title: "Delete", icon: "trash", style: .danger, size: .sm) {
                                 pendingDelete = backup
                                 showDeleteConfirm = true
                             }
                             .disabled(workspace.demoMode || isRunningBackup)
-                            .help(workspace.demoMode ? "Available in live mode only" : "Delete this backup")
+                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "Delete this backup")
                             .accessibilityHint("Shows a confirmation dialog to delete this backup")
                         }
                         .contextMenu {

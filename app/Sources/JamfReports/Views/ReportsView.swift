@@ -217,7 +217,7 @@ struct ReportsView: View {
                             .disabled(workspace.demoMode)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Fleet numbers for a period, with start, end and change"
                             )
                             PNPButton(
@@ -230,7 +230,7 @@ struct ReportsView: View {
                             .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Generate a self-contained HTML instance report"
                             )
                             PNPButton(
@@ -243,7 +243,7 @@ struct ReportsView: View {
                             .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Render the HTML report to PDF via WKWebView"
                             )
                             PNPButton(
@@ -256,7 +256,7 @@ struct ReportsView: View {
                             .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Export a wide CSV of all computer inventory"
                             )
                         }
