@@ -1529,7 +1529,9 @@ struct CoreDashboard: Sendable {
 
             let activationLock = general["activationLockEnabled"] as? Bool
             let passcodeCompliant = general["passcodeCompliant"] as? Bool
-            let sharedIPad = general["enrolledViaAutomatedDeviceEnrollment"] as? Bool ?? false
+            // GENERAL names the flag `sharedIpad`; a device without it is
+            // unknown (blank), not "No".
+            let sharedIPad = general["sharedIpad"] as? Bool
             let dataProtection = general["dataProtectionEnabled"] as? Bool
             let jailbreak = general["jailbreakDetected"] as? String ?? ""
 
@@ -1543,7 +1545,7 @@ struct CoreDashboard: Sendable {
                 "Device Family": family,
                 "Managed": yesNoUnknown(managed),
                 "Supervised": yesNoUnknown(supervised),
-                "Shared iPad": yesNoUnknown(sharedIPad as Bool?),
+                "Shared iPad": yesNoUnknown(sharedIPad),
                 "Model": model,
                 "OS Version": osVersion,
                 "Username": username,

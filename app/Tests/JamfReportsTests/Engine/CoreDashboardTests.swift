@@ -151,6 +151,53 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertNoThrow(try dash.writeMobileInventory())
     }
 
+    /// Shared iPad comes from GENERAL's `sharedIpad`, the key the collected
+    /// inventory carries; a device without it is blank, not "No".
+    func testMobileInventorySharedIPadReadsSharedIpad() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        createdTempDirs.append(tmp)
+        let kindDir = tmp.appendingPathComponent("mobile-device-inventory-details")
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        let json = """
+        [
+          {"mobileDeviceId": "1", "general": {"displayName": "A-Shared", "sharedIpad": true}},
+          {"mobileDeviceId": "2", "general": {"displayName": "B-Single", "sharedIpad": false}},
+          {"mobileDeviceId": "3", "general": {"displayName": "C-Unknown"}}
+        ]
+        """
+        try json.write(
+            to: kindDir.appendingPathComponent("mobile-device-inventory-details.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let dash = makeDashboard(dataDir: tmp)
+        try dash.writeMobileInventory()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Mobile Inventory"))
+
+        // Both the summary label and the column header read "Shared iPad"; the
+        // summary's sits in column 0, the header row starts with "Jamf Pro ID".
+        let labelRows = ws.dedupedCells.filter { cell in
+            guard cell.col == 0, case .string(let text) = cell.value else { return false }
+            return text == "Shared iPad" || text == "Jamf Pro ID"
+        }
+        let summaryRow = try XCTUnwrap(labelRows.first { cell in
+            if case .string("Shared iPad") = cell.value { return true }
+            return false
+        }?.row)
+        XCTAssertEqual(rowText(ws, row: summaryRow, columns: 2), ["Shared iPad", "1"])
+
+        let headerRow = try XCTUnwrap(labelRows.first { cell in
+            if case .string("Jamf Pro ID") = cell.value { return true }
+            return false
+        }?.row)
+        let headers = rowText(ws, row: headerRow, columns: 20)
+        let column = try XCTUnwrap(headers.firstIndex(of: "Shared iPad"))
+        // Rows sort by family ("Mobile" for all three), then by name.
+        let values = (1...3).map { rowText(ws, row: headerRow + $0, columns: 20)[column] }
+        XCTAssertEqual(values, ["Yes", "No", ""])
+    }
+
     // MARK: - Mobile Fleet Summary
 
     func testWriteMobileFleetSummary() throws {
