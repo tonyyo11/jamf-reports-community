@@ -1645,6 +1645,22 @@ struct ReportEngine: Sendable {
         return .confirmedDead(failedCount: authFailedKinds.count)
     }
 
+    /// Whether a `collect` call that returned normally actually ran its loop.
+    ///
+    /// The two early returns collected nothing, and a caller chaining more work
+    /// onto the collect must not treat them as a run: `CollectRouter` runs Jamf
+    /// Protect only after `.collected`, so a Mac that stood down for a peer does
+    /// not fetch Protect while the peer holds the workspace claim.
+    enum CollectDisposition: Equatable, Sendable {
+        /// The collect loop ran to the end (whatever landed, failed or was not due).
+        case collected
+        /// Skipped by the once-per-day guard: a full collect already ran today.
+        case alreadyCollected
+        /// Stood down for another Mac working in this shared workspace.
+        case stoodDown
+    }
+
+    @discardableResult
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
@@ -1654,7 +1670,7 @@ struct ReportEngine: Sendable {
         authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws {
+    ) async throws -> CollectDisposition {
         guard ProfileService.isValid(profile) else {
             throw ReportEngineError.invalidProfile(profile)
         }
@@ -1690,7 +1706,7 @@ struct ReportEngine: Sendable {
                 let msg = "[info] already collected today — skipping (use Refresh to force)"
                 AppLogger.collect.info("\(msg, privacy: .public)")
                 onLine(.init(timestamp: Date(), level: .info, text: msg))
-                return
+                return .alreadyCollected
             }
         }
 
@@ -1710,7 +1726,7 @@ struct ReportEngine: Sendable {
             let line = Self.standDownLine(reason: reason)
             AppLogger.collect.info("\(line, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .warn, text: line))
-            return
+            return .stoodDown
         case .proceed(let state, let notes):
             holdsClaim = state.holdsClaim
             for note in notes {
@@ -1927,6 +1943,7 @@ struct ReportEngine: Sendable {
         if case .proceed(let state, _) = coordination, state.coordinating {
             SharedWorkspace.recordActivity(profile: profile)
         }
+        return .collected
     }
 
     /// The three post-loop honesty checks, in the order they have to run:

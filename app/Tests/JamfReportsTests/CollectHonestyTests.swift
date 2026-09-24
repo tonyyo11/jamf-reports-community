@@ -110,7 +110,7 @@ final class CollectHonestyTests: XCTestCase {
         try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
         let stub = try makeUnlaunchableStub()
 
-        try? await ReportEngine.collect(
+        _ = try? await ReportEngine.collect(
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -224,7 +224,7 @@ final class CollectHonestyTests: XCTestCase {
         try writePeerCollect(at: Date())
         let collector = LogTextCollector()
 
-        try await ReportEngine.collect(
+        let disposition = try await ReportEngine.collect(
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             force: false,
@@ -232,6 +232,8 @@ final class CollectHonestyTests: XCTestCase {
             onLine: collector.append
         )
 
+        XCTAssertEqual(disposition, .stoodDown,
+                       "CollectRouter keys Protect on this; a stand-down is not a collect")
         let standDown = collector.texts.filter { $0.hasPrefix(ReportEngine.standDownMarker) }
         XCTAssertEqual(standDown.count, 1, "got: \(collector.texts)")
         XCTAssertTrue(try XCTUnwrap(standDown.first).contains("peer-mac"),
@@ -239,7 +241,7 @@ final class CollectHonestyTests: XCTestCase {
     }
 
     /// The watcher is what carries those facts to the scheduled-run caller,
-    /// since `collect` returns Void.
+    /// since `CollectRouter.run`, which the scheduled path calls, returns Void.
     func testWatcherRecognizesBothDishonestyMarkers() {
         let standDown = CollectHonestyWatcher()
         standDown.observe("[info] collecting security for prod")
@@ -651,7 +653,7 @@ final class CollectHonestyTests: XCTestCase {
         let stub = try makeStub(exitCode: 4)
         let collector = LogTextCollector()
 
-        try? await ReportEngine.collect(
+        _ = try? await ReportEngine.collect(
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.inventory],
