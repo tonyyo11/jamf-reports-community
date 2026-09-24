@@ -54,7 +54,14 @@ struct TrendsView: View {
     /// display, or a larger mobile-device line could clip off the chart.
     private var chartYDomainValues: [Double] {
         guard metric == .managedDevices else { return values }
-        return trendStore.managedDeviceSeries().flatMap { $0.points.map(\.value) }
+        return managedDeviceSeries.flatMap { $0.points.map(\.value) }
+    }
+
+    /// Computers and mobile devices for the Managed Devices chart.
+    private var managedDeviceSeries: [ChartSeries] {
+        workspaceStore.demoMode
+            ? TrendDemoSeries.managedDeviceSeries(range: range)
+            : trendStore.managedDeviceSeries()
     }
 
     /// Y-axis domain that respects the metric's preferred "good frame" but
@@ -289,8 +296,8 @@ struct TrendsView: View {
     /// Filter available metrics based on data availability.
     /// .mscpBandTrend only appears when mSCP band history exists.
     /// .securityScore only appears when security score data exists.
-    /// .managedDevices is live-only — demo mode has no dated mobile-count
-    /// series to split the two-line chart against.
+    /// .managedDevices shows in demo mode too, from the demo fleet's
+    /// computer and mobile series.
     private var availableMetrics: [TrendSeries.Metric] {
         TrendSeries.Metric.allCases.filter { metric in
             switch metric {
@@ -300,7 +307,7 @@ struct TrendsView: View {
                 // Keep existing logic for security score availability
                 return trendStore.points(metric: .securityScore).count > 0
             case .managedDevices:
-                return !workspaceStore.demoMode
+                return true
             default:
                 return true
             }
@@ -479,7 +486,7 @@ struct TrendsView: View {
                             // Series identity (`by:`) is what lets Charts render
                             // and legend them distinctly — a constant
                             // foregroundStyle would collapse both into one line.
-                            let deviceSeries = trendStore.managedDeviceSeries()
+                            let deviceSeries = managedDeviceSeries
                             ForEach(deviceSeries, id: \.label) { series in
                                 ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
                                     LineMark(
@@ -850,7 +857,7 @@ struct TrendsView: View {
     /// Label/color scale for the `.managedDevices` two-line chart, same
     /// derivation as `mscpBandChartScale`.
     private var managedDevicesChartScale: (labels: [String], colors: [Color]) {
-        let series = trendStore.managedDeviceSeries()
+        let series = managedDeviceSeries
         guard !series.isEmpty else { return (["Computers"], [Theme.Colors.info]) }
         return (series.map(\.label), series.map { Color(cgColor: $0.color) })
     }
@@ -1328,6 +1335,19 @@ enum TrendDemoSeries {
         guard let latest = allPoints.last?.date else { return [] }
         guard let start = startDate(for: range, latest: latest) else { return allPoints }
         return allPoints.filter { $0.date >= start }
+    }
+
+    /// Computers and mobile devices for the Managed Devices chart, shaped like
+    /// `TrendStore.managedDeviceSeries()` so the chart code needs no demo branch.
+    static func managedDeviceSeries(range: TrendRange) -> [ChartSeries] {
+        let computers = points(dates: dates, values: DemoData.totalDevicesTrend, range: range)
+        let mobile = points(dates: dates, values: DemoData.mobileDevicesTrend, range: range)
+        return [
+            ChartSeries(label: "Computers", color: ChartPalette.seriesColors[0],
+                        points: computers.map { (date: $0.date, value: $0.value) }),
+            ChartSeries(label: "Mobile devices", color: ChartPalette.seriesColors[4],
+                        points: mobile.map { (date: $0.date, value: $0.value) }),
+        ]
     }
 
     static func chartDomain(for metric: TrendSeries.Metric, range: TrendRange) -> ClosedRange<Date>? {

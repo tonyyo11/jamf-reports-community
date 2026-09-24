@@ -64,7 +64,11 @@ enum DemoData {
     private static let fileVaultTrend = trend(start: 78, end: 96, jitter: 2.2)
     private static let complianceTrend = trend(start: 54, end: 81, jitter: 4)
     private static let staleTrend = trend(start: 48, end: 22, jitter: 4)
-    private static let osCurrentTrend = trend(start: 41, end: 73, jitter: 5)
+    /// Ends on the share of `osDistribution` flagged current, so the On
+    /// Current macOS card and the Overview donut agree.
+    private static let osCurrentTrend = trend(
+        start: 41, end: 73, jitter: 5,
+        pinnedLast: osDistribution.filter(\.current).reduce(0) { $0 + $1.pct })
     private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8,
                                                 pinnedLast: coverage(edrInstalled))
     private static let patchTrend = trend(start: 62, end: 84, jitter: 4)
@@ -84,7 +88,15 @@ enum DemoData {
     /// Grows from 460 to 520 devices over the 26-week period.
     private static let mscpBandTrend = trend(start: 460, end: 520, jitter: 8)
 
+    /// iPads and iPhones in the demo fleet — Mobile Fleet's demo inventory has 25.
+    static let mobileDeviceCount = 25
+    /// The Managed Devices chart's mobile line, ending on `mobileDeviceCount`.
+    static let mobileDevicesTrend = trend(
+        start: 18, end: 25, jitter: 1, pinnedLast: Double(mobileDeviceCount))
+
     static let trends: [TrendSeries.Metric: [Double]] = [
+        // Headline value is the computer count, as it is live.
+        .managedDevices:  totalDevicesTrend,
         .stability:       stabilityTrend,
         .fileVault:       fileVaultTrend,
         .compliance:      complianceTrend,
