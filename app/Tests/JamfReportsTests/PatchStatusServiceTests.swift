@@ -121,6 +121,39 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.devicesWithFailures, 2)
     }
 
+    /// The same lesson for the other fields: ids as JSON numbers, or a row with
+    /// no username, cost that field and never the whole failures array.
+    func testFailureRowsDecodeWithNumericIdsAndAMissingField() throws {
+        let failuresJSON = """
+        [
+          {"policy": "Firefox", "policy_id": 123, "device": "Mac-001",
+           "device_id": 1001, "status_date": "2026-09-09", "attempt": 3,
+           "last_action": "Retrying", "serial": "ABC123", "os_version": "26.0",
+           "username": "jdoe"},
+          {"policy": "Firefox", "policy_id": 123, "device": "Mac-002",
+           "device_id": 1002, "status_date": "2026-09-09", "attempt": 1,
+           "last_action": "Failed", "serial": "DEF456", "os_version": "26.0"}
+        ]
+        """
+        let tmp = FileManager.default.temporaryDirectory
+        let titlesURL = tmp.appendingPathComponent("titles-\(UUID().uuidString).json")
+        let failuresURL = tmp.appendingPathComponent("failures-\(UUID().uuidString).json")
+        try Data("[]".utf8).write(to: titlesURL)
+        try Data(failuresJSON.utf8).write(to: failuresURL)
+        defer {
+            try? FileManager.default.removeItem(at: titlesURL)
+            try? FileManager.default.removeItem(at: failuresURL)
+        }
+
+        let snapshot = try XCTUnwrap(
+            PatchStatusService.load(from: titlesURL, failuresURL: failuresURL))
+        XCTAssertEqual(snapshot.failures.count, 2, "both rows must decode")
+        XCTAssertEqual(snapshot.failures.map(\.policyId), ["123", "123"])
+        XCTAssertEqual(snapshot.failures.map(\.deviceId), ["1001", "1002"])
+        XCTAssertEqual(snapshot.failures.map(\.username), ["jdoe", ""])
+        XCTAssertEqual(snapshot.failures.map(\.id), ["1001-123", "1002-123"])
+    }
+
     func testEmptyInputHandling() throws {
         let emptyTitlesJSON = "[]"
         let emptyFailuresJSON = "[]"

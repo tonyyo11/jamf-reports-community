@@ -3404,11 +3404,17 @@ struct ReportEngine: Sendable {
     /// either failures section means upstream could not ask (device rows depend
     /// on policy rows), which is not a clean zero — nil lets the caller record
     /// the kind as not landed, with `patchFetchError` saying why.
+    ///
+    /// With no fetch error, a device section whose `data` is null or absent is
+    /// the same healthy zero as `[]`: Go encodes a nil slice as null and
+    /// drops it under `omitempty`. Only a missing section, or `data` of some
+    /// other type, is output this cannot read.
     private static func envelopeDeviceRows(_ sections: [[String: Any]]) -> Data? {
         guard sectionFetchError(in: sections) == nil else { return nil }
-        guard let device = sections.first(where: { $0["section"] as? String == "device_failures" }),
-              let rows = device["data"] as? [[String: Any]]
+        guard let device = sections.first(where: { $0["section"] as? String == "device_failures" })
         else { return nil }
+        guard let value = device["data"], !(value is NSNull) else { return Data("[]".utf8) }
+        guard let rows = value as? [[String: Any]] else { return nil }
         return try? JSONSerialization.data(withJSONObject: rows, options: [])
     }
 

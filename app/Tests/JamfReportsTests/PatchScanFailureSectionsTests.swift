@@ -122,6 +122,28 @@ final class PatchScanFailureSectionsTests: XCTestCase {
         XCTAssertTrue(collector.texts.isEmpty, "got: \(collector.texts)")
     }
 
+    /// Go encodes a nil slice as null and drops it under `omitempty`, so a
+    /// device section with null or absent data is the same zero as `[]` — not
+    /// output to call unreadable. Data of any other type still is.
+    func testEnvelopeWithNullOrMissingDeviceDataIsAnEmptyAnswer() throws {
+        let nullData = try rows(ReportEngine.patchDeviceFailurePayload(
+            from: envelope(devices: "null")))
+        XCTAssertTrue(nullData.isEmpty, "data: null is no failures")
+
+        let missing = Data("""
+        [
+          {"section": "title_compliance", "data": [{"title": "Firefox", "id": "1"}]},
+          {"section": "policy_failures", "data": [], "fetch_error": ""},
+          {"section": "device_failures", "fetch_error": ""}
+        ]
+        """.utf8)
+        let missingData = try rows(ReportEngine.patchDeviceFailurePayload(from: missing))
+        XCTAssertTrue(missingData.isEmpty, "a device section without data is no failures")
+
+        XCTAssertNil(ReportEngine.patchDeviceFailurePayload(from: envelope(devices: "\"none\"")),
+                     "data that is neither rows nor null is still unreadable")
+    }
+
     /// A section jamf-cli could not fetch is empty AND says so. That is not a
     /// clean zero: nil makes the caller record the kind as not landed, and
     /// `patchFetchError` tells it which section failed and why.

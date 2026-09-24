@@ -177,7 +177,10 @@ struct PatchFailureRow: Decodable, Sendable, Identifiable, Equatable {
     let osVersion: String
     let username: String
 
-    var id: String { "\(deviceId)-\(policyId)-\(attempt)" }
+    /// One row per failing device and patch policy. `attempt` stays out of the
+    /// identity: it rises as Jamf retries, so the same failure would read as a
+    /// different row from one scan to the next.
+    var id: String { "\(deviceId)-\(policyId)" }
 
     private enum CodingKeys: String, CodingKey {
         case policy
@@ -197,19 +200,23 @@ extension PatchFailureRow {
     /// jamf-cli writes `attempt` as text ("3") on 1.28 and 1.29; the numeric
     /// form the fixtures were written from is accepted too. A strict `Int`
     /// made the whole failures array undecodable on prod (2.8.0 field pass).
+    /// Every other field is read as leniently: one row with a numeric id or no
+    /// username must cost that field, not the whole array.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        policy = try c.decode(String.self, forKey: .policy)
-        policyId = try c.decode(String.self, forKey: .policyId)
-        device = try c.decode(String.self, forKey: .device)
-        deviceId = try c.decode(String.self, forKey: .deviceId)
-        statusDate = try c.decode(String.self, forKey: .statusDate)
-        attempt = (try? c.decode(Int.self, forKey: .attempt))
-            ?? Int((try? c.decode(String.self, forKey: .attempt)) ?? "") ?? 0
-        lastAction = try c.decode(String.self, forKey: .lastAction)
-        serial = try c.decode(String.self, forKey: .serial)
-        osVersion = try c.decode(String.self, forKey: .osVersion)
-        username = try c.decode(String.self, forKey: .username)
+        func text(_ key: CodingKeys) -> String {
+            (try? c.decodeIfPresent(AnyCodable.self, forKey: key))?.stringValue ?? ""
+        }
+        policy = text(.policy)
+        policyId = text(.policyId)
+        device = text(.device)
+        deviceId = text(.deviceId)
+        statusDate = text(.statusDate)
+        attempt = (try? c.decodeIfPresent(AnyCodable.self, forKey: .attempt))?.intValue ?? 0
+        lastAction = text(.lastAction)
+        serial = text(.serial)
+        osVersion = text(.osVersion)
+        username = text(.username)
     }
 }
 

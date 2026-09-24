@@ -340,7 +340,7 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].attempt, 3)
         XCTAssertEqual(rows[0].lastAction, "Retrying")
         XCTAssertEqual(rows[0].osVersion, "15.7.3")
-        XCTAssertEqual(rows[0].id, "123-42-3")
+        XCTAssertEqual(rows[0].id, "123-42", "attempt is not part of a failure's identity")
     }
 
     func testPatchFailureFixtureDecodesWithoutError() throws {
