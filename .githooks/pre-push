@@ -1,8 +1,34 @@
 #!/bin/sh
+# Pre-push gate: the "Pre-push CI parity" check from CLAUDE.md. Builds the app
+# and its test target, and blocks the push when the compiler reports an error,
+# so a break the CI build would catch is caught before it leaves this Mac.
+# CI compiles with Swift 6.1 (Xcode 16.4); a newer local Swift is more lenient
+# about actor isolation, so this catches most CI errors, not every one.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Skip for one push:      git push --no-verify
 set -eu
 
 repo_root="$(git rev-parse --show-toplevel)"
-cd "$repo_root"
+cd "$repo_root/app"
 
-echo "Running local test gate before push..."
-./scripts/test.sh
+echo "pre-push: swift build --build-tests (CI parity)..."
+if output="$(swift build --build-tests 2>&1)"; then
+  build_status=0
+else
+  build_status=$?
+fi
+
+errors="$(printf '%s\n' "$output" | grep "error:" || true)"
+if [ -n "$errors" ]; then
+  printf '%s\n' "$errors" >&2
+  echo "pre-push: build errors found, push blocked" >&2
+  exit 1
+fi
+# A failed build with no "error:" line (no Swift toolchain, a crash) is not a pass.
+if [ "$build_status" -ne 0 ]; then
+  printf '%s\n' "$output" | tail -n 20 >&2
+  echo "pre-push: swift build exited $build_status, push blocked" >&2
+  exit 1
+fi
+echo "pre-push: OK"
