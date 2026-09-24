@@ -47,4 +47,59 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(score.grade, .aPlus)
         XCTAssertEqual(score.available, [.fileVault, .sip, .firewall])
     }
+
+    // MARK: - Compliance Posture
+
+    /// The first donut is the configured benchmark, banded as the Overview's
+    /// compliance bands with the 22 Macs that report no count as No Data.
+    func testConfiguredBaselineIsTheOverviewsBands() throws {
+        let baseline = try XCTUnwrap(DemoData.complianceBaselineResults.first)
+        XCTAssertEqual(baseline.name, DemoData.complianceBaseline)
+        XCTAssertEqual(baseline.totalDevices, DemoData.totalDevices)
+        XCTAssertEqual(baseline.noDataCount, 22)
+        XCTAssertEqual(baseline.devicesWithData, 502)
+        XCTAssertEqual(Array(baseline.bands.prefix(5).map(\.count)),
+                       DemoData.complianceBands.map(\.count))
+        XCTAssertEqual(baseline.bands.last?.count, 22, "No Data is the last band")
+        XCTAssertEqual(String(format: "%.1f", baseline.compliancePct ?? 0), "42.4")
+    }
+
+    func testSTIGBaselineCoversTheWholeFleet() throws {
+        let stig = try XCTUnwrap(DemoData.complianceBaselineResults.last)
+        XCTAssertEqual(stig.name, "DISA STIG")
+        XCTAssertEqual(stig.totalDevices, DemoData.totalDevices)
+        XCTAssertEqual(stig.noDataCount, 0)
+        XCTAssertEqual(stig.bands.map(\.count), [304, 96, 64, 32, 28, 0])
+        XCTAssertEqual(String(format: "%.1f", stig.compliancePct ?? 0), "58.0")
+    }
+
+    func testControlGapsAreTheComplementsOfTheSecurityControls() {
+        let gaps = DemoData.compliancePostureSnapshot.controlGaps
+        XCTAssertEqual(gaps.map(\.control), ["Firewall", "Gatekeeper", "FileVault", "SIP"])
+        XCTAssertEqual(gaps.map(\.failingDevices), [42, 12, 11, 0])
+        XCTAssertTrue(gaps.allSatisfy { $0.totalDevices == DemoData.totalDevices })
+    }
+
+    /// Each macOS major version holds the Macs the Overview's distribution gives
+    /// it, and the per-Mac gaps add up to the control bars.
+    func testPerOSBreakdownMatchesTheDistributionAndTheGaps() {
+        let snapshot = DemoData.compliancePostureSnapshot
+        var expected: [Int: Int] = [:]
+        for entry in DemoData.osDistribution {
+            let version = DemoData.osVersionNumber(entry.version)
+            let major = ComplianceBandingService.parseOSMajor(version) ?? 0
+            expected[major, default: 0] += entry.count
+        }
+        let perOS = Dictionary(uniqueKeysWithValues: snapshot.perOSMajor.map { row in
+            (row.osMajor, row.bands.reduce(0) { $0 + $1.count })
+        })
+        XCTAssertEqual(perOS, expected)
+        XCTAssertEqual(expected, [15: 385, 14: 84, 13: 38, 12: 17])
+
+        let gapTotal = DemoData.controlGapsByOSMajor.reduce(0) { total, row in
+            total + row.macsByGapCount.enumerated().reduce(0) { $0 + $1.offset * $1.element }
+        }
+        XCTAssertEqual(gapTotal, snapshot.controlGaps.reduce(0) { $0 + $1.failingDevices })
+        XCTAssertEqual(snapshot.totalDevices, DemoData.totalDevices)
+    }
 }

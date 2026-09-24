@@ -18,7 +18,9 @@ struct CompliancePostureView: View {
                 kicker: "Posture",
                 title: "Compliance Posture",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is fixed; an age measured from today would grow
+                // for as long as the demo stays open.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
@@ -90,12 +92,12 @@ struct CompliancePostureView: View {
 
     private func reload() {
         snapshot = workspace.demoMode
-            ? Self.demoSnapshot
+            ? DemoData.compliancePostureSnapshot
             : CompliancePostureService.load(profile: workspace.profile)
 
         // Load real mSCP baseline results when not in demo mode
         if workspace.demoMode {
-            mscpResults = Self.demoMSCPResults
+            mscpResults = DemoData.complianceBaselineResults
         } else {
             // Load config to get resolved baselines
             if let config = readConfig(),
@@ -115,73 +117,6 @@ struct CompliancePostureView: View {
         guard let workspaceURL = ProfileService.workspaceURL(for: workspace.profile) else { return nil }
         let configURL = workspaceURL.appendingPathComponent("config.yaml")
         return try? ConfigLoader.load(from: configURL)
-    }
-
-    private static var demoMSCPResults: [MSCPComplianceService.BaselineResult] {
-        // Demo baselines with different band distributions
-        let stigBands = ComplianceBandingService.bands(failures:
-            Array(repeating: 0, count: 380) +   // Pass
-            Array(repeating: 5, count: 120) +   // Low
-            Array(repeating: 15, count: 80) +   // Med-Low
-            Array(repeating: 35, count: 40) +   // Medium
-            Array(repeating: 60, count: 35)     // High
-        )
-        let nistBands = ComplianceBandingService.bands(failures:
-            Array(repeating: 0, count: 400) +   // Pass
-            Array(repeating: 3, count: 100) +   // Low
-            Array(repeating: 20, count: 90) +   // Med-Low
-            Array(repeating: 40, count: 50) +   // Medium
-            Array(repeating: 55, count: 15)     // High
-        )
-
-        return [
-            MSCPComplianceService.BaselineResult(
-                name: "DISA STIG",
-                failuresCountColumn: "STIG Failures Count",
-                bands: stigBands,
-                noDataCount: 0,
-                totalDevices: 655,
-                compliancePct: 58.0
-            ),
-            MSCPComplianceService.BaselineResult(
-                name: "NIST 800-53r5",
-                failuresCountColumn: "NIST Failures Count",
-                bands: nistBands,
-                noDataCount: 0,
-                totalDevices: 655,
-                compliancePct: 61.1
-            )
-        ]
-    }
-
-    private static var demoSnapshot: CompliancePostureService.Snapshot {
-        let failures: [Int?] =
-            Array(repeating: 0, count: 420) +
-            Array(repeating: 1, count: 130) +
-            Array(repeating: 2, count: 60) +
-            Array(repeating: 3, count: 30) +
-            Array(repeating: 4, count: 15)
-        let bands = ComplianceBandingService.bands(failures: failures)
-        let osPairs: [(osMajor: Int, failures: Int?)] = (0..<420).map { _ in (15, 0) }
-            + (0..<130).map { _ in (15, 1) }
-            + (0..<60).map { _ in (14, 2) }
-            + (0..<45).map { _ in (13, 3) }
-        let perOS = ComplianceBandingService.bandsByOSMajor(osPairs)
-        let total = failures.count
-        let controlGaps = [
-            CompliancePostureService.Snapshot.ControlGap(control: "Gatekeeper", failingDevices: 90, totalDevices: total),
-            CompliancePostureService.Snapshot.ControlGap(control: "Firewall", failingDevices: 80, totalDevices: total),
-            CompliancePostureService.Snapshot.ControlGap(control: "FileVault", failingDevices: 25, totalDevices: total),
-            CompliancePostureService.Snapshot.ControlGap(control: "SIP", failingDevices: 5, totalDevices: total)
-        ]
-        return CompliancePostureService.Snapshot(
-            totalDevices: total,
-            bands: bands,
-            perOSMajor: perOS,
-            controlGaps: controlGaps,
-            sourceFile: nil,
-            snapshotDate: Date()
-        )
     }
 
     // MARK: - Sections
@@ -531,7 +466,13 @@ struct CompliancePostureView: View {
     private var perOSBreakdownCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Per-OS Breakdown")
+                // Always banded by control gaps. Under mSCP donuts, say so rather than
+                // let these bars read as the baselines' failed-rule bands.
+                SectionHeader(
+                    title: "Per-OS Breakdown",
+                    trailing: mscpResults.isEmpty ? nil : "Control-gap proxy"
+                )
+                .help(Self.perOSProxyHelp)
                 if snapshot.perOSMajor.isEmpty {
                     Text("Not enough OS version data in this snapshot.")
                         .font(.footnote)
@@ -542,6 +483,9 @@ struct CompliancePostureView: View {
             }
         }
     }
+
+    private static let perOSProxyHelp: String = "Each Mac is banded by how many of FileVault, "
+        + "SIP, Firewall and Gatekeeper it fails, not by failed mSCP rules."
 
     private var perOSGrid: some View {
         VStack(spacing: 8) {
