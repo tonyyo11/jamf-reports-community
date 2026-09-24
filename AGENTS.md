@@ -691,13 +691,13 @@ recognized subcommand
 
 The CLI lives in `Sources/JamfReports/CLI/` and uses `swift-argument-parser`
 (the second and only other dependency, after ZIPFoundation). `JamfReportsCLI`
-is the `AsyncParsableCommand` root; each of the 12 subcommands is a thin shell
+is the `AsyncParsableCommand` root; each of the 11 subcommands is a thin shell
 over an already-tested engine entry point — `generate`/`html`
 (`ReportEngine.generate`/`generateHTML`), `collect` (`ReportEngine.collect`),
 `backup`/`device` (`CLIBridge`, MainActor hop), `scaffold` (`ScaffoldService`),
-`check`/`school-check`/`school-scaffold` (the `runCheck`/`runSchoolCheck`/
-`runSchoolScaffold` helpers in `main.swift`), `capabilities` (`CapabilityService`
-+ `DefaultCLIExecutor`), `diagnostic-bundle` (`DiagnosticBundleService`), and
+`check`/`school-check` (the `runCheck`/`runSchoolCheck` helpers in `main.swift`),
+`capabilities` (`CapabilityService` + `DefaultCLIExecutor`), `diagnostic-bundle`
+(`DiagnosticBundleService`), and
 `schedules` (2.8.0; `ScheduleStore`/`TickRunner` — `list`/`add`/`remove`/`run`
 over hand-built schedules; managed ones are policy-derived and not editable
 here).
@@ -716,9 +716,10 @@ async root (they print help and exit 0). The `@available` wrapper supplies the
 context that makes the async overloads win. `JamfReportsCLI` carries the same
 annotation.
 
-**School commands ship untested** — `school-check`/`school-scaffold` are
-first-class but unvalidated (no Jamf School tenant); they invite community
-feedback. Install the `jamf-reports` symlink via `CLIInstaller` (Settings →
+**The School command ships untested** — `school-check` is first-class but
+unvalidated (no Jamf School tenant); it invites community feedback.
+`school-scaffold` was removed after 2.8.0: the `school_columns` block it wrote had
+no reader. Install the `jamf-reports` symlink via `CLIInstaller` (Settings →
 "Command-line tool"). User guide: `docs/wiki/07-Command-Line.md`.
 
 #### Building the app

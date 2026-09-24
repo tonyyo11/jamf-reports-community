@@ -357,7 +357,6 @@ enum ScaffoldService {
 
     /// Escape a string for embedding inside a YAML double-quoted scalar.
     /// YAML requires `\` → `\\`, `"` → `\"`, and control chars to be escaped.
-    /// Internal (not private) so `runSchoolScaffold` shares the same escaping.
     ///
     /// U+2028/U+2029/U+0085/U+000B/U+000C are also neutralized: they are all
     /// members of `CharacterSet.newlines`, which `YAMLCodec`'s parser splits

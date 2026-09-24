@@ -29,9 +29,8 @@ jamf-reports --help
 ## Commands
 
 Every command operates on a workspace **profile** (the same profiles the app
-manages under `~/Jamf-Reports/<profile>/`), except `scaffold` and
-`school-scaffold`, which work on standalone CSV files (`scaffold`'s `--csv` is
-optional — see below).
+manages under `~/Jamf-Reports/<profile>/`), except `scaffold`, which works on a
+standalone CSV file (its `--csv` is optional — see below).
 
 If the workspace has been moved off its default location (Settings → Workspace
 location), point the CLI at it with `JRC_WORKSPACES_ROOT`:
@@ -58,7 +57,6 @@ workspace rather than failing.
 | `diagnostic-bundle` | Build a redacted diagnostic zip | `--profile` |
 | `device` | Print one device's detail JSON | `--profile`, `--id <serial-or-id>` |
 | `school-check` | Validate a Jamf School profile | `--profile` |
-| `school-scaffold` | Build a Jamf School `config.yaml` from a CSV | `--csv <path>`, `--out <path>` |
 | `schedules` | List, add, remove, or run hand-built schedules (managed ones come from the Automation policy and are not editable here) | `list`, `add …`, `remove <label>`, `run <label>` |
 
 ### Gating a job on config health
@@ -126,9 +124,9 @@ A few behaviors worth knowing:
 
 ### Jamf School commands
 
-`school-check` and `school-scaffold` are first-class commands, but they ship
-**untested** — the maintainer has no Jamf School tenant to validate against. If
-you run Jamf School, please try them and
+`school-check` is a first-class command, but it ships **untested** — the
+maintainer has no Jamf School tenant to validate against. If you run Jamf School,
+please try it and
 [open an issue or pull request](https://github.com/tonyyo11/jamf-reports-community/issues)
 with feedback.
 

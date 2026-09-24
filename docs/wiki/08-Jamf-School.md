@@ -16,7 +16,7 @@ onboarding choose the Jamf School product, or add it later from the **Sources** 
 The app runs `jamf-cli school setup` for you and wires `school_cli.enabled`/`profile` into
 `config.yaml`.
 
-The relevant `config.yaml` sections (the app manages these):
+The relevant `config.yaml` section (the app manages it):
 
 ```yaml
 school_cli:
@@ -24,11 +24,6 @@ school_cli:
   data_dir: "school-cli-data"
   profile: "school"       # must match the jamf-cli school profile
   use_cached_data: true
-
-school_columns:
-  device_name: ""         # filled in by re-scaffolding against a CSV export
-  serial_number: ""
-  # ...
 ```
 
 ## Setting up a School-only workspace
@@ -54,8 +49,6 @@ or later from **Data Sources**. In that older flow onboarding runs through the J
 screens first — the Authenticate/Validate steps accept placeholder Jamf Pro values and let
 you continue even when the connection check fails (see
 [App Onboarding → Running without jamf-cli credentials](https://github.com/tonyyo11/jamf-reports-community/wiki/02-App-Onboarding)).
-A CSV-only workspace can also skip a live connection and just scaffold `school_columns`
-from a Jamf School CSV export (see below).
 
 Jamf School data feeds the standalone workbook described above — it does not appear in
 the interactive dashboards (Overview, Devices, Security Posture, and the rest), which are
@@ -70,10 +63,7 @@ no conversion needed.
 ## Using the app
 
 1. Export a CSV from Jamf School (**Devices > Export**), or connect a live School profile.
-2. In the **Config** screen, scaffold `school_columns` against the CSV export.
-3. Review the detected `school_columns` — fuzzy matching is good but not perfect. Confirm
-   `device_name` resolved to the display-name column, not a location or class name.
-4. Generate the Jamf School workbook from the app. With a CSV it needs no credentials; with
+2. Generate the Jamf School workbook from the app. With a CSV it needs no credentials; with
    a connected School profile, collect first to add live-data sheets.
 
 ## What jamf-cli school commands are used

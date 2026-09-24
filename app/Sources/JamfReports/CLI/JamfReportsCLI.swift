@@ -18,7 +18,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
         subcommands: [
             Generate.self, Collect.self, Html.self, Backup.self, Scaffold.self,
             Check.self, Capabilities.self, DiagnosticBundleCommand.self, Device.self,
-            SchoolCheck.self, SchoolScaffold.self, Schedules.self,
+            SchoolCheck.self, Schedules.self,
         ]
     )
 
@@ -27,8 +27,7 @@ struct JamfReportsCLI: AsyncParsableCommand {
     /// launch (which passes non-subcommand OS args) still opens the GUI.
     static let subcommandNames: Set<String> = [
         "generate", "collect", "html", "backup", "scaffold", "check",
-        "capabilities", "diagnostic-bundle", "device", "school-check", "school-scaffold",
-        "schedules",
+        "capabilities", "diagnostic-bundle", "device", "school-check", "schedules",
     ]
 
     static func isKnownSubcommand(_ arg: String) -> Bool {
