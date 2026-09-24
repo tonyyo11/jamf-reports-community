@@ -62,20 +62,31 @@ Connection health → Update credentials…** for an existing profile:
 - **Scope:** Environment, with the environment ID from step 7.
 - **Client ID** and **client secret** from step 6.
 
-The app's Platform form still says "account.jamf.com → API Clients"; in Jamf Account the
-page is **Integrations**.
+Environment scope needs jamf-cli 1.28 or later.
 
 ## Check the scope ID
 
-Saving a profile and onboarding's **Validate** step both leave the scope ID unchecked —
-neither sends it — so a mistyped ID is saved without complaint and then fails every
-collect. Check it once after setup:
+The gateway issues a token before it reads the scope header, so a correct client ID and
+secret with a mistyped environment ID still get a token. Onboarding's **Validate** step and
+**Update credentials…** therefore check the ID itself, with a request that needs no
+permission:
+
+- **Accepted:** a Jamf Pro tenant answered, and setup continues.
+- **Rejected:** the gateway does not know the ID, or it is the wrong kind for the
+  integration's scope level. Setup stops and says where the right ID is.
+- **No Jamf Pro:** the ID is valid but no Jamf Pro tenant answers behind it, including an
+  environment that holds no tenant. Setup warns.
+- **Undecided:** the answer was not conclusive, and setup offers **Continue without
+  validating**.
+
+Profiles set up before 2.8.1 were saved without that check. To check one by hand:
 
 ```bash
 jamf-cli -p <profile> pro jamf-pro-version list --output json | head -c 300
 ```
 
-The request needs no permission, so the answer is about the ID and credentials alone:
+On jamf-cli before 1.29 the command is `pro jamf-pro-versions list`. The request needs no
+permission, so the answer is about the ID and credentials alone:
 
 | Result | Meaning |
 |---|---|
@@ -94,8 +105,8 @@ level alone.
 | Level | In the app | What JamfReports can collect |
 |---|---|---|
 | **Platform environment** (use this) | Scope: Environment, with the environment ID | The Jamf Pro and Classic API sources of the environment's Jamf Pro tenant, plus Compliance Benchmarks, blueprint status and DDM status |
-| **Tenant** (legacy) | Scope: Tenant (legacy), with the tenant ID | The Jamf Pro and Classic API sources of that one tenant. Compliance Benchmarks, blueprint status and DDM status declare environment scope and may not answer; a 400 or 403 naming the scope level is the sign to create an environment-level integration. |
-| **Organization** | Scope: Organization, no ID | Nothing. This level reaches Jamf Account administration only. |
+| **Tenant** (legacy) | Scope: Tenant (legacy), with the tenant ID | The Jamf Pro and Classic API sources of that one tenant, plus DDM status. Jamf Account does not let a tenant-level integration read Compliance Benchmarks or blueprint status, so the app skips both on such a profile and says so in Run History and on the Compliance Benchmarks screen. |
+| **Organization** | Not offered | Nothing. This level reaches Jamf Account administration only, so the app does not offer it. A profile set up this way before 2.8.1 reports that the gateway rejected its scope level. |
 
 ## Permissions by report area
 
@@ -121,7 +132,7 @@ and the health strip use.
 | Health Audit | `audit` | Read Policies; Read Categories; Read Self Service; Read Smart Computer Groups; Read Static Computer Groups; Read Device Enrollment Program Instances; Read Computer PreStage Enrollments; View MDM command information in Jamf Pro API; Read Computers | Deployment > Policies; Organizational context > Categories; Global settings > Self Service configuration; Inventory > Device groups; Infrastructure > Automated Device Enrollment connection; Enrollment > PreStage enrollments; Device actions > Device actions; Inventory > Devices |
 | Group hygiene (Health Audit, on demand) | `group-tools-analyze` | Read Smart Computer Groups; Read Static Computer Groups; Read Policies; Read macOS Configuration Profiles; Read Patch Policies; Read Patch Management Software Titles; Read Restricted Software; Read eBooks; Read Computer PreStage Enrollments | Inventory > Device groups; Deployment > Policies; Deployment > Configuration profiles; App lifecycle management > Patch policies; App lifecycle management > Restricted software; App lifecycle management > eBooks; Enrollment > PreStage enrollments |
 | Device lookup (live, not stored) | — | Read Computers; View MDM command information in Jamf Pro API | Inventory > Devices; Inventory > Device history; Device actions > Device actions |
-| Compliance Benchmarks, blueprint status, DDM status | `compliance-devices`, `compliance-rules`, `blueprint-status`, `ddm-status` | Not available on a direct connection | Compliance > Compliance Benchmarks; Deployment > Blueprints; Deployment > Declarations reporting; Inventory > Devices — environment level only |
+| Compliance Benchmarks, blueprint status, DDM status | `compliance-devices`, `compliance-rules`, `blueprint-status`, `ddm-status` | Not available on a direct connection | Compliance > Compliance Benchmarks; Deployment > Blueprints; Deployment > Declarations reporting; Inventory > Devices — environment level (DDM status also answers at tenant level) |
 
 Why *Read Self Service* is on the list: Jamf Pro requires it, alongside *Read Categories*,
 to list categories.
@@ -138,8 +149,8 @@ credential produces a partial backup rather than none.
 
 **Jamf Protect.** Create an API client under **API Clients** in the Jamf Protect console and
 assign it the most restrictive role that can read computers, alerts, insights and plans.
-Jamf's current documentation places the page at **Administrative > API Clients** and offers
-the **Read Only** role or a custom role; the app's form and jamf-cli's setup guide still say
+Jamf's current documentation and the app's form place the page at **Administrative > API
+Clients**, with the **Read Only** role or a custom role; jamf-cli's setup guide still says
 **Settings > API Clients**. Connect it with the Protect URL, client ID and client secret.
 
 **Jamf School.** Generate an API key at **Organization > Settings > API**, and find the
@@ -172,9 +183,11 @@ Some 403s are not about permissions:
 - **A note that the gateway does not serve the endpoint, or exit 8** — the command is
   outside what a Platform API profile can reach. Use a direct Jamf Pro profile for it.
 
-In the app, Run History shows jamf-cli's error message but not its hint, and the app's own
-explanation of exit 5 always points at the Jamf Pro API role. To read the hint, run the
-failing command in Terminal and keep the output short:
+In the app, the health strip and Run History's warning line name the cause and carry
+jamf-cli's hint, and the explanation of exit 5 names both the Jamf Pro API role and the Jamf
+Account integration. A source that fails for a missing permission or a rejected ID is not
+retried every hour: fix the grant, then choose **Collect now**. To see the full output, run
+the failing command in Terminal and keep it short:
 
 ```bash
 jamf-cli -p <profile> pro scripts list --output json | head -c 1500
@@ -188,6 +201,6 @@ workspace's `config.yaml` uses, connected the same way. See
 
 ## Known gaps
 
-The app's Platform API setup text, its advice for permission errors, Compliance Benchmarks
-collection and its HTML reports have known gaps; see
-[Known Issues](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations#known-issues).
+The HTML report has no Platform API sections yet. Compliance Benchmarks, blueprint status
+and DDM status appear on the app's screens and in the workbook's Compliance Rules,
+Compliance Devices, Blueprint Status and DDM Status sheets.
