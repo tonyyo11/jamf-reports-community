@@ -774,7 +774,11 @@ struct EditableNumberStepper: View {
                 .multilineTextAlignment(.trailing)
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Colors.fg2)
-                .frame(minWidth: fieldWidth)
+                // DRAFT — needs visual verification. A fixed width, as the
+                // property's doc says: with only a minimum, the field took
+                // every spare point of the Devices header, stretching "Stale
+                // 30 d" across half the toolbar row.
+                .frame(width: fieldWidth)
                 .onChange(of: value) { _, newValue in
                     let clamped = max(range.lowerBound, min(range.upperBound, newValue))
                     if clamped != newValue { value = clamped }
