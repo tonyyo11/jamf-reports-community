@@ -172,11 +172,20 @@ struct MobileFleetService: Sendable {
                 }
         }
 
-        /// Number of managed apps reported for a rich device. Returns 0 when
-        /// the `applications` array is `nil` (jamf-cli wasn't asked for the
-        /// APPLICATIONS section) or empty.
-        func managedAppCount(for device: MobileDeviceInventoryItem) -> Int {
-            device.applications?.count ?? 0
+        /// Whether any rich device carries an `applications` array. The collect
+        /// never requests the APPLICATIONS section, so on real snapshots it is
+        /// null on every device.
+        var reportsApplications: Bool {
+            richDevices.contains { $0.applications != nil }
+        }
+
+        /// Number of managed apps reported for a rich device, or nil when no
+        /// device in the snapshot carries the APPLICATIONS section: unknown, not
+        /// zero. In a snapshot that has the section, a device without the array
+        /// counts 0.
+        func managedAppCount(for device: MobileDeviceInventoryItem) -> Int? {
+            guard reportsApplications else { return nil }
+            return device.applications?.count ?? 0
         }
 
         /// Map a raw `deviceOwnershipType` value to a display label that matches
@@ -194,22 +203,39 @@ struct MobileFleetService: Sendable {
             }
         }
 
-        var passcodeCompliantCount: Int {
-            richDevices.filter { $0.general?.passcodeCompliant == true }.count
+        // The three posture counts below are nil when no device in the snapshot
+        // carries the field at all. The collected inventory holds only the
+        // GENERAL section, which has none of them, so "absent everywhere" means
+        // not collected; counting it as 0 compliant or "Clean" states a fact
+        // the data does not hold.
+
+        /// Devices reporting `passcodeCompliant == true`, or nil when no device
+        /// reports the field.
+        var passcodeCompliantCount: Int? {
+            let reported = richDevices.compactMap { $0.general?.passcodeCompliant }
+            guard !reported.isEmpty else { return nil }
+            return reported.filter { $0 }.count
         }
 
-        var activationLockEnabledCount: Int {
-            richDevices.filter { $0.general?.activationLockEnabled == true }.count
+        /// Devices reporting `activationLockEnabled == true`, or nil when no
+        /// device reports the field.
+        var activationLockEnabledCount: Int? {
+            let reported = richDevices.compactMap { $0.general?.activationLockEnabled }
+            guard !reported.isEmpty else { return nil }
+            return reported.filter { $0 }.count
         }
 
-        var jailbreakDetectedCount: Int {
-            richDevices.filter { device in
-                guard let status = device.general?.jailbreakDetected,
-                      !status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    return false
-                }
-                return !status.localizedCaseInsensitiveContains("none")
-            }.count
+        /// Devices whose jailbreak status is anything but "none", or nil when no
+        /// device reports a status. A blank status is not a report.
+        var jailbreakDetectedCount: Int? {
+            let reported = richDevices.compactMap { device -> String? in
+                guard let status = device.general?.jailbreakDetected?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !status.isEmpty
+                else { return nil }
+                return status
+            }
+            guard !reported.isEmpty else { return nil }
+            return reported.filter { !$0.localizedCaseInsensitiveContains("none") }.count
         }
 
         var osDistribution: [(osVersion: String, count: Int)] {

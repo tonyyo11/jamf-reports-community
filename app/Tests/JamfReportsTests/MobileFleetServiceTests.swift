@@ -360,7 +360,9 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.managedAppCount(for: secondDevice), 0)
     }
 
-    func testManagedAppCountReturnsZeroWhenApplicationsNull() throws {
+    /// No device carries `applications` (the collect never asks for that
+    /// section), so the count is unknown rather than a fabricated 0.
+    func testManagedAppCountIsNilWhenNoDeviceCarriesApplications() throws {
         let inventoryJSON = """
         [
             {
@@ -381,8 +383,77 @@ final class MobileFleetServiceTests: XCTestCase {
             profilesURL: nil
         )
         let device = try XCTUnwrap(snapshot.richDevices.first)
-        XCTAssertEqual(snapshot.managedAppCount(for: device), 0)
         XCTAssertNil(device.applications)
+        XCTAssertFalse(snapshot.reportsApplications)
+        XCTAssertNil(snapshot.managedAppCount(for: device))
+    }
+
+    // MARK: - Fields the collected inventory never carries
+
+    /// Devices whose GENERAL section lacks every posture field (the collected
+    /// shape) report unknown counts, not zeros and not "Clean".
+    func testPostureCountsAreNilWhenNoDeviceCarriesTheFields() throws {
+        let inventoryJSON = """
+        [
+            {"mobileDeviceId": "1", "deviceType": "iOS",
+             "general": {"managed": true, "supervised": false, "sharedIpad": false}},
+            {"mobileDeviceId": "2", "deviceType": "iOS",
+             "general": {"managed": true, "supervised": true, "jailbreakDetected": "  "}}
+        ]
+        """
+        let snapshot = try loadInventory(inventoryJSON)
+
+        XCTAssertEqual(snapshot.totalDevices, 2)
+        XCTAssertNil(snapshot.passcodeCompliantCount)
+        XCTAssertNil(snapshot.activationLockEnabledCount)
+        XCTAssertNil(snapshot.jailbreakDetectedCount, "a blank status is not a report")
+    }
+
+    /// One device carrying a field is enough to make the count real, and a
+    /// reported `false` counts as reported.
+    func testPostureCountIsReportedWhenOneDeviceCarriesTheField() throws {
+        let inventoryJSON = """
+        [
+            {"mobileDeviceId": "1", "deviceType": "iOS",
+             "general": {"passcodeCompliant": false, "activationLockEnabled": true,
+                         "jailbreakDetected": "None"},
+             "applications": []},
+            {"mobileDeviceId": "2", "deviceType": "iOS", "general": {"managed": true}}
+        ]
+        """
+        let snapshot = try loadInventory(inventoryJSON)
+
+        XCTAssertEqual(snapshot.passcodeCompliantCount, 0)
+        XCTAssertEqual(snapshot.activationLockEnabledCount, 1)
+        XCTAssertEqual(snapshot.jailbreakDetectedCount, 0)
+        XCTAssertTrue(snapshot.reportsApplications)
+        XCTAssertEqual(snapshot.managedAppCount(for: snapshot.richDevices[0]), 0)
+        XCTAssertEqual(snapshot.managedAppCount(for: snapshot.richDevices[1]), 0)
+    }
+
+    /// The real collected shape: GENERAL only, `applications` null everywhere.
+    func testCollectedInventoryFixtureReportsUnknownPostureCounts() throws {
+        let url = TestFixtures.dir(
+            "jamf-cli-data/mobile-device-inventory-details/mobile-device-inventory-details.json"
+        )
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("mobile-device-inventory-details fixture not available")
+        }
+        let snapshot = MobileFleetService.load(listURL: nil, inventoryURL: url, profilesURL: nil)
+
+        let device = try XCTUnwrap(snapshot.richDevices.first)
+        XCTAssertNil(snapshot.passcodeCompliantCount)
+        XCTAssertNil(snapshot.activationLockEnabledCount)
+        XCTAssertNil(snapshot.jailbreakDetectedCount)
+        XCTAssertNil(snapshot.managedAppCount(for: device))
+    }
+
+    private func loadInventory(_ json: String) throws -> MobileFleetService.Snapshot {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mobile-inventory-\(UUID().uuidString).json")
+        try json.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        return MobileFleetService.load(listURL: nil, inventoryURL: url, profilesURL: nil)
     }
 
     // MARK: - sourceDates (freshness chip row)

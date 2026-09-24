@@ -209,22 +209,48 @@ struct MobileFleetView: View {
             LazyVGrid(columns: columns, spacing: 12) {
                 StatTile(
                     label: "Passcode Compliant",
-                    value: String(format: "%.1f%%", pct(count: snapshot.passcodeCompliantCount, total: snapshot.totalDevices)),
-                    sub: "\(snapshot.passcodeCompliantCount) of \(snapshot.totalDevices)"
+                    value: fleetPercentText(snapshot.passcodeCompliantCount),
+                    sub: fleetCountCaption(snapshot.passcodeCompliantCount)
                 )
                 StatTile(
                     label: "Activation Lock",
-                    value: String(format: "%.1f%%", pct(count: snapshot.activationLockEnabledCount, total: snapshot.totalDevices)),
-                    sub: "\(snapshot.activationLockEnabledCount) of \(snapshot.totalDevices)"
+                    value: fleetPercentText(snapshot.activationLockEnabledCount),
+                    sub: fleetCountCaption(snapshot.activationLockEnabledCount)
                 )
-                StatTile(
-                    label: snapshot.jailbreakDetectedCount > 0 ? "Jailbreak Detected" : "Jailbreak Status",
-                    value: snapshot.jailbreakDetectedCount > 0 ? "\(snapshot.jailbreakDetectedCount)" : "Clean",
-                    sub: snapshot.jailbreakDetectedCount > 0 ? "Devices requiring attention" : "No compromised devices"
-                )
+                jailbreakTile
             }
             .padding(.top, 8)
         }
+    }
+
+    /// Caption for a tile whose field no device in the snapshot carries.
+    private static let notCollectedCaption = "Not in the collected inventory"
+
+    /// A count as a share of the fleet, or a dash when the count is unknown.
+    private func fleetPercentText(_ count: Int?) -> String {
+        guard let count else { return "—" }
+        return String(format: "%.1f%%", pct(count: count, total: snapshot.totalDevices))
+    }
+
+    /// "N of M", or why there is no N.
+    private func fleetCountCaption(_ count: Int?) -> String {
+        guard let count else { return Self.notCollectedCaption }
+        return "\(count) of \(snapshot.totalDevices)"
+    }
+
+    /// "Clean" only when some device actually reported a jailbreak status.
+    private var jailbreakTile: StatTile {
+        guard let detected = snapshot.jailbreakDetectedCount else {
+            return StatTile(label: "Jailbreak Status", value: "—", sub: Self.notCollectedCaption)
+        }
+        if detected > 0 {
+            return StatTile(
+                label: "Jailbreak Detected",
+                value: "\(detected)",
+                sub: "Devices requiring attention"
+            )
+        }
+        return StatTile(label: "Jailbreak Status", value: "Clean", sub: "No compromised devices")
     }
 
     @ViewBuilder
@@ -548,7 +574,7 @@ struct MobileFleetView: View {
                 deviceDetailSection("Inventory", rows: [
                     ("Type", device.deviceType ?? ""),
                     ("OS", device.general?.osVersion ?? ""),
-                    ("Managed Apps", "\(snapshot.managedAppCount(for: device))"),
+                    ("Managed Apps", managedAppsText(for: device)),
                     ("User", device.userAndLocation?.username ?? ""),
                     ("Department", device.userAndLocation?.department ?? ""),
                 ])
@@ -578,6 +604,15 @@ struct MobileFleetView: View {
                 }
             }
         }
+    }
+
+    /// The detail card's app count. The snapshot says nothing about apps unless
+    /// the APPLICATIONS section was collected, which the collect never asks for.
+    private func managedAppsText(for device: MobileDeviceInventoryItem) -> String {
+        guard let count = snapshot.managedAppCount(for: device) else {
+            return "— (not in the collected inventory)"
+        }
+        return "\(count)"
     }
 
     private func enrollmentLabel(for device: MobileDeviceInventoryItem) -> String {
