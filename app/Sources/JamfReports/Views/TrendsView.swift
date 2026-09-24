@@ -1318,7 +1318,7 @@ enum TrendDemoSeries {
     }
 
     static func values(for metric: TrendSeries.Metric) -> [Double] {
-        metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])
+        DemoData.trends[metric] ?? []
     }
 
     static func points(for metric: TrendSeries.Metric, range: TrendRange) -> [TrendPoint] {

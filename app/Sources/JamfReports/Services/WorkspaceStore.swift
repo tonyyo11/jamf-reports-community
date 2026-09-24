@@ -261,6 +261,7 @@ final class WorkspaceStore {
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
+        if isDemo { applyDemoConfig() }
     }
 
     /// Managed schedules come from the policy; hand-built from the store.
@@ -345,6 +346,9 @@ final class WorkspaceStore {
             // overdue schedules stayed on screen through the whole demo.
             AutomationHealthModel.shared.issues = []
             AutomationHealthModel.shared.freshnessIssues = []
+            // The live config stayed loaded: its agent name and benchmark labelled
+            // demo screens, and Config's Save reused the real YAML document.
+            applyDemoConfig()
         } else {
             let cleanupMessage = cleanupDemoProfileArtifacts()
             reloadFromDisk()
@@ -571,6 +575,12 @@ final class WorkspaceStore {
     /// file doesn't exist yet (new workspace). Other errors are rethrown.
     func loadConfig() async throws {
         configRepairedKeys = []
+        // A config.yaml under the demo profile's name is not the demo's, and
+        // reading it would put real values on demo screens.
+        if demoMode {
+            applyDemoConfig()
+            return
+        }
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
@@ -591,6 +601,10 @@ final class WorkspaceStore {
 
     /// Flush current configState (+ any column mapping edits) to disk atomically.
     func saveConfig() async throws {
+        // Demo edits stay in memory. Writing would create the fictional profile's
+        // config.yaml in the real workspaces root, where profile discovery and the
+        // background item's all-profiles runs treat it as a real workspace.
+        guard !demoMode else { return }
         syncColumnMappingsToState()
         let newDoc = try ConfigService.save(
             profile: profile,
@@ -602,6 +616,18 @@ final class WorkspaceStore {
         configError = nil
         // Re-saving drops the orphaned sequence items, so the healed-keys note clears.
         configRepairedKeys = newDoc.repairedKeys.sorted()
+    }
+
+    /// The demo workspace's config in place of whatever was loaded before, with
+    /// no document to write back to.
+    private func applyDemoConfig() {
+        configState = DemoData.configState
+        _loadedDoc = nil
+        _savedState = DemoData.configState
+        configError = nil
+        configRepairedKeys = []
+        rebuildColumnMappings()
+        rebuildCustomEAs()
     }
 
     /// Discard in-memory edits and restore to the state at the last load/save.

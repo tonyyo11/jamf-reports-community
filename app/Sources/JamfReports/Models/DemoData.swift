@@ -13,6 +13,14 @@ enum DemoData {
         apiClient: "reporting-svc"
     )
 
+    /// The demo dataset's "now": the Daily Snapshot Collection run on Apr 25, 2026
+    /// that every dated demo value is written against. Demo screens measure ages
+    /// ("3 days ago", days behind) from here rather than the real clock, so the
+    /// fixed dataset never reads as months out of date.
+    static let referenceDate: Date = Calendar(identifier: .gregorian).date(
+        from: DateComponents(year: 2026, month: 4, day: 25, hour: 6, minute: 1)
+    ) ?? Date(timeIntervalSince1970: 1_777_096_860)
+
     // 26 weekly snapshots, ending 2026-04-20.
     static let trendDates: [String] = {
         var dates: [String] = []
@@ -62,7 +70,10 @@ enum DemoData {
     /// point is derived from it so the tile and the agent card agree.
     private static let edrInstalled = 506
     private static let fileVaultTrend = trend(start: 78, end: 96, jitter: 2.2)
-    private static let complianceTrend = trend(start: 54, end: 81, jitter: 4)
+    /// Ends on the Pass share of `complianceBands` (213 of the 502 Macs with
+    /// data), the first baseline's rate, which is what a live summary records.
+    /// It ended at 84.5%, more than the top failing rule's 134 failures allow.
+    private static let complianceTrend = trend(start: 28, end: 42, jitter: 3, pinnedLast: 42.4)
     private static let staleTrend = trend(start: 48, end: 22, jitter: 4)
     /// Ends on the share of `osDistribution` flagged current, so the On
     /// Current macOS card and the Overview donut agree.
@@ -85,8 +96,28 @@ enum DemoData {
     }
 
     /// Demo data for mSCP band trend represents total devices with data.
-    /// Grows from 460 to 520 devices over the 26-week period.
-    private static let mscpBandTrend = trend(start: 460, end: 520, jitter: 8)
+    /// Ends on the `complianceBands` total (502), and stays below the fleet
+    /// every week; unpinned, it ended at 527, more Macs than the fleet has.
+    private static let mscpBandTrend = trend(start: 460, end: 502, jitter: 8, pinnedLast: 502)
+
+    /// Active Macs: the fleet minus its stale Macs, as live summaries have
+    /// recorded it since 2.6 (`DailySummary.activeDeviceCount`). Ends at 498,
+    /// the 524-Mac fleet less the 26 the Stale card shows.
+    static let activeDevicesTrend: [Double] = totalDevicesTrend.indices.map { i in
+        totalDevicesTrend[i].rounded() - (staleTrend[safe: i] ?? 0).rounded()
+    }
+
+    /// The four security controls every demo screen that counts them uses, out
+    /// of the 524-Mac fleet. FileVault ends the FileVault trend (97.9%).
+    struct SecurityControls: Sendable {
+        let total: Int
+        let fileVault: Int
+        let sip: Int
+        let firewall: Int
+        let gatekeeper: Int
+    }
+    static let securityControls = SecurityControls(
+        total: 524, fileVault: 513, sip: 524, firewall: 482, gatekeeper: 512)
 
     /// iPads and iPhones in the demo fleet — Mobile Fleet's demo inventory has 25.
     static let mobileDeviceCount = 25
@@ -97,6 +128,7 @@ enum DemoData {
     static let trends: [TrendSeries.Metric: [Double]] = [
         // Headline value is the computer count, as it is live.
         .managedDevices:  totalDevicesTrend,
+        .activeDevices:   activeDevicesTrend,
         .stability:       stabilityTrend,
         .fileVault:       fileVaultTrend,
         .compliance:      complianceTrend,
@@ -158,7 +190,7 @@ enum DemoData {
         .init(name: "Mobile Inventory (iPad)", profile: "meridian-prod", schedule: "Weekdays · 07:30",
               cadence: "weekdays", mode: .jamfCLIOnly, next: "Apr 27, 07:30", last: "Apr 24, 07:33",
               lastStatus: .warn, artifacts: ["xlsx"], enabled: true),
-        .init(name: "Quarterly Audit Pull", profile: "dummy", schedule: "Disabled",
+        .init(name: "Quarterly Audit Pull", profile: "meridian-sandbox", schedule: "Disabled",
               cadence: "monthly", mode: .jamfCLIFull, next: "—", last: "Jan 1, 06:11",
               lastStatus: .ok, artifacts: ["xlsx", "csv"], enabled: false),
     ]
@@ -168,10 +200,14 @@ enum DemoData {
         // resolve and so don't leak real tenant relationships if the binary is
         // disassembled (`strings` would otherwise show real `*.jamfcloud.com`
         // hosts that map to live Jamf infrastructure — security audit TA-03).
+        // Every name is Meridian-prefixed: a demo profile named like a real one
+        // ("dummy", "prod") would switch the demo onto that real workspace.
         .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok),
-        .init(name: "meridianedu",     url: "meridian.jamfcloud.example",   schedules: 1, status: .ok),
-        .init(name: "dummy",         url: "sandbox.jamfcloud.example",  schedules: 1, status: .idle),
-        .init(name: "prod",          url: "prod-msp.jamfcloud.example", schedules: 0, status: .idle),
+        .init(name: "meridianedu", url: "meridian-edu.jamfcloud.example", schedules: 1, status: .ok),
+        .init(name: "meridian-sandbox", url: "sandbox.jamfcloud.example", schedules: 1,
+              status: .idle),
+        .init(name: "meridian-msp", url: "prod-msp.jamfcloud.example", schedules: 0,
+              status: .idle),
     ]
 
     static let sheetCatalog: [SheetGroup] = [
@@ -193,9 +229,9 @@ enum DemoData {
             .init(name: "Package Lifecycle",   req: "cli", on: false),
             .init(name: "Policy Health",       req: "cli", on: true),
             .init(name: "Profile Status",      req: "cli", on: true),
-            .init(name: "App Status",          req: "cli-1.2+", on: true),
+            .init(name: "App Status",          req: "cli", on: true),
             .init(name: "Patch Compliance",    req: "cli", on: true),
-            .init(name: "Update Status",       req: "cli-1.2+", on: true),
+            .init(name: "Update Status",       req: "cli", on: true),
         ]),
         .init(group: "Charts", items: [
             .init(name: "OS Adoption",         req: "chart", on: true),

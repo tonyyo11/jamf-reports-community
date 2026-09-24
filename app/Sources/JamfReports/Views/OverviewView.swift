@@ -569,12 +569,20 @@ struct OverviewView: View {
                         guard !isRunning else { return }
                         Task { await runGenerate() }
                     }
+                    // Generating runs jamf-cli against the selected profile; in demo
+                    // mode that is the fictional meridian-prod, so it would create a
+                    // real workspace for it.
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? "Demo data is fixed. Generating a report needs a live profile."
+                          : "Collect if the data is stale, then build this profile's report.")
                 }
             )
         }
     }
 
     private func runGenerate() async {
+        guard !workspace.demoMode else { return }
         guard ProfileService.isValid(workspace.profile) else {
             workspace.toast = Toast(message: "Invalid profile name — generate aborted", style: .danger)
             return
@@ -1011,7 +1019,7 @@ struct OverviewView: View {
 
     private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
         let values: [Double] = workspace.demoMode ?
-            (metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])) :
+            (DemoData.trends[metric] ?? []) :
             trendStore.values(metric: metric)
         guard let last = values.last else { return .flat }
         let prev = values.count > 1 ? values[values.count - 2] : last
@@ -1039,7 +1047,7 @@ struct OverviewView: View {
         // against a different day than FileVault in the same render.
         let points: [TrendPoint] = workspace.demoMode ? [] : trendStore.points(metric: metric)
         let values: [Double] = workspace.demoMode ?
-            (metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])) :
+            (DemoData.trends[metric] ?? []) :
             points.map(\.value)
         let comparisonDate: Date? = points.count >= 2 ? points[points.count - 2].date : nil
 
@@ -1743,9 +1751,7 @@ struct OverviewView: View {
 
     private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
         if workspace.demoMode {
-            return metric == .activeDevices
-                ? DemoData.totalDevicesTrend
-                : (DemoData.trends[metric] ?? [])
+            return DemoData.trends[metric] ?? []
         }
         return trendStore.values(metric: metric)
     }
