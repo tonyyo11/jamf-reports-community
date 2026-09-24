@@ -723,6 +723,11 @@ final class WorkspaceStore {
     /// Reads the device count from the most recent summary JSON for the given profile.
     /// Returns 0 if no summary exists or the file cannot be read. Does not trigger a live call.
     func deviceCount(for profile: String) -> Int {
+        if demoMode {
+            guard let index = DemoData.cliProfiles.firstIndex(where: { $0.name == profile })
+            else { return 0 }
+            return DemoData.deviceCount(forProfileAt: index)
+        }
         guard let dir = try? WorkspacePaths.summariesDir(for: profile) else { return 0 }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
@@ -744,6 +749,9 @@ final class WorkspaceStore {
     /// Returns a human-readable relative "last synced" label derived from the mtime
     /// of the most recently modified file in the profile's data directory.
     func lastSyncedRelative(for profile: String) -> String {
+        // The demo was last synced by its Daily Snapshot Collection run; reading the
+        // disk would say "Never synced" on every demo screen.
+        if demoMode { return "Synced Apr 25, 06:01" }
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return "Never synced" }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(

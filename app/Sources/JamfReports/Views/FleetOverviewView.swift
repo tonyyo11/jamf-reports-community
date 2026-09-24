@@ -598,20 +598,25 @@ struct FleetOverviewView: View {
         drilledProfile = nil
     }
 
+    /// The first profile is the Overview's own demo fleet, so its card reads the
+    /// Overview's numbers; each later profile is a smaller variation of it.
     private func demoRows() -> [FleetProfileOverview] {
-        let baseStability = DemoData.stabilityTrend.last ?? 0
-        let baseDevices = Int((DemoData.totalDevicesTrend.last ?? 0).rounded())
+        func latest(_ metric: TrendSeries.Metric) -> Double {
+            DemoData.trends[metric]?.last ?? 0
+        }
+        let baseStale = Int(latest(.stale).rounded())
         return workspace.initializedProfiles.enumerated().map { idx, profile in
             let offset = Double(idx * 4)
+            let dateIndex = max(DemoData.trendDates.count - 1 - idx, 0)
             let summary = DailySummary(
-                date: DemoData.trendDates[safe: max(DemoData.trendDates.count - 1 - idx, 0)] ?? "2026-04-20",
-                totalDevices: max(baseDevices - idx * 37, 0),
-                fileVaultPct: 94 - offset,
-                compliancePct: max((baseStability - offset), 0),
-                staleCount: 18 + idx * 4,
-                osCurrentPct: 72 - offset,
-                crowdstrikePct: 93 - offset,
-                patchPct: 84 - offset
+                date: DemoData.trendDates[safe: dateIndex] ?? "2026-04-20",
+                totalDevices: DemoData.deviceCount(forProfileAt: idx),
+                fileVaultPct: latest(.fileVault) - offset,
+                compliancePct: max(latest(.compliance) - offset, 0),
+                staleCount: baseStale + idx * 4,
+                osCurrentPct: latest(.osCurrent) - offset,
+                crowdstrikePct: latest(.edrAgent) - offset,
+                patchPct: latest(.patch) - offset
             )
             return FleetProfileOverview(
                 profile: profile.name,

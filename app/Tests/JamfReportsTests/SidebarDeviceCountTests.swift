@@ -33,4 +33,16 @@ final class SidebarDeviceCountTests: XCTestCase {
         let store = WorkspaceStore(demoMode: false)
         XCTAssertEqual(store.lastSyncedRelative(for: "ghost"), "Never synced")
     }
+
+    // MARK: - Demo mode
+
+    /// Demo mode read the disk too, so every demo screen's profile chip said
+    /// "Never synced" and the profile menu listed no device counts.
+    func test_demoMode_describesTheDemoFleet() {
+        let store = WorkspaceStore(demoMode: true)
+        XCTAssertEqual(store.deviceCount(for: DemoData.org.profile), DemoData.totalDevices)
+        XCTAssertEqual(store.deviceCount(for: "meridianedu"), DemoData.totalDevices - 37)
+        XCTAssertEqual(store.deviceCount(for: "ghost"), 0)
+        XCTAssertEqual(store.lastSyncedRelative(for: DemoData.org.profile), "Synced Apr 25, 06:01")
+    }
 }

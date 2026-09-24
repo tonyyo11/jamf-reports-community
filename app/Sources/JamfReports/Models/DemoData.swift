@@ -203,12 +203,20 @@ enum DemoData {
         // Every name is Meridian-prefixed: a demo profile named like a real one
         // ("dummy", "prod") would switch the demo onto that real workspace.
         .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok),
-        .init(name: "meridianedu", url: "meridian-edu.jamfcloud.example", schedules: 1, status: .ok),
+        .init(name: "meridianedu", url: "meridian-edu.jamfcloud.example", schedules: 1,
+              status: .ok),
         .init(name: "meridian-sandbox", url: "sandbox.jamfcloud.example", schedules: 1,
               status: .idle),
         .init(name: "meridian-msp", url: "prod-msp.jamfcloud.example", schedules: 0,
               status: .idle),
     ]
+
+    /// Macs in the demo profile at `index` of `cliProfiles`: meridian-prod is the
+    /// 524-Mac fleet every demo screen describes, and each later profile is 37
+    /// smaller. Fleet Overview's cards and the profile menu both read this.
+    static func deviceCount(forProfileAt index: Int) -> Int {
+        max(totalDevices - index * 37, 0)
+    }
 
     static let sheetCatalog: [SheetGroup] = [
         .init(group: "CSV-driven", items: [
