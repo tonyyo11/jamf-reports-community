@@ -12,6 +12,9 @@ final class CLIParsingTests: XCTestCase {
         // Retired: it wrote a `school_columns` block that nothing reads.
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("school-scaffold"))
         XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("--help"))
+        // ArgumentParser's built-in `help` subcommand, as in `jamf-reports help generate`
+        // (docs/wiki/07-Command-Line.md); before this it opened the app instead.
+        XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("help"))
         // Double-click launch passes OS args that must NOT route to the CLI:
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("-NSDocumentRevisionsDebugMode"))
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("/some/file.txt"))

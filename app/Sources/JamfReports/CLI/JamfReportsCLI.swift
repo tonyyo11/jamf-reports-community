@@ -23,15 +23,18 @@ struct JamfReportsCLI: AsyncParsableCommand {
     )
 
     /// Recognized subcommand names — `App/main.swift` checks `argv[1]` against
-    /// this (plus help/version flags) to decide CLI-vs-GUI, so double-click
-    /// launch (which passes non-subcommand OS args) still opens the GUI.
+    /// this (plus `help` and the help/version flags) to decide CLI-vs-GUI, so
+    /// double-click launch (which passes non-subcommand OS args) still opens the GUI.
     static let subcommandNames: Set<String> = [
         "generate", "collect", "html", "backup", "scaffold", "check",
         "capabilities", "diagnostic-bundle", "device", "school-check", "schedules",
     ]
 
+    /// `help` is ArgumentParser's built-in subcommand (`jamf-reports help generate`),
+    /// so it routes here without being in `subcommandNames`, which lists only the
+    /// subcommands this root declares.
     static func isKnownSubcommand(_ arg: String) -> Bool {
-        subcommandNames.contains(arg) || ["--help", "-h", "--version"].contains(arg)
+        subcommandNames.contains(arg) || ["help", "--help", "-h", "--version"].contains(arg)
     }
 }
 
