@@ -196,24 +196,26 @@ struct Sidebar: View {
         return "\(item.label), \(badge)"
     }
 
+    /// Counts what the tab lists. Demo mode counts the demo's own data (its
+    /// profiles and schedules already come through the store) and never reads
+    /// a folder, since the demo profile's name could match a real workspace.
     private func badge(for item: Tab) -> String? {
-        if workspace.demoMode { return item.badge }
+        let count: Int
         switch item {
         case .fleet:
-            let count = workspace.initializedProfiles.count
-            return count > 0 ? "\(count)" : nil
+            count = workspace.initializedProfiles.count
         case .trends:
-            let count = liveTrendCount()
-            return count > 0 ? "\(count)" : nil
+            count = workspace.demoMode ? DemoData.trendDates.count : liveTrendCount()
         case .reports:
-            let count = ReportLibrary().stats(profile: workspace.profile).count
-            return count > 0 ? "\(count)" : nil
+            count = workspace.demoMode
+                ? DemoData.generatedReports.count
+                : ReportLibrary().stats(profile: workspace.profile).count
         case .schedules:
-            let count = workspace.schedules.count
-            return count > 0 ? "\(count)" : nil
+            count = workspace.schedules.count
         default:
             return nil
         }
+        return count > 0 ? "\(count)" : nil
     }
 
     private func liveTrendCount() -> Int {

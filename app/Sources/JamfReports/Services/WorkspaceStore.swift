@@ -997,16 +997,6 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    var badge: String? {
-        switch self {
-        case .devices:   "inv"
-        case .fleet:     "multi"
-        case .trends:    "26w"
-        case .reports:   "47"
-        default:         nil
-        }
-    }
-
     var badgeIsGold: Bool { self == .trends }
 
     /// Tabs the user cannot hide. These are the bones of the app — hiding
