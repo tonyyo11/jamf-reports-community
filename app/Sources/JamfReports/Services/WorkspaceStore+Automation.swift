@@ -425,7 +425,7 @@ extension WorkspaceStore {
     /// run that just happened instead of holding yesterday's verdict.
     ///
     /// Unlike `remediateStaleDataIfNeeded` this applies no hourly rate limit
-    /// and no exit-2/exit-8 exclusion: a person clicking has usually just
+    /// and no exit-2/exit-3/exit-8 exclusion: a person clicking has usually just
     /// fixed the credentials or the profile that made an automatic retry
     /// pointless, and the click must not be a silent no-op.
     func collectFailingNow() async {
@@ -505,8 +505,9 @@ extension WorkspaceStore {
         Self.remediationMarker.stamp(day: hourKey, in: workspace)
 
         // Kinds whose last failure cannot be fixed by retrying — a usage or credentials gate
-        // (exit 2), a policy refusal (exit 8), or a permanent recorded cause — are filtered
-        // before tier targeting, but left in `issues`/the banner so the operator still sees them.
+        // (exit 2), rejected credentials (exit 3), a policy refusal (exit 8), or a permanent
+        // recorded cause — are filtered before tier targeting, but left in `issues`/the banner
+        // so the operator still sees them.
         let remediable = Self.excludingPermanentUsageFailures(issues, profile: profile)
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
@@ -548,11 +549,13 @@ extension WorkspaceStore {
     }
 
     /// Drop issues whose last failure makes retry pointless until someone changes the
-    /// credential: `exitCodeUsage` (2, a usage or credentials gate), `exitCodeRefusedByPolicy`
-    /// (8, outside the profile's API), or a permanent `FailureCause` — a rejected scope ID or
-    /// unknown environment ID, an endpoint this connection does not serve, or a missing
-    /// permission (spec §9.5). Only `tiersToRemediate`'s input narrows; the banner still shows
-    /// every issue.
+    /// credential: `exitCodeUsage` (2, a usage or credentials gate), `exitCodeUnauthorized`
+    /// (3, credentials the server rejected — an hourly retry only repeats the 401 until someone
+    /// re-authenticates), `exitCodeRefusedByPolicy` (8, outside the profile's API), or a
+    /// permanent `FailureCause` — a rejected scope ID or unknown environment ID, an endpoint
+    /// this connection does not serve, or a missing permission (spec §9.5). Only
+    /// `tiersToRemediate`'s input narrows; the banner still shows every issue, and Collect now
+    /// and the tick's same-day retries still reach an exit-3 kind after a re-authentication.
     nonisolated static func excludingPermanentUsageFailures(
         _ issues: [DataFreshnessIssue], profile: String
     ) -> [DataFreshnessIssue] {
@@ -562,6 +565,7 @@ extension WorkspaceStore {
         let permanent = issues.filter {
             let code = store.lastFailureExitCode(for: $0.snapshotKind)
             return code == CLIBridge.exitCodeUsage
+                || code == CLIBridge.exitCodeUnauthorized
                 || code == CLIBridge.exitCodeRefusedByPolicy
                 || store.cause(for: $0.snapshotKind)?.isPermanent == true
         }
@@ -569,7 +573,8 @@ extension WorkspaceStore {
         AppLogger.collect.notice(
             """
             Skipping remediation for \(permanent.count, privacy: .public) kind(s) whose last \
-            failure cannot succeed on retry (usage gate, policy refusal, scope or permission): \
+            failure cannot succeed on retry (usage gate, rejected credentials, policy refusal, \
+            scope or permission): \
             \(permanent.map(\.snapshotKind).sorted().joined(separator: ","), privacy: .public)
             """
         )
