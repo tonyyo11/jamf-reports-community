@@ -878,28 +878,10 @@ struct ReportEngine: Sendable {
         totalDevices: Int
     ) -> Double? {
         guard !macOSRows.isEmpty, totalDevices > 0 else { return nil }
-        // Build latest-version-per-major from SOFA macOS rows.
-        // When two rows share a major (e.g., two macOS 15 entries), keep the
-        // numerically greatest product version — that is the true latest.
-        var latestByMajor: [Int: String] = [:]
-        for row in macOSRows {
-            let tuple = SOFAFeedService.versionTuple(row.productVersion)
-            guard let major = tuple.first else { continue }
-            if let existing = latestByMajor[major] {
-                let existingTuple = SOFAFeedService.versionTuple(existing)
-                // Compare component-by-component; keep the greater version.
-                let len = max(tuple.count, existingTuple.count)
-                var newer = false
-                for i in 0..<len {
-                    let a = i < tuple.count ? tuple[i] : 0
-                    let b = i < existingTuple.count ? existingTuple[i] : 0
-                    if a != b { newer = a > b; break }
-                }
-                if newer { latestByMajor[major] = row.productVersion }
-            } else {
-                latestByMajor[major] = row.productVersion
-            }
-        }
+        // Latest version per major, greatest version winning where two rows share
+        // a major. Shared with the Overview's macOS Distribution card, so the card's
+        // "on current" share and this percentage use one definition of current.
+        let latestByMajor = SOFAFeedService.latestByMajor(macOSRows)
         guard !latestByMajor.isEmpty else { return nil }
         // Count devices whose version >= their major's SOFA latest.
         // fleetCurrency internally filters osCounts to the given major, so

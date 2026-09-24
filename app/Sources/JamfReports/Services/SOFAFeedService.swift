@@ -221,6 +221,31 @@ struct SOFAFeedService: Sendable {
         return (onLatest, behind)
     }
 
+    /// Newest release per major version among `rows` — pass macOS rows only.
+    /// Where two rows share a major, the numerically greater version wins.
+    static func latestByMajor(_ rows: [OSFamilyRow]) -> [Int: String] {
+        var latest: [Int: String] = [:]
+        for row in rows {
+            let tuple = versionTuple(row.productVersion)
+            guard let major = tuple.first else { continue }
+            if let existing = latest[major],
+               compareTuples(tuple, versionTuple(existing)) <= 0 {
+                continue
+            }
+            latest[major] = row.productVersion
+        }
+        return latest
+    }
+
+    /// Whether `version` is at or past the newest release of its own major.
+    /// nil when the feed does not track that major, so "behind" and
+    /// "unknown" stay distinct.
+    static func isCurrent(_ version: String, latestByMajor: [Int: String]) -> Bool? {
+        let tuple = versionTuple(version)
+        guard let major = tuple.first, let latest = latestByMajor[major] else { return nil }
+        return compareTuples(tuple, versionTuple(latest)) >= 0
+    }
+
     /// Returns (eolDevices, eolVersionCount) for devices older than every tracked family.
     ///
     /// Devices whose major < min(familyMajors) have no supported OS — EOL row.
