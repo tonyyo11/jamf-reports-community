@@ -537,6 +537,23 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertEqual(ddm.map(\.managementId), ["m2"])
     }
 
+    /// A device listed twice in `computers` is scanned once and lands once in each
+    /// snapshot, so the DDM and command-health sheets do not repeat it.
+    func testADeviceListedTwiceIsScannedOnce() async throws {
+        try writeComputers([("2", "B", "m2", true), ("2", "B", "m2", true)])
+        try answer("hist-2", cleanHistory)
+        try answer("ddm-m2", ddmPayload)
+        _ = try await runScan()
+
+        XCTAssertEqual(historyCalls(for: "2"), 1, callsLog())
+        let health = try XCTUnwrap(
+            try latest("mdm-command-health", as: [MDMCommandHealthRecord].self)
+        )
+        XCTAssertEqual(health.map(\.deviceId), ["2"])
+        let ddm = try XCTUnwrap(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertEqual(ddm.map(\.deviceId), ["2"])
+    }
+
     /// Every device is filtered out by the unsafe-id guard, so `targets` is
     /// empty. Nothing was attempted: no snapshot lands, and neither the
     /// success nor the failure counters advance — a run that reaches no

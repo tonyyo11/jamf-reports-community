@@ -130,6 +130,7 @@ extension ReportEngine {
             return []
         }
         var targets: [DeviceScanTarget] = []
+        var seenIDs = Set<String>()
         for t in all {
             guard CLIBridge.isSafeDeviceIdentifier(t.id) else {
                 onLine(.init(
@@ -138,6 +139,9 @@ extension ReportEngine {
                 ))
                 continue
             }
+            // A device listed twice in `computers` is scanned once: a second pass
+            // repeats both jamf-cli calls and writes the Mac twice into each snapshot.
+            guard seenIDs.insert(t.id).inserted else { continue }
             targets.append(t)
         }
         guard !targets.isEmpty else {
