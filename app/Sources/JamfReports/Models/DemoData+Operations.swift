@@ -173,4 +173,63 @@ extension DemoData {
             username: user, state: state, action: action, version: "15.4",
             error: error, lastEvent: lastEvent)
     }
+
+    // MARK: - Policy & Profile Health
+
+    /// jamf-cli's policy checks carry two severities: `no_scope` is a warning
+    /// and `no_category` is info. The table holds the 8 and 4 the tiles count.
+    static let policyHealth = PolicyHealthService.Snapshot(
+        summary: PolicyStatusSummary(
+            totalPolicies: 47, enabled: 38, disabled: 9,
+            configFindings: 12, warnings: 8, info: 4),
+        findings: [
+            noScopeFinding("12", "Microsoft Office 2019 - Install (Legacy)"),
+            noScopeFinding("18", "Rosetta 2 - Install"),
+            noScopeFinding("23", "Printer - Meridian East 3rd Floor"),
+            noScopeFinding("31", "macOS Monterey - Upgrade"),
+            noScopeFinding("36", "Test - Dock Reset"),
+            noScopeFinding("40", "Cisco AnyConnect - Remove"),
+            noScopeFinding("44", "Clinical Kiosk - Setup"),
+            noScopeFinding("52", "Zoom Workplace - Update (Pilot)"),
+            noCategoryFinding("7", "Rename Computer"),
+            noCategoryFinding("9", "Set Time Server"),
+            noCategoryFinding("15", "Enable Remote Management"),
+            noCategoryFinding("58", "Collect Diagnostics"),
+        ],
+        profiles: [
+            profileFailure("0-104", "Certificate Authority", "Computer", 15, 11,
+                           "2026-04-24", "The certificate payload could not be installed"),
+            profileFailure("1-109", "Chrome Enterprise", "Computer", 7, 6,
+                           "2026-04-21", "Profile installation timed out"),
+            profileFailure("2-107", "Dock Preferences", "Computer", 8, 5,
+                           "2026-04-23", "Payload rejected by managed client"),
+            profileFailure("3-102", "Exchange Email Setup", "Computer", 3, 3,
+                           "2026-04-15", "Account already exists on device"),
+            profileFailure("4-111", "Time Zone Settings", "Mobile Device", 1, 1,
+                           "2026-04-08", "Device offline during push"),
+        ],
+        profileSummary: ProfileFailureSummary(
+            totalErrors: 34, uniqueProfiles: 5, uniqueDevices: 22, days: 30),
+        sourceFile: nil,
+        snapshotDate: referenceDate
+    )
+
+    private static func noScopeFinding(_ id: String, _ policy: String) -> PolicyFinding {
+        PolicyFinding(severity: "warning", policy: policy, policyId: id,
+                      check: "no_scope", detail: "No targets in scope")
+    }
+
+    private static func noCategoryFinding(_ id: String, _ policy: String) -> PolicyFinding {
+        PolicyFinding(severity: "info", policy: policy, policyId: id,
+                      check: "no_category", detail: "Uncategorised")
+    }
+
+    private static func profileFailure(
+        _ id: String, _ name: String, _ deviceType: String, _ errors: Int, _ devices: Int,
+        _ lastError: String, _ topError: String
+    ) -> PolicyHealthService.ProfileFailure {
+        PolicyHealthService.ProfileFailure(
+            id: id, name: name, deviceType: deviceType, errors: errors, devices: devices,
+            lastError: lastError, topError: topError)
+    }
 }

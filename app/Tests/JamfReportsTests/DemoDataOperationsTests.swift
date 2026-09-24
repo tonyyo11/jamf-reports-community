@@ -152,4 +152,37 @@ final class DemoDataOperationsTests: XCTestCase {
         XCTAssertEqual(os, device.osVersion, name)
         XCTAssertEqual(user, device.user, name)
     }
+
+    // MARK: - Policy & Profile Health
+
+    /// jamf-cli reports warnings and info only; the tiles count the table.
+    func testDemoPolicyFindingsMatchTheSummaryTiles() {
+        let snapshot = DemoData.policyHealth
+        let summary = snapshot.summary
+        let bySeverity = snapshot.findingsBySeverity
+        let checks = ["no_scope": "No targets in scope", "no_category": "Uncategorised"]
+
+        XCTAssertEqual(summary?.configFindings, snapshot.findings.count)
+        XCTAssertEqual(summary?.warnings, bySeverity["warning"])
+        XCTAssertEqual(summary?.info, bySeverity["info"])
+        XCTAssertEqual(Set(bySeverity.keys), ["warning", "info"])
+        XCTAssertEqual((summary?.enabled ?? 0) + (summary?.disabled ?? 0), summary?.totalPolicies)
+        XCTAssertEqual(Set(snapshot.findings.map(\.id)).count, snapshot.findings.count)
+        for finding in snapshot.findings {
+            XCTAssertEqual(checks[finding.check], finding.detail, finding.policy)
+        }
+    }
+
+    /// Profile errors fall in the 30-day window ending on the reference date.
+    func testDemoProfileFailuresFallInTheLookbackWindow() {
+        let snapshot = DemoData.policyHealth
+
+        XCTAssertEqual(snapshot.profileTotalErrors, snapshot.profiles.reduce(0) { $0 + $1.errors })
+        XCTAssertEqual(snapshot.profilesWithFailures, snapshot.profiles.count)
+        XCTAssertEqual(snapshot.profileLookbackDays, 30)
+        for profile in snapshot.profiles {
+            XCTAssertTrue(("2026-03-26"..."2026-04-25").contains(profile.lastError), profile.name)
+        }
+        XCTAssertEqual(snapshot.snapshotDate, DemoData.referenceDate)
+    }
 }
