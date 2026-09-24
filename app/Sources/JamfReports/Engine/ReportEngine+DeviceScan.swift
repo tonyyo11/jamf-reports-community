@@ -35,10 +35,14 @@ extension ReportEngine {
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
-            id = try c.decodeIfPresent(AnyCodable.self, forKey: .id)?.stringValue ?? ""
+            // Both ids are trimmed once, here: `isSafeDeviceIdentifier` trims before it
+            // checks, so the value it passes has to be the value argv and the rows get.
+            let rawId = try c.decodeIfPresent(AnyCodable.self, forKey: .id)?.stringValue ?? ""
+            id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
             let g = try? c.nestedContainer(keyedBy: General.self, forKey: .general)
             name = (try? g?.decodeIfPresent(String.self, forKey: .name)) ?? ""
-            managementId = try? g?.decodeIfPresent(String.self, forKey: .managementId)
+            managementId = (try? g?.decodeIfPresent(String.self, forKey: .managementId))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             // Two if-let steps: try? flattens decodeIfPresent's result to a single optional.
             var ddm = false
             if let container = g,
@@ -591,9 +595,11 @@ extension ReportEngine {
                 text: "[ok] \(kind): \(rows.count) device(s)"
             ))
             if failed > 0 {
+                // Shared suffix: the honesty watcher must not queue a retry for a landed kind.
                 onLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[partial] \(kind): \(failed) of \(attempted) devices did not respond"
+                    text: "[partial] \(kind): \(failed) of \(attempted) "
+                        + deviceScanGapsMarkerSuffix
                 ))
             }
         } catch {

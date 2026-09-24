@@ -518,6 +518,25 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("unsafe id") }, "\(lines)")
     }
 
+    /// `isSafeDeviceIdentifier` trims before it checks, so a padded id used to pass the check
+    /// and reach argv padded. Both ids are trimmed once at decode, for argv and the rows alike.
+    func testPaddedIdsReachArgvAndRowsTrimmed() async throws {
+        try writeComputers([(" 2 ", "B", " m2 ", true)])
+        try answer("hist-2", cleanHistory)
+        try answer("ddm-m2", ddmPayload)
+        _ = try await runScan()
+
+        XCTAssertEqual(historyCalls(for: "2"), 1, callsLog())
+        XCTAssertTrue(callsLog().contains("status-items m2 "), callsLog())
+        let health = try XCTUnwrap(
+            try latest("mdm-command-health", as: [MDMCommandHealthRecord].self)
+        )
+        XCTAssertEqual(health.map(\.deviceId), ["2"])
+        let ddm = try XCTUnwrap(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertEqual(ddm.map(\.deviceId), ["2"])
+        XCTAssertEqual(ddm.map(\.managementId), ["m2"])
+    }
+
     /// Every device is filtered out by the unsafe-id guard, so `targets` is
     /// empty. Nothing was attempted: no snapshot lands, and neither the
     /// success nor the failure counters advance — a run that reaches no

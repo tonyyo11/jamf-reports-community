@@ -315,6 +315,23 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertFalse(sheets.incomplete, "sheet failures are a report problem, not missing data")
     }
 
+    /// A device scan that landed with a few devices missing is a landed kind, and a same-day
+    /// retry would find the scan not due. Over budget or stopped, nothing was written: that
+    /// is missing data and stays incomplete.
+    func testWatcherDoesNotRetryADeviceScanThatLandedWithGaps() {
+        let gaps = CollectHonestyWatcher()
+        gaps.observe("[partial] mdm-command-health: 1 of 4 devices did not respond")
+        XCTAssertFalse(gaps.incomplete, "the snapshot landed; a retry cannot rescan it")
+
+        let overBudget = CollectHonestyWatcher()
+        overBudget.observe("[partial] ddm-device-status: 2 of 4 devices failed — not written")
+        XCTAssertTrue(overBudget.incomplete)
+
+        let stopped = CollectHonestyWatcher()
+        stopped.observe("[partial] mdm-command-health: stopped after exit 5 — not written")
+        XCTAssertTrue(stopped.incomplete)
+    }
+
     // MARK: - S2: a summary that never landed
 
     /// The write failure used to be a plain `[warn]`, so a run whose trend point
@@ -450,6 +467,49 @@ final class CollectHonestyTests: XCTestCase {
             force: true, locateJamfCLI: { stub }, onLine: collector.append
         )
 
+        XCTAssertTrue(collector.texts.contains {
+            $0.hasPrefix(ReportEngine.summaryNotWrittenMarker) && $0.contains("no source landed")
+        }, "got: \(collector.texts)")
+        let summaries = try WorkspacePaths.summariesDir(for: profile)
+        let written = (try? FileManager.default.contentsOfDirectory(atPath: summaries.path)) ?? []
+        XCTAssertTrue(written.isEmpty, "a cache-only summary must not be written: \(written)")
+    }
+
+    /// Same run with a cached `computers` snapshot: the device scan then lands an EMPTY
+    /// ddm-device-status for a fleet with no DDM-enabled Mac. That comes from cached
+    /// inventory, not from a source landing, so it must not let the summary be written.
+    func testEmptyDeviceScanSnapshotDoesNotCountAsASourceLanding() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let dataDir = try WorkspacePaths.dataDir(for: profile)
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        let stampFormatter = DateFormatter()
+        stampFormatter.locale = Locale(identifier: "en_US_POSIX")
+        stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let payload: [[String: Any]] = [["section": "summary", "data": [
+            "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
+            "sip_enabled": 249, "firewall_enabled": 245,
+        ]]]
+        try JSONSerialization.data(withJSONObject: payload)
+            .write(to: secDir.appendingPathComponent("security_\(stamp).json"))
+        let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: computersDir, withIntermediateDirectories: true)
+        let computers = #"[{"id":"1","general":{"name":"Mac-1","managementId":"m1","#
+            + #""declarativeDeviceManagementEnabled":false}}]"#
+        try Data(computers.utf8)
+            .write(to: computersDir.appendingPathComponent("computers_\(stamp).json"))
+        let stub = try makeStub(exitCode: 2, stdout: "")
+        let collector = LogTextCollector()
+
+        try await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
+            force: true, locateJamfCLI: { stub }, onLine: collector.append
+        )
+
+        XCTAssertTrue(collector.texts.contains { $0 == "[ok] ddm-device-status: 0 device(s)" },
+                      "the scan must have landed its empty snapshot; got: \(collector.texts)")
         XCTAssertTrue(collector.texts.contains {
             $0.hasPrefix(ReportEngine.summaryNotWrittenMarker) && $0.contains("no source landed")
         }, "got: \(collector.texts)")

@@ -1888,6 +1888,11 @@ struct ReportEngine: Sendable {
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
 
+        // Judged before the scan phase adds its kinds. The scan works from the cached
+        // `computers` snapshot and lands an EMPTY ddm-device-status for a fleet with no
+        // DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
+        let matrixLandedNothing = !outcomes.isEmpty && savedKinds.isEmpty
+
         // 2.8.0: per-device scan phase. After the verdicts (so a dead run never
         // starts a fleet-wide fan-out) and before finalize (so its kinds count
         // as live in today's summary).
@@ -1901,7 +1906,7 @@ struct ReportEngine: Sendable {
 
         await Self.finalizeCollect(
             profile: profile, tiers: tiers, bin: bin, dataDir: dataDir,
-            savedKinds: savedKinds, nothingLanded: !outcomes.isEmpty && savedKinds.isEmpty,
+            savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
             loadedConfig: loadedConfig,
             workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
         )

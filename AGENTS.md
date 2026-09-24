@@ -299,13 +299,16 @@ for that run. When today's summary is not written for any reason,
 `ReportEngine.finalizeCollect` emits `[partial] summary not written: …`
 (`ReportEngine.summaryNotWrittenMarker`) instead of letting the run claim
 Trends advanced. A collect that attempted sources but landed none
-(`nothingLanded`) writes no summary at all, with the reason "no source landed
-this run", rather than dating cached numbers today. A later same-day collect
+(`nothingLanded`, judged before the device scan adds its kinds) writes no summary
+at all, with the reason "no source landed this run", rather than dating cached
+numbers today. A later same-day collect
 that lands a source today's summary recorded as `cache` or `absent` rebuilds
 it (`freshSummaryIsBetter`), and `mergedSources` keeps `live` for sources the
 earlier run collected. `CollectHonestyWatcher.incomplete` is true after any
-`[partial]` line except the stand-down marker and a report's sheet-failure
-marker; the background item's same-day retry keys on it.
+`[partial]` line except the stand-down marker, a report's sheet-failure marker
+and a device scan that landed with a few devices missing
+(`deviceScanGapsMarkerSuffix`, whose kind landed and whose retry would find the
+scan not due); the background item's same-day retry keys on it.
 `StateFileStore`'s `.fail` files carry the last exit code as
 a third field (`recordFailure(exitCode:)`); `lastFailureExitCode(for:)` reads
 it back and is what lets self-remediation tell a retryable failure from a
