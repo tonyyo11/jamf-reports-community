@@ -137,6 +137,53 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(DemoData.percentLabel(11, of: 11), "100%")
     }
 
+    // MARK: - DDM
+
+    func testDDMIsOnForEveryMacExceptMonterey() {
+        let monterey = DemoData.osDistribution.filter { entry in
+            ComplianceBandingService.parseOSMajor(DemoData.osVersionNumber(entry.version)) == 12
+        }.reduce(0) { $0 + $1.count }
+        XCTAssertEqual(monterey, 17)
+        XCTAssertEqual(DemoData.ddmFleetMacs.count, DemoData.totalDevices - monterey)
+        XCTAssertTrue(DemoData.ddmFleetMacs.allSatisfy { $0.osMajor >= 13 })
+        let snapshot = DemoData.ddmDeviceStatusSnapshot
+        XCTAssertTrue(snapshot.isDetected)
+        XCTAssertEqual(snapshot.records.count, 507)
+        XCTAssertEqual(snapshot.ddmReportedCount, 507)
+    }
+
+    /// The blueprint and declaration-source rows count the Macs the per-device
+    /// sections list, and no blueprint succeeds on more Macs than have DDM.
+    func testDDMBlueprintsAgreeWithThePerDeviceScan() throws {
+        let platform = DemoData.ddmBlueprintSnapshot
+        let devices = DemoData.ddmDeviceStatusSnapshot
+        let baseline = try XCTUnwrap(platform.blueprints.first { $0.name == "Baseline Security" })
+        let updates = try XCTUnwrap(
+            platform.blueprints.first { $0.name == "Software Update Eligibility" })
+        XCTAssertEqual(baseline.failed, 12)
+        XCTAssertEqual(updates.failed, 42)
+        for blueprint in [baseline, updates] {
+            XCTAssertEqual(blueprint.succeeded + (blueprint.failed ?? 0), 507, blueprint.name)
+            let source = try XCTUnwrap(
+                platform.declarations.first { $0.source == blueprint.name })
+            XCTAssertEqual(source.devices, 507)
+            XCTAssertEqual(source.successful, blueprint.succeeded)
+            XCTAssertEqual(source.unsuccessful, blueprint.failed)
+        }
+        let byIdentifier = Dictionary(uniqueKeysWithValues:
+            devices.byIdentifier.map { ($0.identifier, $0) })
+        XCTAssertEqual(byIdentifier["com.meridian.baseline.legacy-profile"]?.invalid, 12)
+        XCTAssertEqual(byIdentifier["com.meridian.softwareupdate.enforcement"]?.inactive, 42)
+        XCTAssertEqual(devices.failingDeclarationCount, 54)
+    }
+
+    func testDDMUpdatesArePendingOnTheOlderSequoiaRelease() {
+        let snapshot = DemoData.ddmDeviceStatusSnapshot
+        XCTAssertEqual(snapshot.pendingVersions.map { $0.version }, ["15.4"])
+        XCTAssertEqual(snapshot.pendingVersions.first?.devices.count, 98)
+        XCTAssertEqual(snapshot.failureReasons.map { $0.devices.count }, [28, 14])
+    }
+
     // MARK: - Security Posture
 
     func testSecurityPostureCountsTheFleetsControls() {

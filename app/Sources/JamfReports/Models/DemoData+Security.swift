@@ -302,6 +302,129 @@ extension DemoData {
         return String(format: "%.1f%%", tenths / 10)
     }
 
+    // MARK: - DDM
+
+    /// Macs with Declarative Device Management enabled: every Mac on macOS 13 or
+    /// later. The 17 on macOS Monterey 12 cannot use it.
+    static let ddmFleetMacs: [FleetMac] = fleetMacs.filter { $0.osMajor >= 13 }
+
+    /// The declarations each DDM-enabled Mac reports: Baseline Security's four,
+    /// Software Update Eligibility's two and Jamf's group-membership declaration.
+    private enum DDMIdentifier {
+        static let passcode = "com.meridian.baseline.passcode"
+        static let diskManagement = "com.meridian.baseline.disk-management"
+        static let legacyProfile = "com.meridian.baseline.legacy-profile"
+        static let statusSubscriptions = "com.meridian.baseline.status-subscriptions"
+        static let updateEnforcement = "com.meridian.softwareupdate.enforcement"
+        static let updateSettings = "com.meridian.softwareupdate.settings"
+        static let groupMembership = "com.jamf.device-group-membership"
+    }
+
+    private static let updateFailureReasons = [
+        "Not enough free disk space to prepare the update",
+        "The update could not be downloaded",
+    ]
+
+    /// The per-device DDM scan, one row per DDM-enabled Mac. Baseline Security's
+    /// legacy-profile declaration is invalid on 12 Macs. The Macs one release behind
+    /// the newest (15.3.2) all have 15.4 pending, and on 42 of them the update
+    /// failed, which leaves the update enforcement declaration inactive.
+    static let ddmDeviceStatusSnapshot = makeDDMDeviceStatusSnapshot()
+
+    private static func makeDDMDeviceStatusSnapshot() -> DDMDeviceStatusService.Snapshot {
+        let latest = osVersionNumber(osDistribution.first?.version ?? "")
+        let latestMajor = ComplianceBandingService.parseOSMajor(latest) ?? 0
+        var records: [DDMDeviceStatusRecord] = []
+        var behind = 0
+        for (position, mac) in ddmFleetMacs.enumerated() {
+            var pending: String?
+            var failure: String?
+            if mac.osMajor == latestMajor && mac.osVersion != latest {
+                pending = latest
+                if behind % 7 < 3 {
+                    failure = updateFailureReasons[behind % 7 < 2 ? 0 : 1]
+                }
+                behind += 1
+            }
+            records.append(ddmRecord(
+                mac, baselineInvalid: position % 42 == 17, pending: pending, failure: failure))
+        }
+        return DDMDeviceStatusService.Snapshot(
+            records: records, isDetected: true, readFailed: false,
+            snapshotDate: referenceDate, sourceDates: [:])
+    }
+
+    private static func ddmRecord(
+        _ mac: FleetMac, baselineInvalid: Bool, pending: String?, failure: String?
+    ) -> DDMDeviceStatusRecord {
+        typealias Declaration = DDMDeviceStatusRecord.Declaration
+        let declarations = [
+            Declaration(identifier: DDMIdentifier.passcode, active: true, valid: true),
+            Declaration(identifier: DDMIdentifier.diskManagement, active: true, valid: true),
+            Declaration(
+                identifier: DDMIdentifier.legacyProfile,
+                active: !baselineInvalid, valid: !baselineInvalid),
+            Declaration(identifier: DDMIdentifier.statusSubscriptions, active: true, valid: true),
+            Declaration(
+                identifier: DDMIdentifier.updateEnforcement, active: failure == nil, valid: true),
+            Declaration(identifier: DDMIdentifier.updateSettings, active: true, valid: true),
+            Declaration(identifier: DDMIdentifier.groupMembership, active: true, valid: true),
+        ]
+        var installState: String?
+        if pending != nil {
+            installState = failure == nil ? "downloading" : "failed"
+        }
+        return DDMDeviceStatusRecord(
+            deviceId: mac.jamfID, name: mac.name, managementId: "meridian-\(mac.jamfID)",
+            osVersion: mac.osVersion,
+            reportDate: timestamp(minutesBefore: mac.daysSinceContact * 1_440),
+            ddmReported: true, declarations: declarations,
+            softwareUpdate: DDMDeviceStatusRecord.SoftwareUpdate(
+                pendingOSVersion: pending, installState: installState, failureReason: failure))
+    }
+
+    /// The Platform blueprints and declaration sources, counted from the per-device
+    /// scan so both halves of the DDM screen agree. Blueprints reach only the
+    /// DDM-enabled Macs: Baseline Security fails where its legacy profile is invalid,
+    /// Software Update Eligibility where the update failed.
+    static let ddmBlueprintSnapshot = makeDDMBlueprintSnapshot()
+
+    private static func makeDDMBlueprintSnapshot() -> DDMBlueprintService.Snapshot {
+        let records = ddmDeviceStatusSnapshot.records
+        let enabled = records.count
+        let baselineFailed = records.filter { record in
+            record.declarations.contains { $0.valid == false }
+        }.count
+        let updateFailed = records.filter { $0.softwareUpdate.failureReason != nil }.count
+        return DDMBlueprintService.Snapshot(
+            blueprints: [
+                .init(name: "Baseline Security", state: "DEPLOYED", scope: enabled, steps: 4,
+                      succeeded: enabled - baselineFailed, failed: baselineFailed, pending: 0),
+                .init(name: "Software Update Eligibility", state: "DEPLOYED", scope: enabled,
+                      steps: 2, succeeded: enabled - updateFailed, failed: updateFailed,
+                      pending: 0),
+                .init(name: "Beta Test Group", state: "DEPLOYED", scope: 24,
+                      steps: 1, succeeded: 22, failed: 0, pending: 2),
+                .init(name: "Legacy Profile Removal", state: "NOT_DEPLOYED", scope: 100,
+                      steps: 1, succeeded: 0, failed: nil, pending: nil),
+                .init(name: "OOO Macs Lockdown", state: "OUT_OF_DATE", scope: 12,
+                      steps: 3, succeeded: 0, failed: nil, pending: nil),
+            ],
+            declarations: [
+                .init(source: "Baseline Security", type: "blueprint", declarations: 4,
+                      devices: enabled, successful: enabled - baselineFailed,
+                      unsuccessful: baselineFailed),
+                .init(source: "Software Update Eligibility", type: "blueprint", declarations: 2,
+                      devices: enabled, successful: enabled - updateFailed,
+                      unsuccessful: updateFailed),
+                .init(source: "Device Group Membership", type: "system", declarations: 1,
+                      devices: enabled, successful: enabled, unsuccessful: 0),
+            ],
+            blueprintsSourceFile: nil,
+            declarationsSourceFile: nil,
+            snapshotDate: referenceDate)
+    }
+
     // MARK: - Security Posture
 
     /// The Security Posture screen's `pro report security` snapshot: the four
