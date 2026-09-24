@@ -836,6 +836,15 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
     firstNonEmpty(lhs, rhs)
 }
 
+extension DeviceInventoryRecord {
+    /// FileVault as yes or no; nil when the inventory carried no value, so the
+    /// Overview's Recent Activity can show "—" instead of a guess.
+    var fileVaultEnabled: Bool? {
+        fileVault.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil : valueLooksGood(fileVault)
+    }
+}
+
 private func valueLooksGood(_ value: String) -> Bool {
     let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         .lowercased()

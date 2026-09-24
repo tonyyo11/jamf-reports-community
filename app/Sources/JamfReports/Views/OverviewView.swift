@@ -25,7 +25,13 @@ struct OverviewView: View {
     /// toast can surface the first artifact's 12-char short hash. Cleared
     /// after each run completes. PR-15.
     @State private var generatedHashes: [String: String] = [:]
-    @State private var activitySelection: DeviceInventoryRecord.ID? = nil
+    @State private var activitySelection: RecentDeviceRow.ID? = nil
+    /// The Customize Overview sheet.
+    @State private var showCustomize = false
+    /// What the data-driven sections show on a live profile (see
+    /// `OverviewLiveData`); `liveLoaded` is false until the first read lands.
+    @State private var live = OverviewLiveData.empty
+    @State private var liveLoaded = false
     /// State-driven drill-down instead of a NavigationStack — this view is
     /// hosted inside ContentView.shell's own NavigationStack, and nested
     /// stacks are unsupported (the pushed page layers over the outer stack's
@@ -76,12 +82,34 @@ struct OverviewView: View {
             Task { await loadTrendsOffMain() }
         }
         .onChange(of: workspace.profile) { _, _ in
+            // The next tenant's sections show loading, never the last one's data.
+            live = .empty
+            liveLoaded = false
             Task {
                 await loadTrendsOffMain()
                 // Health inputs are now per-profile-filtered — recompute on
                 // switch so the banner reflects the newly-active workspace.
                 await workspace.refreshAutomationHealth()
             }
+        }
+        // Re-reads when the profile, the mode or the set of visible data-driven
+        // sections changes — showing a hidden section loads it.
+        .task(id: liveTaskID) {
+            await loadLiveSectionsOffMain()
+        }
+        .onAppear {
+            // Customize Reports' "Customize Overview" lands here.
+            if workspace.overviewCustomizeRequested {
+                workspace.overviewCustomizeRequested = false
+                showCustomize = true
+            }
+        }
+        .sheet(isPresented: $showCustomize) {
+            OverviewCustomizeSheet(
+                unavailable: { unavailableReason($0) },
+                metricHasData: { !metricValues($0).isEmpty }
+            )
+            .environment(workspace)
         }
         .onChange(of: defaultTrendRangeRaw) { _, _ in
             // Range change only re-filters cached data — no disk read.
@@ -95,6 +123,7 @@ struct OverviewView: View {
             workspace.reloadFromDisk()
             Task {
                 await loadTrendsOffMain()
+                await loadLiveSectionsOffMain()
                 await reloadChecklist()
                 await workspace.refreshAutomationHealth()
             }
@@ -158,34 +187,12 @@ struct OverviewView: View {
                 if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
                     ProvenanceBadge(asOf: latest.date, sources: latest.collectionSources)
                 }
-                // v2.5 (macOS 27, opt-in): turns the same daily digest into a
-                // plain-language insight card. `platformSupported` is a
-                // synchronous, config-free check — macOS 26 hosts never see
-                // this card at all (no "requires macOS 27" placeholder).
-                if !workspace.demoMode, ModelAvailability.platformSupported {
-                    AIInsightCard(
-                        profile: workspace.profile,
-                        current: trendStore.filteredSummaries.last,
-                        previous: trendStore.filteredSummaries.count >= 2
-                            ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
-                            : nil
-                    )
-                }
                 // DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
-                // Historical computers-vs-mobile split, straight off the archived
-                // daily summary — Jamf Pro itself has no "how many managed Macs
-                // did we have on <past date>" answer. Live-only: demo mode has no
-                // dated mobile-count series to split a caption against.
-                if !workspace.demoMode, let latest = trendStore.filteredSummaries.last {
-                    managedDevicesTile(latest)
-                }
-                statRow
-                if workspace.demoMode {
-                    osAndRules
-                    securityAgents
-                    recentActivity
-                } else {
-                    liveWorkspaceState
+                // Everything below the banners is the person's own layout
+                // (Customize Overview). A section this profile cannot fill shows
+                // a one-line notice saying what it needs, in its own slot.
+                ForEach(sectionRows, id: \.self) { row in
+                    sectionRow(row)
                 }
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -233,6 +240,7 @@ struct OverviewView: View {
                     defer { isRefreshingHeavyTiers = false }
                     await workspace.runHeavyTierRefresh()
                     await loadTrendsOffMain()
+                    await loadLiveSectionsOffMain()
                 }
             }
         ) {
@@ -378,6 +386,7 @@ struct OverviewView: View {
             defer { isRunningFirstCollect = false }
             await workspace.runFirstCollect()
             await loadTrendsOffMain()
+            await loadLiveSectionsOffMain()
             await reloadChecklist()
         }
     }
@@ -537,12 +546,17 @@ struct OverviewView: View {
         ) {
             AnyView(
                 HStack(spacing: 8) {
+                    PNPButton(title: "Customize", icon: "slider.horizontal.3") {
+                        showCustomize = true
+                    }
+                    .help("Choose the Overview's sections and score cards, and their order.")
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
                         workspace.reloadFromDisk()
                         Task {
                             // Off-main scan so the explicit Refresh doesn't freeze
                             // the UI; picks up any newly-written summaries.
                             await loadTrendsOffMain()
+                            await loadLiveSectionsOffMain()
                             await reloadChecklist()
                         }
                     }
@@ -676,6 +690,7 @@ struct OverviewView: View {
                 workspace.reloadFromDisk()
                 generatedHashes.removeAll()
                 await loadTrendsOffMain()
+                await loadLiveSectionsOffMain()
                 // A generated report completes the checklist's last step — re-derive
                 // it so the card ticks "Generate a report" and auto-hides.
                 await reloadChecklist()
@@ -700,13 +715,261 @@ struct OverviewView: View {
         return "sha256: \(short)…"
     }
 
-    /// Fixed (non-togglable) tile pairing the always-present computer count
-    /// with the optional mobile-device count. Unlike `statRow`'s customizable
-    /// score cards, this always renders when a summary exists — computers and
-    /// mobile devices are the app's most basic "how big is the fleet" answer.
-    private func managedDevicesTile(_ latest: DailySummary) -> some View {
-        let computers = latest.totalDevices
-        let mobile = latest.mobileDeviceCount
+    // MARK: - Layout
+
+    /// Visible sections that exist in this mode: the AI card needs macOS 27 and
+    /// a live profile, and Workspace Status describes a real workspace.
+    private var renderedSections: [OverviewSection] {
+        workspace.overviewLayout.visible.filter { section in
+            switch section {
+            case .aiInsight: return !workspace.demoMode && ModelAvailability.platformSupported
+            case .workspaceStatus: return !workspace.demoMode
+            default: return true
+            }
+        }
+    }
+
+    /// Two adjacent half-width sections share a row, but only when both have
+    /// content: a notice is a thin full-width line.
+    private var sectionRows: [[OverviewSection]] {
+        OverviewLayout.rows(renderedSections) { section in
+            section.isHalfWidth && unavailableReason(section) == nil
+        }
+    }
+
+    @ViewBuilder
+    private func sectionRow(_ row: [OverviewSection]) -> some View {
+        if row.count == 2 {
+            HStack(alignment: .top, spacing: 12) {
+                sectionView(row[0]).frame(maxWidth: .infinity)
+                sectionView(row[1]).frame(maxWidth: .infinity)
+            }
+        } else if let section = row.first {
+            sectionView(section)
+        }
+    }
+
+    @ViewBuilder
+    private func sectionView(_ section: OverviewSection) -> some View {
+        if isLoadingLive(section) {
+            loadingNotice(section)
+        } else if let why = unavailableReason(section) {
+            unavailableNotice(section, why)
+        } else {
+            switch section {
+            case .aiInsight: aiInsightCard
+            case .managedDevices: managedDevicesSection
+            case .scoreCards: statRow
+            case .osDistribution: osDistributionCard
+            case .topFailingRules: failingRulesCard
+            case .securityAgents: securityAgents
+            case .recentActivity: recentActivity
+            case .workspaceStatus: liveWorkspaceState
+            }
+        }
+    }
+
+    /// Why a section has nothing to show on this profile; nil when it has.
+    /// Demo mode always has content.
+    private func unavailableReason(_ section: OverviewSection) -> OverviewUnavailable? {
+        if section == .scoreCards, workspace.selectedScoreCards.isEmpty {
+            return OverviewUnavailable(reason: "No score cards are selected.")
+        }
+        guard !workspace.demoMode else { return nil }
+        switch section {
+        case .managedDevices:
+            return trendStore.filteredSummaries.isEmpty
+                ? OverviewUnavailable(reason: "No daily summary yet. A collect writes one.")
+                : nil
+        case .osDistribution, .topFailingRules, .securityAgents, .recentActivity:
+            return liveLoaded ? live.unavailable[section] : nil
+        case .scoreCards, .aiInsight, .workspaceStatus:
+            return nil
+        }
+    }
+
+    private func isLoadingLive(_ section: OverviewSection) -> Bool {
+        !workspace.demoMode && !liveLoaded && OverviewLiveData.sections.contains(section)
+    }
+
+    /// A section that cannot fill: what it needs, the screen that fixes it, and
+    /// a quick way to hide it for good.
+    private func unavailableNotice(
+        _ section: OverviewSection, _ why: OverviewUnavailable
+    ) -> some View {
+        Card(padding: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: section.sfSymbol)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Theme.Colors.fgMuted)
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(section.title)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                    Text(why.reason)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                if section == .scoreCards {
+                    PNPButton(title: "Customize", icon: "slider.horizontal.3", size: .sm) {
+                        showCustomize = true
+                    }
+                } else if let tab = why.remedy {
+                    PNPButton(title: "Open \(tab.label)", icon: tab.sfSymbol, size: .sm) {
+                        navigate(to: tab)
+                    }
+                }
+                Button {
+                    workspace.overviewLayout.setVisible(section, false)
+                } label: {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Hide \(section.title). Customize brings it back.")
+                .accessibilityLabel("Hide \(section.title)")
+            }
+        }
+    }
+
+    private func loadingNotice(_ section: OverviewSection) -> some View {
+        Card(padding: 14) {
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("Loading \(section.title)…")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+        }
+    }
+
+    // MARK: - Live data
+
+    /// Visible data-driven sections: what the live read covers.
+    private var visibleLiveSections: Set<OverviewSection> {
+        Set(workspace.overviewLayout.visible).intersection(OverviewLiveData.sections)
+    }
+
+    private var liveTaskID: String {
+        let sections = visibleLiveSections.map(\.rawValue).sorted().joined(separator: ",")
+        return "\(workspace.profile)|\(workspace.demoMode)|\(sections)"
+    }
+
+    /// Reads the data-driven sections off the main thread, like the trend scan.
+    private func loadLiveSectionsOffMain() async {
+        guard !workspace.demoMode else { return }
+        let profile = workspace.profile
+        let sections = visibleLiveSections
+        let fleet = overviewFleetCount
+        let data = await Task.detached(priority: .userInitiated) {
+            OverviewLiveDataLoader.load(profile: profile, sections: sections, fleetCount: fleet)
+        }.value
+        // A profile switch mid-read must not paint the previous tenant's data.
+        guard profile == workspace.profile, !workspace.demoMode else { return }
+        live = data
+        liveLoaded = true
+    }
+
+    // Demo and live share one set of cards; these pick the source.
+
+    private var osRows: [OSDistribution] {
+        workspace.demoMode ? DemoData.osDistribution : live.osDistribution
+    }
+
+    /// Percent of Macs on their major's newest release; nil when unknown.
+    private var osCurrentShare: Double? {
+        guard workspace.demoMode else { return live.osCurrentShare }
+        return DemoData.osDistribution.filter(\.current).reduce(0) { $0 + $1.pct }
+    }
+
+    private var osDeviceCount: Int {
+        workspace.demoMode
+            ? DemoData.osDistribution.reduce(0) { $0 + $1.count } : live.osDeviceCount
+    }
+
+    private var osVersionCount: Int {
+        workspace.demoMode ? DemoData.osDistribution.count : live.osVersionCount
+    }
+
+    private var failingRules: [FailingRule] {
+        workspace.demoMode ? DemoData.topFailingRules : live.failingRules
+    }
+
+    private var failingRuleTotal: Int {
+        workspace.demoMode ? DemoData.topFailingRules.count : live.failingRuleCount
+    }
+
+    private var failingRulesLabel: String {
+        if !workspace.demoMode, !live.failingRulesLabel.isEmpty { return live.failingRulesLabel }
+        return workspace.complianceBenchmarkLabel ?? "Compliance Benchmark"
+    }
+
+    /// Live coverage is re-expressed against the fleet count the cards print
+    /// ("installed / fleet") once the trend summaries have loaded.
+    private var agents: [SecurityAgent] {
+        guard !workspace.demoMode else { return DemoData.securityAgents }
+        let fleet = overviewFleetCount
+        guard fleet > 0 else { return live.agents }
+        return live.agents.map { agent in
+            SecurityAgent(
+                name: agent.name, installed: agent.installed,
+                pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
+                    ?? agent.pct,
+                column: agent.column, trend: agent.trend)
+        }
+    }
+
+    private var recentRows: [RecentDeviceRow] {
+        workspace.demoMode
+            ? DemoData.deviceSample.map(RecentDeviceRow.init(demo:))
+            : live.recentDevices
+    }
+
+    // MARK: - Sections
+
+    /// v2.5 (macOS 27, opt-in): the daily digest as a plain-language insight.
+    /// `platformSupported` is a synchronous, config-free check, so a Mac that
+    /// cannot run it never lists or renders this section.
+    private var aiInsightCard: some View {
+        AIInsightCard(
+            profile: workspace.profile,
+            current: trendStore.filteredSummaries.last,
+            previous: trendStore.filteredSummaries.count >= 2
+                ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
+                : nil
+        )
+    }
+
+    /// Historical computers-vs-mobile split, straight off the archived daily
+    /// summary — Jamf Pro itself has no "how many managed Macs did we have on
+    /// <past date>" answer. Demo mode shows the demo fleet and its iPads.
+    @ViewBuilder
+    private var managedDevicesSection: some View {
+        if workspace.demoMode {
+            managedDevicesTile(
+                computers: DemoData.totalDevices,
+                mobile: DemoData.mobileDeviceCount,
+                spark: DemoData.totalDevicesTrend
+            )
+        } else if let latest = trendStore.filteredSummaries.last {
+            managedDevicesTile(
+                computers: latest.totalDevices,
+                mobile: latest.mobileDeviceCount,
+                spark: trendStore.values(metric: .managedDevices)
+            )
+        }
+    }
+
+    /// The computer count with the optional mobile count beside it — the
+    /// app's most basic "how big is the fleet" answer.
+    private func managedDevicesTile(computers: Int, mobile: Int?, spark: [Double]) -> some View {
         let total = computers + (mobile ?? 0)
         let computerLabel = "\(computers) computer\(computers == 1 ? "" : "s")"
         let caption = mobile.map { "\(computerLabel) · \($0) mobile" } ?? computerLabel
@@ -715,25 +978,21 @@ struct OverviewView: View {
             label: "Managed Devices",
             value: "\(total)",
             sub: caption,
-            sparkValues: trendStore.values(metric: .managedDevices),
+            sparkValues: spark,
             sparkColor: Color(hex: TrendSeries.Metric.managedDevices.colorHex)
         )
         .lineLimit(1)
         .truncationMode(.tail)
     }
 
+    /// The person's chosen score cards. Rows share one height, so a card with
+    /// a caption, or one with no data yet, no longer knocks its neighbours'
+    /// tops out of line.
     private var statRow: some View {
-        // Adaptive grid that collapses to fewer columns at narrow widths rather
-        // than cramming tiles into unreadable strips.
-        LazyVGrid(
-            columns: Array(
-                repeating: GridItem(.adaptive(minimum: 220), spacing: 12),
-                count: 1
-            ),
-            spacing: 12
-        ) {
+        EqualHeightTileGrid(minTileWidth: 220) {
             ForEach(workspace.selectedScoreCards) { metric in
-                let isDanger = scoreCardTrend(for: metric) == .down && metric != .stale
+                let hasData = !metricValues(metric).isEmpty
+                let isDanger = hasData && scoreCardTrend(for: metric) == .down && metric != .stale
                 Button {
                     drill = .metric(metric.rawValue)
                 } label: {
@@ -743,7 +1002,8 @@ struct OverviewView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open \(metric.displayLabel) details")
-                .help("Open \(metric.displayLabel) details")
+                // With no value, the hover says what the card needs instead.
+                .help(hasData ? "Open \(metric.displayLabel) details" : metric.dataRequirement)
             }
         }
         .frame(maxWidth: .infinity)
@@ -826,11 +1086,20 @@ struct OverviewView: View {
         // period: a missed run makes the gap days or weeks, and the Trends
         // range the operator picked does not change which day it lands on.
         // Naming the day is both shorter and true.
+        //
+        // Patch compliance in the daily summary is the average of per-title
+        // percentages, while the Patch screen's figure is device-weighted; the
+        // caption keeps the two from reading as a contradiction (epic #207 C1).
+        // A card with no value says so rather than showing a bare "--".
         let subText: String? = {
+            guard lastValue != nil else { return "Not reported by this profile" }
             var parts: [String] = []
             if metric == .activeDevices {
                 let days = Int(workspace.configState.staleDeviceDays) ?? 30
                 parts.append("Checked in within \(days)d")
+            }
+            if metric == .patch {
+                parts.append("Avg per title")
             }
             if values.count >= 2, let comparisonDate {
                 parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
@@ -848,7 +1117,8 @@ struct OverviewView: View {
             delta: values.count >= 2 ? deltaStr : nil,
             deltaTrend: trend,
             sparkValues: values,
-            sparkColor: Color(hex: metric.colorHex)
+            sparkColor: Color(hex: metric.colorHex),
+            fillsHeight: true
         )
         // The label can be an operator-configured string (compliance baseline
         // name, EDR agent name) with no length guarantee — in the field these
@@ -861,77 +1131,96 @@ struct OverviewView: View {
         .truncationMode(.tail)
     }
 
-    // MARK: OS distribution donut + Top failing rules
+    // MARK: macOS distribution + Top failing rules
 
-    private var osAndRules: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Button {
-                drill = .osDistribution
-            } label: {
-                Card(padding: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack {
-                            SectionHeader(title: "macOS Distribution")
-                            Spacer()
-                            Pill(text: "5 versions", tone: .muted)
-                        }
-                        HStack(alignment: .center, spacing: 18) {
-                            donut
-                            VStack(alignment: .leading, spacing: 6) {
-                                ForEach(DemoData.osDistribution) { o in
-                                    HStack(spacing: 8) {
-                                        RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                            .fill(Color(hex: o.colorHex))
-                                            .frame(width: 8, height: 8)
-                                        Text(o.version)
-                                            .font(.footnote)
-                                            .foregroundStyle(o.current ? Theme.Colors.fg : Theme.Text.tertiary(contrast))
-                                        Spacer(minLength: 0)
-                                        Mono(text: "\(o.count)")
-                                        Text("\(String(format: "%.1f", o.pct))%")
-                                            .font(Theme.Fonts.mono(11, weight: .semibold))
-                                            .foregroundStyle(Theme.Colors.fg)
-                                            .frame(minWidth: 44, alignment: .trailing)
-                                    }
+    /// Macs per macOS version. Live, from the inventory summary every collect
+    /// writes; "current" is judged against the SOFA feed, the same way the On
+    /// Current macOS score card is.
+    private var osDistributionCard: some View {
+        Button {
+            drill = .osDistribution
+        } label: {
+            Card(padding: 18) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        SectionHeader(title: "macOS Distribution")
+                        Spacer()
+                        Pill(text: "\(osVersionCount) versions", tone: .muted)
+                    }
+                    HStack(alignment: .center, spacing: 18) {
+                        donut
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(osRows) { o in
+                                HStack(spacing: 8) {
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(Color(hex: o.colorHex))
+                                        .frame(width: 8, height: 8)
+                                    Text(o.version)
+                                        .font(.footnote)
+                                        .foregroundStyle(o.current
+                                            ? Theme.Colors.fg : Theme.Text.tertiary(contrast))
+                                    Spacer(minLength: 0)
+                                    Mono(text: "\(o.count)")
+                                    Text("\(String(format: "%.1f", o.pct))%")
+                                        .font(Theme.Fonts.mono(11, weight: .semibold))
+                                        .foregroundStyle(Theme.Colors.fg)
+                                        .frame(minWidth: 44, alignment: .trailing)
                                 }
                             }
                         }
                     }
                 }
-                .drillDownChrome()
             }
-            .buttonStyle(.plain)
-            .help("Open macOS distribution details")
-            .frame(maxWidth: .infinity)
+            .drillDownChrome()
+        }
+        .buttonStyle(.plain)
+        .help("Open macOS distribution details")
+    }
 
-            Button {
-                drill = .failingRules
-            } label: {
-                Card(padding: 18) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                SectionHeader(title: "Top Failing Rules")
-                                Text(failingRulesSubtitle(baseline: workspace.complianceBenchmarkLabel ?? "Compliance Benchmark", fleetCount: overviewFleetCount))
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                            }
-                            Spacer()
-                            Pill(text: "View all 47", tone: .gold)
+    /// Rules failing on the most Macs. Live, from Compliance Benchmarks on a
+    /// Platform API profile, or from the failures-list extension attribute.
+    private var failingRulesCard: some View {
+        Button {
+            drill = .failingRules
+        } label: {
+            Card(padding: 18) {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            SectionHeader(title: "Top Failing Rules")
+                            Text(failingRulesSubtitle(
+                                baseline: failingRulesLabel, fleetCount: overviewFleetCount))
+                                .font(.caption)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
+                        Spacer()
+                        Pill(text: "View all \(failingRuleTotal)", tone: .gold)
+                    }
+                    if failingRules.isEmpty {
+                        Text("No rule is failing on any Mac that reported results.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    } else {
                         failingRulesBars
                     }
                 }
-                .drillDownChrome()
             }
-            .buttonStyle(.plain)
-            .help("Open failing rule details")
-            .frame(maxWidth: .infinity * 1.4)
+            .drillDownChrome()
         }
+        .buttonStyle(.plain)
+        .help("Open failing rule details")
     }
 
+    /// Centre label: the share on a current release, or — with no SOFA feed
+    /// to judge currency — how many Macs the chart covers.
     private var donut: some View {
-        Chart(DemoData.osDistribution) { o in
+        let share = osCurrentShare
+        let centre = share.map { "\(String(format: "%.1f", $0))%" } ?? "\(osDeviceCount)"
+        let summary = share.map {
+            "macOS distribution donut chart: \(String(format: "%.1f", $0)) percent of Macs "
+                + "are on the newest release of their macOS version"
+        } ?? "macOS distribution donut chart: \(osDeviceCount) Macs"
+        return Chart(osRows) { o in
             SectorMark(
                 angle: .value("Devices", o.pct),
                 innerRadius: .ratio(0.62),
@@ -942,25 +1231,25 @@ struct OverviewView: View {
         }
         .chartLegend(.hidden)
         .frame(width: 160, height: 160)
-        .accessibilityLabel("macOS distribution donut chart: 73 percent of devices are on the current macOS release")
+        .accessibilityLabel(summary)
         .overlay(
             VStack(spacing: 2) {
-                Text("73%")
+                Text(centre)
                     .font(Theme.Fonts.serif(deviceCountSize, weight: .bold))
                     .foregroundStyle(Theme.Colors.fg)
-                Kicker(text: "On Current")
+                Kicker(text: share == nil ? "Macs" : "On Current")
             }
             .accessibilityHidden(true)
         )
         .accessibilityChartDescriptor(SectorChartDescriptor(
             title: "macOS Distribution",
             unit: "%",
-            slices: DemoData.osDistribution.map { .init(label: $0.version, value: $0.pct) }
+            slices: osRows.map { .init(label: $0.version, value: $0.pct) }
         ))
     }
 
     private var failingRulesBars: some View {
-        let rules = DemoData.topFailingRules.prefix(6)
+        let rules = failingRules.prefix(6)
         let maxFails = rules.map(\.fails).max() ?? 1
         return VStack(spacing: 8) {
             ForEach(Array(rules)) { r in
@@ -991,16 +1280,20 @@ struct OverviewView: View {
 
     // MARK: Security agents
 
+    /// Coverage per agent listed under security_agents. Live, from the
+    /// extension-attribute results; the grid wraps instead of squeezing five
+    /// cards into a narrow window, and its rows share one height so a card
+    /// with a "not installed" line no longer sits taller than the rest.
     private var securityAgents: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     SectionHeader(title: "Security Agents")
                     Spacer()
-                    Kicker(text: "5 tracked")
+                    Kicker(text: "\(agents.count) tracked")
                 }
-                HStack(spacing: 10) {
-                    ForEach(DemoData.securityAgents) { a in
+                EqualHeightTileGrid(minTileWidth: 160, spacing: 10) {
+                    ForEach(agents) { a in
                         Button {
                             drill = .securityAgent(a.name)
                         } label: {
@@ -1010,6 +1303,14 @@ struct OverviewView: View {
                         .buttonStyle(.plain)
                         .help("Open \(a.name) details")
                     }
+                }
+                if !workspace.demoMode, !live.agentsWithoutValues.isEmpty {
+                    Text("No values collected for "
+                         + "\(live.agentsWithoutValues.joined(separator: ", ")). "
+                         + "Check that each column matches its extension attribute in Config.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -1021,13 +1322,15 @@ struct OverviewView: View {
 
     // MARK: Recent activity table
 
+    /// The Macs that checked in most recently. Live, from the device
+    /// inventory; a value the inventory does not carry shows "—", not a guess.
     private var recentActivity: some View {
         Card(padding: 0) {
             VStack(spacing: 0) {
                 HStack {
                     SectionHeader(title: "Recent Activity")
                     Spacer()
-                    Pill(text: "\(DemoData.deviceSample.count) of \(DemoData.totalDevices)", tone: .muted)
+                    Pill(text: recentCountLabel, tone: .muted)
                     Button {
                         drill = .recentActivity
                     } label: {
@@ -1046,45 +1349,51 @@ struct OverviewView: View {
                 }
                 .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
                 Divider().background(Theme.Colors.hairlineStrong)
+                recentTable(minHeight: 260)
+            }
+        }
+    }
 
-                Table(DemoData.deviceSample, selection: $activitySelection) {
-                    TableColumn("Device") { d in
-                        Text(d.name).font(.callout.weight(.semibold))
-                    }
-                    TableColumn("Serial") { d in Mono(text: d.serial) }
-                    TableColumn("macOS") { d in Mono(text: d.os) }
-                    TableColumn("User") { d in
-                        Text(d.user).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    TableColumn("Department") { d in Text(d.dept).font(.footnote) }
-                    TableColumn("FV") { d in
-                        Image(systemName: d.fileVault ? "checkmark" : "xmark")
-                            .foregroundStyle(d.fileVault ? Theme.Colors.ok : Theme.Colors.danger)
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .width(40)
-                    TableColumn("Failed Rules") { d in failurePill(d.fails) }
-                    TableColumn("Last Seen") { d in
-                        Mono(text: d.lastSeen,
-                             color: d.lastSeen.contains("day") ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
-                    }
+    private var recentCountLabel: String {
+        let fleet = workspace.demoMode ? DemoData.totalDevices : overviewFleetCount
+        return fleet > 0 ? "\(recentRows.count) of \(fleet)" : "\(recentRows.count) Macs"
+    }
+
+    /// Shared by the card and its drill-down.
+    private func recentTable(minHeight: CGFloat) -> some View {
+        let rows = recentRows
+        return Table(rows, selection: $activitySelection) {
+            TableColumn("Device") { d in
+                Text(d.name).font(.callout.weight(.semibold))
+            }
+            TableColumn("Serial") { d in Mono(text: d.serial) }
+            TableColumn("macOS") { d in Mono(text: d.os) }
+            TableColumn("User") { d in
+                Text(d.user).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            TableColumn("Department") { d in Text(d.department ?? "—").font(.footnote) }
+            TableColumn("FV") { d in fileVaultMark(d.fileVault) }
+                .width(40)
+            TableColumn("Failed Rules") { d in failurePill(d.failedRules) }
+            TableColumn("Last Seen") { d in
+                Mono(text: d.lastSeen,
+                     color: d.isStale ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
+            }
+        }
+        .frame(minHeight: minHeight)
+        .scrollContentBackground(.hidden)
+        .contextMenu(forSelectionType: RecentDeviceRow.ID.self) { selection in
+            if let id = selection.first, let device = rows.first(where: { $0.id == id }) {
+                Button("Copy Serial Number") {
+                    SystemActions.copyToClipboard(device.serial)
                 }
-                .frame(minHeight: 260)
-                .scrollContentBackground(.hidden)
-                .contextMenu(forSelectionType: DeviceRow.ID.self) { selection in
-                    if let id = selection.first, let device = DemoData.deviceSample.first(where: { $0.id == id }) {
-                        Button("Copy Serial Number") {
-                            SystemActions.copyToClipboard(device.serial)
-                        }
-                        Button("Copy User Email") {
-                            SystemActions.copyToClipboard(device.user)
-                        }
-                        if let jamfID = device.numericJamfID,
-                           let url = workspace.consoleURL(forComputerID: jamfID) {
-                            Button("Open in Jamf Pro") {
-                                SystemActions.open(url)
-                            }
-                        }
+                Button("Copy User") {
+                    SystemActions.copyToClipboard(device.user)
+                }
+                if let jamfID = device.numericJamfID,
+                   let url = workspace.consoleURL(forComputerID: jamfID) {
+                    Button("Open in Jamf Pro") {
+                        SystemActions.open(url)
                     }
                 }
             }
@@ -1092,12 +1401,30 @@ struct OverviewView: View {
     }
 
     @ViewBuilder
-    private func failurePill(_ count: Int) -> some View {
-        switch count {
-        case 0:        Pill(text: "PASS", tone: .teal)
-        case 1...10:   Pill(text: "\(count)", tone: .muted)
-        case 11...30:  Pill(text: "\(count)", tone: .warn)
-        default:       Pill(text: "\(count)", tone: .danger)
+    private func fileVaultMark(_ enabled: Bool?) -> some View {
+        if let enabled {
+            Image(systemName: enabled ? "checkmark" : "xmark")
+                .foregroundStyle(enabled ? Theme.Colors.ok : Theme.Colors.danger)
+                .font(.system(size: 11, weight: .bold))
+                .accessibilityLabel(enabled ? "FileVault on" : "FileVault off")
+        } else {
+            Mono(text: "—")
+                .accessibilityLabel("FileVault state unknown")
+        }
+    }
+
+    @ViewBuilder
+    private func failurePill(_ count: Int?) -> some View {
+        if let count {
+            switch count {
+            case 0:        Pill(text: "PASS", tone: .teal)
+            case 1...10:   Pill(text: "\(count)", tone: .muted)
+            case 11...30:  Pill(text: "\(count)", tone: .warn)
+            default:       Pill(text: "\(count)", tone: .danger)
+            }
+        } else {
+            Mono(text: "—")
+                .accessibilityLabel("Failed rules not reported")
         }
     }
 
@@ -1115,7 +1442,7 @@ struct OverviewView: View {
                 case .failingRules:
                     failingRulesDetail
                 case .securityAgent(let name):
-                    if let agent = DemoData.securityAgents.first(where: { $0.name == name }) {
+                    if let agent = agents.first(where: { $0.name == name }) {
                         securityAgentDetail(agent)
                     }
                 case .recentActivity:
@@ -1205,11 +1532,11 @@ struct OverviewView: View {
                 kicker: "macOS Distribution",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: "macOS Distribution",
-                subtitle: "\(DemoData.osDistribution.reduce(0) { $0 + $1.count }) devices across \(DemoData.osDistribution.count) versions"
+                subtitle: "\(osDeviceCount) devices across \(osVersionCount) versions"
             )
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(DemoData.osDistribution) { item in
+                    ForEach(osRows) { item in
                         detailProgressRow(
                             label: item.version,
                             value: item.pct,
@@ -1238,18 +1565,24 @@ struct OverviewView: View {
                 kicker: "Top Failing Rules",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: "Top Failing Rules",
-                subtitle: "\(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") · highest failure counts"
+                subtitle: "\(failingRulesLabel) · highest failure counts"
             )
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(DemoData.topFailingRules) { rule in
+                    ForEach(failingRules) { rule in
                         detailProgressRow(
                             label: rule.ruleID,
                             value: Double(rule.fails),
-                            maxValue: Double(DemoData.topFailingRules.map(\.fails).max() ?? 1),
+                            maxValue: Double(failingRules.map(\.fails).max() ?? 1),
                             trailing: "\(rule.fails) devices",
                             color: Theme.Colors.gold
                         )
+                    }
+                    if failingRuleTotal > failingRules.count {
+                        Text("Showing the \(failingRules.count) rules failing on the most Macs, "
+                             + "of \(failingRuleTotal) failing in all.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     Divider().background(Theme.Colors.hairline)
                     HStack {
@@ -1311,42 +1644,10 @@ struct OverviewView: View {
                 kicker: "Recent Activity",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: "Recent Activity",
-                subtitle: "\(DemoData.deviceSample.count) recent devices from the current snapshot"
+                subtitle: "The \(recentRows.count) Macs that checked in most recently"
             )
             Card(padding: 0) {
-                Table(DemoData.deviceSample, selection: $activitySelection) {
-                    TableColumn("Device") { d in
-                        Text(d.name).font(.callout.weight(.semibold))
-                    }
-                    TableColumn("Serial") { d in Mono(text: d.serial) }
-                    TableColumn("macOS") { d in Mono(text: d.os) }
-                    TableColumn("User") { d in
-                        Text(d.user).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    TableColumn("Failed Rules") { d in failurePill(d.fails) }
-                    TableColumn("Last Seen") { d in
-                        Mono(text: d.lastSeen,
-                             color: d.lastSeen.contains("day") ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
-                    }
-                }
-                .frame(minHeight: 340)
-                .scrollContentBackground(.hidden)
-                .contextMenu(forSelectionType: DeviceRow.ID.self) { selection in
-                    if let id = selection.first, let device = DemoData.deviceSample.first(where: { $0.id == id }) {
-                        Button("Copy Serial Number") {
-                            SystemActions.copyToClipboard(device.serial)
-                        }
-                        Button("Copy User Email") {
-                            SystemActions.copyToClipboard(device.user)
-                        }
-                        if let jamfID = device.numericJamfID,
-                           let url = workspace.consoleURL(forComputerID: jamfID) {
-                            Button("Open in Jamf Pro") {
-                                SystemActions.open(url)
-                            }
-                        }
-                    }
-                }
+                recentTable(minHeight: 340)
             }
             HStack {
                 Spacer()
@@ -1709,7 +2010,9 @@ struct AgentCardView: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Fills the row EqualHeightTileGrid offers, so a card without the
+        // "not installed" line matches its neighbours.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color(nsColor: .controlBackgroundColor))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)

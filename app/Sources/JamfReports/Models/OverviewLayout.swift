@@ -4,10 +4,12 @@ import Foundation
 ///
 /// Raw values are persisted in the saved layout: never rename one. A section
 /// added in a later release joins a saved layout at the end, shown.
+/// Declaration order is the standard layout, which matches the order the
+/// Overview used before it could be customized.
 enum OverviewSection: String, CaseIterable, Identifiable, Sendable {
+    case aiInsight
     case managedDevices
     case scoreCards
-    case aiInsight
     case osDistribution
     case topFailingRules
     case securityAgents

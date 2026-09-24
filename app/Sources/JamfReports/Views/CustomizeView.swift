@@ -170,47 +170,29 @@ struct CustomizeView: View {
         .frame(width: 260)
     }
 
+    /// The Overview's score cards and sections are chosen in one editor on the
+    /// Overview itself, where it can say which ones this profile can fill.
+    /// This card only points there; a second, availability-blind copy of the
+    /// toggles would drift from it.
     private var scoreCardsCard: some View {
         Card(padding: 16) {
-            VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Overview Score Cards", style: .body)
-                    .padding(.bottom, 10)
-                
-                Text("Choose the metrics to show on the Overview dashboard.")
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Overview", style: .body)
+                Text("Score cards and Overview sections — what shows, in what order — "
+                     + "are chosen on the Overview. \(workspace.selectedScoreCards.count) "
+                     + "score cards selected.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .padding(.bottom, 12)
-
-                // No selection cap — the Overview grid is adaptive and wraps
-                // to additional rows as more score cards are enabled.
-                ForEach(TrendSeries.Metric.allCases) { metric in
-                    let isOn = Binding<Bool>(
-                        get: { workspace.selectedScoreCards.contains(metric) },
-                        set: { newValue in
-                            if newValue {
-                                if !workspace.selectedScoreCards.contains(metric) {
-                                    workspace.selectedScoreCards.append(metric)
-                                }
-                            } else {
-                                workspace.selectedScoreCards.removeAll { $0 == metric }
-                            }
-                        }
+                    .fixedSize(horizontal: false, vertical: true)
+                PNPButton(title: "Customize Overview", icon: "slider.horizontal.3", size: .sm) {
+                    workspace.overviewCustomizeRequested = true
+                    NotificationCenter.default.post(
+                        name: .navigateToTab,
+                        object: nil,
+                        userInfo: ["tab": Tab.overview.rawValue]
                     )
-
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text(metric.displayLabel)
-                                .font(.footnote.weight(.medium))
-                                .foregroundStyle(Theme.Text.primary)
-                            Spacer()
-                            PNPToggle(isOn: isOn)
-                        }
-                        .padding(.vertical, 6)
-                        if metric != TrendSeries.Metric.allCases.last {
-                            Divider().background(Theme.Hairline.standard)
-                        }
-                    }
                 }
+                .help("Open the Overview with its Customize sheet.")
             }
         }
     }
