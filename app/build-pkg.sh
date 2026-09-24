@@ -24,6 +24,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Version validation and artifact naming, shared with build-app.sh and
+# scripts/package-dmg.sh (scripts/test-versioning.zsh covers them in CI).
+# shellcheck source-path=SCRIPTDIR source=scripts/lib/versioning.zsh
+source "${PWD}/scripts/lib/versioning.zsh"
+
 CONFIG="${1:-debug}"
 APP_PATH="build/JamfReports.app"
 PKG_STAGING="build/pkg-staging"
@@ -63,23 +68,20 @@ APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") || {
 }
 APP_CHANNEL=$(/usr/libexec/PlistBuddy -c "Print :JRReleaseChannel" "$PLIST" 2>/dev/null || echo "beta")
 
-if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+if ! jr_is_valid_marketing_version "$APP_VERSION"; then
   echo "✗ unexpected CFBundleShortVersionString: '$APP_VERSION' (want N.N or N.N.N)" >&2
   exit 1
 fi
-if [[ ! "$APP_BUILD" =~ ^[0-9]+$ ]]; then
+if ! jr_is_valid_build_number "$APP_BUILD"; then
   echo "✗ unexpected CFBundleVersion: '$APP_BUILD' (must be a monotonic integer)" >&2
   exit 1
 fi
 
-if [[ "$APP_CHANNEL" != "release" ]]; then
-  PKG_OUT="build/JamfReports-${APP_VERSION}-beta${APP_BUILD}.pkg"
-  # productbuild's `--version` flag is a string — pkg receipts store it as-is.
-  PKG_VERSION="${APP_VERSION}-beta${APP_BUILD}"
-else
-  PKG_OUT="build/JamfReports-${APP_VERSION}.pkg"
-  PKG_VERSION="${APP_VERSION}"
-fi
+# Any channel but exactly "release" (a missing key included) gets the -betaN
+# suffix: JamfReports-2.8.0-beta812.pkg, or JamfReports-2.8.0.pkg on release.
+PKG_OUT="$(jr_artifact_path build "$APP_VERSION" "$APP_BUILD" "$APP_CHANNEL" pkg)"
+# productbuild's `--version` flag is a string — pkg receipts store it as-is.
+PKG_VERSION="$(jr_artifact_version "$APP_VERSION" "$APP_BUILD" "$APP_CHANNEL")"
 
 echo "→ staging .app for pkgbuild"
 rm -rf "$PKG_STAGING"

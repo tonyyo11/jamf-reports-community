@@ -22,6 +22,12 @@
 
 set -euo pipefail
 
+# Build-number validation and artifact naming, shared with build-app.sh and
+# build-pkg.sh (test-versioning.zsh covers them in CI).
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+# shellcheck source-path=SCRIPTDIR source=lib/versioning.zsh
+source "${SCRIPT_DIR}/lib/versioning.zsh"
+
 readonly VERSION="${1:?Version required (e.g. 2.1.0)}"
 APP_PATH_RAW="$(cd -- "$(dirname -- "$0")/../build/JamfReports.app" && pwd -P)"
 readonly APP_PATH="$APP_PATH_RAW"
@@ -44,11 +50,15 @@ APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") || {
 }
 APP_CHANNEL=$(/usr/libexec/PlistBuddy -c "Print :JRReleaseChannel" "$PLIST" 2>/dev/null || echo "beta")
 
-if [[ "$APP_CHANNEL" != "release" ]]; then
-  DMG_PATH="${WORK_DIR}/build/JamfReports-${VERSION}-beta${APP_BUILD}.dmg"
-else
-  DMG_PATH="${WORK_DIR}/build/JamfReports-${VERSION}.dmg"
+# The same build-number check build-pkg.sh makes, so a beta .dmg never carries a
+# -beta suffix that is not an integer.
+if ! jr_is_valid_build_number "$APP_BUILD"; then
+  echo "✗ unexpected CFBundleVersion: '$APP_BUILD' (must be a monotonic integer)" >&2
+  exit 1
 fi
+
+# JamfReports-<version>-beta<build>.dmg, or JamfReports-<version>.dmg on release.
+DMG_PATH="$(jr_artifact_path "${WORK_DIR}/build" "$VERSION" "$APP_BUILD" "$APP_CHANNEL" dmg)"
 
 # Clean up old staging and DMG
 if [[ -d "$STAGING_DIR" ]]; then

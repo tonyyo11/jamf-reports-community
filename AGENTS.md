@@ -745,6 +745,10 @@ truth for the user-facing semver (`CFBundleShortVersionString`); keep it in sync
 is always a monotonic integer (git commit count) — never set it to the marketing version.
 Release-vs-beta is signalled by `RELEASE=1` → `JRReleaseChannel` in `Info.plist`, which
 `build-pkg.sh` reads to decide artifact naming (`-betaN` suffix for betas).
+The channel, build-number and artifact-naming rules live in `app/scripts/lib/versioning.zsh`
+(sourced by `build-app.sh`, `build-pkg.sh` and `package-dmg.sh`), and CI runs
+`app/scripts/test-versioning.zsh` against them on every push; only the `Info.plist` stamp
+and its `PlistBuddy` read-back still need a Mac build to exercise.
 To bump: change `MARKETING_VERSION`, roll `CHANGELOG.md`, tag `vX.Y.Z`; the build number
 takes care of itself. `.jamf-cli-tracked-version` is a separate axis (the jamf-cli
 dependency floor), unrelated to app versioning.
