@@ -6,6 +6,12 @@ import Foundation
 /// dates on or before `referenceDate`.
 extension DemoData {
 
+    /// A demo folder as a subtitle shows it. Demo mode names the default root,
+    /// never this Mac's configured one, which may be a synced team folder.
+    static func workspaceDisplayPath(_ subpath: String) -> String {
+        "~/Jamf-Reports/\(org.profile)/\(subpath)"
+    }
+
     // MARK: - Patch Compliance
 
     /// Zoom Workplace, which a demo Mac fails to patch but `patchTitleSummary`
@@ -289,6 +295,76 @@ extension DemoData {
             name: name, priority: priority, andOr: "and", searchType: searchType,
             value: value, openingParen: false, closingParen: false)
     }
+
+    // MARK: - Generated Reports
+
+    /// One file in the demo's Generated Reports folder.
+    private struct ReportFile: Sendable {
+        let name: String
+        let bytes: Int64
+        let date: String
+        let source: String
+        let sheets: Int
+        let devices: Int?
+    }
+
+    private static let weeklyExecutive = "Weekly Executive Report"
+    private static let mobileInventory = "Mobile Inventory (iPad)"
+
+    /// Newest first, as `ReportLibrary.list` sorts them: the weekday Mobile
+    /// Inventory (iPad) run's week and the last two Weekly Executive Reports,
+    /// each with its HTML, named for their schedules in `scheduledRuns`.
+    /// Workbooks carry that day's Mac count, as a summary would give them.
+    private static let reportFiles: [ReportFile] = [
+        reportFile("2026-04-24_073305", "xlsx", 702_464, "Apr 24, 07:33", mobileInventory),
+        reportFile("2026-04-23_073248", "xlsx", 701_952, "Apr 23, 07:32", mobileInventory),
+        reportFile("2026-04-22_073251", "xlsx", 700_416, "Apr 22, 07:32", mobileInventory),
+        reportFile("2026-04-21_073244", "xlsx", 699_904, "Apr 21, 07:32", mobileInventory),
+        reportFile("2026-04-20_073302", "xlsx", 699_392, "Apr 20, 07:33", mobileInventory),
+        reportFile("2026-04-20_070231", "html", 2_412_877, "Apr 20, 07:02", weeklyExecutive),
+        reportFile("2026-04-20_070214", "xlsx", 1_284_506, "Apr 20, 07:02", weeklyExecutive),
+        reportFile("2026-04-13_070227", "html", 2_398_104, "Apr 13, 07:02", weeklyExecutive,
+                   weeksAgo: 1),
+        reportFile("2026-04-13_070209", "xlsx", 1_279_318, "Apr 13, 07:02", weeklyExecutive,
+                   weeksAgo: 1),
+    ]
+
+    /// A report named the way `ReportEngine.resolveOutputURL` names one. The
+    /// Executive template writes 9 sheets and the Asset template 10.
+    private static func reportFile(
+        _ stamp: String, _ ext: String, _ bytes: Int64, _ date: String, _ source: String,
+        weeksAgo: Int = 0
+    ) -> ReportFile {
+        let isWorkbook = ext == "xlsx"
+        let sheets = source == weeklyExecutive ? 9 : 10
+        let lastWeek = totalDevicesTrend.count - 1 - weeksAgo
+        let macs = Int((totalDevicesTrend[safe: lastWeek] ?? Double(totalDevices)).rounded())
+        return ReportFile(
+            name: "report_\(org.profile)_\(stamp).\(ext)", bytes: bytes, date: date,
+            source: source, sheets: isWorkbook ? sheets : 0, devices: isWorkbook ? macs : nil)
+    }
+
+    /// The demo's Generated Reports list. The sidebar's badge counts it.
+    static let generatedReports: [Report] = reportFiles.map { file in
+        Report(name: file.name, size: FileDisplay.size(file.bytes), date: file.date,
+               source: file.source, sheets: file.sheets, devices: file.devices)
+    }
+
+    /// Totals for the Generated Reports tiles. The files come from seven runs,
+    /// fewer than `output.keep_latest_runs` keeps, so none have been archived.
+    static let generatedReportStats = ReportLibrary.Stats(
+        count: reportFiles.count,
+        totalBytes: reportFiles.reduce(Int64(0)) { $0 + $1.bytes },
+        archivedCount: 0
+    )
+
+    /// The archived summaries Trends reads: one per week in `trendDates`.
+    static let snapshotFamilies: [SnapshotFamily] = [
+        SnapshotFamily(
+            name: "summaries", glob: "*summary*.json", snapshotCount: trendDates.count,
+            latestDate: nil, totalBytes: Int64(trendDates.count) * 3_072,
+            usedBy: "Trends · Overview score cards")
+    ]
 }
 
 private extension ClassicGroupRow {

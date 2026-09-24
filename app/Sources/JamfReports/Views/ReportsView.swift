@@ -26,6 +26,21 @@ struct ReportsView: View {
         return workspace.appendingPathComponent("Generated Reports", isDirectory: true)
     }
 
+    /// The header's folder. Demo mode names the demo workspace, not this Mac's
+    /// configured root, which may be a synced team folder.
+    private var reportsFolderDisplayPath: String {
+        workspace.demoMode
+            ? DemoData.workspaceDisplayPath("Generated Reports") + "/"
+            : WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                             subpath: "Generated Reports") + "/"
+    }
+
+    private func revealReportsFolder() {
+        // Demo reports are not on disk; the demo profile's folder could be real.
+        guard !workspace.demoMode else { return }
+        SystemActions.openFolder(reportsDirectory)
+    }
+
     private var filteredReports: [Report] {
         let typeFiltered: [Report]
         if filter == "All" {
@@ -111,7 +126,12 @@ struct ReportsView: View {
                     .frame(minHeight: 360)
                     .scrollContentBackground(.hidden)
                     .contextMenu(forSelectionType: Report.ID.self) { selection in
-                        if let reportID = selection.first,
+                        if workspace.demoMode {
+                            // Demo reports are not on disk, and looking one up
+                            // by name would search a real workspace's folder.
+                            Button("Reveal in Finder") {}.disabled(true)
+                            Button("Open") {}.disabled(true)
+                        } else if let reportID = selection.first,
                            let url = ReportLibrary().url(
                             profile: workspace.profile,
                             reportName: reportID
@@ -171,21 +191,26 @@ struct ReportsView: View {
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
                 title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
-                subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                                         subpath: "Generated Reports") + "/"
+                subtitle: reportsFolderDisplayPath
             ) {
                 AnyView(
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             PNPButton(title: "Reveal in Finder", icon: "folder") {
-                                SystemActions.openFolder(reportsDirectory)
+                                revealReportsFolder()
                             }
-                            .help("Open the Generated Reports folder in Finder")
+                            .disabled(workspace.demoMode)
+                            .help(workspace.demoMode
+                                  ? "Demo reports are not on disk. Revealing their folder "
+                                    + "needs a live profile."
+                                  : "Open the Generated Reports folder in Finder")
                             PNPButton(
                                 title: "Period report",
                                 icon: "calendar.badge.clock",
                                 style: .neutral
                             ) {
+                                // The sheet reads the workspace's summaries.
+                                guard !workspace.demoMode else { return }
                                 showPeriodReport = true
                             }
                             .disabled(workspace.demoMode)
@@ -324,7 +349,7 @@ struct ReportsView: View {
             StatTile(
                 label: "Snapshots archived",
                 value: "\(snapshotCount)",
-                sub: "\(snapshotFamilies.count) families"
+                sub: snapshotFamilies.count == 1 ? "1 family" : "\(snapshotFamilies.count) families"
             )
             StatTile(
                 label: "Auto-archived",
@@ -335,10 +360,18 @@ struct ReportsView: View {
     }
 
     private func reload() {
-        let library = ReportLibrary()
-        reports = library.list(profile: workspace.profile)
-        reportStats = library.stats(profile: workspace.profile)
-        snapshotFamilies = SnapshotArchiveService().families(profile: workspace.profile)
+        if workspace.demoMode {
+            // The demo profile's name could match a real workspace on this Mac;
+            // demo mode lists the demo's reports and never reads a folder.
+            reports = DemoData.generatedReports
+            reportStats = DemoData.generatedReportStats
+            snapshotFamilies = DemoData.snapshotFamilies
+        } else {
+            let library = ReportLibrary()
+            reports = library.list(profile: workspace.profile)
+            reportStats = library.stats(profile: workspace.profile)
+            snapshotFamilies = SnapshotArchiveService().families(profile: workspace.profile)
+        }
         selectedReports = selectedReports.intersection(Set(reports.map(\.id)))
         updateAvailableProfiles()
     }
@@ -365,8 +398,12 @@ struct ReportsView: View {
         NotificationCenter.default.post(name: .requestOverviewTab, object: nil)
     }
 
+    // The generate and export actions run jamf-cli against the selected
+    // profile, a fictional one in demo mode; their buttons are disabled there.
+
     @MainActor
     private func generateHTMLReport() {
+        guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -428,6 +465,7 @@ struct ReportsView: View {
 
     @MainActor
     private func generatePDFReport() {
+        guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -475,6 +513,7 @@ struct ReportsView: View {
 
     @MainActor
     private func runExportInventoryCSV() {
+        guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -521,7 +560,9 @@ struct ReportsView: View {
     }
 
     private func handleSpaceKeyPress() {
-        guard let selectedReport = selectedReports.first,
+        // Quick Look opens the file on disk, which a demo report does not have.
+        guard !workspace.demoMode,
+              let selectedReport = selectedReports.first,
               let url = ReportLibrary().url(profile: workspace.profile, reportName: selectedReport) else {
             return
         }

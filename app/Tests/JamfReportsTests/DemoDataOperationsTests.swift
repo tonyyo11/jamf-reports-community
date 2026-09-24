@@ -302,4 +302,58 @@ final class DemoDataOperationsTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Generated Reports
+
+    /// Named the way the engine names a report, for the demo profile, dated on
+    /// or before the reference date, newest first, each dated by its name.
+    func testDemoReportsAreNamedLikeEngineReports() {
+        let reports = DemoData.generatedReports
+        let prefix = "report_\(DemoData.org.profile)_"
+        let pattern = "^\(prefix)\\d{4}-\\d{2}-\\d{2}_\\d{6}\\.(xlsx|html)$"
+        let stamps = reports.map { String($0.name.dropFirst(prefix.count).prefix(17)) }
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.dateFormat = "yyyy-MM-dd_HHmmss"
+        let label = DateFormatter()
+        label.locale = Locale(identifier: "en_US_POSIX")
+        label.dateFormat = "MMM d, HH:mm"
+
+        XCTAssertEqual(DemoData.generatedReportStats.count, reports.count)
+        XCTAssertEqual(Set(reports.map(\.name)).count, reports.count)
+        XCTAssertEqual(stamps, stamps.sorted(by: >))
+        for (report, stamp) in zip(reports, stamps) {
+            XCTAssertNotNil(report.name.range(of: pattern, options: .regularExpression),
+                            report.name)
+            let generated = parser.date(from: stamp)
+            XCTAssertLessThan(generated ?? .distantFuture, DemoData.referenceDate, report.name)
+            XCTAssertEqual(generated.map(label.string(from:)), report.date, report.name)
+        }
+    }
+
+    /// Each report came from a demo schedule on the demo profile that writes
+    /// its file type; only workbooks carry sheets and a Mac count.
+    func testDemoReportsComeFromTheDemoSchedules() {
+        let schedules = Dictionary(
+            DemoData.scheduledRuns.filter { $0.profile == DemoData.org.profile }
+                .map { ($0.name, $0) },
+            uniquingKeysWith: { first, _ in first })
+
+        for report in DemoData.generatedReports {
+            let ext = URL(fileURLWithPath: report.name).pathExtension
+            XCTAssertTrue(schedules[report.source]?.artifacts.contains(ext) ?? false,
+                          report.name)
+            if ext == "xlsx" {
+                XCTAssertGreaterThan(report.sheets, 0, report.name)
+                XCTAssertLessThanOrEqual(report.devices ?? .max, DemoData.totalDevices,
+                                         report.name)
+            } else {
+                XCTAssertEqual(report.sheets, 0, report.name)
+                XCTAssertNil(report.devices, report.name)
+            }
+        }
+        XCTAssertEqual(DemoData.generatedReportStats.archivedCount, 0)
+        XCTAssertEqual(DemoData.snapshotFamilies.reduce(0) { $0 + $1.snapshotCount },
+                       DemoData.trendDates.count)
+    }
 }
