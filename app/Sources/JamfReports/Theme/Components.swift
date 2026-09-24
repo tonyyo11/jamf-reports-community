@@ -808,9 +808,6 @@ struct EditableNumberStepper: View {
 
 // MARK: - Data Table Components
 
-/// Reusable table header for hand-rolled tables that need custom row layouts.
-/// A column with `width == nil` flexes to fill remaining space.
-
 // MARK: - Filter chip
 
 /// An active filter as a removable token: an xmark beside the filter's label,
