@@ -536,11 +536,29 @@ struct OverviewView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    /// The demo fleet's departments, counted rather than claimed.
+    private static let demoDepartmentCount = Set(DemoData.fleetMacs.map(\.department)).count
+
+    private var headerKicker: String {
+        // The demo's snapshot is its daily collect, which finished at 06:01.
+        if workspace.demoMode { return "Snapshot · Apr 25, 2026 · 06:01" }
+        return "Snapshot · \(trendStore.filteredSummaries.last?.date ?? "No Data")"
+    }
+
+    private var headerSubtitle: String {
+        let baseline = "\(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline"
+        if workspace.demoMode {
+            return "\(DemoData.totalDevices) Macs across \(Self.demoDepartmentCount) departments · "
+                + baseline
+        }
+        return "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(baseline)"
+    }
+
     private var header: some View {
         PageHeader(
-            kicker: workspace.demoMode ? "Snapshot · Apr 25, 2026 · 09:14" : "Snapshot · \(trendStore.filteredSummaries.last?.date ?? "No Data")",
+            kicker: headerKicker,
             title: "\(workspace.org.name) Fleet Overview",
-            subtitle: workspace.demoMode ? "\(DemoData.totalDevices) Macs across 8 departments · 3 sites · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline" : "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline",
+            subtitle: headerSubtitle,
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspace.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
