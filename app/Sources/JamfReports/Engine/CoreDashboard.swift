@@ -3333,8 +3333,10 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["ea-results (no baselines configured)"])
         }
 
+        // decodeSnapshot, like every other ea-results reader: an envelope or a
+        // truncated snapshot still yields its rows instead of an empty sheet.
         guard let eaData = try? loadLatestJSONData(names: ["ea-results"]),
-              let eaRows = try? JSONDecoder().decode([EAResultRow].self, from: eaData),
+              let eaRows = EAResultRow.decodeSnapshot(eaData).rows,
               !eaRows.isEmpty
         else {
             throw CoreDashboardError.noCachedData(names: ["ea-results"])
