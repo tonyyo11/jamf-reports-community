@@ -4,11 +4,11 @@ import Foundation
 /// `compliance-rules/` and `compliance-devices/` directories and prepares
 /// them for `ComplianceBenchmarksView`.
 ///
-/// The Platform API is experimental (jamf-cli v1.14 beta), so this service
-/// only reports on what is on disk — it never invokes jamf-cli. Whether the
-/// snapshots exist at all is the upstream collect path's responsibility,
-/// itself gated by ``experimental.platform_features_enabled`` and a
-/// ``has_platform_auth`` probe on the Python side.
+/// This service only reports on what is on disk — it never invokes jamf-cli.
+/// Whether the snapshots exist is the collect path's job: `ReportEngine.collect`
+/// runs the Platform-only kinds when the profile's auth method is `platform`, and
+/// skips the environment-level ones on a tenant-level profile. The screen is also
+/// behind Settings → Experimental Features → Platform API.
 ///
 /// Decoded shapes track ``ComplianceRuleRow`` and ``ComplianceDeviceRow``
 /// in ``JamfCLIDecoder.swift`` so a parser-level field rename is felt in

@@ -81,9 +81,9 @@ these interactive dashboards either — it produces a separate generated workboo
   Data source: per-device EA results for mSCP/STIG baselines (tier 1) and device inventory
   (tier 1).
 - **Compliance Benchmarks** — per-benchmark compliance rates and device counts from the
-  Jamf Platform API. Experimental; requires `platform.enabled: true`,
-  `experimental.platform_features_enabled: true`, and a platform-auth jamf-cli profile.
-  Shows a locked state when the Platform API gate is closed.
+  Jamf Platform API. Experimental; needs a jamf-cli profile whose auth method is
+  `platform`, and Platform API turned on under Settings → Experimental Features. Shows a
+  locked state until both hold.
   Data source: Jamf Platform API `compliance-devices` (tier 1) and device inventory (tier
   1).
 - **Offline Outreach** — stale devices bucketed into outreach tiers (31–90 / 91–180 /

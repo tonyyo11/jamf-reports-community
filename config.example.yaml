@@ -482,16 +482,20 @@ ai:
 # =============================================================================
 # JAMF PLATFORM API
 # =============================================================================
-# Preview workbook support for jamf-cli builds that expose Platform API report
-# commands under `jamf-cli pro report`, including:
+# Reports only the Jamf Platform API serves, collected through
+# `jamf-cli pro report`:
 #   - blueprint-status
 #   - compliance-rules
 #   - compliance-devices
 #   - ddm-status
 #
-# This path is opt-in because the upstream jamf-cli Platform API support is
-# still emerging. It uses the same selected jamf-cli profile, but that profile
-# must also have working Platform gateway auth in the jamf-cli build you use.
+# Collect runs them when the profile's jamf-cli auth method is `platform`:
+#   jamf-cli config add-profile <name> --auth-method platform \
+#     --url https://<region>.api.jamfcloud.com --environment-id <id>
+# A tenant-level profile (--tenant-id) skips compliance-rules, compliance-devices
+# and blueprint-status, which Jamf Account does not grant at that level. The
+# Compliance Benchmarks and DDM Blueprints screens are also behind Settings →
+# Experimental Features → Platform API.
 #
 # Leave compliance_benchmarks empty to collect every benchmark on the tenant, or
 # list titles to collect only those. Titles match exactly and are case-sensitive;
@@ -500,41 +504,14 @@ ai:
 # Compliance Benchmarks screen shows one benchmark at a time.
 
 platform:
-  # Set true to opt this profile into Platform API reports. Required, but
-  # not sufficient on its own — v2.1.0 also requires the experimental flag
-  # below (experimental.platform_features_enabled) AND a jamf-cli profile
-  # with auth-method: platform. All three checks must pass before any
-  # Platform sheet is written.
+  # Written by the Config screen's "Enable Platform API sheets" switch. Neither
+  # collect nor the reports read it: the profile's auth method decides.
   enabled: false
   # List of benchmark titles for the Platform compliance sheets.
   # Empty collects every benchmark; listed titles narrow it (exact, case-sensitive).
   compliance_benchmarks:
     # - "NIST 800-53r5 Moderate"
     # - "DISA STIG"
-
-
-# =============================================================================
-# EXPERIMENTAL FEATURES
-# =============================================================================
-# Opt-in toggles for v2.1.0 preview features. These features depend on
-# capabilities that are not universally available (Platform API requires a
-# different jamf-cli auth method; Protect requires a configured Protect
-# tenant), so they ship off by default. Enabling a flag here is necessary
-# but not sufficient — each code path also runs a capability probe before
-# attempting any work, and silently skips if the probe fails.
-#
-# Community testing notes and feedback:
-# https://github.com/tonyyo11/jamf-reports-community/discussions
-
-experimental:
-  # Platform API features (compliance benchmarks, DDM blueprints).
-  # Requires a jamf-cli profile with `auth-method: platform`. Set up via:
-  #   jamf-cli config add-profile <name> --auth-method platform \
-  #     --url https://<region>.api.jamfcloud.com --environment-id <id>
-  # (--tenant-id is the legacy single-tenant level; omit both for organization
-  # scope.) The app's onboarding and reauth flows offer all three — pick the
-  # scope the integration was actually created at.
-  platform_features_enabled: false
 
 
 # =============================================================================

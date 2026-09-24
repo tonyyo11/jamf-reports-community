@@ -4,12 +4,9 @@ import Foundation
 /// workspace's `blueprint-status/` and `ddm-status/` directories and
 /// prepares them for ``DDMBlueprintView``.
 ///
-/// Same posture as ``ComplianceBenchmarksService``: the Platform API is
-/// experimental (jamf-cli v1.14 beta), so this service only reports on
-/// what is on disk — it never invokes jamf-cli. Whether the snapshots
-/// exist at all is the upstream collect path's responsibility, itself
-/// gated by ``experimental.platform_features_enabled`` and a
-/// ``has_platform_auth`` probe on the Python side.
+/// Same posture as ``ComplianceBenchmarksService``: this service only
+/// reports on what is on disk — it never invokes jamf-cli. `ReportEngine.collect`
+/// writes these snapshots when the profile's auth method is `platform`.
 ///
 /// Decoded shapes track ``BlueprintStatusRow`` and ``DDMStatusRow`` in
 /// ``JamfCLIDecoder.swift`` so a parser-level field rename is felt in

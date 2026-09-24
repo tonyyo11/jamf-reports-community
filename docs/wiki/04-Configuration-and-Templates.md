@@ -272,15 +272,17 @@ To change a template's sheet selection permanently, edit its file under
 `app/Sources/JamfReports/Engine/Templates/` and rebuild — that is a code change, not a
 config change.
 
-## Platform API (opt-in)
+## Platform API
 
-As of v2.1.0, three conditions must all be true to enable the Platform API sheets
-(blueprint status, DDM status, and benchmark-specific compliance sheets):
+Blueprint status, DDM status and the Compliance Benchmarks sheets come from reports only
+the Jamf Platform API serves. Collect runs them when the active `jamf-cli` profile's auth
+method is `platform`; a tenant-level profile (`--tenant-id`) skips Compliance Benchmarks
+and blueprint status, which Jamf Account does not grant at that level. The workbook adds
+the sheets whenever those snapshots exist.
 
-1. `platform.enabled: true` in `config.yaml`
-2. `experimental.platform_features_enabled: true` in `config.yaml`
-3. The active `jamf-cli` profile must be configured with `auth-method: platform`
+The Compliance Benchmarks and DDM Blueprints screens are also behind **Settings →
+Experimental Features → Platform API**.
 
-Setting `platform.enabled: true` alone is no longer sufficient — the experimental gate
-and the platform-auth profile are also required. The `capabilities` command reports
-whether the gate is open for the current profile.
+Those are the only gates. `platform.enabled` (the Config screen's "Enable Platform API
+sheets" switch) is not read, and `experimental.platform_features_enabled`, which earlier
+versions of this page listed, does not exist.

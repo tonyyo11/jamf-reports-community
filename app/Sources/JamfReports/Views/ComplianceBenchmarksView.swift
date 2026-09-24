@@ -330,7 +330,7 @@ struct ComplianceBenchmarksView: View {
     private static let setupCommands: [String] = [
         "jamf-cli config add-profile <name> --auth-method platform \\",
         "  --url <gateway-url> --environment-id <id>",
-        "Then enable both platform.enabled: true and experimental.platform_features_enabled: true",
+        "Then turn on Platform API in Settings → Experimental Features.",
     ]
 
     private static func lockReason(experimentalOn: Bool, platformAvailable: Bool) -> String {
