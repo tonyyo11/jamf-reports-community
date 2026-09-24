@@ -204,7 +204,9 @@ scheduled fires, the next wake catches up:
 
 "Run now" (GUI button, or `jamf-reports schedules run <label>`) spawns an immediate,
 one-shot run for that one schedule under the same lock every wake uses. If another run
-holds the lock, the request is queued and the first wake that gets the lock runs it.
+holds the lock, the request is queued and the first wake that gets the lock runs it. A
+queued request stays on disk until its run actually starts, so a wake that is stopped
+partway through an earlier, longer run does not lose it.
 
 The lock only keeps a second run out while the one holding it looks alive. A running
 schedule refreshes the lock every five minutes, for up to six hours per schedule. A run
@@ -224,8 +226,9 @@ skipped and the Automation screen shows "Ticker unavailable in this build" — `
 A scheduled run logs to **per-run logs** at `~/Jamf-Reports/<profile>/automation/logs/` —
 one file per run, read by the **Run History** screen (pruned to the most recent 50 per
 workspace). There is no separate `launchd` stdout/stderr file per schedule any more; the
-background item's own diagnostics (lock contention, import, registration) go to
-Console.app under the `com.github.tonyyo11.jamf-reports-community` subsystem.
+background item's own diagnostics (lock contention, import, registration, a schedule
+skipped because its start could not be recorded) go to Console.app under the
+`com.github.tonyyo11.jamf-reports-community` subsystem.
 
 ## Collection cadence
 
