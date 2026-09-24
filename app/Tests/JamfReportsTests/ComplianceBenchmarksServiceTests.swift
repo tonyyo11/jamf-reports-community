@@ -146,6 +146,25 @@ final class ComplianceBenchmarksServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Snapshot date
+
+    /// A sync provider rewrites a file's mtime when it downloads it, so a
+    /// stamped snapshot is dated by its name; only an unstamped file uses mtime.
+    func testSnapshotDateIsTheFilenameStampNotTheMTime() throws {
+        let rulesURL = tempDir.appendingPathComponent("compliance-rules_20260401T120000.json")
+        try Data("[]".utf8).write(to: rulesURL)
+        let resynced = Date(timeIntervalSinceNow: -60)
+        try FileManager.default.setAttributes([.modificationDate: resynced],
+                                              ofItemAtPath: rulesURL.path)
+        let snapshot = ComplianceBenchmarksService.load(rulesURL: rulesURL, devicesURL: nil)
+        let stamp = try XCTUnwrap(CloudStorage.snapshotTimestamp(of: rulesURL))
+        XCTAssertEqual(snapshot.snapshotDate, stamp)
+        XCTAssertNotEqual(snapshot.snapshotDate, resynced)
+        if case .stale = snapshot.cacheSource { /* expected */ } else {
+            XCTFail("An April snapshot is stale however recent its mtime")
+        }
+    }
+
     // MARK: - Per-benchmark rows (2.8.1)
 
     func testRowsKeepTheirBenchmarkAndStayUniqueAcrossBenchmarks() throws {

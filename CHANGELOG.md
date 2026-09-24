@@ -126,6 +126,9 @@ tenant's real data in every section, and you choose what it shows.
 - The Config screen's Platform tab no longer calls the Jamf Platform API a preview or public
   beta. The gateway is generally available, and the tab's setup note now points to Jamf
   Account's Integrations page and Settings → Add connection.
+- Compliance Benchmarks and the DDM screen date their data by when it was collected, not by
+  when a sync service last touched the file, so an old snapshot in a synced workspace no longer
+  reads as fresh.
 - Fleet Overview's summary tiles line up and share one height, and a profile card's stability
   score is no longer hidden under the card's chevron.
 - The stale-days control on Devices is its natural size instead of stretching across the header.

@@ -141,12 +141,11 @@ struct ComplianceBenchmarksService: Sendable {
     static func load(rulesURL: URL?, devicesURL: URL?) -> Snapshot {
         let rules = rulesURL.flatMap(decodeRules) ?? []
         let devices = devicesURL.flatMap(decodeDevices) ?? []
+        // The filename stamp, not the mtime: a sync provider re-stamps mtimes when
+        // it downloads, which made an old snapshot read as fresh.
         let dates = [rulesURL, devicesURL]
             .compactMap { $0 }
-            .compactMap {
-                (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate
-            }
+            .compactMap(FileManager.snapshotDate(of:))
         return Snapshot(
             rules: rules,
             devices: devices,

@@ -125,12 +125,11 @@ struct DDMBlueprintService: Sendable {
     static func load(blueprintsURL: URL?, declarationsURL: URL?) -> Snapshot {
         let blueprints = blueprintsURL.flatMap(decodeBlueprints) ?? []
         let declarations = declarationsURL.flatMap(decodeDeclarations) ?? []
+        // The filename stamp, not the mtime: a sync provider re-stamps mtimes when
+        // it downloads, which made an old snapshot read as fresh.
         let dates = [blueprintsURL, declarationsURL]
             .compactMap { $0 }
-            .compactMap {
-                (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate
-            }
+            .compactMap(FileManager.snapshotDate(of:))
         return Snapshot(
             blueprints: blueprints,
             declarations: declarations,
