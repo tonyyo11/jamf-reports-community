@@ -320,6 +320,11 @@ final class WorkspaceStore {
             profile = DemoData.org.profile
             profiles = DemoData.cliProfiles
             schedules = DemoData.scheduledRuns
+            // The health strip reads a shared model that only the refresh
+            // passes reset. Without this, the live tenant's failing kinds and
+            // overdue schedules stayed on screen through the whole demo.
+            AutomationHealthModel.shared.issues = []
+            AutomationHealthModel.shared.freshnessIssues = []
         } else {
             let cleanupMessage = cleanupDemoProfileArtifacts()
             reloadFromDisk()

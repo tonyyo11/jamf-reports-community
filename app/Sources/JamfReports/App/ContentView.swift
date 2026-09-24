@@ -76,16 +76,20 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     // App-wide health strip: per-kind collection failures and
                     // schedule problems follow the operator onto every screen
-                    // instead of waiting on Overview or Run History.
-                    GlobalHealthBanner(
-                        freshnessIssues: workspace.dataFreshnessIssues,
-                        automationIssues: workspace.automationHealthIssues,
-                        isRemediating: workspace.isRemediatingFreshness,
-                        onOpenAutomation: { tab = .schedules },
-                        onCollectNow: {
-                            Task { await workspace.collectFailingNow() }
-                        }
-                    )
+                    // instead of waiting on Overview or Run History. Never in
+                    // demo mode: its issues describe a real tenant, and its
+                    // Collect now is a no-op there.
+                    if !workspace.demoMode {
+                        GlobalHealthBanner(
+                            freshnessIssues: workspace.dataFreshnessIssues,
+                            automationIssues: workspace.automationHealthIssues,
+                            isRemediating: workspace.isRemediatingFreshness,
+                            onOpenAutomation: { tab = .schedules },
+                            onCollectNow: {
+                                Task { await workspace.collectFailingNow() }
+                            }
+                        )
+                    }
                     ZStack(alignment: .bottom) {
                         detailView
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
