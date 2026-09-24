@@ -356,9 +356,10 @@ let deviceScanGapsMarkerSuffix = "devices did not respond"
 /// (nothing was collected at all), or it could not write the day's summary
 /// (Trends did not move).
 ///
-/// This exists because `ReportEngine.collect` returns `Void` — `CollectRouter`'s
-/// typealias and its test spies depend on that signature, so the facts have to
-/// travel out on the log stream the caller is already reading. A locked box
+/// This exists because `CollectRouter.run` returns `Void`: `ReportEngine.collect`'s
+/// `CollectDisposition` stops at the router, which uses it only to decide whether
+/// Protect follows, so the facts have to travel out on the log stream the caller
+/// is already reading. A locked box
 /// rather than a captured `var` because `onLine` is `@Sendable` and the engine
 /// calls it from its process-reader queues.
 final class CollectHonestyWatcher: @unchecked Sendable {
