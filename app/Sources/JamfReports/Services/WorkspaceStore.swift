@@ -28,6 +28,17 @@ final class WorkspaceStore {
     var selectedScoreCards: [TrendSeries.Metric] {
         didSet { Self.persistScoreCards(selectedScoreCards) }
     }
+    /// Overview section order and visibility, persisted app-wide like the
+    /// score cards. See `OverviewLayout`.
+    var overviewLayout: OverviewLayout {
+        didSet {
+            UserDefaults.standard.set(overviewLayout.serialized, forKey: Self.overviewLayoutKey)
+        }
+    }
+    /// Set by the Customize screen's "Customize Overview" button. The Overview
+    /// opens its editor when it next appears and clears the flag — a
+    /// notification would arrive before the Overview exists to hear it.
+    var overviewCustomizeRequested = false
     /// Heavy collection tiers (.inventory / .scan) whose newest snapshot is
     /// older than `heavyTierStaleDays`. Drives the Overview "data is stale —
     /// refresh now?" prompt. Heavy tiers are never collected automatically
@@ -97,6 +108,14 @@ final class WorkspaceStore {
     /// UserDefaults key for the Overview score-card selection (comma-separated
     /// `TrendSeries.Metric` raw values — same serialization style as `TabVisibility`).
     nonisolated static let scoreCardsKey = "com.jamfreports.selectedScoreCards"
+
+    /// UserDefaults key for the Overview section layout (JSON, see `OverviewLayout`).
+    nonisolated static let overviewLayoutKey = "com.jamfreports.overviewLayout"
+
+    /// Score cards on a first launch, and after Reset in the Overview editor.
+    nonisolated static let defaultScoreCards: [TrendSeries.Metric] = [
+        .stability, .activeDevices, .fileVault, .compliance,
+    ]
 
     nonisolated static func persistScoreCards(_ metrics: [TrendSeries.Metric]) {
         UserDefaults.standard.set(
@@ -233,8 +252,9 @@ final class WorkspaceStore {
         self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
-        self.selectedScoreCards = Self.loadPersistedScoreCards()
-            ?? [.stability, .activeDevices, .fileVault, .compliance]
+        self.selectedScoreCards = Self.loadPersistedScoreCards() ?? Self.defaultScoreCards
+        self.overviewLayout = OverviewLayout.parse(
+            UserDefaults.standard.string(forKey: Self.overviewLayoutKey))
         let jamfCLI = JamfCLIInstaller.currentInstallation()
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
