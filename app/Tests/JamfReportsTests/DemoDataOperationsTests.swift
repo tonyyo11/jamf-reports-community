@@ -259,4 +259,47 @@ final class DemoDataOperationsTests: XCTestCase {
         XCTAssertTrue(snapshot.advancedMobileSearches.allSatisfy { !($0.criteria ?? []).isEmpty })
         XCTAssertEqual(snapshot.snapshotDate, DemoData.referenceDate)
     }
+
+    // MARK: - Trends
+
+    /// Each week's bands add up to the Macs with compliance data that week,
+    /// never more than the fleet, and Pass is the compliance trend's share.
+    /// The last week is the Overview's compliance bands.
+    func testDemoBandCountsFollowTheBandAndComplianceTrends() {
+        let weeks = TrendDemoSeries.weeklyBandCounts
+        let totals = DemoData.trends[.mscpBandTrend] ?? []
+        let passShares = DemoData.trends[.compliance] ?? []
+
+        XCTAssertEqual(weeks.count, DemoData.trendDates.count)
+        XCTAssertEqual(weeks.last, DemoData.complianceBands.map(\.count))
+        for (week, counts) in weeks.enumerated() {
+            let total = Int((totals[safe: week] ?? 0).rounded())
+            let fleet = Int((DemoData.totalDevicesTrend[safe: week] ?? 0).rounded())
+            let pass = Int((Double(total) * (passShares[safe: week] ?? 0) / 100).rounded())
+            XCTAssertEqual(counts.count, DemoData.complianceBands.count, "week \(week)")
+            XCTAssertEqual(counts.reduce(0, +), total, "week \(week)")
+            XCTAssertLessThanOrEqual(total, fleet, "week \(week)")
+            XCTAssertEqual(counts.first, pass, "week \(week)")
+            XCTAssertTrue(counts.allSatisfy { $0 >= 0 }, "week \(week)")
+        }
+        XCTAssertLessThan(weeks.first?.reduce(0, +) ?? 0, weeks.last?.reduce(0, +) ?? 0)
+    }
+
+    /// Narrowing the range drops weeks; it never changes a week's bars.
+    func testDemoBandSeriesDoesNotChangeWithTheVisibleRange() {
+        let all = TrendDemoSeries.mscpStackedSeries(range: .all)
+        let recent = TrendDemoSeries.mscpStackedSeries(range: .w4)
+
+        XCTAssertEqual(all.map(\.label), DemoData.complianceBands.map(\.label))
+        XCTAssertEqual(all.map { $0.points.last?.value ?? -1 },
+                       DemoData.complianceBands.map { Double($0.count) })
+        for (wide, narrow) in zip(all, recent) {
+            XCTAssertLessThan(narrow.points.count, wide.points.count, wide.label)
+            let byDate = Dictionary(
+                wide.points.map { ($0.date, $0.value) }, uniquingKeysWith: { first, _ in first })
+            for point in narrow.points {
+                XCTAssertEqual(byDate[point.date], point.value, wide.label)
+            }
+        }
+    }
 }

@@ -64,6 +64,23 @@ struct TrendsView: View {
             : trendStore.managedDeviceSeries()
     }
 
+    /// The mSCP band series the hero chart stacks. In demo mode it is the demo
+    /// fleet's, never the tenant's the shared store may still hold.
+    private var mscpStackedSeries: [ChartSeries] {
+        workspaceStore.demoMode
+            ? TrendDemoSeries.mscpStackedSeries(range: range)
+            : trendStore.mscpStackedSeries()
+    }
+
+    /// A metric's name as the pills show it: the configured compliance
+    /// benchmark and EDR agent in place of the generic names.
+    private func metricLabel(_ m: TrendSeries.Metric) -> String {
+        m.displayLabel(
+            benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
+            edrAgentName: workspaceStore.edrAgentName
+        )
+    }
+
     /// Y-axis domain that respects the metric's preferred "good frame" but
     /// always expands to fit actual data. Without this, a Stability Index of
     /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
@@ -261,7 +278,7 @@ struct TrendsView: View {
                         Task { await exportChartPNG() }
                     }
                     .disabled(isExporting)
-                    .accessibilityLabel("Export \(metric.displayLabel) trend chart as PNG")
+                    .accessibilityLabel("Export \(metricLabel(metric)) trend chart as PNG")
                     .help("Save the current trend chart as a PNG image")
                 }
             )
@@ -296,16 +313,17 @@ struct TrendsView: View {
     /// Filter available metrics based on data availability.
     /// .mscpBandTrend only appears when mSCP band history exists.
     /// .securityScore only appears when security score data exists.
+    /// The demo fleet has both series, and they show in demo mode even when
+    /// the shared store holds no live history.
     /// .managedDevices shows in demo mode too, from the demo fleet's
     /// computer and mobile series.
     private var availableMetrics: [TrendSeries.Metric] {
         TrendSeries.Metric.allCases.filter { metric in
             switch metric {
             case .mscpBandTrend:
-                return trendStore.hasMSCPBandHistory
+                return workspaceStore.demoMode || trendStore.hasMSCPBandHistory
             case .securityScore:
-                // Keep existing logic for security score availability
-                return trendStore.points(metric: .securityScore).count > 0
+                return !points(for: .securityScore).isEmpty
             case .managedDevices:
                 return true
             default:
@@ -337,12 +355,9 @@ struct TrendsView: View {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
                     .accessibilityHidden(true)
-                Text(m.displayLabel(
-                    benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
-                    edrAgentName: workspaceStore.edrAgentName
-                ))
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(Theme.Colors.fg)
+                Text(metricLabel(m))
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
                 Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(
@@ -391,7 +406,7 @@ struct TrendsView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(metricPillAccessibilityLabel(m, delta: dl, goodTrend: goodTrend))
         .accessibilityAddTraits(isActive ? .isSelected : [])
-        .help("Show \(m.displayLabel) trend")
+        .help("Show \(metricLabel(m)) trend")
         .onAppear {
             guard !pillPulse, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
@@ -407,7 +422,7 @@ struct TrendsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Kicker(text: metric.displayLabel)
+                        Kicker(text: metricLabel(metric))
                         HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Text("\(Int(displayVal.rounded()))\(metric.unit)")
                                 .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
@@ -468,7 +483,7 @@ struct TrendsView: View {
                             // Stacked area chart for mSCP compliance bands.
                             // Series identity (`by:`) is what makes Charts stack correctly —
                             // a constant foregroundStyle collapses every band into one mass.
-                            let stackedSeries = trendStore.mscpStackedSeries()
+                            let stackedSeries = mscpStackedSeries
                             ForEach(stackedSeries, id: \.label) { series in
                                 ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
                                     AreaMark(
@@ -587,10 +602,10 @@ struct TrendsView: View {
                     )
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
-                    .accessibilityLabel(Self.metricTrendChartLabel(metric.displayLabel))
+                    .accessibilityLabel(Self.metricTrendChartLabel(metricLabel(metric)))
                     .accessibilityChartDescriptor(TrendLineChartDescriptor(
-                        title: "\(metric.displayLabel) Trend",
-                        seriesName: metric.displayLabel,
+                        title: "\(metricLabel(metric)) Trend",
+                        seriesName: metricLabel(metric),
                         dates: trendPoints.map(\.date),
                         values: trendPoints.map(\.value),
                         unit: metric.unit
@@ -614,11 +629,13 @@ struct TrendsView: View {
                     }
                     Spacer()
                     PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm) {
-                        if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
-                            SystemActions.openFolder(dir)
-                        }
+                        openSummariesFolder()
                     }
-                    .help("Open the summaries directory where archived summary.json snapshots live.")
+                    .disabled(workspaceStore.demoMode)
+                    .help(workspaceStore.demoMode
+                          ? Self.demoSummariesFolderHelp
+                          : "Open the summaries directory where archived summary.json "
+                            + "snapshots live.")
                 }
             }
         }
@@ -681,9 +698,13 @@ struct TrendsView: View {
         }
     }
 
-    /// Subtitle tracks the selected baseline once more than one exists.
+    /// Subtitle tracks the selected baseline once more than one exists. The
+    /// demo has one; a tenant's baseline names the store still holds must not
+    /// reach a demo screen.
     private var complianceBandCardSubtitle: String {
-        guard let name = trendStore.primaryMSCPBaseline, trendStore.mscpBaselineNames.count > 1 else {
+        guard !workspaceStore.demoMode,
+              let name = trendStore.primaryMSCPBaseline,
+              trendStore.mscpBaselineNames.count > 1 else {
             return "Devices grouped by failed-rule count, weekly"
         }
         return "\(name) · devices grouped by failed-rule count, weekly"
@@ -849,7 +870,7 @@ struct TrendsView: View {
     /// Falls back to a single neutral entry when no series exist yet (Charts
     /// requires a non-empty domain/range even before data loads).
     private var mscpBandChartScale: (labels: [String], colors: [Color]) {
-        let series = trendStore.mscpStackedSeries()
+        let series = mscpStackedSeries
         guard !series.isEmpty else { return (["Band"], [Theme.Colors.fg2]) }
         return (series.map(\.label), series.map { Color(cgColor: $0.color) })
     }
@@ -902,31 +923,24 @@ struct TrendsView: View {
     }
 
     private var stackedBandsChart: some View {
-        // Demo data only. Live mode renders an empty state until summaries carry
-        // real per-band failed-rule counts.
-        let dates = trendDates
-        let weeks = dates.enumerated().map { idx, date -> (date: Date, values: [Int]) in
-            let t = Double(idx) / Double(max(dates.count - 1, 1))
-            let base = 524.0
-            let pass    = Int((base * (0.35 + 0.1 * t)).rounded())
-            let low     = Int((base * (0.35 - 0.05 * t)).rounded())
-            let medLow  = Int((base * (0.15 - 0.05 * t)).rounded())
-            let med     = Int((base * (0.10 - 0.05 * t)).rounded())
-            let high    = Int((base * (0.05 - 0.02 * t)).rounded())
-            return (date: date, values: [pass, low, medLow, med, high])
+        // Demo data only: the weekly band counts the hero chart stacks, as
+        // bars. Live mode draws `liveBandsChart` from the store instead.
+        let bands = TrendDemoSeries.mscpStackedSeries(range: range)
+        let dateLabels: [String] = (bands.first?.points ?? []).map {
+            SummaryJSONParser.dateFormatter.string(from: $0.date)
         }
 
         return Group {
             if let domain = chartDomain {
                 Chart {
-                    ForEach(Array(weeks.enumerated()), id: \.offset) { weekIdx, week in
-                        ForEach(Array(DemoData.complianceBands.enumerated()), id: \.offset) { bandIdx, band in
+                    ForEach(bands, id: \.label) { band in
+                        ForEach(Array(band.points.enumerated()), id: \.offset) { _, point in
                             BarMark(
-                                x: .value("Date", week.date),
-                                y: .value("Devices", week.values[bandIdx]),
+                                x: .value("Date", point.date),
+                                y: .value("Devices", point.value),
                                 stacking: .standard
                             )
-                            .foregroundStyle(Color(hex: band.colorHex))
+                            .foregroundStyle(Color(cgColor: band.color))
                         }
                     }
                 }
@@ -940,12 +954,12 @@ struct TrendsView: View {
                 .accessibilityLabel(Self.complianceTrendChartLabel)
                 .accessibilityChartDescriptor(StackedBarChartDescriptor(
                     title: "Compliance Distribution Over Time",
-                    dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
-                    bands: DemoData.complianceBands.enumerated().map { bandIdx, band in
+                    dateLabels: dateLabels,
+                    bands: bands.map { band in
                         StackedBarChartDescriptor.Band(
                             name: band.label,
-                            dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
-                            values: weeks.map { $0.values[bandIdx] }
+                            dateLabels: dateLabels,
+                            values: band.points.map { Int($0.value.rounded()) }
                         )
                     }
                 ))
@@ -1005,7 +1019,7 @@ struct TrendsView: View {
     ) -> String {
         let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
         let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(m.unit)"
-        return "\(m.displayLabel), \(direction), \(deltaStr) change"
+        return "\(metricLabel(m)), \(direction), \(deltaStr) change"
     }
 
     /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
@@ -1107,11 +1121,13 @@ struct TrendsView: View {
                     Spacer()
                     HStack(spacing: 8) {
                         PNPButton(title: "Show in Finder", icon: "folder", size: .sm) {
-                            if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
-                                SystemActions.openFolder(dir)
-                            }
+                            openSummariesFolder()
                         }
-                        .help("Open the archived summaries folder so you can inspect or copy snapshot JSON.")
+                        .disabled(workspaceStore.demoMode)
+                        .help(workspaceStore.demoMode
+                              ? Self.demoSummariesFolderHelp
+                              : "Open the archived summaries folder so you can inspect or copy "
+                                + "snapshot JSON.")
                         PNPButton(
                             title: isArchiving ? "Archiving…" : "Archive now",
                             icon: isArchiving ? "hourglass" : "icloud.and.arrow.up",
@@ -1225,7 +1241,23 @@ struct TrendsView: View {
 
     // MARK: Archive
 
+    private static let demoSummariesFolderHelp =
+        "Demo summaries are not on disk. Opening their folder needs a live profile."
+
+    /// Opens the archived summaries folder. Never in demo mode: the demo's
+    /// summaries are not on disk, and its profile's name could match a real
+    /// workspace's folder.
+    private func openSummariesFolder() {
+        guard !workspaceStore.demoMode else { return }
+        if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
+            SystemActions.openFolder(dir)
+        }
+    }
+
     private func archiveNow() async {
+        // Collecting runs jamf-cli against the selected profile, a fictional
+        // one in demo mode; the button is disabled there too.
+        guard !workspaceStore.demoMode else { return }
         let profile = workspaceStore.profile
         isArchiving = true
         workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
@@ -1275,11 +1307,12 @@ struct TrendsView: View {
                 : "\(f.string(from: first.date)) → \(f.string(from: last.date)) · \(pts.count) snapshots"
         }
 
+        let label = metricLabel(m)
         let exportResult = DashboardChartExport.run(
-            title: m.displayLabel,
+            title: label,
             subtitle: subtitle,
             suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile)
-        ) { ChartExportView(trendPoints: pts, metric: m, domain: dom) }
+        ) { ChartExportView(trendPoints: pts, metric: m, domain: dom, axisLabel: label) }
 
         if case .failure(let error) = exportResult {
             workspaceStore.toast = Toast(message: error.userMessage, style: .danger)
@@ -1350,6 +1383,55 @@ enum TrendDemoSeries {
         ]
     }
 
+    /// The demo fleet's weekly mSCP band counts, Pass through High, by absolute
+    /// week so the visible range only filters them. Each week sums to that
+    /// week's `.mscpBandTrend` total (Macs with compliance data), Pass is the
+    /// compliance trend's share of it, and the last week is exactly
+    /// `DemoData.complianceBands`. The split of the rest drifts to that week's
+    /// from a start weighted toward the high bands.
+    static let weeklyBandCounts: [[Int]] = {
+        let totals = values(for: .mscpBandTrend)
+        let passShares = values(for: .compliance)
+        let lastCounts = DemoData.complianceBands.map(\.count)
+        let lastRest = Double(max(lastCounts.dropFirst().reduce(0, +), 1))
+        let startShares: [Double] = [0.48, 0.27, 0.15]
+        let endShares: [Double] = lastCounts.dropFirst().prefix(3).map { Double($0) / lastRest }
+        let lastWeek = totals.count - 1
+        return totals.indices.map { week -> [Int] in
+            if week == lastWeek { return lastCounts }
+            let t = Double(week) / Double(max(lastWeek, 1))
+            let total = Int(totals[week].rounded())
+            let pass = Int((Double(total) * (passShares[safe: week] ?? 0) / 100).rounded())
+            let rest = total - pass
+            let split: [Int] = zip(startShares, endShares).map { start, end in
+                Int((Double(rest) * (start + (end - start) * t)).rounded())
+            }
+            return [pass] + split + [rest - split.reduce(0, +)]
+        }
+    }()
+
+    /// The demo's band counts as the stacked series both band charts draw,
+    /// named and coloured like `DemoData.complianceBands`.
+    static func mscpStackedSeries(range: TrendRange) -> [ChartSeries] {
+        DemoData.complianceBands.enumerated().map { item -> ChartSeries in
+            let counts = weeklyBandCounts.map { Double($0[safe: item.offset] ?? 0) }
+            let visible = points(dates: dates, values: counts, range: range)
+            return ChartSeries(
+                label: item.element.label,
+                color: sRGBColor(hex: item.element.colorHex),
+                points: visible.map { (date: $0.date, value: $0.value) })
+        }
+    }
+
+    /// `Color(hex:)`'s sRGB colour as the CGColor a `ChartSeries` carries.
+    private static func sRGBColor(hex: UInt32) -> CGColor {
+        CGColor(
+            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1)
+    }
+
     static func chartDomain(for metric: TrendSeries.Metric, range: TrendRange) -> ClosedRange<Date>? {
         let points = points(for: metric, range: range)
         guard let latest = points.last?.date else { return nil }
@@ -1418,6 +1500,8 @@ private struct ChartExportView: View {
     let trendPoints: [TrendPoint]
     let metric: TrendSeries.Metric
     let domain: ClosedRange<Date>?
+    /// The metric's name as the screen shows it (configured benchmark, agent).
+    let axisLabel: String
 
     private struct ExportPoint: Identifiable {
         let index: Int
@@ -1546,7 +1630,7 @@ private struct ChartExportView: View {
             }
         }
         .chartXAxisLabel("Snapshot date", position: .bottom, alignment: .center)
-        .chartYAxisLabel(metric.displayLabel, position: .leading, alignment: .center)
+        .chartYAxisLabel(axisLabel, position: .leading, alignment: .center)
         .chartPlotStyle { plotArea in
             plotArea.background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
