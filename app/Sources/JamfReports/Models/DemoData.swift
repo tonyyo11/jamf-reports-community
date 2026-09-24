@@ -83,7 +83,10 @@ enum DemoData {
     private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8,
                                                 pinnedLast: coverage(edrInstalled))
     private static let patchTrend = trend(start: 62, end: 84, jitter: 4)
-    private static let securityScoreTrend = trend(start: 68, end: 86, jitter: 2.4)
+    /// Ends on the Security Posture ring's 96.6: a summary scores the same three
+    /// controls from the same `pro report security` counts (`securityControls`).
+    private static let securityScoreTrend = trend(
+        start: 88, end: 96, jitter: 0.8, pinnedLast: 96.6)
 
     static let stabilityTrend: [Double] = complianceTrend.indices.map { idx in
         let total = Int((totalDevicesTrend[safe: idx] ?? totalDevicesTrend.last ?? 1).rounded())
@@ -403,8 +406,10 @@ enum DemoData {
             ipAddress: "10.42.\(days + 10).\(failedRules + 20)",
             assetTag: "MH-\(String(serial.suffix(4)))",
             managedState: "Managed",
-            lastContact: days == 0 ? "2026-04-25T09:14:00Z" : "\(days) days ago",
-            lastInventory: "2026-04-25T06:01:00Z",
+            // Taken from `referenceDate`, a local time: the fixed UTC strings these
+            // replace fell after the demo's "now" in many time zones.
+            lastContact: days == 0 ? timestamp(minutesBefore: 47) : "\(days) days ago",
+            lastInventory: timestamp(minutesBefore: 0),
             daysSinceContact: days,
             stale: days >= 30,
             fileVault: fileVault,
