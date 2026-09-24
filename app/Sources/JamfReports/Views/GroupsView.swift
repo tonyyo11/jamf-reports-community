@@ -16,7 +16,8 @@ struct GroupsView: View {
                 kicker: "Fleet",
                 title: "Groups & Searches",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is frozen on purpose; an age warning on it is noise.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
@@ -68,7 +69,11 @@ struct GroupsView: View {
     }
 
     private func reload() {
-        snapshot = GroupInventoryService.load(profile: workspace.profile)
+        // The demo profile's name could match a real workspace on this Mac;
+        // demo mode never reads one.
+        snapshot = workspace.demoMode
+            ? DemoData.groupInventory
+            : GroupInventoryService.load(profile: workspace.profile)
     }
 
     /// Maps Jamf's siteId to a display label, matching the Python sheet convention:

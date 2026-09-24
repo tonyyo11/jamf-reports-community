@@ -239,4 +239,24 @@ final class DemoDataOperationsTests: XCTestCase {
             XCTAssertFalse(name.localizedCaseInsensitiveContains("demo"), name)
         }
     }
+
+    // MARK: - Groups & Searches
+
+    /// Demo mode has group data of its own instead of reading a workspace.
+    func testDemoGroupInventoryIsDetectedWithItsCounts() {
+        let snapshot = DemoData.groupInventory
+
+        XCTAssertTrue(snapshot.isDetected)
+        XCTAssertEqual(snapshot.classicComputerGroupCount, 14)
+        XCTAssertEqual(snapshot.classicComputerSmartGroupCount, 9)
+        XCTAssertEqual(snapshot.classicComputerStaticGroupCount, 5)
+        XCTAssertEqual(snapshot.classicMobileGroupCount, 4)
+        XCTAssertEqual(snapshot.advancedSearchCount, 2)
+        for groups in [snapshot.classicComputerGroups, snapshot.classicMobileGroups] {
+            XCTAssertEqual(Set(groups.compactMap(\.id)).count, groups.count)
+            XCTAssertTrue(groups.allSatisfy { !($0.name ?? "").isEmpty })
+        }
+        XCTAssertTrue(snapshot.advancedMobileSearches.allSatisfy { !($0.criteria ?? []).isEmpty })
+        XCTAssertEqual(snapshot.snapshotDate, DemoData.referenceDate)
+    }
 }
