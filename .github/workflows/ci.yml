@@ -69,7 +69,19 @@ jobs:
 
       - name: Run Swift tests
         working-directory: app
-        run: swift test
+        shell: zsh {0}
+        run: |
+          set -e -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
+
+      # A test run logs thousands of lines and the tail is what a log viewer
+      # shows, so on failure repeat just the compiler errors and failed tests.
+      - name: List test failures
+        if: failure()
+        shell: zsh {0}
+        run: |
+          grep -E ": error: |error: -\[|' failed \(|✘ " "$RUNNER_TEMP/swift-test.log" \
+            | awk '!seen[$0]++' | head -n 200 || true
 
   shellcheck:
     runs-on: ubuntu-latest
