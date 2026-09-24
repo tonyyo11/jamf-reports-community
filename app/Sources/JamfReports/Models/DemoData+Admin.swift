@@ -56,7 +56,8 @@ extension DemoData {
     private static let runPlan: [PlannedRun] = [
         // meridian-prod, the week to Apr 25: the daily snapshot every morning,
         // the iPad inventory each weekday and the executive report on Monday.
-        planned("Daily Snapshot Collection", month: 4, day: 25, at: (6, 0, 3), seconds: 58),
+        // Ends at 06:01:00, the demo's "now" (`referenceDate`); a run can't end later.
+        planned("Daily Snapshot Collection", month: 4, day: 25, at: (6, 0, 3), seconds: 57),
         planned("Mobile Inventory (iPad)", month: 4, day: 24, at: (7, 30, 2), seconds: 188,
                 recordedExit: false),
         planned("Daily Snapshot Collection", month: 4, day: 24, at: (6, 0, 4), seconds: 61),
