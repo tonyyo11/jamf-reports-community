@@ -121,6 +121,8 @@ tenant's real data in every section, and you choose what it shows.
 - Security Posture no longer tells you to run a collect to add EDR, mSCP, XProtect, CVE and Secure
   Boot to its score. Its score comes from the security report, which has none of them; the line
   now says they are not scored there.
+- Leaving the Automation or Schedules screen no longer rewrites the profile's config.yaml, or
+  creates one, when the notification settings were not changed.
 - Fleet Overview's summary tiles line up and share one height, and a profile card's stability
   score is no longer hidden under the card's chevron.
 - The stale-days control on Devices is its natural size instead of stretching across the header.

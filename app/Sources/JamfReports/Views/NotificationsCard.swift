@@ -148,13 +148,17 @@ struct NotificationsCard: View {
         notifyURLSaveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
+            notifyURLSaveTask = nil
             saveNotifyConfig()
         }
     }
 
-    /// Write immediately (Return pressed) — cancel any pending debounce first.
+    /// Write a pending URL edit now (Return pressed, or the card going away).
+    /// With nothing pending there is nothing to write: the card used to rewrite
+    /// config.yaml, and create one where none existed, whenever it left the screen.
     private func flushNotifySave() {
-        notifyURLSaveTask?.cancel()
+        guard let pending = notifyURLSaveTask else { return }
+        pending.cancel()
         notifyURLSaveTask = nil
         saveNotifyConfig()
     }
