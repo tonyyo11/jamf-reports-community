@@ -467,7 +467,8 @@ struct MobileFleetView: View {
     }
 
     private var devicesTable: some View {
-        Card {
+        let listRowsByID = snapshot.lightDevicesByID
+        return Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(
                     title: "Mobile Devices",
@@ -484,7 +485,7 @@ struct MobileFleetView: View {
                     .width(min: 140, ideal: 180)
 
                     TableColumn("Type") { device in
-                        let deviceType = getDeviceType(device)
+                        let deviceType = getDeviceType(device, listRowsByID: listRowsByID)
                         Pill(text: deviceType, tone: pillTone(for: deviceType))
                             .accessibilityLabel("\(deviceType) device type")
                     }
@@ -683,15 +684,26 @@ struct MobileFleetView: View {
         }
     }
 
-    private func getDeviceType(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String {
-        let type = switch device {
-        case .left(let light): light.type ?? ""
-        case .right(let rich): rich.deviceType ?? ""
+    /// Type pill text. An inventory row's `deviceType` is the OS family ("iOS")
+    /// for every device, so the form factor comes from the hardware model,
+    /// which the collected snapshots carry only on the list row.
+    private func getDeviceType(
+        _ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>,
+        listRowsByID: [String: MobileDeviceListRow]
+    ) -> String {
+        switch device {
+        case .left(let light):
+            return MobileFleetService.typeLabel(
+                for: MobileFleetService.formFactor(of: light),
+                deviceType: light.deviceType ?? light.type
+            )
+        case .right(let rich):
+            let listRow = rich.mobileDeviceId.flatMap { listRowsByID[$0] }
+            return MobileFleetService.typeLabel(
+                for: MobileFleetService.formFactor(of: rich, listRow: listRow),
+                deviceType: rich.deviceType
+            )
         }
-        if type.localizedCaseInsensitiveContains("iPad") { return "iPad" }
-        if type.localizedCaseInsensitiveContains("iPhone") { return "iPhone" }
-        if type.localizedCaseInsensitiveContains("TV") || type.localizedCaseInsensitiveContains("AppleTV") { return "Apple TV" }
-        return type.isEmpty ? "Unknown" : type
     }
 
     private func getSerial(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String? {

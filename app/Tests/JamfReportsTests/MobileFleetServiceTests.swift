@@ -584,6 +584,86 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.appleTVCount, 0)
     }
 
+    // MARK: - Devices table Type pill
+
+    /// The collected shape: the inventory row says only "iOS" and has no
+    /// hardware, so the form factor comes from the list row with the same id.
+    func testFormFactorOfInventoryRowReadsTheMatchingListRow() throws {
+        let json = """
+        [{"id": "7", "name": "Device 7", "model": "iPad Air", "type": "ios"}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        let device = MobileDeviceInventoryItem(mobileDeviceId: "7", deviceType: "iOS")
+
+        let joined = MobileFleetService.formFactor(of: device, listRow: rows.first)
+        XCTAssertEqual(joined, .iPad)
+        XCTAssertEqual(MobileFleetService.typeLabel(for: joined, deviceType: "iOS"), "iPad")
+
+        let alone = MobileFleetService.formFactor(of: device, listRow: nil)
+        XCTAssertEqual(alone, .other)
+        XCTAssertEqual(MobileFleetService.typeLabel(for: alone, deviceType: "iOS"), "iOS")
+        XCTAssertEqual(MobileFleetService.typeLabel(for: .other, deviceType: nil), "Unknown")
+        XCTAssertEqual(MobileFleetService.typeLabel(for: .other, deviceType: "  "), "Unknown")
+        XCTAssertEqual(MobileFleetService.typeLabel(for: .appleTV, deviceType: "tvOS"), "Apple TV")
+    }
+
+    /// A row's own hardware section wins over its list row.
+    func testFormFactorOfInventoryRowPrefersItsOwnHardware() throws {
+        let json = """
+        [{"id": "7", "model": "iPad Air"}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        let device = MobileDeviceInventoryItem(
+            mobileDeviceId: "7",
+            deviceType: "iOS",
+            hardware: MobileDeviceHardware(model: "iPhone 15", modelIdentifier: "iPhone16,1")
+        )
+        XCTAssertEqual(MobileFleetService.formFactor(of: device, listRow: rows.first), .iPhone)
+    }
+
+    func testLightDevicesByIDKeepsTheFirstRowForARepeatedID() throws {
+        let json = """
+        [{"id": "1", "name": "First"}, {"id": "1", "name": "Second"}, {"name": "No ID"}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: rows, richDevices: [], profiles: [],
+            sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.lightDevicesByID.count, 1)
+        XCTAssertEqual(snapshot.lightDevicesByID["1"]?.name, "First")
+    }
+
+    /// Per-row pills over the collected fixtures agree with the iPad and iPhone
+    /// tiles, and no row falls back to the OS family.
+    func testTypePillsOverCollectedFixturesMatchTheFormFactorTiles() throws {
+        let listURL = TestFixtures.dir("jamf-cli-data/mobile-devices-list/mobile-devices-list.json")
+        let inventoryURL = TestFixtures.dir(
+            "jamf-cli-data/mobile-device-inventory-details/mobile-device-inventory-details.json"
+        )
+        guard FileManager.default.fileExists(atPath: listURL.path),
+              FileManager.default.fileExists(atPath: inventoryURL.path) else {
+            throw XCTSkip("mobile fixtures not available")
+        }
+        let snapshot = MobileFleetService.load(
+            listURL: listURL, inventoryURL: inventoryURL, profilesURL: nil
+        )
+        let byID = snapshot.lightDevicesByID
+        let labels = snapshot.richDevices.map { device in
+            MobileFleetService.typeLabel(
+                for: MobileFleetService.formFactor(
+                    of: device, listRow: device.mobileDeviceId.flatMap { byID[$0] }
+                ),
+                deviceType: device.deviceType
+            )
+        }
+
+        XCTAssertGreaterThan(snapshot.iPadCount + snapshot.iPhoneCount, 0)
+        XCTAssertEqual(labels.filter { $0 == "iPad" }.count, snapshot.iPadCount)
+        XCTAssertEqual(labels.filter { $0 == "iPhone" }.count, snapshot.iPhoneCount)
+        XCTAssertFalse(labels.contains("iOS"), "no row should fall back to the OS family")
+    }
+
     // MARK: - deviceCount(fromMobileDevicesListData:) — Managed Devices summary field
 
     /// Real jamf-cli shape: a bare array, no envelope. Mirrors `loadDeviceList`.

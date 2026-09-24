@@ -55,6 +55,46 @@ struct MobileFleetService: Sendable {
         return .other
     }
 
+    /// Form factor of one list row, read from the same fields `Snapshot` counts
+    /// iPads and iPhones with: the current shape's `hardware` and `deviceType`,
+    /// or the older flat shape's top-level `model` and `type`.
+    static func formFactor(of row: MobileDeviceListRow) -> FormFactor {
+        classifyFormFactor(
+            model: row.hardware?.model ?? row.model,
+            modelIdentifier: row.hardware?.modelIdentifier,
+            deviceType: row.deviceType ?? row.type
+        )
+    }
+
+    /// Form factor of one inventory row. The collected inventory's `hardware`
+    /// section is null and its `deviceType` is the OS family ("iOS"), so when
+    /// the row's own fields name nothing, the model comes from `listRow`: the
+    /// `mobile-devices-list` row with the same id.
+    static func formFactor(
+        of device: MobileDeviceInventoryItem, listRow: MobileDeviceListRow?
+    ) -> FormFactor {
+        let own = classifyFormFactor(
+            model: device.hardware?.model,
+            modelIdentifier: device.hardware?.modelIdentifier,
+            deviceType: device.deviceType
+        )
+        guard own == .other, let listRow else { return own }
+        return formFactor(of: listRow)
+    }
+
+    /// Text for the devices table's Type pill: the form factor when the model
+    /// names one, otherwise the type jamf-cli reported, or "Unknown".
+    static func typeLabel(for formFactor: FormFactor, deviceType: String?) -> String {
+        switch formFactor {
+        case .iPad: return "iPad"
+        case .iPhone: return "iPhone"
+        case .appleTV: return "Apple TV"
+        case .other:
+            let type = (deviceType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return type.isEmpty ? "Unknown" : type
+        }
+    }
+
     /// Everything the MobileFleetView needs from mobile device snapshots.
     /// Provides both light and rich device data sources, with computed KPIs
     /// preferring rich data when available.
@@ -114,6 +154,18 @@ struct MobileFleetService: Sendable {
                     deviceType: $0.deviceType
                 ) == factor
             }.count
+        }
+
+        /// List rows keyed by id, to join an inventory row to its list row:
+        /// jamf-cli's list `id` is the inventory's `mobileDeviceId`. The first
+        /// row wins when an id repeats.
+        var lightDevicesByID: [String: MobileDeviceListRow] {
+            var byID: [String: MobileDeviceListRow] = [:]
+            for row in lightDevices {
+                guard let id = row.id, byID[id] == nil else { continue }
+                byID[id] = row
+            }
+            return byID
         }
 
         var iPadCount: Int { formFactorCount(.iPad) }
