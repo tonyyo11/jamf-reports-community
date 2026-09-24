@@ -111,6 +111,12 @@ A few behaviors worth knowing:
   label, and a failure posts the failure card. These signals are best-effort and additive —
   a webhook or recording failure never changes the exit code or the command's stdout. `html`
   does not emit these signals.
+- Every `jamf-reports` command, read-only ones like `check`, `capabilities` and `--version`
+  included, first does the background-item setup an app launch does: the one-time import of
+  schedules from an older install's `~/Library/LaunchAgents` files (archiving and removing
+  the managed ones), then registering the background item if **Manage automation** is on or
+  a hand-built schedule exists. A command never unregisters the item, and never turns one
+  back on that was switched off under **Login Items › Allow in the Background**.
 
 ### Templates
 
@@ -203,10 +209,11 @@ A schedule added with `jamf-reports schedules add` behaves exactly like one buil
 GUI: the background item picks it up on its next wake, gives it the same missed-fire
 catch-up, and covers it with the dead-man switch.
 
-The background item is registered when the app is launched from its bundle. Running the
-included CLI also attempts registration and runs the one-time import; if the CLI was
-installed as a symlink, confirm under **Login Items › Allow in the Background** that
-JamfReports is listed. A schedule you instead build yourself
+The background item is registered when something is scheduled: **Manage automation** is
+on, or a hand-built schedule exists. Launching the app from its bundle registers or
+unregisters it to match; a `jamf-reports` command only ever registers it, as noted above.
+If the CLI was installed as a symlink, confirm under **Login Items › Allow in the
+Background** that JamfReports is listed. A schedule you instead build yourself
 around the CLI — a `launchd` job or `cron` entry calling `collect`/`generate` directly —
 **does** get most of the app's automation-trust machinery: metric alerts (collect only),
 the `notify:` webhook digests, and Run History under a `cli-collect` / `cli-generate` label.

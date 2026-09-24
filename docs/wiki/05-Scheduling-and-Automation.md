@@ -203,9 +203,17 @@ scheduled fires, the next wake catches up:
   **last 15 minutes** — the same rule these modes have always followed.
 
 "Run now" (GUI button, or `jamf-reports schedules run <label>`) spawns an immediate,
-one-shot run for that one schedule under the same lock every wake uses, so it never
-overlaps a run already in progress; if the lock is held, the request is queued and the very
-next wake runs it instead.
+one-shot run for that one schedule under the same lock every wake uses. If another run
+holds the lock, the request is queued and the first wake that gets the lock runs it.
+
+The lock only keeps a second run out while the one holding it looks alive. A running
+schedule refreshes the lock every five minutes, for up to six hours per schedule. A run
+still going after that is treated as hung: once the lock has gone an hour without a
+refresh, the next wake takes it over and starts whatever is due, which can be the same
+schedule again, as a
+[same-day retry](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust)
+or a queued Run now. So a run that was merely slow, not hung, can overlap another run of
+the same schedule until it finishes.
 
 A development build (`swift run JamfReports`) has no bundled agent, so registration is
 skipped and the Automation screen shows "Ticker unavailable in this build" — `JamfReports
