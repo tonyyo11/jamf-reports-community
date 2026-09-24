@@ -173,6 +173,10 @@ tenant's real data in every section, and you choose what it shows.
   guide no longer tell you to set `platform.enabled` and `experimental.platform_features_enabled`,
   which nothing reads. A jamf-cli profile with the platform auth method is what collects Platform
   data, and those two screens also need Platform API under Settings → Experimental Features.
+- The HTML report's Intervention Required list ages each Mac by its last check-in again, not by
+  its last inventory update. Devices, Offline Outreach and the Overview also show the last
+  check-in for Macs the device compliance report does not cover. Jamf Pro's v4 inventory API,
+  which jamf-cli has used since 1.28.0, renamed the field.
 
 ### Removed
 

@@ -1790,8 +1790,10 @@ struct HtmlReport: Sendable {
     }
 
     /// Extract last contact/check-in time string from a `computers list` record.
+    /// v4 renamed `lastContactTime` to `lastCheckIn`; v4's `lastContact` is a different field.
     func inventoryLastContact(_ item: [String: Any]) -> String {
         if let general = item["general"] as? [String: Any] {
+            if let ts = general["lastCheckIn"] as? String, !ts.isEmpty { return ts }
             if let ts = general["lastContactTime"] as? String, !ts.isEmpty { return ts }
             if let ts = general["reportDate"] as? String, !ts.isEmpty { return ts }
         }
