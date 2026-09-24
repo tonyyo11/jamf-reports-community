@@ -708,4 +708,128 @@ final class MobileFleetServiceTests: XCTestCase {
         let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data("not json".utf8))
         XCTAssertNil(count, "undecodable data must be nil, never a fabricated 0")
     }
+
+    // MARK: - Supervision donut filter
+
+    private func inventoryItem(managed: Bool?, supervised: Bool?) -> MobileDeviceInventoryItem {
+        MobileDeviceInventoryItem(
+            mobileDeviceId: UUID().uuidString,
+            general: MobileDeviceGeneral(
+                displayName: nil, serialNumber: nil, osVersion: nil,
+                managed: managed, supervised: supervised,
+                lastInventoryUpdateDate: nil, deviceOwnershipType: nil,
+                activationLockEnabled: nil, passcodeCompliant: nil,
+                dataProtectionEnabled: nil, jailbreakDetected: nil,
+                enrollmentMethodPrestage: nil
+            )
+        )
+    }
+
+    func testSupervisionRolePlacesEachManagedAndSupervisedPair() {
+        typealias Role = MobileFleetService.SupervisionRole
+        let cases: [(managed: Bool?, supervised: Bool?, role: Role?)] = [
+            (nil, true, nil),
+            (nil, nil, nil),
+            (false, true, .unmanaged),
+            (false, false, .unmanaged),
+            (false, nil, .unmanaged),
+            (true, true, .supervised),
+            (true, false, .unsupervised),
+            (true, nil, nil),
+        ]
+        for (index, entry) in cases.enumerated() {
+            let item = inventoryItem(managed: entry.managed, supervised: entry.supervised)
+            XCTAssertEqual(
+                MobileFleetService.supervisionRole(of: item), entry.role, "case \(index)"
+            )
+        }
+        let noGeneral = MobileDeviceInventoryItem(mobileDeviceId: "1", deviceType: "iOS")
+        XCTAssertNil(MobileFleetService.supervisionRole(of: noGeneral))
+    }
+
+    /// The donut's buckets are exactly what the table filter selects.
+    func testSupervisionBreakdownCountsThroughSupervisionRole() {
+        let fleet = [
+            inventoryItem(managed: true, supervised: true),
+            inventoryItem(managed: true, supervised: true),
+            inventoryItem(managed: true, supervised: false),
+            inventoryItem(managed: false, supervised: true),
+            inventoryItem(managed: nil, supervised: true),
+            inventoryItem(managed: true, supervised: nil),
+        ]
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: fleet, profiles: [],
+            sourceFile: nil, snapshotDate: nil
+        )
+
+        let breakdown = snapshot.supervisionBreakdown
+        XCTAssertEqual(breakdown.map { $0.role }, MobileFleetService.SupervisionRole.allCases)
+        XCTAssertEqual(breakdown.map { $0.label }, ["Supervised", "Unsupervised", "Unmanaged"])
+        XCTAssertEqual(breakdown.map { $0.count }, [2, 1, 1])
+        for slice in breakdown {
+            XCTAssertEqual(
+                MobileFleetService.devices(fleet, in: slice.role).count, slice.count, slice.label
+            )
+        }
+        XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, fleet.count)
+    }
+
+    func testSupervisionSlicesDropEmptyBuckets() {
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [],
+            richDevices: [
+                inventoryItem(managed: true, supervised: true),
+                inventoryItem(managed: false, supervised: nil),
+            ],
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        let slices = snapshot.supervisionSlices
+        XCTAssertEqual(slices.map { $0.role }, [.supervised, .unmanaged])
+        XCTAssertEqual(slices.map { $0.count }, [1, 1])
+    }
+
+    /// A press reports the running device count at the pointer's angle; each
+    /// slice owns the values up to and including its running total.
+    func testRoleAtAngleValueWalksRunningTotals() {
+        let slices: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 20),
+            (role: .unsupervised, count: 3),
+            (role: .unmanaged, count: 2),
+        ]
+        let expected: [(value: Double, role: MobileFleetService.SupervisionRole?)] = [
+            (0, .supervised), (19.5, .supervised), (20, .supervised),
+            (20.5, .unsupervised), (21, .unsupervised), (23, .unsupervised),
+            (23.5, .unmanaged), (24, .unmanaged), (25, .unmanaged),
+            (26, nil), (-0.5, nil),
+        ]
+        for entry in expected {
+            XCTAssertEqual(
+                MobileFleetService.role(atAngleValue: entry.value, in: slices), entry.role,
+                "value \(entry.value)"
+            )
+        }
+        XCTAssertNil(MobileFleetService.role(atAngleValue: .nan, in: slices))
+    }
+
+    /// An empty bucket owns no angle, not even 0.
+    func testRoleAtAngleValueSkipsEmptySlices() {
+        let slices: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 0),
+            (role: .unsupervised, count: 5),
+        ]
+        XCTAssertEqual(MobileFleetService.role(atAngleValue: 0, in: slices), .unsupervised)
+        XCTAssertNil(MobileFleetService.role(atAngleValue: 1, in: []))
+    }
+
+    /// The table filters before its 50-row cap, so a bucket whose devices all
+    /// sit after the fleet's first 50 still reaches the table, in order.
+    func testDevicesInRoleFiltersTheWholeFleetInOrder() {
+        let supervised = (0..<55).map { _ in inventoryItem(managed: true, supervised: true) }
+        let unmanaged = (0..<5).map { _ in inventoryItem(managed: false, supervised: nil) }
+        let fleet = supervised + unmanaged
+
+        let filtered = MobileFleetService.devices(fleet, in: .unmanaged)
+        XCTAssertEqual(filtered.map { $0.mobileDeviceId }, unmanaged.map { $0.mobileDeviceId })
+        XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, 60)
+    }
 }

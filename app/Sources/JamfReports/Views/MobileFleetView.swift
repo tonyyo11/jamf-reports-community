@@ -11,6 +11,16 @@ struct MobileFleetView: View {
     @State private var snapshot: MobileFleetService.Snapshot = .empty
     @State private var hasLoaded = false
     @State private var selectedDeviceID: String?
+    /// Supervision bucket the devices table is filtered to. Set from a donut
+    /// slice or legend row, cleared by the same control or the filter chip.
+    @State private var supervisionFilter: MobileFleetService.SupervisionRole?
+    /// The donut's `chartAngleSelection`: the running device count under the
+    /// pointer while it is pressed. Plotted and bound as Double so a press is
+    /// placed exactly, with no rounding of the angle to a whole device.
+    @State private var supervisionAngle: Double?
+    /// The slice the current press last toggled, so dragging within one slice
+    /// toggles once instead of on every move.
+    @State private var lastAngleRole: MobileFleetService.SupervisionRole?
 
     var body: some View {
         PageScaffold {
@@ -82,6 +92,9 @@ struct MobileFleetView: View {
         snapshot = workspace.demoMode
             ? Self.demoSnapshot
             : MobileFleetService.load(profile: workspace.profile)
+        supervisionFilter = nil
+        supervisionAngle = nil
+        lastAngleRole = nil
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
@@ -276,48 +289,102 @@ struct MobileFleetView: View {
         }
     }
 
+    /// Clicking a slice filters the devices table to it, clicking it again
+    /// clears the filter. Unselected slices dim while a filter is active.
     private var supervisionDonut: some View {
-        let breakdown = snapshot.supervisionBreakdown
-        return Chart(breakdown.filter { $0.count > 0 }, id: \.label) { slice in
+        let slices = snapshot.supervisionSlices
+        return Chart(slices, id: \.role) { slice in
             SectorMark(
-                angle: .value("Count", slice.count),
+                angle: .value("Count", Double(slice.count)),
                 innerRadius: .ratio(0.62),
                 angularInset: 1.6
             )
             .foregroundStyle(supervisionColor(for: slice.role))
-            .accessibilityLabel(slice.label)
+            .opacity(sliceOpacity(for: slice.role))
+            .accessibilityLabel(slice.role.label)
             .accessibilityValue("\(slice.count) devices")
         }
         .chartLegend(.hidden)
+        .chartAngleSelection(value: $supervisionAngle)
+        .onChange(of: supervisionAngle) { _, newValue in
+            selectSupervisionSlice(at: newValue, in: slices)
+        }
         .accessibilityLabel("Mobile fleet supervision breakdown")
     }
 
+    /// Each row is also the keyboard and VoiceOver route to the filter, which
+    /// a click on the chart does not offer.
     private var supervisionLegend: some View {
         let total = snapshot.totalDevices
         let breakdown = snapshot.supervisionBreakdown
         return VStack(alignment: .leading, spacing: 8) {
             ForEach(breakdown, id: \.label) { slice in
                 let percentage = total > 0 ? Double(slice.count) / Double(total) * 100 : 0
-                HStack(spacing: 10) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(supervisionColor(for: slice.role))
-                        .frame(width: 12, height: 12)
-                    Text(slice.label)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(Theme.Colors.fg)
-                    Spacer()
-                    Text("\(slice.count)")
-                        .font(Theme.Fonts.mono(12, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.fg2)
-                        .monospacedDigit()
-                    Text(String(format: "%.1f%%", percentage))
-                        .font(Theme.Fonts.mono(11))
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(minWidth: 48, alignment: .trailing)
-                        .monospacedDigit()
+                let isActive = supervisionFilter == slice.role
+                let action: String = isActive
+                    ? "Show every device in the table"
+                    : "Show only \(slice.label.lowercased()) devices in the table"
+                Button {
+                    toggleSupervisionFilter(slice.role)
+                } label: {
+                    HStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(supervisionColor(for: slice.role))
+                            .frame(width: 12, height: 12)
+                        Text(slice.label)
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(Theme.Colors.fg)
+                        Spacer()
+                        Text("\(slice.count)")
+                            .font(Theme.Fonts.mono(12, weight: .semibold))
+                            .foregroundStyle(Theme.Colors.fg2)
+                            .monospacedDigit()
+                        Text(String(format: "%.1f%%", percentage))
+                            .font(Theme.Fonts.mono(11))
+                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                            .frame(minWidth: 48, alignment: .trailing)
+                            .monospacedDigit()
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .disabled(slice.count == 0)
+                .accessibilityAddTraits(isActive ? .isSelected : [])
+                .accessibilityHint(action)
+                .help(action)
             }
         }
+    }
+
+    /// Full strength while no filter is set, and for the filtered slice.
+    private func sliceOpacity(for role: MobileFleetService.SupervisionRole) -> Double {
+        supervisionFilter == nil || supervisionFilter == role ? 1 : 0.3
+    }
+
+    /// Turns a donut press into one filter toggle per slice entered. Charts may
+    /// or may not reset the selection to nil on mouse-up, so nil ends a press,
+    /// and further movement within the slice already toggled does nothing.
+    private func selectSupervisionSlice(
+        at angleValue: Double?, in slices: [MobileFleetService.SupervisionSlice]
+    ) {
+        guard let angleValue else {
+            lastAngleRole = nil
+            return
+        }
+        guard let role = MobileFleetService.role(atAngleValue: angleValue, in: slices),
+              role != lastAngleRole
+        else { return }
+        lastAngleRole = role
+        toggleSupervisionFilter(role)
+    }
+
+    /// Filters the devices table to `role`, or clears the filter when it is
+    /// already `role`. The row selection is dropped either way: the detail card
+    /// looks devices up in the unfiltered list, so a selected row the filter
+    /// hid would keep showing a device that is not in the table.
+    private func toggleSupervisionFilter(_ role: MobileFleetService.SupervisionRole) {
+        supervisionFilter = supervisionFilter == role ? nil : role
+        selectedDeviceID = nil
     }
 
     private func supervisionColor(for role: MobileFleetService.SupervisionRole) -> Color {
@@ -468,15 +535,25 @@ struct MobileFleetView: View {
 
     private var devicesTable: some View {
         let listRowsByID = snapshot.lightDevicesByID
+        let matching = tableRows
+        let rows = Array(matching.prefix(50))
+        let total = totalMobileDevices
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(
-                    title: "Mobile Devices",
-                    trailing: totalMobileDevices > devicesForTable.count
-                        ? "\(devicesForTable.count) of \(totalMobileDevices) shown"
-                        : nil
-                )
-                Table(devicesForTable, selection: $selectedDeviceID) {
+                HStack(spacing: 10) {
+                    SectionHeader(
+                        title: "Mobile Devices",
+                        trailing: supervisionFilter != nil || total > rows.count
+                            ? "\(rows.count) of \(total) shown"
+                            : nil
+                    )
+                    if let supervisionFilter {
+                        FilterChip(label: supervisionFilter.label) {
+                            toggleSupervisionFilter(supervisionFilter)
+                        }
+                    }
+                }
+                Table(rows, selection: $selectedDeviceID) {
                     TableColumn("Name") { device in
                         Text(deviceDisplayName(device))
                             .font(.callout.weight(.medium))
@@ -524,7 +601,7 @@ struct MobileFleetView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .font(.callout)
-                if totalMobileDevices > devicesForTable.count {
+                if matching.count > rows.count {
                     Text("Generated reports include every mobile device.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -667,12 +744,16 @@ struct MobileFleetView: View {
 
     // MARK: - Helpers
 
-    private var devicesForTable: [Either<MobileDeviceListRow, MobileDeviceInventoryItem>] {
+    /// The rows the devices table can list before its 50-row cap: inventory rows
+    /// in the active supervision bucket when inventory details exist, list rows
+    /// otherwise. Filtering before the cap lets a bucket's devices beyond the
+    /// fleet's first 50 reach the table.
+    private var tableRows: [Either<MobileDeviceListRow, MobileDeviceInventoryItem>] {
         if !snapshot.richDevices.isEmpty {
-            return Array(snapshot.richDevices.prefix(50)).map { .right($0) }
-        } else {
-            return Array(snapshot.lightDevices.prefix(50)).map { .left($0) }
+            return MobileFleetService.devices(snapshot.richDevices, in: supervisionFilter)
+                .map { .right($0) }
         }
+        return snapshot.lightDevices.map { .left($0) }
     }
 
     private func deviceDisplayName(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String {

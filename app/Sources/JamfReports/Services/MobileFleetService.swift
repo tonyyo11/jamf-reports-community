@@ -9,10 +9,56 @@ import Foundation
 /// sources exist — many tenants don't manage mobile devices.
 struct MobileFleetService: Sendable {
 
-    /// Slice kind used by the MobileFleetView supervision donut so the view
-    /// can pick a colour without leaking string literals.
-    enum SupervisionRole: Sendable {
-        case supervised, unsupervised, unmanaged
+    /// The supervision donut's buckets, in slice order. The view picks a colour
+    /// per case and filters the devices table by it; the raw value is the label
+    /// the legend shows.
+    enum SupervisionRole: String, Sendable, CaseIterable {
+        case supervised = "Supervised"
+        case unsupervised = "Unsupervised"
+        case unmanaged = "Unmanaged"
+
+        var label: String { rawValue }
+    }
+
+    /// One plotted slice of the supervision donut.
+    typealias SupervisionSlice = (role: SupervisionRole, count: Int)
+
+    /// The donut bucket a device falls in, or nil when it cannot be placed: an
+    /// unknown management state, or a managed device whose supervision state
+    /// is unknown. Unmanaged wins over supervised, because an unmanaged
+    /// device's supervised flag may be stale.
+    static func supervisionRole(of device: MobileDeviceInventoryItem) -> SupervisionRole? {
+        guard let managed = device.general?.managed else { return nil }
+        guard managed else { return .unmanaged }
+        guard let supervised = device.general?.supervised else { return nil }
+        return supervised ? .supervised : .unsupervised
+    }
+
+    /// The slice under a donut selection. `chartAngleSelection` reports the
+    /// running total at the pointer's angle, so walk the plotted slices in
+    /// order: a slice owns the values up to and including its running total,
+    /// and the first also owns 0. Nil below 0 or past the ring's total. Pass
+    /// the exact array the chart plots, or a click resolves against slices
+    /// that were never drawn.
+    static func role(
+        atAngleValue value: Double, in slices: [SupervisionSlice]
+    ) -> SupervisionRole? {
+        guard value >= 0 else { return nil }
+        var runningTotal = 0
+        for slice in slices where slice.count > 0 {
+            runningTotal += slice.count
+            if value <= Double(runningTotal) { return slice.role }
+        }
+        return nil
+    }
+
+    /// The devices in `role`'s bucket, in their original order, or all of them
+    /// when `role` is nil: the devices table's filter.
+    static func devices(
+        _ devices: [MobileDeviceInventoryItem], in role: SupervisionRole?
+    ) -> [MobileDeviceInventoryItem] {
+        guard let role else { return devices }
+        return devices.filter { supervisionRole(of: $0) == role }
     }
 
     /// Coarse device form factor. jamf-cli's `deviceType` is the OS family
@@ -187,22 +233,27 @@ struct MobileFleetService: Sendable {
         }
 
         /// Bucket count of supervised / unsupervised / unmanaged devices for the
-        /// MobileFleetView supervision donut. Unmanaged dominates over
-        /// supervised: an unmanaged device's supervised flag may be stale, so
-        /// we surface it as the more actionable bucket.
+        /// MobileFleetView supervision donut, counted through
+        /// `MobileFleetService.supervisionRole(of:)` so the donut and the
+        /// devices table's filter can never disagree about a device.
         var supervisionBreakdown: [(label: String, count: Int, role: SupervisionRole)] {
-            let unmanaged = unmanagedCount
-            let supervised = richDevices.filter {
-                $0.general?.managed == true && $0.general?.supervised == true
-            }.count
-            let unsupervised = richDevices.filter {
-                $0.general?.managed == true && $0.general?.supervised == false
-            }.count
-            return [
-                ("Supervised", supervised, .supervised),
-                ("Unsupervised", unsupervised, .unsupervised),
-                ("Unmanaged", unmanaged, .unmanaged),
-            ]
+            var counts: [SupervisionRole: Int] = [:]
+            for device in richDevices {
+                guard let role = MobileFleetService.supervisionRole(of: device) else { continue }
+                counts[role, default: 0] += 1
+            }
+            return SupervisionRole.allCases.map { role in
+                (label: role.label, count: counts[role] ?? 0, role: role)
+            }
+        }
+
+        /// The slices the donut plots: the breakdown without its empty buckets.
+        /// The chart and `MobileFleetService.role(atAngleValue:in:)` both read
+        /// this one array.
+        var supervisionSlices: [SupervisionSlice] {
+            supervisionBreakdown
+                .filter { $0.count > 0 }
+                .map { (role: $0.role, count: $0.count) }
         }
 
         /// Per-method counts derived from `general.deviceOwnershipType`. Maps the

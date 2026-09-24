@@ -810,3 +810,29 @@ struct EditableNumberStepper: View {
 
 /// Reusable table header for hand-rolled tables that need custom row layouts.
 /// A column with `width == nil` flexes to fill remaining space.
+
+// MARK: - Filter chip
+
+/// An active filter as a removable token: an xmark beside the filter's label,
+/// cleared with one click. The look of the Devices screen's OS-version chip,
+/// shared so a screen that filters from a chart shows what the click did and
+/// how to undo it.
+struct FilterChip: View {
+    let label: String
+    let onClear: () -> Void
+
+    var body: some View {
+        Button(action: onClear) {
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                Mono(text: label, color: Theme.Colors.goldBright)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear filter: \(label)")
+        .help("Clear this filter")
+    }
+}
