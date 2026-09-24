@@ -1019,7 +1019,11 @@ struct ReportEngine: Sendable {
                                              color: ChartPalette.color(for: 1), points: fvPoints))
             }
             if !patchPoints.isEmpty {
-                secSeries.append(ChartSeries(label: "Patch Compliance %",
+                // patchPct averages per-title compliance without weighting by devices,
+                // unlike the Executive Summary's Patch Fleet Compliance. The line-chart
+                // legend keeps only 14 characters of a label (ChartRenderer.drawLegend),
+                // so the qualifier must fit: "Patch Compliance %" showed as "Patch Complian".
+                secSeries.append(ChartSeries(label: "Patch % (avg)",
                                              color: ChartPalette.color(for: 2), points: patchPoints))
             }
             if !secSeries.isEmpty {
