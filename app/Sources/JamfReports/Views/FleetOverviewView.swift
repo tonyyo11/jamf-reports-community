@@ -317,7 +317,7 @@ struct FleetOverviewView: View {
                     StatTile(
                         label: "Patch",
                         value: row.summary?.patchPct.map { "\(String(format: "%.1f", $0))%" } ?? "--",
-                        sub: "Patch compliance"
+                        sub: "Avg per title"
                     )
                 }
 
@@ -887,8 +887,11 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     if let patchPct = summary.patchPct, patchPct < 80 {
         issues.append(FleetProfileIssue(
             reason: "Patch \(String(format: "%.1f", patchPct))% (below 80%)",
-            explanation: "Share of patch-managed titles on their latest version "
-                + "in the latest patch snapshot.",
+            // patchPct is the unweighted mean of per-title compliance, not a share
+            // of titles or of devices (epic #207 C1).
+            explanation: "Average across patch titles of the share of each title's devices "
+                + "on its latest version, in the latest patch snapshot. The Patch screen's "
+                + "figure weights every device equally, so the two can differ.",
             actionLabel: "Open Patch Compliance",
             tab: .patch
         ))

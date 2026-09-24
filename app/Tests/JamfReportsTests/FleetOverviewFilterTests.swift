@@ -61,6 +61,24 @@ final class FleetOverviewFilterTests: XCTestCase {
         XCTAssertTrue(fleetProfileHasIssue(summary))
     }
 
+    /// The daily summary's patch figure is the average of per-title compliance,
+    /// not a share of titles; the explanation used to say it was (epic #207 C1).
+    func testPatchIssueExplainsTheAveragePerTitle() throws {
+        let summary = DailySummary(
+            date: "2026-05-01",
+            totalDevices: 100,
+            fileVaultPct: 98,
+            compliancePct: 90,
+            staleCount: 0,
+            osCurrentPct: 75,
+            crowdstrikePct: 95,
+            patchPct: 72
+        )
+        let patch = try XCTUnwrap(fleetProfileIssues(summary).first { $0.tab == .patch })
+        XCTAssertTrue(patch.explanation.hasPrefix("Average across patch titles"),
+                      patch.explanation)
+    }
+
     func testLowStabilityIndexHasIssue() {
         // stability = 0.4*50 + 0.4*75 + 0.2*(100-0) = 20+30+20 = 70 — at threshold,
         // use compliancePct that pulls it below 70
