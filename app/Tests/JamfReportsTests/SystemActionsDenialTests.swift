@@ -24,6 +24,39 @@ final class SystemActionsDenialTests: XCTestCase {
         wait(for: [expectation], timeout: 2.0)
     }
 
+    /// A folder the app creates on first use — run logs before the first run —
+    /// is inside the allow-list; the toast used to say it was outside.
+    func testOpenMissingFolderInsideAllowListSaysItDoesNotExistYet() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let missing = home.appendingPathComponent(
+            "Jamf-Reports/jrc-missing-\(UUID().uuidString)/automation/logs", isDirectory: true)
+        let expectation = expectation(forNotification: .systemActionDenied, object: nil) { note in
+            let message = note.userInfo?["message"] as? String ?? ""
+            return message.contains("does not exist yet") && !message.contains("outside")
+        }
+        SystemActions.openFolder(missing)
+        wait(for: [expectation], timeout: 2.0)
+    }
+
+    func testOpenFolderOutsideAllowListStillSaysOutside() {
+        let outside = URL(fileURLWithPath: "/etc", isDirectory: true)
+        let expectation = expectation(forNotification: .systemActionDenied, object: nil) { note in
+            (note.userInfo?["message"] as? String)?.contains("outside the app's allowed") == true
+        }
+        SystemActions.openFolder(outside)
+        wait(for: [expectation], timeout: 2.0)
+    }
+
+    func testRefusalMessagesNameTheirCause() {
+        let logs = URL(fileURLWithPath: "/Users/admin/Jamf-Reports/acme/automation/logs")
+        XCTAssertEqual(
+            SystemActions.refusalMessage(.missingFolder, url: logs, verb: "open"),
+            "Can't open \"logs\" — the folder does not exist yet.")
+        XCTAssertTrue(
+            SystemActions.refusalMessage(.outsideAllowedFolders, url: logs, verb: "reveal")
+                .hasPrefix("Can't reveal \"logs\" — it's outside the app's allowed folders"))
+    }
+
     func testAllowedPathDoesNotPostDenial() {
         // A path inside ~/Jamf-Reports canonicalizes; reveal returns true and
         // must NOT post a denial. (It may activate Finder; harmless in CI.)
