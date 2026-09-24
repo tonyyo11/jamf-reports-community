@@ -8,7 +8,25 @@ versions in this repository map to git tags.
 ## [Unreleased]
 
 Jamf Platform API profiles collect Compliance Benchmarks, setup catches a wrong environment ID,
-and a source that fails for want of a permission says which one.
+and a source that fails for want of a permission says which one. The Overview shows your
+tenant's real data in every section, and you choose what it shows.
+
+### Added
+
+- The Overview is yours to arrange. **Customize** (in its header) lists every section and score
+  card: show or hide each one, move it up or down, and see which ones this profile can fill.
+  Reset to Defaults puts back the standard layout, which is the order the Overview has always
+  used.
+- macOS Distribution, Top Failing Rules, Security Agents and Recent Activity now show your
+  tenant's data. They used to appear only in demo mode. macOS Distribution comes from the
+  inventory summary every collect writes; Top Failing Rules from Compliance Benchmarks on a Jamf
+  Platform API profile, or from your mSCP failures-list extension attribute; Security Agents from
+  the agents listed in Config; Recent Activity from the device inventory.
+- A section your profile cannot fill says what it needs in one line, with a button to the screen
+  that fixes it and a control to hide it.
+- The EDR agent score card, its trend and the security score's EDR weight fill on jamf-cli
+  profiles, from the first security agent in Config and its extension attribute. They were always
+  empty there before.
 
 ### Fixed
 
@@ -71,6 +89,21 @@ and a source that fails for want of a permission says which one.
 - Fleet Overview's summary tiles line up and share one height, and a profile card's stability
   score is no longer hidden under the card's chevron.
 - The stale-days control on Devices is its natural size instead of stretching across the header.
+- Overview score cards line up in rows of one height. A card with no data says "Not reported by
+  this profile" and, on hover, what it needs, instead of a bare "--". Patch Compliance is labelled
+  as the average across patch titles, which is why it can differ from the device-weighted figure
+  on the Patch screen.
+- A Mac whose last check-in time includes milliseconds, as Jamf Pro often sends it, now has a
+  contact age on Devices and Offline Outreach instead of none.
+- A device scan that missed a few Macs no longer sets off a same-day retry that could not
+  rescan, and a collect that fetched nothing no longer dates cached numbers today on a fleet with
+  no DDM-enabled Macs.
+- The Patch screen keeps its failure list when jamf-cli sends an ID as a number or leaves out a
+  username, and a patch report with no failing devices is no longer recorded as a failed collect.
+- DDM status counts a device listed twice in the inventory once, and a malformed status reply no
+  longer drops the declarations after it.
+- The OS Updates error-devices table shows the first 50 devices and how many more there are, like
+  the failed-plans table beside it.
 
 ### Removed
 
@@ -84,6 +117,11 @@ and a source that fails for want of a permission says which one.
   or withdrawn, every flag it passes is still there, and the same reports come back byte for
   byte. v1.30.0's breaking change is to the Classic `scope` command, which this app never calls.
   The supported floor stays v1.18.0.
+
+### Security
+
+- Diagnostic bundles redact every device name, serial and user name found in the workspace. On a
+  fleet with more than 5,000 of one kind, the shortest could previously be left in log excerpts.
 
 ## [2.8.0] - 2026-09-14
 
