@@ -21,21 +21,16 @@ extension DemoData {
 
     // MARK: - Patch Compliance
 
-    /// Zoom Workplace, which a demo Mac fails to patch but `patchTitleSummary`
-    /// (the Devices screen's titles) does not list. Its counts put the fleet on
-    /// the Patch trend's final 87.5% both ways it is measured: weighted by
-    /// device (1,799 of 2,056) and as the mean of the four titles' rates, which
-    /// is how a daily summary records it.
+    /// Zoom Workplace, which a demo Mac fails to patch; `patchTitleSummary`
+    /// lists it last. Its counts put the fleet on the Patch trend's final 87.5%
+    /// both ways it is measured: weighted by device (1,799 of 2,056) and as the
+    /// mean of the four titles' rates, which is how a daily summary records it.
     static let zoomPatchTitle = PatchTitleSummary(
         title: "Zoom Workplace", latestVersion: "6.0.2",
         compliant: 378, total: 520, complianceLabel: "72.7%")
 
-    /// Every title Patch Compliance tracks: the Devices screen's titles, plus
-    /// Zoom Workplace unless `patchTitleSummary` already lists it.
-    static let patchTitles: [PatchTitleSummary] = {
-        let listed = Set(patchTitleSummary.map(\.title))
-        return patchTitleSummary + [zoomPatchTitle].filter { !listed.contains($0.title) }
-    }()
+    /// Every title Patch Compliance tracks: the four the Devices screen lists.
+    static var patchTitles: [PatchTitleSummary] { patchTitleSummary }
 
     /// A demo title's ID: its 1-based position in `patchTitles`.
     static func patchTitleID(_ title: String) -> String {

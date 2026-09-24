@@ -293,6 +293,7 @@ enum DemoData {
         .init(title: "Google Chrome", latestVersion: "124.0.6367.119", compliant: 471, total: 524, complianceLabel: "89.9%"),
         .init(title: "Mozilla Firefox", latestVersion: "125.0.2", compliant: 436, total: 488, complianceLabel: "89.3%"),
         .init(title: "Jamf Self Service for macOS", latestVersion: "11.4.1", compliant: 514, total: 524, complianceLabel: "98.1%"),
+        zoomPatchTitle,
     ]
 
     static let deviceInventory: [DeviceInventoryRecord] = [
