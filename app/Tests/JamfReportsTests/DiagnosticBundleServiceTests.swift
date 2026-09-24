@@ -227,6 +227,23 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertTrue(out.contains("Mac "), "len<4 name should survive the floor")
     }
 
+    /// A category used to keep only its 5000 longest literals, so on a large fleet the
+    /// shortest names were never redacted. Past that size they spill into another regex.
+    func testSeedingRedactsEveryLiteralPastTheChunkSize() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        var devices = (0...5_000).map { ["computerName": "Fleet-Mac-\($0)"] }
+        devices.append(["computerName": "Kiwi"])
+        try JSONSerialization.data(withJSONObject: devices)
+            .write(to: dir.appendingPathComponent("a.json"))
+
+        let r = DiagnosticRedactor()
+        XCTAssertEqual(r.seedFromWorkspace(dir), 5_002)
+        let out = r.redactText("log: Kiwi and Fleet-Mac-4999 crashed")
+        XCTAssertFalse(out.contains("Kiwi"), "the shortest literal must be redacted too")
+        XCTAssertFalse(out.contains("Fleet-Mac-4999"))
+    }
+
     // MARK: - Bundle structure
 
     func testStageFilesProducesRedactedTree() throws {
