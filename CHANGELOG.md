@@ -93,6 +93,29 @@ tenant's real data in every section, and you choose what it shows.
   Devices tile said 527), the EDR score card matches the CrowdStrike agent card, the Security
   Score card has a trend instead of "--", and demo headers no longer warn that a deliberately
   fixed dataset was "updated 151 days ago".
+- Demo mode describes one 524-Mac fleet on every screen. Security Posture, Compliance Posture,
+  Compliance Benchmarks, DDM, Extension Attributes, Offline Outreach, Health Audit, Jamf Protect,
+  Patch Compliance, OS Updates, Policy & Profile Health, Mobile Fleet, Groups & Searches, Trends,
+  Generated Reports and Backups now show the Overview's Macs, macOS versions, compliance bands and
+  schedules, dated on or before the demo's own date. The sidebar badges count the demo's reports,
+  trend weeks, profiles and schedules, and the Overview's Security Score ends on the Security
+  Posture ring's value.
+- Demo mode's Automation, Run History, Data Sources and Settings show the demo's schedules, runs,
+  workspace and connections instead of this Mac's, and the toolbar chip says jamf-cli is not used.
+- Demo mode no longer reads or writes this Mac's workspaces, even one that shares the demo
+  profile's name, and no longer runs jamf-cli. Controls that would (reveal, export, save, run,
+  delete, refresh, update jamf-cli) are disabled with a note saying they need a live profile.
+- Turning demo mode off no longer deletes the workspace and schedules of a real jamf-cli profile
+  that happens to be named like the demo's (meridian-prod). Finishing setup from demo mode also
+  clears what earlier demo sessions left behind, as turning it off in Settings always did.
+- Offline Outreach's Dormant tier reads 181+ days instead of overlapping Inactive by a day. OS
+  Updates labels its plan tile Total Plans, since it counts completed and failed plans too, and
+  Compliance Posture marks its per-OS breakdown as a control-gap count when mSCP baselines are
+  shown above it.
+- Data Sources shows when `pro computers list` last collected. It said "not cached" on every
+  workspace, because it looked under an older folder name.
+- Opening a workspace folder that has not been created yet says so, instead of saying the folder
+  is outside the app's allowed folders.
 - Fleet Overview's summary tiles line up and share one height, and a profile card's stability
   score is no longer hidden under the card's chevron.
 - The stale-days control on Devices is its natural size instead of stretching across the header.
