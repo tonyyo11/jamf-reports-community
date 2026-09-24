@@ -32,6 +32,8 @@ tenant's real data in every section, and you choose what it shows.
   reports.
 - The Managed Devices trend shows mobile devices for days before 2.6.0, from the dated mobile
   device snapshots already in your workspace.
+- Click a slice of the Mobile Fleet supervision chart, or its legend row, to show only those
+  devices in the Mobile Devices table. A chip above the table shows the filter and clears it.
 
 ### Fixed
 
@@ -127,6 +129,20 @@ tenant's real data in every section, and you choose what it shows.
   instead of opening the app.
 - Building from source: `build-pkg.sh` rejects a malformed app version such as `2x8`, and
   `package-dmg.sh` rejects a build number that is not a whole number.
+- The Devices table and detail panel no longer show a Mac with FileVault off as a green check.
+  "UNENCRYPTED", "Not Enabled", "NOT_ESCROWED" and "Not Installed" read as failing, a Gatekeeper
+  setting reads as on, and a value Jamf did not collect reads as unknown.
+- Mobile Fleet no longer shows 0% passcode compliance, 0% Activation Lock, a "Clean" jailbreak
+  status or 0 managed apps when the collected inventory does not contain that data. Those tiles
+  show a dash and say why.
+- The Mobile Devices table's Type column shows iPad or iPhone instead of "iOS" for every device,
+  and the mobile workbook sheets report shared iPads instead of "No" for every device.
+- The workbook's mSCP Compliance sheet and the Devices risk score read extension-attribute
+  results in every shape the rest of the app reads, instead of skipping some.
+- The Compliance Benchmarks and DDM Blueprints screens, config.example.yaml and the Configuration
+  guide no longer tell you to set `platform.enabled` and `experimental.platform_features_enabled`,
+  which nothing reads. A jamf-cli profile with the platform auth method is what collects Platform
+  data, and those two screens also need Platform API under Settings → Experimental Features.
 
 ### Removed
 
@@ -136,6 +152,7 @@ tenant's real data in every section, and you choose what it shows.
 - The `jamf-reports school-scaffold` command. It wrote a `school_columns` section that the app
   never read, so it never affected a report. `school-check` is unchanged, and a config.yaml that
   still has `school_columns` keeps working; the section is ignored.
+- The `experimental:` block in config.example.yaml. Nothing read it.
 
 ### Changed
 
