@@ -1036,10 +1036,23 @@ final class OnboardingFlow {
     private func finishFirstReport(exit: Int32, workspaceStore: WorkspaceStore) {
         firstReportExitCode = exit
         if exit == 0 {
-            UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
-            workspaceStore.reloadFromDisk()
+            finishSetup(in: workspaceStore)
         } else {
             lastError = "Generate exited \(exit) — check the log above."
+        }
+    }
+
+    /// Point the app at the profile setup just created. Demo mode is left
+    /// through `setDemoMode(false)`: clearing its flag directly, as setup did,
+    /// skipped the cleanup of what earlier builds wrote under the demo
+    /// profile. The exception is a new profile named like the demo's, whose
+    /// fresh workspace and schedules that cleanup would delete.
+    func finishSetup(in workspaceStore: WorkspaceStore) {
+        if workspaceStore.demoMode && profileName.trimmed != DemoData.org.profile {
+            workspaceStore.setDemoMode(false)
+        } else {
+            UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
+            workspaceStore.reloadFromDisk()
         }
     }
 

@@ -952,10 +952,9 @@ struct OnboardingView: View {
     ///     user back on Overview where progress is visible.
     ///   - Sidebar "Add workspace…" → same as Settings path above.
     private func skipAndFinishOnboarding() {
-        // Clear any first-launch demo preference so reloadFromDisk picks up
-        // the newly-created real profile instead of staying in demo mode.
-        UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
-        workspaceStore.reloadFromDisk()
+        // Leave demo mode, through its cleanup, so the newly created real
+        // profile replaces the demo; otherwise reload to pick it up.
+        flow.finishSetup(in: workspaceStore)
         NotificationCenter.default.post(
             name: .navigateToTab,
             object: nil,
