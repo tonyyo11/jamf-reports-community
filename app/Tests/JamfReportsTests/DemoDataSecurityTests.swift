@@ -335,13 +335,15 @@ final class DemoDataSecurityTests: XCTestCase {
 
     /// The ring's value with the default weights. The Overview's Security Score
     /// card ends on `DemoData.trends[.securityScore]`, which should match it.
-    func testSecurityScoreRingWithDefaultWeights() {
+    func testSecurityScoreRingWithDefaultWeights() throws {
         let score = SecurityScoreCalculator.score(
             input: SecurityScoreCalculator.input(from: DemoData.securityPostureSnapshot),
             weights: .defaultWeights)
         XCTAssertEqual(score.value, 96.6, accuracy: 0.001)
         XCTAssertEqual(score.grade, .aPlus)
         XCTAssertEqual(score.available, [.fileVault, .sip, .firewall])
+        let overviewScore = try XCTUnwrap(DemoData.trends[.securityScore]?.last)
+        XCTAssertEqual(overviewScore, score.value, accuracy: 0.05)
     }
 
     // MARK: - Compliance Posture
