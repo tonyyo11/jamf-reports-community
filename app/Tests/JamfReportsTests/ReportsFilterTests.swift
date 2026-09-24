@@ -11,6 +11,24 @@ final class ReportsFilterTests {
         Report(name: "school_report_edu_2024-05-05.xlsx", size: "900 KB", date: "May 5, 11:10", source: "Jamf School", sheets: 8, devices: 150)
     ]
 
+    private func profile(_ filename: String) -> String? {
+        ReportsView.profile(fromReportFilename: filename)
+    }
+
+    @Test func profileFromFilenameKeepsHyphensAndUnderscores() {
+        #expect(profile("report_meridian-prod_2026-04-24_073305.xlsx") == "meridian-prod")
+        #expect(profile("report_acme_east_2026-04-24_073305.html") == "acme_east")
+        #expect(profile("jamf_report_main_2024-05-01.xlsx") == "main")
+        #expect(profile("school-report_edu_2024-05-05.xlsx") == "edu")
+        #expect(profile("report_prod.xlsx") == "prod")
+    }
+
+    @Test func profileFromFilenameRejectsDatesAndUnknownPrefixes() {
+        #expect(profile("report_2026-04-24_073305.xlsx") == nil)
+        #expect(profile("report_20260424.xlsx") == nil)
+        #expect(profile("patch-compliance-prod-2026-04-24_073305.csv") == nil)
+    }
+
     @Test func emptySearchReturnsAll() {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,

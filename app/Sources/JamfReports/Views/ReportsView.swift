@@ -573,18 +573,21 @@ struct ReportsView: View {
 
     private func updateAvailableProfiles() {
         let profileTokens = Set(reports.compactMap { report in
-            extractProfileFromFilename(report.name)
+            Self.profile(fromReportFilename: report.name)
         })
         availableProfiles = Array(profileTokens).sorted()
     }
 
-    private func extractProfileFromFilename(_ filename: String) -> String? {
-        // Extract the profile token from filename patterns like
-        // "report_PROFILE_date.ext", "jamf_report_PROFILE_date.ext", or
-        // "inventory_PROFILE_date.ext". Multi-word prefixes are matched
-        // longest-first so "jamf_report_prod_..." yields "prod", not "report".
+    /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
+    /// ("report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
+    /// prefix and the date is the profile, so a hyphen or underscore in it stays;
+    /// profile names allow both, and treating any hyphen as a date dropped every
+    /// such profile from the menu. Without a date, the first `_` segment is taken.
+    /// Nil for an unknown prefix, or when no profile precedes the date.
+    nonisolated static func profile(fromReportFilename filename: String) -> String? {
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         let lowered = stem.lowercased()
+        // Longest first, so "jamf_report_prod_..." yields "prod", not "report".
         let knownPrefixes = [
             "jamf_report_", "school_report_", "school-report_",
             "report_", "compliance_", "mobile_", "inventory_",
@@ -593,14 +596,14 @@ struct ReportsView: View {
             return nil
         }
         let rest = String(stem.dropFirst(prefix.count))
-        guard let profileCandidate = rest.split(separator: "_").first.map(String.init) else {
-            return nil
+        let profile: Substring
+        if let date = rest.range(of: #"(^|_)\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
+            profile = rest[..<date.lowerBound]
+        } else {
+            profile = rest.split(separator: "_").first ?? ""
         }
-        // Filter out date-like tokens (all numbers, or yyyy-MM-dd patterns).
-        if profileCandidate.allSatisfy({ $0.isNumber }) || profileCandidate.contains("-") {
-            return nil
-        }
-        return profileCandidate
+        guard !profile.isEmpty, !profile.allSatisfy(\.isNumber) else { return nil }
+        return String(profile)
     }
 }
 
