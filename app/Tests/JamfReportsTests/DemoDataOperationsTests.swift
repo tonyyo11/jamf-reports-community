@@ -353,8 +353,10 @@ final class DemoDataOperationsTests: XCTestCase {
             }
         }
         XCTAssertEqual(DemoData.generatedReportStats.archivedCount, 0)
-        XCTAssertEqual(DemoData.snapshotFamilies.reduce(0) { $0 + $1.snapshotCount },
-                       DemoData.trendDates.count)
+        XCTAssertEqual(
+            DemoData.snapshotFamilies(for: DemoData.org.profile)
+                .reduce(0) { $0 + $1.snapshotCount },
+            DemoData.trendDates.count)
     }
 
     // MARK: - Backups

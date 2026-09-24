@@ -6,12 +6,6 @@ import Foundation
 /// dates on or before `referenceDate`.
 extension DemoData {
 
-    /// A demo folder as a subtitle shows it. Demo mode names the default root,
-    /// never this Mac's configured one, which may be a synced team folder.
-    static func workspaceDisplayPath(_ subpath: String) -> String {
-        "~/Jamf-Reports/\(org.profile)/\(subpath)"
-    }
-
     /// A local date in April 2026, built like `referenceDate`.
     private static func demoDate(day: Int, hour: Int, minute: Int) -> Date {
         Calendar(identifier: .gregorian).date(
@@ -359,14 +353,6 @@ extension DemoData {
         totalBytes: reportFiles.reduce(Int64(0)) { $0 + $1.bytes },
         archivedCount: 0
     )
-
-    /// The archived summaries Trends reads: one per week in `trendDates`.
-    static let snapshotFamilies: [SnapshotFamily] = [
-        SnapshotFamily(
-            name: "summaries", glob: "*summary*.json", snapshotCount: trendDates.count,
-            latestDate: nil, totalBytes: Int64(trendDates.count) * 3_072,
-            usedBy: "Trends · Overview score cards")
-    ]
 
     // MARK: - Backups
 

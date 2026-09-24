@@ -30,7 +30,8 @@ struct ReportsView: View {
     /// configured root, which may be a synced team folder.
     private var reportsFolderDisplayPath: String {
         workspace.demoMode
-            ? DemoData.workspaceDisplayPath("Generated Reports") + "/"
+            ? DemoData.workspaceDisplayPath(
+                profile: DemoData.org.profile, subpath: "Generated Reports") + "/"
             : WorkspaceRootStore.displayPath(profile: workspace.profile,
                                              subpath: "Generated Reports") + "/"
     }
@@ -365,7 +366,7 @@ struct ReportsView: View {
             // demo mode lists the demo's reports and never reads a folder.
             reports = DemoData.generatedReports
             reportStats = DemoData.generatedReportStats
-            snapshotFamilies = DemoData.snapshotFamilies
+            snapshotFamilies = DemoData.snapshotFamilies(for: DemoData.org.profile)
         } else {
             let library = ReportLibrary()
             reports = library.list(profile: workspace.profile)

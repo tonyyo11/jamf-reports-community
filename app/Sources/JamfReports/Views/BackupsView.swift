@@ -34,7 +34,8 @@ struct BackupsView: View {
     /// configured root, which may be a synced team folder.
     private var backupsFolderDisplayPath: String {
         workspace.demoMode
-            ? DemoData.workspaceDisplayPath("backups") + "/"
+            ? DemoData.workspaceDisplayPath(profile: DemoData.org.profile, subpath: "backups")
+                + "/"
             : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "backups") + "/"
     }
 
