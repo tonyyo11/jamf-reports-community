@@ -304,7 +304,7 @@ struct ComplianceBenchmarksView: View {
 
     private func reload() {
         snapshot = workspace.demoMode
-            ? Self.demoSnapshot
+            ? DemoData.complianceBenchmarksSnapshot
             : ComplianceBenchmarksService.load(profile: workspace.profile)
     }
 
@@ -500,35 +500,5 @@ struct ComplianceBenchmarksView: View {
         let name = device.device.isEmpty ? "Unnamed device" : device.device
         let failed = device.rulesFailed.map { "\($0) failed" } ?? "unknown failures"
         return "\(name), \(device.rulesPassed) passed, \(failed)"
-    }
-
-    // MARK: - Demo
-
-    private static var demoSnapshot: ComplianceBenchmarksService.Snapshot {
-        ComplianceBenchmarksService.Snapshot(
-            rules: [
-                .init(rule: "FileVault enabled", passed: 540, failed: 12,
-                      unknown: 0, devices: 552, passRate: "98%"),
-                .init(rule: "Gatekeeper enabled", passed: 540, failed: 12,
-                      unknown: 0, devices: 552, passRate: "98%"),
-                .init(rule: "Firewall enabled", passed: 510, failed: 42,
-                      unknown: 0, devices: 552, passRate: "92%"),
-                .init(rule: "SIP enabled", passed: 552, failed: 0,
-                      unknown: 0, devices: 552, passRate: "100%"),
-                .init(rule: "Secure boot strict", passed: 0, failed: nil,
-                      unknown: 552, devices: 552, passRate: ""),
-            ],
-            devices: [
-                .init(device: "demo-host-001", deviceId: "1",
-                      rulesPassed: 5, rulesFailed: 0, compliance: "100%"),
-                .init(device: "demo-host-002", deviceId: "2",
-                      rulesPassed: 4, rulesFailed: 1, compliance: "80%"),
-                .init(device: "demo-host-003", deviceId: "3",
-                      rulesPassed: 3, rulesFailed: nil, compliance: ""),
-            ],
-            rulesSourceFile: nil,
-            devicesSourceFile: nil,
-            snapshotDate: Date()
-        )
     }
 }

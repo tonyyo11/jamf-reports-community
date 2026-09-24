@@ -190,6 +190,118 @@ extension DemoData {
         return record
     }
 
+    // MARK: - Compliance Benchmarks
+
+    /// A rule of the demo benchmark and how many of the fleet's Macs fail it.
+    struct BenchmarkRule: Sendable, Equatable {
+        let id: String
+        let failing: Int
+    }
+
+    /// The Secure Boot rule, which reports no result on any demo Mac.
+    static let unknownBenchmarkRule = "os_secure_boot_verify"
+    private static let fileVaultBenchmarkRule = "system_settings_filevault_enforce"
+
+    /// The demo benchmark's rules with results, most failing first: the Overview's
+    /// top failing rules and the four security controls.
+    static let benchmarkRules: [BenchmarkRule] = {
+        let controls = securityControls
+        let controlRules = [
+            BenchmarkRule(
+                id: fileVaultBenchmarkRule, failing: controls.total - controls.fileVault),
+            BenchmarkRule(
+                id: "system_settings_firewall_enable", failing: controls.total - controls.firewall),
+            BenchmarkRule(
+                id: "os_gatekeeper_enable", failing: controls.total - controls.gatekeeper),
+            BenchmarkRule(id: "os_sip_enable", failing: controls.total - controls.sip),
+        ]
+        let topRules = topFailingRules.map { BenchmarkRule(id: $0.ruleID, failing: $0.fails) }
+        return (topRules + controlRules).sorted { $0.failing > $1.failing }
+    }()
+
+    /// The rules each Mac in `fleetMacs` fails, in fleet order. An inventory Mac
+    /// fails one top rule per five failed mSCP rules it reports, plus FileVault
+    /// when its disk is not encrypted. 209 generated Macs pass everything, so 213
+    /// pass in all, the Pass band of `complianceBands`. Each rule's remaining
+    /// failures are dealt in turn across the other generated Macs, so every rule
+    /// fails on exactly its count.
+    static let benchmarkFailures: [Set<String>] = {
+        var failures = deviceInventory.map(inventoryBenchmarkFailures)
+        let generated = max(fleetMacs.count - failures.count, 0)
+        let passing = (complianceBands.first?.count ?? 0) - failures.filter(\.isEmpty).count
+        var remaining: [String: Int] = [:]
+        for rule in benchmarkRules {
+            let taken = failures.filter { $0.contains(rule.id) }.count
+            remaining[rule.id] = max(rule.failing - taken, 0)
+        }
+        failures += [Set<String>](repeating: [], count: generated)
+        // A fixed stride through the generated Macs picks the ones that pass.
+        let pool = (0..<generated)
+            .filter { ($0 * 41) % generated >= passing }
+            .map { $0 + deviceInventory.count }
+        guard !pool.isEmpty else { return failures }
+        var cursor = 0
+        for rule in benchmarkRules {
+            let count = min(remaining[rule.id] ?? 0, pool.count)
+            for offset in 0..<count {
+                failures[pool[(cursor + offset) % pool.count]].insert(rule.id)
+            }
+            cursor = (cursor + count) % pool.count
+        }
+        return failures
+    }()
+
+    private static func inventoryBenchmarkFailures(_ record: DeviceInventoryRecord) -> Set<String> {
+        let topCount = record.failedRules == 0
+            ? 0 : min(topFailingRules.count, (record.failedRules + 4) / 5)
+        var failing = Set(topFailingRules.prefix(topCount).map(\.ruleID))
+        if record.fileVault != "Encrypted" {
+            failing.insert(fileVaultBenchmarkRule)
+        }
+        return failing
+    }
+
+    /// The Compliance Benchmarks screen: the configured benchmark's rules and all
+    /// 524 Macs, each passing or failing the 11 rules that report a result.
+    static let complianceBenchmarksSnapshot = makeComplianceBenchmarksSnapshot()
+
+    private static func makeComplianceBenchmarksSnapshot() -> ComplianceBenchmarksService.Snapshot {
+        typealias Rule = ComplianceBenchmarksService.Snapshot.Rule
+        typealias Device = ComplianceBenchmarksService.Snapshot.Device
+        let total = fleetMacs.count
+        var rules: [Rule] = benchmarkRules.map { rule in
+            Rule(rule: rule.id, passed: total - rule.failing, failed: rule.failing, unknown: 0,
+                 devices: total, passRate: percentLabel(total - rule.failing, of: total),
+                 ruleId: rule.id, benchmark: complianceBaseline)
+        }
+        rules.append(Rule(
+            rule: unknownBenchmarkRule, passed: 0, failed: nil, unknown: total, devices: total,
+            passRate: "", ruleId: unknownBenchmarkRule, benchmark: complianceBaseline))
+        let evaluated = benchmarkRules.count
+        var devices: [Device] = []
+        for (mac, failing) in zip(fleetMacs, benchmarkFailures) {
+            let passed = evaluated - failing.count
+            devices.append(Device(
+                device: mac.name, deviceId: mac.jamfID, rulesPassed: passed,
+                rulesFailed: failing.count, compliance: percentLabel(passed, of: evaluated),
+                benchmark: complianceBaseline))
+        }
+        return ComplianceBenchmarksService.Snapshot(
+            rules: rules, devices: devices, rulesSourceFile: nil, devicesSourceFile: nil,
+            snapshotDate: referenceDate)
+    }
+
+    /// A share to one decimal place without a trailing ".0" ("92%", "74.4%"), the
+    /// way jamf-cli prints pass rates.
+    static func percentLabel(_ part: Int, of whole: Int) -> String {
+        guard whole > 0 else { return "" }
+        let tenths = (Double(part) / Double(whole) * 1_000).rounded()
+        if tenths.truncatingRemainder(dividingBy: 10) == 0 {
+            return "\(Int(tenths / 10))%"
+        }
+        return String(format: "%.1f%%", tenths / 10)
+    }
+
     // MARK: - Security Posture
 
     /// The Security Posture screen's `pro report security` snapshot: the four

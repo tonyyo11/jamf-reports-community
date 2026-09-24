@@ -74,6 +74,69 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(DemoData.fleetMacs[8].user, "o.adeyemi")
     }
 
+    // MARK: - Compliance Benchmarks
+
+    func testBenchmarkIsTheConfiguredBaselineOverTheFleet() {
+        let snapshot = DemoData.complianceBenchmarksSnapshot
+        XCTAssertEqual(snapshot.benchmarks, [DemoData.complianceBaseline])
+        XCTAssertEqual(snapshot.totalRules, DemoData.benchmarkRules.count + 1)
+        XCTAssertEqual(snapshot.totalDevices, DemoData.totalDevices)
+        for rule in snapshot.rules {
+            XCTAssertEqual(rule.passed + (rule.failed ?? 0) + rule.unknown,
+                           DemoData.totalDevices, rule.rule)
+            XCTAssertEqual(rule.devices, DemoData.totalDevices, rule.rule)
+        }
+    }
+
+    func testBenchmarkRulesAreTheControlsAndTheTopFailingRules() throws {
+        let rules = Dictionary(uniqueKeysWithValues:
+            DemoData.complianceBenchmarksSnapshot.rules.map { ($0.rule, $0) })
+        XCTAssertEqual(rules["system_settings_filevault_enforce"]?.failed, 11)
+        XCTAssertEqual(rules["system_settings_firewall_enable"]?.failed, 42)
+        XCTAssertEqual(rules["os_gatekeeper_enable"]?.failed, 12)
+        XCTAssertEqual(rules["os_sip_enable"]?.failed, 0)
+        let secureBoot = try XCTUnwrap(rules[DemoData.unknownBenchmarkRule])
+        XCTAssertNil(secureBoot.failed)
+        XCTAssertEqual(secureBoot.unknown, DemoData.totalDevices)
+        for top in DemoData.topFailingRules {
+            XCTAssertEqual(rules[top.ruleID]?.failed, top.fails, top.ruleID)
+        }
+    }
+
+    /// Each rule fails on as many listed Macs as it counts, and the counters add
+    /// up: 213 passing, the Pass band, and 311 failing.
+    func testBenchmarkDevicesAgreeWithTheRules() {
+        let snapshot = DemoData.complianceBenchmarksSnapshot
+        for rule in DemoData.benchmarkRules {
+            let failing = DemoData.benchmarkFailures.filter { $0.contains(rule.id) }.count
+            XCTAssertEqual(failing, rule.failing, rule.id)
+        }
+        let devices = snapshot.deviceAggregate
+        XCTAssertEqual(devices.passing, DemoData.complianceBands.first?.count)
+        XCTAssertEqual(devices.failing, 311)
+        XCTAssertEqual(devices.unknown, 0)
+        let failedTotal = snapshot.devices.reduce(0) { $0 + ($1.rulesFailed ?? 0) }
+        XCTAssertEqual(failedTotal, snapshot.ruleAggregate.failed)
+    }
+
+    /// No Mac passes more rules than report a result: the old demo host passed
+    /// 5 of 5 while Secure Boot had no result on any Mac.
+    func testNoMacPassesARuleWithoutAResult() {
+        let evaluated = DemoData.benchmarkRules.count
+        for device in DemoData.complianceBenchmarksSnapshot.devices {
+            XCTAssertEqual(device.rulesPassed + (device.rulesFailed ?? 0), evaluated,
+                           device.device)
+            XCTAssertEqual(device.compliance == "100%", device.rulesFailed == 0, device.device)
+        }
+    }
+
+    func testPercentLabelDropsATrailingZero() {
+        XCTAssertEqual(DemoData.percentLabel(482, of: 524), "92%")
+        XCTAssertEqual(DemoData.percentLabel(390, of: 524), "74.4%")
+        XCTAssertEqual(DemoData.percentLabel(10, of: 11), "90.9%")
+        XCTAssertEqual(DemoData.percentLabel(11, of: 11), "100%")
+    }
+
     // MARK: - Security Posture
 
     func testSecurityPostureCountsTheFleetsControls() {
