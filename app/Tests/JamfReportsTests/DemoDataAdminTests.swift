@@ -107,7 +107,7 @@ final class DemoDataAdminTests: XCTestCase {
         let profile = DemoData.org.profile
         let overview = DemoData.cacheDate(for: ["overview"], profile: profile)
         let computers = DemoData.cacheDate(
-            for: ["computers-list", "computers_list"], profile: profile)
+            for: ["computers", "computers-list", "computers_list"], profile: profile)
         XCTAssertEqual(overview.map { lastRunFormat.string(from: $0) }, "Apr 25, 06:00")
         XCTAssertEqual(computers.map { lastRunFormat.string(from: $0) }, "Apr 20, 07:00")
         let names = [["overview"], ["ea-results"], ["update-status"], ["protect-overview"]]

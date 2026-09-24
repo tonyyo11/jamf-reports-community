@@ -46,9 +46,10 @@ struct SourcesView: View {
 
     private let cliCommandDefinitions: [CLICommandDefinition] = [
         .init(label: "pro overview",                cacheNames: ["overview"]),
+        // Collect writes `computers`; the other two are older names still read.
         .init(
             label: "pro computers list (incl. SECURITY section)",
-            cacheNames: ["computers-list", "computers_list"]
+            cacheNames: ["computers", "computers-list", "computers_list"]
         ),
         .init(label: "pro report ea-results --all", cacheNames: ["ea-results", "ea_results"]),
         .init(label: "pro report patch-status",     cacheNames: ["patch-status", "patch_status"]),

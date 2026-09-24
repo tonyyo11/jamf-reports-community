@@ -251,7 +251,7 @@ extension DemoData {
     }
 
     private static let inventoryCaches: Set<String> = [
-        "computers-list", "ea-results", "app-status", "update-status",
+        "computers", "ea-results", "app-status", "update-status",
     ]
 
     /// A demo profile's csv-inbox: the export a CSV-assisted schedule runs
