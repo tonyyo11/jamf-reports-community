@@ -1033,15 +1033,14 @@ private struct PlatformTab: View {
         @Bindable var ws = workspace
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
+                // The Platform API Gateway went GA in September 2026.
                 HStack(alignment: .center, spacing: 10) {
-                    SectionHeader(title: "Jamf Platform API · Preview")
-                    Pill(text: "PREVIEW", tone: .warn)
+                    SectionHeader(title: "Jamf Platform API")
+                    Pill(text: "GA", tone: .teal)
                 }
-                (Text("Public beta · requires ")
+                (Text("Generally available · reached through ")
                  + Text("jamf-cli").font(.caption.monospaced())
-                 + Text(" build with ")
-                 + Text("pro report").font(.caption.monospaced())
-                 + Text(" commands."))
+                 + Text(" with a Platform Gateway profile."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Divider().background(Theme.Hairline.standard)
@@ -1119,11 +1118,10 @@ private struct PlatformTab: View {
                 Text("Requires a Platform Gateway profile")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                (Text("Run ")
-                 + Text("jamf-cli platform setup").font(.caption.monospaced())
-                 + Text(" to create a Platform Gateway profile. "
-                        + "This routes Pro API traffic through the Jamf Platform Gateway "
-                        + "and unlocks Platform API commands used by these sheets."))
+                Text("Create an integration in Jamf Account under Integrations, then add it "
+                     + "with Settings → Add connection and choose Platform Gateway. That routes "
+                     + "Jamf Pro API traffic through the gateway and unlocks the Platform "
+                     + "commands these sheets use.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                 Button {

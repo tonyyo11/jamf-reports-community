@@ -123,6 +123,9 @@ tenant's real data in every section, and you choose what it shows.
   now says they are not scored there.
 - Leaving the Automation or Schedules screen no longer rewrites the profile's config.yaml, or
   creates one, when the notification settings were not changed.
+- The Config screen's Platform tab no longer calls the Jamf Platform API a preview or public
+  beta. The gateway is generally available, and the tab's setup note now points to Jamf
+  Account's Integrations page and Settings → Add connection.
 - Fleet Overview's summary tiles line up and share one height, and a profile card's stability
   score is no longer hidden under the card's chevron.
 - The stale-days control on Devices is its natural size instead of stretching across the header.
