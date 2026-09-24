@@ -37,18 +37,38 @@ enum DemoData {
         }
     }
 
-    static let totalDevicesTrend = trend(start: 486, end: 524, jitter: 3.5)
+    /// `trend` with its final point pinned, so a headline number other demo
+    /// cards are written against lands exactly where they expect it. The
+    /// jitter otherwise moves the last point: the unpinned device series ended
+    /// at 527 while every hand-written count below adds up to 524.
+    static func trend(start: Double, end: Double, jitter: Double = 6, n: Int = 26,
+                      pinnedLast: Double) -> [Double] {
+        Array(trend(start: start, end: end, jitter: jitter, n: n).dropLast()) + [pinnedLast]
+    }
+
+    static let totalDevicesTrend = trend(start: 486, end: 524, jitter: 3.5, pinnedLast: 524)
     /// Canonical demo-mode fleet total. Used as the denominator for
     /// security-agent coverage, failing-rules subtitle, and any other
     /// "N of M" rendering. Derived from the end of `totalDevicesTrend`
     /// so all demo cards stay internally consistent.
     static let totalDevices: Int = Int((totalDevicesTrend.last ?? 524).rounded())
+
+    /// Coverage of the demo fleet, rounded to one decimal like every tile.
+    static func coverage(_ installed: Int) -> Double {
+        (Double(installed) / Double(max(totalDevices, 1)) * 1000).rounded() / 10
+    }
+
+    /// Macs with the demo EDR agent connected. The EDR score card's latest
+    /// point is derived from it so the tile and the agent card agree.
+    private static let edrInstalled = 506
     private static let fileVaultTrend = trend(start: 78, end: 96, jitter: 2.2)
     private static let complianceTrend = trend(start: 54, end: 81, jitter: 4)
     private static let staleTrend = trend(start: 48, end: 22, jitter: 4)
     private static let osCurrentTrend = trend(start: 41, end: 73, jitter: 5)
-    private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8)
+    private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8,
+                                                pinnedLast: coverage(edrInstalled))
     private static let patchTrend = trend(start: 62, end: 84, jitter: 4)
+    private static let securityScoreTrend = trend(start: 68, end: 86, jitter: 2.4)
 
     static let stabilityTrend: [Double] = complianceTrend.indices.map { idx in
         let total = Int((totalDevicesTrend[safe: idx] ?? totalDevicesTrend.last ?? 1).rounded())
@@ -72,6 +92,7 @@ enum DemoData {
         .osCurrent:       osCurrentTrend,
         .edrAgent:        crowdstrikeTrend,
         .patch:           patchTrend,
+        .securityScore:   securityScoreTrend,
         .mscpBandTrend:   mscpBandTrend,
     ]
 
@@ -86,7 +107,8 @@ enum DemoData {
     ]
 
     static let securityAgents: [SecurityAgent] = [
-        .init(name: "CrowdStrike Falcon",  installed: 488, pct: 93.1, column: "CrowdStrike Falcon - Status", trend: .up),
+        .init(name: "CrowdStrike Falcon",  installed: edrInstalled, pct: coverage(edrInstalled),
+              column: "CrowdStrike Falcon - Status", trend: .up),
         .init(name: "1Password",           installed: 502, pct: 95.8, column: "1Password 8 - Installed", trend: .up),
         .init(name: "Splunk Forwarder",    installed: 451, pct: 86.1, column: "Splunk - Forwarder Status", trend: .flat),
         .init(name: "Beyond Identity",     installed: 423, pct: 80.7, column: "Beyond Identity - Enrolled", trend: .up),

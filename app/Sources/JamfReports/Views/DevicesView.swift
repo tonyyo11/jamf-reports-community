@@ -233,7 +233,8 @@ struct DevicesView: View {
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Devices",
             subtitle: "\(activeSnapshot.totalDevices) records · \(workspace.profile)",
-            lastModified: activeSnapshot.generatedDate
+            // The demo dataset is frozen on purpose; an age warning on it is noise.
+            lastModified: workspace.demoMode ? nil : activeSnapshot.generatedDate
         ) {
             AnyView(
                 HStack(spacing: 8) {

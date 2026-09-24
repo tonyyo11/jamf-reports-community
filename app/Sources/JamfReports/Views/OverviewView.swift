@@ -531,8 +531,9 @@ struct OverviewView: View {
         PageHeader(
             kicker: workspace.demoMode ? "Snapshot · Apr 25, 2026 · 09:14" : "Snapshot · \(trendStore.filteredSummaries.last?.date ?? "No Data")",
             title: "\(workspace.org.name) Fleet Overview",
-            subtitle: workspace.demoMode ? "524 Macs across 8 departments · 3 sites · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline" : "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline",
-            lastModified: workspace.demoMode ? Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 25)) : trendStore.filteredSummaries.last?.parsedDate
+            subtitle: workspace.demoMode ? "\(DemoData.totalDevices) Macs across 8 departments · 3 sites · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline" : "\(trendStore.filteredSummaries.last?.totalDevices ?? 0) Macs · \(workspace.complianceBenchmarkLabel ?? "Compliance Benchmark") baseline",
+            // The demo dataset is frozen on purpose; an age warning on it is noise.
+            lastModified: workspace.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -1026,7 +1027,7 @@ struct OverviewView: View {
                 HStack {
                     SectionHeader(title: "Recent Activity")
                     Spacer()
-                    Pill(text: "8 of 524", tone: .muted)
+                    Pill(text: "\(DemoData.deviceSample.count) of \(DemoData.totalDevices)", tone: .muted)
                     Button {
                         drill = .recentActivity
                     } label: {
