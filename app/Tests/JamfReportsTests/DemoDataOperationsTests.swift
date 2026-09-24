@@ -76,4 +76,80 @@ final class DemoDataOperationsTests: XCTestCase {
             XCTAssertLessThan(days ?? .max, 60, row.title)
         }
     }
+
+    // MARK: - OS Updates
+
+    private func updateCount(
+        _ label: String, in slices: [UpdateStatusService.Snapshot.Slice]
+    ) -> Int {
+        slices.first { $0.label == label }?.count ?? 0
+    }
+
+    /// Every Mac has a status; the completed ones are the Macs on a current
+    /// release, and ERROR is the three error devices.
+    func testDemoUpdateStatusesCoverTheFleet() {
+        let snapshot = DemoData.updateStatus
+        let onCurrent = DemoData.osDistribution.filter(\.current).reduce(0) { $0 + $1.count }
+
+        XCTAssertEqual(snapshot.total, DemoData.totalDevices)
+        XCTAssertEqual(snapshot.statusBreakdown.reduce(0) { $0 + $1.count }, snapshot.total)
+        XCTAssertEqual(updateCount("COMPLETED", in: snapshot.statusBreakdown), onCurrent)
+        XCTAssertEqual(updateCount("ERROR", in: snapshot.statusBreakdown), 3)
+        XCTAssertEqual(snapshot.errorDevices.count, 3)
+        XCTAssertTrue(snapshot.errorDevices.allSatisfy { $0.status == "ERROR" })
+    }
+
+    /// The plan-state donut, the Failing Plans tile and the failed-plans
+    /// table count the same plans.
+    func testDemoUpdatePlansAgreeWithTheFailedPlansTable() {
+        let snapshot = DemoData.updateStatus
+        let states = snapshot.planStateBreakdown
+
+        XCTAssertEqual(states.reduce(0) { $0 + $1.count }, snapshot.planTotal)
+        XCTAssertEqual(snapshot.plansFailedFromStates, 6)
+        for state in ["PlanFailed", "PlanException", "PlanCanceled"] {
+            XCTAssertEqual(snapshot.failedPlans.filter { $0.state == state }.count,
+                           updateCount(state, in: states), state)
+        }
+        XCTAssertEqual(snapshot.failedPlans.count, 7)
+    }
+
+    /// Update rows name Meridian Macs on the demo's older releases, dated
+    /// Apr 21–25; a Mac the Devices screen lists keeps its serial, OS and user.
+    func testDemoUpdateRowsDescribeTheDemoMacs() {
+        let snapshot = DemoData.updateStatus
+        let behind = Set(DemoData.osDistribution.filter { !$0.current }.compactMap { dist in
+            dist.version.split(separator: " ").first { $0.first?.isNumber == true }
+                .map(String.init)
+        })
+        let inventory = Dictionary(
+            DemoData.deviceInventory.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+
+        XCTAssertEqual(behind, ["14.7.4", "13.7.6", "12.7.6"])
+        for device in snapshot.errorDevices {
+            assertDemoMac(device.name, device.serial, device.osVersion, device.username,
+                          dated: device.updated, behind: behind, inventory: inventory)
+        }
+        for plan in snapshot.failedPlans {
+            assertDemoMac(plan.name, plan.serial, plan.osVersion, plan.username,
+                          dated: plan.lastEvent, behind: behind, inventory: inventory)
+        }
+        XCTAssertTrue(snapshot.errorDevices.allSatisfy { $0.productKey.hasSuffix("15.4") })
+        XCTAssertTrue(snapshot.failedPlans.allSatisfy { $0.version == "15.4" })
+        XCTAssertEqual(snapshot.snapshotDate, DemoData.referenceDate)
+    }
+
+    private func assertDemoMac(
+        _ name: String, _ serial: String, _ os: String, _ user: String, dated date: String,
+        behind: Set<String>, inventory: [String: DeviceInventoryRecord]
+    ) {
+        XCTAssertTrue(name.hasPrefix("MERIDIAN-"), name)
+        XCTAssertEqual(serial.count, 12, name)
+        XCTAssertTrue(behind.contains(os), name)
+        XCTAssertTrue(("2026-04-21"..."2026-04-25").contains(String(date.prefix(10))), name)
+        guard let device = inventory[name] else { return }
+        XCTAssertEqual(serial, device.serial, name)
+        XCTAssertEqual(os, device.osVersion, name)
+        XCTAssertEqual(user, device.user, name)
+    }
 }

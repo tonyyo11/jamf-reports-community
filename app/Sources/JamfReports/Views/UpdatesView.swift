@@ -19,7 +19,8 @@ struct UpdatesView: View {
                 kicker: "Operations",
                 title: "OS Updates",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is frozen on purpose; an age warning on it is noise.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
@@ -72,76 +73,19 @@ struct UpdatesView: View {
     }
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : UpdateStatusService.load(profile: workspace.profile)
-        if !workspace.demoMode,
-           let dir = try? WorkspacePaths.dataDir(for: workspace.profile) {
+        guard !workspace.demoMode else {
+            snapshot = DemoData.updateStatus
+            // SOFA rows come from the workspace's cache. Left in place, a live
+            // profile's rows stayed on screen after switching to the demo.
+            sofaRows = []
+            return
+        }
+        snapshot = UpdateStatusService.load(profile: workspace.profile)
+        if let dir = try? WorkspacePaths.dataDir(for: workspace.profile) {
             let sofaSnap = SOFAFeedService.load(dataDir: dir)
             sofaRows = sofaSnap.rows
         }
     }
-
-    private static let demoSnapshot = UpdateStatusService.Snapshot(
-        total: 485,
-        planTotal: 18,
-        statusBreakdown: [
-            .init(label: "COMPLETED", count: 320, colorHex: 0x30D158),
-            .init(label: "PENDING", count: 95, colorHex: 0x007AFF),
-            .init(label: "INSTALLING", count: 42, colorHex: 0x007AFF),
-            .init(label: "ERROR", count: 28, colorHex: 0xFF453A)
-        ],
-        planStateBreakdown: [
-            .init(label: "PlanCompleted", count: 12, colorHex: 0x30D158),
-            .init(label: "PlanActive", count: 3, colorHex: 0x007AFF),
-            .init(label: "PlanPending", count: 2, colorHex: 0x007AFF),
-            .init(label: "PlanFailed", count: 1, colorHex: 0xFF453A)
-        ],
-        errorDevices: [
-            UpdateErrorDevice(name: "MacBook-001", serial: "ABC123", deviceType: "Computer",
-                             osVersion: "15.2.1", username: "jdoe", status: "ERROR",
-                             productKey: "macOS Sequoia 15.3", updated: "2026-05-10T10:30:00Z"),
-            UpdateErrorDevice(name: "MacBook-047", serial: "DEF456", deviceType: "Computer",
-                             osVersion: "14.7.5", username: "asmith", status: "TIMEOUT",
-                             productKey: "macOS Sonoma 14.8", updated: "2026-05-09T15:45:00Z"),
-            UpdateErrorDevice(name: "iMac-Pro-12", serial: "GHI789", deviceType: "Computer",
-                             osVersion: "15.2.1", username: "bwilson", status: "FAILED",
-                             productKey: "macOS Sequoia 15.3", updated: "2026-05-08T09:15:00Z")
-        ],
-        failedPlans: [
-            UpdateFailedPlan(name: "MacBook-035", serial: "JKL012", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "cjohnson", state: "PlanFailed",
-                            action: "Install", version: "15.3", error: "Insufficient disk space",
-                            lastEvent: "2026-05-11T14:20:00Z"),
-            UpdateFailedPlan(name: "MacBook-078", serial: "MNO345", deviceType: "Computer",
-                            osVersion: "15.2.1", username: "dlee", state: "PlanException",
-                            action: "Download", version: "15.3", error: "Network timeout after 3 retries",
-                            lastEvent: "2026-05-11T11:45:00Z"),
-            UpdateFailedPlan(name: "iMac-024", serial: "PQR678", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "egarcia", state: "PlanCanceled",
-                            action: "Install", version: "15.3", error: "User canceled installation",
-                            lastEvent: "2026-05-10T16:30:00Z"),
-            UpdateFailedPlan(name: "MacBook-Air-67", serial: "STU901", deviceType: "Computer",
-                            osVersion: "15.1.2", username: "fmartinez", state: "PlanFailed",
-                            action: "Validate", version: "15.3", error: "Signature verification failed",
-                            lastEvent: "2026-05-10T13:10:00Z"),
-            UpdateFailedPlan(name: "Mac-Pro-03", serial: "VWX234", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "gbrown", state: "PlanException",
-                            action: "Install", version: "15.3", error: "Power management conflict",
-                            lastEvent: "2026-05-09T20:25:00Z"),
-            UpdateFailedPlan(name: "MacBook-Pro-89", serial: "YZA567", deviceType: "Computer",
-                            osVersion: "15.2.1", username: "hdavis", state: "PlanFailed",
-                            action: "Restart", version: "15.3", error: "Failed to apply updates on restart",
-                            lastEvent: "2026-05-09T18:00:00Z"),
-            UpdateFailedPlan(name: "iMac-Pro-45", serial: "BCD890", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "ithompson", state: "PlanException",
-                            action: "Download", version: "15.3", error: "Storage full during download",
-                            lastEvent: "2026-05-08T22:40:00Z")
-        ],
-        sourceFile: nil,
-        snapshotDate: Date(),
-        scanFailuresAvailable: true
-    )
 
     // MARK: - Computed values
 
@@ -187,10 +131,12 @@ struct UpdatesView: View {
                 value: "\(snapshot.total)",
                 sub: "Tracked for updates"
             )
+            // plan_total is every plan, completed and failed ones included (the
+            // donut's percentages divide by it); "Plans Active" misnamed it.
             StatTile(
-                label: "Plans Active",
+                label: "Total Plans",
                 value: "\(snapshot.planTotal)",
-                sub: "Update plans in flight"
+                sub: "Update plans tracked"
             )
             StatTile(
                 label: "Failing Plans",
