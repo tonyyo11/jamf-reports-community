@@ -8,6 +8,8 @@ struct RunsView: View {
     @State private var runs: [RunHistoryService.RunSummary] = []
     @State private var selectedRun: RunHistoryService.RunSummary? = nil
     @State private var logLines: [CLIBridge.LogLine] = []
+    /// Demo mode's log lines by run id: its runs have no file to read.
+    @State private var demoLogs: [String: [CLIBridge.LogLine]] = [:]
     @State private var showExportError = false
     @State private var exportError: String? = nil
     @State private var aiConfig = AIConfig()
@@ -37,7 +39,9 @@ struct RunsView: View {
         }
         .task(id: workspace.profile) {
             reload()
-            aiConfig = AIConfigLoader.load(profile: workspace.profile)
+            // A config.yaml under a demo profile's name is not the demo's.
+            aiConfig = workspace.demoMode
+                ? AIConfig() : AIConfigLoader.load(profile: workspace.profile)
             aiAvailability = ModelAvailability.current(for: aiConfig)
         }
         .alert("Export Failed", isPresented: $showExportError) {
@@ -67,17 +71,31 @@ struct RunsView: View {
                         PNPButton(title: "Refresh", icon: "arrow.clockwise") { reload() }
                             .help("Reload run logs from disk")
                         PNPButton(title: "Reveal", icon: "folder") { revealLog() }
-                            .help("Reveal the selected log in Finder, or open the run history folder")
+                            .disabled(workspace.demoMode)
+                            .help(revealHelp)
                         PNPButton(title: "Copy log", icon: "doc.on.doc") { copyLog() }
                             .disabled(selectedRun == nil)
                             .help(selectedRun == nil ? "Select a run to copy its log" : "Copy full log text to clipboard")
                         PNPButton(title: "Export", icon: "arrow.down.circle") { exportLog() }
-                            .disabled(selectedRun == nil)
-                            .help(selectedRun == nil ? "Select a run to export its log" : "Save log file to a chosen location")
+                            .disabled(selectedRun == nil || workspace.demoMode)
+                            .help(exportHelp)
                     }
                 }
             )
         }
+    }
+
+    /// Demo runs have no log file, so there is nothing to reveal or export.
+    private var revealHelp: String {
+        workspace.demoMode
+            ? DemoData.liveOnlyHelp
+            : "Reveal the selected log in Finder, or open the run history folder"
+    }
+
+    private var exportHelp: String {
+        if workspace.demoMode { return DemoData.liveOnlyHelp }
+        return selectedRun == nil
+            ? "Select a run to export its log" : "Save log file to a chosen location"
     }
 
     // MARK: - Empty state
@@ -153,7 +171,7 @@ struct RunsView: View {
     @ViewBuilder
     private func runListItemContextMenu(_ run: RunHistoryService.RunSummary) -> some View {
         Button {
-            let text = RunHistoryService.loadLog(run.logURL).map(\.text).joined(separator: "\n")
+            let text = lines(for: run).map(\.text).joined(separator: "\n")
             SystemActions.copyToClipboard(text)
         } label: {
             Label("Copy log", systemImage: "doc.on.doc")
@@ -163,12 +181,15 @@ struct RunsView: View {
         } label: {
             Label("Export log…", systemImage: "arrow.down.circle")
         }
+        .disabled(workspace.demoMode)
         Divider()
         Button {
+            guard !workspace.demoMode else { return }
             SystemActions.reveal(run.logURL)
         } label: {
             Label("Reveal in Finder", systemImage: "folder")
         }
+        .disabled(workspace.demoMode)
     }
 
     private func runListItemAccessibilityLabel(
@@ -346,15 +367,29 @@ struct RunsView: View {
     // MARK: - Actions
 
     private func reload() {
-        runs = RunHistoryService.list(profile: workspace.profile)
+        if workspace.demoMode {
+            // The demo's runs carry their logs; nothing is read from disk.
+            let history = DemoData.runHistory(for: workspace.profile)
+            demoLogs = Dictionary(
+                history.map { ($0.summary.id, $0.lines) }, uniquingKeysWith: { first, _ in first })
+            runs = history.map(\.summary)
+        } else {
+            demoLogs = [:]
+            runs = RunHistoryService.list(profile: workspace.profile)
+        }
         if let first = runs.first { selectRun(first) } else { selectedRun = nil; logLines = [] }
     }
 
     private func selectRun(_ run: RunHistoryService.RunSummary) {
         selectedRun = run
-        logLines = RunHistoryService.loadLog(run.logURL)
+        logLines = lines(for: run)
         explanation = nil
         explainError = nil
+    }
+
+    /// A run's log: its file, or in demo mode the lines the demo history holds.
+    private func lines(for run: RunHistoryService.RunSummary) -> [CLIBridge.LogLine] {
+        workspace.demoMode ? (demoLogs[run.id] ?? []) : RunHistoryService.loadLog(run.logURL)
     }
 
     private func copyLog() {
@@ -363,6 +398,7 @@ struct RunsView: View {
     }
 
     private func revealLog() {
+        guard !workspace.demoMode else { return }
         if let run = selectedRun {
             SystemActions.reveal(run.logURL)
         } else if let logsDir = try? WorkspacePaths.runHistoryDir(for: workspace.profile) {
@@ -378,6 +414,7 @@ struct RunsView: View {
 
     @MainActor
     private func exportLogFile(_ url: URL) {
+        guard !workspace.demoMode else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = url.lastPathComponent
         panel.allowedContentTypes = [.plainText]
