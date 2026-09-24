@@ -884,6 +884,12 @@ private extension DeviceInventoryService {
     static func parseDate(_ text: String) -> Date? {
         guard !text.isEmpty else { return nil }
         if let date = ISO8601DateFormatter().date(from: text) { return date }
+        // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
+        // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
+        // Mac had no contact age unless device-compliance supplied a day count.
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: text) { return date }
         let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
         for format in formats {
             let formatter = DateFormatter()
