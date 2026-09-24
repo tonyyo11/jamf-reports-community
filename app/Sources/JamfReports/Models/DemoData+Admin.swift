@@ -296,4 +296,23 @@ extension DemoData {
             CapabilityService.trackedCommands.map { ($0, CommandAvailability.available) },
             uniquingKeysWith: { first, _ in first })
     )
+
+    // MARK: - Settings and the toolbar
+
+    /// Shown where a live screen names this Mac's jamf-cli: demo mode never
+    /// runs it, so it claims no version or path.
+    static let jamfCLINote = "Not used in demo mode"
+
+    /// What Settings' token probe would have found for each demo connection:
+    /// a token issued at `referenceDate`, valid for 30 minutes. A connection in
+    /// error is not probed, as on a live Mac.
+    static func tokenStatuses(for profiles: [JamfCLIProfile]) -> [String: TokenStatus] {
+        var statuses: [String: TokenStatus] = [:]
+        for profile in profiles where profile.status != .error {
+            statuses[profile.name] = TokenStatus.make(
+                profile: profile.name, token: "demo",
+                expiresAt: referenceDate.addingTimeInterval(30 * 60), raw: "")
+        }
+        return statuses
+    }
 }

@@ -147,4 +147,19 @@ final class DemoDataAdminTests: XCTestCase {
         XCTAssertEqual(Set(snapshot.availability.keys), Set(CapabilityService.trackedCommands))
         XCTAssertTrue(snapshot.availability.values.allSatisfy { $0 == .available })
     }
+
+    // MARK: - Settings
+
+    func testTokenStatusesAreValidAtTheReferenceDate() {
+        let statuses = DemoData.tokenStatuses(for: DemoData.cliProfiles)
+        XCTAssertEqual(Set(statuses.keys), Set(DemoData.cliProfiles.map(\.name)))
+        for status in statuses.values {
+            XCTAssertTrue(status.isValid, status.profile)
+            guard let expiry = status.expiresAt else {
+                XCTFail("\(status.profile) has no expiry")
+                continue
+            }
+            XCTAssertGreaterThan(expiry, DemoData.referenceDate)
+        }
+    }
 }
