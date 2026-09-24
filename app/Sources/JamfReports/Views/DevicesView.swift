@@ -950,13 +950,14 @@ struct DevicesView: View {
         }
     }
 
+    /// Positive words used to be matched first, so "UNENCRYPTED" and "Not Enabled"
+    /// showed a green check; `SecurityValueState` checks the negative forms first.
     private func securityTone(for value: String) -> Pill.Tone {
-        let v = value.lowercased()
-        let positives = ["enabled", "on", "active", "encrypted", "yes", "true", "escrowed", "installed"]
-        let negatives = ["disabled", "off", "inactive", "decrypted", "no", "false", "missing", "not installed"]
-        if positives.contains(where: { v.contains($0) }) { return .teal }
-        if negatives.contains(where: { v.contains($0) }) { return .danger }
-        return .muted
+        switch SecurityValueState(value) {
+        case .good: return .teal
+        case .bad: return .danger
+        case .unknown: return .muted
+        }
     }
 
     // Per-control glyph row for the inventory table. Five tight icons:
