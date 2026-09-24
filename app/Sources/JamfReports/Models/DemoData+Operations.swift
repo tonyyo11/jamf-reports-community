@@ -12,6 +12,13 @@ extension DemoData {
         "~/Jamf-Reports/\(org.profile)/\(subpath)"
     }
 
+    /// A local date in April 2026, built like `referenceDate`.
+    private static func demoDate(day: Int, hour: Int, minute: Int) -> Date {
+        Calendar(identifier: .gregorian).date(
+            from: DateComponents(year: 2026, month: 4, day: day, hour: hour, minute: minute)
+        ) ?? referenceDate
+    }
+
     // MARK: - Patch Compliance
 
     /// Zoom Workplace, which a demo Mac fails to patch but `patchTitleSummary`
@@ -365,6 +372,49 @@ extension DemoData {
             latestDate: nil, totalBytes: Int64(trendDates.count) * 3_072,
             usedBy: "Trends · Overview score cards")
     ]
+
+    // MARK: - Backups
+
+    /// Newest first, as `BackupLibrary.list` sorts them: April's four Saturday
+    /// scheduled backups, and one taken by hand before the macOS 15.4 rollout.
+    static let backups: [BackupRecord] = [
+        scheduledBackup(day: 25, fileCount: 1_291, bytes: 4_437_016),
+        scheduledBackup(day: 18, fileCount: 1_288, bytes: 4_421_540),
+        backup(label: "pre-15.4-rollout", created: demoDate(day: 14, hour: 16, minute: 42),
+               fileCount: 1_286, bytes: 4_409_872),
+        scheduledBackup(day: 11, fileCount: 1_284, bytes: 4_398_230),
+        scheduledBackup(day: 4, fileCount: 1_279, bytes: 4_371_902),
+    ]
+
+    /// Labelled like a scheduled run labels its backup.
+    private static func scheduledBackup(day: Int, fileCount: Int, bytes: Int64) -> BackupRecord {
+        let created = demoDate(day: day, hour: 5, minute: 30)
+        return backup(
+            label: "scheduled-\(BackupMaintenance.dateStamp(now: created))",
+            created: created, fileCount: fileCount, bytes: bytes)
+    }
+
+    /// Named the way `CLIBridge.backup` names the folder: the UTC timestamp.
+    private static func backup(
+        label: String, created: Date, fileCount: Int, bytes: Int64
+    ) -> BackupRecord {
+        let name = String(ISO8601DateFormatter().string(from: created)
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .prefix(15))
+        return BackupRecord(
+            name: name, label: label, created: created, sizeBytes: bytes,
+            fileCount: fileCount, url: demoBackupURL(name))
+    }
+
+    /// Demo backups are not on disk. Their URLs sit inside /dev/null, a file, so
+    /// no folder can exist there: the Backups screen disables and guards every
+    /// action on a demo backup, and a missed guard fails instead of touching a
+    /// real workspace.
+    private static func demoBackupURL(_ name: String) -> URL {
+        URL(fileURLWithPath: "/dev/null", isDirectory: false)
+            .appendingPathComponent(name, isDirectory: true)
+    }
 }
 
 private extension ClassicGroupRow {

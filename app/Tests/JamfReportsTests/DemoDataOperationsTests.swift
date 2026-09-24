@@ -356,4 +356,40 @@ final class DemoDataOperationsTests: XCTestCase {
         XCTAssertEqual(DemoData.snapshotFamilies.reduce(0) { $0 + $1.snapshotCount },
                        DemoData.trendDates.count)
     }
+
+    // MARK: - Backups
+
+    /// Four weekly scheduled backups and one manual one, newest first, none
+    /// after the reference date, named and labelled like real backups.
+    func testDemoBackupsAreAprilBackupsNamedLikeRealOnes() {
+        let backups = DemoData.backups
+        let scheduled = backups.filter { $0.label.hasPrefix("scheduled-") }
+        let aprilFirst = Calendar(identifier: .gregorian).date(
+            from: DateComponents(year: 2026, month: 4, day: 1)) ?? .distantFuture
+
+        XCTAssertEqual(scheduled.count, 4)
+        XCTAssertEqual(backups.count, 5)
+        XCTAssertEqual(backups.map(\.created), backups.map(\.created).sorted(by: >))
+        XCTAssertEqual(Set(backups.map(\.name)).count, backups.count)
+        for backup in backups {
+            XCTAssertNotNil(backup.name.range(of: #"^\d{8}T\d{6}$"#, options: .regularExpression),
+                            backup.name)
+            XCTAssertLessThan(backup.created, DemoData.referenceDate, backup.name)
+            XCTAssertGreaterThanOrEqual(backup.created, aprilFirst, backup.name)
+        }
+        for backup in scheduled {
+            let stamp = BackupMaintenance.dateStamp(now: backup.created)
+            XCTAssertEqual(backup.label, "scheduled-\(stamp)", backup.name)
+        }
+    }
+
+    /// A demo backup's URL can never name a real folder, so an action that
+    /// slipped past the demo guards would fail rather than touch a workspace.
+    func testDemoBackupsPointAtNoRealFolder() {
+        for backup in DemoData.backups {
+            XCTAssertTrue(backup.url.path.hasPrefix("/dev/null/"), backup.url.path)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: backup.url.path),
+                           backup.url.path)
+        }
+    }
 }
