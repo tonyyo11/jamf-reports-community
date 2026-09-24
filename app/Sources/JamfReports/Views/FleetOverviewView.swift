@@ -120,9 +120,14 @@ struct FleetOverviewView: View {
         rows.compactMap { $0.summary?.stabilityIndex }
     }
 
+    // DRAFT — needs visual verification at PageScaffold.minSupportedWidth.
+    // An HStack centred tiles of different heights, so the Stability tile's
+    // sparkline pushed its neighbours' tops out of line. The grid gives the row
+    // one height and wraps to two columns in a narrow window.
     private var summaryStrip: some View {
-        HStack(spacing: 12) {
-            StatTile(label: "Profiles", value: "\(rows.count)", sub: "Initialized workspaces")
+        EqualHeightTileGrid(minTileWidth: 200) {
+            StatTile(label: "Profiles", value: "\(rows.count)", sub: "Initialized workspaces",
+                     fillsHeight: true)
                 .overlay(alignment: .topTrailing) {
                     if issueCount > 0 {
                         Button {
@@ -139,13 +144,15 @@ struct FleetOverviewView: View {
                         .padding(8)
                     }
                 }
-            StatTile(label: "Devices", value: "\(totalDevices)", sub: "Latest successful summaries")
+            StatTile(label: "Devices", value: "\(totalDevices)", sub: "Latest successful summaries",
+                     fillsHeight: true)
             StatTile(
                 label: "Stability",
                 value: stabilityLabel(averageStability),
                 sub: "Average index",
                 sparkValues: stabilitySpark.isEmpty ? nil : stabilitySpark,
-                sparkColor: Theme.Colors.teal
+                sparkColor: Theme.Colors.teal,
+                fillsHeight: true
             )
             latestRunTile
         }
@@ -165,7 +172,8 @@ struct FleetOverviewView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Fills the grid row like its StatTile neighbours.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Theme.Colors.winBG2)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
@@ -680,6 +688,11 @@ private struct FleetProfileCard: View {
                     tone: stabilityTone(stability)
                 )
                 .contentTransition(.numericText())
+                // DRAFT — needs visual verification. `fleetDrillDownChrome`
+                // pins an always-visible chevron to the card's top-right
+                // corner; without this clearance it covered the pill's last
+                // digits ("88.6" read "88.").
+                .padding(.trailing, 26)
             }
 
                 HStack(alignment: .firstTextBaseline, spacing: 18) {

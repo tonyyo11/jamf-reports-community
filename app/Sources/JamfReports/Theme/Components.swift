@@ -423,6 +423,10 @@ struct StatTile: View {
     var deltaTrend: Trend = .flat
     var sparkValues: [Double]? = nil
     var sparkColor: Color? = nil
+    /// Stretch the surface to the height the container offers — set inside an
+    /// `EqualHeightTileGrid` so a tile without a caption or sparkline matches
+    /// its row instead of sitting short. Off, the tile keeps its own height.
+    var fillsHeight: Bool = false
 
     // WCAG 1.4.4: scaled relative to .largeTitle so the KPI numeral responds
     // to Accessibility text size while keeping the design baseline at 32pt.
@@ -458,7 +462,10 @@ struct StatTile: View {
             }
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // With `fillsHeight` off, maxHeight is nil and the frame is as tall as
+        // its content, so `.topLeading` lays out exactly as `.leading` did.
+        .frame(maxWidth: .infinity, maxHeight: fillsHeight ? CGFloat.infinity : nil,
+               alignment: .topLeading)
         .background(Theme.Colors.winBG2)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
