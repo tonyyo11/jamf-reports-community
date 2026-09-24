@@ -245,6 +245,65 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertLessThanOrEqual(snapshot.snapshotDate ?? .distantFuture, DemoData.referenceDate)
     }
 
+    // MARK: - Jamf Protect
+
+    /// Every tile, bar and deep-dive chart counts the rows the screen lists. The
+    /// old demo left the arrays empty and drew rows separately, so the High Alerts
+    /// tile vanished and the timeline found no devices beside 8 alerts.
+    func testProtectCountsComeFromItsRows() {
+        let snapshot = DemoData.protectSnapshot
+        XCTAssertEqual(snapshot.computers.count, 12)
+        XCTAssertEqual(snapshot.totalComputers, snapshot.computers.count)
+        XCTAssertEqual(snapshot.alerts.count, 8)
+        XCTAssertEqual(snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts
+            + snapshot.informationalAlerts, snapshot.alerts.count)
+        XCTAssertEqual(snapshot.highAlerts, 2)
+        XCTAssertEqual(snapshot.webProtectionActiveCount, 10)
+        XCTAssertEqual(snapshot.fullDiskAccessCount, 9)
+        XCTAssertEqual(snapshot.connectedCount, 10)
+        XCTAssertEqual(snapshot.failingInsights, 4)
+        for insight in snapshot.insights {
+            XCTAssertEqual((insight.totalPass ?? 0) + (insight.totalFail ?? 0),
+                           snapshot.totalComputers, insight.label ?? "")
+        }
+        let stages = ProtectDashboardService.killChainBuckets(snapshot.alerts)
+        XCTAssertEqual(stages.reduce(0) { $0 + $1.count }, snapshot.alerts.count)
+        let versions = ProtectDashboardService.agentVersionDistribution(snapshot.computers)
+        XCTAssertEqual(versions.map { $0.count }, [8, 3, 1])
+    }
+
+    /// The pilot's Macs are fleet Macs on the fleet's macOS versions; every alert
+    /// is on one of them and precedes the reference date; the offline agents last
+    /// connected after their own alerts.
+    func testProtectRowsFitTheFleetAndTheDemoDate() throws {
+        let snapshot = DemoData.protectSnapshot
+        let parser = ISO8601DateFormatter()
+        let hosts = Set(snapshot.computers.compactMap(\.hostName))
+        XCTAssertTrue(hosts.isSubset(of: Set(DemoData.fleetMacs.map(\.name))))
+        let versions = Set(DemoData.osDistribution.map {
+            "macOS " + DemoData.osVersionNumber($0.version)
+        })
+        for alert in snapshot.alerts {
+            let host = try XCTUnwrap(alert.hostName)
+            XCTAssertTrue(hosts.contains(host), host)
+            let created = try XCTUnwrap(parser.date(from: alert.created ?? ""))
+            XCTAssertLessThan(created, DemoData.referenceDate)
+            XCTAssertFalse(
+                ProtectDashboardService.alertTimeline(for: host, in: snapshot.alerts).isEmpty)
+        }
+        for computer in snapshot.computers {
+            XCTAssertTrue(versions.contains(computer.osString ?? ""), computer.osString ?? "")
+            let seen = try XCTUnwrap(parser.date(from: computer.lastConnection ?? ""))
+            XCTAssertLessThan(seen, DemoData.referenceDate)
+            guard !ProtectDashboardService.isConnected(computer.connectionStatus) else { continue }
+            let alertDates = snapshot.alerts
+                .filter { $0.hostName == computer.hostName }
+                .compactMap { parser.date(from: $0.created ?? "") }
+            let lastAlert = try XCTUnwrap(alertDates.max())
+            XCTAssertGreaterThan(seen, lastAlert, computer.hostName ?? "")
+        }
+    }
+
     // MARK: - Security Posture
 
     func testSecurityPostureCountsTheFleetsControls() {

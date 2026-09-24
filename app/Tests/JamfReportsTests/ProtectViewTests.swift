@@ -81,11 +81,13 @@ final class ProtectViewTests: XCTestCase {
     func testDemoAlertsUseValuesProtectActuallySends() {
         let severities: Set<String> = ["High", "Medium", "Low", "Informational"]
         let statuses: Set<String> = ["New", "InProgress", "Resolved", "AutoResolved"]
-        for alert in ProtectView.demoDemoAlerts {
-            XCTAssertTrue(severities.contains(alert.severity),
-                          "\(alert.severity) is not a Protect SEVERITY")
-            XCTAssertTrue(statuses.contains(alert.status),
-                          "\(alert.status) is not a Protect ALERT_STATUS")
+        let alerts = DemoData.protectSnapshot.alerts
+        XCTAssertFalse(alerts.isEmpty)
+        for alert in alerts {
+            XCTAssertTrue(severities.contains(alert.severity ?? ""),
+                          "\(alert.severity ?? "nil") is not a Protect SEVERITY")
+            XCTAssertTrue(statuses.contains(alert.status ?? ""),
+                          "\(alert.status ?? "nil") is not a Protect ALERT_STATUS")
         }
     }
 

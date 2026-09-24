@@ -481,6 +481,162 @@ extension DemoData {
     static let duplicateSerialsSnapshot = DuplicateSerialService.Snapshot(
         groups: [], isDetected: true, readFailed: false)
 
+    // MARK: - Jamf Protect
+
+    /// The Jamf Protect pilot: the first 12 IT and Engineering Macs on macOS 14 or
+    /// later that checked in on the reference day. Protect runs on these 12 of the
+    /// fleet's 524 Macs.
+    static let protectPilotMacs: [FleetMac] = Array(fleetMacs.filter { mac in
+        ["IT", "Engineering"].contains(mac.department) && mac.daysSinceContact == 0
+            && mac.osMajor >= 14
+    }.prefix(12))
+
+    /// Each pilot Mac's agent, in `protectPilotMacs` order: plan, version (nil when
+    /// unreported), web protection, full disk access, whether it is connected, and
+    /// minutes since it last connected. The two offline agents last connected just
+    /// after their own alerts.
+    private static let protectAgentStates: [(
+        plan: String, version: String?, web: Bool, fullDisk: Bool, connected: Bool,
+        lastSeenMinutes: Int
+    )] = [
+        ("Standard", "4.6.0", true, true, true, 3),
+        ("Standard", "4.6.0", true, true, true, 6),
+        ("Standard", "4.5.2", true, false, true, 2),
+        ("Standard", "4.6.0", false, true, false, 920),
+        ("Premium", "4.6.0", true, true, true, 9),
+        ("Premium", "4.5.2", true, true, true, 4),
+        ("Standard", "4.6.0", true, false, true, 12),
+        ("Standard", nil, false, false, false, 2_270),
+        ("Premium", "4.6.0", true, true, true, 1),
+        ("Standard", "4.5.2", true, true, true, 7),
+        ("Standard", "4.6.0", true, true, true, 5),
+        ("Premium", "4.6.0", true, true, true, 11),
+    ]
+
+    /// One alert on each of the pilot's first eight Macs, raised `minutesAgo`
+    /// before `referenceDate`. Severities and statuses are Protect's own enums.
+    private static let protectAlertFacts: [(
+        severity: String, eventType: String, status: String, minutesAgo: Int
+    )] = [
+        ("High", "GPProcessEvent", "New", 31),
+        ("High", "GPDownloadEvent", "InProgress", 106),
+        ("Medium", "GPFSEvent", "Resolved", 796),
+        ("Medium", "GPScreenshotEvent", "AutoResolved", 941),
+        ("Low", "GPKeylogRegisterEvent", "New", 1_111),
+        ("Low", "GPFSEvent", "Resolved", 1_201),
+        ("Informational", "GPFSEvent", "AutoResolved", 2_131),
+        ("Informational", "GPClickEvent", "Resolved", 2_296),
+    ]
+
+    /// Insight results over the 12 pilot Macs.
+    private static let protectInsightFacts: [(
+        label: String, section: String, pass: Int, fail: Int, enabled: Bool
+    )] = [
+        ("Firewall Configuration", "Network Security", 10, 2, true),
+        ("FileVault Status", "Data Protection", 12, 0, true),
+        ("Gatekeeper Policy", "Application Security", 11, 1, true),
+        ("SIP Status", "System Integrity", 12, 0, true),
+        ("XProtect Updates", "Malware Protection", 9, 3, false),
+        ("Certificate Validation", "PKI", 11, 1, true),
+    ]
+
+    /// Rows decoded from the JSON jamf-cli prints, so the demo goes through the
+    /// decoders a live tenant's snapshots do.
+    private static func decodedRows<Row: Decodable>(_ objects: [[String: Any]]) -> [Row] {
+        guard let data = try? JSONSerialization.data(withJSONObject: objects),
+              let rows = try? JSONDecoder().decode([Row].self, from: data)
+        else { return [] }
+        return rows
+    }
+
+    private static func protectComputerRows() -> [ProtectComputerRow] {
+        var objects: [[String: Any]] = []
+        for (mac, agent) in zip(protectPilotMacs, protectAgentStates) {
+            var object: [String: Any] = [
+                "uuid": "meridian-protect-\(mac.jamfID)",
+                "hostname": mac.name,
+                "serial": mac.serial,
+                "osString": "macOS \(mac.osVersion)",
+                "plan": agent.plan,
+                "webProtectionActive": agent.web,
+                "fullDiskAccess": agent.fullDisk ? "Authorized" : "Unauthorized",
+                "connectionStatus": agent.connected ? "Connected" : "Disconnected",
+                "lastConnection": timestamp(minutesBefore: agent.lastSeenMinutes),
+            ]
+            if let version = agent.version {
+                object["version"] = version
+            }
+            objects.append(object)
+        }
+        return decodedRows(objects)
+    }
+
+    private static func protectAlertRows() -> [ProtectAlertRow] {
+        var objects: [[String: Any]] = []
+        for (mac, alert) in zip(protectPilotMacs, protectAlertFacts) {
+            objects.append([
+                "uuid": "meridian-alert-\(mac.jamfID)",
+                "created": timestamp(minutesBefore: alert.minutesAgo),
+                "severity": alert.severity,
+                "status": alert.status,
+                "eventType": alert.eventType,
+                "computer": mac.name,
+            ])
+        }
+        return decodedRows(objects)
+    }
+
+    private static func protectInsightRows() -> [ProtectInsightRow] {
+        var objects: [[String: Any]] = []
+        for insight in protectInsightFacts {
+            objects.append([
+                "label": insight.label, "section": insight.section,
+                "totalPass": insight.pass, "totalFail": insight.fail,
+                "enabled": insight.enabled,
+            ])
+        }
+        return decodedRows(objects)
+    }
+
+    /// The Protect screen's snapshot. Every count is taken from the rows it lists.
+    static let protectSnapshot = makeProtectSnapshot()
+
+    private static func makeProtectSnapshot() -> ProtectDashboardService.Snapshot {
+        let computers = protectComputerRows()
+        let alerts = protectAlertRows()
+        let insights = protectInsightRows()
+        let severities = alerts.compactMap(\.severity)
+        let plans = [
+            ProtectPlanRow(
+                name: "Standard", logLevel: "INFO", autoUpdate: true,
+                telemetry: "Standard Telemetry"),
+            ProtectPlanRow(
+                name: "Premium", logLevel: "DEBUG", autoUpdate: true,
+                telemetry: "Extended Telemetry"),
+            ProtectPlanRow(name: "Lab", logLevel: "INFO", autoUpdate: false, telemetry: nil),
+        ]
+        return ProtectDashboardService.Snapshot(
+            isDetected: true,
+            overviewItems: [],
+            alerts: alerts,
+            computers: computers,
+            insights: insights,
+            plans: plans,
+            totalComputers: computers.count,
+            webProtectionActiveCount: computers.filter { $0.webProtectionActive == true }.count,
+            fullDiskAccessCount: computers.filter { $0.fullDiskAccess == true }.count,
+            connectedCount: computers.filter {
+                ProtectDashboardService.isConnected($0.connectionStatus)
+            }.count,
+            highAlerts: severities.filter { $0 == "High" }.count,
+            mediumAlerts: severities.filter { $0 == "Medium" }.count,
+            lowAlerts: severities.filter { $0 == "Low" }.count,
+            informationalAlerts: severities.filter { $0 == "Informational" }.count,
+            failingInsights: insights.filter { ($0.totalFail ?? 0) > 0 }.count,
+            sourceFile: nil,
+            snapshotDate: referenceDate)
+    }
+
     // MARK: - Security Posture
 
     /// The Security Posture screen's `pro report security` snapshot: the four
