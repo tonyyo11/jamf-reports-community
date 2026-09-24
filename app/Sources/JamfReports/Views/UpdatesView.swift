@@ -437,7 +437,7 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Error Devices", trailing: "\(snapshot.errorDevices.count) total")
-                Table(snapshot.errorDevices) {
+                Table(Array(snapshot.errorDevices.prefix(50))) {
                     TableColumn("Device") { device in
                         Text(device.name)
                             .font(.footnote)
@@ -470,6 +470,13 @@ struct UpdatesView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .frame(minHeight: 150)
+
+                if snapshot.errorDevices.count > 50 {
+                    Text("+ \(snapshot.errorDevices.count - 50) more")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .padding(.top, 4)
+                }
             }
         }
     }
