@@ -425,6 +425,62 @@ extension DemoData {
             snapshotDate: referenceDate)
     }
 
+    // MARK: - Health Audit
+
+    /// The demo's Instance Health Audit: the security-control gaps and stale Macs
+    /// the other demo screens count.
+    static let auditFindings: [AuditFinding] = {
+        let controls = securityControls
+        let stale = fleetMacs.filter { $0.daysSinceContact >= 30 }.count
+        return [
+            AuditFinding(
+                name: "Computers without FileVault",
+                affected: controls.total - controls.fileVault, category: "security",
+                recommendation: "Scope the FileVault profile to these computers and escrow "
+                    + "their recovery keys.",
+                severity: "CRITICAL"),
+            AuditFinding(
+                name: "Firewall disabled", affected: controls.total - controls.firewall,
+                category: "security",
+                recommendation: "Deploy the firewall configuration profile to these computers.",
+                severity: "WARNING"),
+            AuditFinding(
+                name: "Gatekeeper disabled", affected: controls.total - controls.gatekeeper,
+                category: "security",
+                recommendation: "Re-enable Gatekeeper with a configuration profile.",
+                severity: "WARNING"),
+            AuditFinding(
+                name: "Stale computers (30+ days since check-in)", affected: stale,
+                category: "hygiene",
+                recommendation: "Contact their users from Offline Outreach, or retire the "
+                    + "records.",
+                severity: "WARNING"),
+        ]
+    }()
+
+    /// Computer groups no policy or profile references.
+    static let unusedGroups: [UnusedGroup] = [
+        UnusedGroup(
+            id: "118", name: "macOS 14 Upgrade Pilot", memberCount: 0, type: "smart",
+            reason: nil),
+        UnusedGroup(
+            id: "164", name: "Zoom Beta Testers", memberCount: 3, type: "static", reason: nil),
+        UnusedGroup(
+            id: "207", name: "Retired Clinical Kiosks", memberCount: 0, type: "static",
+            reason: nil),
+        UnusedGroup(
+            id: "231", name: "Chrome 118 Rollout", memberCount: 14, type: "smart", reason: nil),
+    ]
+
+    /// When the demo's audit and group analysis last ran: the afternoon before
+    /// `referenceDate`.
+    static let auditRunDate = referenceDate.addingTimeInterval(-14 * 3_600)
+    static let groupAnalysisRunDate = referenceDate.addingTimeInterval(-14 * 3_600 + 240)
+
+    /// The demo collected duplicate serials and found none.
+    static let duplicateSerialsSnapshot = DuplicateSerialService.Snapshot(
+        groups: [], isDetected: true, readFailed: false)
+
     // MARK: - Security Posture
 
     /// The Security Posture screen's `pro report security` snapshot: the four

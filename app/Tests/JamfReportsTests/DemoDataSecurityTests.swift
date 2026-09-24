@@ -184,6 +184,35 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(snapshot.failureReasons.map { $0.devices.count }, [28, 14])
     }
 
+    // MARK: - Health Audit
+
+    func testAuditFindingsCountTheControlGapsAndStaleMacs() {
+        let findings = Dictionary(uniqueKeysWithValues:
+            DemoData.auditFindings.map { ($0.name, $0) })
+        let controls = DemoData.securityControls
+        XCTAssertEqual(findings["Computers without FileVault"]?.affected,
+                       controls.total - controls.fileVault)
+        XCTAssertEqual(findings["Computers without FileVault"]?.severity, "CRITICAL")
+        XCTAssertEqual(findings["Firewall disabled"]?.affected, 42)
+        XCTAssertEqual(findings["Gatekeeper disabled"]?.affected, 12)
+        let stale = findings["Stale computers (30+ days since check-in)"]
+        XCTAssertEqual(stale?.affected, 26)
+        XCTAssertEqual(Double(stale?.affected ?? 0),
+                       Double(DemoData.totalDevices) - (DemoData.activeDevicesTrend.last ?? 0))
+        XCTAssertEqual(DemoData.auditFindings.filter { $0.severity == "WARNING" }.count, 3)
+    }
+
+    func testAuditDemoRunsPrecedeTheReferenceDate() {
+        XCTAssertLessThan(DemoData.auditRunDate, DemoData.referenceDate)
+        XCTAssertLessThan(DemoData.groupAnalysisRunDate, DemoData.referenceDate)
+        XCTAssertTrue(DemoData.duplicateSerialsSnapshot.isDetected)
+        XCTAssertTrue(DemoData.duplicateSerialsSnapshot.groups.isEmpty)
+        for group in DemoData.unusedGroups {
+            XCTAssertNotNil(Int(group.id), group.id)
+            XCTAssertLessThan(group.memberCount, DemoData.totalDevices)
+        }
+    }
+
     // MARK: - Security Posture
 
     func testSecurityPostureCountsTheFleetsControls() {
