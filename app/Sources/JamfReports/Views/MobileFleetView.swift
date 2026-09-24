@@ -28,7 +28,8 @@ struct MobileFleetView: View {
                 kicker: "Mobile",
                 title: "Mobile Fleet",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is frozen on purpose; an age warning on it is noise.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
@@ -101,8 +102,10 @@ struct MobileFleetView: View {
 
     // nonisolated: evaluated from the static-let initializer, which Swift 6.0
     // treats as a nonisolated context (6.1+ tolerates the isolated call).
-    private nonisolated static func makeDemoSnapshot() -> MobileFleetService.Snapshot {
-        let devices: [MobileDeviceInventoryItem] = (1...25).map(makeDemoDevice)
+    // Internal so the demo tests can check the fleet it builds.
+    nonisolated static func makeDemoSnapshot() -> MobileFleetService.Snapshot {
+        let devices: [MobileDeviceInventoryItem] =
+            (1...DemoData.mobileDeviceCount).map(makeDemoDevice)
         let profiles: [MobileConfigProfileRow] = makeDemoProfiles()
         return MobileFleetService.Snapshot(
             isDetected: true,
@@ -110,34 +113,64 @@ struct MobileFleetView: View {
             richDevices: devices,
             profiles: profiles,
             sourceFile: nil,
-            snapshotDate: Date()
+            snapshotDate: DemoData.referenceDate
         )
     }
 
-    private nonisolated static let demoOwnershipTypes: [String] = [
-        "Institutional", "UserEnrollment",
-        "AccountDrivenUserEnrollment", "AccountDrivenDeviceEnrollment",
+    private nonisolated static let demoOSVersions: [String] = ["18.2.1", "18.1.1", "17.6.1"]
+
+    /// Each demo device's owner: username, first name and department. The
+    /// iPhones belong to the Devices screen's Mac users, in their departments.
+    private nonisolated static let demoOwners: [(user: String, first: String, dept: String)] = [
+        ("a.thompson", "Amara", "Clinical"), ("k.okafor", "Kofi", "Clinical"),
+        ("s.nguyen", "Sofia", "Clinical"), ("t.walsh", "Tomas", "Clinical"),
+        ("e.moreau", "Elena", "Research"), ("h.bauer", "Hanna", "Clinical"),
+        ("n.patel", "Nikhil", "Operations"), ("c.alvarez", "Carmen", "Clinical"),
+        ("g.lindqvist", "Greta", "Research"), ("o.haddad", "Omar", "Engineering"),
+        ("w.zhang", "Wei", "Clinical"), ("y.sato", "Yuki", "Clinical"),
+        ("f.rossi", "Francesca", "Operations"), ("i.kovac", "Ivan", "IT"),
+        ("v.mehta", "Vikram", "Finance"), ("j.silva", "Joana", "Engineering"),
+        ("r.chen", "Rui", "Design"), ("d.kim", "Daniel", "Finance"),
+        ("m.rodriguez", "Marco", "IT"), ("l.vasquez", "Lucia", "Operations"),
+        ("p.tanaka", "Peter", "Research"), ("b.singh", "Bina", "Engineering"),
+        ("u.dimitrov", "Uma", "IT"), ("z.cohen", "Zara", "Finance"),
+        ("q.ibrahim", "Qadir", "Operations"),
     ]
 
-    private nonisolated static let demoOSVersions: [String] = ["18.2.1", "18.1.1", "17.6.1"]
-    private nonisolated static let demoDepartments: [String] = ["IT", "Sales", "Marketing"]
-
+    /// Supervised devices came through Automated Device Enrollment with the
+    /// iPad or iPhone prestage. The rest are personal devices their owners
+    /// enrolled (i = 5, 15, 25 User Enrollment; 10 and 20 account-driven, and
+    /// since unenrolled), so none of them reads as supervised.
     private nonisolated static func makeDemoDevice(index i: Int) -> MobileDeviceInventoryItem {
         let isIPad = i <= 15
         let kind = isIPad ? "iPad" : "iPhone"
-        let displayName = "\(kind)-Demo-\(String(format: "%03d", i))"
-        let serial = "DEMO\(String(format: "%08d", 10000000 + i))"
-        let lastUpdate = "2025-01-\(String(format: "%02d", (i % 28) + 1))T12:00:00Z"
-        let ownership = demoOwnershipTypes[i % demoOwnershipTypes.count]
-        let prestage: MobileDevicePrestage? = i % 4 == 0
-            ? MobileDevicePrestage(mobileDevicePrestageId: "\(i)", profileName: "Demo Prestage")
+        let supervised = i % 5 != 0
+        let owner = demoOwners[(i - 1) % demoOwners.count]
+        let number = String(format: "%02d", isIPad ? i : i - 15)
+        let displayName = supervised
+            ? "MERIDIAN-\(kind.uppercased())-\(number)"
+            : "\(owner.first)'s \(kind)"
+        let serial = isIPad
+            ? "DMPW" + String(0x3A10 + i * 0x2F, radix: 16, uppercase: true) + "Q1GH"
+            : "F2LX" + String(0x51C0 + i * 0x3B, radix: 16, uppercase: true) + "N0DV"
+        // Inventoried in the week before the demo's "now", never after it.
+        let age = TimeInterval((i % 7) * 86_400 + (i * 37 % 300 + 20) * 60)
+        let lastUpdate = ISO8601DateFormatter().string(
+            from: DemoData.referenceDate.addingTimeInterval(-age))
+        let ownership = supervised
+            ? "Institutional"
+            : (i % 10 == 0 ? "AccountDrivenUserEnrollment" : "UserEnrollment")
+        let prestage: MobileDevicePrestage? = supervised
+            ? MobileDevicePrestage(
+                mobileDevicePrestageId: isIPad ? "1" : "2",
+                profileName: isIPad ? "Meridian iPad ADE" : "Meridian iPhone ADE")
             : nil
         let general = MobileDeviceGeneral(
             displayName: displayName,
             serialNumber: serial,
             osVersion: demoOSVersions[i % 3],
             managed: i % 10 != 0,
-            supervised: i % 5 != 0,
+            supervised: supervised,
             lastInventoryUpdateDate: lastUpdate,
             deviceOwnershipType: ownership,
             activationLockEnabled: i % 6 != 0,
@@ -147,10 +180,10 @@ struct MobileFleetView: View {
             enrollmentMethodPrestage: prestage
         )
         let userLoc = MobileDeviceUserLocation(
-            username: i % 5 == 0 ? nil : "user\(i)",
-            emailAddress: i % 5 == 0 ? nil : "user\(i)@example.com",
-            department: demoDepartments[i % 3],
-            building: "Building \((i % 3) + 1)"
+            username: owner.user,
+            emailAddress: "\(owner.user)@meridian.health",
+            department: owner.dept,
+            building: i % 2 == 0 ? "Meridian East" : "HQ"
         )
         let apps: [MobileDeviceApplication] = (0..<((i * 3) % 12)).map { idx in
             MobileDeviceApplication(identifier: "com.demo.app\(idx)", name: "Demo App \(idx)")
@@ -819,7 +852,10 @@ struct MobileFleetView: View {
             }
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .abbreviated
-            return formatter.localizedString(for: date, relativeTo: Date())
+            // Demo dates were written against the demo's "now"; measured from
+            // today, every one read "1 yr. ago".
+            let now = workspace.demoMode ? DemoData.referenceDate : Date()
+            return formatter.localizedString(for: date, relativeTo: now)
         }
     }
 

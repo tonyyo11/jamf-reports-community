@@ -185,4 +185,58 @@ final class DemoDataOperationsTests: XCTestCase {
         }
         XCTAssertEqual(snapshot.snapshotDate, DemoData.referenceDate)
     }
+
+    // MARK: - Mobile Fleet
+
+    /// Supervised devices are the ADE ones, each with its prestage; the
+    /// personal devices are user-enrolled and never supervised.
+    func testDemoMobileEnrollmentAgreesWithSupervision() {
+        let snapshot = MobileFleetView.makeDemoSnapshot()
+        let counts = Dictionary(
+            snapshot.supervisionBreakdown.map { ($0.role, $0.count) },
+            uniquingKeysWith: { first, _ in first })
+        let methods = Dictionary(
+            snapshot.enrollmentMethodDistribution.map { ($0.method, $0.count) },
+            uniquingKeysWith: { first, _ in first })
+
+        XCTAssertEqual(snapshot.totalDevices, DemoData.mobileDeviceCount)
+        XCTAssertEqual(snapshot.iPadCount + snapshot.iPhoneCount, DemoData.mobileDeviceCount)
+        XCTAssertEqual(counts[.supervised], 20)
+        XCTAssertEqual(counts[.unsupervised], 3)
+        XCTAssertEqual(counts[.unmanaged], 2)
+        XCTAssertEqual(methods["ADE / Institutional"], counts[.supervised])
+        XCTAssertEqual(methods["User Enrollment"], 3)
+        XCTAssertEqual(methods["Account-Driven User Enrollment"], 2)
+        for device in snapshot.richDevices {
+            let general = device.general
+            let isADE = general?.deviceOwnershipType == "Institutional"
+            XCTAssertEqual(general?.supervised, isADE, general?.displayName ?? "")
+            XCTAssertEqual(general?.enrollmentMethodPrestage != nil, isADE,
+                           general?.displayName ?? "")
+        }
+    }
+
+    /// Every device was inventoried in the week before the demo's "now", and
+    /// carries Meridian names, serials and addresses.
+    func testDemoMobileDevicesAreMeridianDevicesFromTheDemoWeek() {
+        let snapshot = MobileFleetView.makeDemoSnapshot()
+        let parser = ISO8601DateFormatter()
+        let weekBefore = DemoData.referenceDate.addingTimeInterval(-7 * 86_400)
+
+        XCTAssertEqual(snapshot.snapshotDate, DemoData.referenceDate)
+        for device in snapshot.richDevices {
+            let name = device.general?.displayName ?? ""
+            let inventoried = parser.date(from: device.general?.lastInventoryUpdateDate ?? "")
+            XCTAssertNotNil(inventoried, name)
+            XCTAssertLessThan(inventoried ?? .distantFuture, DemoData.referenceDate, name)
+            XCTAssertGreaterThan(inventoried ?? .distantPast, weekBefore, name)
+            XCTAssertEqual(device.general?.serialNumber?.count, 12, name)
+            XCTAssertTrue(device.userAndLocation?.emailAddress?.hasSuffix("@meridian.health")
+                          ?? false, name)
+            if device.general?.supervised == true {
+                XCTAssertTrue(name.hasPrefix("MERIDIAN-"), name)
+            }
+            XCTAssertFalse(name.localizedCaseInsensitiveContains("demo"), name)
+        }
+    }
 }
