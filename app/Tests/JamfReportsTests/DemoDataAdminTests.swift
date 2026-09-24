@@ -92,4 +92,59 @@ final class DemoDataAdminTests: XCTestCase {
         XCTAssertEqual(
             DemoData.workspaceDisplayPath(profile: "meridian-prod"), "~/Jamf-Reports/meridian-prod")
     }
+
+    // MARK: - Data Sources
+
+    func testProfileWithoutSchedulesHasNoCachesInboxOrFamilies() {
+        XCTAssertNil(DemoData.cacheDate(for: ["overview"], profile: "meridian-msp"))
+        XCTAssertTrue(DemoData.inboxFiles(for: "meridian-msp").isEmpty)
+        XCTAssertTrue(DemoData.snapshotFamilies(for: "meridian-msp").isEmpty)
+    }
+
+    /// The refresh tier comes from the Apr 25 daily snapshot, the inventory
+    /// tier from Monday's executive report: the runs whose logs collect them.
+    func testCacheDatesComeFromTheRunsThatCollectedThem() {
+        let profile = DemoData.org.profile
+        let overview = DemoData.cacheDate(for: ["overview"], profile: profile)
+        let computers = DemoData.cacheDate(
+            for: ["computers-list", "computers_list"], profile: profile)
+        XCTAssertEqual(overview.map { lastRunFormat.string(from: $0) }, "Apr 25, 06:00")
+        XCTAssertEqual(computers.map { lastRunFormat.string(from: $0) }, "Apr 20, 07:00")
+        let names = [["overview"], ["ea-results"], ["update-status"], ["protect-overview"]]
+        for demoProfile in DemoData.cliProfiles {
+            for cacheNames in names {
+                guard let date = DemoData.cacheDate(for: cacheNames, profile: demoProfile.name)
+                else { continue }
+                XCTAssertLessThanOrEqual(date, DemoData.referenceDate)
+            }
+        }
+    }
+
+    /// Only the Daily Snapshot's log collects Jamf Protect.
+    func testProtectCacheOnlyWhereTheDailySnapshotRuns() {
+        XCTAssertNotNil(DemoData.cacheDate(for: ["protect-overview"], profile: "meridian-prod"))
+        XCTAssertNil(DemoData.cacheDate(for: ["protect-overview"], profile: "meridianedu"))
+    }
+
+    func testOnlyTheCSVAssistedProfileHasAnInboxCSV() {
+        let inbox = DemoData.inboxFiles(for: DemoData.org.profile)
+        XCTAssertEqual(inbox.count, 1)
+        XCTAssertTrue(inbox.allSatisfy { $0.mtime <= DemoData.referenceDate })
+        XCTAssertTrue(DemoData.inboxFiles(for: "meridianedu").isEmpty)
+    }
+
+    func testSummariesFamilyMatchesTheTrendHistory() {
+        let families = DemoData.snapshotFamilies(for: DemoData.org.profile)
+        XCTAssertEqual(families.map(\.name), ["summaries"])
+        XCTAssertEqual(families.first?.snapshotCount, DemoData.trendDates.count)
+        XCTAssertEqual(
+            families.first?.latestDate.map { lastRunFormat.string(from: $0) }, "Apr 25, 06:01")
+    }
+
+    func testCommandMatrixListsEveryTrackedCommandWithoutAVersion() {
+        let snapshot = DemoData.jamfCLICapabilities
+        XCTAssertNil(snapshot.version)
+        XCTAssertEqual(Set(snapshot.availability.keys), Set(CapabilityService.trackedCommands))
+        XCTAssertTrue(snapshot.availability.values.allSatisfy { $0 == .available })
+    }
 }

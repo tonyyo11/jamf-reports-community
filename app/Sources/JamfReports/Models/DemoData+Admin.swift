@@ -226,4 +226,74 @@ extension DemoData {
         formatter.dateFormat = format
         return formatter.string(from: date)
     }
+
+    // MARK: - Data Sources
+
+    /// When a demo profile last wrote one of the Data Sources card's caches:
+    /// the start of its newest run whose log collects that kind, so the card
+    /// and Run History agree. The daily snapshot writes the refresh tier and
+    /// Jamf Protect; a report run collects the inventory tier. Nil for a cache
+    /// no run has written.
+    static func cacheDate(for cacheNames: [String], profile: String) -> Date? {
+        guard let name = cacheNames.first else { return nil }
+        let modes: Set<Schedule.RunMode>
+        if inventoryCaches.contains(name) {
+            modes = [.csvAssisted, .jamfCLIFull]
+        } else if name == "protect-overview" {
+            modes = [.snapshotOnly]
+        } else {
+            modes = [.snapshotOnly, .jamfCLIFull]
+        }
+        return runPlan
+            .filter { $0.schedule.profile == profile && modes.contains($0.schedule.mode) }
+            .map { $0.start.addingTimeInterval(20) }
+            .max()
+    }
+
+    private static let inventoryCaches: Set<String> = [
+        "computers-list", "ea-results", "app-status", "update-status",
+    ]
+
+    /// A demo profile's csv-inbox: the export a CSV-assisted schedule runs
+    /// from — meridian-prod's executive report, dropped the morning of its Apr
+    /// 20 run — or nothing for a profile without one.
+    static func inboxFiles(for profile: String) -> [InboxFile] {
+        let needsCSV = scheduledRuns.contains { $0.profile == profile && $0.mode == .csvAssisted }
+        guard needsCSV else { return [] }
+        let name = "meridian-computers-2026-04-20.csv"
+        let dropped = Calendar(identifier: .gregorian).date(from: DateComponents(
+            year: 2026, month: 4, day: 20, hour: 6, minute: 48)) ?? referenceDate
+        return [
+            InboxFile(name: name, relativePath: name, size: FileDisplay.size(638_976),
+                      mtime: dropped, status: .pending),
+        ]
+    }
+
+    /// A demo profile's snapshot families: the daily summaries its collects
+    /// wrote, the newest by its latest collect. meridian-prod has as many as
+    /// its trend history has points, another profile one per collect in its
+    /// Run History, and a profile nothing has collected for none.
+    static func snapshotFamilies(for profile: String) -> [SnapshotFamily] {
+        let collects = runPlan.filter {
+            $0.schedule.profile == profile && $0.schedule.mode != .jamfCLIOnly
+                && $0.schedule.mode != .backup
+        }
+        guard let latest = collects.map(\.finished).max() else { return [] }
+        let count = profile == org.profile ? trendDates.count : collects.count
+        return [
+            SnapshotFamily(
+                name: "summaries", glob: "*summary*.json", snapshotCount: count,
+                latestDate: latest, totalBytes: Int64(count) * 6_144,
+                usedBy: "Trends · Overview score cards"),
+        ]
+    }
+
+    /// The Data Sources command matrix: every command the app tracks,
+    /// available. No version is claimed, since no jamf-cli ran.
+    static let jamfCLICapabilities = CLICapabilitySnapshot(
+        version: nil,
+        availability: Dictionary(
+            CapabilityService.trackedCommands.map { ($0, CommandAvailability.available) },
+            uniquingKeysWith: { first, _ in first })
+    )
 }
