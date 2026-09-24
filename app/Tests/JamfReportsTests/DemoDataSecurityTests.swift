@@ -213,6 +213,38 @@ final class DemoDataSecurityTests: XCTestCase {
         }
     }
 
+    // MARK: - Extension Attributes
+
+    func testExtensionAttributesCoverTheFleet() {
+        let snapshot = ExtensionAttributesView.demoSnapshot
+        XCTAssertEqual(snapshot.totalDevices, DemoData.totalDevices)
+        XCTAssertTrue(snapshot.coverage.allSatisfy {
+            $0.totalDevices == DemoData.totalDevices && $0.populatedDevices <= $0.totalDevices
+        })
+        let coverage = Dictionary(uniqueKeysWithValues:
+            snapshot.coverage.map { ($0.eaName, $0.populatedDevices) })
+        XCTAssertEqual(coverage["FileVault Status"], DemoData.totalDevices)
+        XCTAssertEqual(coverage["CrowdStrike Status"], DemoData.securityAgents.first?.installed)
+        XCTAssertEqual(coverage["CrowdStrike Status"], 506)
+        let crowdStrike = snapshot.definitions.first { $0.name == "CrowdStrike Status" }
+        XCTAssertEqual(crowdStrike?.enabled, true)
+    }
+
+    /// Each value distribution adds up to the Macs its attribute covers, and
+    /// FileVault splits as the Security Posture screen counts it.
+    func testExtensionAttributeDistributionsMatchTheirCoverage() {
+        let snapshot = ExtensionAttributesView.demoSnapshot
+        let coverage = Dictionary(uniqueKeysWithValues:
+            snapshot.coverage.map { ($0.eaName, $0.populatedDevices) })
+        for distribution in snapshot.valueDistributions {
+            let total = distribution.top.reduce(distribution.otherCount) { $0 + $1.count }
+            XCTAssertEqual(total, coverage[distribution.eaName], distribution.eaName)
+        }
+        let fileVault = snapshot.valueDistributions.first { $0.eaName == "FileVault Status" }
+        XCTAssertEqual(fileVault?.top.map(\.count), [513, 11])
+        XCTAssertLessThanOrEqual(snapshot.snapshotDate ?? .distantFuture, DemoData.referenceDate)
+    }
+
     // MARK: - Security Posture
 
     func testSecurityPostureCountsTheFleetsControls() {
