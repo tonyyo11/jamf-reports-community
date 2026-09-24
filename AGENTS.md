@@ -736,9 +736,12 @@ swift run JamfReports              # launch (debug)
 RELEASE=1 ./build-app.sh release   # stamps JRReleaseChannel=release
 ```
 
-For distribution to other Macs: sign with a Developer ID certificate, notarize via
-`xcrun notarytool`, and staple with `xcrun stapler staple`. These steps are currently
-manual and not integrated into `build-app.sh`.
+For distribution to other Macs, `./build-app.sh release` signs with a Developer ID
+Application identity from the keychain (`TEAM_ID` picks one, `SIGNING_IDENTITY` names it),
+then notarizes and staples with `xcrun notarytool` and `xcrun stapler`, using the
+`JamfReports-Notary` keychain profile or `NOTARY_KEY_PATH`/`NOTARY_KEY_ID`/`NOTARY_ISSUER`.
+With no Developer ID identity it falls back to ad-hoc signing and skips notarization;
+`SKIP_NOTARIZE` skips it on purpose.
 
 **Version model.** `MARKETING_VERSION` in `build-app.sh` is the single source of
 truth for the user-facing semver (`CFBundleShortVersionString`); keep it in sync with
@@ -953,6 +956,9 @@ CI. Before pushing, run:
 ```bash
 cd app && swift build --build-tests 2>&1 | grep "error:" || echo "OK"
 ```
+
+`.githooks/pre-push` runs the same check before every push once enabled with
+`git config core.hooksPath .githooks`; `git push --no-verify` skips it for one push.
 
 To catch isolation errors locally, install Xcode 16.4 alongside your
 current Xcode (Apple's older-releases page) and `sudo xcode-select -s
