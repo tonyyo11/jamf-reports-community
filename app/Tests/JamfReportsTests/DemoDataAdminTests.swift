@@ -82,4 +82,14 @@ final class DemoDataAdminTests: XCTestCase {
     func testProfileWithoutSchedulesHasNoRunHistory() {
         XCTAssertTrue(DemoData.runHistory(for: "meridian-msp").isEmpty)
     }
+
+    // MARK: - Workspace paths
+
+    func testWorkspaceDisplayPathMatchesTheLiveShape() {
+        XCTAssertEqual(
+            DemoData.workspaceDisplayPath(profile: "meridian-prod", subpath: "config.yaml"),
+            "~/Jamf-Reports/meridian-prod/config.yaml")
+        XCTAssertEqual(
+            DemoData.workspaceDisplayPath(profile: "meridian-prod"), "~/Jamf-Reports/meridian-prod")
+    }
 }

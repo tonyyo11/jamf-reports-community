@@ -10,6 +10,19 @@ extension DemoData {
     /// write the real workspace, run jamf-cli or open a real path.
     static let liveOnlyHelp = "Available with a live profile"
 
+    // MARK: - Workspace paths
+
+    /// Where demo screens say the workspaces live. A live screen shows this
+    /// Mac's root, which may have been moved to a team folder.
+    static let workspacesRootDisplay = "~/Jamf-Reports"
+
+    /// A demo profile's workspace, printed the way a live screen prints one
+    /// (`WorkspaceRootStore.displayPath(profile:subpath:)`).
+    static func workspaceDisplayPath(profile: String, subpath: String = "") -> String {
+        let base = "\(workspacesRootDisplay)/\(profile)"
+        return subpath.isEmpty ? base : "\(base)/\(subpath)"
+    }
+
     // MARK: - Run History
 
     /// One demo Run History entry: the row the list shows and the log it opens.

@@ -86,7 +86,9 @@ struct CustomizeView: View {
         // These two are config keys, not sheet toggles, so they come from
         // config.yaml rather than the sheet catalogue. Before 2.7.0 they were
         // never loaded or saved at all — the switches moved and nothing else did.
-        let charts = ChartsConfigLoader.load(profile: workspace.profile)
+        // Demo mode has no config.yaml to read, so it shows the defaults.
+        let charts = workspace.demoMode
+            ? ChartsOptions.defaults : ChartsConfigLoader.load(profile: workspace.profile)
         chartSavePNGs = charts.savePNGs
         chartPerMajor = charts.perMajorCharts
     }
@@ -110,6 +112,8 @@ struct CustomizeView: View {
                     PNPButton(title: "Preset: Executive") {
                         applyExecutivePreset()
                     }
+                    // Apply writes the chart options into config.yaml, which in
+                    // demo mode would create one under the demo profile's name.
                     PNPButton(
                         title: applySaved ? "Saved" : "Apply",
                         icon: applySaved ? "checkmark.circle" : "checkmark",
@@ -118,6 +122,8 @@ struct CustomizeView: View {
                         saveError = nil
                         applyAndSave()
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
                 .sheet(isPresented: $showGuide) {
                     CustomizeGuideSheet()
@@ -264,7 +270,7 @@ struct CustomizeView: View {
                 )
                 chartToggleRow(
                     title: "Per-major macOS charts",
-                    detail: "10, 11, 12, 13, 14, 15",
+                    detail: "Majors found in the fleet",
                     isOn: $chartPerMajor,
                     hasDivider: true
                 )
@@ -322,6 +328,7 @@ struct CustomizeView: View {
     }
 
     private func applyAndSave() {
+        guard !workspace.demoMode else { return }
         var updatedSheets = sheets
         let chartNameToToggle: [String: Bool] = [
             "OS Adoption": chartOSAdoption,

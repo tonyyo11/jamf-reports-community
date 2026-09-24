@@ -219,8 +219,7 @@ struct ConfigView: View {
         PageHeader(
             kicker: "Workspace · \(workspace.profile)",
             title: "config.yaml",
-            subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                                     subpath: "config.yaml")
+            subtitle: configDisplayPath
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -230,6 +229,8 @@ struct ConfigView: View {
                     }
                     saveStatusPill
                     PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     // Switches to Columns because that is where the results
                     // render. Worth knowing if this ever reads as a bug again:
                     // the check used only to validate column mappings, which
@@ -241,15 +242,29 @@ struct ConfigView: View {
                         tab = .columns
                         triggerColumnsCheck = true
                     }
-                    .help("Check this profile's config and data, and show what to fix "
-                          + "(results appear under Columns)")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Check this profile's config and data, and show what to fix "
+                              + "(results appear under Columns)")
+                    // Demo edits apply on screen but have no file to be saved to.
                     PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             )
         }
     }
 
+    /// The demo's own path, not this Mac's root, which may have been moved.
+    private var configDisplayPath: String {
+        workspace.demoMode
+            ? DemoData.workspaceDisplayPath(profile: workspace.profile, subpath: "config.yaml")
+            : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "config.yaml")
+    }
+
     private func viewYAML() {
+        guard !workspace.demoMode else { return }
         guard let url = ProfileService.workspaceURL(for: workspace.profile) else {
             workspace.toast = Toast(
                 message: "Workspace not found for profile `\(workspace.profile)`.",
@@ -303,6 +318,7 @@ struct ConfigView: View {
     // MARK: Button actions
 
     private func save() {
+        guard !workspace.demoMode else { return }
         saveTask?.cancel()
         saveStatus = .saving
         saveTask = Task { @MainActor in
@@ -495,7 +511,11 @@ private struct ColumnsTab: View {
                 }
                 HStack(spacing: 6) {
                     PNPButton(title: "Re-check", icon: "arrow.clockwise", size: .sm, action: runCheck)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     PNPButton(title: "Open CSV", icon: "arrow.up.right.square", style: .ghost, size: .sm, action: openCSV)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             }
         }
@@ -523,12 +543,17 @@ private struct ColumnsTab: View {
                     .foregroundStyle(Theme.Text.secondary)
                 PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm,
                           action: runScaffold)
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 TipView(ConfigTips.rescaffold)
             }
         }
     }
 
+    /// Runs the report engine's check against the real workspace and its CSV,
+    /// so never in demo mode.
     private func runCheck() {
+        guard !workspace.demoMode else { return }
         Task {
             checkOutput = ["Running check…"]
             let csvPath = newestCSVPath()
@@ -556,6 +581,7 @@ private struct ColumnsTab: View {
     }
 
     private func openCSV() {
+        guard !workspace.demoMode else { return }
         guard let url = newestCSVURL() else {
             workspace.toast = Toast(
                 message: "No CSV export found in the workspace yet.",
@@ -574,6 +600,7 @@ private struct ColumnsTab: View {
     }
 
     private func runScaffold() {
+        guard !workspace.demoMode else { return }
         guard let csvURL = newestCSVURL() else {
             workspace.toast = Toast(
                 message: "Drop a CSV export into the workspace before scaffolding.",
@@ -1400,7 +1427,10 @@ private struct ScoringTab: View {
         raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
     }
 
+    /// The weights are an app-wide preference that scores live profiles too, so
+    /// demo mode shows them without letting an edit reach that preference.
     private func update(_ mutate: (inout SecurityScoreWeights) -> Void) {
+        guard !workspace.demoMode else { return }
         var c = config
         mutate(&c.weights)
         raw = c.serialize()
@@ -1423,9 +1453,14 @@ private struct ScoringTab: View {
                             icon: totalWeight == 100 ? "checkmark" : "scalemass"
                         )
                         PNPButton(title: "Reset to v3.5 defaults", size: .sm) {
+                            guard !workspace.demoMode else { return }
                             raw = ""
                         }
-                        .help("Restore the eight default weights from the v3.5 production script.")
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode
+                              ? DemoData.liveOnlyHelp
+                              : "Restore the eight default weights from the v3.5 production "
+                                  + "script.")
                     }
                     Text("These weights drive the Security Score on the Security Posture screen. " +
                          "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
@@ -1458,6 +1493,8 @@ private struct ScoringTab: View {
                                   value: Binding(get: { Int(config.weights.secureBoot) },
                                                  set: { v in update { $0.secureBoot = Double(v) } }))
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             }
             .accessibilityElement(children: .contain)
