@@ -168,7 +168,9 @@ struct SecurityPostureView: View {
         let names = score.missing
             .map { $0.displayLabel(edrAgentName: workspace.edrAgentName) }
             .joined(separator: ", ")
-        return "Not in this snapshot (run collect on EA results + device-compliance to include): \(names)."
+        // The ring scores `pro report security`, which carries FileVault, SIP and the
+        // firewall only. No collect adds the rest here, so the line asks for none.
+        return "Not in the security report, so not scored here: \(names)."
     }
 
     private func pillTone(for grade: SecurityScore.Grade) -> Pill.Tone {

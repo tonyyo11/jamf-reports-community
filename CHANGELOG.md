@@ -116,6 +116,11 @@ tenant's real data in every section, and you choose what it shows.
   workspace, because it looked under an older folder name.
 - Opening a workspace folder that has not been created yet says so, instead of saying the folder
   is outside the app's allowed folders.
+- Generated Reports' profile menu lists profiles with a hyphen or underscore in the name, such as
+  acme-prod, which it used to leave out or cut short.
+- Security Posture no longer tells you to run a collect to add EDR, mSCP, XProtect, CVE and Secure
+  Boot to its score. Its score comes from the security report, which has none of them; the line
+  now says they are not scored there.
 - Fleet Overview's summary tiles line up and share one height, and a profile card's stability
   score is no longer hidden under the card's chevron.
 - The stale-days control on Devices is its natural size instead of stretching across the header.
