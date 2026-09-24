@@ -700,33 +700,55 @@ struct ReportEngine: Sendable {
         // Stable identity that lets the trend chart bridge a later baseline rename.
         var mscpBandColumnsSnapshot: [String: String]? = nil
         // cachedData records the source automatically (live/cache/absent), so a single
-        // call here covers both the recordSource and the data load. Guard on eaBaselines
-        // so "absent" is not recorded for tenants that never configured an EA baseline.
+        // call here covers both the recordSource and the data load. Guarded on something
+        // needing it, so "absent" is not recorded for tenants that configured neither an
+        // EA baseline nor a security agent.
         let eaBaselines = config.compliance?.resolvedBaselines ?? []
-        if !eaBaselines.isEmpty, let eaData = cachedData(kind: "ea-results") {
+        // The EDR score card is labelled with the first named security agent
+        // (`WorkspaceStore.edrAgentName`); its value comes from the same agent.
+        let edrAgent = (config.securityAgents ?? []).first {
+            !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        var eaRows: [EAResultRow]? = nil
+        if !eaBaselines.isEmpty || edrAgent != nil, let eaData = cachedData(kind: "ea-results") {
             let decoded = EAResultRow.decodeSnapshot(eaData)
-            if let eaRows = decoded.rows {
-                let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
-                if let primary = results.first, let realPct = primary.compliancePct {
-                    complianceFinalPct = realPct
-                    complianceIsRealData = true
-                }
-                // Map all baseline results into the mscpBands summary field so the
-                // trend chart has per-date band data from the first collect onward.
-                let bandsMap = Self.mscpBandsMap(from: results)
-                if !bandsMap.isEmpty {
-                    mscpBandsSnapshot = bandsMap
-                    // Only the baselines that produced bands carry a column entry.
-                    mscpBandColumnsSnapshot = Self.mscpBandColumnsMap(
-                        from: results, baselines: eaBaselines)
-                }
-            } else {
+            eaRows = decoded.rows
+            if decoded.rows == nil {
                 // `.notice` (not `.debug`) so the shape surfaces without verbose logging;
                 // `reason` is keys-only (PII-safe).
                 AppLogger.platform.notice(
                     "ReportEngine: ea-results undecodable — \(decoded.reason, privacy: .public)"
                 )
             }
+        }
+        if !eaBaselines.isEmpty, let eaRows {
+            let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+            if let primary = results.first, let realPct = primary.compliancePct {
+                complianceFinalPct = realPct
+                complianceIsRealData = true
+            }
+            // Map all baseline results into the mscpBands summary field so the
+            // trend chart has per-date band data from the first collect onward.
+            let bandsMap = Self.mscpBandsMap(from: results)
+            if !bandsMap.isEmpty {
+                mscpBandsSnapshot = bandsMap
+                // Only the baselines that produced bands carry a column entry.
+                mscpBandColumnsSnapshot = Self.mscpBandColumnsMap(
+                    from: results, baselines: eaBaselines)
+            }
+        }
+        // EDR coverage, stored under the legacy `crowdstrikePct` key. Before this
+        // the jamf-cli writer always left it nil, so the EDR score card, its trend
+        // and the security score's EDR weight were empty on every jamf-cli
+        // profile. Over the whole fleet, so a Mac that reports no value counts as
+        // not connected; nil (unknown, not 0%) when no Mac reports the agent's
+        // extension attribute at all — usually a column name that doesn't match.
+        var edrConnectedPct: Double? = nil
+        if let edrAgent, let eaRows,
+           let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: [edrAgent]).first,
+           coverage.reporting > 0 {
+            edrConnectedPct = SecurityAgentCoverage.percent(
+                installed: coverage.installed, fleet: totalDevices)
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -776,7 +798,7 @@ struct ReportEngine: Sendable {
             compliancePct: complianceFinalPct.map(round1),
             staleCount: staleCount,
             osCurrentPct: osCurrentPct.map(round1),
-            crowdstrikePct: nil,
+            crowdstrikePct: edrConnectedPct,
             patchPct: patchPct.map(round1),
             source: "jamf-cli",
             sipPct: sipPct.map(round1),
