@@ -587,7 +587,9 @@ struct ProtectView: View {
 
                 if !displayedComputers.isEmpty {
                     VStack(spacing: 0) {
-                        ForEach(Array(displayedComputers.enumerated()), id: \.offset) { index, computer in
+                        ForEach(
+                            Array(displayedComputers.enumerated()), id: \.offset
+                        ) { index, computer in
                             computerRow(computer, isLast: index == displayedComputers.count - 1)
                         }
                     }
