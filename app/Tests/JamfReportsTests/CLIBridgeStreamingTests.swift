@@ -88,6 +88,24 @@ final class CLIBridgeStreamingTests: XCTestCase {
         XCTAssertEqual(received.utf8.count, expected.utf8.count, "stderr text was dropped")
         XCTAssertTrue(received == expected, "stderr text arrived incomplete or out of order")
     }
+
+    /// The same contract without the race: the line is written only after the shell has
+    /// exited, so returning at termination loses it every time, not only under load.
+    func testStderrWrittenAfterTheProcessExitsArrivesBeforeReturn() async throws {
+        let bridge = CLIBridge()
+        let collector = LineCollector()
+        // The shell exits at once; a background writer with its stdout closed prints later.
+        let (exit, _) = try await bridge.runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "(exec 1>&-; sleep 0.3; printf 'LATE-LINE\\n' 1>&2) & exit 0"],
+            onLine: { line in collector.append(line) }
+        )
+        XCTAssertEqual(exit, 0)
+        XCTAssertTrue(
+            collector.snapshot().map(\.text).contains("LATE-LINE"),
+            "stderr written after exit must reach onLine before runAndCapture returns"
+        )
+    }
 }
 
 /// Thread-safe collector for onLine callbacks (the handler is called from a
