@@ -127,6 +127,10 @@ tenant's real data in every section, and you choose what it shows.
   workspace, because it looked under an older folder name.
 - Opening a workspace folder that has not been created yet says so, instead of saying the folder
   is outside the app's allowed folders.
+- At the smallest window size, Devices and the first setup step no longer push the sidebar out of
+  the window: the Devices search field moves above the filters, and the setup badges wrap.
+- Mobile Fleet's Mobile Devices table shows its devices. It showed only its header.
+- Trends charts with a single line no longer show a "Band" legend underneath.
 - Generated Reports' profile menu lists profiles with a hyphen or underscore in the name, such as
   acme-prod, which it used to leave out or cut short.
 - Security Posture no longer tells you to run a collect to add EDR, mSCP, XProtect, CVE and Secure
