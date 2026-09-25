@@ -746,6 +746,29 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains(">3<"), "Current day's totalFail (3) must render")
     }
 
+    /// renderTable escapes every cell, so the rows hold plain text. Escaped first as well,
+    /// a label with `&` read "&amp;" in the report.
+    func testInsightsDriftEscapesALabelOnce() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("InsightsDriftEscape-\(UUID().uuidString)", isDirectory: true)
+        let insightsDir = tmp.appendingPathComponent("protect-insights", isDirectory: true)
+        try FileManager.default.createDirectory(at: insightsDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let label = "Gatekeeper & XProtect <script>alert(1)</script>"
+        for (stamp, fail) in [("20260401T000000", 4), ("20260402T000000", 2)] {
+            let rows: [[String: Any]] = [["label": label, "section": "System", "enabled": true,
+                                          "totalPass": 90, "totalFail": fail, "totalNone": 0]]
+            try JSONSerialization.data(withJSONObject: rows).write(
+                to: insightsDir.appendingPathComponent("protect-insights_\(stamp).json"))
+        }
+
+        let html = makeReport().buildInsightsDrift(protectDataDir: tmp)
+
+        XCTAssertTrue(html.contains("Gatekeeper &amp; XProtect &lt;script&gt;"), html)
+        XCTAssertFalse(html.contains("&amp;amp;"), "the label was escaped twice")
+        XCTAssertFalse(html.contains("<script>alert"), "the label must still be escaped")
+    }
+
     // MARK: - agentHealth
 
     func testAgentHealthNoAgentsConfigured() {

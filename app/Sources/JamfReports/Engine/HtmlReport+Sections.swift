@@ -362,7 +362,7 @@ extension HtmlReport {
               <h2>Exception List</h2>
               \(f.emptyState("No exceptions configured. " +
                 "Add an exceptions: block in config.yaml to document waivers " +
-                "for \(f.escapeHTML(framework))."))
+                "for \(framework)."))
             </section>
             """
         }
@@ -377,7 +377,7 @@ extension HtmlReport {
             let threshold: String
             switch ea.type {
             case .boolean:
-                threshold = ea.trueValue.map { "Pass value: \(f.escapeHTML($0))" } ?? "—"
+                threshold = ea.trueValue.map { "Pass value: \($0)" } ?? "—"
             case .percentage:
                 let warn = ea.warningThreshold.map { "\($0)%" } ?? "—"
                 let crit = ea.criticalThreshold.map { "\($0)%" } ?? "—"
@@ -389,7 +389,8 @@ extension HtmlReport {
             case .text:
                 threshold = "—"
             }
-            return [f.escapeHTML(ea.name), f.escapeHTML(ea.column), typeStr, threshold]
+            // Plain text: renderTable escapes every cell.
+            return [ea.name, ea.column, typeStr, threshold]
         }
 
         return """
@@ -827,10 +828,11 @@ extension HtmlReport {
             }
         }
 
+        // Plain text: renderTable escapes every cell.
         let tableRows = insightKeys.map { key -> [String] in
-            var row = [f.escapeHTML(key)]
+            var row = [key]
             for snapshot in window {
-                row.append(snapshot[key].map { f.escapeHTML("\($0)") } ?? "—")
+                row.append(snapshot[key].map { "\($0)" } ?? "—")
             }
             return row
         }
