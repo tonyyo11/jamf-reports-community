@@ -145,4 +145,19 @@ final class OverviewLiveDataTests: XCTestCase {
         XCTAssertEqual(withEmail.user, "jdoe@example.org")
         XCTAssertEqual(withEmail.fileVault, true)
     }
+
+    /// jamf-cli fills `fileVault` from `partitionFileVault2State`. A Mac still encrypting, or
+    /// one Jamf could not read, showed a red "FileVault off" here while Devices showed it as
+    /// unknown.
+    func testRecentRowReadsFileVaultStatesLikeTheDevicesTable() {
+        var mac = record("mac-1", days: 1)
+        let cases: [(String, Bool?)] = [
+            ("ENCRYPTED", true), ("NOT_ENCRYPTED", false), ("DECRYPTING", false),
+            ("ENCRYPTING", nil), ("UNKNOWN", nil), ("INELIGIBLE", nil), ("RESTART_NEEDED", nil),
+        ]
+        for (state, expected) in cases {
+            mac.fileVault = state
+            XCTAssertEqual(RecentDeviceRow(record: mac, failedRules: nil).fileVault, expected, state)
+        }
+    }
 }
