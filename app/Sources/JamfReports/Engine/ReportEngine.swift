@@ -2323,6 +2323,7 @@ struct ReportEngine: Sendable {
                 kind: kind, exitCode: exitCode, data: data,
                 sawForbidden: stderrWatcher.sawForbidden,
                 sawNoDeclarationData: stderrWatcher.sawNoDeclarationData,
+                sawSoftwareUpdatePlansOff: stderrWatcher.sawSoftwareUpdatePlansOff,
                 useCachedData: useCachedData,
                 dataDir: dataDir, stateStore: stateStore, collectStart: collectStart,
                 onLine: onLine
@@ -2345,6 +2346,7 @@ struct ReportEngine: Sendable {
         data: Data,
         sawForbidden: Bool = false,
         sawNoDeclarationData: Bool = false,
+        sawSoftwareUpdatePlansOff: Bool = false,
         useCachedData: Bool,
         dataDir: URL,
         stateStore: StateFileStore?,
@@ -2353,7 +2355,8 @@ struct ReportEngine: Sendable {
     ) throws -> KindCollectResult {
         let cause = FailureCause.classify(
             exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
-            sawNoDeclarationDataOnStderr: sawNoDeclarationData)
+            sawNoDeclarationDataOnStderr: sawNoDeclarationData,
+            sawSoftwareUpdatePlansOffOnStderr: sawSoftwareUpdatePlansOff)
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
         stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
                            cause: cause)

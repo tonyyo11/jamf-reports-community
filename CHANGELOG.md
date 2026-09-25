@@ -68,6 +68,9 @@ tenant's real data in every section, and you choose what it shows.
 - When DDM status comes back empty, Run History says the environment may have no declarations
   or the integration may lack Deployment > Declarations reporting, and it is no longer retried
   every hour.
+- When Managed Software Update Plans is turned off in Jamf Pro, Run History and the health strip
+  say so for OS update status and failures, and those sources are no longer retried every hour.
+  Turn the setting on, or list them in `jamf_cli.collect_skip`.
 - When jamf-cli cannot read patch policies, Run History gives its reason, and a missing
   permission is no longer retried every hour. It no longer calls the output unreadable.
 - The device scan's permission warning names what jamf-cli reports as missing, or both the Jamf

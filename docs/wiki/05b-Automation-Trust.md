@@ -95,6 +95,7 @@ next collect fetches it.
   - a scope ID or environment ID the gateway rejects
   - an endpoint the connection does not serve
   - no DDM declaration data
+  - Managed Software Update Plans turned off in Jamf Pro (OS update status and failures)
   - Compliance Benchmark titles that match none on the tenant
 
   Those sources stay in the strip so you can see them, but the hourly repair skips them.

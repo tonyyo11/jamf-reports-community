@@ -147,6 +147,26 @@ final class FailureCauseTests: XCTestCase {
         XCTAssertEqual(cause.kind, .other)
     }
 
+    /// Jamf Pro answers the plans endpoint with 503 until the setting is turned on.
+    func testSoftwareUpdatePlansTurnedOffIsItsOwnPermanentCause() {
+        let cause = FailureCause.classify(
+            exitCode: 0, stdout: Data(), sawSoftwareUpdatePlansOffOnStderr: true)
+        XCTAssertEqual(cause.kind, .softwareUpdatePlansOff)
+        XCTAssertTrue(cause.isPermanent)
+        XCTAssertTrue(cause.label.contains("jamf_cli.collect_skip"), cause.label)
+    }
+
+    func testTheWatcherSeesTheSoftwareUpdatePlansLine() {
+        let watcher = StderrSignalWatcher()
+        let forward = watcher.forwarding(to: { _ in })
+        forward(.init(timestamp: Date(), level: .warn, text: "    \"description\" : \"This "
+            + "endpoint cannot be used if the Managed Software Update Plans toggle is off.\","))
+        XCTAssertTrue(watcher.sawSoftwareUpdatePlansOff)
+        XCTAssertFalse(watcher.sawForbidden || watcher.sawNoDeclarationData)
+        watcher.reset()
+        XCTAssertFalse(watcher.sawSoftwareUpdatePlansOff)
+    }
+
     /// jamf-cli 1.29 writes `fetch_error` into a document it exits 0 on.
     func testAFetchError403IsAMissingPermissionCarryingTheText() {
         let text = "fetching page 0: permission denied (HTTP 403)"

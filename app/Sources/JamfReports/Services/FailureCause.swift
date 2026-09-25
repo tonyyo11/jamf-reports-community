@@ -31,6 +31,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// `pro report ddm-status` found no declaration data. jamf-cli skips refused device
         /// reports silently, so the environment has none or the permission is missing.
         case noDeclarationData
+        /// `pro report update-status` found Managed Software Update Plans turned off in Jamf
+        /// Pro: the plans endpoint answers 503 and jamf-cli exits 0 with no data.
+        case softwareUpdatePlansOff
         /// `platform.compliance_benchmarks` lists titles and none of them can be collected: the
         /// tenant lists none of them, or each one is shared by two benchmarks or starts with
         /// "-". `names` holds the configured titles. Recorded by collect, never classified.
@@ -55,6 +58,9 @@ struct FailureCause: Codable, Equatable, Sendable {
     static let noBlueprintsStderrMarker = "No blueprints found."
     /// `pro report ddm-status` prints this and exits 0 when no declaration report came back.
     static let noDeclarationDataStderrMarker = "No DDM declaration data found."
+    /// Jamf Pro's 503 body, which `pro report update-status` prints in a warning before it
+    /// exits 0 with no data.
+    static let softwareUpdatePlansOffStderrMarker = "Managed Software Update Plans toggle is off"
 
     /// Retrying within the hour cannot help (spec §9.5): the credential, its scope ID, its
     /// permissions, the environment's data or the config has to change first. Edge blocks stay
@@ -62,7 +68,7 @@ struct FailureCause: Codable, Equatable, Sendable {
     var isPermanent: Bool {
         switch kind {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
-             .noDeclarationData, .noConfiguredBenchmark: true
+             .noDeclarationData, .softwareUpdatePlansOff, .noConfiguredBenchmark: true
         case .edgeBlocked, .other: false
         }
     }
@@ -81,6 +87,9 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .noDeclarationData:
             "no DDM declaration data: the environment has none, or each device's report was "
                 + "refused (Deployment > Declarations reporting)"
+        case .softwareUpdatePlansOff:
+            "Managed Software Update Plans is turned off in Jamf Pro; turn it on, or add this "
+                + "source to jamf_cli.collect_skip"
         case .noConfiguredBenchmark:
             names.isEmpty
                 ? "no benchmark in platform.compliance_benchmarks can be collected"
@@ -92,7 +101,7 @@ struct FailureCause: Codable, Equatable, Sendable {
 
     static func classify(
         exitCode: Int32, stdout: Data, sawForbiddenOnStderr: Bool = false,
-        sawNoDeclarationDataOnStderr: Bool = false
+        sawNoDeclarationDataOnStderr: Bool = false, sawSoftwareUpdatePlansOffOnStderr: Bool = false
     ) -> FailureCause {
         let envelope = JamfCLIErrorEnvelope.parse(stdout)
         let message = envelope?.message ?? ""
@@ -128,6 +137,7 @@ struct FailureCause: Codable, Equatable, Sendable {
         }
         guard exitCode == 0 else { return cause(.other) }
         if sawForbiddenOnStderr { return cause(.missingPermission) }
+        if sawSoftwareUpdatePlansOffOnStderr { return cause(.softwareUpdatePlansOff) }
         return cause(sawNoDeclarationDataOnStderr ? .noDeclarationData : .other)
     }
 
@@ -164,16 +174,19 @@ struct FailureCause: Codable, Equatable, Sendable {
 }
 
 /// Watches one kind's streamed stderr for the jamf-cli lines that explain an exit 0 without
-/// data (spec §9.1): a swallowed 403, an empty blueprint listing, or no declaration data.
+/// data (spec §9.1): a swallowed 403, an empty blueprint listing, no declaration data, or
+/// Managed Software Update Plans turned off.
 final class StderrSignalWatcher: @unchecked Sendable {
     private let lock = NSLock()
     private var forbidden = false
     private var noBlueprints = false
     private var noDeclarationData = false
+    private var softwareUpdatePlansOff = false
 
     var sawForbidden: Bool { lock.withLock { forbidden } }
     var sawNoBlueprints: Bool { lock.withLock { noBlueprints } }
     var sawNoDeclarationData: Bool { lock.withLock { noDeclarationData } }
+    var sawSoftwareUpdatePlansOff: Bool { lock.withLock { softwareUpdatePlansOff } }
 
     /// A retried attempt is classified on its own stderr, not the first attempt's.
     func reset() {
@@ -181,6 +194,7 @@ final class StderrSignalWatcher: @unchecked Sendable {
             forbidden = false
             noBlueprints = false
             noDeclarationData = false
+            softwareUpdatePlansOff = false
         }
     }
 
@@ -196,6 +210,9 @@ final class StderrSignalWatcher: @unchecked Sendable {
                 }
                 if text.contains(FailureCause.noDeclarationDataStderrMarker) {
                     self.noDeclarationData = true
+                }
+                if text.contains(FailureCause.softwareUpdatePlansOffStderrMarker) {
+                    self.softwareUpdatePlansOff = true
                 }
             }
             onLine(line)

@@ -205,6 +205,46 @@ final class CollectFailureCauseTests: XCTestCase {
         XCTAssertTrue(warn.contains("Declarations reporting"), warn)
     }
 
+    /// jamf-cli 1.31.1's stderr for `pro report update-status`, with or without
+    /// `--scan-failures`, on a Jamf Pro with Managed Software Update Plans turned off.
+    private static let plansOffStderr = """
+    Fetching managed software update statuses...
+    Fetching managed software update plans...
+    WARNING: failed to fetch update plans: fetching page 0: request failed (HTTP 503): {
+      "httpStatus" : 503,
+      "errors" : [ {
+        "code" : null,
+        "description" : "This endpoint cannot be used if the Managed Software Update \
+    Plans toggle is off.",
+        "id" : "0",
+        "field" : null
+      } ]
+    }
+    No managed software update data found.
+
+    """
+
+    func testSoftwareUpdatePlansTurnedOffIsAPermanentCause() async throws {
+        let stderrFile = root.appendingPathComponent("plans-off-stderr")
+        try Self.plansOffStderr.write(to: stderrFile, atomically: true, encoding: .utf8)
+        let log = try await collectInventory("""
+          *"report update-status"*) cat "\(stderrFile.path)" >&2; exit 0 ;;
+        """)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let cause = try XCTUnwrap(store.cause(for: "update-status"))
+        XCTAssertEqual(cause.kind, .softwareUpdatePlansOff)
+        XCTAssertTrue(cause.isPermanent, "an hourly retry gets the same 503 until it is turned on")
+        let warn = try XCTUnwrap(
+            log.first { $0.hasPrefix("[warn] update-status: exit 0") }, "\(log)")
+        XCTAssertTrue(warn.contains("Managed Software Update Plans is turned off"), warn)
+    }
+
+    func testSoftwareUpdatePlansTurnedOffIsRecordedForTheScanToo() async throws {
+        _ = try await runScan(stdout: "", stderr: Self.plansOffStderr, exit: 0)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.cause(for: "update-device-failures")?.kind, .softwareUpdatePlansOff)
+    }
+
     /// jamf-cli 1.29 exits 0 with `fetch_error` when it cannot list patch policies
     /// (pro_report_patch.go:67-70): one line with the cause, and no "not JSON" line.
     func testAPatchFetchErrorIsRecordedWithItsCause() async throws {
