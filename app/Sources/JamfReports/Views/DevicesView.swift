@@ -278,65 +278,84 @@ struct DevicesView: View {
         )
     }
 
+    /// One row when it fits; otherwise the search field sits above the filters. At the
+    /// minimum window width the single row was wider than the page and pushed the sidebar
+    /// off the window.
     private var controls: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                TextField("Search devices", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.callout)
-                    .foregroundStyle(Theme.Colors.fg)
-                    .focused($isSearchFocused)
-                    .accessibilityLabel("Search devices")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                searchField
+                filterControls
             }
-            .padding(.horizontal, 10)
-            .frame(width: 260, height: 30)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
-                    .strokeBorder(
-                        isSearchFocused ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
-                        lineWidth: isSearchFocused ? 1 : 0.5
-                    )
-                    .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
-            )
-
-            SegmentedControl(
-                selection: $filter,
-                options: DeviceFilter.allCases.map { ($0, $0.label, $0.icon) }
-            )
-
-            if let osFilter {
-                Button {
-                    self.osFilter = nil
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 11))
-                        Mono(text: osFilter, color: Theme.Colors.goldBright)
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: 28)
-                    .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
+            VStack(alignment: .leading, spacing: 10) {
+                searchField
+                HStack(spacing: 10) {
+                    filterControls
                 }
-                .buttonStyle(.plain)
             }
+        }
+    }
 
-            Spacer()
-
-            let isFiltered = filteredDevices.count < activeSnapshot.devices.count
-            HStack(spacing: 6) {
-                if isFiltered {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.goldBright)
-                }
-                Pill(
-                    text: "\(filteredDevices.count) shown",
-                    tone: isFiltered ? .gold : .muted
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fgMuted)
+            TextField("Search devices", text: $query)
+                .textFieldStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(Theme.Colors.fg)
+                .focused($isSearchFocused)
+                .accessibilityLabel("Search devices")
+        }
+        .padding(.horizontal, 10)
+        .frame(width: 260, height: 30)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
+                .strokeBorder(
+                    isSearchFocused ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
+                    lineWidth: isSearchFocused ? 1 : 0.5
                 )
+                .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+        )
+    }
+
+    @ViewBuilder
+    private var filterControls: some View {
+        SegmentedControl(
+            selection: $filter,
+            options: DeviceFilter.allCases.map { ($0, $0.label, $0.icon) }
+        )
+
+        if let osFilter {
+            Button {
+                self.osFilter = nil
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                    Mono(text: osFilter, color: Theme.Colors.goldBright)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
             }
+            .buttonStyle(.plain)
+        }
+
+        Spacer()
+
+        let isFiltered = filteredDevices.count < activeSnapshot.devices.count
+        HStack(spacing: 6) {
+            if isFiltered {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.goldBright)
+            }
+            Pill(
+                text: "\(filteredDevices.count) shown",
+                tone: isFiltered ? .gold : .muted
+            )
         }
     }
 
