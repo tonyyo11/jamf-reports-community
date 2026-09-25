@@ -236,7 +236,9 @@ jamf_cli:
   # Report types collect never runs — a stall guard for on-prem Jamf Pro. Accepts
   # any of patch-device-failures, profile-status, update-status and
   # update-device-failures, the per-device-heavy queries known to stall an
-  # on-prem server; underscores and hyphens are interchangeable. Anything else is
+  # on-prem server, and dashboard, jamf-cli's HTML fleet dashboard (1.31.0+),
+  # which reads the whole inventory again for the HTML report's dashboard
+  # section; underscores and hyphens are interchangeable. Anything else is
   # ignored, so core inventory always runs. A listed source is skipped even by a
   # manual collect and is left out of the data freshness strip.
   # Example: collect_skip: [update-status, update-device-failures]

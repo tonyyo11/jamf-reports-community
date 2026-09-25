@@ -358,8 +358,9 @@ extension WorkspaceStore {
             return
         }
         let profile = self.profile
+        let jamfCLIVersion = self.jamfCLIVersion
         let issues = await Task.detached(priority: .utility) {
-            Self.evaluateFreshness(profile: profile)
+            Self.evaluateFreshness(profile: profile, jamfCLIVersion: jamfCLIVersion)
         }.value
         AutomationHealthModel.shared.freshnessIssues = issues
     }
@@ -368,6 +369,7 @@ extension WorkspaceStore {
     /// the file reads happen off the main actor.
     nonisolated static func evaluateFreshness(
         profile: String,
+        jamfCLIVersion: String? = nil,
         now: Date = Date()
     ) -> [DataFreshnessIssue] {
         guard ProfileService.isValid(profile),
@@ -380,7 +382,8 @@ extension WorkspaceStore {
             authMethod: auth?.authMethod,
             tenantLevel: auth?.isTenantLevel == true,
             collectSkip: ReportEngine.collectSkipKinds(
-                loadReportConfig(profile: profile)?.jamfCli?.collectSkip)
+                loadReportConfig(profile: profile)?.jamfCli?.collectSkip),
+            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion)
         )
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
@@ -394,28 +397,32 @@ extension WorkspaceStore {
     /// Which kinds this profile is expected to collect, and so which may be
     /// reported as failing or stale.
     ///
-    /// Four exclusions, all about not alarming on an absence that is intended:
+    /// Five exclusions, all about not alarming on an absence that is intended:
     /// the Settings toggle makes the four per-device kinds deliberately absent
     /// (the false-alarm class `FreshnessChipRow` already guards), a Jamf Pro
     /// instance profile can never serve the Platform-only kinds, a
     /// tenant-level integration can never be granted `environmentLevelKinds`,
-    /// and `collect` never runs a kind listed in `jamf_cli.collect_skip`
-    /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set).
-    /// The last three apply regardless of the `.fail` counters on disk: a
-    /// workspace that ran for months before the collect-side skip has a
-    /// standing pile of them, and reading those back is exactly what kept the
-    /// banner red.
+    /// `collect` never runs a kind listed in `jamf_cli.collect_skip`
+    /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set),
+    /// and it skips the dashboard on a jamf-cli before 1.31.0
+    /// (`dashboardSupported`, false for an unknown version, as `collect` reads it).
+    /// The Platform, tenant and skip-list rules apply regardless of the `.fail`
+    /// counters on disk: a workspace that ran for months before the collect-side
+    /// skip has a standing pile of them, and reading those back is exactly what
+    /// kept the banner red.
     nonisolated static func expectedKinds(
         skipExpensive: Bool,
         authMethod: String?,
         tenantLevel: Bool = false,
-        collectSkip: Set<String> = []
+        collectSkip: Set<String> = [],
+        dashboardSupported: Bool = false
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
         return ReportEngine.knownCollectKinds.filter { kind in
             if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
                 return false
             }
+            if kind == ReportEngine.dashboardKind, !dashboardSupported { return false }
             if tenantLevel, ReportEngine.environmentLevelKinds.contains(kind) {
                 return false
             }

@@ -211,6 +211,18 @@ final class JamfCLIInstaller {
         return compareVersions(installedVersion, specDerivedNamesVersion) != .orderedAscending
     }
 
+    /// First release with the top-level `dashboard` command: one self-contained
+    /// HTML page of fleet aggregates. Older binaries have no such command.
+    nonisolated static let dashboardVersion: String = "1.31.0"
+
+    /// True only when `installedVersion` parses and is at least 1.31.0. An unknown
+    /// version fails toward not running it, like `supportsSpecDerivedNames`.
+    nonisolated static func supportsDashboard(_ installedVersion: String?) -> Bool {
+        guard let installedVersion,
+              !versionParts(installedVersion).isEmpty else { return false }
+        return compareVersions(installedVersion, dashboardVersion) != .orderedAscending
+    }
+
     /// Errors raised by `validateAsset(host:name:)` when a release asset
     /// fails the host allow-list, control-char/path-traversal scrub, or
     /// archive-suffix pattern. See P9-A-08 in the security audit.

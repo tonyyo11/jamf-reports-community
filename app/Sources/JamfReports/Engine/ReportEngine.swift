@@ -1454,6 +1454,8 @@ struct ReportEngine: Sendable {
         "audit",
         // Duplicate-serial records (v1.23.0+) — data-integrity aggregate query.
         "duplicate-serials",
+        // jamf-cli's cross-product HTML dashboard (1.31.0+), saved as `.html`.
+        "dashboard",
         // SOFA OS currency and patch release dates — post-loop steps, not argv-matrix.
         "sofa",
         "patch-release-dates",
@@ -1780,6 +1782,7 @@ struct ReportEngine: Sendable {
         // gate below all key on it.
         let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
         let specNames = JamfCLIInstaller.supportsSpecDerivedNames(detectedVersion)
+        let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
         let commands = Self.collectCommandMatrix(profile: profile, specNames: specNames)
 
         let plannedCommands: [(args: [String], kind: String)]
@@ -1861,6 +1864,16 @@ struct ReportEngine: Sendable {
                 ))
                 continue
             }
+            // And for the dashboard on a jamf-cli that has no such command: recorded
+            // nowhere, like the Platform-only skip, since it is not a failure either.
+            if kind == Self.dashboardKind, !dashboardSupported {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): needs jamf-cli \(JamfCLIInstaller.dashboardVersion) "
+                        + "or later (installed: \(detectedVersion ?? "unknown"))"
+                ))
+                continue
+            }
 
             // T-9 tier filter: drop kinds outside the selected tier set.
             // An unmapped kind has no tier and is always allowed — the
@@ -1894,6 +1907,16 @@ struct ReportEngine: Sendable {
                     kind: kind, profile: profile, arguments: args,
                     configuredTitles: loadedConfig?.platform?.benchmarkTitles ?? [],
                     discovery: &benchmarkDiscovery,
+                    supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
+                    dataDir: dataDir, recordManifest: recordManifest,
+                    useCachedData: useCachedData, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine
+                )
+            } else if kind == Self.dashboardKind {
+                result = try await Self.collectDashboard(
+                    profile: profile,
+                    arguments: Self.dashboardArguments(
+                        base: args, profile: profile, protect: loadedConfig?.protect),
                     supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
                     dataDir: dataDir, recordManifest: recordManifest,
                     useCachedData: useCachedData, stateStore: stateStore,
@@ -2241,6 +2264,11 @@ struct ReportEngine: Sendable {
             // failure mode on old binaries is a clean non-zero exit.
             (["-p", profile, "pro", "report", "duplicate-serials", "--output", "json"],
              "duplicate-serials"),
+            // jamf-cli 1.31.0+: one self-contained HTML page of fleet aggregates, which
+            // the HTML report embeds. `collectDashboard` adds `--out-file` and any Protect
+            // profile; `collect` skips the row on an older binary. `--output json` only
+            // shapes the error envelope on stdout; the page itself is always HTML.
+            (["-p", profile, "dashboard", "--output", "json"], dashboardKind),
         ]
     }
 
@@ -2368,7 +2396,10 @@ struct ReportEngine: Sendable {
         // Only claim "using cached" when a cached snapshot for this kind exists; otherwise
         // the generate step has nothing to fall back to and the copy would mislead.
         let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
-        let cacheNote = FileManager.newestJSONFile(in: kindDir) != nil
+        let cached = kind == Self.dashboardKind
+            ? FileManager.newestHTMLSnapshot(in: kindDir)
+            : FileManager.newestJSONFile(in: kindDir)
+        let cacheNote = cached != nil
             ? "skipped (using cached)"
             : "no cached snapshot available"
         // jamf-cli's own reason beats a bare exit code in Run History.
@@ -3517,6 +3548,7 @@ struct ReportEngine: Sendable {
         data: Data,
         kind: String,
         dataDir: URL,
+        fileExtension: String = "json",
         recordManifest: Bool = false,
         onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
     ) throws {
@@ -3530,7 +3562,7 @@ struct ReportEngine: Sendable {
         formatter.dateFormat = "yyyyMMdd'T'HHmmss"
         formatter.locale = Locale(identifier: "en_US_POSIX")
         let ts = formatter.string(from: Date())
-        let file = dir.appendingPathComponent("\(kind)_\(ts).json")
+        let file = dir.appendingPathComponent("\(kind)_\(ts).\(fileExtension)")
         // Atomic (temp file + rename) so a same-second collision, crash, or
         // full disk mid-write never leaves a torn snapshot on disk — mirrors
         // CLIBridge.saveJSONSnapshot's S-01 discipline. The 0600 setAttributes

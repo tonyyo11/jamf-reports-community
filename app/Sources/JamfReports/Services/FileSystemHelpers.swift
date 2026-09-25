@@ -29,6 +29,12 @@ extension FileManager {
         newestSnapshot(inDirectory: dir, extensions: ["json"])
     }
 
+    /// Newest `.html` snapshot in `dir`, by the same rule. jamf-cli's `dashboard`
+    /// is the one kind saved as a page rather than JSON.
+    static func newestHTMLSnapshot(in dir: URL) -> URL? {
+        newestSnapshot(inDirectory: dir, extensions: ["html"])
+    }
+
     /// Shared body: enumerate, confine to `dir`, filter, order.
     private static func newestSnapshot(inDirectory dir: URL, extensions: Set<String>) -> URL? {
         let fm = FileManager.default
