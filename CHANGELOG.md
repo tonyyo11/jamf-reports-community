@@ -155,6 +155,10 @@ tenant's real data in every section, and you choose what it shows.
 - A **Run now** request queued behind a long run is no longer lost if the background item stops
   before reaching it. If the background item cannot record that a schedule started, it skips only
   that schedule, still runs the rest and sends the overdue digest, and logs the problem to Console.
+- Scheduled scans no longer skip a week. A weekly scan that started a few minutes earlier than
+  the week before found its sources not yet due and waited another seven days, and the two-day
+  inventory sources on a daily schedule ran every third day for the same reason. A source now
+  counts as due up to an hour early.
 - `jamf_cli.collect_skip` works again; it had been read and then ignored. Listing
   `patch-device-failures`, `profile-status`, `update-status` or `update-device-failures` stops
   collect from running those per-device-heavy reports, which can stall an on-premises server, and

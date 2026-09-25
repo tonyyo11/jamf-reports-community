@@ -242,7 +242,9 @@ is no on-prem/cloud/custom preset picker (removed in 2.3.0):
 | Scan | Full device inventory and patch/update failure scans — minutes on large fleets | Every 7 days |
 
 These cadences gate the app's own background refresh: opening a dashboard that already has
-data within its tier's window does not re-fetch. To force fresh data on demand:
+data within its tier's window does not re-fetch. A tier counts as due up to an hour early, so a
+scheduled run that starts a few minutes earlier than the last one still collects it instead of
+waiting a whole extra cycle. To force fresh data on demand:
 
 - **Refresh all** — the toolbar refresh button re-collects every tier now.
 - **Collect now** — each dashboard's freshness banner re-collects just that page's tier(s).

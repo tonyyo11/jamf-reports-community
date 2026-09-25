@@ -38,15 +38,73 @@ final class IsDueTests: XCTestCase {
     // MARK: - Cadence math
 
     func testFreshIsNotDue() {
-        let lastRun = referenceNow.addingTimeInterval(-Double(oneDay - 1))
+        // One second short of the cadence less its one-hour tolerance.
+        let lastRun = referenceNow.addingTimeInterval(-Double(oneDay - 3_600 - 1))
         XCTAssertFalse(
             CadenceResolver.isDue(
                 lastRun: lastRun,
                 cadence: .seconds(oneDay),
                 now: referenceNow
             ),
-            "Report fetched 1 s before cadence elapsed must not be due"
+            "Report fetched 1 s before cadence less tolerance must not be due"
         )
+    }
+
+    func testAnHourEarlyIsDue() {
+        let lastRun = referenceNow.addingTimeInterval(-Double(oneDay - 3_600))
+        XCTAssertTrue(
+            CadenceResolver.isDue(
+                lastRun: lastRun,
+                cadence: .seconds(oneDay),
+                now: referenceNow
+            ),
+            "Report fetched cadence less the one-hour tolerance ago must be due"
+        )
+    }
+
+    // MARK: - Tolerance (#207 G1)
+
+    /// A weekly scan stamped at 07:00:30 last week, with this week's tick waking
+    /// at 07:00:10, is 20 s short of the cadence. Without a tolerance it read
+    /// "not due" and the scan waited another week.
+    func testWeeklyScanStartingEarlierThanLastWeekIsDue() {
+        let lastRun = referenceNow.addingTimeInterval(-Double(604_800 - 20))
+        XCTAssertTrue(
+            CadenceResolver.isDue(lastRun: lastRun, cadence: .seconds(604_800), now: referenceNow)
+        )
+    }
+
+    /// The 48-hour inventory tier on a daily schedule: two seconds short on
+    /// the second day used to push it to the third.
+    func testInventoryTierOnADailyScheduleIsDueOnTheSecondDay() {
+        let lastRun = referenceNow.addingTimeInterval(-Double(172_800 - 2))
+        XCTAssertTrue(
+            CadenceResolver.isDue(lastRun: lastRun, cadence: .seconds(172_800), now: referenceNow)
+        )
+    }
+
+    /// A day into the weekly cadence is still not due: the tolerance is an
+    /// hour, not a fraction of the week.
+    func testToleranceIsAnHourForTheShippingTiers() {
+        XCTAssertEqual(CadenceResolver.dueTolerance(for: 43_200), 3_600)
+        XCTAssertEqual(CadenceResolver.dueTolerance(for: 172_800), 3_600)
+        XCTAssertEqual(CadenceResolver.dueTolerance(for: 604_800), 3_600)
+        let dayEarly = referenceNow.addingTimeInterval(-Double(604_800 - oneDay))
+        XCTAssertFalse(
+            CadenceResolver.isDue(lastRun: dayEarly, cadence: .seconds(604_800), now: referenceNow)
+        )
+    }
+
+    /// A short cadence gets a tenth of its interval, so it is never due at once.
+    func testToleranceIsATenthOfAShortInterval() {
+        XCTAssertEqual(CadenceResolver.dueTolerance(for: 60), 6)
+        let cadence = Cadence.seconds(60)
+        XCTAssertFalse(CadenceResolver.isDue(
+            lastRun: referenceNow.addingTimeInterval(-53), cadence: cadence, now: referenceNow
+        ))
+        XCTAssertTrue(CadenceResolver.isDue(
+            lastRun: referenceNow.addingTimeInterval(-54), cadence: cadence, now: referenceNow
+        ))
     }
 
     func testExactlyDue() {
