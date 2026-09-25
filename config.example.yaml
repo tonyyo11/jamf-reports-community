@@ -498,8 +498,10 @@ ai:
 # Experimental Features → Platform API.
 #
 # Leave compliance_benchmarks empty to collect every benchmark on the tenant, or
-# list titles to collect only those. Titles match exactly and are case-sensitive;
-# a title shared by two benchmarks is skipped. Results land in one Compliance
+# list titles to collect only those. Titles match exactly and are case-sensitive
+# (benchmark IDs do not match); a title shared by two benchmarks is skipped. If
+# none of the listed titles is on the tenant, both compliance sources fail with
+# that cause in Run History and keep their last data. Results land in one Compliance
 # Rules sheet and one Compliance Devices sheet with a Benchmark column, and the
 # Compliance Benchmarks screen shows one benchmark at a time.
 

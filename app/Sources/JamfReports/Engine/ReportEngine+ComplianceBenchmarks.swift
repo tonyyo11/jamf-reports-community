@@ -18,6 +18,9 @@ extension ReportEngine {
         let ambiguous: [String]
         /// Starts with "-"; jamf-cli would parse it as a flag, not a title.
         var unsafe: [String] = []
+        /// Every title the tenant lists, in listing order, for the hint when none of the
+        /// configured titles can be collected.
+        var listed: [String] = []
     }
 
     /// The once-per-run benchmark listing, shared by both compliance kinds.
@@ -49,13 +52,15 @@ extension ReportEngine {
         let usable = listed.filter { !ambiguous.contains($0) && !unsafe.contains($0) }
         guard !configured.isEmpty else {
             return BenchmarkSelection(
-                titles: usable, missing: [], ambiguous: ambiguous, unsafe: unsafe)
+                titles: usable, missing: [], ambiguous: ambiguous, unsafe: unsafe,
+                listed: listed)
         }
         return BenchmarkSelection(
             titles: configured.filter { usable.contains($0) },
             missing: configured.filter { idsByTitle[$0] == nil },
             ambiguous: ambiguous.filter { configured.contains($0) },
-            unsafe: unsafe.filter { configured.contains($0) }
+            unsafe: unsafe.filter { configured.contains($0) },
+            listed: listed
         )
     }
 
@@ -137,6 +142,15 @@ extension ReportEngine {
                 dataDir: dataDir, stateStore: stateStore, collectStart: collectStart,
                 onLine: onLine)
         case .selected(let selection):
+            // Titles were configured and none can be collected: a benchmark ID, a typo, the
+            // Add button's placeholder or a renamed benchmark. Saving `[]` here recorded a
+            // success and put an empty snapshot in front of the last good one.
+            if selection.titles.isEmpty, !configuredTitles.isEmpty {
+                return try recordUncollectableSelection(
+                    kind: kind, selection: selection, configuredTitles: configuredTitles,
+                    dataDir: dataDir, useCachedData: useCachedData, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine)
+            }
             titles = selection.titles
         }
 
@@ -177,6 +191,45 @@ extension ReportEngine {
             dataDir: dataDir, recordManifest: recordManifest, stateStore: stateStore,
             collectStart: collectStart, onLine: onLine
         )
+    }
+
+    /// Fails `kind` because none of the configured titles can be collected, as a failed jamf-cli
+    /// attempt would (`recordUnlandedAttempt`): nothing is saved, so the last snapshot stays
+    /// the newest, and the cause names the configured titles and what the tenant lists.
+    static func recordUncollectableSelection(
+        kind: String,
+        selection: BenchmarkSelection,
+        configuredTitles: [String],
+        dataDir: URL,
+        useCachedData: Bool,
+        stateStore: StateFileStore?,
+        collectStart: Date,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) throws -> KindCollectResult {
+        let tenant = selection.listed.isEmpty
+            ? "This tenant lists no benchmarks."
+            : "This tenant lists: " + selection.listed.joined(separator: "; ") + "."
+        let hint = "Titles must match exactly, case included. \(tenant) "
+            + "Leave the list empty to collect every benchmark."
+        let cause = FailureCause(
+            kind: .noConfiguredBenchmark, names: configuredTitles,
+            hint: String(decoding: hint.utf8.prefix(FailureCause.hintByteLimit), as: UTF8.self),
+            exitCode: 0)
+        stateStore?.record(.failed(exitCode: 0), report: kind, at: collectStart, cause: cause)
+        guard useCachedData else {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(kind): nothing to collect\(causeSuffix(cause)) "
+                            + "— failing (use_cached_data=false)"))
+            throw ReportEngineError.collectFailed(kind: kind, exitCode: 0)
+        }
+        let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
+        let cacheNote = FileManager.newestJSONFile(in: kindDir) != nil
+            ? "skipped (using cached)"
+            : "no cached snapshot available"
+        onLine(.init(timestamp: Date(), level: .warn,
+                     text: "[warn] \(kind): \(cacheNote)" + causeSuffix(cause)))
+        return KindCollectResult(
+            outcome: CollectOutcome(kind: kind, exitCode: 0, cause: cause.kind), saved: false)
     }
 
     static func discoverBenchmarks(

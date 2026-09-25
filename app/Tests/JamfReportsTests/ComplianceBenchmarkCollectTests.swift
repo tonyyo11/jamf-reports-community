@@ -57,6 +57,13 @@ final class ComplianceBenchmarkSelectionTests: XCTestCase {
         XCTAssertEqual(selection.titles, [])
     }
 
+    /// A title listed twice ran twice and saved its rows twice.
+    func testConfiguredTitlesAreTrimmedWithBlanksAndRepeatsDropped() throws {
+        let json = #"{"compliance_benchmarks":[" CIS Level 1","CIS Level 1","","STIG "]}"#
+        let config = try JSONDecoder().decode(PlatformConfig.self, from: data(json))
+        XCTAssertEqual(config.benchmarkTitles, ["CIS Level 1", "STIG"])
+    }
+
     func testNonJSONListOutputIsRejected() {
         XCTAssertNil(ReportEngine.benchmarkSelection(
             fromListOutput: data("Usage: jamf-cli pro"), configured: []))
@@ -225,6 +232,47 @@ final class ComplianceBenchmarkCollectTests: XCTestCase {
         let log = calls()
         XCTAssertFalse(log.contains { $0.contains("CIS-L1") }, "\(log)")
         XCTAssertTrue(log.contains { $0.contains("compliance-rules STIG-High") })
+    }
+
+    /// A benchmark ID (the Config help used to ask for "titles or IDs"), a typo or the Add
+    /// button's placeholder matches no title. That landed `[]` as a success: the health strip
+    /// stayed green while the screen said nothing had been collected.
+    func testConfiguredTitlesThatMatchNothingFailWithTheirCause() async throws {
+        try writeConfig("platform:\n  compliance_benchmarks:\n    - \"12345\"\n")
+        try answer("list", #"[{"id":"12345","title":"CIS-L1"},{"id":"2","title":"STIG-High"}]"#)
+        let log = BenchmarkLogCollector()
+
+        try await collectInventory(onLine: log.append)
+
+        XCTAssertFalse(calls().contains { $0.contains(" report compliance-") }, "\(calls())")
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        for kind in ReportEngine.benchmarkReportKinds {
+            let dir = try WorkspacePaths.dataDir(for: profile).appendingPathComponent(kind)
+            XCTAssertNil(FileManager.newestJSONFile(in: dir), "\(kind): nothing is saved")
+            let cause = try XCTUnwrap(store.cause(for: kind), kind)
+            XCTAssertEqual(cause.kind, .noConfiguredBenchmark)
+            XCTAssertEqual(cause.names, ["12345"])
+            XCTAssertTrue(cause.isPermanent, "an hourly retry cannot fix the config")
+            XCTAssertEqual(cause.hint?.contains("This tenant lists: CIS-L1; STIG-High."), true,
+                           cause.hint ?? "no hint")
+        }
+        XCTAssertTrue(log.texts.contains {
+            $0.contains("[warn] compliance-rules: no cached snapshot available — cause: no "
+                + "benchmark in platform.compliance_benchmarks can be collected: 12345")
+        }, "\(log.texts)")
+    }
+
+    func testARepeatedConfiguredTitleIsCollectedOnce() async throws {
+        try writeConfig(
+            "platform:\n  compliance_benchmarks:\n    - \" STIG-High\"\n    - \"STIG-High\"\n")
+        try answer("list", #"[{"id":"1","title":"CIS-L1"},{"id":"2","title":"STIG-High"}]"#)
+        try answer("rules-STIG-High", #"[{"rule":"FileVault","ruleId":"r7","passed":5}]"#)
+        try answer("devices-STIG-High", "[]")
+
+        try await collectInventory()
+
+        XCTAssertEqual(calls().filter { $0.contains("compliance-rules STIG-High") }.count, 1)
+        XCTAssertEqual(try rows("compliance-rules").count, 1)
     }
 
     func testAFailedListingFailsBothKindsWithItsExitCode() async throws {

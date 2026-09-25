@@ -31,6 +31,10 @@ struct FailureCause: Codable, Equatable, Sendable {
         /// `pro report ddm-status` found no declaration data. jamf-cli skips refused device
         /// reports silently, so the environment has none or the permission is missing.
         case noDeclarationData
+        /// `platform.compliance_benchmarks` lists titles and none of them can be collected: the
+        /// tenant lists none of them, or each one is shared by two benchmarks or starts with
+        /// "-". `names` holds the configured titles. Recorded by collect, never classified.
+        case noConfiguredBenchmark
         /// Rule 8: anything else; the exit-code handling that existed before applies.
         case other
     }
@@ -53,11 +57,12 @@ struct FailureCause: Codable, Equatable, Sendable {
     static let noDeclarationDataStderrMarker = "No DDM declaration data found."
 
     /// Retrying within the hour cannot help (spec §9.5): the credential, its scope ID, its
-    /// permissions or the environment's data has to change first. Edge blocks stay retryable.
+    /// permissions, the environment's data or the config has to change first. Edge blocks stay
+    /// retryable.
     var isPermanent: Bool {
         switch kind {
         case .scopeRejected, .unknownEnvironment, .notServed, .missingPermission,
-             .noDeclarationData: true
+             .noDeclarationData, .noConfiguredBenchmark: true
         case .edgeBlocked, .other: false
         }
     }
@@ -76,6 +81,11 @@ struct FailureCause: Codable, Equatable, Sendable {
         case .noDeclarationData:
             "no DDM declaration data: the environment has none, or each device's report was "
                 + "refused (Deployment > Declarations reporting)"
+        case .noConfiguredBenchmark:
+            names.isEmpty
+                ? "no benchmark in platform.compliance_benchmarks can be collected"
+                : "no benchmark in platform.compliance_benchmarks can be collected: "
+                    + names.joined(separator: "; ")
         case .other: "exit \(exitCode)"
         }
     }

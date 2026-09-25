@@ -1076,7 +1076,7 @@ private struct PlatformTab: View {
                         }
                     }
                     PNPButton(title: "Add benchmark", icon: "plus", style: .ghost, size: .sm, action: { ws.addComplianceBenchmark() })
-                    FieldHelp(text: "Benchmark titles or IDs. Generates per-rule and per-device sheets.")
+                    FieldHelp(text: "Exact titles, case-sensitive. Empty collects every benchmark.")
                 }
             }
         }
