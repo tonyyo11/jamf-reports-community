@@ -714,6 +714,26 @@ final class WorkspaceStore {
         configError = nil
     }
 
+    /// Takes the column mappings a re-scaffold just wrote to config.yaml into the working
+    /// config and its saved baseline, and rebuilds the Columns tab. Other unsaved edits stay.
+    /// Before, the Columns tab kept the old mappings, and the Save the re-scaffold toast asks
+    /// for wrote them back over the merge.
+    func adoptScaffoldedColumns(from saved: ConfigState) {
+        guard !demoMode else { return }
+        configState.columns = saved.columns
+        configState.mobileColumns = saved.mobileColumns
+        configState.failuresCountColumn = saved.failuresCountColumn
+        configState.failuresListColumn = saved.failuresListColumn
+        _savedState?.columns = saved.columns
+        _savedState?.mobileColumns = saved.mobileColumns
+        _savedState?.failuresCountColumn = saved.failuresCountColumn
+        _savedState?.failuresListColumn = saved.failuresListColumn
+        if let reloaded = try? ConfigService.load(profile: profile) {
+            _loadedDoc = reloaded.document
+        }
+        rebuildColumnMappings()
+    }
+
     // MARK: Mutations
 
     func addSecurityAgent() {

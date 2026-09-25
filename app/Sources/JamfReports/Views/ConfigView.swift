@@ -617,8 +617,8 @@ private struct ColumnsTab: View {
                 // thresholds) untouched. ConfigService.save preserves unmanaged keys.
                 // File reads + config load/save; keep off the main actor so a
                 // large CSV export never blocks the UI.
-                let (report, familyLabel) = try await Task.detached {
-                    () throws -> (ScaffoldService.ColumnMergeReport, String) in
+                let (report, familyLabel, merged) = try await Task.detached {
+                    () throws -> (ScaffoldService.ColumnMergeReport, String, ConfigState) in
                     let sample = try ScaffoldService.readSample(from: csvURL)
                     let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
                     var loaded = try ConfigService.load(profile: profile)
@@ -653,7 +653,7 @@ private struct ColumnsTab: View {
                     _ = try ConfigService.save(
                         profile: profile, state: loaded.state, existingDocument: loaded.document)
                     let familyLabel = isMobile ? "mobile device export" : "computer export"
-                    return (report, familyLabel)
+                    return (report, familyLabel, loaded.state)
                 }.value
                 await MainActor.run {
                     workspace.toast = Toast(
@@ -664,6 +664,11 @@ private struct ColumnsTab: View {
                     )
                 }
                 workspace.reloadFromDisk()
+                // reloadFromDisk() leaves the loaded config alone, so without this the
+                // Columns tab showed the old mappings and Save wrote them back.
+                if workspace.profile == profile {
+                    workspace.adoptScaffoldedColumns(from: merged)
+                }
             } catch {
                 await MainActor.run {
                     workspace.toast = Toast(
