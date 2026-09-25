@@ -316,13 +316,7 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     }
 }
 
-// MARK: - Sheet catalog (for Customize screen)
-
-struct SheetGroup: Identifiable, Sendable {
-    var id: String { group }
-    let group: String
-    var items: [SheetItem]
-}
+// MARK: - Sheet item (CustomizationWizard, TemplateApplier tests)
 
 struct SheetItem: Identifiable, Sendable {
     var id: String { name }

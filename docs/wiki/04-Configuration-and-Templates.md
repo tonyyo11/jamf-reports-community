@@ -220,14 +220,20 @@ column name and detected type, and any column missing from the cached data is fl
 
 ## The Customize screen
 
-The **Customize** screen controls what a generated workbook contains:
+The **Customize** screen holds the report options that are not in Config:
 
-- Toggle individual sheets on or off.
-- Choose which metrics appear on the Overview score cards.
-- Apply a template preset as a starting point.
 - Two chart switches, saved per profile when you press Apply:
   **Save PNGs alongside xlsx** (`charts.save_png`) and **Per-major-version charts**
   (`charts.os_adoption.per_major_charts`).
+- A button to the Overview's own **Customize** sheet, where you choose which score cards and
+  sections the Overview shows.
+- How to get a shorter workbook: the command-line tool's `--template` (see Report templates
+  below).
+
+Before 2.8.1 the screen also had a grid of sheet toggles, an Executive preset and three more
+chart switches. Nothing saved them or read them when generating, so they are gone. The
+stale-device trend (`charts.device_state_trend.enabled`) and the compliance bands
+(`charts.compliance_trend.bands`) are set in `config.yaml`.
 
 Both chart switches default to on, so a workspace with no `charts:` block behaves as it
 always has. `save_png: false` now genuinely stops standalone PNG files being written
@@ -256,9 +262,12 @@ against broken column mappings no longer looks clean in Run History.
 
 ## Report templates
 
-The app ships five report templates. Pick one when generating; each is a curated sheet
-selection, not a separate engine. All formats — XLSX, HTML, PDF — are produced by the
-native Swift engine.
+The app ships five report templates, each a curated sheet selection rather than a separate
+engine. The app itself generates the Full Instance report, with every sheet; generate a
+template with the command-line tool, for example
+`jamf-reports generate --profile <profile> --template executive` (see
+[Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line)).
+All formats — XLSX, HTML, PDF — are produced by the native Swift engine.
 
 | Template | Audience | Cadence | Focus |
 |---|---|---|---|

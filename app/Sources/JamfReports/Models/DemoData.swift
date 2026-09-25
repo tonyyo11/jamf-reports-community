@@ -221,41 +221,6 @@ enum DemoData {
         max(totalDevices - index * 37, 0)
     }
 
-    static let sheetCatalog: [SheetGroup] = [
-        .init(group: "CSV-driven", items: [
-            .init(name: "Device Inventory",    req: "csv", on: true),
-            .init(name: "Stale Devices",       req: "csv", on: true),
-            .init(name: "Security Controls",   req: "csv", on: true),
-            .init(name: "Security Agents",     req: "csv", on: true),
-            .init(name: "Compliance",          req: "csv", on: true),
-        ]),
-        .init(group: "jamf-cli (live)", items: [
-            .init(name: "Fleet Overview",      req: "cli", on: true),
-            .init(name: "Security Posture",    req: "cli", on: true),
-            .init(name: "Inventory Summary",   req: "cli", on: true),
-            .init(name: "Device Compliance",   req: "cli", on: true),
-            .init(name: "EA Coverage",         req: "cli", on: true),
-            .init(name: "EA Definitions",      req: "cli", on: false),
-            .init(name: "Software Installs",   req: "cli", on: true),
-            .init(name: "Package Lifecycle",   req: "cli", on: false),
-            .init(name: "Policy Health",       req: "cli", on: true),
-            .init(name: "Profile Status",      req: "cli", on: true),
-            .init(name: "App Status",          req: "cli", on: true),
-            .init(name: "Patch Compliance",    req: "cli", on: true),
-            .init(name: "Update Status",       req: "cli", on: true),
-        ]),
-        .init(group: "Charts", items: [
-            .init(name: "OS Adoption",         req: "chart", on: true),
-            .init(name: "Compliance Trend",    req: "chart", on: true),
-            .init(name: "Device State Trend",  req: "chart", on: true),
-        ]),
-        .init(group: "Platform API (preview)", items: [
-            .init(name: "Platform Blueprints",        req: "platform", on: false),
-            .init(name: "Platform Compliance Rules",  req: "platform", on: false),
-            .init(name: "Platform DDM Status",        req: "platform", on: false),
-        ]),
-    ]
-
     static let columnMappings: [ColumnMapping] = [
         .init(key: "computer_name",     label: "Computer Name",      value: "Computer Name", required: true, status: .ok),
         .init(key: "serial_number",     label: "Serial Number",      value: "Serial Number", required: true, status: .ok),

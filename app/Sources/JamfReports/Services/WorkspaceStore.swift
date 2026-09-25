@@ -10,7 +10,6 @@ final class WorkspaceStore {
     var profile: String
     var profiles: [JamfCLIProfile]
     var schedules: [Schedule]
-    var sheetCatalog: [SheetGroup]
     var customEAs: [CustomEA]
     var columnMappings: [ColumnMapping]
     var demoMode: Bool
@@ -249,7 +248,6 @@ final class WorkspaceStore {
         self.schedules = isDemo ? DemoData.scheduledRuns
             : Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
                 profiles: realProfiles, policy: AutomationPolicy.current()))
-        self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
         self.selectedScoreCards = Self.loadPersistedScoreCards() ?? Self.defaultScoreCards

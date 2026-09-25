@@ -197,6 +197,11 @@ tenant's real data in every section, and you choose what it shows.
   never read, so it never affected a report. `school-check` is unchanged, and a config.yaml that
   still has `school_columns` keeps working; the section is ignored.
 - The `experimental:` block in config.example.yaml. Nothing read it.
+- Customize Reports' sheet toggles, Executive preset and workbook preview, and its OS Adoption,
+  Compliance Trend and Device State Trend switches. None of them was saved or used when a
+  report was generated, yet Apply said Saved. The screen keeps the two chart options that do
+  save, and says how to generate a shorter template with the command-line tool. Apply also no
+  longer saves unsaved changes from the Config screen along with them.
 
 ### Changed
 
