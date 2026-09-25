@@ -155,8 +155,9 @@ snapshots from different tenants don't overwrite each other.
 
 `collect_skip` accepts any of: `patch-device-failures`, `profile-status`,
 `update-status`, `update-device-failures`. These are the four per-device-heavy
-queries known to stall on-prem Jamf Pro. Underscores and hyphens are
-interchangeable. Core inventory commands always run.
+queries known to stall on-prem Jamf Pro. It also accepts `dashboard` (2.9), which
+sweeps the whole inventory again for the HTML report's dashboard section.
+Underscores and hyphens are interchangeable. Core inventory commands always run.
 `ReportEngine.collectSkipKinds` normalizes the list (trimmed, lowercased, anything
 outside `ReportEngine.skippableKinds` dropped); `collect` skips a listed kind even
 when forced, logs `[skip] <kind>: listed in jamf_cli.collect_skip` and records
@@ -553,6 +554,24 @@ the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 **Report templates.** `Engine/Templates/` defines the `ReportTemplate` protocol plus the shipping templates (Full Instance Report, Executive, Operational, Compliance, Asset, Security Posture, School, Custom), resolved by `TemplateResolver`. Each template lists its `includedSheets` (`SheetID` raw values must match `CoreDashboard.sheetPlan` names exactly) and `htmlSections` (`SectionID` → `HtmlReport.buildSectionMap`). **`FullInstanceTemplate` (`full-instance`) is the default** for both GUI generation (GenerateSheet) and engine-level `generateAll`/`generate` calls; it includes every sheet and section. `CustomTemplate` (`custom`) lets users select any subset of sheets for single-sheet or focused reports, with the selected sheet list persisted in AppStorage. Adding a new sheet/section: add the enum case, register the builder, and add it to FullInstanceTemplate (a test asserts FullInstanceTemplate covers all SectionID cases).
 
 **Snapshot key contract (Swift HTML report).** `HtmlReport` loads cached snapshots by the canonical on-disk names that `ReportEngine.collect` writes — `computers`, `policies`, `smart-computer-groups`, `patch-device-failures` — with the older alternate names kept as fallback aliases in `loadJSONList(kinds:)` calls. When adding a section that reads a new kind, the kind must also be added to the collect command matrix and `knownCollectKinds` in `ReportEngine.swift` (and `CollectionTier` if it should participate in tiered collection); otherwise the section will silently render its empty-state placeholder forever. Protect is no exception: its sections read the `protect-alerts` and `protect-insights` kind dirs under the same `jamf_cli.data_dir` as everything else. `protect.data_dir` was removed in 2.8.1 — it named a directory nothing ever wrote.
+
+**jamf-cli dashboard (2.9).** `dashboard` is the one kind saved as `.html`: jamf-cli 1.31.0's
+top-level `dashboard` command writes one self-contained page of fleet aggregates (Jamf Pro, the
+Platform API, Protect, Security Cloud; no device names, serials or usernames).
+`ReportEngine+Dashboard.collectDashboard` runs it with `--out-file` into a staging file and
+saves the page with `saveSnapshot(fileExtension: "html")`; `--output json` only makes the error
+envelope on stdout JSON for `recordUnlandedAttempt`. Inventory tier. `collect` skips it, recording
+nothing, below 1.31.0 or when the version is unknown (`JamfCLIInstaller.supportsDashboard`), and
+`WorkspaceStore.expectedKinds(dashboardSupported:)` agrees. When `protect.enabled` names another
+profile it rides along as `--include-profile=<name>`; if that stops jamf-cli before it collects
+anything (exit 1 or 2, empty page), one more run goes without it. Exit 7 lands the page, whose
+own banner names the missing sections, with a `[warn]` line quoting jamf-cli's message.
+`HtmlReport+Dashboard` embeds the newest page (`FileManager.newestHTMLSnapshot`) as the
+`.jamfDashboard` section in a `sandbox="allow-scripts"` srcdoc iframe, never same-origin. It adds
+CSS showing the `.section` cards and `.ring` fills (jamf-cli reveals both by animation, and its
+own print CSS disables animations without restoring them) and a script posting the page height,
+which the report accepts only from that frame. Print shows a note instead, because a frame does
+not break across pages. Pages over `maxEmbeddedDashboardBytes` are named, not embedded.
 
 **Computer inventory sections (2.8.0).** `collect` passes `--section` with
 `ReportEngine.computerInventorySections` (General, Hardware, Operating System, User and

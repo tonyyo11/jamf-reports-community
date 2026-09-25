@@ -96,6 +96,8 @@ enum SectionID: String, Sendable, CaseIterable {
     case cleanupAnalysis = "cleanup_analysis"
     case timeline        = "timeline"
     case osCurrency      = "os_currency"
+    /// jamf-cli's `dashboard` page, embedded from the newest `dashboard` snapshot.
+    case jamfDashboard   = "jamf_dashboard"
 }
 
 /// PDF pagination strategy hint.

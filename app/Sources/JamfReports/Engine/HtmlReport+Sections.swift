@@ -1649,6 +1649,7 @@ extension HtmlReport {
             ),
             .timeline: buildTimelineSection(),
             .osCurrency: buildOSCurrencySection(),
+            .jamfDashboard: buildJamfDashboardSection(),
         ]
     }
 
