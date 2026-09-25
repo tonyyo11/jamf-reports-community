@@ -422,16 +422,39 @@ final class SchoolDashboardTests: XCTestCase {
         XCTAssertTrue(cells.contains("No"))
     }
 
-    func testOSVersionsGroupsByMajorVersionDespiteNamePrefix() throws {
+    func testOSVersionsGroupsByPlatformAndMajorVersion() throws {
         let dataDir = try tempDataDir(writing: deviceFixtureJSON(), kind: "school-devices")
         let workbook = Workbook()
         let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
         XCTAssertNoThrow(try dash.writeSchoolOSVersions())
         let cells = strings(in: "OS Versions", of: workbook)
-        XCTAssertTrue(cells.contains("14"), "major version extracted past the \"macOS \" prefix")
-        XCTAssertTrue(cells.contains("17"), "major version extracted past the \"iPadOS \" prefix")
+        XCTAssertTrue(cells.contains("macOS 14"), "the major version keeps its platform")
+        XCTAssertTrue(cells.contains("iPadOS 17"), "the major version keeps its platform")
         let counts = ints(in: "OS Versions", of: workbook)
         XCTAssertTrue(counts.contains(2), "both iPadOS 17.4 devices grouped into one bucket")
+    }
+
+    /// From 26 on every Apple platform shares its major version; "26" alone merged them.
+    func testOSVersionsKeepsMacsAndIPadsOnTheSameMajorApart() throws {
+        let json = """
+        [
+          {"name": "Mac-1", "os": "macOS 26.0", "isManaged": true},
+          {"name": "Mac-2", "os": "macOS 26.1", "isManaged": true},
+          {"name": "iPad-1", "os": "iPadOS 26.0", "isManaged": true},
+          {"name": "Mac-3", "os": "macOS 9.2", "isManaged": true}
+        ]
+        """
+        let dataDir = try tempDataDir(writing: json, kind: "school-devices")
+        let workbook = Workbook()
+        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        XCTAssertNoThrow(try dash.writeSchoolOSVersions())
+        let cells = strings(in: "OS Versions", of: workbook)
+        XCTAssertTrue(cells.contains("macOS 26"))
+        XCTAssertTrue(cells.contains("iPadOS 26"))
+        XCTAssertFalse(cells.contains("26"), "no bucket merges both platforms")
+        let order = cells.filter { $0.hasPrefix("macOS ") }
+        XCTAssertEqual(order, ["macOS 26", "macOS 9"], "versions sort numerically, newest first")
+        XCTAssertEqual(ints(in: "OS Versions", of: workbook).sorted(), [1, 1, 2])
     }
 
     func testDeviceStatusCountsIsManagedAndIsSupervised() throws {
