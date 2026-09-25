@@ -217,6 +217,11 @@ tenant's real data in every section, and you choose what it shows.
   never read, so it never affected a report. `school-check` is unchanged, and a config.yaml that
   still has `school_columns` keeps working; the section is ignored.
 - The `experimental:` block in config.example.yaml. Nothing read it.
+- The `protect` block's `use_cached_data` and per-sheet `enabled` switches, and the
+  `school_cli` block's `data_dir`, `multi` and `use_cached_data`, from config.example.yaml.
+  Nothing read them: Protect and School snapshots live under `jamf_cli.data_dir`, and each
+  Protect sheet is written when its data landed. A config.yaml that still has them keeps
+  working; they are ignored.
 - Customize Reports' sheet toggles, Executive preset and workbook preview, and its OS Adoption,
   Compliance Trend and Device State Trend switches. None of them was saved or used when a
   report was generated, yet Apply said Saved. The screen keeps the two chart options that do

@@ -313,39 +313,27 @@ html:
 # =============================================================================
 # JAMF PROTECT
 # =============================================================================
-# Experimental Jamf Protect workbook support. This is opt-in because the
-# community project has not been fully validated against a live Protect tenant.
-# The report currently builds a single "Protect Overview" sheet from:
+# Optional Jamf Protect data, collected after each Jamf Pro collect that runs:
 #   - jamf-cli protect overview
+#   - jamf-cli protect alerts list
 #   - jamf-cli protect computers list
-#   - jamf-cli protect analytics list
+#   - jamf-cli protect insights list
 #   - jamf-cli protect plans list
+# Snapshots live under jamf_cli.data_dir with the rest, and the workbook gets a
+# Protect Overview, Alerts, Computers, Insights and Plans sheet for each one that
+# landed.
 #
-# jamf-cli uses the same profile flag (`-p/--profile`) for both Pro and Protect,
-# but Protect still requires its own setup/auth flow:
+# Protect has its own jamf-cli profile and setup flow, which the app runs when
+# you connect Protect from onboarding or the Data Sources screen:
 #
 #   jamf-cli protect setup
 
 protect:
-  # Set true to enable the experimental Protect Overview sheet and snapshot
-  # collection for Jamf Protect commands.
+  # Set true to collect Jamf Protect data after each Jamf Pro collect.
   enabled: false
   # jamf-cli protect profile name; empty = jamf-cli's default Protect profile.
   # Distinct from jamf_cli.profile (the Pro profile).
   profile: ""
-  # Fall back to cached snapshots when a live Protect call fails.
-  use_cached_data: true
-  plans:
-    enabled: true                  # W22 — Protect Plans sheet (quick win)
-  # W23 standard pack — opt-in. Sheets are Experimental until pagination shape
-  # is verified against a live Protect tenant; field names follow the
-  # jamfprotect-go-sdk camelCase contract.
-  computers:
-    enabled: false                 # Protect Computers sheet (hostname/serial/plan/insights/connection)
-  alerts:
-    enabled: false                 # Protect Alerts sheet (severity/status/event/computer)
-  insights:
-    enabled: false                 # Protect Insights sheet (label/section/pass-fail-none)
 
 
 # =============================================================================
@@ -811,33 +799,15 @@ charts:
 # Configure this section to generate Jamf School reports.
 #
 # Setup:
-#   1. Connect a Jamf School profile from the app (onboarding, or the Sources
-#      screen). The app runs `jamf-cli school setup` and sets the fields below.
-#   2. Generate a Jamf School report from the app — from a CSV export, or from a
-#      connected School profile after a collect.
+#   1. Connect a Jamf School profile from the app (onboarding, or the Data
+#      Sources screen). The app runs `jamf-cli school setup` and sets the fields
+#      below.
+#   2. Collect, then generate a Jamf School report from the app. Its sheets come
+#      from the collected School data; a CSV export alone adds none.
 
 school_cli:
-  # Set true to use live jamf-cli school commands.
-  # When false, the Jamf School report still works from a CSV export.
+  # Set true to collect with live jamf-cli school commands. School snapshots
+  # are stored under jamf_cli.data_dir with the rest.
   enabled: false
-  # Directory where jamf-cli school JSON snapshots are stored.
-  data_dir: "school-cli-data"
   # Profile name configured via: jamf-cli school setup --profile-name <name>
   profile: "school"
-
-  # jamf-cli multi support (v1.9+)
-  # Run commands against multiple school profiles.
-  multi:
-    # Set true to use 'jamf-cli multi' for all live school data collection.
-    enabled: false
-    # Optional glob pattern to filter profiles (e.g., 'school-*').
-    filter: ""
-    # Optional comma-separated list of profile names.
-    profiles: ""
-    # Optional path to a file containing profile names or instance URLs.
-    from_file: ""
-    # Set true to run profiles sequentially instead of in parallel.
-    sequential: false
-
-  # Fall back to cached snapshots when live commands fail.
-  use_cached_data: true

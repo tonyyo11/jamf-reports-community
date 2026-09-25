@@ -162,8 +162,10 @@ these interactive dashboards either — it produces a separate generated workboo
 - **Config** — the `config.yaml` editor. See
   [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
   Data source: no tier (configuration only).
-- **Customize** — choose which sheets a generated workbook includes and which metrics the
-  Overview score cards show.
+- **Customize** — the chart options generated workbooks use: whether to save chart images,
+  and one OS chart per major macOS version. The app always generates the Full Instance
+  template; `jamf-reports generate --template` makes the shorter ones. Overview score cards
+  and sections are chosen on the Overview itself.
   Data source: no tier (user preferences).
 - **Data Sources** — the inputs surface: cached `jamf-cli` data, the CSV inbox, and
   snapshot status.

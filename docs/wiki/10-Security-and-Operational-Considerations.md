@@ -192,7 +192,7 @@ themselves do not need version control — only the input config.
 logs in `~/Jamf-Reports/<profile>/automation/logs/` and cleans up older ones automatically.
 
 **In regulated environments**, collect and ship logs to your SIEM (Splunk, Elastic, etc.)
-for a durable audit trail, especially for the write-path `patch-managed` command:
+for a durable audit trail:
 
 ```bash
 # Example: tail-ship logs to syslog
@@ -200,8 +200,7 @@ tail -f ~/Jamf-Reports/<profile>/automation/logs/*.log | nc -q1 siem.example.com
 ```
 
 Logs include timestamps, profile name, command, exit status, and error details — but NOT
-credential/secret material (always redacted). The `patch-managed` command logs device IDs
-affected and the managed-state change requested.
+credential/secret material (always redacted).
 
 ## Diagnostic Bundle Redaction Scope
 

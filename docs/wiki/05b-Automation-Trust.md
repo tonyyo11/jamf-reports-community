@@ -85,12 +85,21 @@ next collect fetches it.
   started, then two hours after that, then four, and then waits for the schedule's next
   time. A retry only re-collects what is still due, so sources that already landed are not
   fetched again. Report-from-cache and backup schedules are not retried.
-- **Three failures are never retried automatically.** A usage or credentials-gate error
-  (exit 2), credentials the server rejected (exit 3 — re-authenticate the profile), and a
-  refused-by-policy error (exit 8 — the command is outside what this profile's API
-  publishes) fail identically every time. Those sources stay in the strip so you can see
-  them, but the hourly repair skips them. Pressing **Collect now** yourself does try them,
-  on the assumption that you have just fixed the cause.
+- **Some failures are never retried automatically.** They fail identically every time until
+  something outside the app changes:
+  - a usage or credentials-gate error (exit 2)
+  - credentials the server rejected (exit 3 — re-authenticate the profile)
+  - a refused-by-policy error (exit 8 — the command is outside what this profile's API
+    publishes)
+  - a missing permission, which the strip names
+  - a scope ID or environment ID the gateway rejects
+  - an endpoint the connection does not serve
+  - no DDM declaration data
+  - Compliance Benchmark titles that match none on the tenant
+
+  Those sources stay in the strip so you can see them, but the hourly repair skips them.
+  Pressing **Collect now** yourself does try them, on the assumption that you have just
+  fixed the cause.
 
 The strip re-evaluates after any manual refresh, not only at launch, so a collect you just
 ran is reflected immediately.
