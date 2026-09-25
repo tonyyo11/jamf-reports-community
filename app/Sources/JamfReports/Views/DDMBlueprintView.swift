@@ -227,7 +227,11 @@ struct DDMBlueprintView: View {
                     DDMBlueprintView.blueprintRow(blueprint, contrast: contrast)
                 }
                 if snapshot.blueprints.count > 20 {
-                    Text("Showing the first 20 blueprints. Full data is in the Excel workbook (\"Platform Blueprints\" sheet).")
+                    // Sheet names come from SheetID so they cannot drift from the workbook
+                    // again: both footnotes kept the v2.1.0 names after the sheets were
+                    // renamed (#207 G14).
+                    Text("Showing the first 20 blueprints. Full data is in the Excel workbook "
+                         + "(\"\(SheetID.blueprintStatus.rawValue)\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -256,7 +260,8 @@ struct DDMBlueprintView: View {
                     DDMBlueprintView.declarationRow(entry, contrast: contrast)
                 }
                 if snapshot.declarations.count > 30 {
-                    Text("Showing the first 30 sources. Full data is in the Excel workbook (\"Platform DDM Status\" sheet).")
+                    Text("Showing the first 30 sources. Full data is in the Excel workbook "
+                         + "(\"\(SheetID.ddmStatus.rawValue)\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }

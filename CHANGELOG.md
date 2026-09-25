@@ -147,6 +147,9 @@ tenant's real data in every section, and you choose what it shows.
   longer drops the declarations after it.
 - The OS Updates error-devices table shows the first 50 devices and how many more there are, like
   the failed-plans table beside it.
+- When the DDM screen shortens its blueprint or declaration list, it now points you to the
+  workbook's **Blueprint Status** and **DDM Status** sheets. It named "Platform Blueprints" and
+  "Platform DDM Status", sheets the workbook no longer has.
 - While the app is open, a source whose credentials were rejected is no longer re-collected every
   hour. It stays in the health strip until you re-authenticate and press **Collect now**, or a
   scheduled run tries again.
