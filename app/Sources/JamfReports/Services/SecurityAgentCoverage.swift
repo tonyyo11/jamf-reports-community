@@ -13,7 +13,8 @@ enum SecurityAgentCoverage {
         let name: String
         let column: String
         /// Macs whose value contains the agent's `connected_value` — the same
-        /// case-insensitive match the Devices screen's risk check uses.
+        /// case-insensitive match the Devices screen's risk check uses. With no
+        /// `connected_value`, any value counts, as Config Doctor tells the operator.
         let installed: Int
         /// Macs with any value for the agent's extension attribute.
         let reporting: Int
@@ -25,6 +26,10 @@ enum SecurityAgentCoverage {
         agents.compactMap { agent -> Result? in
             let column = agent.column.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !column.isEmpty else { return nil }
+            // Config's Add agent leaves connected_value blank. SecurityAgentCheck reads that as
+            // unknown, which recorded 0% EDR coverage every day.
+            let anyValueCounts = agent.connectedValue
+                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             var reporting: Set<String> = []
             var installed: Set<String> = []
             for row in rows {
@@ -38,7 +43,7 @@ enum SecurityAgentCoverage {
                 reporting.insert(id)
                 let check = RiskScoringService.SecurityAgentCheck(
                     value: value, connectedValue: agent.connectedValue)
-                if check.isConnected == true { installed.insert(id) }
+                if anyValueCounts || check.isConnected == true { installed.insert(id) }
             }
             return Result(name: agent.name, column: column,
                           installed: installed.count, reporting: reporting.count)
@@ -46,9 +51,12 @@ enum SecurityAgentCoverage {
     }
 
     /// Percent of `fleet` with the agent connected, one decimal like every
-    /// tile. nil for an empty fleet — unknown is not 0%.
+    /// tile. nil for an empty fleet — unknown is not 0%. At most 100: the count
+    /// comes from ea-results and the fleet from the security report, collected on
+    /// different cadences, so a fleet that shrank in between can count more Macs
+    /// connected than it has.
     static func percent(installed: Int, fleet: Int) -> Double? {
         guard fleet > 0 else { return nil }
-        return (Double(installed) / Double(fleet) * 1000).rounded() / 10
+        return (Double(min(installed, fleet)) / Double(fleet) * 1000).rounded() / 10
     }
 }
