@@ -763,12 +763,20 @@ struct OverviewView: View {
         }
     }
 
+    /// A pair too wide for the page stacks: side by side at the minimum width, the macOS
+    /// legend and the rule bars were squeezed to nothing.
     @ViewBuilder
     private func sectionRow(_ row: [OverviewSection]) -> some View {
         if row.count == 2 {
-            HStack(alignment: .top, spacing: 12) {
-                sectionView(row[0]).frame(maxWidth: .infinity)
-                sectionView(row[1]).frame(maxWidth: .infinity)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    sectionView(row[0]).frame(maxWidth: .infinity)
+                    sectionView(row[1]).frame(maxWidth: .infinity)
+                }
+                VStack(spacing: 20) {
+                    sectionView(row[0])
+                    sectionView(row[1])
+                }
             }
         } else if let section = row.first {
             sectionView(section)
