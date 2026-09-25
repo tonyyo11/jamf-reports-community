@@ -318,6 +318,7 @@ final class WorkspaceStore {
     /// Reload from disk — called from the sidebar refresh and after onboarding.
     /// Respects an explicit user demo-mode preference set via `setDemoMode(_:)`.
     func reloadFromDisk() {
+        let wasDemo = demoMode
         refreshToolStatus()
         let real = ProfileService.discoverLocal()
         let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
@@ -337,6 +338,27 @@ final class WorkspaceStore {
             }
             org = Self.org(for: real.first(where: { $0.name == profile }))
             Task { await refreshAuthStatus() }
+            if wasDemo { restoreLiveStateAfterDemo() }
+        }
+    }
+
+    /// Entering demo mode swaps in the demo's config and empties the health strip. Leaving
+    /// it, whether through `setDemoMode(false)` or setup finishing under the demo's name,
+    /// reloaded neither. Until Config opened or the profile changed, the demo's benchmark and
+    /// agent labelled the live screens, and Devices scored real Macs against the demo agent's
+    /// connected_value. The demo values are dropped first, so a failed load cannot keep them.
+    private func restoreLiveStateAfterDemo() {
+        configState = .defaultState
+        _loadedDoc = nil
+        _savedState = nil
+        rebuildColumnMappings()
+        rebuildCustomEAs()
+        Task {
+            do { try await loadConfig() } catch {
+                configError = error.localizedDescription
+            }
+            await refreshAutomationHealth()
+            await refreshDataFreshness()
         }
     }
 

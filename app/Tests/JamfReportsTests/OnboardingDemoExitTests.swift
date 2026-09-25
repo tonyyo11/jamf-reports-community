@@ -84,6 +84,20 @@ final class OnboardingDemoExitTests: XCTestCase {
         XCTAssertFalse(store.demoMode)
     }
 
+    /// Entering demo mode swaps in the demo's config. Leaving it has to drop that config, or
+    /// the demo's agent and benchmark label the live screens and score real Macs.
+    func testLeavingDemoDropsTheDemoConfig() throws {
+        _ = try makeWorkspace("acme", withConfig: true)
+        let store = WorkspaceStore(demoMode: true, jamfCLIProfileNames: { [] })
+        XCTAssertEqual(store.configState, DemoData.configState)
+
+        store.setDemoMode(false)
+
+        XCTAssertFalse(store.demoMode)
+        XCTAssertNotEqual(store.configState, DemoData.configState,
+                          "the demo config must not outlive demo mode")
+    }
+
     func testLeavingDemoKeepsAWorkspaceJamfCLIListsUnderTheDemoName() throws {
         let workspace = try makeWorkspace(DemoData.org.profile, withConfig: false)
         let store = WorkspaceStore(demoMode: true, jamfCLIProfileNames: { [DemoData.org.profile] })
