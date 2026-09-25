@@ -68,10 +68,7 @@ struct AcknowledgementsView: View {
 
     private func text(for tab: Tab) -> String {
         let resource = "\(tab.resourceName).\(tab.resourceExtension)"
-        guard let url = Bundle.module.url(
-            forResource: tab.resourceName,
-            withExtension: tab.resourceExtension
-        ) else {
+        guard let url = Self.resourceURL(for: tab) else {
             return "Resource not bundled: \(resource)"
         }
         do {
@@ -79,5 +76,23 @@ struct AcknowledgementsView: View {
         } catch {
             return "Could not read \(resource): \(error.localizedDescription)"
         }
+    }
+
+    /// `build-app.sh` copies these files into `Contents/Resources/` (`Bundle.main`).
+    /// SwiftPM's `Bundle.module` accessor calls `fatalError` when its resource bundle
+    /// is missing, which it always is in the packaged .app, so it is only touched in
+    /// DEBUG (`swift run` / tests), as in `Theme.FontRegistry.locateFont(named:)`.
+    private static func resourceURL(for tab: Tab) -> URL? {
+        if let url = Bundle.main.url(
+            forResource: tab.resourceName, withExtension: tab.resourceExtension
+        ) {
+            return url
+        }
+        #if DEBUG
+        return Bundle.module.url(
+            forResource: tab.resourceName, withExtension: tab.resourceExtension)
+        #else
+        return nil
+        #endif
     }
 }

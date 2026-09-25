@@ -88,10 +88,12 @@ cp "LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist" \
 # shipped ZERO fonts under swiftbuild, so IBM Plex Mono never registered and every
 # mono label fell back to a wider system font (overflowing segmented controls and
 # tracked-label rows). `-type f` + the extension filter keep this to real assets.
+# `.txt`/`.md` are the LICENSE, NOTICE and THIRD_PARTY_NOTICES files the
+# Acknowledgements window reads; without them it shows "Resource not bundled".
 if [[ -d "$BUNDLE" ]]; then
   find "$BUNDLE" -type f \
     \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \
-       -o -name "*.mobileconfig" \) \
+       -o -name "*.mobileconfig" -o -name "*.txt" -o -name "*.md" \) \
     -print0 | while IFS= read -r -d '' asset; do
     cp "$asset" "$APP_OUT/Contents/Resources/"
   done
