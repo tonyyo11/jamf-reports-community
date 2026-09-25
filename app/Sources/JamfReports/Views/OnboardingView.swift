@@ -255,7 +255,9 @@ struct OnboardingView: View {
                         .font(.title3)
                         .foregroundStyle(Theme.Colors.fg2)
                         .frame(maxWidth: 640, alignment: .leading)
-                    HStack(spacing: 8) {
+                    // Wraps: one row of these pills is wider than the setup column opened
+                    // from Settings, and it pushed the sidebar off the window.
+                    FlowLayout(spacing: 8) {
                         Pill(text: "Owner-only folders", tone: .teal, icon: "lock.fill")
                         Pill(text: "Secret never stored by the app", tone: .gold, icon: "key.fill")
                         Pill(text: "No Terminal needed", tone: .muted, icon: "terminal")
