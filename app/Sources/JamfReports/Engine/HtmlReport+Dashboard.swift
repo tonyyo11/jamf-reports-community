@@ -23,16 +23,23 @@ extension HtmlReport {
 
     /// Shows the cards and rings without their animation (jamf-cli's
     /// `dashboard_html.go`: `.section` starts at opacity 0 and `.ring` at `--rv: 0`).
-    static let dashboardEmbedStyle =
+    static let dashboardEmbedStyle: String =
         ".section{opacity:1!important;animation:none!important}"
         + ".ring{--rv:var(--v)!important;animation:none!important}"
 
-    /// Posts the page height to the report, which checks the message came from this
-    /// frame before using it.
-    static let dashboardHeightScript =
-        "(function(){function h(){try{parent.postMessage({jrcDashboardHeight:"
-        + "Math.ceil(document.documentElement.scrollHeight)},\"*\")}catch(e){}}"
-        + "window.addEventListener(\"load\",h);window.addEventListener(\"resize\",h);})();"
+    /// Posts the height of the page's body to the report, which checks the message came
+    /// from this frame before using it. The body, not the document: a document is never
+    /// shorter than its frame, so measuring it fed the frame's height back in and the
+    /// frame grew on every resize. A ResizeObserver catches a section collapsing or
+    /// expanding, which resizes nothing else.
+    static let dashboardHeightScript: String =
+        "(function(){function h(){try{var b=document.body;if(!b){return;}"
+        + "var s=getComputedStyle(b);var v=b.getBoundingClientRect().height"
+        + "+(parseFloat(s.marginTop)||0)+(parseFloat(s.marginBottom)||0);"
+        + "parent.postMessage({jrcDashboardHeight:Math.ceil(v)},\"*\")}catch(e){}}"
+        + "window.addEventListener(\"load\",function(){h();if(window.ResizeObserver){"
+        + "new ResizeObserver(h).observe(document.body);}});"
+        + "window.addEventListener(\"resize\",h);})();"
 
     func buildJamfDashboardSection() -> String {
         let dir = dataDir.appendingPathComponent(ReportEngine.dashboardKind, isDirectory: true)
@@ -57,23 +64,28 @@ extension HtmlReport {
             "From jamf-cli's dashboard command, collected \(collected). It covers Jamf Pro and, "
                 + "where this profile reaches them, the Jamf Platform API, Jamf Protect and "
                 + "Jamf Security Cloud.")
+        // The border sits on a wrapper so the frame's height is all page under any box
+        // model, and nothing is styled inline, so the print rule can hide the frame.
         return """
         <div class="section" id="jamf-dashboard">
           <h2>Jamf Fleet Dashboard</h2>
-          <p class="note">\(caption)</p>
-          <iframe id="jrc-dashboard-frame" title="Jamf fleet dashboard from jamf-cli" \
-        sandbox="allow-scripts" referrerpolicy="no-referrer" \
-        style="display:block;width:100%;height:1200px;border:1px solid rgba(127,127,127,0.35);\
-        border-radius:8px" srcdoc="\(srcdoc)"></iframe>
-          <p class="note jrc-dashboard-print-note">The Jamf fleet dashboard is interactive; \
-        open the HTML version of this report to see it.</p>
           <style>
+            #jamf-dashboard .jrc-dashboard-wrap {
+              border: 1px solid rgba(127,127,127,0.35); border-radius: 8px; overflow: hidden;
+            }
+            #jrc-dashboard-frame { display: block; width: 100%; height: 1200px; border: 0; }
             #jamf-dashboard .jrc-dashboard-print-note { display: none; }
             @media print {
-              #jrc-dashboard-frame { display: none; }
+              #jamf-dashboard .jrc-dashboard-wrap { display: none !important; }
               #jamf-dashboard .jrc-dashboard-print-note { display: block; }
             }
           </style>
+          <p class="note">\(caption)</p>
+          <div class="jrc-dashboard-wrap"><iframe id="jrc-dashboard-frame" \
+        title="Jamf fleet dashboard from jamf-cli" sandbox="allow-scripts" \
+        referrerpolicy="no-referrer" srcdoc="\(srcdoc)"></iframe></div>
+          <p class="note jrc-dashboard-print-note">The Jamf fleet dashboard is interactive; \
+        open the HTML version of this report to see it.</p>
           <script>
           (function () {
             var frame = document.getElementById("jrc-dashboard-frame");
@@ -82,8 +94,8 @@ extension HtmlReport {
               if (event.source !== frame.contentWindow || !event.data) { return; }
               var height = event.data.jrcDashboardHeight;
               if (typeof height !== "number" || !isFinite(height)) { return; }
-              var clamped = Math.max(400, Math.min(Math.ceil(height) + 16, 40000));
-              if (Math.abs(frame.offsetHeight - clamped) > 2) {
+              var clamped = Math.max(400, Math.min(Math.ceil(height), 40000));
+              if (Math.abs(frame.clientHeight - clamped) > 2) {
                 frame.style.height = clamped + "px";
               }
             });

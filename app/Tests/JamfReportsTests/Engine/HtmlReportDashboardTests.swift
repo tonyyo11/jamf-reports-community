@@ -85,7 +85,29 @@ final class HtmlReportDashboardTests: XCTestCase {
         let html = report().buildJamfDashboardSection()
         XCTAssertTrue(html.contains("@media print"))
         XCTAssertTrue(html.contains("jrc-dashboard-print-note"))
+        XCTAssertTrue(html.contains(
+            "#jamf-dashboard .jrc-dashboard-wrap { display: none !important; }"))
         XCTAssertTrue(html.contains("event.source !== frame.contentWindow"))
+        let tag = try XCTUnwrap(html.range(of: "<iframe id=\"jrc-dashboard-frame\""))
+        let srcdoc = try XCTUnwrap(html.range(of: "srcdoc=", range: tag.upperBound..<html.endIndex))
+        XCTAssertFalse(html[tag.upperBound..<srcdoc.lowerBound].contains("style="),
+                       "an inline display on the frame beats the print rule")
+    }
+
+    /// The page reports its body's height and the report uses it as is. A document is
+    /// never shorter than its frame, so reporting that, plus padding, grew the frame on
+    /// every resize until the cap.
+    func testTheFrameTakesThePageBodysHeightWithoutPadding() throws {
+        let script = HtmlReport.dashboardHeightScript
+        XCTAssertTrue(script.contains("document.body"))
+        XCTAssertFalse(script.contains("scrollHeight"), "the document's height feeds back")
+        XCTAssertTrue(script.contains("ResizeObserver"), "a collapsed section must shrink it")
+        try writePage("<!DOCTYPE html><html><head></head><body></body></html>",
+                      stamp: "20260925T060000")
+        let html = report().buildJamfDashboardSection()
+        XCTAssertTrue(html.contains("Math.max(400, Math.min(Math.ceil(height), 40000))"), html)
+        XCTAssertTrue(html.contains("Math.abs(frame.clientHeight - clamped) > 2"))
+        XCTAssertTrue(html.contains("border: 0;"), "the border sits on the wrapper")
     }
 
     func testTheTemplatedReportRendersTheSection() async throws {
