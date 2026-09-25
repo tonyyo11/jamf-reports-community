@@ -600,6 +600,7 @@ struct TrendsView: View {
                         domain: heroChartForegroundScale.labels,
                         range: heroChartForegroundScale.colors
                     )
+                    .chartLegend(heroLegendVisibility)
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
                     .accessibilityLabel(Self.metricTrendChartLabel(metricLabel(metric)))
@@ -889,6 +890,12 @@ struct TrendsView: View {
     /// for them and picking the right one here only matters for those two.
     private var heroChartForegroundScale: (labels: [String], colors: [Color]) {
         metric == .managedDevices ? managedDevicesChartScale : mscpBandChartScale
+    }
+
+    /// The scale above is applied to every metric, so Charts would list its domain (the band
+    /// fallback "Band") under single-line charts. Only the two multi-series charts get a legend.
+    private var heroLegendVisibility: Visibility {
+        metric == .managedDevices || metric == .mscpBandTrend ? .automatic : .hidden
     }
 
     /// Band legend for the live stacked-area chart.
