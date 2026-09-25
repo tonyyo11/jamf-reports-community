@@ -74,7 +74,14 @@ struct CustomizeView: View {
             chartsLoaded = true
             loadChartOptions()
         }
+        // A profile switch or leaving demo mode keeps this view, so the toggles reload.
+        // Before, Apply wrote the previous profile's values, or the demo's defaults, into
+        // the current profile's config.yaml.
+        .onChange(of: chartSource) { loadChartOptions() }
     }
+
+    /// Which config the chart options were read from.
+    private var chartSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
     /// Both options are config keys, so they come from config.yaml. Before 2.7.0
     /// they were never loaded or saved at all. Demo mode has no config.yaml to
