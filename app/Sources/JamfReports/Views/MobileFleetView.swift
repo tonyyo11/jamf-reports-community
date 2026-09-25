@@ -634,6 +634,9 @@ struct MobileFleetView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .font(.callout)
+                // A Table has no height of its own inside the page's ScrollView; without this
+                // it collapses under the header and shows no rows. Same minimum as Devices.
+                .frame(minHeight: 430)
                 if matching.count > rows.count {
                     Text("Generated reports include every mobile device.")
                         .font(.caption)
