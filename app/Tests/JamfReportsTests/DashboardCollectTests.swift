@@ -234,11 +234,31 @@ final class DashboardCollectTests: XCTestCase {
 
     private func runCollect() async throws -> [String] {
         let stub = try makeStub()
-        let collector = LogTextCollector()
+        let collector = DashboardLogCollector()
         try await ReportEngine.collect(
             profile: profile, workspacePaths: WorkspacePaths.self,
             tiers: [.inventory], force: true,
             locateJamfCLI: { stub }, onLine: collector.append)
         return collector.texts
+    }
+}
+
+/// Thread-safe collector for streamed log-line text: `onLine` is `@Sendable`, so a
+/// plainly captured `var` is not. Each suite keeps its own, since theirs are private.
+private final class DashboardLogCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    /// Usable directly as an `onLine` handler.
+    var append: @Sendable (CLIBridge.LogLine) -> Void {
+        { line in
+            self.lock.lock(); defer { self.lock.unlock() }
+            self.lines.append(line.text)
+        }
+    }
+
+    var texts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return lines
     }
 }
