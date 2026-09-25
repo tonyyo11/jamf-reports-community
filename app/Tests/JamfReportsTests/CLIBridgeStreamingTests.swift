@@ -26,8 +26,7 @@ final class CLIBridgeStreamingTests: XCTestCase {
             "PAYLOAD-LINE-1\nPAYLOAD-LINE-2\n"
         )
 
-        // Drain the readabilityHandler so any pending stderr lines arrive.
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        // No drain wait: runAndCapture returns only after stderr's EOF (#207 G24).
         let lines = collector.snapshot().map(\.text)
 
         // stderr: surfaced via onLine.
@@ -60,6 +59,34 @@ final class CLIBridgeStreamingTests: XCTestCase {
         // no inherited variables can leak into the child. The test
         // command writes only to stdout so collector stays empty.
         XCTAssertTrue(collector.snapshot().isEmpty, "no log lines should leak for clean stdout-only command")
+    }
+
+    /// Collect classifies a command that exits 0 without data from its stderr, so a tail
+    /// still in the pipe at exit must reach onLine before runAndCapture returns (#207 G24).
+    /// 20,000 lines is more than a pipe holds, so the child can exit with the tail unread.
+    /// The handler splits lines at chunk boundaries, hence the comparison of joined text.
+    func testEveryStderrLineHasArrivedWhenItReturns() async throws {
+        let lines = (1...20_000).map { "line-\($0)" }
+        let file = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Stderr-\(UUID().uuidString).txt")
+        try (lines.joined(separator: "\n") + "\n")
+            .write(to: file, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let bridge = CLIBridge()
+        let collector = LineCollector()
+        let (exit, data) = try await bridge.runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "/bin/cat \"$1\" 1>&2", "sh", file.path],
+            onLine: { line in collector.append(line) }
+        )
+
+        XCTAssertEqual(exit, 0)
+        XCTAssertTrue(data.isEmpty)
+        let received = collector.snapshot().map(\.text).joined()
+        let expected = lines.joined()
+        XCTAssertEqual(received.utf8.count, expected.utf8.count, "stderr text was dropped")
+        XCTAssertTrue(received == expected, "stderr text arrived incomplete or out of order")
     }
 }
 

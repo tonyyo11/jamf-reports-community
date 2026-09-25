@@ -332,15 +332,18 @@ final class CLIBridge {
             throw gateError
         }
 
-        // Resumes the async continuation only once BOTH the stdout pipe has
-        // reached EOF (an empty `availableData` delivery) and the process has
-        // terminated. Resuming on `terminationHandler` alone races the final
-        // `readabilityHandler` delivery — they run on different GCD queues — so
+        // Resumes the async continuation only once BOTH pipes have reached EOF
+        // (an empty `availableData` delivery) and the process has terminated.
+        // Resuming on `terminationHandler` alone races the final
+        // `readabilityHandler` deliveries — they run on different GCD queues — so
         // under CI load the continuation can resume before the last stdout chunk
-        // is appended, truncating the captured payload to empty (Epic #102).
+        // is appended, truncating the captured payload to empty (Epic #102). The
+        // same race on stderr dropped the lines collect's `StderrSignalWatcher`
+        // classifies a command that exits 0 without data from (#207 G24).
         final class CaptureCompletion: @unchecked Sendable {
             private let lock = NSLock()
             private var stdoutAtEOF = false
+            private var stderrAtEOF = false
             private var exitCode: Int32?
             private var resumed = false
             private let continuation: CheckedContinuation<Int32, Error>
@@ -351,10 +354,12 @@ final class CLIBridge {
 
             func markStdoutEOF() { finish { $0.stdoutAtEOF = true } }
 
+            func markStderrEOF() { finish { $0.stderrAtEOF = true } }
+
             func markTerminated(_ code: Int32) { finish { $0.exitCode = code } }
 
             /// Process never spawned — resume with a thrown error immediately,
-            /// bypassing the EOF wait (no child means the stdout pipe will never
+            /// bypassing the EOF wait (no child means the pipes will never
             /// deliver EOF).
             func failWithLaunchError(_ error: CLIBridgeError) {
                 let shouldResume: Bool
@@ -369,7 +374,7 @@ final class CLIBridge {
                 var pending: Int32?
                 lock.lock()
                 mutate(self)
-                if !resumed, stdoutAtEOF, let exitCode {
+                if !resumed, stdoutAtEOF, stderrAtEOF, let exitCode {
                     resumed = true
                     pending = exitCode
                 }
@@ -419,14 +424,21 @@ final class CLIBridge {
                 }
                 stderr.fileHandleForReading.readabilityHandler = { handle in
                     let data = handle.availableData
-                    guard !data.isEmpty, let s = String(data: data, encoding: .utf8) else { return }
+                    if data.isEmpty {
+                        // EOF: every stderr line has been through onLine. Clearing the
+                        // handler here, not in terminationHandler, is what lets a line
+                        // still in the pipe at exit arrive.
+                        handle.readabilityHandler = nil
+                        completion.markStderrEOF()
+                        return
+                    }
+                    guard let s = String(data: data, encoding: .utf8) else { return }
                     for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
                         onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
                     }
                 }
 
                 process.terminationHandler = { proc in
-                    stderr.fileHandleForReading.readabilityHandler = nil
                     completion.markTerminated(proc.terminationStatus)
                 }
 

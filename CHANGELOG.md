@@ -72,6 +72,9 @@ tenant's real data in every section, and you choose what it shows.
   permission is no longer retried every hour. It no longer calls the output unreadable.
 - The device scan's permission warning names what jamf-cli reports as missing, or both the Jamf
   Pro API role privilege and the Jamf Account permission when it names nothing.
+- Run History no longer drops the last warnings jamf-cli prints before it exits. When jamf-cli
+  exits without an error code, those warnings are how the app recognises a missing permission,
+  no blueprints or no DDM data, so each was sometimes missed.
 - Jamf School workbooks show each device's OS, managed and supervised state, device group member
   counts and stale devices, and School Overview lists one row per line. Columns jamf-cli never
   provides (app install counts, profile categories, location addresses, user roles, teacher
