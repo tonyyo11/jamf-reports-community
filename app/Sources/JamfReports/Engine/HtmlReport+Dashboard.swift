@@ -8,10 +8,15 @@ import Foundation
 /// nothing. Three things are added to the page before it is embedded:
 /// - CSS that shows every section card and fills every ring. jamf-cli reveals both by
 ///   animation, and its own print styles switch animations off without restoring
-///   them, which leaves the cards invisible and the rings empty.
+///   them, which leaves the cards invisible and the rings empty. It also hides the
+///   page's theme switch, since the report's switch drives the frame.
 /// - A script that posts the page's height, so the report can size the frame. The
 ///   report cannot measure a frame in another origin itself.
-/// - Nothing else: the page keeps its own theme toggle, filters and timestamps.
+/// - A script that takes the report's theme. The report is light unless the reader
+///   picks dark, while the page follows the Mac's appearance, so without it a Mac in
+///   dark mode shows a dark page inside a light report.
+///
+/// The page keeps its own filters, collapsible sections and timestamps.
 ///
 /// The PDF export prints a one-line note instead, because a frame does not break
 /// across printed pages.
@@ -22,10 +27,12 @@ extension HtmlReport {
     static let maxEmbeddedDashboardBytes = 4_000_000
 
     /// Shows the cards and rings without their animation (jamf-cli's
-    /// `dashboard_html.go`: `.section` starts at opacity 0 and `.ring` at `--rv: 0`).
+    /// `dashboard_html.go`: `.section` starts at opacity 0 and `.ring` at `--rv: 0`),
+    /// and hides the page's theme switch, which the report's switch replaces.
     static let dashboardEmbedStyle: String =
         ".section{opacity:1!important;animation:none!important}"
         + ".ring{--rv:var(--v)!important;animation:none!important}"
+        + ".theme-toggle{display:none!important}"
 
     /// Posts the height of the page's body to the report, which checks the message came
     /// from this frame before using it. The body, not the document: a document is never
@@ -40,6 +47,15 @@ extension HtmlReport {
         + "window.addEventListener(\"load\",function(){h();if(window.ResizeObserver){"
         + "new ResizeObserver(h).observe(document.body);}});"
         + "window.addEventListener(\"resize\",h);})();"
+
+    /// Starts the page light, the report's default, then takes whatever theme the
+    /// report sends. The page keys its dark palette on `data-theme` ahead of the Mac's
+    /// appearance, so setting it wins either way.
+    static let dashboardThemeScript: String =
+        "(function(){var d=document.documentElement;d.setAttribute(\"data-theme\",\"light\");"
+        + "window.addEventListener(\"message\",function(e){"
+        + "if(e.source!==parent||!e.data){return;}var t=e.data.jrcTheme;"
+        + "if(t===\"light\"||t===\"dark\"){d.setAttribute(\"data-theme\",t);}});})();"
 
     func buildJamfDashboardSection() -> String {
         let dir = dataDir.appendingPathComponent(ReportEngine.dashboardKind, isDirectory: true)
@@ -99,17 +115,29 @@ extension HtmlReport {
                 frame.style.height = clamped + "px";
               }
             });
+            function sendTheme() {
+              var dark = document.documentElement.getAttribute("data-theme") === "dark";
+              try {
+                frame.contentWindow.postMessage({ jrcTheme: dark ? "dark" : "light" }, "*");
+              } catch (e) {}
+            }
+            frame.addEventListener("load", sendTheme);
+            if (window.MutationObserver) {
+              new MutationObserver(sendTheme).observe(document.documentElement,
+                { attributes: true, attributeFilter: ["data-theme"] });
+            }
           })();
           </script>
         </div>
         """
     }
 
-    /// `page` with the embed style and height script added at the end of its `<head>`,
-    /// or at the start when it has none.
+    /// `page` with the embed style and the height and theme scripts added at the end of
+    /// its `<head>`, or at the start when it has none.
     static func dashboardPageForEmbedding(_ page: String) -> String {
         let addition = "<style id=\"jrc-embed\">\(dashboardEmbedStyle)</style>"
             + "<script id=\"jrc-embed-height\">\(dashboardHeightScript)</script>"
+            + "<script id=\"jrc-embed-theme\">\(dashboardThemeScript)</script>"
         guard let head = page.range(of: "</head>", options: .caseInsensitive) else {
             return addition + page
         }

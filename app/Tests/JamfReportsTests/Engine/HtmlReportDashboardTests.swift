@@ -61,6 +61,27 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertTrue(page.contains(".section{opacity:1!important;animation:none!important}"))
         XCTAssertTrue(page.contains(".ring{--rv:var(--v)!important;animation:none!important}"))
         XCTAssertTrue(page.contains("jrcDashboardHeight"))
+        let theme = try XCTUnwrap(page.range(of: "<script id=\"jrc-embed-theme\">"))
+        XCTAssertLessThan(theme.lowerBound, headEnd.lowerBound)
+    }
+
+    /// The report is light unless the reader picks dark and the page follows the Mac,
+    /// so the report's switch drives the frame and the page's own switch is hidden.
+    func testTheReportsThemeSwitchDrivesTheFrame() throws {
+        let page = HtmlReport.dashboardPageForEmbedding("<html><head></head><body></body></html>")
+        XCTAssertTrue(page.contains(".theme-toggle{display:none!important}"))
+        XCTAssertTrue(page.contains("d.setAttribute(\"data-theme\",\"light\")"),
+                      "the page starts on the report's default")
+        XCTAssertTrue(page.contains("if(e.source!==parent||!e.data){return;}"),
+                      "the page takes a theme only from the report")
+        XCTAssertTrue(page.contains("if(t===\"light\"||t===\"dark\")"))
+
+        try writePage("<!DOCTYPE html><html><head></head><body></body></html>",
+                      stamp: "20260925T060000")
+        let html = report().buildJamfDashboardSection()
+        XCTAssertTrue(html.contains("frame.addEventListener(\"load\", sendTheme)"), html)
+        XCTAssertTrue(html.contains("new MutationObserver(sendTheme)"))
+        XCTAssertTrue(html.contains("attributeFilter: [\"data-theme\"]"))
     }
 
     func testAPageWithoutAHeadGetsTheAdditionsFirst() {

@@ -17,8 +17,8 @@ tenant's real data in every section, and you choose what it shows.
   collect saves the dashboard every two days: one page of fleet-wide totals across Jamf Pro
   and, where your profile reaches them, the Jamf Platform API, Jamf Protect and Jamf Security
   Cloud, with no device names, serials or usernames. The report shows it as its last section,
-  as jamf-cli made it, with its own filters and theme switch; the PDF export says where to find
-  it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
+  as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
+  says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
 - The Overview is yours to arrange. **Customize** (in its header) lists every section and score
   card: show or hide each one, move it up or down, and see which ones this profile can fill.
   Reset to Defaults puts back the standard layout, which is the order the Overview has always

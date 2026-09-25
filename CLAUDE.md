@@ -569,9 +569,12 @@ own banner names the missing sections, with a `[warn]` line quoting jamf-cli's m
 `HtmlReport+Dashboard` embeds the newest page (`FileManager.newestHTMLSnapshot`) as the
 `.jamfDashboard` section in a `sandbox="allow-scripts"` srcdoc iframe, never same-origin. It adds
 CSS showing the `.section` cards and `.ring` fills (jamf-cli reveals both by animation, and its
-own print CSS disables animations without restoring them) and a script posting the page height,
-which the report accepts only from that frame. Print shows a note instead, because a frame does
-not break across pages. Pages over `maxEmbeddedDashboardBytes` are named, not embedded.
+own print CSS disables animations without restoring them), a script posting the page height,
+which the report accepts only from that frame, and one taking the report's `data-theme` from the
+report alone: the report is light unless the reader picks dark while the page follows the Mac,
+so the report's switch drives the frame and the page's own switch is hidden. Print shows a note
+instead, because a frame does not break across pages. Pages over `maxEmbeddedDashboardBytes` are
+named, not embedded.
 
 **Computer inventory sections (2.8.0).** `collect` passes `--section` with
 `ReportEngine.computerInventorySections` (General, Hardware, Operating System, User and
