@@ -299,12 +299,14 @@ struct ProtectView: View {
         return ordered.sorted()
     }
 
+    /// Tiles with and without a caption share a row, so the grid evens each row's height.
     private var kpiGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)], spacing: 16) {
+        EqualHeightTileGrid(minTileWidth: 220) {
             if snapshot.totalComputers > 0 {
                 StatTile(
                     label: "Total Computers",
-                    value: "\(snapshot.totalComputers)"
+                    value: "\(snapshot.totalComputers)",
+                    fillsHeight: true
                 )
             }
 
@@ -312,7 +314,8 @@ struct ProtectView: View {
                 StatTile(
                     label: "Web Protection",
                     value: "\(snapshot.webProtectionActiveCount)",
-                    sub: "\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"
+                    sub: "\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    fillsHeight: true
                 )
             }
 
@@ -320,7 +323,8 @@ struct ProtectView: View {
                 StatTile(
                     label: "Full Disk Access",
                     value: "\(snapshot.fullDiskAccessCount)",
-                    sub: "\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"
+                    sub: "\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    fillsHeight: true
                 )
             }
 
@@ -328,21 +332,24 @@ struct ProtectView: View {
                 StatTile(
                     label: "Connected",
                     value: "\(snapshot.connectedCount)",
-                    sub: "\(snapshot.connectedCount) of \(snapshot.totalComputers)"
+                    sub: "\(snapshot.connectedCount) of \(snapshot.totalComputers)",
+                    fillsHeight: true
                 )
             }
 
             if !snapshot.alerts.isEmpty {
                 StatTile(
                     label: "High Alerts",
-                    value: "\(snapshot.highAlerts)"
+                    value: "\(snapshot.highAlerts)",
+                    fillsHeight: true
                 )
             }
 
             if snapshot.failingInsights > 0 {
                 StatTile(
                     label: "Failing Insights",
-                    value: "\(snapshot.failingInsights)"
+                    value: "\(snapshot.failingInsights)",
+                    fillsHeight: true
                 )
             }
         }
@@ -482,8 +489,10 @@ struct ProtectView: View {
     private func alertRow(_ alert: ProtectAlertRow, isLast: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
+                // Pills keep their full width, so each column fits its longest label:
+                // INFORMATIONAL here, AUTO RESOLVED in the status column.
                 severityPill(alert.severity)
-                    .frame(width: 72, alignment: .leading)
+                    .frame(width: 124, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(alert.eventType ?? "Unknown")
@@ -507,7 +516,7 @@ struct ProtectView: View {
                 }
 
                 statusPill(alert.status)
-                    .frame(width: 104, alignment: .trailing)
+                    .frame(width: 128, alignment: .trailing)
             }
             .padding(.vertical, 8)
 
@@ -619,12 +628,13 @@ struct ProtectView: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .leading)
 
+                // Wide enough for INACTIVE and YES, the longest labels these pills show.
                 booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
-                    .frame(width: 64, alignment: .center)
+                    .frame(width: 92, alignment: .center)
                     .accessibilityLabel("Web Protection \(computer.webProtectionActive == true ? "active" : "inactive")")
 
                 booleanPill(computer.fullDiskAccess, trueLabel: "Yes", falseLabel: "No")
-                    .frame(width: 48, alignment: .center)
+                    .frame(width: 56, alignment: .center)
                     .accessibilityLabel("Full Disk Access \(computer.fullDiskAccess == true ? "granted" : "denied")")
 
                 connectionPill(computer.connectionStatus)
