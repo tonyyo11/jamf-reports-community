@@ -428,6 +428,10 @@ final class OnboardingFlow {
         case .platformGateway:
             try await registerPlatformGatewayProfile()
         }
+        // Update credentials can switch a profile's auth method or scope level. Collect and
+        // the health strip read both through ProfileAuthMethod's process-lifetime cache,
+        // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
+        ProfileAuthMethod.invalidateCache()
     }
 
     private func registerOAuth2Profile() async throws {
@@ -530,6 +534,14 @@ final class OnboardingFlow {
             protectConnectionError = FlowError.missingJamfCLI.localizedDescription
             return
         }
+        // The client secret goes to this binary, so it passes the same signature gate as
+        // the Jamf Pro paths.
+        do {
+            try verifyJamfCLISignatureGate(binary: binary)
+        } catch {
+            protectConnectionError = error.localizedDescription
+            return
+        }
         // S1: reject http:// URLs before any secret reaches the PTY.
         // Mirrors the Platform Gateway guard at registerPlatformGatewayProfile().
         guard isProtectURLValid else {
@@ -590,6 +602,14 @@ final class OnboardingFlow {
         }
         guard let binary = CLIBridge().locate("jamf-cli") else {
             schoolConnectionError = FlowError.missingJamfCLI.localizedDescription
+            return
+        }
+        // The API key goes to this binary, so it passes the same signature gate as the
+        // Jamf Pro paths.
+        do {
+            try verifyJamfCLISignatureGate(binary: binary)
+        } catch {
+            schoolConnectionError = error.localizedDescription
             return
         }
         // S1: reject http:// URLs before any secret reaches the PTY.
