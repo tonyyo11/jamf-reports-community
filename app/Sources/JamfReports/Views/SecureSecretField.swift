@@ -59,7 +59,6 @@ struct SecureSecretField: View {
             field.isBezeled = false
             field.isBordered = false
             field.drawsBackground = false
-            field.focusRingType = .none
             field.delegate = context.coordinator
             field.target = context.coordinator
             field.action = #selector(Coordinator.fieldAction(_:))
