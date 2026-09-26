@@ -52,13 +52,18 @@ struct OnboardingView: View {
     private var progressStrip: some View {
         let sequence = flow.stepSequence
         let currentIndex = sequence.firstIndex(of: flow.currentStep) ?? 0
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(sequence.enumerated()), id: \.element.id) { idx, step in
-                    stepPill(step, index: idx, currentIndex: currentIndex)
-                    if idx < sequence.count - 1 {
-                        Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
-                    }
+        // The named strip is wider than the setup column at the narrowest window, where it
+        // clipped steps 6 to 8 out of sight; the compact strip names only the current step.
+        return ViewThatFits(in: .horizontal) {
+            stepRow(sequence, currentIndex: currentIndex, compact: false)
+            stepRow(sequence, currentIndex: currentIndex, compact: true)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    stepRow(sequence, currentIndex: currentIndex, compact: true)
+                }
+                .onAppear { proxy.scrollTo(currentIndex, anchor: .center) }
+                .onChange(of: currentIndex) { _, index in
+                    proxy.scrollTo(index, anchor: .center)
                 }
             }
         }
@@ -68,7 +73,23 @@ struct OnboardingView: View {
         )
     }
 
-    private func stepPill(_ step: OnboardingFlow.Step, index: Int, currentIndex: Int) -> some View {
+    private func stepRow(
+        _ sequence: [OnboardingFlow.Step], currentIndex: Int, compact: Bool
+    ) -> some View {
+        HStack(spacing: compact ? 6 : 10) {
+            ForEach(Array(sequence.enumerated()), id: \.element.id) { idx, step in
+                stepPill(step, index: idx, currentIndex: currentIndex, compact: compact)
+                    .id(idx)
+                if idx < sequence.count - 1 {
+                    Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
+                }
+            }
+        }
+    }
+
+    private func stepPill(
+        _ step: OnboardingFlow.Step, index: Int, currentIndex: Int, compact: Bool
+    ) -> some View {
         let done = index < currentIndex
         let current = index == currentIndex
 
@@ -82,14 +103,16 @@ struct OnboardingView: View {
                     .font(Theme.Fonts.mono(10, weight: .semibold))
                     .foregroundStyle(current ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
             }
-            Text(step.label)
-                .font(.caption)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(current ? Theme.Colors.fg :
-                                 done ? Theme.Colors.fg2 : Theme.Text.tertiary(contrast))
+            if !compact || current {
+                Text(step.label)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(current ? Theme.Colors.fg :
+                                     done ? Theme.Colors.fg2 : Theme.Text.tertiary(contrast))
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, compact && !current ? 10 : 12)
         .padding(.vertical, 6)
         .background(
             Capsule().fill(
@@ -104,6 +127,7 @@ struct OnboardingView: View {
                 lineWidth: 0.5
             )
         )
+        .help(step.label)
     }
 
     private var stepHeader: some View {
