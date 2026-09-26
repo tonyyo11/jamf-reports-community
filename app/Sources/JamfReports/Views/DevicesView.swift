@@ -375,10 +375,19 @@ struct DevicesView: View {
     private var inventoryTable: some View {
         Card(padding: 0) {
             VStack(spacing: 0) {
-                HStack {
-                    SectionHeader(title: "Device Inventory")
-                    Spacer()
-                    riskLegend
+                // Beside the table's detail panel the card can be too narrow for the
+                // title and legend on one row; the legend then drops below the title
+                // instead of hyphenating its words.
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        SectionHeader(title: "Device Inventory")
+                        Spacer()
+                        riskLegend
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Device Inventory")
+                        riskLegend
+                    }
                 }
                 .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
                 Divider().background(Theme.Colors.hairlineStrong)
@@ -469,6 +478,7 @@ struct DevicesView: View {
             legendDot(color: Theme.Colors.warn, label: "Attention")
             legendDot(color: Theme.Colors.ok, label: "OK")
         }
+        .fixedSize()
     }
 
     private func detailPanel(_ device: DeviceInventoryRecord?) -> some View {
