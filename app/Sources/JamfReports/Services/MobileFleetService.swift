@@ -35,11 +35,10 @@ struct MobileFleetService: Sendable {
     }
 
     /// The slice at an angle value. An angle value is the running device count
-    /// at an angle, so walk the plotted slices in order: a slice owns the
-    /// values up to and including its running total, and the first also
-    /// owns 0. Nil below 0 or past the ring's total. Pass
-    /// the exact array the chart plots, or a click resolves against slices
-    /// that were never drawn.
+    /// at an angle, so walk the plotted slices in order: a slice owns the values
+    /// up to and including its running total, and the first also owns 0. Nil
+    /// below 0 or past the ring's total. Pass the exact array the chart plots,
+    /// or a click resolves against slices that were never drawn.
     static func role(
         atAngleValue value: Double, in slices: [SupervisionSlice]
     ) -> SupervisionRole? {
@@ -267,7 +266,8 @@ struct MobileFleetService: Sendable {
         }
 
         /// The slices the donut plots: the breakdown without its empty buckets.
-        /// The chart and `MobileFleetService.role(atAngleValue:in:)` both read
+        /// The chart and the click path, which enters through
+        /// `MobileFleetService.role(at:plotSize:innerRadiusRatio:in:)`, both read
         /// this one array.
         var supervisionSlices: [SupervisionSlice] {
             supervisionBreakdown

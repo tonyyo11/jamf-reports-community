@@ -754,14 +754,19 @@ struct MobileFleetView: View {
     }
 
     /// Tells a profiles snapshot that was never collected from one that listed none.
+    /// `sourceDates` records only that the file exists, and an undecodable file also
+    /// loads as no profiles, so the second message must not claim zero.
     private var profilesEmptyMessage: String {
         snapshot.sourceDates["classic-ios-profiles"] == nil
             ? "Configuration profiles have not been collected yet."
-            : "No configuration profiles in the collected snapshot."
+            : "The collected profiles snapshot lists none, or could not be read."
     }
 
     private var profilesTableRows: some View {
-        Table(Array(snapshot.profiles.prefix(30).enumerated()).map { ProfileWithIndex(profile: $0.element, index: $0.offset) }) {
+        let rows = snapshot.profiles.prefix(30).enumerated().map {
+            ProfileWithIndex(profile: $0.element, index: $0.offset)
+        }
+        return Table(rows) {
             TableColumn("Name") { item in
                 Text(item.profile.name ?? "Untitled Profile")
                     .font(.callout.weight(.medium))
