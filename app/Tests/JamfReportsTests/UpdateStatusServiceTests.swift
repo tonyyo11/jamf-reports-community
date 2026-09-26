@@ -243,8 +243,8 @@ final class UpdateStatusServiceTests: XCTestCase {
     }
 
     /// 2.8.1 visual pass: the donut legend and the Failed Plans pills printed
-    /// the raw enum (`PlanCompleted`, and `PLANEXCEPTION` through the pill's
-    /// upper-casing).
+    /// the raw enum (`PlanCompleted`; the pill upper-cased `PlanException` to
+    /// `PLANEXCEPTION`).
     func testPlanStateDisplayNameReadsAsWords() {
         let name = UpdateStatusService.planStateDisplayName
         XCTAssertEqual(name("PlanCompleted"), "Completed")
@@ -253,7 +253,9 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertEqual(name("PlanFailed"), "Failed")
         XCTAssertEqual(name("PlanException"), "Exception")
         XCTAssertEqual(name("PlanCanceled"), "Canceled")
-        XCTAssertEqual(name("PLANEXCEPTION"), "Exception")
+        // A run-together all-caps word has no word boundary to find; it is not
+        // guessed at, so `PLANNED` cannot become `Ned`.
+        XCTAssertEqual(name("PLANNED"), "Planned")
         XCTAssertEqual(name("PLAN_FAILED"), "Failed")
         // Unknown states fall back to their words, acronyms kept.
         XCTAssertEqual(name("PendingPlanValidation"), "Pending Plan Validation")

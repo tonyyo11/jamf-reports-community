@@ -226,7 +226,7 @@ struct UpdateStatusService: Sendable {
     }
 
     /// Readable label for a plan state: `PlanCompleted` → `Completed`,
-    /// `PLANEXCEPTION` → `Exception`, `PendingPlanValidation` → `Pending Plan Validation`.
+    /// `PLAN_FAILED` → `Failed`, `PendingPlanValidation` → `Pending Plan Validation`.
     /// Display only — matching, colouring and exports keep the raw value.
     static func planStateDisplayName(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespaces)
@@ -236,8 +236,6 @@ struct UpdateStatusService: Sendable {
             .flatMap { camelCaseWords(String($0)) }
         if words.count > 1, words[0].caseInsensitiveCompare("plan") == .orderedSame {
             words.removeFirst()
-        } else if words.count == 1, shouting, words[0].hasPrefix("PLAN"), words[0].count > 4 {
-            words[0] = String(words[0].dropFirst(4))
         }
         guard !words.isEmpty else { return raw }
         // All-caps input carries no word casing to keep; mixed case keeps acronyms (DDM).
