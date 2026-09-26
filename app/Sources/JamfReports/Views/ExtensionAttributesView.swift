@@ -40,7 +40,9 @@ struct ExtensionAttributesView: View {
                 kicker: "Inventory",
                 title: "Extension Attributes",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is fixed; an age measured from today would grow
+                // for as long as the demo stays open.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
@@ -117,86 +119,99 @@ struct ExtensionAttributesView: View {
         }
     }
 
-    private static let demoSnapshot = ExtensionAttributeService.Snapshot(
-        definitions: [
-            ExtensionAttribute(
-                id: "1", name: "FileVault Status", dataType: "STRING",
-                description: "Reports FileVault encryption status",
-                inputType: "SCRIPT", enabled: true
-            ),
-            ExtensionAttribute(
-                id: "2", name: "mSCP Version", dataType: "STRING",
-                description: "Installed mSCP compliance baseline version",
-                inputType: "SCRIPT", enabled: true
-            ),
-            ExtensionAttribute(
-                id: "3", name: "Last Patched", dataType: "DATE",
-                description: "Date of last software update",
-                inputType: "SCRIPT", enabled: true
-            ),
-            ExtensionAttribute(
-                id: "4", name: "Disk Usage", dataType: "INTEGER",
-                description: "Disk usage percentage",
-                inputType: "SCRIPT", enabled: true
-            ),
-            ExtensionAttribute(
-                id: "5", name: "CrowdStrike Status", dataType: "STRING",
-                description: "CrowdStrike agent status",
-                inputType: "SCRIPT", enabled: false
-            ),
-            ExtensionAttribute(
-                id: "6", name: "Legacy Test EA", dataType: "BOOLEAN",
-                description: "Deprecated test attribute",
-                inputType: "TEXT", enabled: false
-            ),
-            ExtensionAttribute(
-                id: "7", name: "Office Version", dataType: "STRING",
-                description: "Microsoft Office version",
-                inputType: "SCRIPT", enabled: true
-            ),
-            ExtensionAttribute(
-                id: "8", name: "VPN Connection", dataType: "BOOLEAN",
-                description: "VPN connectivity status",
-                inputType: "SCRIPT", enabled: true
-            )
-        ],
-        coverage: [
-            .init(eaName: "Legacy Test EA", definitionId: "6", populatedDevices: 0, totalDevices: 655),
-            .init(eaName: "CrowdStrike Status", definitionId: "5", populatedDevices: 320, totalDevices: 655),
-            .init(eaName: "VPN Connection", definitionId: "8", populatedDevices: 459, totalDevices: 655),
-            .init(eaName: "Last Patched", definitionId: "3", populatedDevices: 459, totalDevices: 655),
-            .init(eaName: "Office Version", definitionId: "7", populatedDevices: 590, totalDevices: 655),
-            .init(eaName: "Disk Usage", definitionId: "4", populatedDevices: 622, totalDevices: 655),
-            .init(eaName: "mSCP Version", definitionId: "2", populatedDevices: 622, totalDevices: 655),
-            .init(eaName: "FileVault Status", definitionId: "1", populatedDevices: 655, totalDevices: 655)
-        ],
-        totalDevices: 655,
-        totalEAs: 8,
-        totalRowCount: 5_240,
-        valueDistributions: [
-            .init(
-                eaName: "FileVault Status",
-                top: [
-                    .init(value: "encrypted", count: 647),
-                    .init(value: "not encrypted", count: 8)
-                ],
-                otherCount: 0,
-                distinctValueCount: 2
-            ),
-            .init(
-                eaName: "mSCP Version",
-                top: [
-                    .init(value: "v1.0.3", count: 380),
-                    .init(value: "v1.0.2", count: 180),
-                    .init(value: "v1.0.1", count: 62)
-                ],
-                otherCount: 0,
-                distinctValueCount: 3
-            )
-        ],
-        sourceFile: nil,
-        snapshotDate: Date()
-    )
+    /// The demo's attributes over the 524-Mac fleet: FileVault splits as
+    /// `DemoData.securityControls`, the EDR agent reports on the Macs
+    /// `DemoData.securityAgents` counts it on, and the rest scale the original
+    /// 655-device demo to the fleet.
+    static let demoSnapshot: ExtensionAttributeService.Snapshot = {
+        let fleet = DemoData.totalDevices
+        let controls = DemoData.securityControls
+        let edr = DemoData.securityAgents.first?.installed ?? 0
+        let definitions = demoDefinitions
+        let coverage: [(name: String, id: String, devices: Int)] = [
+            ("Legacy Test EA", "6", 0), ("VPN Connection", "8", 367), ("Last Patched", "3", 367),
+            ("Office Version", "7", 472), ("Disk Usage", "4", 498), ("mSCP Version", "2", 498),
+            ("CrowdStrike Status", "5", edr), ("FileVault Status", "1", fleet),
+        ]
+        return ExtensionAttributeService.Snapshot(
+            definitions: definitions,
+            coverage: coverage.map { entry in
+                ExtensionAttributeService.Snapshot.Coverage(
+                    eaName: entry.name, definitionId: entry.id,
+                    populatedDevices: entry.devices, totalDevices: fleet)
+            },
+            totalDevices: fleet,
+            totalEAs: definitions.count,
+            // One row per Mac for each attribute, as `pro report ea-results --all` writes.
+            totalRowCount: fleet * definitions.count,
+            valueDistributions: [
+                .init(
+                    eaName: "FileVault Status",
+                    top: [
+                        .init(value: "encrypted", count: controls.fileVault),
+                        .init(value: "not encrypted", count: controls.total - controls.fileVault),
+                    ],
+                    otherCount: 0,
+                    distinctValueCount: 2
+                ),
+                .init(
+                    eaName: "mSCP Version",
+                    top: [
+                        .init(value: "v1.0.3", count: 304),
+                        .init(value: "v1.0.2", count: 144),
+                        .init(value: "v1.0.1", count: 50),
+                    ],
+                    otherCount: 0,
+                    distinctValueCount: 3
+                ),
+            ],
+            sourceFile: nil,
+            snapshotDate: DemoData.referenceDate
+        )
+    }()
+
+    private static let demoDefinitions: [ExtensionAttribute] = [
+        ExtensionAttribute(
+            id: "1", name: "FileVault Status", dataType: "STRING",
+            description: "Reports FileVault encryption status",
+            inputType: "SCRIPT", enabled: true
+        ),
+        ExtensionAttribute(
+            id: "2", name: "mSCP Version", dataType: "STRING",
+            description: "Installed mSCP compliance baseline version",
+            inputType: "SCRIPT", enabled: true
+        ),
+        ExtensionAttribute(
+            id: "3", name: "Last Patched", dataType: "DATE",
+            description: "Date of last software update",
+            inputType: "SCRIPT", enabled: true
+        ),
+        ExtensionAttribute(
+            id: "4", name: "Disk Usage", dataType: "INTEGER",
+            description: "Disk usage percentage",
+            inputType: "SCRIPT", enabled: true
+        ),
+        ExtensionAttribute(
+            id: "5", name: "CrowdStrike Status", dataType: "STRING",
+            description: "CrowdStrike Falcon sensor status",
+            inputType: "SCRIPT", enabled: true
+        ),
+        ExtensionAttribute(
+            id: "6", name: "Legacy Test EA", dataType: "BOOLEAN",
+            description: "Deprecated test attribute",
+            inputType: "TEXT", enabled: false
+        ),
+        ExtensionAttribute(
+            id: "7", name: "Office Version", dataType: "STRING",
+            description: "Microsoft Office version",
+            inputType: "SCRIPT", enabled: true
+        ),
+        ExtensionAttribute(
+            id: "8", name: "VPN Connection", dataType: "BOOLEAN",
+            description: "VPN connectivity status",
+            inputType: "SCRIPT", enabled: true
+        ),
+    ]
 
     // MARK: - Computed values
 

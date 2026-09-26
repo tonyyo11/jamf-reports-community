@@ -67,12 +67,6 @@ final class IconAccessibilityTests: XCTestCase {
         .init(view: "BackupsView", symbol: "terminal", treatment: .hidden,
               rationale: "Adjacent Mono text 'backup output' names the section"),
 
-        // CustomizeView
-        .init(view: "CustomizeView", symbol: "doc (workbook preview)", treatment: .hidden,
-              rationale: "Adjacent Text(item.name) announces the sheet name"),
-        .init(view: "CustomizeView", symbol: "checkmark (toggle cell)", treatment: .hidden,
-              rationale: "Parent button's toggle state is communicated through button styling"),
-
         // ConfigView
         .init(view: "ConfigView", symbol: "validation icon", treatment: .hidden,
               rationale: "Title and detail Text in validationRow carry the full message"),

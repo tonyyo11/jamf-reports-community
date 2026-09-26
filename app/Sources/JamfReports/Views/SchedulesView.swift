@@ -55,7 +55,9 @@ struct SchedulesView: View {
     var body: some View {
         PageScaffold(spacing: 14) {
             header
-            if tickerDisabledBannerShouldShow(
+            // Demo mode leaves out what describes this Mac's automation: its
+            // background item and its managed-automation policy.
+            if !workspace.demoMode && tickerDisabledBannerShouldShow(
                 policy: AutomationPolicy.parse(automationPolicyRaw),
                 hasHandBuilt: !workspace.schedules.isEmpty,
                 tickerStatus: workspace.tickerStatus
@@ -70,14 +72,16 @@ struct SchedulesView: View {
                         + "background. Turn it on under Login Items › Allow in the Background.")
                         .font(.callout)
                 }
-            } else if workspace.tickerStatus == .unavailable {
+            } else if !workspace.demoMode && workspace.tickerStatus == .unavailable {
                 InlineBanner(icon: "hammer", tone: .info) {
                     Text("Ticker unavailable in this build — schedules run only via "
                         + "`JamfReports --tick` until the app is installed.")
                         .font(.callout)
                 }
             }
-            managedModeCard
+            if !workspace.demoMode {
+                managedModeCard
+            }
             profileFilterStrip
             nextUpCallout
             schedulesTable
@@ -171,17 +175,23 @@ struct SchedulesView: View {
         ) {
             AnyView(
                 HStack(spacing: 8) {
+                    // A reload re-reads profiles and schedules, and in demo mode
+                    // put a chosen demo profile back to meridian-prod.
                     PNPButton(title: "Refresh", icon: "arrow.clockwise") {
+                        guard !workspace.demoMode else { return }
                         workspace.reloadFromDisk()
                     }
-                    .help("Re-read schedules from disk.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Re-read schedules from disk.")
                     PNPButton(title: "New schedule", icon: "plus", style: .gold) {
                         newScheduleForm = ScheduleFormState(defaultProfile: workspace.profile)
                         showNewSchedule = true
                     }
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode
-                          ? "Available in live mode only"
+                          ? DemoData.liveOnlyHelp
                           : "Add a schedule the background item runs automatically.")
                 }
             )
@@ -229,8 +239,24 @@ struct SchedulesView: View {
 
     // MARK: - Next-up callout
 
+    /// "Now" for the countdown. Demo mode uses the demo's reference time: its
+    /// fixed next runs ("Apr 27, 07:00") read against the real clock rolled
+    /// into the following year.
+    private var clockNow: Date { workspace.demoMode ? DemoData.referenceDate : now }
+
+    /// The enabled schedule that runs soonest, or the first enabled one when no
+    /// next run parses, as on a live Mac, whose schedules list "—".
+    private var nextUpSchedule: Schedule? {
+        let enabled = filteredSchedules.filter(\.enabled)
+        let dated = enabled.compactMap { schedule in
+            Self.parseScheduleDate(schedule.next, reference: clockNow).map { (schedule, $0) }
+        }
+        return dated.min { $0.1 < $1.1 }?.0 ?? enabled.first ?? filteredSchedules.first
+    }
+
     private var nextUpCallout: some View {
-        let next = filteredSchedules.first(where: \.enabled) ?? filteredSchedules.first
+        let now = clockNow
+        let next = nextUpSchedule
         let nextDate = next.flatMap { Self.parseScheduleDate($0.next, reference: now) }
         let lastDate = next.flatMap { Self.parseScheduleDate($0.last, reference: now) }
         let progress = Self.intervalProgress(now: now, next: nextDate, last: lastDate)
@@ -289,7 +315,7 @@ struct SchedulesView: View {
                         Task { await runNextScheduledNow() }
                     }
                     .disabled(workspace.demoMode || isRunning)
-                    .help(workspace.demoMode ? "Available in live mode only" : "")
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     if let msg = lastRunMessage {
                         Mono(text: msg, size: 10, color: Theme.Text.tertiary(contrast))
                             .accessibilityAddTraits(.updatesFrequently)
@@ -548,8 +574,7 @@ struct SchedulesView: View {
     // MARK: - Actions
 
     private func runNextScheduledNow() async {
-        let target = filteredSchedules.first(where: \.enabled) ?? filteredSchedules.first
-        guard let target else { return }
+        guard let target = nextUpSchedule else { return }
         await runScheduleNow(target)
     }
 

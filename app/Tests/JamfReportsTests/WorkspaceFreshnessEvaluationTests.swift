@@ -96,4 +96,23 @@ final class WorkspaceFreshnessEvaluationTests: XCTestCase {
         let issues = WorkspaceStore.evaluateFreshness(profile: profile, now: now)
         XCTAssertTrue(issues.isEmpty)
     }
+
+    // MARK: - jamf_cli.collect_skip
+
+    /// `collect` never runs a listed kind, so on an established workspace its
+    /// absence is intended, not a gap — while an unlisted heavy kind still alarms.
+    func testKindsListedInCollectSkipAreNotReported() throws {
+        UserDefaults.standard.set(false, forKey: skipExpensiveKey)
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  collect_skip: [update_status, update-device-failures]\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        try stateStore().record(.landed, report: "overview", at: now)
+
+        let reportedKinds = Set(
+            WorkspaceStore.evaluateFreshness(profile: profile, now: now).map(\.snapshotKind))
+        XCTAssertFalse(reportedKinds.contains("update-status"))
+        XCTAssertFalse(reportedKinds.contains("update-device-failures"))
+        XCTAssertTrue(reportedKinds.contains("patch-device-failures"),
+                      "an unlisted heavy kind that never landed is still a gap")
+    }
 }

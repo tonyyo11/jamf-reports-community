@@ -150,6 +150,48 @@ final class MobileFleetServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
+    /// Tied counts list the newer version first, compared numerically, on
+    /// every run: the rows no longer swap places between renders. Asserted on
+    /// the comparator itself, because Dictionary order is fixed within one
+    /// process and a count-only sort could pass by luck.
+    func testOSDistributionOrderBreaksTiesByVersionDescending() {
+        let order = MobileFleetService.osDistributionOrder
+        XCTAssertTrue(order(("18.2.1", 2), ("17.6.1", 2)))
+        XCTAssertFalse(order(("17.6.1", 2), ("18.2.1", 2)))
+        XCTAssertTrue(order(("18.10", 1), ("18.2", 1)))
+        XCTAssertFalse(order(("18.2", 1), ("18.10", 1)))
+        XCTAssertTrue(order(("18.10", 1), ("9.3.6", 1)))
+        XCTAssertFalse(order(("9.3.6", 1), ("18.10", 1)))
+        XCTAssertTrue(order(("9.3.6", 3), ("18.10", 1)))
+        XCTAssertFalse(order(("18.2.1", 2), ("18.2.1", 2)))
+    }
+
+    /// Six versions tied at one device each: a sort that ignored the tiebreak
+    /// would land this exact order about once in 720 runs.
+    func testOSDistributionUsesTheVersionTiebreak() {
+        let versions = ["17.6.1", "18.2", "9.3.6", "18.10", "16.7.10", "18.2.1", "18.2.1"]
+        let fleet = versions.map { version in
+            MobileDeviceInventoryItem(
+                mobileDeviceId: UUID().uuidString,
+                general: MobileDeviceGeneral(
+                    displayName: nil, serialNumber: nil, osVersion: version,
+                    managed: nil, supervised: nil,
+                    lastInventoryUpdateDate: nil, deviceOwnershipType: nil,
+                    activationLockEnabled: nil, passcodeCompliant: nil,
+                    dataProtectionEnabled: nil, jailbreakDetected: nil,
+                    enrollmentMethodPrestage: nil
+                )
+            )
+        }
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: fleet,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.osDistribution.map { $0.osVersion },
+                       ["18.2.1", "18.10", "18.2", "17.6.1", "16.7.10", "9.3.6"])
+        XCTAssertEqual(snapshot.osDistribution.map { $0.count }, [2, 1, 1, 1, 1, 1])
+    }
+
     func testOSDistributionSortedAndLimited() throws {
         let inventoryJSON = """
         [
@@ -360,7 +402,9 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.managedAppCount(for: secondDevice), 0)
     }
 
-    func testManagedAppCountReturnsZeroWhenApplicationsNull() throws {
+    /// No device carries `applications` (the collect never asks for that
+    /// section), so the count is unknown rather than a fabricated 0.
+    func testManagedAppCountIsNilWhenNoDeviceCarriesApplications() throws {
         let inventoryJSON = """
         [
             {
@@ -381,8 +425,77 @@ final class MobileFleetServiceTests: XCTestCase {
             profilesURL: nil
         )
         let device = try XCTUnwrap(snapshot.richDevices.first)
-        XCTAssertEqual(snapshot.managedAppCount(for: device), 0)
         XCTAssertNil(device.applications)
+        XCTAssertFalse(snapshot.reportsApplications)
+        XCTAssertNil(snapshot.managedAppCount(for: device))
+    }
+
+    // MARK: - Fields the collected inventory never carries
+
+    /// Devices whose GENERAL section lacks every posture field (the collected
+    /// shape) report unknown counts, not zeros and not "Clean".
+    func testPostureCountsAreNilWhenNoDeviceCarriesTheFields() throws {
+        let inventoryJSON = """
+        [
+            {"mobileDeviceId": "1", "deviceType": "iOS",
+             "general": {"managed": true, "supervised": false, "sharedIpad": false}},
+            {"mobileDeviceId": "2", "deviceType": "iOS",
+             "general": {"managed": true, "supervised": true, "jailbreakDetected": "  "}}
+        ]
+        """
+        let snapshot = try loadInventory(inventoryJSON)
+
+        XCTAssertEqual(snapshot.totalDevices, 2)
+        XCTAssertNil(snapshot.passcodeCompliantCount)
+        XCTAssertNil(snapshot.activationLockEnabledCount)
+        XCTAssertNil(snapshot.jailbreakDetectedCount, "a blank status is not a report")
+    }
+
+    /// One device carrying a field is enough to make the count real, and a
+    /// reported `false` counts as reported.
+    func testPostureCountIsReportedWhenOneDeviceCarriesTheField() throws {
+        let inventoryJSON = """
+        [
+            {"mobileDeviceId": "1", "deviceType": "iOS",
+             "general": {"passcodeCompliant": false, "activationLockEnabled": true,
+                         "jailbreakDetected": "None"},
+             "applications": []},
+            {"mobileDeviceId": "2", "deviceType": "iOS", "general": {"managed": true}}
+        ]
+        """
+        let snapshot = try loadInventory(inventoryJSON)
+
+        XCTAssertEqual(snapshot.passcodeCompliantCount, 0)
+        XCTAssertEqual(snapshot.activationLockEnabledCount, 1)
+        XCTAssertEqual(snapshot.jailbreakDetectedCount, 0)
+        XCTAssertTrue(snapshot.reportsApplications)
+        XCTAssertEqual(snapshot.managedAppCount(for: snapshot.richDevices[0]), 0)
+        XCTAssertEqual(snapshot.managedAppCount(for: snapshot.richDevices[1]), 0)
+    }
+
+    /// The real collected shape: GENERAL only, `applications` null everywhere.
+    func testCollectedInventoryFixtureReportsUnknownPostureCounts() throws {
+        let url = TestFixtures.dir(
+            "jamf-cli-data/mobile-device-inventory-details/mobile-device-inventory-details.json"
+        )
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("mobile-device-inventory-details fixture not available")
+        }
+        let snapshot = MobileFleetService.load(listURL: nil, inventoryURL: url, profilesURL: nil)
+
+        let device = try XCTUnwrap(snapshot.richDevices.first)
+        XCTAssertNil(snapshot.passcodeCompliantCount)
+        XCTAssertNil(snapshot.activationLockEnabledCount)
+        XCTAssertNil(snapshot.jailbreakDetectedCount)
+        XCTAssertNil(snapshot.managedAppCount(for: device))
+    }
+
+    private func loadInventory(_ json: String) throws -> MobileFleetService.Snapshot {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mobile-inventory-\(UUID().uuidString).json")
+        try json.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        return MobileFleetService.load(listURL: nil, inventoryURL: url, profilesURL: nil)
     }
 
     // MARK: - sourceDates (freshness chip row)
@@ -513,6 +626,86 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.appleTVCount, 0)
     }
 
+    // MARK: - Devices table Type pill
+
+    /// The collected shape: the inventory row says only "iOS" and has no
+    /// hardware, so the form factor comes from the list row with the same id.
+    func testFormFactorOfInventoryRowReadsTheMatchingListRow() throws {
+        let json = """
+        [{"id": "7", "name": "Device 7", "model": "iPad Air", "type": "ios"}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        let device = MobileDeviceInventoryItem(mobileDeviceId: "7", deviceType: "iOS")
+
+        let joined = MobileFleetService.formFactor(of: device, listRow: rows.first)
+        XCTAssertEqual(joined, .iPad)
+        XCTAssertEqual(MobileFleetService.typeLabel(for: joined, deviceType: "iOS"), "iPad")
+
+        let alone = MobileFleetService.formFactor(of: device, listRow: nil)
+        XCTAssertEqual(alone, .other)
+        XCTAssertEqual(MobileFleetService.typeLabel(for: alone, deviceType: "iOS"), "iOS")
+        XCTAssertEqual(MobileFleetService.typeLabel(for: .other, deviceType: nil), "Unknown")
+        XCTAssertEqual(MobileFleetService.typeLabel(for: .other, deviceType: "  "), "Unknown")
+        XCTAssertEqual(MobileFleetService.typeLabel(for: .appleTV, deviceType: "tvOS"), "Apple TV")
+    }
+
+    /// A row's own hardware section wins over its list row.
+    func testFormFactorOfInventoryRowPrefersItsOwnHardware() throws {
+        let json = """
+        [{"id": "7", "model": "iPad Air"}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        let device = MobileDeviceInventoryItem(
+            mobileDeviceId: "7",
+            deviceType: "iOS",
+            hardware: MobileDeviceHardware(model: "iPhone 15", modelIdentifier: "iPhone16,1")
+        )
+        XCTAssertEqual(MobileFleetService.formFactor(of: device, listRow: rows.first), .iPhone)
+    }
+
+    func testLightDevicesByIDKeepsTheFirstRowForARepeatedID() throws {
+        let json = """
+        [{"id": "1", "name": "First"}, {"id": "1", "name": "Second"}, {"name": "No ID"}]
+        """
+        let rows = try JSONDecoder().decode([MobileDeviceListRow].self, from: Data(json.utf8))
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: rows, richDevices: [], profiles: [],
+            sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.lightDevicesByID.count, 1)
+        XCTAssertEqual(snapshot.lightDevicesByID["1"]?.name, "First")
+    }
+
+    /// Per-row pills over the collected fixtures agree with the iPad and iPhone
+    /// tiles, and no row falls back to the OS family.
+    func testTypePillsOverCollectedFixturesMatchTheFormFactorTiles() throws {
+        let listURL = TestFixtures.dir("jamf-cli-data/mobile-devices-list/mobile-devices-list.json")
+        let inventoryURL = TestFixtures.dir(
+            "jamf-cli-data/mobile-device-inventory-details/mobile-device-inventory-details.json"
+        )
+        guard FileManager.default.fileExists(atPath: listURL.path),
+              FileManager.default.fileExists(atPath: inventoryURL.path) else {
+            throw XCTSkip("mobile fixtures not available")
+        }
+        let snapshot = MobileFleetService.load(
+            listURL: listURL, inventoryURL: inventoryURL, profilesURL: nil
+        )
+        let byID = snapshot.lightDevicesByID
+        let labels = snapshot.richDevices.map { device in
+            MobileFleetService.typeLabel(
+                for: MobileFleetService.formFactor(
+                    of: device, listRow: device.mobileDeviceId.flatMap { byID[$0] }
+                ),
+                deviceType: device.deviceType
+            )
+        }
+
+        XCTAssertGreaterThan(snapshot.iPadCount + snapshot.iPhoneCount, 0)
+        XCTAssertEqual(labels.filter { $0 == "iPad" }.count, snapshot.iPadCount)
+        XCTAssertEqual(labels.filter { $0 == "iPhone" }.count, snapshot.iPhoneCount)
+        XCTAssertFalse(labels.contains("iOS"), "no row should fall back to the OS family")
+    }
+
     // MARK: - deviceCount(fromMobileDevicesListData:) — Managed Devices summary field
 
     /// Real jamf-cli shape: a bare array, no envelope. Mirrors `loadDeviceList`.
@@ -556,5 +749,267 @@ final class MobileFleetServiceTests: XCTestCase {
     func testDeviceCountReturnsNilForUndecodableData() throws {
         let count = MobileFleetService.deviceCount(fromMobileDevicesListData: Data("not json".utf8))
         XCTAssertNil(count, "undecodable data must be nil, never a fabricated 0")
+    }
+
+    // MARK: - Supervision donut filter
+
+    private func inventoryItem(managed: Bool?, supervised: Bool?) -> MobileDeviceInventoryItem {
+        MobileDeviceInventoryItem(
+            mobileDeviceId: UUID().uuidString,
+            general: MobileDeviceGeneral(
+                displayName: nil, serialNumber: nil, osVersion: nil,
+                managed: managed, supervised: supervised,
+                lastInventoryUpdateDate: nil, deviceOwnershipType: nil,
+                activationLockEnabled: nil, passcodeCompliant: nil,
+                dataProtectionEnabled: nil, jailbreakDetected: nil,
+                enrollmentMethodPrestage: nil
+            )
+        )
+    }
+
+    func testSupervisionRolePlacesEachManagedAndSupervisedPair() {
+        typealias Role = MobileFleetService.SupervisionRole
+        let cases: [(managed: Bool?, supervised: Bool?, role: Role?)] = [
+            (nil, true, nil),
+            (nil, nil, nil),
+            (false, true, .unmanaged),
+            (false, false, .unmanaged),
+            (false, nil, .unmanaged),
+            (true, true, .supervised),
+            (true, false, .unsupervised),
+            (true, nil, nil),
+        ]
+        for (index, entry) in cases.enumerated() {
+            let item = inventoryItem(managed: entry.managed, supervised: entry.supervised)
+            XCTAssertEqual(
+                MobileFleetService.supervisionRole(of: item), entry.role, "case \(index)"
+            )
+        }
+        let noGeneral = MobileDeviceInventoryItem(mobileDeviceId: "1", deviceType: "iOS")
+        XCTAssertNil(MobileFleetService.supervisionRole(of: noGeneral))
+    }
+
+    /// The donut's buckets are exactly what the table filter selects.
+    func testSupervisionBreakdownCountsThroughSupervisionRole() {
+        let fleet = [
+            inventoryItem(managed: true, supervised: true),
+            inventoryItem(managed: true, supervised: true),
+            inventoryItem(managed: true, supervised: false),
+            inventoryItem(managed: false, supervised: true),
+            inventoryItem(managed: nil, supervised: true),
+            inventoryItem(managed: true, supervised: nil),
+        ]
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: fleet, profiles: [],
+            sourceFile: nil, snapshotDate: nil
+        )
+
+        let breakdown = snapshot.supervisionBreakdown
+        XCTAssertEqual(breakdown.map { $0.role }, MobileFleetService.SupervisionRole.allCases)
+        XCTAssertEqual(
+            breakdown.map { $0.label }, ["Supervised", "Unsupervised", "Unmanaged", "Unknown"]
+        )
+        XCTAssertEqual(breakdown.map { $0.count }, [2, 1, 1, 2])
+        XCTAssertEqual(breakdown.reduce(0) { $0 + $1.count }, snapshot.totalDevices)
+        for slice in breakdown {
+            XCTAssertEqual(
+                MobileFleetService.devices(fleet, in: slice.role).count, slice.count, slice.label
+            )
+        }
+        XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, fleet.count)
+        XCTAssertEqual(snapshot.supervisionSlices.map { $0.role }.last, .unknown)
+    }
+
+    /// A fleet whose every device has a supervision state shows no Unknown
+    /// row, while an empty known bucket keeps its row.
+    func testSupervisionBreakdownOmitsAnEmptyUnknownRow() {
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [],
+            richDevices: [
+                inventoryItem(managed: true, supervised: true),
+                inventoryItem(managed: false, supervised: nil),
+            ],
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        let breakdown = snapshot.supervisionBreakdown
+        XCTAssertEqual(breakdown.map { $0.role }, [.supervised, .unsupervised, .unmanaged])
+        XCTAssertEqual(breakdown.map { $0.count }, [1, 0, 1])
+    }
+
+    func testSupervisionSlicesDropEmptyBuckets() {
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [],
+            richDevices: [
+                inventoryItem(managed: true, supervised: true),
+                inventoryItem(managed: false, supervised: nil),
+            ],
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        let slices = snapshot.supervisionSlices
+        XCTAssertEqual(slices.map { $0.role }, [.supervised, .unmanaged])
+        XCTAssertEqual(slices.map { $0.count }, [1, 1])
+    }
+
+    /// An angle value is the running device count at an angle; each slice
+    /// owns the values up to and including its running total.
+    func testRoleAtAngleValueWalksRunningTotals() {
+        let slices: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 20),
+            (role: .unsupervised, count: 3),
+            (role: .unmanaged, count: 2),
+        ]
+        let expected: [(value: Double, role: MobileFleetService.SupervisionRole?)] = [
+            (0, .supervised), (19.5, .supervised), (20, .supervised),
+            (20.5, .unsupervised), (21, .unsupervised), (23, .unsupervised),
+            (23.5, .unmanaged), (24, .unmanaged), (25, .unmanaged),
+            (26, nil), (-0.5, nil),
+        ]
+        for entry in expected {
+            XCTAssertEqual(
+                MobileFleetService.role(atAngleValue: entry.value, in: slices), entry.role,
+                "value \(entry.value)"
+            )
+        }
+        XCTAssertNil(MobileFleetService.role(atAngleValue: .nan, in: slices))
+    }
+
+    /// An empty bucket owns no angle, not even 0.
+    func testRoleAtAngleValueSkipsEmptySlices() {
+        let slices: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 0),
+            (role: .unsupervised, count: 5),
+        ]
+        XCTAssertEqual(MobileFleetService.role(atAngleValue: 0, in: slices), .unsupervised)
+        XCTAssertNil(MobileFleetService.role(atAngleValue: 1, in: []))
+    }
+
+    private static let ringSlices: [MobileFleetService.SupervisionSlice] = [
+        (role: .supervised, count: 20),
+        (role: .unsupervised, count: 3),
+        (role: .unmanaged, count: 2),
+    ]
+
+    /// A point `radius` from the plot's centre at `degrees` clockwise from 12 o'clock.
+    private func point(degrees: Double, radius: Double, in size: CGSize) -> CGPoint {
+        let radians = degrees * .pi / 180
+        return CGPoint(
+            x: size.width / 2 + radius * sin(radians),
+            y: size.height / 2 - radius * cos(radians)
+        )
+    }
+
+    private func roleAt(
+        degrees: Double, radius: Double, in size: CGSize,
+        slices: [MobileFleetService.SupervisionSlice]? = nil
+    ) -> MobileFleetService.SupervisionRole? {
+        MobileFleetService.role(
+            at: point(degrees: degrees, radius: radius, in: size), plotSize: size,
+            innerRadiusRatio: 0.62, in: slices ?? Self.ringSlices
+        )
+    }
+
+    /// 20/3/2 devices: supervised spans 0–288°, unsupervised to 331.2°, unmanaged to 360°.
+    func testRoleAtPointWalksTheRingClockwiseFrom12() {
+        let size = CGSize(width: 200, height: 200)
+        let expected: [(degrees: Double, role: MobileFleetService.SupervisionRole)] = [
+            (1, .supervised), (90, .supervised), (180, .supervised),
+            (300, .unsupervised), (345, .unmanaged), (359, .unmanaged),
+        ]
+        for entry in expected {
+            XCTAssertEqual(
+                roleAt(degrees: entry.degrees, radius: 80, in: size), entry.role,
+                "\(entry.degrees)°"
+            )
+        }
+    }
+
+    /// Two equal slices: 3 o'clock is the first, 9 o'clock the second. A
+    /// counterclockwise or flipped conversion swaps them.
+    func testRoleAtPointIsClockwise() {
+        let size = CGSize(width: 200, height: 200)
+        let halves: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 1), (role: .unmanaged, count: 1),
+        ]
+        XCTAssertEqual(roleAt(degrees: 90, radius: 80, in: size, slices: halves), .supervised)
+        XCTAssertEqual(roleAt(degrees: 270, radius: 80, in: size, slices: halves), .unmanaged)
+    }
+
+    func testRoleAtPointIgnoresTheHoleAndOutsideTheRing() {
+        let size = CGSize(width: 200, height: 200)
+        let hole = MobileFleetService.role(
+            at: CGPoint(x: 100, y: 100), plotSize: size, innerRadiusRatio: 0.62,
+            in: Self.ringSlices
+        )
+        XCTAssertNil(hole)
+        XCTAssertNil(roleAt(degrees: 45, radius: 50, in: size))
+        XCTAssertNil(roleAt(degrees: 45, radius: 61, in: size))
+        XCTAssertNotNil(roleAt(degrees: 45, radius: 62, in: size))
+        XCTAssertNotNil(roleAt(degrees: 45, radius: 100, in: size))
+        for corner in [CGPoint(x: 5, y: 5), CGPoint(x: 100, y: -1)] {
+            XCTAssertNil(
+                MobileFleetService.role(
+                    at: corner, plotSize: size, innerRadiusRatio: 0.62, in: Self.ringSlices
+                ),
+                "\(corner)"
+            )
+        }
+    }
+
+    /// The ring's radius is half the plot's shorter side, not its width.
+    func testRoleAtPointUsesThePlotsShorterSide() {
+        let size = CGSize(width: 300, height: 200)
+        XCTAssertEqual(roleAt(degrees: 0, radius: 85, in: size), .supervised)
+        XCTAssertNil(roleAt(degrees: 90, radius: 110, in: size))
+    }
+
+    func testRoleAtPointNeedsSlicesAndASize() {
+        let size = CGSize(width: 200, height: 200)
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: size, slices: []))
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: .zero))
+        let empty: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 0), (role: .unmanaged, count: 0),
+        ]
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: size, slices: empty))
+    }
+
+    /// The table filters before its 50-row cap, so a bucket whose devices all
+    /// sit after the fleet's first 50 still reaches the table, in order.
+    func testDevicesInRoleFiltersTheWholeFleetInOrder() {
+        let supervised = (0..<55).map { _ in inventoryItem(managed: true, supervised: true) }
+        let unmanaged = (0..<5).map { _ in inventoryItem(managed: false, supervised: nil) }
+        let fleet = supervised + unmanaged
+
+        let filtered = MobileFleetService.devices(fleet, in: .unmanaged)
+        XCTAssertEqual(filtered.map { $0.mobileDeviceId }, unmanaged.map { $0.mobileDeviceId })
+        XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, 60)
+    }
+
+    // MARK: - Table heights
+
+    /// A short list sizes the table to its rows, so no blank striped rows
+    /// trail it; a long one stops at the cap and scrolls.
+    func testTableHeightFitsItsRowsUpToTheCap() {
+        let row = MobileFleetView.deviceRowHeight
+        let three = MobileFleetView.tableHeight(rows: 3, rowHeight: row, cap: 430)
+        XCTAssertEqual(three, 33 + 3 * row)
+        XCTAssertLessThan(three, 430)
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 4, rowHeight: row, cap: 430) - three, row
+        )
+        XCTAssertEqual(MobileFleetView.tableHeight(rows: 50, rowHeight: row, cap: 430), 430)
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 8, rowHeight: MobileFleetView.profileRowHeight,
+                                        cap: 280),
+            33 + 8 * 24
+        )
+    }
+
+    /// An empty list keeps a row's height under the header rather than
+    /// collapsing to the header alone.
+    func testTableHeightKeepsOneRowWhenEmpty() {
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 0, rowHeight: 26, cap: 430),
+            MobileFleetView.tableHeight(rows: 1, rowHeight: 26, cap: 430)
+        )
     }
 }

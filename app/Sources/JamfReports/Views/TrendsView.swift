@@ -54,7 +54,35 @@ struct TrendsView: View {
     /// display, or a larger mobile-device line could clip off the chart.
     private var chartYDomainValues: [Double] {
         guard metric == .managedDevices else { return values }
-        return trendStore.managedDeviceSeries().flatMap { $0.points.map(\.value) }
+        return managedDeviceSeries.flatMap { $0.points.map(\.value) }
+    }
+
+    /// Computers and mobile devices for the Managed Devices chart.
+    private var managedDeviceSeries: [ChartSeries] {
+        workspaceStore.demoMode
+            ? TrendDemoSeries.managedDeviceSeries(range: range)
+            : trendStore.managedDeviceSeries()
+    }
+
+    /// The mSCP band series the hero chart stacks. In demo mode it is the demo
+    /// fleet's, never the tenant's the shared store may still hold.
+    private var mscpStackedSeries: [ChartSeries] {
+        workspaceStore.demoMode
+            ? TrendDemoSeries.mscpStackedSeries(range: range)
+            : trendStore.mscpStackedSeries()
+    }
+
+    /// A metric's name as the pills show it: the configured compliance
+    /// benchmark and EDR agent in place of the generic names.
+    private func metricLabel(_ m: TrendSeries.Metric) -> String {
+        m.displayLabel(
+            benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
+            edrAgentName: workspaceStore.edrAgentName
+        )
+    }
+
+    private var chartYDomain: ClosedRange<Double> {
+        Self.chartYDomain(metric: metric, values: chartYDomainValues)
     }
 
     /// Y-axis domain that respects the metric's preferred "good frame" but
@@ -62,12 +90,28 @@ struct TrendsView: View {
     /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
     /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
     /// non-negative by construction (validated in the data layer).
-    private var chartYDomain: ClosedRange<Double> {
-        let dataMin = chartYDomainValues.min()
-        let dataMax = chartYDomainValues.max()
+    /// Device counts have no good frame: a fixed 0–1,000 flattened a small
+    /// fleet, so their top follows the data.
+    nonisolated static func chartYDomain(
+        metric: TrendSeries.Metric,
+        values: [Double]
+    ) -> ClosedRange<Double> {
+        let dataMin = values.min()
+        let dataMax = values.max()
+        if metric == .managedDevices || metric == .activeDevices, let dataMax {
+            return 0...deviceCountAxisTop(dataMax)
+        }
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
         let hi = max(metric.maxY, dataMax ?? metric.maxY)
         return lo...hi
+    }
+
+    /// About a tenth of headroom over the largest count, rounded up to a fifth of its order of
+    /// magnitude (524 → 580, 1,100 → 1,400), and never under 10.
+    nonisolated static func deviceCountAxisTop(_ dataMax: Double) -> Double {
+        let target = max(dataMax * 1.1, 10)
+        let step = pow(10, floor(log10(target))) / 5
+        return (target / step).rounded(.up) * step
     }
 
     private var selectedPoint: TrendPoint? {
@@ -77,8 +121,9 @@ struct TrendsView: View {
         }
     }
 
-    private var displayVal: Double {
-        selectedPoint?.value ?? trendPoints.last?.value ?? 0
+    /// Nil when the metric has no points in range.
+    private var displayVal: Double? {
+        selectedPoint?.value ?? trendPoints.last?.value
     }
 
     private var displayDate: String {
@@ -107,6 +152,50 @@ struct TrendsView: View {
     nonisolated static func relativeChangePercent(delta: Double, baseline: Double) -> Double? {
         guard abs(baseline) >= relativeChangeBaselineFloor else { return nil }
         return (delta / baseline) * 100
+    }
+
+    /// A gap longer than this many typical intervals between points breaks the hero line.
+    nonisolated static let lineGapFactor: Double = 2.5
+    /// No shorter gap breaks it, so a weekday-only schedule's weekends stay joined.
+    nonisolated static let minimumLineGap: TimeInterval = 4 * 24 * 3600
+
+    /// The line segment each point belongs to, from 0. The cadence is the lower median interval
+    /// between points, so daily and weekly histories each break only at their own gaps; the
+    /// lower one because a gap is always a high outlier and must not set the cadence itself.
+    /// `dates` must be ascending, as the trend points are.
+    nonisolated static func lineSegmentIndices(_ dates: [Date]) -> [Int] {
+        guard dates.count > 1 else { return dates.map { _ in 0 } }
+        let intervals = zip(dates.dropFirst(), dates).map { $0.timeIntervalSince($1) }
+        let sorted = intervals.sorted()
+        let typical = sorted[(sorted.count - 1) / 2]
+        let limit = max(typical * lineGapFactor, minimumLineGap)
+        var segment = 0
+        return [0] + intervals.map { interval in
+            if interval > limit { segment += 1 }
+            return segment
+        }
+    }
+
+    /// A metric value as the hero shows it. No value is a dash: "0%" would read as measured.
+    nonisolated static func metricValueText(_ value: Double?, unit: String) -> String {
+        guard let value else { return "—" }
+        return "\(Int(value.rounded()))\(unit)"
+    }
+
+    /// Min, max and mean of the values in range, or nil when there are none.
+    nonisolated static func valueStats(
+        _ values: [Double]
+    ) -> (min: Double, max: Double, avg: Double)? {
+        guard let low = values.min(), let high = values.max() else { return nil }
+        return (low, high, values.reduce(0, +) / Double(values.count))
+    }
+
+    /// A pill's change over the range; a metric with no points shows a dash, not "±0".
+    nonisolated static func pillDeltaText(series: [Double], unit: String) -> String {
+        guard let first = series.first, let last = series.last else { return "—" }
+        let change = Int((last - first).rounded())
+        if change == 0 { return "±0\(unit)" }
+        return "\(change > 0 ? "+" : "")\(change)\(unit)"
     }
 
     private var pctDelta: Double? {
@@ -241,7 +330,8 @@ struct TrendsView: View {
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Historical Trends",
             subtitle: "Snapshot history from snapshots/summaries · \(trendDates.count) snapshot\(trendDates.count == 1 ? "" : "s")",
-            lastModified: workspaceStore.demoMode ? Calendar.current.date(from: DateComponents(year: 2026, month: 4, day: 25)) : trendStore.filteredSummaries.last?.parsedDate
+            // The demo dataset is frozen on purpose; an age warning on it is noise.
+            lastModified: workspaceStore.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -253,7 +343,7 @@ struct TrendsView: View {
                         Task { await exportChartPNG() }
                     }
                     .disabled(isExporting)
-                    .accessibilityLabel("Export \(metric.displayLabel) trend chart as PNG")
+                    .accessibilityLabel("Export \(metricLabel(metric)) trend chart as PNG")
                     .help("Save the current trend chart as a PNG image")
                 }
             )
@@ -288,18 +378,19 @@ struct TrendsView: View {
     /// Filter available metrics based on data availability.
     /// .mscpBandTrend only appears when mSCP band history exists.
     /// .securityScore only appears when security score data exists.
-    /// .managedDevices is live-only — demo mode has no dated mobile-count
-    /// series to split the two-line chart against.
+    /// The demo fleet has both series, and they show in demo mode even when
+    /// the shared store holds no live history.
+    /// .managedDevices shows in demo mode too, from the demo fleet's
+    /// computer and mobile series.
     private var availableMetrics: [TrendSeries.Metric] {
         TrendSeries.Metric.allCases.filter { metric in
             switch metric {
             case .mscpBandTrend:
-                return trendStore.hasMSCPBandHistory
+                return workspaceStore.demoMode || trendStore.hasMSCPBandHistory
             case .securityScore:
-                // Keep existing logic for security score availability
-                return trendStore.points(metric: .securityScore).count > 0
+                return !points(for: .securityScore).isEmpty
             case .managedDevices:
-                return !workspaceStore.demoMode
+                return true
             default:
                 return true
             }
@@ -329,13 +420,10 @@ struct TrendsView: View {
             HStack(spacing: 8) {
                 Circle().fill(color).frame(width: 6, height: 6)
                     .accessibilityHidden(true)
-                Text(m.displayLabel(
-                    benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
-                    edrAgentName: workspaceStore.edrAgentName
-                ))
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(Theme.Colors.fg)
-                Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
+                Text(metricLabel(m))
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+                Text(Self.pillDeltaText(series: series, unit: m.unit))
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(
                         deltaState == .flat ? Theme.Text.tertiary(contrast)
@@ -351,6 +439,8 @@ struct TrendsView: View {
                     .opacity(0.85)
                 }
             }
+            // The sparkline's height, so a pill without one (under two points) matches its row.
+            .frame(minHeight: 18)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
@@ -381,9 +471,11 @@ struct TrendsView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(metricPillAccessibilityLabel(m, delta: dl, goodTrend: goodTrend))
+        .accessibilityLabel(Self.metricPillAccessibilityLabel(
+            label: metricLabel(m), unit: m.unit, series: series, goodTrend: goodTrend
+        ))
         .accessibilityAddTraits(isActive ? .isSelected : [])
-        .help("Show \(m.displayLabel) trend")
+        .help("Show \(metricLabel(m)) trend")
         .onAppear {
             guard !pillPulse, !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
@@ -394,56 +486,96 @@ struct TrendsView: View {
 
     // MARK: Hero chart
 
+    private var deltaText: String {
+        let magnitude = "\(abs(Int(delta.rounded())))\(metric.unit)"
+        return pctDelta.map { "\(magnitude) (\(String(format: "%.1f", $0))%)" } ?? magnitude
+    }
+
+    /// The delta, plus the range pill when asked.
+    @ViewBuilder
+    private func heroIdleDetail(showsRange: Bool) -> some View {
+        // With no points there is no change to report; the range pill says "No snapshots".
+        if !values.isEmpty {
+            HStack(spacing: 4) {
+                Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                    .font(.system(size: 11, weight: .bold))
+                Text(deltaText)
+                    .lineLimit(1)
+            }
+            .font(Theme.Fonts.mono(14, weight: .semibold))
+            .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        if showsRange {
+            Pill(text: rangeBadgeText, tone: .muted)
+        }
+    }
+
+    /// Number plus the delta (idle) or hovered date; the range pill joins only when asked.
+    private func heroValueRow(showsRange: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(Self.metricValueText(displayVal, unit: metric.unit))
+                .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
+                .foregroundStyle(Theme.Colors.fg)
+                .monospacedDigit()
+                .contentTransition(.numericText(countsDown: delta < 0))
+                .animation(.snappy(duration: 0.35), value: displayVal)
+                .fixedSize()
+
+            if selectedPoint == nil {
+                heroIdleDetail(showsRange: showsRange)
+            } else {
+                // The hidden idle detail keeps the row as wide as it is idle, so hovering
+                // cannot make ViewThatFits pick the other arrangement and move the chart.
+                ZStack(alignment: .leadingFirstTextBaseline) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        heroIdleDetail(showsRange: showsRange)
+                    }
+                    .hidden()
+                    Text("at \(displayDate)")
+                        .font(Theme.Fonts.mono(14, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.goldBright)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
     private var heroChart: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Kicker(text: metric.displayLabel)
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text("\(Int(displayVal.rounded()))\(metric.unit)")
-                                .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
-                                .foregroundStyle(Theme.Colors.fg)
-                                .monospacedDigit()
-                                .contentTransition(.numericText(countsDown: delta < 0))
-                                .animation(.snappy(duration: 0.35), value: displayVal)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-
-                            if selectedPoint == nil {
-                                HStack(spacing: 4) {
-                                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
-                                        .font(.system(size: 11, weight: .bold))
-                                    Text(
-                                        pctDelta.map {
-                                            "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
-                                        } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
-                                    )
-                                    .lineLimit(1)
-                                }
-                                .font(Theme.Fonts.mono(14, weight: .semibold))
-                                .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
-                                .fixedSize(horizontal: true, vertical: false)
+                        Kicker(text: metricLabel(metric))
+                        // The range pill drops under the number only when the one-line row
+                        // does not fit, so the wide layout is unchanged.
+                        ViewThatFits(in: .horizontal) {
+                            heroValueRow(showsRange: true)
+                            VStack(alignment: .leading, spacing: 6) {
+                                heroValueRow(showsRange: false)
+                                // Hidden, not removed, on hover so the chart below stays put.
                                 Pill(text: rangeBadgeText, tone: .muted)
-                            } else {
-                                Text("at \(displayDate)")
-                                    .font(Theme.Fonts.mono(14, weight: .semibold))
-                                    .foregroundStyle(Theme.Colors.goldBright)
-                                    .lineLimit(1)
+                                    .opacity(selectedPoint == nil ? 1 : 0)
+                                    .accessibilityHidden(selectedPoint != nil)
                             }
                         }
                     }
+                    // Without this the outer row offers the left block half its width, and the
+                    // number is the only child in it that can give ground.
+                    .layoutPriority(1)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 6) {
                         Kicker(text: "Min · Max · Avg")
+                        let stats = Self.valueStats(values)
                         HStack(spacing: 14) {
-                            Text("\(Int((values.min() ?? 0).rounded()))\(metric.unit)")
-                            Text("\(Int((values.max() ?? 0).rounded()))\(metric.unit)")
-                            Text("\(Int((values.reduce(0,+) / Double(max(values.count,1))).rounded()))\(metric.unit)")
+                            Text(Self.metricValueText(stats?.min, unit: metric.unit))
+                            Text(Self.metricValueText(stats?.max, unit: metric.unit))
+                            Text(Self.metricValueText(stats?.avg, unit: metric.unit))
                         }
                         .font(Theme.Fonts.mono(12))
                         .foregroundStyle(Theme.Colors.fg2)
                     }
+                    .fixedSize()
                 }
 
                 if metric == .mscpBandTrend, !workspaceStore.demoMode, trendStore.mscpBaselineNames.count > 1 {
@@ -460,7 +592,7 @@ struct TrendsView: View {
                             // Stacked area chart for mSCP compliance bands.
                             // Series identity (`by:`) is what makes Charts stack correctly —
                             // a constant foregroundStyle collapses every band into one mass.
-                            let stackedSeries = trendStore.mscpStackedSeries()
+                            let stackedSeries = mscpStackedSeries
                             ForEach(stackedSeries, id: \.label) { series in
                                 ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
                                     AreaMark(
@@ -478,7 +610,7 @@ struct TrendsView: View {
                             // Series identity (`by:`) is what lets Charts render
                             // and legend them distinctly — a constant
                             // foregroundStyle would collapse both into one line.
-                            let deviceSeries = trendStore.managedDeviceSeries()
+                            let deviceSeries = managedDeviceSeries
                             ForEach(deviceSeries, id: \.label) { series in
                                 ForEach(Array(series.points.enumerated()), id: \.offset) { _, point in
                                     LineMark(
@@ -500,9 +632,18 @@ struct TrendsView: View {
                             }
                         } else {
                             // Standard line + area chart for other metrics
-                            ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
+                            // The area starts at the axis floor, not 0: Charts does not clip marks
+                            // to the plot, so a floor above 0 let the fill run down over the card.
+                            let areaFloor = chartYDomain.lowerBound
+                            // Each segment is its own series, so a gap in the history breaks the
+                            // line instead of a curve being drawn through weeks with no data.
+                            let segments = Self.lineSegmentIndices(trendPoints.map(\.date))
+                            ForEach(Array(trendPoints.enumerated()), id: \.offset) { idx, point in
+                                let segment = segments[safe: idx] ?? 0
                                 AreaMark(x: .value("Date", point.date),
-                                         y: .value(metric.displayLabel, point.value))
+                                         yStart: .value(metric.displayLabel, areaFloor),
+                                         yEnd: .value(metric.displayLabel, point.value),
+                                         series: .value("Segment", segment))
                                     .foregroundStyle(LinearGradient(
                                         colors: [Color(hex: metric.colorHex).opacity(0.14),
                                                  Color(hex: metric.colorHex).opacity(0.0)],
@@ -510,7 +651,8 @@ struct TrendsView: View {
                                     ))
                                     .interpolationMethod(.monotone)
                                 LineMark(x: .value("Date", point.date),
-                                         y: .value(metric.displayLabel, point.value))
+                                         y: .value(metric.displayLabel, point.value),
+                                         series: .value("Segment", segment))
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                                     .interpolationMethod(.monotone)
@@ -559,7 +701,12 @@ struct TrendsView: View {
                             }
                         }
                     }
-                    .chartXScale(domain: domain)
+                    // Inset so the first and last point markers clear the y-axis labels and the
+                    // plot edge; the band chart has no markers and fills the full width.
+                    .chartXScale(
+                        domain: domain,
+                        range: .plotDimension(padding: metric == .mscpBandTrend ? 0 : 10)
+                    )
                     .chartYScale(domain: chartYDomain)
                     .chartXSelection(value: $selectedDate)
                     .chartXAxis {
@@ -577,12 +724,21 @@ struct TrendsView: View {
                         domain: heroChartForegroundScale.labels,
                         range: heroChartForegroundScale.colors
                     )
+                    .chartLegend(heroLegendVisibility)
+                    .overlay {
+                        if trendPoints.isEmpty, metric != .mscpBandTrend,
+                           metric != .managedDevices {
+                            Text("No snapshot in this range records \(metricLabel(metric)).")
+                                .font(.callout)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                    }
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
-                    .accessibilityLabel(Self.metricTrendChartLabel(metric.displayLabel))
+                    .accessibilityLabel(Self.metricTrendChartLabel(metricLabel(metric)))
                     .accessibilityChartDescriptor(TrendLineChartDescriptor(
-                        title: "\(metric.displayLabel) Trend",
-                        seriesName: metric.displayLabel,
+                        title: "\(metricLabel(metric)) Trend",
+                        seriesName: metricLabel(metric),
                         dates: trendPoints.map(\.date),
                         values: trendPoints.map(\.value),
                         unit: metric.unit
@@ -606,11 +762,13 @@ struct TrendsView: View {
                     }
                     Spacer()
                     PNPButton(title: "Open in Finder", icon: "folder", style: .ghost, size: .sm) {
-                        if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
-                            SystemActions.openFolder(dir)
-                        }
+                        openSummariesFolder()
                     }
-                    .help("Open the summaries directory where archived summary.json snapshots live.")
+                    .disabled(workspaceStore.demoMode)
+                    .help(workspaceStore.demoMode
+                          ? Self.demoSummariesFolderHelp
+                          : "Open the summaries directory where archived summary.json "
+                            + "snapshots live.")
                 }
             }
         }
@@ -673,9 +831,13 @@ struct TrendsView: View {
         }
     }
 
-    /// Subtitle tracks the selected baseline once more than one exists.
+    /// Subtitle tracks the selected baseline once more than one exists. The
+    /// demo has one; a tenant's baseline names the store still holds must not
+    /// reach a demo screen.
     private var complianceBandCardSubtitle: String {
-        guard let name = trendStore.primaryMSCPBaseline, trendStore.mscpBaselineNames.count > 1 else {
+        guard !workspaceStore.demoMode,
+              let name = trendStore.primaryMSCPBaseline,
+              trendStore.mscpBaselineNames.count > 1 else {
             return "Devices grouped by failed-rule count, weekly"
         }
         return "\(name) · devices grouped by failed-rule count, weekly"
@@ -841,7 +1003,7 @@ struct TrendsView: View {
     /// Falls back to a single neutral entry when no series exist yet (Charts
     /// requires a non-empty domain/range even before data loads).
     private var mscpBandChartScale: (labels: [String], colors: [Color]) {
-        let series = trendStore.mscpStackedSeries()
+        let series = mscpStackedSeries
         guard !series.isEmpty else { return (["Band"], [Theme.Colors.fg2]) }
         return (series.map(\.label), series.map { Color(cgColor: $0.color) })
     }
@@ -849,7 +1011,7 @@ struct TrendsView: View {
     /// Label/color scale for the `.managedDevices` two-line chart, same
     /// derivation as `mscpBandChartScale`.
     private var managedDevicesChartScale: (labels: [String], colors: [Color]) {
-        let series = trendStore.managedDeviceSeries()
+        let series = managedDeviceSeries
         guard !series.isEmpty else { return (["Computers"], [Theme.Colors.info]) }
         return (series.map(\.label), series.map { Color(cgColor: $0.color) })
     }
@@ -860,6 +1022,12 @@ struct TrendsView: View {
     /// for them and picking the right one here only matters for those two.
     private var heroChartForegroundScale: (labels: [String], colors: [Color]) {
         metric == .managedDevices ? managedDevicesChartScale : mscpBandChartScale
+    }
+
+    /// The scale above is applied to every metric, so Charts would list its domain (the band
+    /// fallback "Band") under single-line charts. Only the two multi-series charts get a legend.
+    private var heroLegendVisibility: Visibility {
+        metric == .managedDevices || metric == .mscpBandTrend ? .automatic : .hidden
     }
 
     /// Band legend for the live stacked-area chart.
@@ -894,31 +1062,24 @@ struct TrendsView: View {
     }
 
     private var stackedBandsChart: some View {
-        // Demo data only. Live mode renders an empty state until summaries carry
-        // real per-band failed-rule counts.
-        let dates = trendDates
-        let weeks = dates.enumerated().map { idx, date -> (date: Date, values: [Int]) in
-            let t = Double(idx) / Double(max(dates.count - 1, 1))
-            let base = 524.0
-            let pass    = Int((base * (0.35 + 0.1 * t)).rounded())
-            let low     = Int((base * (0.35 - 0.05 * t)).rounded())
-            let medLow  = Int((base * (0.15 - 0.05 * t)).rounded())
-            let med     = Int((base * (0.10 - 0.05 * t)).rounded())
-            let high    = Int((base * (0.05 - 0.02 * t)).rounded())
-            return (date: date, values: [pass, low, medLow, med, high])
+        // Demo data only: the weekly band counts the hero chart stacks, as
+        // bars. Live mode draws `liveBandsChart` from the store instead.
+        let bands = TrendDemoSeries.mscpStackedSeries(range: range)
+        let dateLabels: [String] = (bands.first?.points ?? []).map {
+            SummaryJSONParser.dateFormatter.string(from: $0.date)
         }
 
         return Group {
             if let domain = chartDomain {
                 Chart {
-                    ForEach(Array(weeks.enumerated()), id: \.offset) { weekIdx, week in
-                        ForEach(Array(DemoData.complianceBands.enumerated()), id: \.offset) { bandIdx, band in
+                    ForEach(bands, id: \.label) { band in
+                        ForEach(Array(band.points.enumerated()), id: \.offset) { _, point in
                             BarMark(
-                                x: .value("Date", week.date),
-                                y: .value("Devices", week.values[bandIdx]),
+                                x: .value("Date", point.date),
+                                y: .value("Devices", point.value),
                                 stacking: .standard
                             )
-                            .foregroundStyle(Color(hex: band.colorHex))
+                            .foregroundStyle(Color(cgColor: band.color))
                         }
                     }
                 }
@@ -932,12 +1093,12 @@ struct TrendsView: View {
                 .accessibilityLabel(Self.complianceTrendChartLabel)
                 .accessibilityChartDescriptor(StackedBarChartDescriptor(
                     title: "Compliance Distribution Over Time",
-                    dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
-                    bands: DemoData.complianceBands.enumerated().map { bandIdx, band in
+                    dateLabels: dateLabels,
+                    bands: bands.map { band in
                         StackedBarChartDescriptor.Band(
                             name: band.label,
-                            dateLabels: dates.map { SummaryJSONParser.dateFormatter.string(from: $0) },
-                            values: weeks.map { $0.values[bandIdx] }
+                            dateLabels: dateLabels,
+                            values: band.points.map { Int($0.value.rounded()) }
                         )
                     }
                 ))
@@ -990,14 +1151,21 @@ struct TrendsView: View {
         }
     }
 
-    private func metricPillAccessibilityLabel(
-        _ m: TrendSeries.Metric,
-        delta: Double,
+    /// A pill's VoiceOver label; a metric with no points says so rather than "+0% change",
+    /// matching the dash the pill shows.
+    nonisolated static func metricPillAccessibilityLabel(
+        label: String,
+        unit: String,
+        series: [Double],
         goodTrend: Bool
     ) -> String {
+        guard let first = series.first, let last = series.last else {
+            return "\(label), no snapshots in range"
+        }
+        let delta = last - first
         let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
-        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(m.unit)"
-        return "\(m.displayLabel), \(direction), \(deltaStr) change"
+        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(unit)"
+        return "\(label), \(direction), \(deltaStr) change"
     }
 
     /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
@@ -1099,11 +1267,13 @@ struct TrendsView: View {
                     Spacer()
                     HStack(spacing: 8) {
                         PNPButton(title: "Show in Finder", icon: "folder", size: .sm) {
-                            if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
-                                SystemActions.openFolder(dir)
-                            }
+                            openSummariesFolder()
                         }
-                        .help("Open the archived summaries folder so you can inspect or copy snapshot JSON.")
+                        .disabled(workspaceStore.demoMode)
+                        .help(workspaceStore.demoMode
+                              ? Self.demoSummariesFolderHelp
+                              : "Open the archived summaries folder so you can inspect or copy "
+                                + "snapshot JSON.")
                         PNPButton(
                             title: isArchiving ? "Archiving…" : "Archive now",
                             icon: isArchiving ? "hourglass" : "icloud.and.arrow.up",
@@ -1217,7 +1387,23 @@ struct TrendsView: View {
 
     // MARK: Archive
 
+    private static let demoSummariesFolderHelp =
+        "Demo summaries are not on disk. Opening their folder needs a live profile."
+
+    /// Opens the archived summaries folder. Never in demo mode: the demo's
+    /// summaries are not on disk, and its profile's name could match a real
+    /// workspace's folder.
+    private func openSummariesFolder() {
+        guard !workspaceStore.demoMode else { return }
+        if let dir = try? WorkspacePaths.summariesDir(for: workspaceStore.profile) {
+            SystemActions.openFolder(dir)
+        }
+    }
+
     private func archiveNow() async {
+        // Collecting runs jamf-cli against the selected profile, a fictional
+        // one in demo mode; the button is disabled there too.
+        guard !workspaceStore.demoMode else { return }
         let profile = workspaceStore.profile
         isArchiving = true
         workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
@@ -1267,11 +1453,12 @@ struct TrendsView: View {
                 : "\(f.string(from: first.date)) → \(f.string(from: last.date)) · \(pts.count) snapshots"
         }
 
+        let label = metricLabel(m)
         let exportResult = DashboardChartExport.run(
-            title: m.displayLabel,
+            title: label,
             subtitle: subtitle,
             suggestedFilename: DashboardChartExport.filename(for: m.displayLabel, profile: workspaceStore.profile)
-        ) { ChartExportView(trendPoints: pts, metric: m, domain: dom) }
+        ) { ChartExportView(trendPoints: pts, metric: m, domain: dom, axisLabel: label) }
 
         if case .failure(let error) = exportResult {
             workspaceStore.toast = Toast(message: error.userMessage, style: .danger)
@@ -1310,7 +1497,7 @@ enum TrendDemoSeries {
     }
 
     static func values(for metric: TrendSeries.Metric) -> [Double] {
-        metric == .activeDevices ? DemoData.totalDevicesTrend : (DemoData.trends[metric] ?? [])
+        DemoData.trends[metric] ?? []
     }
 
     static func points(for metric: TrendSeries.Metric, range: TrendRange) -> [TrendPoint] {
@@ -1327,6 +1514,68 @@ enum TrendDemoSeries {
         guard let latest = allPoints.last?.date else { return [] }
         guard let start = startDate(for: range, latest: latest) else { return allPoints }
         return allPoints.filter { $0.date >= start }
+    }
+
+    /// Computers and mobile devices for the Managed Devices chart, shaped like
+    /// `TrendStore.managedDeviceSeries()` so the chart code needs no demo branch.
+    static func managedDeviceSeries(range: TrendRange) -> [ChartSeries] {
+        let computers = points(dates: dates, values: DemoData.totalDevicesTrend, range: range)
+        let mobile = points(dates: dates, values: DemoData.mobileDevicesTrend, range: range)
+        return [
+            ChartSeries(label: "Computers", color: ChartPalette.seriesColors[0],
+                        points: computers.map { (date: $0.date, value: $0.value) }),
+            ChartSeries(label: "Mobile devices", color: ChartPalette.seriesColors[4],
+                        points: mobile.map { (date: $0.date, value: $0.value) }),
+        ]
+    }
+
+    /// The demo fleet's weekly mSCP band counts, Pass through High, by absolute
+    /// week so the visible range only filters them. Each week sums to that
+    /// week's `.mscpBandTrend` total (Macs with compliance data), Pass is the
+    /// compliance trend's share of it, and the last week is exactly
+    /// `DemoData.complianceBands`. The split of the rest drifts to that week's
+    /// from a start weighted toward the high bands.
+    static let weeklyBandCounts: [[Int]] = {
+        let totals = values(for: .mscpBandTrend)
+        let passShares = values(for: .compliance)
+        let lastCounts = DemoData.complianceBands.map(\.count)
+        let lastRest = Double(max(lastCounts.dropFirst().reduce(0, +), 1))
+        let startShares: [Double] = [0.48, 0.27, 0.15]
+        let endShares: [Double] = lastCounts.dropFirst().prefix(3).map { Double($0) / lastRest }
+        let lastWeek = totals.count - 1
+        return totals.indices.map { week -> [Int] in
+            if week == lastWeek { return lastCounts }
+            let t = Double(week) / Double(max(lastWeek, 1))
+            let total = Int(totals[week].rounded())
+            let pass = Int((Double(total) * (passShares[safe: week] ?? 0) / 100).rounded())
+            let rest = total - pass
+            let split: [Int] = zip(startShares, endShares).map { start, end in
+                Int((Double(rest) * (start + (end - start) * t)).rounded())
+            }
+            return [pass] + split + [rest - split.reduce(0, +)]
+        }
+    }()
+
+    /// The demo's band counts as the stacked series both band charts draw,
+    /// named and coloured like `DemoData.complianceBands`.
+    static func mscpStackedSeries(range: TrendRange) -> [ChartSeries] {
+        DemoData.complianceBands.enumerated().map { item -> ChartSeries in
+            let counts = weeklyBandCounts.map { Double($0[safe: item.offset] ?? 0) }
+            let visible = points(dates: dates, values: counts, range: range)
+            return ChartSeries(
+                label: item.element.label,
+                color: sRGBColor(hex: item.element.colorHex),
+                points: visible.map { (date: $0.date, value: $0.value) })
+        }
+    }
+
+    /// `Color(hex:)`'s sRGB colour as the CGColor a `ChartSeries` carries.
+    private static func sRGBColor(hex: UInt32) -> CGColor {
+        CGColor(
+            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue: CGFloat(hex & 0xFF) / 255,
+            alpha: 1)
     }
 
     static func chartDomain(for metric: TrendSeries.Metric, range: TrendRange) -> ClosedRange<Date>? {
@@ -1397,6 +1646,8 @@ private struct ChartExportView: View {
     let trendPoints: [TrendPoint]
     let metric: TrendSeries.Metric
     let domain: ClosedRange<Date>?
+    /// The metric's name as the screen shows it (configured benchmark, agent).
+    let axisLabel: String
 
     private struct ExportPoint: Identifiable {
         let index: Int
@@ -1525,7 +1776,7 @@ private struct ChartExportView: View {
             }
         }
         .chartXAxisLabel("Snapshot date", position: .bottom, alignment: .center)
-        .chartYAxisLabel(metric.displayLabel, position: .leading, alignment: .center)
+        .chartYAxisLabel(axisLabel, position: .leading, alignment: .center)
         .chartPlotStyle { plotArea in
             plotArea.background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 8))

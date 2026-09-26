@@ -16,8 +16,9 @@ Xcode 16+ for previews and runtime, or build from the command line with `swift b
   generation, and Historical Trends are implemented. Reports are produced by a native
   Swift engine (`ReportEngine`); there is no Python in the report-generation path and no
   Python runtime is bundled or required.
-- **Distribution:** local builds are ad-hoc signed; Developer ID signing, notarization,
-  and stapling remain manual steps (see Build distribution below).
+- **Distribution:** `./build-app.sh release` signs with a Developer ID identity when the
+  keychain has one, then notarizes and staples; without one it ad-hoc signs for local use
+  (see Build distribution below).
 
 ## Quick start
 
@@ -108,17 +109,16 @@ app/
 
 ## Build distribution
 
-The `./build-app.sh release` script performs ad-hoc signing (`codesign -s -`) so the
-bundle can run on the local development machine. For distribution to other Macs:
+`./build-app.sh release` signs with a Developer ID Application identity from the keychain
+(`TEAM_ID` picks one, `SIGNING_IDENTITY` names it), then notarizes and staples with
+`xcrun notarytool` and `xcrun stapler`. Notarization authenticates with the
+`JamfReports-Notary` keychain profile (`xcrun notarytool store-credentials`), or with an App
+Store Connect API key through `NOTARY_KEY_PATH`, `NOTARY_KEY_ID` and `NOTARY_ISSUER`.
 
-1. **Signing:** The bundle must be signed with a valid **Developer ID Application**
-   certificate.
-2. **Notarization:** The signed bundle must be submitted to Apple's notary service
-   via `xcrun notarytool`.
-3. **Stapling:** The notarization ticket must be stapled to the bundle via
-   `xcrun stapler staple`.
-
-These steps are currently manual and not yet integrated into the `build-app.sh` script.
+- With no Developer ID identity it falls back to ad-hoc signing (`codesign -s -`) and skips
+  notarization. That build suits the Mac that built it; Gatekeeper blocks it on others.
+- With an identity but no notary credentials, notarization fails and so does the build. Set
+  `SKIP_NOTARIZE=1` to sign without notarizing, for example while iterating locally.
 
 No Python runtime is bundled into the app — `build-app.sh` builds and signs the SwiftPM
 executable only, and report generation is performed entirely by the native Swift

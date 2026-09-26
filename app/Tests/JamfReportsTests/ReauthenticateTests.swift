@@ -56,31 +56,25 @@ final class ReauthenticateTests: XCTestCase {
 
     func testPlatformVerifyEnabledWhenComplete() {
         XCTAssertTrue(ReauthenticateSheet.canVerifyPlatform(
-            isBusy: false, gatewayURLValid: true, scope: .environment, scopeID: "e1",
+            isBusy: false, gatewayURLValid: true, scopeID: "e1",
             clientID: "abc", hasSecret: true))
     }
 
     func testPlatformVerifyDisabledOnBlankScopeID() {
         XCTAssertFalse(ReauthenticateSheet.canVerifyPlatform(
-            isBusy: false, gatewayURLValid: true, scope: .environment, scopeID: " ",
-            clientID: "abc", hasSecret: true))
-    }
-
-    func testPlatformVerifyEnabledForOrganizationScopeWithNoID() {
-        XCTAssertTrue(ReauthenticateSheet.canVerifyPlatform(
-            isBusy: false, gatewayURLValid: true, scope: .organization, scopeID: "",
+            isBusy: false, gatewayURLValid: true, scopeID: " ",
             clientID: "abc", hasSecret: true))
     }
 
     func testPlatformVerifyDisabledOnInvalidGatewayURL() {
         XCTAssertFalse(ReauthenticateSheet.canVerifyPlatform(
-            isBusy: false, gatewayURLValid: false, scope: .environment, scopeID: "e1",
+            isBusy: false, gatewayURLValid: false, scopeID: "e1",
             clientID: "abc", hasSecret: true))
     }
 
     func testPlatformVerifyDisabledWithoutSecret() {
         XCTAssertFalse(ReauthenticateSheet.canVerifyPlatform(
-            isBusy: false, gatewayURLValid: true, scope: .environment, scopeID: "e1",
+            isBusy: false, gatewayURLValid: true, scopeID: "e1",
             clientID: "abc", hasSecret: false))
     }
 

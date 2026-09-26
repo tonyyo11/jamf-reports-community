@@ -25,9 +25,19 @@ struct ContentView: View {
     /// "SCHEDULES" when the operator manages hand-built agents directly.
     @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
     @State private var isRefreshingAll = false
+    /// Nil until the first measurement, so a window launched narrow compacts without animating.
+    @State private var isNarrowWindow: Bool?
+    /// A sidebar cycle while narrow; cleared when the window widens past the threshold.
+    @State private var sidebarOverriddenWhileNarrow = false
 
+    /// What the shell shows. `sidebarModeRaw` stays the user's choice; the width rule never
+    /// writes it.
     private var sidebarMode: SidebarMode {
-        get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
+        SidebarMode.effective(
+            stored: SidebarMode(rawValue: sidebarModeRaw) ?? .expanded,
+            isNarrow: isNarrowWindow ?? false,
+            overridden: sidebarOverriddenWhileNarrow
+        )
     }
 
     var body: some View {
@@ -76,16 +86,20 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     // App-wide health strip: per-kind collection failures and
                     // schedule problems follow the operator onto every screen
-                    // instead of waiting on Overview or Run History.
-                    GlobalHealthBanner(
-                        freshnessIssues: workspace.dataFreshnessIssues,
-                        automationIssues: workspace.automationHealthIssues,
-                        isRemediating: workspace.isRemediatingFreshness,
-                        onOpenAutomation: { tab = .schedules },
-                        onCollectNow: {
-                            Task { await workspace.collectFailingNow() }
-                        }
-                    )
+                    // instead of waiting on Overview or Run History. Never in
+                    // demo mode: its issues describe a real tenant, and its
+                    // Collect now is a no-op there.
+                    if !workspace.demoMode {
+                        GlobalHealthBanner(
+                            freshnessIssues: workspace.dataFreshnessIssues,
+                            automationIssues: workspace.automationHealthIssues,
+                            isRemediating: workspace.isRemediatingFreshness,
+                            onOpenAutomation: { tab = .schedules },
+                            onCollectNow: {
+                                Task { await workspace.collectFailingNow() }
+                            }
+                        )
+                    }
                     ZStack(alignment: .bottom) {
                         detailView
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -105,6 +119,13 @@ struct ContentView: View {
             .navigationTitle(tab.label)
             .navigationSubtitle(subtitle(for: tab) ?? "")
             .toolbar { shellToolbar }
+        }
+        // A Bool transform fires only on threshold crossings, and fires once for the initial
+        // width, so a window launched narrow compacts too.
+        .onGeometryChange(for: Bool.self) { proxy in
+            proxy.size.width < Theme.Metrics.sidebarAutoCompactBelow
+        } action: { narrow in
+            applyWindowWidth(narrow: narrow)
         }
         .onReceive(NotificationCenter.default.publisher(for: .cycleSidebar)) { _ in
             cycleSidebar()
@@ -149,7 +170,7 @@ struct ContentView: View {
             // scoped to the affected tiers; no-op when nothing is wrong.
             await workspace.remediateStaleDataIfNeeded()
         }
-        .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
+        .animation(.snappy(duration: 0.28), value: sidebarMode)
         .animation(.snappy, value: workspace.toast != nil)
         .onReceive(NotificationCenter.default.publisher(for: .systemActionDenied)) { note in
             if let message = note.userInfo?["message"] as? String {
@@ -234,7 +255,10 @@ struct ContentView: View {
         case .deviceLookup:      "LOOKUP"
         case .trends:            TrendRange(rawValue: defaultTrendRangeRaw)?.rawValue ?? TrendRange.w4.rawValue
         case .audit:             "HEALTH & HYGIENE"
-        case .schedules:         AutomationPolicy.parse(automationPolicyRaw).isManaged ? "POLICY" : "SCHEDULES"
+        // Demo mode always shows the schedules list (see `AutomationTab`).
+        case .schedules:
+            !workspace.demoMode && AutomationPolicy.parse(automationPolicyRaw).isManaged
+                ? "POLICY" : "SCHEDULES"
         case .runs:              "STDOUT"
         case .config:            "CONFIG.YAML"
         case .customize:         "SHEETS"
@@ -259,7 +283,24 @@ struct ContentView: View {
     }
 
     private func cycleSidebar() {
-        sidebarModeRaw = sidebarMode.next().rawValue
+        let result = SidebarMode.cycled(
+            stored: SidebarMode(rawValue: sidebarModeRaw) ?? .expanded,
+            isNarrow: isNarrowWindow ?? false,
+            overridden: sidebarOverriddenWhileNarrow
+        )
+        sidebarOverriddenWhileNarrow = result.overridden
+        sidebarModeRaw = result.stored.rawValue
+    }
+
+    private func applyWindowWidth(narrow: Bool) {
+        if !narrow { sidebarOverriddenWhileNarrow = false }
+        guard isNarrowWindow != nil else {
+            var launch = Transaction()
+            launch.disablesAnimations = true
+            withTransaction(launch) { isNarrowWindow = narrow }
+            return
+        }
+        isNarrowWindow = narrow
     }
 
     @ViewBuilder
@@ -314,5 +355,22 @@ struct ContentView: View {
         case .success: Theme.Colors.ok
         case .danger:  Theme.Colors.danger
         }
+    }
+}
+
+extension SidebarMode {
+    /// Expanded shows compact in a narrow window unless the user cycled the sidebar since it
+    /// narrowed. Compact and hidden are never changed.
+    static func effective(stored: SidebarMode, isNarrow: Bool, overridden: Bool) -> SidebarMode {
+        stored == .expanded && isNarrow && !overridden ? .compact : stored
+    }
+
+    /// Cycles from the mode on screen, so the first press while auto-compacted changes what the
+    /// user sees, and a press while narrow overrides the rule until the window widens.
+    static func cycled(
+        stored: SidebarMode, isNarrow: Bool, overridden: Bool
+    ) -> (stored: SidebarMode, overridden: Bool) {
+        let shown = effective(stored: stored, isNarrow: isNarrow, overridden: overridden)
+        return (shown.next(), overridden || isNarrow)
     }
 }

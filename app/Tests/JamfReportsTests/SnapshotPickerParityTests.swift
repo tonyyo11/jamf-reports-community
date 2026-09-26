@@ -294,25 +294,30 @@ final class SnapshotPickerParityTests: XCTestCase {
     /// mis-ordered and count a conflict copy as an extra day of drift.
     func testProtectInsightSeriesOrdersByStampAndDropsConflictCopies() throws {
         let protectDir = root.appendingPathComponent("protect", isDirectory: true)
-        let insights = protectDir.appendingPathComponent("insights", isDirectory: true)
+        let insights = protectDir.appendingPathComponent("protect-insights", isDirectory: true)
         try FileManager.default.createDirectory(at: insights, withIntermediateDirectories: true)
         let now = Date()
-        try write(#"{"marker": "NEWEST"}"#,
-                  to: insights.appendingPathComponent("insights_\(newestStamp).json"),
+        // One insight label in every file, so the marker is its failing-device
+        // count per column rather than a row name (rows sort alphabetically).
+        let newestRows = #"[{"label": "Gatekeeper enabled", "totalFail": 7373}]"#
+        let olderRows = #"[{"label": "Gatekeeper enabled", "totalFail": 4242}]"#
+        let conflictRows = #"[{"label": "Gatekeeper enabled", "totalFail": 9999}]"#
+        try write(newestRows,
+                  to: insights.appendingPathComponent("protect-insights_\(newestStamp).json"),
                   modified: now.addingTimeInterval(-3600))
-        try write(#"{"marker": "OLDER"}"#,
-                  to: insights.appendingPathComponent("insights_\(olderStamp).json"),
+        try write(olderRows,
+                  to: insights.appendingPathComponent("protect-insights_\(olderStamp).json"),
                   modified: now.addingTimeInterval(-10))
-        try write(#"{"marker": "CONFLICT"}"#,
-                  to: insights.appendingPathComponent("insights_\(newestStamp) 2.json"),
+        try write(conflictRows,
+                  to: insights.appendingPathComponent("protect-insights_\(newestStamp) 2.json"),
                   modified: now)
 
         let html = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
             .buildInsightsDrift(protectDataDir: protectDir)
 
-        XCTAssertFalse(html.contains("CONFLICT"), "a sync conflict copy is never a snapshot")
-        let older = try XCTUnwrap(html.range(of: "OLDER"))
-        let newest = try XCTUnwrap(html.range(of: "NEWEST"))
+        XCTAssertFalse(html.contains("9999"), "a sync conflict copy is never a snapshot")
+        let older = try XCTUnwrap(html.range(of: "4242"))
+        let newest = try XCTUnwrap(html.range(of: "7373"))
         XCTAssertLessThan(older.lowerBound, newest.lowerBound,
                           "the filename-newest snapshot belongs in the Current column")
     }

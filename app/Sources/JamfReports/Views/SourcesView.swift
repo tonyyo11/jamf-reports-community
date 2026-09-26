@@ -46,9 +46,10 @@ struct SourcesView: View {
 
     private let cliCommandDefinitions: [CLICommandDefinition] = [
         .init(label: "pro overview",                cacheNames: ["overview"]),
+        // Collect writes `computers`; the other two are older names still read.
         .init(
             label: "pro computers list (incl. SECURITY section)",
-            cacheNames: ["computers-list", "computers_list"]
+            cacheNames: ["computers", "computers-list", "computers_list"]
         ),
         .init(label: "pro report ea-results --all", cacheNames: ["ea-results", "ea_results"]),
         .init(label: "pro report patch-status",     cacheNames: ["patch-status", "patch_status"]),
@@ -116,9 +117,7 @@ struct SourcesView: View {
         }
         .onAppear {
             reload()
-            inboxWatcher.start(profile: workspace.profile) {
-                reload()
-            }
+            startInboxWatcher()
             reloadCapabilities()
         }
         .onChange(of: workspace.profile) { _, _ in
@@ -128,9 +127,7 @@ struct SourcesView: View {
             doctorOutcome = nil
             doctorRunning = false
             reload()
-            inboxWatcher.start(profile: workspace.profile) {
-                reload()
-            }
+            startInboxWatcher()
             reloadCapabilities()
         }
         .onDisappear {
@@ -200,23 +197,39 @@ struct SourcesView: View {
                         tone: cachedCLICommandCount == 0 ? .muted : .teal
                     )
                 }
-                HStack(spacing: 4) {
-                    Text("jamf-cli profile")
-                    Text(workspace.profile).foregroundStyle(Theme.Colors.goldBright)
-                    scopeChip(for: workspace.profile)
-                    Text("· cache \(cliCacheDisplayPath)")
+                // One line when it fits; otherwise the cache path takes its own line
+                // rather than wrapping every word into a narrow column.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        cliProfileLine(label: "jamf-cli profile")
+                        Text("·")
+                        cliCacheLine
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        // The card title already says jamf-cli; drop it before the
+                        // profile name has to truncate.
+                        ViewThatFits(in: .horizontal) {
+                            cliProfileLine(label: "jamf-cli profile")
+                            cliProfileLine(label: "profile")
+                        }
+                        cliCacheLine
+                    }
                 }
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Text.tertiary(contrast))
 
                 VStack(spacing: 0) {
                     ForEach(Array(cliCommands.enumerated()), id: \.element.id) { idx, c in
-                        HStack {
+                        // The label wraps at its full height: truncated, it still
+                        // reserved the wrapped height below the cards row.
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Mono(text: c.label, color: Theme.Text.secondary)
-                            Spacer()
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Text(c.status)
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .fixedSize()
                         }
                         .padding(.vertical, 6)
                         if idx < cliCommands.count - 1 {
@@ -229,6 +242,28 @@ struct SourcesView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private func cliProfileLine(label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(label).fixedSize()
+            Text(workspace.profile)
+                .foregroundStyle(Theme.Colors.goldBright)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            scopeChip(for: workspace.profile)
+                .disabled(workspace.demoMode)
+        }
+    }
+
+    private var cliCacheLine: some View {
+        HStack(spacing: 4) {
+            Text("cache").fixedSize()
+            Text(cliCacheDisplayPath)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(cliCacheDisplayPath)
+        }
+    }
+
     private var csvCard: some View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
@@ -239,8 +274,7 @@ struct SourcesView: View {
                     Spacer()
                     Pill(text: "\(csvFiles.count) FILES", tone: .muted)
                 }
-                Mono(text: WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                                          subpath: "csv-inbox") + "/")
+                Mono(text: workspaceDisplayPath(subpath: "csv-inbox") + "/")
 
                 if csvFiles.isEmpty {
                     emptyCSVState
@@ -279,6 +313,8 @@ struct SourcesView: View {
                                 }
                                 .menuStyle(.button)
                                 .buttonStyle(.plain)
+                                .disabled(workspace.demoMode)
+                                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                                 .accessibilityLabel("Actions for \(f.name)")
                             }
                             .padding(.vertical, 8)
@@ -291,21 +327,31 @@ struct SourcesView: View {
 
                 HStack(spacing: 8) {
                     PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
+                        guard !workspace.demoMode else { return }
                         let url = (ProfileService.workspaceURL(for: workspace.profile)
                                     ?? WorkspaceRootStore.defaultRoot)
                             .appendingPathComponent("csv-inbox", isDirectory: true)
                         SystemActions.openFolder(url)
                     }
-                    .help("Open the csv-inbox folder where you drop fresh CSV exports.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Open the csv-inbox folder where you drop fresh CSV exports.")
+                    // Reads the real inbox's newest CSV and writes config.yaml.
                     PNPButton(
                         title: "EA tracking guide",
                         icon: "tablecells.badge.ellipsis",
                         style: .ghost,
                         size: .sm
                     ) {
+                        guard !workspace.demoMode else { return }
                         showingEAWalkthrough = true
                     }
-                    .help("Detect Extension Attribute columns in your newest CSV and adopt them into config.yaml.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Detect Extension Attribute columns in your newest CSV and adopt "
+                              + "them into config.yaml.")
                 }
                 .padding(.top, 4)
                 TipView(SourcesTips.eaTracking)
@@ -336,14 +382,22 @@ struct SourcesView: View {
                         let v = Self.healthPill(r.health)
                         Pill(text: v.label, tone: v.tone, icon: v.icon)
                     }
+                    // Demo mode: the sheet would register a real jamf-cli profile
+                    // under the demo's name, and the check runs `jamf-cli doctor`.
                     Button("Update credentials\u{2026}") {
+                        guard !workspace.demoMode else { return }
                         showingReauth = true
                     }
-                    .help("Re-register this profile's jamf-cli credentials (URL, client ID, and secret) without leaving the app.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Re-register this profile's jamf-cli credentials (URL, client ID, "
+                              + "and secret) without leaving the app.")
                     Button(doctorOutcome == nil ? "Check connection" : "Re-check") {
                         runDoctor()
                     }
-                    .disabled(doctorRunning)
+                    .disabled(doctorRunning || workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
                 TipView(SourcesTips.connectionHealth)
                     .frame(maxWidth: 460, alignment: .leading)
@@ -479,6 +533,7 @@ struct SourcesView: View {
     }
 
     private func runDoctor() {
+        guard !workspace.demoMode else { return }
         doctorRunning = true
         let profile = workspace.profile
         let service = CLIDoctorService(executor: DefaultCLIExecutor(bridge: cliBridge))
@@ -499,7 +554,9 @@ struct SourcesView: View {
                         .font(.system(size: 16))
                     SectionHeader(title: "jamf-cli · command matrix")
                     Spacer()
-                    if capabilitySnapshot == nil {
+                    if workspace.demoMode {
+                        Pill(text: "demo", tone: .muted)
+                    } else if capabilitySnapshot == nil {
                         Pill(text: "probing…", tone: .muted)
                     } else if let ver = capabilitySnapshot?.version {
                         Pill(text: "v\(ver)", tone: .muted)
@@ -549,13 +606,17 @@ struct SourcesView: View {
                     SectionHeader(title: "Snapshot Archive Families")
                     Spacer()
                     PNPButton(title: "Open in Finder", icon: "folder", size: .sm) {
+                        guard !workspace.demoMode else { return }
                         let url = (try? WorkspacePaths.historicalDir(for: workspace.profile))
                                     ?? (ProfileService.workspaceURL(for: workspace.profile)
                                         ?? WorkspaceRootStore.defaultRoot)
                                         .appendingPathComponent("snapshots", isDirectory: true)
                         SystemActions.openFolder(url)
                     }
-                    .help("Open the snapshots directory where dated CSV/JSON archives live.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Open the snapshots directory where dated CSV/JSON archives live.")
                 }
                 if families.isEmpty {
                     emptyFamiliesState
@@ -601,7 +662,8 @@ struct SourcesView: View {
             title: "No CSV files in the inbox.",
             message: "Drop Jamf Pro exports here before running a CSV-assisted report. "
                 + "Add your Extension Attribute columns to the export to track them.",
-            primaryAction: EmptyStateAction(
+            // The walkthrough reads the real inbox and writes config.yaml.
+            primaryAction: workspace.demoMode ? nil : EmptyStateAction(
                 label: "Set up EA tracking",
                 icon: "tablecells.badge.ellipsis",
                 action: { showingEAWalkthrough = true }
@@ -623,9 +685,16 @@ struct SourcesView: View {
     }
 
     private func reload() {
+        guard !workspace.demoMode else {
+            // The demo workspace, never this Mac's: no folder is read.
+            csvFiles = DemoData.inboxFiles(for: workspace.profile)
+            families = DemoData.snapshotFamilies(for: workspace.profile)
+            resolutionError = nil
+            return
+        }
         csvFiles = CSVInboxService().list(profile: workspace.profile)
         families = SnapshotArchiveService().families(profile: workspace.profile)
-        
+
         do {
             _ = try WorkspacePaths.dataDir(for: workspace.profile)
             _ = try WorkspacePaths.historicalDir(for: workspace.profile)
@@ -640,6 +709,7 @@ struct SourcesView: View {
     }
 
     private func clearPendingFile() {
+        guard !workspace.demoMode else { return }
         guard let file = pendingClearFile,
               let profile = pendingClearProfile else {
             return
@@ -659,7 +729,25 @@ struct SourcesView: View {
         }
     }
 
+    /// Watch the profile's csv-inbox for dropped exports. Demo mode watches
+    /// nothing: its inbox is fixed.
+    private func startInboxWatcher() {
+        guard !workspace.demoMode else {
+            inboxWatcher.stop()
+            return
+        }
+        inboxWatcher.start(profile: workspace.profile) {
+            reload()
+        }
+    }
+
     private func reloadCapabilities() {
+        guard !workspace.demoMode else {
+            // The probe runs this Mac's jamf-cli, which demo mode never does.
+            capabilityService = nil
+            capabilitySnapshot = DemoData.jamfCLICapabilities
+            return
+        }
         capabilitySnapshot = nil
         let executor = DefaultCLIExecutor(bridge: cliBridge)
         let service = CapabilityService(executor: executor)
@@ -675,10 +763,12 @@ struct SourcesView: View {
     @ViewBuilder
     private func scopeChip(for profile: String) -> some View {
         let _ = scopeRefreshTrigger
-        let scope = ProfileService.scope(for: profile)
+        // The scope is an app-wide preference keyed by profile name; a demo
+        // profile shows the default and never sets one.
+        let scope: APIScope = workspace.demoMode ? .limited : ProfileService.scope(for: profile)
         Menu {
             Button {
-                if scope != .limited {
+                if scope != .limited, !workspace.demoMode {
                     ProfileService.setScope(.limited, for: profile)
                     scopeRefreshTrigger &+= 1
                 }
@@ -689,7 +779,7 @@ struct SourcesView: View {
                 )
             }
             Button {
-                if scope != .fullAdmin {
+                if scope != .fullAdmin, !workspace.demoMode {
                     pendingScopeProfile = profile
                     showElevateScopeConfirm = true
                 }
@@ -709,9 +799,16 @@ struct SourcesView: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .help(scope == .fullAdmin
-              ? "Full Admin — destructive app operations enabled for this profile (local setting). Click to change."
-              : "Limited — destructive app operations gated for this profile (local setting). Click to change.")
+        .help(scopeHelp(scope))
+    }
+
+    private func scopeHelp(_ scope: APIScope) -> String {
+        if workspace.demoMode { return DemoData.liveOnlyHelp }
+        return scope == .fullAdmin
+            ? "Full Admin — destructive app operations enabled for this profile (local setting). "
+                + "Click to change."
+            : "Limited — destructive app operations gated for this profile (local setting). "
+                + "Click to change."
     }
 
     private func tone(for status: InboxFileStatus) -> Pill.Tone {
@@ -728,6 +825,9 @@ struct SourcesView: View {
     }
 
     private func latestCacheDate(for cacheNames: [String]) -> Date? {
+        if workspace.demoMode {
+            return DemoData.cacheDate(for: cacheNames, profile: workspace.profile)
+        }
         guard let root = WorkspacePathGuard.root(for: workspace.profile) else { return nil }
         let configured = (try? WorkspacePaths.dataDir(for: workspace.profile))
             ?? root.appendingPathComponent("jamf-cli-data", isDirectory: true)
@@ -742,7 +842,16 @@ struct SourcesView: View {
         return dates.max()
     }
 
+    /// The demo's own workspace path in demo mode, not this Mac's root, which
+    /// may have been moved to a team folder.
+    private func workspaceDisplayPath(subpath: String) -> String {
+        workspace.demoMode
+            ? DemoData.workspaceDisplayPath(profile: workspace.profile, subpath: subpath)
+            : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: subpath)
+    }
+
     private var cliCacheDisplayPath: String {
+        if workspace.demoMode { return workspaceDisplayPath(subpath: "jamf-cli-data") + "/" }
         guard let root = WorkspacePathGuard.root(for: workspace.profile),
               let dataDir = try? WorkspacePaths.dataDir(for: workspace.profile) else {
             return WorkspaceRootStore.displayPath(profile: workspace.profile,
@@ -772,21 +881,28 @@ struct SourcesView: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
 
+                // Both set up a real jamf-cli connection and write config.yaml.
                 HStack(spacing: 10) {
                     PNPButton(
                         title: "Add Jamf Protect",
                         icon: "shield.lefthalf.filled",
                         size: .sm
                     ) {
+                        guard !workspace.demoMode else { return }
                         showingProductConnect = .protect
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     PNPButton(
                         title: "Add Jamf School",
                         icon: "graduationcap.fill",
                         size: .sm
                     ) {
+                        guard !workspace.demoMode else { return }
                         showingProductConnect = .school
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             }
         }

@@ -189,4 +189,26 @@ final class DDMBlueprintServiceTests: XCTestCase {
             XCTFail("Expected .stale, got \(snapshot.cacheSource)")
         }
     }
+
+    // MARK: - Snapshot date
+
+    /// A sync provider rewrites a file's mtime when it downloads it, so each
+    /// stamped snapshot is dated by its name, and the screen by the newer one.
+    func testSnapshotDateIsTheNewerFilenameStampNotTheMTime() throws {
+        let blueprintsURL = tempDir.appendingPathComponent("blueprint-status_20260401T120000.json")
+        let declarationsURL = tempDir.appendingPathComponent("ddm-status_20260402T060000.json")
+        let resynced = Date(timeIntervalSinceNow: -60)
+        for url in [blueprintsURL, declarationsURL] {
+            try Data("[]".utf8).write(to: url)
+            try FileManager.default.setAttributes([.modificationDate: resynced],
+                                                  ofItemAtPath: url.path)
+        }
+        let snapshot = DDMBlueprintService.load(
+            blueprintsURL: blueprintsURL,
+            declarationsURL: declarationsURL
+        )
+        let newer = try XCTUnwrap(CloudStorage.snapshotTimestamp(of: declarationsURL))
+        XCTAssertEqual(snapshot.snapshotDate, newer)
+        XCTAssertNotEqual(snapshot.snapshotDate, resynced)
+    }
 }

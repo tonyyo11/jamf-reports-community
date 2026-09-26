@@ -204,45 +204,51 @@ extension Theme.Metrics {
 
 extension Theme {
     enum Severity {
-        case critical, high, medium, low
+        // `critical` has no real Protect equivalent (its SEVERITY enum tops
+        // out at High) but other screens still use it — left alone.
+        case critical, high, medium, low, informational
 
         /// In-app dark-mode color, matched to Pill tones below.
         var inApp: Color {
             switch self {
-            case .critical: Theme.Colors.danger       // 0xFF453A
-            case .high:     Theme.Colors.warn         // 0xFF9F0A
-            case .medium:   Theme.Colors.goldBright   // 0xE8B614
-            case .low:      Theme.Colors.teal         // 0x2A6B6B
+            case .critical:      Theme.Colors.danger       // 0xFF453A
+            case .high:          Theme.Colors.warn         // 0xFF9F0A
+            case .medium:        Theme.Colors.goldBright   // 0xE8B614
+            case .low:           Theme.Colors.teal         // 0x2A6B6B
+            case .informational: Theme.Colors.fgMuted      // 0x8E8E93 — muted, not alarming
             }
         }
 
         /// Light-canvas export color (saturated, not neon on #F8FAFC).
         var export: Color {
             switch self {
-            case .critical: Color(hex: 0xDC2626)
-            case .high:     Color(hex: 0xD97706)
-            case .medium:   Color(hex: 0xCA8A04)
-            case .low:      Color(hex: 0x0891B2)
+            case .critical:      Color(hex: 0xDC2626)
+            case .high:          Color(hex: 0xD97706)
+            case .medium:        Color(hex: 0xCA8A04)
+            case .low:           Color(hex: 0x0891B2)
+            case .informational: Theme.Colors.fgMuted
             }
         }
 
         /// Map to existing Pill tone so chips match bars.
         var pillTone: Pill.Tone {
             switch self {
-            case .critical: .danger
-            case .high:     .warn
-            case .medium:   .gold
-            case .low:      .teal
+            case .critical:      .danger
+            case .high:          .warn
+            case .medium:        .gold
+            case .low:           .teal
+            case .informational: .muted
             }
         }
 
         /// SF Symbol icon for color-blind-safe redundancy.
         var systemImage: String {
             switch self {
-            case .critical: "exclamationmark.triangle.fill"
-            case .high:     "exclamationmark.circle.fill"
-            case .medium:   "info.circle.fill"
-            case .low:      "circle.fill"
+            case .critical:      "exclamationmark.triangle.fill"
+            case .high:          "exclamationmark.circle.fill"
+            case .medium:        "info.circle.fill"
+            case .low:           "circle.fill"
+            case .informational: "circle"
             }
         }
     }

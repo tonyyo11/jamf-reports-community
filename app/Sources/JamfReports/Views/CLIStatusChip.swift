@@ -13,8 +13,11 @@ struct CLIStatusChip: View {
     @State private var hoveringChip = false
 
     var body: some View {
-        let isWarn = workspace.jamfCLIPath == nil
-        let dotColor = isWarn ? Theme.Colors.warn : Theme.Colors.ok
+        // Demo mode never runs jamf-cli, so this Mac's copy (or its absence,
+        // which pulsed amber on every demo screen) says nothing about the demo.
+        let isWarn = !workspace.demoMode && workspace.jamfCLIPath == nil
+        let dotColor = workspace.demoMode
+            ? Theme.Colors.fgMuted : (isWarn ? Theme.Colors.warn : Theme.Colors.ok)
         return chipContent(isWarn: isWarn, dotColor: dotColor)
             .onHover { hoveringChip = $0 }
             .popover(isPresented: $hoveringChip, arrowEdge: .bottom) {
@@ -77,7 +80,7 @@ struct CLIStatusChip: View {
                 .font(Theme.Fonts.mono(9, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
-            Text(workspace.jamfCLIPath ?? "not found on PATH")
+            Text(popoverPathText)
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Colors.fg)
                 .textSelection(.enabled)
@@ -86,9 +89,21 @@ struct CLIStatusChip: View {
         .frame(minWidth: 220, alignment: .leading)
     }
 
+    private var popoverPathText: String {
+        if workspace.demoMode { return DemoData.jamfCLINote }
+        return workspace.jamfCLIPath ?? "not found on PATH"
+    }
+
     private var cliStatusText: String {
-        guard workspace.jamfCLIPath != nil else { return "jamf-cli missing" }
-        let version = workspace.jamfCLIVersion ?? "unknown"
-        return "jamf-cli \(version) · \(workspace.demoMode ? "demo" : "live")"
+        Self.statusText(
+            path: workspace.jamfCLIPath, version: workspace.jamfCLIVersion,
+            demoMode: workspace.demoMode)
+    }
+
+    /// The chip's label. `nonisolated` so tests can call it without a view.
+    nonisolated static func statusText(path: String?, version: String?, demoMode: Bool) -> String {
+        if demoMode { return "jamf-cli · demo" }
+        guard path != nil else { return "jamf-cli missing" }
+        return "jamf-cli \(version ?? "unknown") · live"
     }
 }

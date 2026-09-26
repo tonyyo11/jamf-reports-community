@@ -1,48 +1,40 @@
 [
   {
-    "uuid": "alert-1",
-    "created": "2026-05-01T08:00:00Z",
-    "received": "2026-05-01T08:00:01Z",
-    "eventTimestamp": "2026-05-01T07:59:55Z",
-    "severity": "high",
+    "analytics": "Suspicious Process Execution, Unsigned Binary Launch",
+    "computer": "lab-mac-01.example",
+    "created": "2026-05-01T08:00:00.000Z",
+    "eventType": "GPProcessEvent",
+    "received": "2026-05-01T08:00:01.000Z",
+    "severity": "High",
     "status": "New",
-    "eventType": "ProcessExecution",
-    "computer": {
-      "uuid": "11111111-1111-1111-1111-111111111111",
-      "hostName": "lab-mac-01",
-      "serial": "ABC1230001"
-    },
-    "plan": {"uuid": "plan-eng-1", "name": "Engineering Lab"},
-    "analytics": [
-      {"uuid": "ana-1", "name": "Suspicious Process", "label": "T1059"},
-      {"uuid": "ana-2", "name": "LOLBin Usage", "label": "T1218"}
-    ],
-    "actions": [{"name": "Quarantine"}, {"name": "Notify"}],
-    "tags": ["mitre", "p1"],
-    "facts": []
+    "uuid": "00000000-0000-4000-8000-00000000a001"
   },
   {
-    "uuid": "alert-2",
-    "created": "2026-05-02T11:30:00Z",
-    "severity": "medium",
+    "analytics": "Document Drop",
+    "computer": "exec-mbp-09.example",
+    "created": "2026-05-02T11:30:00.000Z",
+    "eventType": "GPFSEvent",
+    "received": "2026-05-02T11:30:02.000Z",
+    "severity": "Medium",
     "status": "InProgress",
-    "eventType": "FileWrite",
-    "computer": {"hostName": "exec-mbp-09", "serial": "DEF4567890"},
-    "plan": {"name": "Executive Strict"},
-    "analytics": [{"name": "Document Drop"}],
-    "actions": ["Notify"],
-    "tags": []
+    "uuid": "00000000-0000-4000-8000-00000000a002"
   },
   {
-    "uuid": "alert-3",
-    "created": "2026-05-03T02:14:00Z",
-    "severity": "low",
+    "computer": "build-mini-02.example",
+    "created": "2026-05-03T02:14:00.000Z",
+    "eventType": "GPUSBEvent",
+    "received": "2026-05-03T02:14:05.000Z",
+    "severity": "Low",
     "status": "Resolved",
-    "eventType": "NetworkConnection",
-    "computer": {"hostName": "prod-server-02", "serial": "GHI9990001"},
-    "plan": {"name": "Production Default"},
-    "analytics": [],
-    "actions": [],
-    "tags": ["auto"]
+    "uuid": "00000000-0000-4000-8000-00000000a003"
+  },
+  {
+    "analytics": "Gatekeeper Override",
+    "created": "2026-05-04T09:45:00.000Z",
+    "eventType": "GPGatekeeperEvent",
+    "received": "2026-05-04T09:45:00.000Z",
+    "severity": "Informational",
+    "status": "AutoResolved",
+    "uuid": "00000000-0000-4000-8000-00000000a004"
   }
 ]

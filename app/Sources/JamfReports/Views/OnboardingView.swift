@@ -14,8 +14,6 @@ struct OnboardingView: View {
         "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
         "Mobile Apps: Read", "Software Updates: Read", "Computer Groups: Read",
     ]
-    private static let jamfCLIReleases =
-        URL(string: "https://github.com/Jamf-Concepts/jamf-cli/releases")
 
     var body: some View {
         ScrollView {
@@ -54,13 +52,19 @@ struct OnboardingView: View {
     private var progressStrip: some View {
         let sequence = flow.stepSequence
         let currentIndex = sequence.firstIndex(of: flow.currentStep) ?? 0
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(sequence.enumerated()), id: \.element.id) { idx, step in
-                    stepPill(step, index: idx, currentIndex: currentIndex)
-                    if idx < sequence.count - 1 {
-                        Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
-                    }
+        // The 8-step Pro strip, named, needs about 920 pt, more than the 800 pt setup column at
+        // any window size, so it always falls to the compact row; the 6-step School strip
+        // stays named on a wide window.
+        return ViewThatFits(in: .horizontal) {
+            stepRow(sequence, currentIndex: currentIndex, compact: false)
+            stepRow(sequence, currentIndex: currentIndex, compact: true)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    stepRow(sequence, currentIndex: currentIndex, compact: true)
+                }
+                .onAppear { proxy.scrollTo(currentIndex, anchor: .center) }
+                .onChange(of: currentIndex) { _, index in
+                    proxy.scrollTo(index, anchor: .center)
                 }
             }
         }
@@ -70,7 +74,23 @@ struct OnboardingView: View {
         )
     }
 
-    private func stepPill(_ step: OnboardingFlow.Step, index: Int, currentIndex: Int) -> some View {
+    private func stepRow(
+        _ sequence: [OnboardingFlow.Step], currentIndex: Int, compact: Bool
+    ) -> some View {
+        HStack(spacing: compact ? 6 : 10) {
+            ForEach(Array(sequence.enumerated()), id: \.element.id) { idx, step in
+                stepPill(step, index: idx, currentIndex: currentIndex, compact: compact)
+                    .id(idx)
+                if idx < sequence.count - 1 {
+                    Rectangle().fill(Theme.Colors.hairlineStrong).frame(width: 10, height: 0.5)
+                }
+            }
+        }
+    }
+
+    private func stepPill(
+        _ step: OnboardingFlow.Step, index: Int, currentIndex: Int, compact: Bool
+    ) -> some View {
         let done = index < currentIndex
         let current = index == currentIndex
 
@@ -84,14 +104,16 @@ struct OnboardingView: View {
                     .font(Theme.Fonts.mono(10, weight: .semibold))
                     .foregroundStyle(current ? Theme.Colors.goldBright : Theme.Text.tertiary(contrast))
             }
-            Text(step.label)
-                .font(.caption)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-                .foregroundStyle(current ? Theme.Colors.fg :
-                                 done ? Theme.Colors.fg2 : Theme.Text.tertiary(contrast))
+            if !compact || current {
+                Text(step.label)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundStyle(current ? Theme.Colors.fg :
+                                     done ? Theme.Colors.fg2 : Theme.Text.tertiary(contrast))
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, compact && !current ? 10 : 12)
         .padding(.vertical, 6)
         .background(
             Capsule().fill(
@@ -106,6 +128,7 @@ struct OnboardingView: View {
                 lineWidth: 0.5
             )
         )
+        .help(step.label)
     }
 
     private var stepHeader: some View {
@@ -217,7 +240,11 @@ struct OnboardingView: View {
                 }
             }
 
-            if showsContinueWithoutValidating {
+            if let check = flow.connectionCheck {
+                ConnectionCheckBanner(verdict: check)
+            }
+
+            if flow.offersContinueWithoutValidating {
                 HStack(spacing: 10) {
                     Text("The profile is saved even though validation failed. Fix the URL, "
                         + "client ID, or secret later from Data Sources, or continue now.")
@@ -239,15 +266,6 @@ struct OnboardingView: View {
         }
     }
 
-    /// True only after a validation attempt has failed and the flow already
-    /// permits advancing — `canAdvance` for `.validate` requires the profile
-    /// to be registered and not mid-validation, which is already the policy
-    /// this button exposes (the docs promise it; only the UI lacked it).
-    private var showsContinueWithoutValidating: Bool {
-        guard let exit = flow.validationExitCode, exit != 0 else { return false }
-        return !flow.connectionValidated && flow.canAdvance
-    }
-
     private var welcomeStep: some View {
         Card(padding: 24) {
             HStack(alignment: .top, spacing: 22) {
@@ -262,7 +280,9 @@ struct OnboardingView: View {
                         .font(.title3)
                         .foregroundStyle(Theme.Colors.fg2)
                         .frame(maxWidth: 640, alignment: .leading)
-                    HStack(spacing: 8) {
+                    // Wraps: one row of these pills is wider than the setup column opened
+                    // from Settings, and it pushed the sidebar off the window.
+                    FlowLayout(spacing: 8) {
                         Pill(text: "Owner-only folders", tone: .teal, icon: "lock.fill")
                         Pill(text: "Secret never stored by the app", tone: .gold, icon: "key.fill")
                         Pill(text: "No Terminal needed", tone: .muted, icon: "terminal")
@@ -293,6 +313,16 @@ struct OnboardingView: View {
                 }
             }
 
+            // Setup is the way out of demo mode, so it checks the real jamf-cli rather than
+            // showing a demo one; say so, since the title bar still reads demo.
+            if workspaceStore.demoMode {
+                Text("Demo mode is on. Setup checks the jamf-cli on this Mac because it "
+                    + "creates a real profile, and demo mode ends when setup finishes.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Card(padding: 0) {
                 HStack(spacing: 10) {
                     Mono(text: flow.brewCommand, size: 12, color: Theme.Colors.fg2)
@@ -311,10 +341,8 @@ struct OnboardingView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
-                if let releases = Self.jamfCLIReleases {
-                    Link("Open GitHub releases", destination: releases)
-                        .font(.caption)
-                }
+                Link("Open GitHub releases", destination: JamfCLIInstaller.githubReleasesURL)
+                    .font(.caption)
             }
         }
     }
@@ -326,8 +354,18 @@ struct OnboardingView: View {
                     FieldLabel(label: "Profile name", trailing: "required")
                     PNPTextField(value: binding(\.profileName), placeholder: "my-tenant", mono: true)
                     HStack(spacing: 6) {
-                        Image(systemName: flow.isProfileNameValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(flow.isProfileNameValid ? Theme.Colors.ok : Theme.Colors.danger)
+                        switch OnboardingFlow.feedback(
+                            for: flow.profileName, isValid: flow.isProfileNameValid
+                        ) {
+                        case .hint:
+                            EmptyView()
+                        case .valid:
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Theme.Colors.ok)
+                        case .invalid:
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(Theme.Colors.danger)
+                        }
                         FieldHelp(text: "Use lowercase letters, numbers, dots, underscores, or hyphens.")
                     }
                 }
@@ -384,7 +422,10 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     FieldLabel(label: "Jamf Pro URL")
                     PNPTextField(value: binding(\.jamfURL), placeholder: "https://example.jamfcloud.com")
-                    validationLine(ok: flow.isJamfURLValid, text: "Must use https:// and include a host")
+                    validationLine(
+                        value: flow.jamfURL, ok: flow.isJamfURLValid,
+                        text: "Must use https:// and include a host"
+                    )
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -432,9 +473,14 @@ struct OnboardingView: View {
                             .foregroundStyle(Theme.Colors.fg)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("1. Go to account.jamf.com → API Clients")
-                        Text("2. Create an API Client and note the Client ID")
-                        Text("3. Generate a Client Secret (shown only once)")
+                        Text("1. In account.jamf.com, open Integrations → Create integration")
+                        Text("2. Scope level: Platform environment, choosing only the "
+                            + "environment that holds your Jamf Pro tenant")
+                        Text("3. Permissions: Read only, for the report areas you want")
+                        Text("4. Copy the client ID and the client secret (shown only once)")
+                        Text("5. Copy the environment ID: open the integration and click the "
+                            + "environment pill")
+                        Text("6. Integrations are valid for six months")
                     }
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg2)
@@ -451,7 +497,10 @@ struct OnboardingView: View {
                             placeholder: "https://us.api.jamfcloud.com",
                             mono: true
                         )
-                        validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")
+                        validationLine(
+                            value: flow.gatewayURL, ok: flow.isGatewayURLValid,
+                            text: "Must use https:// and include a host"
+                        )
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -468,19 +517,18 @@ struct OnboardingView: View {
                         Text(
                             "Environment is where a GA integration is usually created "
                                 + "(needs jamf-cli 1.28 or later). Tenant is the legacy "
-                                + "single-tenant level. Organization sends no scope at all."
+                                + "single-tenant level and cannot reach Compliance Benchmarks "
+                                + "or blueprint status."
                         )
                         .font(.caption)
                         .foregroundStyle(Theme.Colors.fg2)
-                        if flow.platformScope.needsID {
-                            FieldLabel(label: flow.platformScope.idFieldLabel)
-                            PNPTextField(
-                                value: binding(\.platformScopeID),
-                                placeholder: flow.platformScope == .environment
-                                    ? "your-environment-id" : "your-tenant-id",
-                                mono: true
-                            )
-                        }
+                        FieldLabel(label: flow.platformScope.idFieldLabel)
+                        PNPTextField(
+                            value: binding(\.platformScopeID),
+                            placeholder: flow.platformScope == .environment
+                                ? "your-environment-id" : "your-tenant-id",
+                            mono: true
+                        )
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -549,7 +597,10 @@ struct OnboardingView: View {
                 if !flow.protectConnected {
                     Divider().background(Theme.Colors.hairline)
 
-                    Text("Create API client credentials in your Jamf Protect console under Settings → API Clients.")
+                    Text("""
+                        Create API client credentials in your Jamf Protect console under \
+                        Administrative → API Clients.
+                        """)
                         .font(.footnote)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
 
@@ -771,7 +822,10 @@ struct OnboardingView: View {
                                 value: binding(\.schoolURL),
                                 placeholder: "https://yourorg.jamfcloud.com"
                             )
-                            validationLine(ok: flow.isSchoolURLValid, text: "Must use https:// and include a host")
+                            validationLine(
+                                value: flow.schoolURL, ok: flow.isSchoolURLValid,
+                                text: "Must use https:// and include a host"
+                            )
                         }
 
                         HStack(alignment: .top, spacing: 12) {
@@ -954,10 +1008,9 @@ struct OnboardingView: View {
     ///     user back on Overview where progress is visible.
     ///   - Sidebar "Add workspace…" → same as Settings path above.
     private func skipAndFinishOnboarding() {
-        // Clear any first-launch demo preference so reloadFromDisk picks up
-        // the newly-created real profile instead of staying in demo mode.
-        UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
-        workspaceStore.reloadFromDisk()
+        // Leave demo mode, through its cleanup, so the newly created real
+        // profile replaces the demo; otherwise reload to pick it up.
+        flow.finishSetup(in: workspaceStore)
         NotificationCenter.default.post(
             name: .navigateToTab,
             object: nil,
@@ -1118,14 +1171,20 @@ struct OnboardingView: View {
             .frame(width: 34)
     }
 
-    private func validationLine(ok: Bool, text: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: ok ? "checkmark" : "xmark")
-                .font(.system(size: 9, weight: .bold))
+    private func validationLine(value: String, ok: Bool, text: String) -> some View {
+        let feedback = OnboardingFlow.feedback(for: value, isValid: ok)
+        return HStack(spacing: 5) {
+            if feedback != .hint {
+                Image(systemName: feedback == .valid ? "checkmark" : "xmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
             Text(text)
         }
         .font(.caption)
-        .foregroundStyle(ok ? Theme.Chart.tealLight : Theme.Colors.danger)
+        .foregroundStyle(
+            feedback == .hint ? Theme.Colors.fgMuted
+                : feedback == .valid ? Theme.Chart.tealLight : Theme.Colors.danger
+        )
     }
 
     private func logViewer(title: String, lines: [CLIBridge.LogLine], exitCode: Int32?) -> some View {

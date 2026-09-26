@@ -250,9 +250,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Legacy list of jamf-cli report kinds to skip during collect.
-    /// Still read so existing config.yaml files continue to work;
-    /// the GUI no longer emits this key.
+    /// Report kinds `collect` never runs — the on-prem stall guard. Only the four
+    /// per-device-heavy kinds count (`ReportEngine.collectSkipKinds`); the GUI does
+    /// not write this key, and a Config screen save keeps it.
     var collectSkip: [String]?
 
     private enum CodingKeys: String, CodingKey {
@@ -701,16 +701,13 @@ struct BrandingConfig: Decodable, Sendable {
 struct ProtectConfig: Decodable, Sendable {
     var enabled: Bool?
     var profile: String?
-    var dataDir: String?
 
     private enum CodingKeys: String, CodingKey {
         case enabled, profile
-        case dataDir = "data_dir"
     }
 
     var isEnabled: Bool { enabled ?? false }
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
-    var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data/protect" }
 }
 
 // MARK: - school_cli
@@ -1157,7 +1154,15 @@ struct PlatformConfig: Decodable, Sendable {
     }
 
     var isEnabled: Bool { enabled ?? false }
-    var benchmarkTitles: [String] { complianceBenchmarks?.compactMap { $0.isEmpty ? nil : $0 } ?? [] }
+    /// Configured titles, trimmed, with blanks and repeats dropped. A title listed twice was
+    /// collected twice and its rows saved twice.
+    var benchmarkTitles: [String] {
+        var seen: Set<String> = []
+        return (complianceBenchmarks ?? []).compactMap { raw in
+            let title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !title.isEmpty && seen.insert(title).inserted ? title : nil
+        }
+    }
 }
 
 // MARK: - YAML loader

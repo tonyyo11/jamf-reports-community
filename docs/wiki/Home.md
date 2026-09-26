@@ -28,6 +28,7 @@ unattended runs, and tracks fleet health — all from a GUI. Read these pages in
 ### Reference for everyone
 
 - [Jamf School](https://github.com/tonyyo11/jamf-reports-community/wiki/08-Jamf-School) — if you manage a Jamf School tenant
+- [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access) — what each connection needs, and how to create read-only credentials
 - [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting)
 - [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)
 - [Custom EA Examples](https://github.com/tonyyo11/jamf-reports-community/wiki/12-Custom-EA-Examples) — worked examples for adding custom Extension Attributes

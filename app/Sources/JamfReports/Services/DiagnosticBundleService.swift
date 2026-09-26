@@ -48,7 +48,7 @@ final class DiagnosticRedactor {
     /// 16-byte CSPRNG salt — matches Python `secrets.token_bytes(16)`.
     private let salt: SymmetricKey
     private var cache: [String: String] = [:]
-    private var seededRegexes: [String: NSRegularExpression] = [:]
+    private var seededRegexes: [String: [NSRegularExpression]] = [:]
 
     private let secretPatterns: [(NSRegularExpression, String)]
     private let hostnameURLRE: NSRegularExpression
@@ -57,7 +57,9 @@ final class DiagnosticRedactor {
     private let serialRE: NSRegularExpression
     private let homePathRE: NSRegularExpression
 
-    private static let maxSeedPerCategory = 5000
+    /// Literals per compiled alternation. Not a cap: a category with more is split across
+    /// several regexes, since a cap dropped the shortest literals from redaction.
+    private static let seedChunkSize = 5000
     private static let minSeedLen = 4
     private static let seededCategories =
         ["serial", "device", "udid", "host", "ip", "user", "email", "org"]
@@ -161,8 +163,10 @@ final class DiagnosticRedactor {
             }
         }
         for category in Self.seededCategories {
-            guard piiEnabled(category), let re = seededRegexes[category] else { continue }
-            out = replaceMatches(re, in: out) { g in self.placeholder(category, g[0] ?? "") }
+            guard piiEnabled(category), let chunks = seededRegexes[category] else { continue }
+            for re in chunks {
+                out = replaceMatches(re, in: out) { g in self.placeholder(category, g[0] ?? "") }
+            }
         }
         return out
     }
@@ -230,25 +234,36 @@ final class DiagnosticRedactor {
 
     // MARK: - Internals
 
-    /// Compile one category's harvested literals into an alternation regex and
-    /// store it. Extracted from `seedFromWorkspace` to keep that method's
-    /// complexity within the project ceiling.
+    /// Compile one category's harvested literals into alternation regexes of
+    /// `seedChunkSize` literals each and store them. Longest first across every
+    /// chunk, so no alternation stops at a shorter literal that prefixes a longer
+    /// one; ties sort by value, so the order is the same on every run. Extracted
+    /// from `seedFromWorkspace` to keep that method's complexity within the
+    /// project ceiling.
     private func compileSeededRegex(_ category: String, from values: Set<String>) {
         let literals = values.filter { $0.count >= Self.minSeedLen }
-            .sorted { $0.count > $1.count }
-            .prefix(Self.maxSeedPerCategory)
+            .sorted { a, b in
+                if a.count != b.count { return a.count > b.count }
+                return a < b
+            }
         guard !literals.isEmpty else { return }
-        let pattern = literals.map { NSRegularExpression.escapedPattern(for: $0) }
-            .joined(separator: "|")
-        do {
-            seededRegexes[category] = try NSRegularExpression(pattern: pattern)
-        } catch {
-            // Seeding only augments free-text redaction; key-based and regex
-            // PII/credential redaction are unaffected. Log so the rare
-            // (length-limit) gap is observable rather than silent.
-            AppLogger.collect.warning(
-                "DiagnosticRedactor: seed compile failed for \(category, privacy: .public)")
+        var chunks: [NSRegularExpression] = []
+        for start in stride(from: 0, to: literals.count, by: Self.seedChunkSize) {
+            let chunk = literals[start..<min(start + Self.seedChunkSize, literals.count)]
+            let pattern = chunk.map { NSRegularExpression.escapedPattern(for: $0) }
+                .joined(separator: "|")
+            do {
+                let regex = try NSRegularExpression(pattern: pattern)
+                chunks.append(regex)
+            } catch {
+                // Seeding only augments free-text redaction; key-based and regex
+                // PII/credential redaction are unaffected. Log so the rare
+                // (length-limit) gap is observable rather than silent.
+                AppLogger.collect.warning(
+                    "DiagnosticRedactor: seed compile failed for \(category, privacy: .public)")
+            }
         }
+        if !chunks.isEmpty { seededRegexes[category] = chunks }
     }
 
     private func placeholder(_ kind: String, _ value: String) -> String {

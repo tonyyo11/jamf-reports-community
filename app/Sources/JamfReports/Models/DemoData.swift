@@ -13,6 +13,14 @@ enum DemoData {
         apiClient: "reporting-svc"
     )
 
+    /// The demo dataset's "now": the Daily Snapshot Collection run on Apr 25, 2026
+    /// that every dated demo value is written against. Demo screens measure ages
+    /// ("3 days ago", days behind) from here rather than the real clock, so the
+    /// fixed dataset never reads as months out of date.
+    static let referenceDate: Date = Calendar(identifier: .gregorian).date(
+        from: DateComponents(year: 2026, month: 4, day: 25, hour: 6, minute: 1)
+    ) ?? Date(timeIntervalSince1970: 1_777_096_860)
+
     // 26 weekly snapshots, ending 2026-04-20.
     static let trendDates: [String] = {
         var dates: [String] = []
@@ -37,18 +45,48 @@ enum DemoData {
         }
     }
 
-    static let totalDevicesTrend = trend(start: 486, end: 524, jitter: 3.5)
+    /// `trend` with its final point pinned, so a headline number other demo
+    /// cards are written against lands exactly where they expect it. The
+    /// jitter otherwise moves the last point: the unpinned device series ended
+    /// at 527 while every hand-written count below adds up to 524.
+    static func trend(start: Double, end: Double, jitter: Double = 6, n: Int = 26,
+                      pinnedLast: Double) -> [Double] {
+        Array(trend(start: start, end: end, jitter: jitter, n: n).dropLast()) + [pinnedLast]
+    }
+
+    static let totalDevicesTrend = trend(start: 486, end: 524, jitter: 3.5, pinnedLast: 524)
     /// Canonical demo-mode fleet total. Used as the denominator for
     /// security-agent coverage, failing-rules subtitle, and any other
     /// "N of M" rendering. Derived from the end of `totalDevicesTrend`
     /// so all demo cards stay internally consistent.
     static let totalDevices: Int = Int((totalDevicesTrend.last ?? 524).rounded())
+
+    /// Coverage of the demo fleet, rounded to one decimal like every tile.
+    static func coverage(_ installed: Int) -> Double {
+        (Double(installed) / Double(max(totalDevices, 1)) * 1000).rounded() / 10
+    }
+
+    /// Macs with the demo EDR agent connected. The EDR score card's latest
+    /// point is derived from it so the tile and the agent card agree.
+    private static let edrInstalled = 506
     private static let fileVaultTrend = trend(start: 78, end: 96, jitter: 2.2)
-    private static let complianceTrend = trend(start: 54, end: 81, jitter: 4)
+    /// Ends on the Pass share of `complianceBands` (213 of the 502 Macs with
+    /// data), the first baseline's rate, which is what a live summary records.
+    /// It ended at 84.5%, more than the top failing rule's 134 failures allow.
+    private static let complianceTrend = trend(start: 28, end: 42, jitter: 3, pinnedLast: 42.4)
     private static let staleTrend = trend(start: 48, end: 22, jitter: 4)
-    private static let osCurrentTrend = trend(start: 41, end: 73, jitter: 5)
-    private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8)
+    /// Ends on the share of `osDistribution` flagged current, so the On
+    /// Current macOS card and the Overview donut agree.
+    private static let osCurrentTrend = trend(
+        start: 41, end: 73, jitter: 5,
+        pinnedLast: osDistribution.filter(\.current).reduce(0) { $0 + $1.pct })
+    private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8,
+                                                pinnedLast: coverage(edrInstalled))
     private static let patchTrend = trend(start: 62, end: 84, jitter: 4)
+    /// Ends on the Security Posture ring's 96.6: a summary scores the same three
+    /// controls from the same `pro report security` counts (`securityControls`).
+    private static let securityScoreTrend = trend(
+        start: 88, end: 96, jitter: 0.8, pinnedLast: 96.6)
 
     static let stabilityTrend: [Double] = complianceTrend.indices.map { idx in
         let total = Int((totalDevicesTrend[safe: idx] ?? totalDevicesTrend.last ?? 1).rounded())
@@ -61,10 +99,39 @@ enum DemoData {
     }
 
     /// Demo data for mSCP band trend represents total devices with data.
-    /// Grows from 460 to 520 devices over the 26-week period.
-    private static let mscpBandTrend = trend(start: 460, end: 520, jitter: 8)
+    /// Ends on the `complianceBands` total (502), and stays below the fleet
+    /// every week; unpinned, it ended at 527, more Macs than the fleet has.
+    private static let mscpBandTrend = trend(start: 460, end: 502, jitter: 8, pinnedLast: 502)
+
+    /// Active Macs: the fleet minus its stale Macs, as live summaries have
+    /// recorded it since 2.6 (`DailySummary.activeDeviceCount`). Ends at 498,
+    /// the 524-Mac fleet less the 26 the Stale card shows.
+    static let activeDevicesTrend: [Double] = totalDevicesTrend.indices.map { i in
+        totalDevicesTrend[i].rounded() - (staleTrend[safe: i] ?? 0).rounded()
+    }
+
+    /// The four security controls every demo screen that counts them uses, out
+    /// of the 524-Mac fleet. FileVault ends the FileVault trend (97.9%).
+    struct SecurityControls: Sendable {
+        let total: Int
+        let fileVault: Int
+        let sip: Int
+        let firewall: Int
+        let gatekeeper: Int
+    }
+    static let securityControls = SecurityControls(
+        total: 524, fileVault: 513, sip: 524, firewall: 482, gatekeeper: 512)
+
+    /// iPads and iPhones in the demo fleet — Mobile Fleet's demo inventory has 25.
+    static let mobileDeviceCount = 25
+    /// The Managed Devices chart's mobile line, ending on `mobileDeviceCount`.
+    static let mobileDevicesTrend = trend(
+        start: 18, end: 25, jitter: 1, pinnedLast: Double(mobileDeviceCount))
 
     static let trends: [TrendSeries.Metric: [Double]] = [
+        // Headline value is the computer count, as it is live.
+        .managedDevices:  totalDevicesTrend,
+        .activeDevices:   activeDevicesTrend,
         .stability:       stabilityTrend,
         .fileVault:       fileVaultTrend,
         .compliance:      complianceTrend,
@@ -72,21 +139,23 @@ enum DemoData {
         .osCurrent:       osCurrentTrend,
         .edrAgent:        crowdstrikeTrend,
         .patch:           patchTrend,
+        .securityScore:   securityScoreTrend,
         .mscpBandTrend:   mscpBandTrend,
     ]
 
+    /// Labelled the way the live Overview labels a version ("macOS 15.4"), so the
+    /// demo legend reads as a live one does.
     static let osDistribution: [OSDistribution] = [
-        .init(version: "macOS Sequoia 15.4", count: 287, pct: 54.8,
-              colorHex: 0xC9970A, current: true),
-        .init(version: "macOS 15.3.2",           count:  98, pct: 18.7, colorHex: 0xA87E08, current: true),
-        .init(version: "macOS Sonoma 14.7.4", count: 84, pct: 16.0,
-              colorHex: 0x7D8794, current: false),
-        .init(version: "macOS 13.7.6 (Ventura)", count:  38, pct:  7.2, colorHex: 0x5A6068, current: false),
-        .init(version: "macOS 12.7.6 (Monterey)",count:  17, pct:  3.2, colorHex: 0x4A4F55, current: false),
+        .init(version: "macOS 15.4",   count: 287, pct: 54.8, colorHex: 0xC9970A, current: true),
+        .init(version: "macOS 15.3.2", count:  98, pct: 18.7, colorHex: 0xA87E08, current: true),
+        .init(version: "macOS 14.7.4", count:  84, pct: 16.0, colorHex: 0x7D8794, current: false),
+        .init(version: "macOS 13.7.6", count:  38, pct:  7.2, colorHex: 0x5A6068, current: false),
+        .init(version: "macOS 12.7.6", count:  17, pct:  3.2, colorHex: 0x4A4F55, current: false),
     ]
 
     static let securityAgents: [SecurityAgent] = [
-        .init(name: "CrowdStrike Falcon",  installed: 488, pct: 93.1, column: "CrowdStrike Falcon - Status", trend: .up),
+        .init(name: "CrowdStrike Falcon",  installed: edrInstalled, pct: coverage(edrInstalled),
+              column: "CrowdStrike Falcon - Status", trend: .up),
         .init(name: "1Password",           installed: 502, pct: 95.8, column: "1Password 8 - Installed", trend: .up),
         .init(name: "Splunk Forwarder",    installed: 451, pct: 86.1, column: "Splunk - Forwarder Status", trend: .flat),
         .init(name: "Beyond Identity",     installed: 423, pct: 80.7, column: "Beyond Identity - Enrolled", trend: .up),
@@ -124,7 +193,7 @@ enum DemoData {
         .init(name: "Mobile Inventory (iPad)", profile: "meridian-prod", schedule: "Weekdays · 07:30",
               cadence: "weekdays", mode: .jamfCLIOnly, next: "Apr 27, 07:30", last: "Apr 24, 07:33",
               lastStatus: .warn, artifacts: ["xlsx"], enabled: true),
-        .init(name: "Quarterly Audit Pull", profile: "dummy", schedule: "Disabled",
+        .init(name: "Quarterly Audit Pull", profile: "meridian-sandbox", schedule: "Disabled",
               cadence: "monthly", mode: .jamfCLIFull, next: "—", last: "Jan 1, 06:11",
               lastStatus: .ok, artifacts: ["xlsx", "csv"], enabled: false),
     ]
@@ -134,46 +203,23 @@ enum DemoData {
         // resolve and so don't leak real tenant relationships if the binary is
         // disassembled (`strings` would otherwise show real `*.jamfcloud.com`
         // hosts that map to live Jamf infrastructure — security audit TA-03).
+        // Every name is Meridian-prefixed: a demo profile named like a real one
+        // ("dummy", "prod") would switch the demo onto that real workspace.
         .init(name: "meridian-prod", url: "meridian.jamfcloud.example", schedules: 3, status: .ok),
-        .init(name: "meridianedu",     url: "meridian.jamfcloud.example",   schedules: 1, status: .ok),
-        .init(name: "dummy",         url: "sandbox.jamfcloud.example",  schedules: 1, status: .idle),
-        .init(name: "prod",          url: "prod-msp.jamfcloud.example", schedules: 0, status: .idle),
+        .init(name: "meridianedu", url: "meridian-edu.jamfcloud.example", schedules: 1,
+              status: .ok),
+        .init(name: "meridian-sandbox", url: "sandbox.jamfcloud.example", schedules: 1,
+              status: .idle),
+        .init(name: "meridian-msp", url: "prod-msp.jamfcloud.example", schedules: 0,
+              status: .idle),
     ]
 
-    static let sheetCatalog: [SheetGroup] = [
-        .init(group: "CSV-driven", items: [
-            .init(name: "Device Inventory",    req: "csv", on: true),
-            .init(name: "Stale Devices",       req: "csv", on: true),
-            .init(name: "Security Controls",   req: "csv", on: true),
-            .init(name: "Security Agents",     req: "csv", on: true),
-            .init(name: "Compliance",          req: "csv", on: true),
-        ]),
-        .init(group: "jamf-cli (live)", items: [
-            .init(name: "Fleet Overview",      req: "cli", on: true),
-            .init(name: "Security Posture",    req: "cli", on: true),
-            .init(name: "Inventory Summary",   req: "cli", on: true),
-            .init(name: "Device Compliance",   req: "cli", on: true),
-            .init(name: "EA Coverage",         req: "cli", on: true),
-            .init(name: "EA Definitions",      req: "cli", on: false),
-            .init(name: "Software Installs",   req: "cli", on: true),
-            .init(name: "Package Lifecycle",   req: "cli", on: false),
-            .init(name: "Policy Health",       req: "cli", on: true),
-            .init(name: "Profile Status",      req: "cli", on: true),
-            .init(name: "App Status",          req: "cli-1.2+", on: true),
-            .init(name: "Patch Compliance",    req: "cli", on: true),
-            .init(name: "Update Status",       req: "cli-1.2+", on: true),
-        ]),
-        .init(group: "Charts", items: [
-            .init(name: "OS Adoption",         req: "chart", on: true),
-            .init(name: "Compliance Trend",    req: "chart", on: true),
-            .init(name: "Device State Trend",  req: "chart", on: true),
-        ]),
-        .init(group: "Platform API (preview)", items: [
-            .init(name: "Platform Blueprints",        req: "platform", on: false),
-            .init(name: "Platform Compliance Rules",  req: "platform", on: false),
-            .init(name: "Platform DDM Status",        req: "platform", on: false),
-        ]),
-    ]
+    /// Macs in the demo profile at `index` of `cliProfiles`: meridian-prod is the
+    /// 524-Mac fleet every demo screen describes, and each later profile is 37
+    /// smaller. Fleet Overview's cards and the profile menu both read this.
+    static func deviceCount(forProfileAt index: Int) -> Int {
+        max(totalDevices - index * 37, 0)
+    }
 
     static let columnMappings: [ColumnMapping] = [
         .init(key: "computer_name",     label: "Computer Name",      value: "Computer Name", required: true, status: .ok),
@@ -215,6 +261,7 @@ enum DemoData {
         .init(title: "Google Chrome", latestVersion: "124.0.6367.119", compliant: 471, total: 524, complianceLabel: "89.9%"),
         .init(title: "Mozilla Firefox", latestVersion: "125.0.2", compliant: 436, total: 488, complianceLabel: "89.3%"),
         .init(title: "Jamf Self Service for macOS", latestVersion: "11.4.1", compliant: 514, total: 524, complianceLabel: "98.1%"),
+        zoomPatchTitle,
     ]
 
     static let deviceInventory: [DeviceInventoryRecord] = [
@@ -324,8 +371,10 @@ enum DemoData {
             ipAddress: "10.42.\(days + 10).\(failedRules + 20)",
             assetTag: "MH-\(String(serial.suffix(4)))",
             managedState: "Managed",
-            lastContact: days == 0 ? "2026-04-25T09:14:00Z" : "\(days) days ago",
-            lastInventory: "2026-04-25T06:01:00Z",
+            // Taken from `referenceDate`, a local time: the fixed UTC strings these
+            // replace fell after the demo's "now" in many time zones.
+            lastContact: days == 0 ? timestamp(minutesBefore: 47) : "\(days) days ago",
+            lastInventory: timestamp(minutesBefore: 0),
             daysSinceContact: days,
             stale: days >= 30,
             fileVault: fileVault,

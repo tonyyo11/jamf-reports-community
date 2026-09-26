@@ -20,7 +20,7 @@ brew install Jamf-Concepts/tap/jamf-cli
 ```
 
 This project supports jamf-cli v1.18.0 or later, with v1.19.0+ recommended for full
-partial-failure handling; the app itself currently tracks v1.29.0. On jamf-cli 1.24.0
+partial-failure handling; the app itself currently tracks v1.30.0. On jamf-cli 1.24.0
 through 1.27.0, the security report requires a Jamf Security Cloud subscription (see Known
 Issues in the CHANGELOG) — this is fixed in 1.28.0, so upgrade to restore Security Posture,
 the security score and the FileVault, SIP, firewall and Gatekeeper figures. Tenants that
@@ -81,9 +81,8 @@ full detail on each:
    shared team folder so several Macs build one pooled history — see
    [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations).
 4. **Authenticate** — connect Jamf Pro with your API client credentials (or a Platform
-   API scope — environment ID, or tenant ID for a legacy integration; organization
-   scope needs no ID). The secret is never persisted by the app; `jamf-cli` stores the
-   resulting token in the macOS keychain.
+   API scope — environment ID, or tenant ID for a legacy integration). The secret is
+   never persisted by the app; `jamf-cli` stores the resulting token in the macOS keychain.
 5. **Validate** — the app confirms the connection works.
 6. **CSV mapping** — optionally add a Jamf Pro CSV export for the sheets that need
    per-device export columns (Stale Devices, Security Agents, custom Extension

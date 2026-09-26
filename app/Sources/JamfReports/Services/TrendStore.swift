@@ -34,6 +34,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// mscpBands keys in the no-config fallback path.
     private(set) var mscpBaselineNames: [String] = []
 
+    /// Mobile device counts recovered from dated `mobile-devices-list` snapshots for
+    /// summaries that predate `mobileDeviceCount` (`backfillMobileCounts`), keyed by
+    /// summary date. Rebuilt once per load; fills gaps only — a recorded count wins.
+    private var mobileCountBackfill: [String: Int] = [:]
+
     /// The baseline whose series `mscpStackedSeries()` and `.mscpBandTrend`
     /// derivation read. Defaults to the first name; user-settable via
     /// `selectMSCPBaseline`. Nil only when no baseline has band history.
@@ -51,6 +56,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         var hasEverFetchedLive: Bool
         var bandSeries: [String: [MSCPChartDataBuilder.BandPoint]]
         var baselineNames: [String]
+        /// Mobile counts for days summarized before 2.6.0 (`backfillMobileCounts`).
+        /// Defaulted so a snapshot built by hand, as tests do, need not pass it.
+        var mobileCountBackfill: [String: Int] = [:]
     }
 
     init(summaries: [DailySummary] = [], range: TrendRange = .w4) {
@@ -94,7 +102,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             latestSnapshotDate: readLatestSnapshotMTime(profile: profile),
             hasEverFetchedLive: summaries.contains { $0.source == "jamf-cli" },
             bandSeries: built.series,
-            baselineNames: built.names
+            baselineNames: built.names,
+            mobileCountBackfill: loadMobileCountBackfill(profile: profile, summaries: summaries)
         )
     }
 
@@ -122,6 +131,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         hasEverFetchedLive = snapshot.hasEverFetchedLive
         cachedBandSeries = snapshot.bandSeries
         mscpBaselineNames = snapshot.baselineNames
+        mobileCountBackfill = snapshot.mobileCountBackfill
         // Preserve a still-valid selection across reloads; else default to first.
         let keepSelection = selectedMSCPBaseline.map(snapshot.baselineNames.contains) ?? false
         if !keepSelection { selectedMSCPBaseline = snapshot.baselineNames.first }
@@ -147,6 +157,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         filteredSummaries = []
         cachedBandSeries = [:]
         mscpBaselineNames = []
+        mobileCountBackfill = [:]
         selectedMSCPBaseline = nil
         latestSnapshotDate = nil
         hasEverFetchedLive = false
@@ -402,8 +413,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// (`mobileDeviceCount`, nil-skipped). Range-filtered to match
     /// `filteredSummaries`, mirroring `mscpStackedSeries()`.
     ///
-    /// The Mobile series is entirely absent — not zero-filled — for any date
-    /// before `mobileDeviceCount` was recorded; that's expected, not a gap.
+    /// A day summarized before `mobileDeviceCount` existed takes its count from
+    /// `mobileCountBackfill`. The Mobile series is entirely absent — not zero-filled —
+    /// for any date with neither; that's expected, not a gap.
     func managedDeviceSeries() -> [ChartSeries] {
         guard !filteredSummaries.isEmpty else { return [] }
 
@@ -415,7 +427,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         ]
 
         let mobilePoints: [(date: Date, value: Double)] = filteredSummaries.compactMap { summary in
-            guard let count = summary.mobileDeviceCount else { return nil }
+            // A recorded count always wins; the backfill only fills older days.
+            guard let count = summary.mobileDeviceCount ?? mobileCountBackfill[summary.date] else {
+                return nil
+            }
             return (date: summary.parsedDate, value: Double(count))
         }
         if !mobilePoints.isEmpty {
@@ -495,5 +510,120 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return names.sorted().map {
             ComplianceBaselineConfig(name: $0, failuresCountColumn: $0, ruleCount: nil)
         }
+    }
+
+    // MARK: - Mobile device-count backfill
+
+    /// `backfillMobileCounts` for `profile`, resolving its data dir the way
+    /// `computeBandPoints` does and `jamf_cli.max_cache_age_hours` the way the
+    /// summary writer does (168 when the config is unreadable). `nonisolated static`
+    /// so it runs off the main actor inside `computeSnapshot`.
+    nonisolated static func loadMobileCountBackfill(
+        profile: String, summaries: [DailySummary]
+    ) -> [String: Int] {
+        // No I/O at all once every summary recorded the count itself (2.6.0 on).
+        guard summaries.contains(where: { $0.mobileDeviceCount == nil }),
+              let workspace = ProfileService.workspaceURL(for: profile) else { return [:] }
+        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
+            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let config = try? ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        return backfillMobileCounts(
+            dataDir: dataDir,
+            summaries: summaries,
+            maxCacheAgeHours: config?.jamfCli?.resolvedMaxCacheAgeHours ?? 168
+        )
+    }
+
+    /// Mobile device counts for summaries that never recorded one — every summary
+    /// written before 2.6.0 added `mobileDeviceCount` — recovered from the dated
+    /// `mobile-devices-list` snapshots still on disk, the way `MSCPChartDataBuilder`
+    /// backfills band history. Without it the Managed Devices trend's mobile series
+    /// starts at the upgrade, however much snapshot history exists.
+    ///
+    /// The summary writer's selection, replayed per day: the newest snapshot stamped
+    /// before that day ended, if it is at most `maxCacheAgeHours` old at the day's end
+    /// (whole hours; `<= 0` means no limit, as it does for the writer). Files are
+    /// ordered by their filename stamp after manifest.json, `.partial` staging files
+    /// and sync-conflict copies are dropped. A file that does not decode is skipped
+    /// for the next-newest eligible one, and no file is decoded twice.
+    ///
+    /// - Returns: counts keyed by summary `date` (`yyyy-MM-dd`). A day that recorded
+    ///   its own count, or has no usable snapshot, is absent — never 0.
+    nonisolated static func backfillMobileCounts(
+        dataDir: URL,
+        summaries: [DailySummary],
+        maxCacheAgeHours: Int
+    ) -> [String: Int] {
+        let days = summaries.filter { $0.mobileDeviceCount == nil }.map(\.date)
+        guard !days.isEmpty else { return [:] }
+        let snapshots = mobileDeviceSnapshots(in: dataDir)
+        guard !snapshots.isEmpty else { return [:] }
+        let calendar = Calendar(identifier: .iso8601)
+
+        var counts: [URL: Int] = [:]
+        var undecodable: Set<URL> = []
+        var backfill: [String: Int] = [:]
+        for day in days {
+            guard let start = SummaryJSONParser.dateFormatter.date(from: day),
+                  let end = calendar.date(byAdding: .day, value: 1, to: start) else { continue }
+            // Newest first: the snapshot the summary writer would have read that day.
+            let candidates = snapshots.reversed().filter {
+                $0.date < end && isWithinCacheAge($0.date, of: end, maxHours: maxCacheAgeHours)
+            }
+            backfill[day] = firstDecodableCount(
+                in: candidates, counts: &counts, undecodable: &undecodable
+            )
+        }
+        return backfill
+    }
+
+    /// The `mobile-devices-list` snapshots in `dataDir`, oldest first by filename
+    /// stamp, after the exclusions every snapshot picker applies.
+    private nonisolated static func mobileDeviceSnapshots(
+        in dataDir: URL
+    ) -> [(url: URL, date: Date)] {
+        let dir = dataDir.appendingPathComponent("mobile-devices-list", isDirectory: true)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        return files
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .filter(FileManager.isSelectableSnapshot)
+            .map { (url: $0, date: MSCPChartDataBuilder.dateFromSnapshotFilename($0)) }
+            .sorted { $0.date < $1.date }
+    }
+
+    /// The summary writer's age rule (`ReportEngine.loadLatestSnapshotData`): whole
+    /// hours, a snapshot exactly at the limit still counts, `<= 0` disables it.
+    private nonisolated static func isWithinCacheAge(
+        _ stamp: Date, of reference: Date, maxHours: Int
+    ) -> Bool {
+        guard maxHours > 0 else { return true }
+        return Int(reference.timeIntervalSince(stamp) / 3600) <= maxHours
+    }
+
+    /// The count from the first of `candidates` (newest first) that decodes. Every
+    /// decode is remembered in `counts` / `undecodable`, so a file several days
+    /// select is read once.
+    private nonisolated static func firstDecodableCount(
+        in candidates: [(url: URL, date: Date)],
+        counts: inout [URL: Int],
+        undecodable: inout Set<URL>
+    ) -> Int? {
+        for candidate in candidates where !undecodable.contains(candidate.url) {
+            if let count = counts[candidate.url] ?? decodeMobileCount(at: candidate.url) {
+                counts[candidate.url] = count
+                return count
+            }
+            undecodable.insert(candidate.url)
+        }
+        return nil
+    }
+
+    private nonisolated static func decodeMobileCount(at url: URL) -> Int? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return MobileFleetService.deviceCount(fromMobileDevicesListData: data)
     }
 }

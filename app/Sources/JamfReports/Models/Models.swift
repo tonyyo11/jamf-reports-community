@@ -316,13 +316,7 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     }
 }
 
-// MARK: - Sheet catalog (for Customize screen)
-
-struct SheetGroup: Identifiable, Sendable {
-    var id: String { group }
-    let group: String
-    var items: [SheetItem]
-}
+// MARK: - Sheet item (CustomizationWizard, TemplateApplier tests)
 
 struct SheetItem: Identifiable, Sendable {
     var id: String { name }
@@ -836,6 +830,19 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
     firstNonEmpty(lhs, rhs)
 }
 
+extension DeviceInventoryRecord {
+    /// FileVault as yes or no, read as the Devices table reads it (`SecurityValueState`); nil
+    /// when the inventory carried no value or neither answer, such as ENCRYPTING or UNKNOWN,
+    /// so the Overview's Recent Activity shows "—" instead of a guess.
+    var fileVaultEnabled: Bool? {
+        switch SecurityValueState(fileVault) {
+        case .good: true
+        case .bad: false
+        case .unknown: nil
+        }
+    }
+}
+
 private func valueLooksGood(_ value: String) -> Bool {
     let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
         .lowercased()
@@ -848,6 +855,51 @@ private func valueLooksGood(_ value: String) -> Bool {
         || text.contains("encrypted")
         || text.contains("escrowed")
         || ["true", "yes", "1", "managed"].contains(text)
+}
+
+/// Whether an inventory security value (FileVault, SIP, firewall, Gatekeeper,
+/// bootstrap token) reads as good, bad or unknown, for the Devices table and
+/// detail panel. Unknown and negative forms are checked before positive ones,
+/// because most negatives contain their positive word: "UNENCRYPTED",
+/// "NOT_ENCRYPTED", "Not Enabled", "NOT_ESCROWED", "inactive".
+enum SecurityValueState: Equatable, Sendable {
+    case good, bad, unknown
+
+    init(_ value: String) {
+        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+        self = Self.classify(text)
+    }
+
+    /// Jamf did not collect the value, or the Mac cannot report it.
+    private static let unknownMarkers = [
+        "not collected", "not available", "not supported", "unknown", "pending",
+    ]
+    private static let badMarkers = [
+        "not ", "disabled", "unencrypted", "inactive", "decrypt", "missing",
+    ]
+    private static let badValues: Set<String> = ["false", "no", "0", "off", "none"]
+    /// Gatekeeper reports its setting ("APP_STORE_AND_IDENTIFIED_DEVELOPERS"),
+    /// not a yes or no.
+    private static let goodMarkers = [
+        "enabled", "encrypted", "escrowed", "installed", "active", "app store",
+        "identified developers",
+    ]
+    private static let goodValues: Set<String> = ["true", "yes", "1", "on"]
+
+    private static func classify(_ text: String) -> SecurityValueState {
+        if text.isEmpty || unknownMarkers.contains(where: { text.contains($0) }) {
+            return .unknown
+        }
+        if badValues.contains(text) || badMarkers.contains(where: { text.contains($0) }) {
+            return .bad
+        }
+        if goodValues.contains(text) || goodMarkers.contains(where: { text.contains($0) }) {
+            return .good
+        }
+        return .unknown
+    }
 }
 
 // MARK: - Token status

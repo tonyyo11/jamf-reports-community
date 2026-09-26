@@ -233,6 +233,14 @@ jamf_cli:
   # (.absent/.omitted) are tolerated. AuditView surfaces verify results
   # regardless of this setting. Threat-model T-11.
   require_manifest: false
+  # Report types collect never runs — a stall guard for on-prem Jamf Pro. Accepts
+  # any of patch-device-failures, profile-status, update-status and
+  # update-device-failures, the per-device-heavy queries known to stall an
+  # on-prem server; underscores and hyphens are interchangeable. Anything else is
+  # ignored, so core inventory always runs. A listed source is skipped even by a
+  # manual collect and is left out of the data freshness strip.
+  # Example: collect_skip: [update-status, update-device-failures]
+  collect_skip: []
 
 
 # ---------------------------------------------------------------------------
@@ -305,42 +313,27 @@ html:
 # =============================================================================
 # JAMF PROTECT
 # =============================================================================
-# Experimental Jamf Protect workbook support. This is opt-in because the
-# community project has not been fully validated against a live Protect tenant.
-# The report currently builds a single "Protect Overview" sheet from:
+# Optional Jamf Protect data, collected after each Jamf Pro collect that runs:
 #   - jamf-cli protect overview
+#   - jamf-cli protect alerts list
 #   - jamf-cli protect computers list
-#   - jamf-cli protect analytics list
+#   - jamf-cli protect insights list
 #   - jamf-cli protect plans list
+# Snapshots live under jamf_cli.data_dir with the rest, and the workbook gets a
+# Protect Overview, Alerts, Computers, Insights and Plans sheet for each one that
+# landed.
 #
-# jamf-cli uses the same profile flag (`-p/--profile`) for both Pro and Protect,
-# but Protect still requires its own setup/auth flow:
+# Protect has its own jamf-cli profile and setup flow, which the app runs when
+# you connect Protect from onboarding or the Data Sources screen:
 #
 #   jamf-cli protect setup
 
 protect:
-  # Set true to enable the experimental Protect Overview sheet and snapshot
-  # collection for Jamf Protect commands.
+  # Set true to collect Jamf Protect data after each Jamf Pro collect.
   enabled: false
-  # Cached JSON snapshots are kept separate from Pro so multi-tenant setups
-  # don't collide. Path is resolved relative to this config file's directory.
-  data_dir: "jamf-cli-data/protect"
   # jamf-cli protect profile name; empty = jamf-cli's default Protect profile.
   # Distinct from jamf_cli.profile (the Pro profile).
   profile: ""
-  # Fall back to cached snapshots when a live Protect call fails.
-  use_cached_data: true
-  plans:
-    enabled: true                  # W22 — Protect Plans sheet (quick win)
-  # W23 standard pack — opt-in. Sheets are Experimental until pagination shape
-  # is verified against a live Protect tenant; field names follow the
-  # jamfprotect-go-sdk camelCase contract.
-  computers:
-    enabled: false                 # Protect Computers sheet (hostname/serial/plan/insights/connection)
-  alerts:
-    enabled: false                 # Protect Alerts sheet (severity/status/event/computer)
-  insights:
-    enabled: false                 # Protect Insights sheet (label/section/pass-fail-none)
 
 
 # =============================================================================
@@ -477,64 +470,38 @@ ai:
 # =============================================================================
 # JAMF PLATFORM API
 # =============================================================================
-# Preview workbook support for jamf-cli builds that expose Platform API report
-# commands under `jamf-cli pro report`, including:
+# Reports only the Jamf Platform API serves, collected through
+# `jamf-cli pro report`:
 #   - blueprint-status
 #   - compliance-rules
 #   - compliance-devices
 #   - ddm-status
 #
-# This path is opt-in because the upstream jamf-cli Platform API support is
-# still emerging. It uses the same selected jamf-cli profile, but that profile
-# must also have working Platform gateway auth in the jamf-cli build you use.
+# Collect runs them when the profile's jamf-cli auth method is `platform`:
+#   jamf-cli config add-profile <name> --auth-method platform \
+#     --url https://<region>.api.jamfcloud.com --environment-id <id>
+# A tenant-level profile (--tenant-id) skips compliance-rules, compliance-devices
+# and blueprint-status, which Jamf Account does not grant at that level. The
+# Compliance Benchmarks and DDM Blueprints screens are also behind Settings →
+# Experimental Features → Platform API.
 #
-# List each benchmark title in compliance_benchmarks. Each entry generates two
-# sheets: one for per-rule pass/fail stats and one for per-device results.
-# Orgs commonly run multiple benchmarks (e.g. an enforced baseline and an audit
-# baseline, or separate baselines per department). Leave the list empty to skip
-# compliance sheets while still including the Blueprint and DDM Status sheets.
-#
-# Sheet names are derived from the benchmark title (truncated to fit Excel's
-# 31-character limit), e.g. "NIST 800-53r5 Moderate Rules" and
-# "NIST 800-53r5 Moderate Devices".
+# Leave compliance_benchmarks empty to collect every benchmark on the tenant, or
+# list titles to collect only those. Titles match exactly and are case-sensitive
+# (benchmark IDs do not match); a title shared by two benchmarks is skipped. If
+# none of the listed titles is on the tenant, both compliance sources fail with
+# that cause in Run History and keep their last data. Results land in one Compliance
+# Rules sheet and one Compliance Devices sheet with a Benchmark column, and the
+# Compliance Benchmarks screen shows one benchmark at a time.
 
 platform:
-  # Set true to opt this profile into Platform API reports. Required, but
-  # not sufficient on its own — v2.1.0 also requires the experimental flag
-  # below (experimental.platform_features_enabled) AND a jamf-cli profile
-  # with auth-method: platform. All three checks must pass before any
-  # Platform sheet is written; a "[skip] Platform API gate closed" line
-  # surfaces in the run log if any check fails.
+  # Written by the Config screen's "Enable Platform API sheets" switch. Neither
+  # collect nor the reports read it: the profile's auth method decides.
   enabled: false
   # List of benchmark titles for the Platform compliance sheets.
-  # Each entry produces a Rules sheet and a Devices sheet.
+  # Empty collects every benchmark; listed titles narrow it (exact, case-sensitive).
   compliance_benchmarks:
     # - "NIST 800-53r5 Moderate"
     # - "DISA STIG"
-
-
-# =============================================================================
-# EXPERIMENTAL FEATURES
-# =============================================================================
-# Opt-in toggles for v2.1.0 preview features. These features depend on
-# capabilities that are not universally available (Platform API requires a
-# different jamf-cli auth method; Protect requires a configured Protect
-# tenant), so they ship off by default. Enabling a flag here is necessary
-# but not sufficient — each code path also runs a capability probe before
-# attempting any work, and silently skips if the probe fails.
-#
-# Community testing notes and feedback:
-# https://github.com/tonyyo11/jamf-reports-community/discussions
-
-experimental:
-  # Platform API features (compliance benchmarks, DDM blueprints).
-  # Requires a jamf-cli profile with `auth-method: platform`. Set up via:
-  #   jamf-cli config add-profile <name> --auth-method platform \
-  #     --url https://<region>.api.jamfcloud.com --environment-id <id>
-  # (--tenant-id is the legacy single-tenant level; omit both for organization
-  # scope.) The app's onboarding and reauth flows offer all three — pick the
-  # scope the integration was actually created at.
-  platform_features_enabled: false
 
 
 # =============================================================================
@@ -832,74 +799,15 @@ charts:
 # Configure this section to generate Jamf School reports.
 #
 # Setup:
-#   1. Connect a Jamf School profile from the app (onboarding, or the Sources
-#      screen). The app runs `jamf-cli school setup` and sets the fields below.
-#   2. Generate a Jamf School report from the app — from a CSV export, or from a
-#      connected School profile after a collect.
+#   1. Connect a Jamf School profile from the app (onboarding, or the Data
+#      Sources screen). The app runs `jamf-cli school setup` and sets the fields
+#      below.
+#   2. Collect, then generate a Jamf School report from the app. Its sheets come
+#      from the collected School data; a CSV export alone adds none.
 
 school_cli:
-  # Set true to use live jamf-cli school commands.
-  # When false, the Jamf School report still works from a CSV export.
+  # Set true to collect with live jamf-cli school commands. School snapshots
+  # are stored under jamf_cli.data_dir with the rest.
   enabled: false
-  # Directory where jamf-cli school JSON snapshots are stored.
-  data_dir: "school-cli-data"
   # Profile name configured via: jamf-cli school setup --profile-name <name>
   profile: "school"
-
-  # jamf-cli multi support (v1.9+)
-  # Run commands against multiple school profiles.
-  multi:
-    # Set true to use 'jamf-cli multi' for all live school data collection.
-    enabled: false
-    # Optional glob pattern to filter profiles (e.g., 'school-*').
-    filter: ""
-    # Optional comma-separated list of profile names.
-    profiles: ""
-    # Optional path to a file containing profile names or instance URLs.
-    from_file: ""
-    # Set true to run profiles sequentially instead of in parallel.
-    sequential: false
-
-  # Fall back to cached snapshots when live commands fail.
-  use_cached_data: true
-
-
-# ---------------------------------------------------------------------------
-# Jamf School column mapping
-# ---------------------------------------------------------------------------
-# Maps logical field names to the actual column headers in your Jamf School
-# CSV device export (the semicolon-delimited file from Device > Export).
-#
-# Scaffold these mappings from a CSV export in the Config screen; the Health
-# Audit flags any mapping that no longer matches a CSV header.
-
-school_columns:
-  # Device display name (e.g. "Jamf School exports this as 'Name'")
-  device_name: ""
-  serial_number: ""
-  # Device type (e.g. "iPad", "AppleTV", "Mac")
-  device_type: ""
-  os_version: ""
-  model: ""
-  # School/location name the device belongs to
-  location_name: ""
-  # Assigned user display name (separate from owner_username)
-  user_name: ""
-  owner_email: ""
-  owner_first_name: ""
-  owner_last_name: ""
-  owner_username: ""
-  # Boolean columns — expected values: "true" / "false"
-  managed: ""
-  supervised: ""
-  shared: ""
-  lost_mode: ""
-  # Timestamps — ISO 8601 format expected
-  last_checkin: ""
-  enrollment_date: ""
-  # Enrollment method (dep, user, manual, etc.)
-  enroll_type: ""
-  # Pipe- or bracket-delimited list of device group memberships
-  member_of: ""
-  # Available storage capacity (float, GB)
-  available_capacity: ""

@@ -25,7 +25,7 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
             outcome("inventory-summary", 3),
             outcome("policy-status", 3),
         ]
-        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes, savedKinds: []))
     }
 
     /// The real prod shape: core endpoints 401 (exit 3), chronic Platform-API
@@ -38,7 +38,7 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
             outcome("ddm-status", 1),
             outcome("blueprint-status", 1),
         ]
-        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes, savedKinds: []))
     }
 
     /// A single 401 among successful calls is a transient/per-endpoint failure,
@@ -50,7 +50,9 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
             outcome("security", 3),
             outcome("policy-status", 0),
         ]
-        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(
+            outcomes, savedKinds: ["overview", "computers", "policy-status"]
+        ))
     }
 
     /// Only chronic non-auth 404s (no 401 anywhere) → never auth-dead, even with
@@ -61,40 +63,51 @@ final class CollectAuthDeadVerdictTests: XCTestCase {
             outcome("compliance-rules", 1),
             outcome("ddm-status", 1),
         ]
-        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes, savedKinds: []))
     }
 
     /// All calls succeed → not auth-dead.
     func testAllSuccess_isNotAuthDead() {
         let outcomes = [outcome("overview", 0), outcome("security", 0)]
-        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(
+            outcomes, savedKinds: ["overview", "security"]
+        ))
     }
 
     /// An empty outcome set (no auth-bearing command ran, e.g. a tier of only
     /// skipped kinds) is never auth-dead — there is no evidence either way.
     func testEmpty_isNotAuthDead() {
-        XCTAssertFalse(ReportEngine.isCollectAuthDead([]))
+        XCTAssertFalse(ReportEngine.isCollectAuthDead([], savedKinds: []))
     }
 
-    /// exit 0 proves auth was accepted even with an empty body, so a 401
-    /// alongside it is transient (not auth-dead) — mirrors the Python tally,
-    /// which counts any non-raising call as a success.
-    func testExitZeroCountsAsSuccessEvenEmpty_isNotAuthDead() {
+    /// A landed kind proves auth was accepted even with an empty body, so a 401
+    /// alongside it is transient (not auth-dead).
+    func testALandedKindCountsAsSuccess_isNotAuthDead() {
         let outcomes = [
             outcome("ea-results", 0),
             outcome("security", 3),
         ]
-        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes, savedKinds: ["ea-results"]))
     }
 
-    /// exit 7 (partial failure, v1.19.0+) also proves auth was accepted, so a
-    /// co-occurring 401 is transient — not auth-dead.
+    /// exit 7 (partial failure, v1.19.0+) also lands a kind, proving auth was
+    /// accepted, so a co-occurring 401 is transient — not auth-dead.
     func testExit7CountsAsSuccess_isNotAuthDead() {
         let outcomes = [
             outcome("ea-results", 7),
             outcome("security", 3),
         ]
-        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(outcomes, savedKinds: ["ea-results"]))
+    }
+
+    /// Task 10 case: `update-device-failures` exits 0 without landing data (spec
+    /// §13.2), so an exit code alone must not mask a co-occurring 401.
+    func testExitZeroThatLandedNothingDoesNotHideA401() {
+        let outcomes = [
+            outcome("update-device-failures", 0),
+            outcome("patch-device-failures", 3),
+        ]
+        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes, savedKinds: []))
     }
 }
 
@@ -168,7 +181,7 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
         ]
         let spy = AuthProbeSpy(result: true)
         let decision = await ReportEngine.evaluateAuthDead(
-            outcomes: outcomes, profile: "dummy", bin: testBin,
+            outcomes: outcomes, savedKinds: [], profile: "dummy", bin: testBin,
             probe: { profile, bin in await spy.probe(profile: profile, bin: bin) }
         )
         XCTAssertEqual(decision, .confirmedAlive(warnedKinds: ["patch-device-failures"]))
@@ -186,7 +199,7 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
         ]
         let spy = AuthProbeSpy(result: false)
         let decision = await ReportEngine.evaluateAuthDead(
-            outcomes: outcomes, profile: "dummy", bin: testBin,
+            outcomes: outcomes, savedKinds: [], profile: "dummy", bin: testBin,
             probe: { profile, bin in await spy.probe(profile: profile, bin: bin) }
         )
         XCTAssertEqual(decision, .confirmedDead(failedCount: 2))
@@ -202,7 +215,7 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
         ]
         let spy = AuthProbeSpy(result: true)
         let decision = await ReportEngine.evaluateAuthDead(
-            outcomes: outcomes, profile: "dummy", bin: testBin,
+            outcomes: outcomes, savedKinds: ["overview"], profile: "dummy", bin: testBin,
             probe: { profile, bin in await spy.probe(profile: profile, bin: bin) }
         )
         XCTAssertNil(decision)
@@ -218,7 +231,7 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
         ]
         let spy = AuthProbeSpy(result: true)
         let decision = await ReportEngine.evaluateAuthDead(
-            outcomes: outcomes, profile: "dummy", bin: testBin,
+            outcomes: outcomes, savedKinds: [], profile: "dummy", bin: testBin,
             probe: { profile, bin in await spy.probe(profile: profile, bin: bin) }
         )
         XCTAssertNil(decision)
@@ -229,7 +242,7 @@ final class AuthDeadConfirmationProbeTests: XCTestCase {
     func testProbeNotInvokedForEmptyOutcomes() async {
         let spy = AuthProbeSpy(result: true)
         let decision = await ReportEngine.evaluateAuthDead(
-            outcomes: [], profile: "dummy", bin: testBin,
+            outcomes: [], savedKinds: [], profile: "dummy", bin: testBin,
             probe: { profile, bin in await spy.probe(profile: profile, bin: bin) }
         )
         XCTAssertNil(decision)
@@ -256,7 +269,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("patch-status", 4),
             outcome("policy-status", 5),
         ]
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
     }
 
     /// All non-zero exits, some are exit 6 (rate-limited) → still collect-dead.
@@ -265,7 +278,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("overview", 6),
             outcome("security", 6),
         ]
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
     }
 
     /// All calls fail with 401 included — auth-dead wins at the call site; isCollectDead
@@ -279,8 +292,8 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("inventory-summary", 1),
         ]
         // Auth-dead wins at call site — but isCollectDead is also true.
-        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes, savedKinds: []))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
     }
 
     /// One success + failures → partial failure, cache is warmed; neither verdict fires.
@@ -290,13 +303,15 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("security", 1),
             outcome("patch-status", 4),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: ["overview"]))
     }
 
-    /// exit 7 (partial failure, v1.19.0+) counts as a success for the outage
-    /// verdict — partial data was returned and saved, so the run is not dead.
+    /// exit 7 (partial failure, v1.19.0+) is not collect-dead: a saved partial
+    /// result is not an outage.
     func testExit7IsNotCollectDead() {
-        XCTAssertFalse(ReportEngine.isCollectDead([outcome("security", 7)]))
+        XCTAssertFalse(ReportEngine.isCollectDead(
+            [outcome("security", 7)], savedKinds: ["security"]
+        ))
     }
 
     /// All calls succeed → not collect-dead.
@@ -306,13 +321,15 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("security", 0),
             outcome("computers", 0),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectDead(
+            outcomes, savedKinds: ["overview", "security", "computers"]
+        ))
     }
 
     /// An empty outcome set (no live calls attempted, e.g. tier skipped everything)
     /// is never collect-dead — there is no evidence of a failure.
     func testEmpty_isNotCollectDead() {
-        XCTAssertFalse(ReportEngine.isCollectDead([]))
+        XCTAssertFalse(ReportEngine.isCollectDead([], savedKinds: []))
     }
 
     /// A single exit-0 among otherwise-all-failures → cache is warmed; not collect-dead.
@@ -324,7 +341,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("policy-status", 1),
             outcome("inventory-summary", 1),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: ["overview"]))
     }
 
     // MARK: - skippedNotDueCount veto (field defect, jamf-cli 1.21.1, 2026-07)
@@ -343,7 +360,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("ddm-status", 1),
             outcome("duplicate-serials", 2),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 4))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: [], skippedNotDueCount: 4))
     }
 
     /// All failures are exit 2 (usage — bad flags / unrecognized subcommand), no
@@ -354,7 +371,7 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("duplicate-serials", 2),
             outcome("some-new-command", 2),
         ]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, savedKinds: [], skippedNotDueCount: 0))
     }
 
     /// Zero successes, zero skips, and at least one non-exit-2 failure → still dead.
@@ -365,13 +382,53 @@ final class CollectDeadVerdictTests: XCTestCase {
             outcome("duplicate-serials", 2),
             outcome("compliance-devices", 1),
         ]
-        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: [], skippedNotDueCount: 0))
     }
 
-    /// exit 7 (partial failure) still counts as success evidence even when the
-    /// skippedNotDueCount veto isn't in play — a saved partial result is not an outage.
+    /// A saved partial result still counts as success even when the
+    /// skippedNotDueCount veto isn't in play — it is not an outage.
     func testExit7CountsAsSuccessRegardlessOfSkips_isNotCollectDead() {
         let outcomes = [outcome("ea-results", 7), outcome("compliance-devices", 1)]
-        XCTAssertFalse(ReportEngine.isCollectDead(outcomes, skippedNotDueCount: 0))
+        XCTAssertFalse(ReportEngine.isCollectDead(
+            outcomes, savedKinds: ["ea-results"], skippedNotDueCount: 0
+        ))
+    }
+
+    /// Exit 0 is not evidence: some jamf-cli reports exit 0 after every fetch failed.
+    func testExitZeroThatLandedNothingIsCollectDead() {
+        let outcomes = [outcome("update-status", 0), outcome("security", 1)]
+        XCTAssertTrue(ReportEngine.isCollectDead(outcomes, savedKinds: []))
+    }
+
+    // MARK: - Dead-run cause (spec §9.6)
+
+    private func failed(
+        _ kind: String, _ exit: Int32, _ cause: FailureCause.Kind?
+    ) -> ReportEngine.CollectOutcome {
+        ReportEngine.CollectOutcome(kind: kind, exitCode: exit, cause: cause)
+    }
+
+    /// Jamf Pro commands on a gateway profile drop the 404 body, so one named rejection is
+    /// enough.
+    func testAnyRejectedIDNamesTheDeadRun() {
+        let outcomes = [failed("security", 4, .other),
+                        failed("compliance-rules", 4, .unknownEnvironment)]
+        XCTAssertEqual(ReportEngine.deadRunCause(outcomes), .rejectedID)
+    }
+
+    func testEveryFailureAMissingPermissionNamesTheDeadRun() {
+        let outcomes = [failed("security", 5, .missingPermission),
+                        failed("computers", 5, .missingPermission),
+                        failed("duplicate-serials", 2, .other)]
+        XCTAssertEqual(ReportEngine.deadRunCause(outcomes), .noPermission,
+                       "a usage error says nothing about access and is left out")
+    }
+
+    func testAnythingElseIsAnOutage() {
+        XCTAssertEqual(ReportEngine.deadRunCause(
+            [failed("security", 5, .missingPermission), failed("computers", 1, .other)]), .outage)
+        XCTAssertEqual(ReportEngine.deadRunCause(
+            [failed("security", ReportEngine.launchFailureExitCode, nil)]), .outage)
+        XCTAssertEqual(ReportEngine.deadRunCause([]), .outage)
     }
 }

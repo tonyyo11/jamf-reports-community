@@ -81,17 +81,6 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         )
     }
 
-    func test_platformGateway_organizationScope_advancesWithNoScopeID() {
-        let flow = makeValidPlatformGatewayFlow()
-        flow.platformScope = .organization
-        flow.platformScopeID = ""
-        flow.platformSecretFieldHasText = true
-        XCTAssertTrue(
-            flow.canAdvance,
-            "Organization scope needs no ID, so canAdvance must be true"
-        )
-    }
-
     // MARK: - Part 2: addProducts step canAdvance
 
     func test_addProducts_alwaysAdvanceable() {
@@ -215,21 +204,6 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertFalse(args.contains("--environment-id"), "tenant scope must not send --environment-id")
     }
 
-    func test_platformGatewayArguments_organizationScope_sendsNoScopeFlag() {
-        let args = OnboardingFlow.platformGatewayArguments(
-            profile: "platform-prod",
-            gatewayURL: "https://us.api.jamfcloud.com",
-            scope: .organization,
-            scopeID: ""
-        )
-        XCTAssertFalse(args.contains("--environment-id"), "organization scope sends no ID flag")
-        XCTAssertFalse(args.contains("--tenant-id"), "organization scope sends no ID flag")
-        XCTAssertTrue(args.contains("--auth-method"), "must still include --auth-method")
-        XCTAssertTrue(args.contains("platform"), "auth method must be platform")
-        XCTAssertTrue(args.contains("--url"), "must still include --url")
-        XCTAssertTrue(args.contains("--no-color"), "must still include --no-color")
-    }
-
     func test_platformGatewayArguments_neverSendsBothScopeFlags() {
         for scope in OnboardingFlow.PlatformScope.allCases {
             let args = OnboardingFlow.platformGatewayArguments(
@@ -251,13 +225,10 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertEqual(Scope.defaultScope(forCLIVersion: "garbage"), .environment)
     }
 
-    func test_platformScope_needsID_falseOnlyForOrganization() {
-        for scope in OnboardingFlow.PlatformScope.allCases {
-            XCTAssertEqual(
-                scope.needsID, scope != .organization,
-                "needsID must be false only for organization scope (\(scope))"
-            )
-        }
+    /// Organization level reaches no data the app collects (every scoped call answers 400
+    /// REQUEST_CONTEXT_NOT_PROVIDED), so setup offers only environment and tenant.
+    func test_platformScope_offersOnlyEnvironmentAndTenant() {
+        XCTAssertEqual(OnboardingFlow.PlatformScope.allCases, [.environment, .tenant])
     }
 
     /// jamf-cli refuses the retired `{region}.apigw.jamf.com` gateway by name

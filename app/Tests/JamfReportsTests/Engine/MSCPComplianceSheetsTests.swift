@@ -208,6 +208,23 @@ final class MSCPComplianceSheetsTests: XCTestCase {
                         "Sheet 'mSCP Compliance' must be created")
     }
 
+    /// The sheet decoded a bare array only, so an ea-results snapshot wrapped in a
+    /// `results` envelope, which every other reader accepts, gave no sheet at all.
+    func testWriteMSCPComplianceReadsAnEnvelopeSnapshot() throws {
+        let eaDir = tmpDir.appendingPathComponent("ea-results", isDirectory: true)
+        try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
+        let envelope: [String: Any] = ["results": [
+            ["device": "mac-1", "ea_name": "STIG Failures", "value": 0],
+            ["device": "mac-2", "ea_name": "STIG Failures", "value": 5],
+        ]]
+        try JSONSerialization.data(withJSONObject: envelope)
+            .write(to: eaDir.appendingPathComponent("ea-results_20240615T120000.json"))
+
+        let dash = makeDashboard(config: configWithBaseline())
+        XCTAssertNoThrow(try dash.writeMSCPCompliance())
+        XCTAssertNotNil(dash.workbook.sheet(named: "mSCP Compliance"))
+    }
+
     func testWriteMSCPComplianceBandRowCount() throws {
         // 10 pass + 3 low + 2 high = 15 total; expected row structure:
         // header (1) + 3 summary rows + band-header (1) + No Data + 5 band rows = 11 rows per baseline.

@@ -566,10 +566,12 @@ extension DeviceInventoryService {
         record.department = first(flat, ["userAndLocation.department", "location.department", "department"])
         record.building = first(flat, ["userAndLocation.building", "location.building", "building"])
         record.site = first(flat, ["general.site.name", "site.name", "site"])
-        record.ipAddress = first(flat, ["general.lastIpAddress", "general.lastReportedIp", "general.ipAddress", "ipAddress"])
+        record.ipAddress = first(flat, ["general.lastIpAddress", "general.lastReportedIpV4", "general.lastReportedIp", "general.ipAddress", "ipAddress"])
         record.assetTag = first(flat, ["general.assetTag", "assetTag"])
         record.managedState = managedLabel(first(flat, ["general.remoteManagement.managed", "general.managed", "isManaged", "managed"]))
-        record.lastContact = first(flat, ["general.lastContactTime", "general.lastContactDate", "lastContactDate"])
+        // Jamf Pro's v4 inventory renamed lastContactTime to lastCheckIn. Its general.lastContact
+        // is a separate field, null on most Macs, so it is not a substitute.
+        record.lastContact = first(flat, ["general.lastCheckIn", "general.lastContactTime", "general.lastContactDate", "lastContactDate"])
         record.lastInventory = first(flat, ["general.reportDate", "general.lastReportDate", "lastReportDate"])
         record.daysSinceContact = daysSince(label: record.lastContact)
         record.stale = (record.daysSinceContact ?? 0) >= staleThresholdDays
@@ -884,6 +886,12 @@ private extension DeviceInventoryService {
     static func parseDate(_ text: String) -> Date? {
         guard !text.isEmpty else { return nil }
         if let date = ISO8601DateFormatter().date(from: text) { return date }
+        // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
+        // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
+        // Mac had no contact age unless device-compliance supplied a day count.
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: text) { return date }
         let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
         for format in formats {
             let formatter = DateFormatter()

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Offline Outreach Report dashboard. Lifts the v3.5 outreach workflow into a live GUI.
-/// Buckets devices by days-since-checkin (31-90 / 91-180 / 180+) and surfaces manager/email/
+/// Buckets devices by days-since-checkin (31-90 / 91-180 / 181+) and surfaces manager/email/
 /// department for outreach. One-click "Copy email list" mail-merge for the selected tier.
 struct OutreachView: View {
     @Environment(WorkspaceStore.self) private var workspace
@@ -19,7 +19,9 @@ struct OutreachView: View {
                 kicker: "Posture",
                 title: "Offline Outreach",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is fixed; an age measured from today would grow
+                // for as long as the demo stays open.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             if !workspace.demoMode {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
@@ -61,42 +63,19 @@ struct OutreachView: View {
     }
 
     private func reload() {
+        // The demo buckets the whole 524-Mac demo fleet by the demo config's own
+        // threshold, so the tier counts and their captions always agree.
         snapshot = workspace.demoMode
-            ? Self.demoSnapshot
+            ? StaleDeviceService.snapshot(
+                from: DemoData.outreachRecords,
+                staleDays: configuredStaleDays,
+                dataCollectedDate: DemoData.referenceDate
+            )
             : StaleDeviceService.snapshot(
                 profile: workspace.profile,
                 demoMode: false,
                 staleDays: configuredStaleDays
             )
-    }
-
-    private static var demoSnapshot: StaleDeviceService.Snapshot {
-        let records = (1...30).map { i -> DeviceInventoryRecord in
-            var record = DeviceInventoryRecord.empty(id: "demo-\(i)", source: "demo")
-            record.name = "MacBook-\(String(format: "%03d", i))"
-            record.serial = "C02X\(String(format: "%08d", i))"
-            record.user = ["John Doe", "Jane Smith", "Bob Wilson", "Alice Johnson"].randomElement() ?? ""
-            record.email = ["jdoe@example.com", "jsmith@example.com", "", "ajohnson@example.com"].randomElement() ?? ""
-            record.department = ["IT", "Marketing", "Sales", "HR"].randomElement() ?? ""
-            record.building = ["Main Office", "East Campus", "West Wing"].randomElement() ?? ""
-
-            // Distribute across tiers
-            let daysSince: Int
-            switch i {
-            case 1...15: daysSince = Int.random(in: 31...90)    // offline
-            case 16...25: daysSince = Int.random(in: 91...180)  // inactive
-            case 26...30: daysSince = Int.random(in: 181...365) // dormant
-            default: daysSince = Int.random(in: 0...30)         // recent
-            }
-
-            record.daysSinceContact = daysSince
-            record.lastContact = Calendar.current.date(byAdding: .day, value: -daysSince, to: Date()).map {
-                ISO8601DateFormatter().string(from: $0)
-            } ?? ""
-
-            return record
-        }
-        return StaleDeviceService.snapshot(from: records)
     }
 
     // MARK: - Sections
@@ -142,7 +121,8 @@ struct OutreachView: View {
         case .recent:   return "0-\(s) days"
         case .offline:  return "\(s + 1)-\(3 * s) days"
         case .inactive: return "\(3 * s + 1)-\(6 * s) days"
-        case .dormant:  return "\(6 * s)+ days"
+        // Dormant starts the day after Inactive ends (181+ at 30), not on its last day.
+        case .dormant:  return "\(6 * s + 1)+ days"
         }
     }
 
@@ -181,7 +161,12 @@ struct OutreachView: View {
                     style: .neutral,
                     action: exportOutreachCSV
                 )
-                .help("Export all stale devices across every tier to a CSV in the workspace")
+                // Exporting writes into the workspaces root and reveals the file;
+                // the demo profile has no workspace of its own.
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? "Demo data is fixed. Exporting a CSV needs a live profile."
+                      : "Export all stale devices across every tier to a CSV in the workspace")
 
                 if let copyConfirmation {
                     Pill(text: copyConfirmation, tone: .teal)
@@ -300,6 +285,7 @@ struct OutreachView: View {
     /// output directory, then reveal the file in Finder. Gated on the allow-list
     /// via `SystemActions.reveal` — writes only inside `~/Jamf-Reports/<profile>/`.
     private func exportOutreachCSV() {
+        guard !workspace.demoMode else { return }
         guard let outputDir = try? WorkspacePaths.outputDir(for: workspace.profile) else {
             workspace.toast = Toast(
                 message: "Could not resolve output directory for profile \(workspace.profile).",
@@ -357,7 +343,9 @@ struct OutreachView: View {
         guard let date = parseDate(dateString) else { return "Unknown" }
         let formatter = RelativeDateTimeFormatter()
         formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: date, relativeTo: Date())
+        // Demo ages are measured from the demo's own "now", not today's date.
+        let now = workspace.demoMode ? DemoData.referenceDate : Date()
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 
     private func parseDate(_ text: String) -> Date? {

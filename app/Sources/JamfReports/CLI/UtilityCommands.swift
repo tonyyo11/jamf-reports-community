@@ -203,16 +203,3 @@ struct SchoolCheck: AsyncParsableCommand {
         Foundation.exit(runSchoolCheck(profile: profile))
     }
 }
-
-struct SchoolScaffold: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        commandName: "school-scaffold",
-        abstract: "Scaffold a Jamf School config from a CSV (community-feedback-driven; provided as-is)."
-    )
-    @Option(help: "Path to a Jamf School CSV export.") var csv: String
-    @Option(help: "Output config.yaml path.") var out: String
-
-    func run() async throws {
-        Foundation.exit(runSchoolScaffold(csvPath: csv, outPath: out))
-    }
-}

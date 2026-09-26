@@ -48,7 +48,10 @@ struct FleetInsightInput: Sendable {
 
         appendPct(&lines, "FileVault encrypted", current.fileVaultPct, previous?.fileVaultPct)
         appendPct(&lines, "OS current", current.osCurrentPct, previous?.osCurrentPct)
-        appendPct(&lines, "Patch compliance", current.patchPct, previous?.patchPct)
+        // Unweighted mean of per-title compliance, not the device-weighted figure the
+        // Patch screen shows; labelled so the model does not present it as that one.
+        appendPct(&lines, "Patch compliance (avg per title)", current.patchPct,
+                  previous?.patchPct)
         appendPct(&lines, "SIP enabled", current.sipPct, previous?.sipPct)
         appendPct(&lines, "Firewall enabled", current.firewallPct, previous?.firewallPct)
         appendPct(&lines, "Gatekeeper enabled", current.gatekeeperPct, previous?.gatekeeperPct)

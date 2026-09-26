@@ -4,11 +4,11 @@ import Foundation
 /// `compliance-rules/` and `compliance-devices/` directories and prepares
 /// them for `ComplianceBenchmarksView`.
 ///
-/// The Platform API is experimental (jamf-cli v1.14 beta), so this service
-/// only reports on what is on disk — it never invokes jamf-cli. Whether the
-/// snapshots exist at all is the upstream collect path's responsibility,
-/// itself gated by ``experimental.platform_features_enabled`` and a
-/// ``has_platform_auth`` probe on the Python side.
+/// This service only reports on what is on disk — it never invokes jamf-cli.
+/// Whether the snapshots exist is the collect path's job: `ReportEngine.collect`
+/// runs the Platform-only kinds when the profile's auth method is `platform`, and
+/// skips the environment-level ones on a tenant-level profile. The screen is also
+/// behind Settings → Experimental Features → Platform API.
 ///
 /// Decoded shapes track ``ComplianceRuleRow`` and ``ComplianceDeviceRow``
 /// in ``JamfCLIDecoder.swift`` so a parser-level field rename is felt in
@@ -32,7 +32,11 @@ struct ComplianceBenchmarksService: Sendable {
             let unknown: Int
             let devices: Int
             let passRate: String
-            var id: String { rule }
+            var ruleId: String = ""
+            /// Benchmark title the row was collected under; empty before 2.8.1.
+            var benchmark: String = ""
+            /// A rule appears once per benchmark that contains it.
+            var id: String { "\(benchmark)|\(ruleId.isEmpty ? rule : ruleId)" }
         }
 
         struct Device: Sendable, Equatable, Identifiable {
@@ -41,11 +45,31 @@ struct ComplianceBenchmarksService: Sendable {
             let rulesPassed: Int
             let rulesFailed: Int?
             let compliance: String
-            var id: String { deviceId.isEmpty ? device : deviceId }
+            var benchmark: String = ""
+            /// A device appears once per benchmark it was evaluated against.
+            var id: String { "\(benchmark)|\(deviceId.isEmpty ? device : deviceId)" }
         }
 
         var totalRules: Int { rules.count }
         var totalDevices: Int { devices.count }
+
+        /// Benchmark titles in first-seen order; empty for snapshots from before 2.8.1.
+        var benchmarks: [String] {
+            var seen: Set<String> = []
+            return (rules.map(\.benchmark) + devices.map(\.benchmark))
+                .filter { !$0.isEmpty && seen.insert($0).inserted }
+        }
+
+        /// This snapshot limited to one benchmark's rows.
+        func filtered(to benchmark: String) -> Snapshot {
+            Snapshot(
+                rules: rules.filter { $0.benchmark == benchmark },
+                devices: devices.filter { $0.benchmark == benchmark },
+                rulesSourceFile: rulesSourceFile,
+                devicesSourceFile: devicesSourceFile,
+                snapshotDate: snapshotDate
+            )
+        }
 
         /// Pass / Fail / Unknown across all rules. "Unknown" covers rules
         /// where the upstream returned no `failed` key — distinct from
@@ -117,12 +141,11 @@ struct ComplianceBenchmarksService: Sendable {
     static func load(rulesURL: URL?, devicesURL: URL?) -> Snapshot {
         let rules = rulesURL.flatMap(decodeRules) ?? []
         let devices = devicesURL.flatMap(decodeDevices) ?? []
+        // The filename stamp, not the mtime: a sync provider re-stamps mtimes when
+        // it downloads, which made an old snapshot read as fresh.
         let dates = [rulesURL, devicesURL]
             .compactMap { $0 }
-            .compactMap {
-                (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate
-            }
+            .compactMap(FileManager.snapshotDate(of:))
         return Snapshot(
             rules: rules,
             devices: devices,
@@ -146,7 +169,9 @@ struct ComplianceBenchmarksService: Sendable {
                 failed: raw.failed,
                 unknown: raw.unknown ?? 0,
                 devices: raw.devices ?? 0,
-                passRate: raw.passRate ?? ""
+                passRate: raw.passRate ?? "",
+                ruleId: raw.ruleId ?? "",
+                benchmark: raw.benchmark ?? ""
             )
         }
     }
@@ -162,7 +187,8 @@ struct ComplianceBenchmarksService: Sendable {
                 deviceId: raw.deviceId ?? "",
                 rulesPassed: raw.rulesPassed ?? 0,
                 rulesFailed: raw.rulesFailed,
-                compliance: raw.compliance ?? ""
+                compliance: raw.compliance ?? "",
+                benchmark: raw.benchmark ?? ""
             )
         }
     }
@@ -174,6 +200,8 @@ struct ComplianceBenchmarksService: Sendable {
         let unknown: Int?
         let devices: Int?
         let passRate: String?
+        let ruleId: String?
+        let benchmark: String?
     }
 
     private struct RawDevice: Decodable {
@@ -182,5 +210,6 @@ struct ComplianceBenchmarksService: Sendable {
         let rulesPassed: Int?
         let rulesFailed: Int?
         let compliance: String?
+        let benchmark: String?
     }
 }

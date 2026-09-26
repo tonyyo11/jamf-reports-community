@@ -13,13 +13,17 @@ struct ComplianceBenchmarksView: View {
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var platformCapability: PlatformCapabilityService?
     @State private var platformAvailable = false
+    @State private var platformTenantLevel = false
     @State private var bridge = CLIBridge()
+    @State private var selectedBenchmark = ""
 
     /// Tri-state lock decision the view's body switches on.
     enum LockState: Equatable {
         case locked
         case unlockedNoData
         case unlockedWithData
+        /// A tenant-level integration, which Jamf Account cannot grant Compliance Benchmarks.
+        case needsEnvironmentLevel
     }
 
     var body: some View {
@@ -49,7 +53,8 @@ struct ComplianceBenchmarksView: View {
             isDemoMode: workspace.demoMode,
             experimentalOn: experimentalFeatures.isEnabled(.platformAPI),
             platformAvailable: platformAvailable,
-            hasData: snapshot.totalRules > 0 || snapshot.totalDevices > 0
+            hasData: snapshot.totalRules > 0 || snapshot.totalDevices > 0,
+            tenantLevel: platformTenantLevel
         )
     }
 
@@ -61,18 +66,21 @@ struct ComplianceBenchmarksView: View {
     /// - ``platformAvailable``: result of ``PlatformCapabilityService``
     ///   probe for the active profile.
     /// - ``hasData``: any cached rule or device data on disk.
+    /// - ``tenantLevel``: the profile's integration is tenant level, so collect skips benchmarks.
     static func decideLockState(
         isDemoMode: Bool,
         experimentalOn: Bool,
         platformAvailable: Bool,
-        hasData: Bool
+        hasData: Bool,
+        tenantLevel: Bool = false
     ) -> LockState {
         if isDemoMode {
             return hasData ? .unlockedWithData : .unlockedNoData
         }
         guard experimentalOn else { return .locked }
         guard platformAvailable else { return .locked }
-        return hasData ? .unlockedWithData : .unlockedNoData
+        if hasData { return .unlockedWithData }
+        return tenantLevel ? .needsEnvironmentLevel : .unlockedNoData
     }
 
     // MARK: - Body fragments
@@ -84,7 +92,10 @@ struct ComplianceBenchmarksView: View {
             lockedCard
         case .unlockedNoData:
             unlockedEmptyCard
+        case .needsEnvironmentLevel:
+            environmentLevelCard
         case .unlockedWithData:
+            if snapshot.benchmarks.count > 1 { benchmarkPicker }
             ruleAggregateCard
             ruleDistributionCard
             deviceTableCard
@@ -129,11 +140,31 @@ struct ComplianceBenchmarksView: View {
                 EmptyStateView(
                     systemImage: "checkmark.shield",
                     title: "No compliance snapshots yet",
-                    message: "Run `jamf-cli pro report compliance-rules` and `compliance-devices` to populate this screen.",
+                    message: "Collect this workspace to list its compliance benchmarks and "
+                        + "fetch each one's rule and device results.",
                     commands: [
-                        "jamf-cli pro report compliance-rules --output json",
-                        "jamf-cli pro report compliance-devices --output json",
+                        "jamf-cli pro compliance-benchmarks list --output json",
+                        "jamf-cli pro report compliance-rules \"<title>\" --output json",
+                        "jamf-cli pro report compliance-devices \"<title>\" --output json",
                     ]
+                )
+            }
+        }
+    }
+
+    private var environmentLevelCard: some View {
+        Card(padding: 24) {
+            VStack(alignment: .leading, spacing: 14) {
+                ComplianceBenchmarksView.experimentalBadge()
+                EmptyStateView(
+                    systemImage: "lock.shield",
+                    title: "Needs a platform environment integration",
+                    message: "This profile's Jamf Account integration is tenant level, and "
+                        + "Jamf Account does not offer the Compliance Benchmarks permission at "
+                        + "that level, so collect skips benchmarks. Create an integration at "
+                        + "platform environment level, then switch this profile to it with "
+                        + "Update credentials in Data Sources.",
+                    commands: []
                 )
             }
         }
@@ -141,12 +172,72 @@ struct ComplianceBenchmarksView: View {
 
     // MARK: - Unlocked sections
 
+    /// What the unlocked cards draw; see `displayed`.
+    private var shown: ComplianceBenchmarksService.Snapshot {
+        Self.displayed(snapshot, selected: selectedBenchmark)
+    }
+
+    /// The benchmark on screen when the snapshot holds several, else nil.
+    nonisolated static func activeBenchmark(
+        in snapshot: ComplianceBenchmarksService.Snapshot, selected: String
+    ) -> String? {
+        let benchmarks = snapshot.benchmarks
+        guard benchmarks.count > 1 else { return nil }
+        return benchmarks.contains(selected) ? selected : benchmarks[0]
+    }
+
+    /// One benchmark's rows when there are several (aggregates across benchmarks would
+    /// double-count devices), all rows when there is one or none.
+    nonisolated static func displayed(
+        _ snapshot: ComplianceBenchmarksService.Snapshot, selected: String
+    ) -> ComplianceBenchmarksService.Snapshot {
+        activeBenchmark(in: snapshot, selected: selected).map(snapshot.filtered(to:)) ?? snapshot
+    }
+
+    private var benchmarkPicker: some View {
+        let active = Self.activeBenchmark(in: snapshot, selected: selectedBenchmark) ?? ""
+        return Menu {
+            ForEach(snapshot.benchmarks, id: \.self) { name in
+                Button {
+                    selectedBenchmark = name
+                } label: {
+                    if name == active {
+                        Label(name, systemImage: "checkmark")
+                    } else {
+                        Text(name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "checklist").font(.system(size: 10, weight: .semibold))
+                Text(active).font(.callout.weight(.medium))
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 22)
+            .foregroundStyle(Theme.Colors.fg2)
+            .background(Color.white.opacity(0.07),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Theme.Colors.hairline, lineWidth: 0.5)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityLabel("Compliance benchmark")
+        .accessibilityValue(active)
+        .help("Switch which compliance benchmark this screen shows")
+    }
+
     private var ruleAggregateCard: some View {
-        let agg = snapshot.ruleAggregate
+        let agg = shown.ruleAggregate
         return Card {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
-                    SectionHeader(title: "Rule Pass / Fail", trailing: "\(snapshot.totalRules) rules")
+                    SectionHeader(title: "Rule Pass / Fail", trailing: "\(shown.totalRules) rules")
                     Spacer()
                     ComplianceBenchmarksView.experimentalBadge()
                 }
@@ -169,10 +260,10 @@ struct ComplianceBenchmarksView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Per-Rule Distribution")
-                ForEach(snapshot.rules.prefix(20)) { rule in
+                ForEach(shown.rules.prefix(20)) { rule in
                     ComplianceBenchmarksView.ruleBar(rule, contrast: contrast)
                 }
-                if snapshot.rules.count > 20 {
+                if shown.rules.count > 20 {
                     Text("Showing the first 20 rules. Full data is in the Excel workbook (\"Compliance Rules\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -182,10 +273,10 @@ struct ComplianceBenchmarksView: View {
     }
 
     private var deviceTableCard: some View {
-        let agg = snapshot.deviceAggregate
+        let agg = shown.deviceAggregate
         return Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Devices", trailing: "\(snapshot.totalDevices) devices")
+                SectionHeader(title: "Devices", trailing: "\(shown.totalDevices) devices")
                 HStack(spacing: 10) {
                     ComplianceBenchmarksView.deviceCounter(label: "Failing",
                                                            value: agg.failing,
@@ -197,10 +288,10 @@ struct ComplianceBenchmarksView: View {
                                                            value: agg.unknown,
                                                            color: Theme.Colors.warn)
                 }
-                ForEach(snapshot.devices.prefix(30)) { device in
+                ForEach(shown.devices.prefix(30)) { device in
                     ComplianceBenchmarksView.deviceRow(device, contrast: contrast)
                 }
-                if snapshot.devices.count > 30 {
+                if shown.devices.count > 30 {
                     Text("Showing the first 30 devices. Full data is in the Excel workbook (\"Compliance Devices\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -213,13 +304,14 @@ struct ComplianceBenchmarksView: View {
 
     private func reload() {
         snapshot = workspace.demoMode
-            ? Self.demoSnapshot
+            ? DemoData.complianceBenchmarksSnapshot
             : ComplianceBenchmarksService.load(profile: workspace.profile)
     }
 
     private func probePlatformAvailability() async {
         guard !workspace.demoMode, !workspace.profile.isEmpty else {
             platformAvailable = false
+            platformTenantLevel = false
             return
         }
         let service = platformCapability ?? PlatformCapabilityService(
@@ -227,6 +319,10 @@ struct ComplianceBenchmarksView: View {
         )
         if platformCapability == nil { platformCapability = service }
         platformAvailable = await service.isAvailable(for: workspace.profile)
+        let profile = workspace.profile
+        platformTenantLevel = await Task.detached {
+            ProfileAuthMethod.resolve(profile: profile)?.isTenantLevel == true
+        }.value
     }
 
     // MARK: - Static rendering helpers (kept static to keep view body type-check cheap)
@@ -234,7 +330,7 @@ struct ComplianceBenchmarksView: View {
     private static let setupCommands: [String] = [
         "jamf-cli config add-profile <name> --auth-method platform \\",
         "  --url <gateway-url> --environment-id <id>",
-        "Then enable both platform.enabled: true and experimental.platform_features_enabled: true",
+        "Then turn on Platform API in Settings → Experimental Features.",
     ]
 
     private static func lockReason(experimentalOn: Bool, platformAvailable: Bool) -> String {
@@ -404,35 +500,5 @@ struct ComplianceBenchmarksView: View {
         let name = device.device.isEmpty ? "Unnamed device" : device.device
         let failed = device.rulesFailed.map { "\($0) failed" } ?? "unknown failures"
         return "\(name), \(device.rulesPassed) passed, \(failed)"
-    }
-
-    // MARK: - Demo
-
-    private static var demoSnapshot: ComplianceBenchmarksService.Snapshot {
-        ComplianceBenchmarksService.Snapshot(
-            rules: [
-                .init(rule: "FileVault enabled", passed: 540, failed: 12,
-                      unknown: 0, devices: 552, passRate: "98%"),
-                .init(rule: "Gatekeeper enabled", passed: 540, failed: 12,
-                      unknown: 0, devices: 552, passRate: "98%"),
-                .init(rule: "Firewall enabled", passed: 510, failed: 42,
-                      unknown: 0, devices: 552, passRate: "92%"),
-                .init(rule: "SIP enabled", passed: 552, failed: 0,
-                      unknown: 0, devices: 552, passRate: "100%"),
-                .init(rule: "Secure boot strict", passed: 0, failed: nil,
-                      unknown: 552, devices: 552, passRate: ""),
-            ],
-            devices: [
-                .init(device: "demo-host-001", deviceId: "1",
-                      rulesPassed: 5, rulesFailed: 0, compliance: "100%"),
-                .init(device: "demo-host-002", deviceId: "2",
-                      rulesPassed: 4, rulesFailed: 1, compliance: "80%"),
-                .init(device: "demo-host-003", deviceId: "3",
-                      rulesPassed: 3, rulesFailed: nil, compliance: ""),
-            ],
-            rulesSourceFile: nil,
-            devicesSourceFile: nil,
-            snapshotDate: Date()
-        )
     }
 }

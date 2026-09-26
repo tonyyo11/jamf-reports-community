@@ -90,7 +90,7 @@ final class CollectHonestyTests: XCTestCase {
                 onLine: collector.append
             )
             XCTFail("a run that could not launch jamf-cli at all must not succeed")
-        } catch ReportEngineError.collectDead(_, let failedCount) {
+        } catch ReportEngineError.collectDead(_, let failedCount, _) {
             XCTAssertEqual(failedCount, 2, "both scan-tier kinds must count as failures")
         }
 
@@ -110,7 +110,7 @@ final class CollectHonestyTests: XCTestCase {
         try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
         let stub = try makeUnlaunchableStub()
 
-        try? await ReportEngine.collect(
+        _ = try? await ReportEngine.collect(
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.scan],
@@ -136,12 +136,30 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertNotEqual(sentinel, CLIBridge.exitCodeUnauthorized)
 
         let launchFailed = [ReportEngine.CollectOutcome(kind: "security", exitCode: sentinel)]
-        XCTAssertTrue(ReportEngine.isCollectDead(launchFailed),
+        XCTAssertTrue(ReportEngine.isCollectDead(launchFailed, savedKinds: []),
                       "an all-launch-failure run is a total outage")
-        XCTAssertFalse(ReportEngine.isCollectAuthDead(launchFailed),
+        XCTAssertFalse(ReportEngine.isCollectAuthDead(launchFailed, savedKinds: []),
                        "a launch failure says nothing about credentials")
-        XCTAssertFalse(ReportEngine.isCollectDead(launchFailed, skippedNotDueCount: 1),
-                       "the not-due veto must still apply")
+        XCTAssertFalse(
+            ReportEngine.isCollectDead(launchFailed, savedKinds: [], skippedNotDueCount: 1),
+            "the not-due veto must still apply"
+        )
+    }
+
+    /// Every command exited 0 and printed nothing, so nothing was saved: the run fetched no
+    /// data and must not read as healthy.
+    func testExitZeroWithNothingSavedIsADeadCollect() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let stub = try makeStub(exitCode: 0, stdout: "")
+
+        do {
+            try await ReportEngine.collect(
+                profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
+                force: true, locateJamfCLI: { stub }, onLine: { _ in })
+            XCTFail("a run that saved nothing must not succeed")
+        } catch ReportEngineError.collectDead(_, let failedCount, _) {
+            XCTAssertEqual(failedCount, 2)
+        }
     }
 
     /// A 401 alongside a launch failure is still auth-dead: the sentinel must
@@ -153,7 +171,7 @@ final class CollectHonestyTests: XCTestCase {
             ReportEngine.CollectOutcome(
                 kind: "computers", exitCode: CLIBridge.exitCodeUnauthorized),
         ]
-        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes))
+        XCTAssertTrue(ReportEngine.isCollectAuthDead(outcomes, savedKinds: []))
     }
 
     /// S3: the `[partial]` line names every kind whose data did not land, and a
@@ -206,7 +224,7 @@ final class CollectHonestyTests: XCTestCase {
         try writePeerCollect(at: Date())
         let collector = LogTextCollector()
 
-        try await ReportEngine.collect(
+        let disposition = try await ReportEngine.collect(
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             force: false,
@@ -214,6 +232,8 @@ final class CollectHonestyTests: XCTestCase {
             onLine: collector.append
         )
 
+        XCTAssertEqual(disposition, .stoodDown,
+                       "CollectRouter keys Protect on this; a stand-down is not a collect")
         let standDown = collector.texts.filter { $0.hasPrefix(ReportEngine.standDownMarker) }
         XCTAssertEqual(standDown.count, 1, "got: \(collector.texts)")
         XCTAssertTrue(try XCTUnwrap(standDown.first).contains("peer-mac"),
@@ -221,7 +241,7 @@ final class CollectHonestyTests: XCTestCase {
     }
 
     /// The watcher is what carries those facts to the scheduled-run caller,
-    /// since `collect` returns Void.
+    /// since `CollectRouter.run`, which the scheduled path calls, returns Void.
     func testWatcherRecognizesBothDishonestyMarkers() {
         let standDown = CollectHonestyWatcher()
         standDown.observe("[info] collecting security for prod")
@@ -295,6 +315,23 @@ final class CollectHonestyTests: XCTestCase {
         let sheets = CollectHonestyWatcher()
         sheets.observe(partialRunMarker(sheetFailures: 2))
         XCTAssertFalse(sheets.incomplete, "sheet failures are a report problem, not missing data")
+    }
+
+    /// A device scan that landed with a few devices missing is a landed kind, and a same-day
+    /// retry would find the scan not due. Over budget or stopped, nothing was written: that
+    /// is missing data and stays incomplete.
+    func testWatcherDoesNotRetryADeviceScanThatLandedWithGaps() {
+        let gaps = CollectHonestyWatcher()
+        gaps.observe("[partial] mdm-command-health: 1 of 4 devices did not respond")
+        XCTAssertFalse(gaps.incomplete, "the snapshot landed; a retry cannot rescan it")
+
+        let overBudget = CollectHonestyWatcher()
+        overBudget.observe("[partial] ddm-device-status: 2 of 4 devices failed — not written")
+        XCTAssertTrue(overBudget.incomplete)
+
+        let stopped = CollectHonestyWatcher()
+        stopped.observe("[partial] mdm-command-health: stopped after exit 5 — not written")
+        XCTAssertTrue(stopped.incomplete)
     }
 
     // MARK: - S2: a summary that never landed
@@ -440,6 +477,49 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertTrue(written.isEmpty, "a cache-only summary must not be written: \(written)")
     }
 
+    /// Same run with a cached `computers` snapshot: the device scan then lands an EMPTY
+    /// ddm-device-status for a fleet with no DDM-enabled Mac. That comes from cached
+    /// inventory, not from a source landing, so it must not let the summary be written.
+    func testEmptyDeviceScanSnapshotDoesNotCountAsASourceLanding() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let dataDir = try WorkspacePaths.dataDir(for: profile)
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        let stampFormatter = DateFormatter()
+        stampFormatter.locale = Locale(identifier: "en_US_POSIX")
+        stampFormatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        let stamp = stampFormatter.string(from: Date().addingTimeInterval(-86_400))
+        let payload: [[String: Any]] = [["section": "summary", "data": [
+            "total_devices": 250, "filevault_encrypted": 240, "gatekeeper_enabled": 250,
+            "sip_enabled": 249, "firewall_enabled": 245,
+        ]]]
+        try JSONSerialization.data(withJSONObject: payload)
+            .write(to: secDir.appendingPathComponent("security_\(stamp).json"))
+        let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: computersDir, withIntermediateDirectories: true)
+        let computers = #"[{"id":"1","general":{"name":"Mac-1","managementId":"m1","#
+            + #""declarativeDeviceManagementEnabled":false}}]"#
+        try Data(computers.utf8)
+            .write(to: computersDir.appendingPathComponent("computers_\(stamp).json"))
+        let stub = try makeStub(exitCode: 2, stdout: "")
+        let collector = LogTextCollector()
+
+        try await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
+            force: true, locateJamfCLI: { stub }, onLine: collector.append
+        )
+
+        XCTAssertTrue(collector.texts.contains { $0 == "[ok] ddm-device-status: 0 device(s)" },
+                      "the scan must have landed its empty snapshot; got: \(collector.texts)")
+        XCTAssertTrue(collector.texts.contains {
+            $0.hasPrefix(ReportEngine.summaryNotWrittenMarker) && $0.contains("no source landed")
+        }, "got: \(collector.texts)")
+        let summaries = try WorkspacePaths.summariesDir(for: profile)
+        let written = (try? FileManager.default.contentsOfDirectory(atPath: summaries.path)) ?? []
+        XCTAssertTrue(written.isEmpty, "a cache-only summary must not be written: \(written)")
+    }
+
     /// A workspace with no config.yaml skips the emit entirely — also a run that
     /// did not advance Trends, and also silent before this.
     func testCollectWithoutConfigSaysTheSummaryWasNotWritten() async throws {
@@ -573,7 +653,7 @@ final class CollectHonestyTests: XCTestCase {
         let stub = try makeStub(exitCode: 4)
         let collector = LogTextCollector()
 
-        try? await ReportEngine.collect(
+        _ = try? await ReportEngine.collect(
             profile: profile,
             workspacePaths: WorkspacePaths.self,
             tiers: [.inventory],

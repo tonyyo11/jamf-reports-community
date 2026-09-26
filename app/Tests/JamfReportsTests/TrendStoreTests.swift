@@ -76,11 +76,18 @@ final class TrendStoreTests: XCTestCase {
         XCTAssertEqual(store.points(metric: .activeDevices).map(\.value), [0])
     }
 
-    func testActiveDevicesDemoSeriesUsesTotalDevicesTrend() {
+    /// Active is the fleet minus its stale Macs, live and demo alike; the demo
+    /// used to plot the whole fleet under Active Devices.
+    func testActiveDevicesDemoSeriesExcludesStaleMacs() {
         let points = TrendDemoSeries.points(for: .activeDevices, range: .all)
 
-        XCTAssertEqual(points.count, min(TrendDemoSeries.dates.count, DemoData.totalDevicesTrend.count))
-        XCTAssertEqual(points.map(\.value), DemoData.totalDevicesTrend)
+        XCTAssertEqual(points.count,
+                       min(TrendDemoSeries.dates.count, DemoData.activeDevicesTrend.count))
+        XCTAssertEqual(points.map(\.value), DemoData.activeDevicesTrend)
+        XCTAssertEqual(DemoData.activeDevicesTrend.last, 498)
+        for (active, total) in zip(DemoData.activeDevicesTrend, DemoData.totalDevicesTrend) {
+            XCTAssertLessThan(active, total)
+        }
     }
 
     func testDemoPointsClampMismatchedDateAndValueArrays() {

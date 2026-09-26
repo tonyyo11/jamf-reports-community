@@ -31,7 +31,8 @@ struct PatchView: View {
                 kicker: "Operations",
                 title: "Patch Compliance",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is frozen on purpose; an age warning on it is noise.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
@@ -50,7 +51,11 @@ struct PatchView: View {
             } else {
                 kpiGrid
                 patchTitlesCard
-                patchVelocityCard
+                // Velocity needs dated patch history, which the demo does not
+                // have; the card would only show its placeholder.
+                if !workspace.demoMode {
+                    patchVelocityCard
+                }
                 if !snapshot.failures.isEmpty {
                     recentFailuresCard
                 }
@@ -86,13 +91,19 @@ struct PatchView: View {
     }
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : PatchStatusService.load(profile: workspace.profile)
-        if !workspace.demoMode {
-            let rows = PatchReleaseDateService.load(profile: workspace.profile)
-            releaseLookup = PatchReleaseDateService.releaseDateLookup(from: rows)
+        guard !workspace.demoMode else {
+            snapshot = DemoData.patchStatus
+            releaseLookup = DemoData.patchReleaseLookup
+            return
         }
+        snapshot = PatchStatusService.load(profile: workspace.profile)
+        let rows = PatchReleaseDateService.load(profile: workspace.profile)
+        releaseLookup = PatchReleaseDateService.releaseDateLookup(from: rows)
+    }
+
+    /// The date Days Behind counts to: the demo's own "now", or today.
+    private var daysBehindReferenceDate: Date {
+        workspace.demoMode ? DemoData.referenceDate : Date()
     }
 
     /// Computes patch adoption velocity off-main. Demo mode shows no
@@ -117,22 +128,6 @@ struct PatchView: View {
         guard workspace.profile == profile else { return }
         velocity = computed
     }
-
-    private static let demoSnapshot = PatchStatusService.Snapshot(
-        titles: [
-            PatchStatusRow(title: "Firefox", id: "123", onLatest: 280, onOther: 45, total: 325, latest: "132.0.2", compliancePct: "86%"),
-            PatchStatusRow(title: "Google Chrome", id: "124", onLatest: 420, onOther: 35, total: 455, latest: "131.0.6778.108", compliancePct: "92%"),
-            PatchStatusRow(title: "Microsoft Office 365", id: "125", onLatest: 150, onOther: 200, total: 350, latest: "16.91", compliancePct: "43%"),
-            PatchStatusRow(title: "Adobe Acrobat", id: "126", onLatest: 95, onOther: 5, total: 100, latest: "2024.004.20272", compliancePct: "95%")
-        ],
-        failures: [
-            PatchFailureRow(policy: "Microsoft Office 365", policyId: "125", device: "MacBook-Pro-001", deviceId: "1001", statusDate: "2025-01-08", attempt: 3, lastAction: "Retrying", serial: "C02Z12345678", osVersion: "15.4.1", username: "jdoe"),
-            PatchFailureRow(policy: "Firefox", policyId: "123", device: "iMac-Lab-042", deviceId: "1042", statusDate: "2025-01-07", attempt: 2, lastAction: "Failed", serial: "C02Y87654321", osVersion: "14.7.5", username: ""),
-            PatchFailureRow(policy: "Microsoft Office 365", policyId: "125", device: "MacBook-Air-199", deviceId: "1199", statusDate: "2025-01-06", attempt: 1, lastAction: "Download Failed", serial: "C02X11223344", osVersion: "15.4.1", username: "asmith")
-        ],
-        sourceFile: nil,
-        snapshotDate: Date()
-    )
 
     // MARK: - Sections
 
@@ -239,7 +234,8 @@ struct PatchView: View {
 
                     TableColumn("Days Behind") { title in
                         let dateStr = releaseLookup[title.id] ?? ""
-                        let days = PatchReleaseDateService.daysBehind(releaseDate: dateStr)
+                        let days = PatchReleaseDateService.daysBehind(
+                            releaseDate: dateStr, referenceDate: daysBehindReferenceDate)
                         // >30 days behind the latest release is the warn threshold —
                         // matches the failure-count warn styling in the Failures column.
                         Text(days.map { "\($0)d" } ?? "—")

@@ -346,14 +346,20 @@ func partialRunMarker(sheetFailures: Int) -> String {
 /// data that did not land.
 let sheetFailureMarkerSuffix = "sheet failure(s) — see lines above"
 
+/// Ends the `[partial]` line a device scan logs when its snapshot landed with a few devices
+/// missing, inside the failure budget. `CollectHonestyWatcher` skips it: the kind did land,
+/// and a same-day retry cannot rescan, since the scan's cadence floor makes it not due.
+let deviceScanGapsMarkerSuffix = "devices did not respond"
+
 /// Watches a run's log lines for the two engine markers that mean a run exiting
 /// 0 did NOT do what "success" implies: it stood down for another machine
 /// (nothing was collected at all), or it could not write the day's summary
 /// (Trends did not move).
 ///
-/// This exists because `ReportEngine.collect` returns `Void` — `CollectRouter`'s
-/// typealias and its test spies depend on that signature, so the facts have to
-/// travel out on the log stream the caller is already reading. A locked box
+/// This exists because `CollectRouter.run` returns `Void`: `ReportEngine.collect`'s
+/// `CollectDisposition` stops at the router, which uses it only to decide whether
+/// Protect follows, so the facts have to travel out on the log stream the caller
+/// is already reading. A locked box
 /// rather than a captured `var` because `onLine` is `@Sendable` and the engine
 /// calls it from its process-reader queues.
 final class CollectHonestyWatcher: @unchecked Sendable {
@@ -370,7 +376,9 @@ final class CollectHonestyWatcher: @unchecked Sendable {
             lock.withLock { standDown = true }
             return
         }
-        guard line.hasPrefix("[partial]"), !line.hasSuffix(sheetFailureMarkerSuffix) else { return }
+        guard line.hasPrefix("[partial]"),
+              !line.hasSuffix(sheetFailureMarkerSuffix),
+              !line.hasSuffix(deviceScanGapsMarkerSuffix) else { return }
         let summary = line.hasPrefix(ReportEngine.summaryNotWrittenMarker)
         lock.withLock {
             partial = true
@@ -385,8 +393,9 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     /// The summary write failed, so the trend chart did not advance.
     var summaryWriteFailed: Bool { lock.withLock { summaryFailed } }
 
-    /// A source or the summary did not land, so a same-day retry is worth it. A stand-down
-    /// and a report's sheet failures are not missing data and never set it.
+    /// A source or the summary did not land, so a same-day retry is worth it. A stand-down,
+    /// a report's sheet failures and a device scan that landed with gaps are not missing data
+    /// a retry would fetch, and never set it.
     var incomplete: Bool { lock.withLock { partial } }
 
     /// Whether the run may claim it refreshed the fleet's data. False for

@@ -99,6 +99,42 @@ final class PlatformOnlyKindTests: XCTestCase {
         XCTAssertNil(PlatformCapabilityService.authMethod(data: Data("nope".utf8), profile: "p"))
     }
 
+    // MARK: - Tenant-level integrations (2.8.1)
+
+    /// Jamf Account offers neither the Compliance Benchmarks nor the Blueprints permission to a
+    /// tenant-level integration, so freshness must not expect those kinds from one.
+    func testFreshnessExcludesBenchmarkAndBlueprintKindsAtTenantLevel() {
+        let kinds = Set(WorkspaceStore.expectedKinds(
+            skipExpensive: false, authMethod: "platform", tenantLevel: true))
+        for kind in ["compliance-rules", "compliance-devices", "blueprint-status"] {
+            XCTAssertFalse(kinds.contains(kind), "\(kind) cannot be granted at tenant level")
+        }
+        XCTAssertTrue(kinds.contains("ddm-status"),
+                      "DDM reporting still answered tenant credentials (2026-09-04)")
+        XCTAssertTrue(kinds.contains("security"))
+    }
+
+    func testEnvironmentLevelKindsAreAllKnownCollectKinds() {
+        for kind in ReportEngine.environmentLevelKinds {
+            XCTAssertTrue(ReportEngine.knownCollectKinds.contains(kind), kind)
+        }
+    }
+
+    func testTenantLevelComesFromTheProfilesScopeKeys() {
+        func level(_ keys: [String: String]) -> Bool? {
+            var row: [String: Any] = ["name": "prod", "auth-method": "platform"]
+            for (key, value) in keys { row[key] = value }
+            let data = (try? JSONSerialization.data(withJSONObject: [row])) ?? Data()
+            return PlatformCapabilityService.isTenantLevel(data: data, profile: "prod")
+        }
+        XCTAssertEqual(level(["tenant-id": "t1"]), true)
+        XCTAssertEqual(level(["environment-id": "e1"]), false)
+        XCTAssertEqual(level([:]), false, "organization level names neither")
+        XCTAssertEqual(level(["tenant-id": "t1", "environment-id": "e1"]), false,
+                       "an environment ID wins, as it does on the wire")
+        XCTAssertNil(PlatformCapabilityService.isTenantLevel(data: Data("nope".utf8), profile: "p"))
+    }
+
     // MARK: - Manual collect tiers
 
     func testManualCollectTargetsOnlyTheTiersBehind() {

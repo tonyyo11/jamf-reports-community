@@ -6,30 +6,32 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Build-number and channel rules, shared with build-pkg.sh and
+# scripts/package-dmg.sh (scripts/test-versioning.zsh covers them in CI).
+# shellcheck source-path=SCRIPTDIR source=scripts/lib/versioning.zsh
+source "${PWD}/scripts/lib/versioning.zsh"
+
 CONFIG="${1:-release}"
 
 # Marketing version (CFBundleShortVersionString) — bumped per milestone.
 # This is the single source of truth for the user-facing semver; keep it in
 # sync with AppVersionState.fallbackVersion (a test enforces this).
-MARKETING_VERSION="${MARKETING_VERSION:-2.8.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-2.8.1}"
 
 # Build number (CFBundleVersion). Always a monotonically increasing integer
 # (git commit count), independent of the marketing version — this matches
 # Apple's CURRENT_PROJECT_VERSION model and keeps every build comparable.
 # Do NOT set this to the marketing version for releases (that made a beta's
 # integer build look "newer" than its own release to version-comparing tools).
-BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 0)}"
+# A non-empty BUILD_NUMBER in the environment wins; outside a git checkout it is 0.
+BUILD_NUMBER="$(jr_build_number)"
 
 # Release channel. Set RELEASE=1 for a public release build; otherwise the
 # build is a beta and downstream build-pkg.sh appends -betaN.
 # This is stamped into Info.plist (JRReleaseChannel) so the packaging scripts
 # read the channel from the .app rather than guessing from the build number.
-RELEASE="${RELEASE:-0}"
-if [[ "$RELEASE" == "1" ]]; then
-  RELEASE_CHANNEL="release"
-else
-  RELEASE_CHANNEL="beta"
-fi
+# Only exactly "1" is a release; "true", "yes" and the like build a beta.
+RELEASE_CHANNEL="$(jr_release_channel "${RELEASE:-0}")"
 
 echo "→ version ${MARKETING_VERSION} build ${BUILD_NUMBER} (${RELEASE_CHANNEL})"
 echo "→ swift build (${CONFIG})"
@@ -86,10 +88,12 @@ cp "LaunchAgents/com.github.tonyyo11.jamf-reports-community.tick.plist" \
 # shipped ZERO fonts under swiftbuild, so IBM Plex Mono never registered and every
 # mono label fell back to a wider system font (overflowing segmented controls and
 # tracked-label rows). `-type f` + the extension filter keep this to real assets.
+# `.txt`/`.md` are the LICENSE, NOTICE and THIRD_PARTY_NOTICES files the
+# Acknowledgements window reads; without them it shows "Resource not bundled".
 if [[ -d "$BUNDLE" ]]; then
   find "$BUNDLE" -type f \
     \( -name "*.ttf" -o -name "*.otf" -o -name "*.png" -o -name "*.json" \
-       -o -name "*.mobileconfig" \) \
+       -o -name "*.mobileconfig" -o -name "*.txt" -o -name "*.md" \) \
     -print0 | while IFS= read -r -d '' asset; do
     cp "$asset" "$APP_OUT/Contents/Resources/"
   done

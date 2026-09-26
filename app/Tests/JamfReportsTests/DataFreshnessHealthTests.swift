@@ -196,8 +196,11 @@ final class DataFreshnessHealthTests: XCTestCase {
     // 1.24–1.27 Security Cloud gate on `pro report security`); an exit 8
     // (1.28+) is a policy refusal — the command is outside what the profile's
     // API publishes. Both fail identically on every retry, so remediation must
-    // not spend a collect on either. They stay visible: the banner reads
-    // `issues`, which is never filtered — only the re-collect tiers are.
+    // not spend a collect on either.
+    // A permanent recorded failure cause (rejected scope ID, unknown environment ID, endpoint
+    // not served, missing permission) is excluded the same way (2.8.1).
+    // They stay visible: the banner reads `issues`, which is never filtered — only the
+    // re-collect tiers are.
 
     func testNeverRetryableFailuresAreExcludedFromRemediationTargeting() throws {
         let profile = "exittwofilter"
@@ -242,6 +245,90 @@ final class DataFreshnessHealthTests: XCTestCase {
         let remediable = WorkspaceStore.excludingPermanentUsageFailures(issues, profile: profile)
         XCTAssertEqual(remediable.map(\.snapshotKind), ["computers"])
         XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(remediable), [.inventory])
+    }
+
+    /// Exit 3 (HTTP 401) means the stored credentials were rejected. Until someone
+    /// re-authenticates, every hourly retry repeats the same 401 against the server, so
+    /// remediation leaves those kinds to Collect now and the tick's same-day retries.
+    func testCredentialRejectionsAreExcludedFromRemediationTargeting() throws {
+        let profile = "exitthreefilter"
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-ExitThree-\(UUID().uuidString)", isDirectory: true)
+        let workspacesRoot = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspacesRoot.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let stateDir = try WorkspacePaths.stateDir(for: profile)
+        let store = StateFileStore(directory: stateDir)
+        // Rejected credentials on kinds in two tiers — neither can land before a re-auth.
+        store.record(
+            .failed(exitCode: CLIBridge.exitCodeUnauthorized), report: "security", at: now)
+        store.record(
+            .failed(exitCode: CLIBridge.exitCodeUnauthorized),
+            report: "patch-device-failures", at: now)
+        // A transient (retryable-class) failure on a different kind — must stay.
+        store.record(.failed(exitCode: 1), report: "computers", at: now)
+
+        let issues = [
+            DataFreshnessIssue(
+                snapshotKind: "security", tier: .refresh, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            ),
+            DataFreshnessIssue(
+                snapshotKind: "patch-device-failures", tier: .scan, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            ),
+            DataFreshnessIssue(
+                snapshotKind: "computers", tier: .inventory, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            )
+        ]
+
+        let remediable = WorkspaceStore.excludingPermanentUsageFailures(issues, profile: profile)
+        XCTAssertEqual(remediable.map(\.snapshotKind), ["computers"])
+        XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(remediable), [.inventory])
+    }
+
+    /// Spec §9.5: a rejected scope ID, an unserved endpoint and a missing permission cannot be
+    /// fixed by retrying; a gateway edge block can.
+    func testPermanentFailureCausesAreExcludedFromRemediationTargeting() throws {
+        let profile = "causefilter"
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Cause-\(UUID().uuidString)", isDirectory: true)
+        let workspacesRoot = root.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspacesRoot.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+        setenv("JRC_TEST_WORKSPACES_ROOT", workspacesRoot.path, 1)
+        defer {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        func record(_ report: String, _ kind: FailureCause.Kind, exit: Int32) {
+            store.record(.failed(exitCode: exit), report: report, at: now,
+                         cause: FailureCause(kind: kind, names: [], hint: nil, exitCode: exit))
+        }
+        record("security", .missingPermission, exit: 5)
+        record("computers", .unknownEnvironment, exit: 4)
+        record("policies", .edgeBlocked, exit: 5)
+
+        let issues = ["security", "computers", "policies"].map {
+            DataFreshnessIssue(
+                snapshotKind: $0, tier: .inventory, kind: .failing,
+                lastSuccess: nil, consecutiveFailures: 2, lastFailure: now
+            )
+        }
+        let remediable = WorkspaceStore.excludingPermanentUsageFailures(issues, profile: profile)
+        XCTAssertEqual(remediable.map(\.snapshotKind), ["policies"])
     }
 
     func testNoExitTwoFailureLeavesIssuesUntouched() throws {
@@ -434,6 +521,15 @@ final class DataFreshnessHealthTests: XCTestCase {
         let issue = try XCTUnwrap(issues.first)
         XCTAssertTrue(issue.neverCollected)
         XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(issues), [issue.tier])
+    }
+
+    func testAnIssueCarriesItsKindsRecordedCause() {
+        let cause = FailureCause(kind: .unknownEnvironment, names: [], hint: nil, exitCode: 4)
+        let issues = DataFreshnessHealth.evaluate(
+            states: [KindCollectionState(kind: "security", lastSuccess: nil,
+                                         consecutiveFailures: 2, lastFailure: now, cause: cause)],
+            hasCollectedBefore: true, now: now)
+        XCTAssertEqual(issues.first?.cause, cause)
     }
 }
 

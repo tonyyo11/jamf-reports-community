@@ -242,6 +242,29 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertEqual(colorByState["PlanActive"], 0x007AFF)     // blue
     }
 
+    /// 2.8.1 visual pass: the donut legend and the Failed Plans pills printed
+    /// the raw enum (`PlanCompleted`; the pill upper-cased `PlanException` to
+    /// `PLANEXCEPTION`).
+    func testPlanStateDisplayNameReadsAsWords() {
+        let name = UpdateStatusService.planStateDisplayName
+        XCTAssertEqual(name("PlanCompleted"), "Completed")
+        XCTAssertEqual(name("PlanActive"), "Active")
+        XCTAssertEqual(name("PlanPending"), "Pending")
+        XCTAssertEqual(name("PlanFailed"), "Failed")
+        XCTAssertEqual(name("PlanException"), "Exception")
+        XCTAssertEqual(name("PlanCanceled"), "Canceled")
+        // A run-together all-caps word has no word boundary to find; it is not
+        // guessed at, so `PLANNED` cannot become `Ned`.
+        XCTAssertEqual(name("PLANNED"), "Planned")
+        XCTAssertEqual(name("PLAN_FAILED"), "Failed")
+        // Unknown states fall back to their words, acronyms kept.
+        XCTAssertEqual(name("PendingPlanValidation"), "Pending Plan Validation")
+        XCTAssertEqual(name("DDMPlanStart"), "DDM Plan Start")
+        XCTAssertEqual(name("Init"), "Init")
+        XCTAssertEqual(name("Plan"), "Plan")
+        XCTAssertEqual(name(""), "")
+    }
+
     /// Tests empty input handling.
     func testUpdateStatusServiceHandlesEmptyInput() throws {
         let tmp = FileManager.default.temporaryDirectory

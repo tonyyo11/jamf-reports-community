@@ -23,17 +23,30 @@ enum TickRunner {
         try Data().write(to: dir.appendingPathComponent(label), options: .atomic)
     }
 
-    /// Read and delete every marker. Filenames are labels; anything that fails
-    /// `isValidLabel` is removed and ignored.
-    static func consumeRunNowMarkers(dir: URL = runNowMarkerDir) -> Set<String> {
+    /// Every queued label, with its marker left on disk: a tick killed during an
+    /// earlier, longer run must not lose the requests queued behind it. Filenames
+    /// are labels; anything that fails `isValidLabel` is removed and ignored.
+    static func pendingRunNowLabels(dir: URL = runNowMarkerDir) -> Set<String> {
         let fm = FileManager.default
         let names = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
         var labels: Set<String> = []
         for name in names {
-            try? fm.removeItem(at: dir.appendingPathComponent(name))
-            if LaunchAgentWriter.isValidLabel(name) { labels.insert(name) }
+            if LaunchAgentWriter.isValidLabel(name) {
+                labels.insert(name)
+            } else {
+                try? fm.removeItem(at: dir.appendingPathComponent(name))
+            }
         }
         return labels
+    }
+
+    /// Delete one label's marker. The tick calls this once the run's start is
+    /// recorded and before the run begins, never after it ends: a run-now label is
+    /// due unconditionally, so a marker outliving a run that crashed the process
+    /// would re-run it on every wake.
+    static func clearRunNowMarker(label: String, dir: URL = runNowMarkerDir) {
+        guard LaunchAgentWriter.isValidLabel(label) else { return }
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent(label))
     }
 
     /// Spawn `JamfReports --tick --now <label>` as a child. With `wait`, stream

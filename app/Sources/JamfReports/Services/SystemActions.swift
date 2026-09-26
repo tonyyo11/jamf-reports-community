@@ -29,10 +29,31 @@ enum SystemActions {
     /// Surface a refused reveal/open so the click isn't silently swallowed.
     /// Posts on the main queue; `ContentView` turns it into a toast.
     private static func notifyDenied(_ url: URL, verb: String) {
-        let message = "Can't \(verb) \"\(url.lastPathComponent)\" — it's outside the app's "
-            + "allowed folders (~/Jamf-Reports, LaunchAgents, Logs)."
+        notify(refusalMessage(.outsideAllowedFolders, url: url, verb: verb))
+    }
+
+    private static func notify(_ message: String) {
         NotificationCenter.default.post(
             name: .systemActionDenied, object: nil, userInfo: ["message": message])
+    }
+
+    /// Why a programmatic reveal/open was refused.
+    enum Refusal: Equatable {
+        case outsideAllowedFolders
+        /// Inside the allow-list, but nothing is there yet — a workspace folder
+        /// the app creates on first use, such as run logs before the first run.
+        case missingFolder
+    }
+
+    /// The toast for a refused action. Pure, so tests can pin the wording.
+    static func refusalMessage(_ refusal: Refusal, url: URL, verb: String) -> String {
+        switch refusal {
+        case .outsideAllowedFolders:
+            return "Can't \(verb) \"\(url.lastPathComponent)\" — it's outside the app's "
+                + "allowed folders (~/Jamf-Reports, LaunchAgents, Logs)."
+        case .missingFolder:
+            return "Can't \(verb) \"\(url.lastPathComponent)\" — the folder does not exist yet."
+        }
     }
 
     /// Returns true when `url` should be opened directly via `NSWorkspace.open`
@@ -64,11 +85,15 @@ enum SystemActions {
         NSWorkspace.shared.open(resolved)
     }
 
-    /// Open a directory in Finder.
+    /// Open a directory in Finder. A missing folder inside the allow-list gets
+    /// its own message: it used to read as "outside the allowed folders".
     static func openFolder(_ url: URL) {
-        guard let resolved = canonicalize(url),
-              FileManager.default.fileExists(atPath: resolved.path) else {
+        guard let resolved = canonicalize(url) else {
             notifyDenied(url, verb: "open")
+            return
+        }
+        guard FileManager.default.fileExists(atPath: resolved.path) else {
+            notify(refusalMessage(.missingFolder, url: url, verb: "open"))
             return
         }
         NSWorkspace.shared.open(resolved)

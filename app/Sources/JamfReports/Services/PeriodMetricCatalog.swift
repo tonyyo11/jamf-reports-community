@@ -49,7 +49,9 @@ enum PeriodMetricCatalog {
         addPercent("fileVaultPct", "FileVault encrypted", \.fileVaultPct)
         addPercent("compliancePct", "Compliance rate", \.compliancePct)
         addPercent("osCurrentPct", "On current macOS", \.osCurrentPct)
-        addPercent("patchPct", "Patch compliance", \.patchPct)
+        // summary.json's patchPct is an unweighted mean of per-title compliance; the
+        // Patch screen and the Executive Summary weight by devices, so they disagree.
+        addPercent("patchPct", "Patch compliance (avg per title)", \.patchPct)
         addPercent("sipPct", "SIP enabled", \.sipPct)
         addPercent("firewallPct", "Firewall enabled", \.firewallPct)
         addPercent("gatekeeperPct", "Gatekeeper enabled", \.gatekeeperPct)

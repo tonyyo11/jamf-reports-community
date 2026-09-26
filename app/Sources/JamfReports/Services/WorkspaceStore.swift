@@ -10,7 +10,6 @@ final class WorkspaceStore {
     var profile: String
     var profiles: [JamfCLIProfile]
     var schedules: [Schedule]
-    var sheetCatalog: [SheetGroup]
     var customEAs: [CustomEA]
     var columnMappings: [ColumnMapping]
     var demoMode: Bool
@@ -28,6 +27,17 @@ final class WorkspaceStore {
     var selectedScoreCards: [TrendSeries.Metric] {
         didSet { Self.persistScoreCards(selectedScoreCards) }
     }
+    /// Overview section order and visibility, persisted app-wide like the
+    /// score cards. See `OverviewLayout`.
+    var overviewLayout: OverviewLayout {
+        didSet {
+            UserDefaults.standard.set(overviewLayout.serialized, forKey: Self.overviewLayoutKey)
+        }
+    }
+    /// Set by the Customize screen's "Customize Overview" button. The Overview
+    /// opens its editor when it next appears and clears the flag — a
+    /// notification would arrive before the Overview exists to hear it.
+    var overviewCustomizeRequested = false
     /// Heavy collection tiers (.inventory / .scan) whose newest snapshot is
     /// older than `heavyTierStaleDays`. Drives the Overview "data is stale —
     /// refresh now?" prompt. Heavy tiers are never collected automatically
@@ -55,6 +65,9 @@ final class WorkspaceStore {
     var workspaceInitMessage: String?
     /// Seam for tests; production uses the real SMAppService registrar.
     let tickerRegistrar: any TickerRegistrar
+    /// Names of this Mac's jamf-cli profiles, for the demo cleanup. Injected so a
+    /// test can say which profiles jamf-cli knows without a jamf-cli on the host.
+    private let jamfCLIProfileNames: @MainActor () -> Set<String>
     var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
     var toast: Toast? = nil
@@ -97,6 +110,14 @@ final class WorkspaceStore {
     /// UserDefaults key for the Overview score-card selection (comma-separated
     /// `TrendSeries.Metric` raw values — same serialization style as `TabVisibility`).
     nonisolated static let scoreCardsKey = "com.jamfreports.selectedScoreCards"
+
+    /// UserDefaults key for the Overview section layout (JSON, see `OverviewLayout`).
+    nonisolated static let overviewLayoutKey = "com.jamfreports.overviewLayout"
+
+    /// Score cards on a first launch, and after Reset in the Overview editor.
+    nonisolated static let defaultScoreCards: [TrendSeries.Metric] = [
+        .stability, .activeDevices, .fileVault, .compliance,
+    ]
 
     nonisolated static func persistScoreCards(_ metrics: [TrendSeries.Metric]) {
         UserDefaults.standard.set(
@@ -204,8 +225,14 @@ final class WorkspaceStore {
 
     // MARK: Init
 
-    init(demoMode: Bool? = nil, tickerRegistrar: any TickerRegistrar = SMAppServiceRegistrar()) {
+    init(
+        demoMode: Bool? = nil,
+        tickerRegistrar: any TickerRegistrar = SMAppServiceRegistrar(),
+        jamfCLIProfileNames: @escaping @MainActor () -> Set<String>
+            = WorkspaceStore.liveJamfCLIProfileNames
+    ) {
         self.tickerRegistrar = tickerRegistrar
+        self.jamfCLIProfileNames = jamfCLIProfileNames
         // MFS-2: one-shot Spotlight + permissions backfill on existing
         // workspaces. Gated on a per-version UserDefaults sentinel so the
         // walk runs at most once per app version. Wave 1 covers the
@@ -230,17 +257,18 @@ final class WorkspaceStore {
         self.schedules = isDemo ? DemoData.scheduledRuns
             : Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
                 profiles: realProfiles, policy: AutomationPolicy.current()))
-        self.sheetCatalog = DemoData.sheetCatalog
         self.customEAs = DemoData.customEAs
         self.columnMappings = DemoData.columnMappings
-        self.selectedScoreCards = Self.loadPersistedScoreCards()
-            ?? [.stability, .activeDevices, .fileVault, .compliance]
+        self.selectedScoreCards = Self.loadPersistedScoreCards() ?? Self.defaultScoreCards
+        self.overviewLayout = OverviewLayout.parse(
+            UserDefaults.standard.string(forKey: Self.overviewLayoutKey))
         let jamfCLI = JamfCLIInstaller.currentInstallation()
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
         self.jamfCLIVerificationFailed = jamfCLI?.codesignVerified == false
         self.jamfCLISpecProVersion = jamfCLI?.specProVersion
+        if isDemo { applyDemoConfig() }
     }
 
     /// Managed schedules come from the policy; hand-built from the store.
@@ -290,6 +318,7 @@ final class WorkspaceStore {
     /// Reload from disk — called from the sidebar refresh and after onboarding.
     /// Respects an explicit user demo-mode preference set via `setDemoMode(_:)`.
     func reloadFromDisk() {
+        let wasDemo = demoMode
         refreshToolStatus()
         let real = ProfileService.discoverLocal()
         let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
@@ -309,6 +338,27 @@ final class WorkspaceStore {
             }
             org = Self.org(for: real.first(where: { $0.name == profile }))
             Task { await refreshAuthStatus() }
+            if wasDemo { restoreLiveStateAfterDemo() }
+        }
+    }
+
+    /// Entering demo mode swaps in the demo's config and empties the health strip. Leaving
+    /// it, whether through `setDemoMode(false)` or setup finishing under the demo's name,
+    /// reloaded neither. Until Config opened or the profile changed, the demo's benchmark and
+    /// agent labelled the live screens, and Devices scored real Macs against the demo agent's
+    /// connected_value. The demo values are dropped first, so a failed load cannot keep them.
+    private func restoreLiveStateAfterDemo() {
+        configState = .defaultState
+        _loadedDoc = nil
+        _savedState = nil
+        rebuildColumnMappings()
+        rebuildCustomEAs()
+        Task {
+            do { try await loadConfig() } catch {
+                configError = error.localizedDescription
+            }
+            await refreshAutomationHealth()
+            await refreshDataFreshness()
         }
     }
 
@@ -320,6 +370,14 @@ final class WorkspaceStore {
             profile = DemoData.org.profile
             profiles = DemoData.cliProfiles
             schedules = DemoData.scheduledRuns
+            // The health strip reads a shared model that only the refresh
+            // passes reset. Without this, the live tenant's failing kinds and
+            // overdue schedules stayed on screen through the whole demo.
+            AutomationHealthModel.shared.issues = []
+            AutomationHealthModel.shared.freshnessIssues = []
+            // The live config stayed loaded: its agent name and benchmark labelled
+            // demo screens, and Config's Save reused the real YAML document.
+            applyDemoConfig()
         } else {
             let cleanupMessage = cleanupDemoProfileArtifacts()
             reloadFromDisk()
@@ -331,6 +389,12 @@ final class WorkspaceStore {
 
     private func cleanupDemoProfileArtifacts() -> String? {
         let demoProfile = DemoData.org.profile
+        // A real jamf-cli profile can carry the demo's name. Its workspace and
+        // schedules are the operator's, not what an older demo build left.
+        guard !jamfCLIProfileNames().contains(demoProfile) else { return nil }
+        // So can a workspace this Mac's jamf-cli does not list. Removal is
+        // permanent, so data only a collect or backup writes keeps it too.
+        guard !Self.workspaceHoldsCollectedData(profile: demoProfile) else { return nil }
         let store = ScheduleStore()
         let all = store.load()
         let kept = all.filter { $0.profile != demoProfile }
@@ -360,6 +424,46 @@ final class WorkspaceStore {
             return "Could not remove demo workspace \(demoProfile): \(error.localizedDescription)"
         }
         return nil
+    }
+
+    nonisolated static func liveJamfCLIProfileNames() -> Set<String> {
+        Set(ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]).map(\.name))
+    }
+
+    /// Whether `profile`'s workspace holds what only a collect, a CSV archive or a
+    /// backup writes: a snapshot, a trend summary or archived CSV, a backup, or a
+    /// retention archive. Older demo builds left a config.yaml, logs and empty
+    /// folders under the demo's name, never these. So one of them means the folder
+    /// is an operator's, whatever this Mac's jamf-cli lists: a shared or synced root
+    /// another Mac collects into, or a workspace kept after its profile was removed.
+    nonisolated static func workspaceHoldsCollectedData(profile: String) -> Bool {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return false }
+        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
+            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let kinds = visibleEntries(of: dataDir).filter {
+            let name = $0.lastPathComponent
+            return name != "state" && name != "sofa" && !name.hasPrefix("_")
+        }
+        if kinds.contains(where: { kind in
+            visibleEntries(of: kind).contains { $0.pathExtension == "json" }
+        }) {
+            return true
+        }
+        let historical = (try? WorkspacePaths.historicalDir(for: profile))
+            ?? workspace.appendingPathComponent("snapshots", isDirectory: true)
+        if let files = FileManager.default.enumerator(
+            at: historical, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]),
+           files.contains(where: { ["json", "csv"].contains(($0 as? URL)?.pathExtension ?? "") }) {
+            return true
+        }
+        return ["backups", "_archive"].contains { name in
+            !visibleEntries(of: workspace.appendingPathComponent(name, isDirectory: true)).isEmpty
+        }
+    }
+
+    private nonisolated static func visibleEntries(of directory: URL) -> [URL] {
+        (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
     }
 
     /// Move an unparseable `config.yaml` aside and reseed the default from the
@@ -534,7 +638,8 @@ final class WorkspaceStore {
     }
 
     func autoUpdateJamfCLIIfNeeded() async {
-        guard !didAutoUpdateJamfCLI else { return }
+        // Demo mode runs no jamf-cli, and Settings disables the update controls there.
+        guard !didAutoUpdateJamfCLI, !demoMode else { return }
         didAutoUpdateJamfCLI = true
         guard UserDefaults.standard.bool(forKey: "autoUpdateJamfCLI") else { return }
         await updateJamfCLI()
@@ -546,6 +651,12 @@ final class WorkspaceStore {
     /// file doesn't exist yet (new workspace). Other errors are rethrown.
     func loadConfig() async throws {
         configRepairedKeys = []
+        // A config.yaml under the demo profile's name is not the demo's, and
+        // reading it would put real values on demo screens.
+        if demoMode {
+            applyDemoConfig()
+            return
+        }
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
@@ -566,6 +677,10 @@ final class WorkspaceStore {
 
     /// Flush current configState (+ any column mapping edits) to disk atomically.
     func saveConfig() async throws {
+        // Demo edits stay in memory. Writing would create the fictional profile's
+        // config.yaml in the real workspaces root, where profile discovery and the
+        // background item's all-profiles runs treat it as a real workspace.
+        guard !demoMode else { return }
         syncColumnMappingsToState()
         let newDoc = try ConfigService.save(
             profile: profile,
@@ -579,12 +694,44 @@ final class WorkspaceStore {
         configRepairedKeys = newDoc.repairedKeys.sorted()
     }
 
+    /// The demo workspace's config in place of whatever was loaded before, with
+    /// no document to write back to.
+    private func applyDemoConfig() {
+        configState = DemoData.configState
+        _loadedDoc = nil
+        _savedState = DemoData.configState
+        configError = nil
+        configRepairedKeys = []
+        rebuildColumnMappings()
+        rebuildCustomEAs()
+    }
+
     /// Discard in-memory edits and restore to the state at the last load/save.
     func revert() {
         configState = _savedState ?? .defaultState
         rebuildColumnMappings()
         rebuildCustomEAs()
         configError = nil
+    }
+
+    /// Takes the column mappings a re-scaffold just wrote to config.yaml into the working
+    /// config and its saved baseline, and rebuilds the Columns tab. Other unsaved edits stay.
+    /// Before, the Columns tab kept the old mappings, and the Save the re-scaffold toast asks
+    /// for wrote them back over the merge.
+    func adoptScaffoldedColumns(from saved: ConfigState) {
+        guard !demoMode else { return }
+        configState.columns = saved.columns
+        configState.mobileColumns = saved.mobileColumns
+        configState.failuresCountColumn = saved.failuresCountColumn
+        configState.failuresListColumn = saved.failuresListColumn
+        _savedState?.columns = saved.columns
+        _savedState?.mobileColumns = saved.mobileColumns
+        _savedState?.failuresCountColumn = saved.failuresCountColumn
+        _savedState?.failuresListColumn = saved.failuresListColumn
+        if let reloaded = try? ConfigService.load(profile: profile) {
+            _loadedDoc = reloaded.document
+        }
+        rebuildColumnMappings()
     }
 
     // MARK: Mutations
@@ -672,6 +819,11 @@ final class WorkspaceStore {
     /// Reads the device count from the most recent summary JSON for the given profile.
     /// Returns 0 if no summary exists or the file cannot be read. Does not trigger a live call.
     func deviceCount(for profile: String) -> Int {
+        if demoMode {
+            guard let index = DemoData.cliProfiles.firstIndex(where: { $0.name == profile })
+            else { return 0 }
+            return DemoData.deviceCount(forProfileAt: index)
+        }
         guard let dir = try? WorkspacePaths.summariesDir(for: profile) else { return 0 }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
@@ -693,6 +845,9 @@ final class WorkspaceStore {
     /// Returns a human-readable relative "last synced" label derived from the mtime
     /// of the most recently modified file in the profile's data directory.
     func lastSyncedRelative(for profile: String) -> String {
+        // The demo was last synced by its Daily Snapshot Collection run; reading the
+        // disk would say "Never synced" on every demo screen.
+        if demoMode { return "Synced Apr 25, 06:01" }
         guard let dir = try? WorkspacePaths.dataDir(for: profile) else { return "Never synced" }
         let fm = FileManager.default
         guard let files = try? fm.contentsOfDirectory(
@@ -935,16 +1090,6 @@ enum Tab: String, CaseIterable, Identifiable, Hashable {
         case .protectDashboard:  "shield.lefthalf.filled"
         case .mobileFleet:       "ipad"
         case .groupInventory:    "rectangle.3.group"
-        }
-    }
-
-    var badge: String? {
-        switch self {
-        case .devices:   "inv"
-        case .fleet:     "multi"
-        case .trends:    "26w"
-        case .reports:   "47"
-        default:         nil
         }
     }
 

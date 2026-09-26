@@ -8,16 +8,21 @@ final class CLIParsingTests: XCTestCase {
     func testKnownSubcommandRouting() {
         XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("generate"))
         XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("collect"))
-        XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("school-scaffold"))
+        XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("school-check"))
+        // Retired: it wrote a `school_columns` block that nothing reads.
+        XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("school-scaffold"))
         XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("--help"))
+        // ArgumentParser's built-in `help` subcommand, as in `jamf-reports help generate`
+        // (docs/wiki/07-Command-Line.md); before this it opened the app instead.
+        XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("help"))
         // Double-click launch passes OS args that must NOT route to the CLI:
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("-NSDocumentRevisionsDebugMode"))
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("/some/file.txt"))
     }
 
-    func testAllTwelveSubcommandsRegistered() {
-        XCTAssertEqual(JamfReportsCLI.subcommandNames.count, 12)
-        XCTAssertEqual(JamfReportsCLI.configuration.subcommands.count, 12)
+    func testAllElevenSubcommandsRegistered() {
+        XCTAssertEqual(JamfReportsCLI.subcommandNames.count, 11)
+        XCTAssertEqual(JamfReportsCLI.configuration.subcommands.count, 11)
     }
 
     func testTierParsing() {

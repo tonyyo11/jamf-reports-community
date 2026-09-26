@@ -32,6 +32,15 @@ final class PeriodMetricCatalogTests: XCTestCase {
         )
     }
 
+    /// summary.json's patchPct is an unweighted per-title mean, not the device-weighted
+    /// figure the Patch screen shows, and the label has to say so (Epic #207 C1).
+    func testPatchMetricIsLabelledAsAPerTitleAverage() throws {
+        let metrics = PeriodMetricCatalog.fleetMetrics(
+            in: [summary(date: "2026-04-01", fileVault: nil, patch: 80)])
+        let patch = try XCTUnwrap(metrics.first { $0.id == "patchPct" })
+        XCTAssertEqual(patch.label, "Patch compliance (avg per title)")
+    }
+
     func testTotalDevicesIsAlwaysOffered() {
         let names = PeriodMetricCatalog.fleetMetrics(
             in: [summary(date: "2026-04-01", fileVault: nil, patch: nil)]).map(\.id)

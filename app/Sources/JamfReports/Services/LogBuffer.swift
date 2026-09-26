@@ -16,6 +16,15 @@ struct LogEntry: Identifiable, Sendable {
             case .fault: return "Fault"
             }
         }
+
+        /// A run line's level, mapped the way `CLIBridge.bufferingOnLine` files it.
+        init(_ runLine: CLIBridge.LogLevel) {
+            switch runLine {
+            case .info, .ok: self = .info
+            case .warn:      self = .notice
+            case .fail:      self = .error
+            }
+        }
     }
 
     let id = UUID()
@@ -57,7 +66,16 @@ final class LogBuffer: @unchecked Sendable {
                   since: Date? = nil,
                   limit: Int = 1000) -> [LogEntry] {
         lock.lock(); let all = entries; lock.unlock()
-        var filtered = all.filter { $0.level >= minLevel }
+        return Self.select(all, minLevel: minLevel, since: since, limit: limit)
+    }
+
+    /// `snapshot`'s filter over any oldest-first list, so the demo's events
+    /// filter the way the real buffer does.
+    static func select(_ entries: [LogEntry],
+                       minLevel: LogEntry.Level = .debug,
+                       since: Date? = nil,
+                       limit: Int = 1000) -> [LogEntry] {
+        var filtered = entries.filter { $0.level >= minLevel }
         if let since { filtered = filtered.filter { $0.date >= since } }
         return Array(filtered.suffix(limit).reversed())
     }

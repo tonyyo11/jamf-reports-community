@@ -23,7 +23,9 @@ struct SecurityPostureView: View {
                 kicker: "Posture",
                 title: "Security Posture",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is fixed; an age measured from today would grow
+                // for as long as the demo stays open.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
@@ -80,25 +82,9 @@ struct SecurityPostureView: View {
 
     private func reload() {
         snapshot = workspace.demoMode
-            ? Self.demoSnapshot
+            ? DemoData.securityPostureSnapshot
             : SecurityPostureService.load(profile: workspace.profile)
     }
-
-    private static let demoSnapshot = SecurityPostureService.Snapshot(
-        totalDevices: 655,
-        fileVaultEncrypted: 647,
-        sipEnabled: 655,
-        firewallEnabled: 655,
-        gatekeeperEnabled: 640,
-        osVersions: [
-            .init(osVersion: "15.4.1", count: 380, pct: 58),
-            .init(osVersion: "14.7.5", count: 180, pct: 27),
-            .init(osVersion: "13.7.10", count: 70, pct: 11),
-            .init(osVersion: "26.0.0", count: 25, pct: 4)
-        ],
-        sourceFile: nil,
-        snapshotDate: Date()
-    )
 
     // MARK: - Computed values
 
@@ -159,7 +145,8 @@ struct SecurityPostureView: View {
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
-                    if !score.missing.isEmpty {
+                    // The demo cannot collect, so it never tells its viewer to.
+                    if !score.missing.isEmpty && !workspace.demoMode {
                         Text(missingText)
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -181,7 +168,9 @@ struct SecurityPostureView: View {
         let names = score.missing
             .map { $0.displayLabel(edrAgentName: workspace.edrAgentName) }
             .joined(separator: ", ")
-        return "Not in this snapshot (run collect on EA results + device-compliance to include): \(names)."
+        // The ring scores `pro report security`, which carries FileVault, SIP and the
+        // firewall only. No collect adds the rest here, so the line asks for none.
+        return "Not in the security report, so not scored here: \(names)."
     }
 
     private func pillTone(for grade: SecurityScore.Grade) -> Pill.Tone {

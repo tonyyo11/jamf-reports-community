@@ -69,7 +69,19 @@ jobs:
 
       - name: Run Swift tests
         working-directory: app
-        run: swift test
+        shell: zsh {0}
+        run: |
+          set -e -o pipefail
+          swift test 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
+
+      # A test run logs thousands of lines and the tail is what a log viewer
+      # shows, so on failure repeat just the compiler errors and failed tests.
+      - name: List test failures
+        if: failure()
+        shell: zsh {0}
+        run: |
+          grep -E ": error: |error: -\[|' failed \(|✘ " "$RUNNER_TEMP/swift-test.log" \
+            | awk '!seen[$0]++' | head -n 200 || true
 
   shellcheck:
     runs-on: ubuntu-latest
@@ -90,8 +102,21 @@ jobs:
         run: |
           shellcheck --shell=bash --severity=error \
             app/build-app.sh \
+            app/build-pkg.sh \
+            app/scripts/lib/versioning.zsh \
+            app/scripts/test-versioning.zsh \
             app/scripts/release.sh \
             app/scripts/package-dmg.sh \
             app/scripts/notarize-release.sh \
             app/scripts/sign-release.sh \
             scripts/build-release.sh
+
+      # The release channel, build number and .pkg/.dmg naming that build-app.sh,
+      # build-pkg.sh and package-dmg.sh share live in app/scripts/lib/versioning.zsh.
+      # That logic needs only zsh and git, so it is tested here on every push
+      # without a macOS runner. zsh is not preinstalled on ubuntu-latest.
+      - name: Install zsh
+        run: sudo apt-get update && sudo apt-get install -y zsh
+
+      - name: Test version, channel and artifact naming
+        run: zsh app/scripts/test-versioning.zsh

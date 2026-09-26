@@ -1,38 +1,29 @@
 [
   {
-    "uuid": "ins-1",
-    "label": "Disable Bluetooth when not needed",
-    "section": "Network",
-    "description": "Bluetooth should be disabled if unused.",
-    "totalPass": 380,
-    "totalFail": 122,
-    "totalNone": 0,
+    "cisIDs": "2.3.1, 2.3.2",
     "enabled": true,
-    "tags": ["cis", "network"],
-    "cisid": [{"id": "1.1.1", "osVersion": "15"}, {"id": "1.1.1", "osVersion": "14"}]
+    "label": "Bluetooth sharing disabled",
+    "section": "Sharing",
+    "totalFail": 12,
+    "totalNone": 0,
+    "totalPass": 88
   },
   {
-    "uuid": "ins-2",
-    "label": "Enable Gatekeeper",
+    "cisIDs": "5.1.1",
+    "enabled": true,
+    "label": "Gatekeeper enabled",
     "section": "System Integrity",
-    "description": "Gatekeeper enforces signed-app policy.",
-    "totalPass": 502,
     "totalFail": 0,
     "totalNone": 0,
-    "enabled": true,
-    "tags": ["cis", "core"],
-    "cisid": [{"id": "2.4.1"}]
+    "totalPass": 100
   },
   {
-    "uuid": "ins-3",
-    "label": "Restrict Wi-Fi auto-join",
-    "section": "Network",
-    "description": "Auto-join restricted to known SSIDs.",
-    "totalPass": 410,
-    "totalFail": 80,
-    "totalNone": 12,
+    "cisIDs": "",
     "enabled": false,
-    "tags": ["network"],
-    "cisid": []
+    "label": "Wi-Fi status shown in menu bar",
+    "section": "Network",
+    "totalFail": 7,
+    "totalNone": 5,
+    "totalPass": 88
   }
 ]

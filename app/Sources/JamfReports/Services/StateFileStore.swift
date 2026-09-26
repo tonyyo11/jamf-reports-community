@@ -165,10 +165,11 @@ struct StateFileStore: Sendable {
         try atomicWrite(data: data, to: failureURL(for: report))
     }
 
-    /// Drop the failure record for `report` — called on every success so the
+    /// Drop the failure record and its cause for `report` — called on every success so the
     /// count means *consecutive* failures rather than lifetime failures.
     func clearFailures(report: String) {
         try? FileManager.default.removeItem(at: failureURL(for: report))
+        try? FileManager.default.removeItem(at: causeURL(for: report))
     }
 
     /// The result of one collect attempt for a single report kind.
@@ -201,14 +202,41 @@ struct StateFileStore: Sendable {
     ///
     /// Never throws: a state-write failure must not undo a snapshot already on
     /// disk. The worst case is one redundant fetch next cycle.
-    func record(_ outcome: KindOutcome, report: String, at date: Date) {
+    func record(
+        _ outcome: KindOutcome, report: String, at date: Date, cause: FailureCause? = nil
+    ) {
         switch outcome {
         case .landed:
             try? recordRun(report: report, at: date)
             clearFailures(report: report)
         case .failed(let exitCode):
             try? recordFailure(report: report, at: date, exitCode: exitCode)
+            if let cause {
+                try? writeCause(cause, report: report, at: date)
+            } else {
+                // A cause left from an earlier failure would mislabel this one.
+                try? FileManager.default.removeItem(at: causeURL(for: report))
+            }
         }
+    }
+
+    /// The classified cause of `report`'s newest failure (spec §9.3), or nil when none is
+    /// recorded. Reads never throw, like `failures(report:)`.
+    func cause(for report: String) -> FailureCause? {
+        guard let data = try? Data(contentsOf: causeURL(for: report)) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(FailureCause.self, from: data)
+    }
+
+    private func writeCause(_ cause: FailureCause, report: String, at date: Date) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var stamped = cause
+        stamped.recordedAt = Date(timeIntervalSince1970: floor(date.timeIntervalSince1970))
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted]
+        try atomicWrite(data: try encoder.encode(stamped), to: causeURL(for: report))
     }
 
     /// Per-kind collection state for every kind in `kinds`, for the freshness
@@ -221,7 +249,8 @@ struct StateFileStore: Sendable {
                 kind: kind,
                 lastSuccess: lastRun(report: kind),
                 consecutiveFailures: failure?.count ?? 0,
-                lastFailure: failure?.last
+                lastFailure: failure?.last,
+                cause: cause(for: kind)
             )
         }
     }
@@ -324,6 +353,11 @@ struct StateFileStore: Sendable {
     /// `.last` files — is unaffected by failure bookkeeping.
     private func failureURL(for report: String) -> URL {
         directory.appendingPathComponent("\(report).fail", isDirectory: false)
+    }
+
+    /// `<report>.cause.json`; outside the manifest, which hashes `.last` files only.
+    private func causeURL(for report: String) -> URL {
+        directory.appendingPathComponent("\(report).cause.json", isDirectory: false)
     }
 
     /// Write `data` to `url` via a temp-file-then-rename so a crash mid-

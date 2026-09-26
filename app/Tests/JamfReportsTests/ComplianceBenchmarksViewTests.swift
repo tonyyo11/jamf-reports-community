@@ -95,4 +95,51 @@ final class ComplianceBenchmarksViewTests: XCTestCase {
             .unlockedNoData
         )
     }
+
+    /// Collect skips benchmarks on a tenant-level profile, so "collect this workspace" would be a
+    /// dead end; the screen names the integration level instead.
+    func testATenantLevelProfileWithoutDataNeedsAnEnvironmentIntegration() {
+        XCTAssertEqual(
+            ComplianceBenchmarksView.decideLockState(
+                isDemoMode: false, experimentalOn: true, platformAvailable: true,
+                hasData: false, tenantLevel: true),
+            .needsEnvironmentLevel
+        )
+    }
+
+    func testSnapshotsCollectedBeforeASwitchToTenantLevelStillShow() {
+        XCTAssertEqual(
+            ComplianceBenchmarksView.decideLockState(
+                isDemoMode: false, experimentalOn: true, platformAvailable: true,
+                hasData: true, tenantLevel: true),
+            .unlockedWithData
+        )
+    }
+
+    // MARK: - Per-benchmark display (2.8.1)
+
+    func testSeveralBenchmarksShowOneAtATime() {
+        func rule(_ benchmark: String) -> ComplianceBenchmarksService.Snapshot.Rule {
+            .init(rule: "FileVault", passed: 1, failed: 0, unknown: 0, devices: 1,
+                  passRate: "100%", ruleId: "r1", benchmark: benchmark)
+        }
+        let snapshot = ComplianceBenchmarksService.Snapshot(
+            rules: [rule("CIS"), rule("STIG")], devices: [],
+            rulesSourceFile: nil, devicesSourceFile: nil, snapshotDate: nil)
+        func shown(_ selected: String) -> [String] {
+            ComplianceBenchmarksView.displayed(snapshot, selected: selected).rules.map(\.benchmark)
+        }
+        XCTAssertEqual(shown(""), ["CIS"], "defaults to the first benchmark")
+        XCTAssertEqual(shown("STIG"), ["STIG"])
+        XCTAssertEqual(shown("Removed since"), ["CIS"], "a vanished selection falls back")
+    }
+
+    func testOneBenchmarkShowsEverything() {
+        let snapshot = ComplianceBenchmarksService.Snapshot(
+            rules: [.init(rule: "FileVault", passed: 1, failed: 0, unknown: 0, devices: 1,
+                          passRate: "100%", benchmark: "CIS")],
+            devices: [], rulesSourceFile: nil, devicesSourceFile: nil, snapshotDate: nil)
+        XCTAssertNil(ComplianceBenchmarksView.activeBenchmark(in: snapshot, selected: ""))
+        XCTAssertEqual(ComplianceBenchmarksView.displayed(snapshot, selected: "").rules.count, 1)
+    }
 }

@@ -312,16 +312,15 @@ final class CoreDashboardParityTests: XCTestCase {
     func testWriteProtectPlansHappyPath() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
+        // flattenPlan rows: reference columns are names and absent when nothing is assigned.
         let json = """
         [
-          {"id":"plan-1","name":"Production Default","uuid":"aaaa-bbbb",
-           "description":"Default plan","created":"2024-01-01","updated":"2026-01-01",
-           "logLevel":"INFO","autoUpdate":true,"threatPreventionStrategy":"BALANCED",
-           "profileVersion":7,
-           "customEngineConfig":{"MalwareRiskware":{"enabled":true},"AdversaryTactics":{"enabled":true}},
-           "exceptionSets":[{"name":"Vendor Tools"}],
-           "analyticSets":[{"analyticSet":{"name":"Core Analytics"}}],
-           "telemetry":true,"telemetryV2":true}
+          {"actionConfig":"Default Actions","autoUpdate":true,"logLevel":"INFO",
+           "name":"Production Default","telemetry":"Standard Telemetry",
+           "unifiedLoggingFilterSets":"Authentication, Screen Sharing",
+           "usbControlSet":"Block External Storage"},
+          {"actionConfig":"Default Actions","autoUpdate":false,"logLevel":"DEBUG",
+           "name":"Engineering Lab","unifiedLoggingFilterSets":""}
         ]
         """
         try seedJSON(json, kind: "protect-plans", in: dir)
@@ -330,8 +329,19 @@ final class CoreDashboardParityTests: XCTestCase {
         XCTAssertNoThrow(try dash.writeProtectPlans(),
                          "writeProtectPlans must not throw on valid data")
 
-        let ws = dash.workbook.sheet(named: "Protect Plans")
-        XCTAssertNotNil(ws, "Protect Plans sheet must be created")
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Plans"),
+                               "Protect Plans sheet must be created")
+        XCTAssertEqual(rowText(ws, row: 3, columns: 7), [
+            "Plan Name", "Log Level", "Auto Update", "Action Configuration", "Telemetry",
+            "USB Control Set", "Unified Logging Filter Sets",
+        ])
+        // Rows sort by name, so Engineering Lab comes first.
+        XCTAssertEqual(rowText(ws, row: 4, columns: 7),
+                       ["Engineering Lab", "DEBUG", "No", "Default Actions", "", "", ""])
+        XCTAssertEqual(rowText(ws, row: 5, columns: 7), [
+            "Production Default", "INFO", "Yes", "Default Actions", "Standard Telemetry",
+            "Block External Storage", "Authentication, Screen Sharing",
+        ])
     }
 
     func testWriteProtectPlansEmptyArrayThrows() throws {
@@ -370,26 +380,9 @@ final class CoreDashboardParityTests: XCTestCase {
 
         let dash = makeDashboard(dataDir: dir)
         XCTAssertNoThrow(try dash.writeProtectPlans())
-        XCTAssertNotNil(dash.workbook.sheet(named: "Protect Plans"))
-    }
-
-    func testWriteProtectPlansEnvelopeShape() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        // Plans wrapped in {nodes: [...]} envelope
-        let json = """
-        {"nodes":[
-          {"id":"plan-1","name":"Alpha Plan","uuid":"uuid-1","description":"",
-           "created":"2024-01-01","updated":"2024-01-02",
-           "logLevel":"INFO","autoUpdate":false,"threatPreventionStrategy":"STRICT",
-           "profileVersion":3,"customEngineConfig":null,
-           "exceptionSets":[],"analyticSets":[],"telemetry":false,"telemetryV2":false}
-        ]}
-        """
-        try seedJSON(json, kind: "protect-plans", in: dir)
-        let dash = makeDashboard(dataDir: dir)
-        XCTAssertNoThrow(try dash.writeProtectPlans())
-        XCTAssertNotNil(dash.workbook.sheet(named: "Protect Plans"))
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Plans"))
+        XCTAssertEqual(rowText(ws, row: 4, columns: 7),
+                       ["Engineering Lab", "DEBUG", "No", "Default Actions", "", "", ""])
     }
 
     // MARK: - writeProtectThreatOverview
@@ -397,20 +390,19 @@ final class CoreDashboardParityTests: XCTestCase {
     func testWriteProtectThreatOverviewHappyPath() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
+        // flattenAlert rows: `computer` is the host name, `analytics` the analytics' names.
         let json = """
         [
-          {"uuid":"a1","created":"2026-05-01T08:00:00Z","severity":"high",
-           "status":"New","eventType":"ProcessExecution",
-           "computer":{"hostName":"lab-mac-01","serial":"ABC001"},
-           "actions":[{"name":"Quarantine"},{"name":"Notify"}]},
-          {"uuid":"a2","created":"2026-05-02T11:30:00Z","severity":"medium",
-           "status":"InProgress","eventType":"FileWrite",
-           "computer":{"hostName":"exec-mbp-09","serial":"DEF002"},
-           "actions":["Notify"]},
-          {"uuid":"a3","created":"2026-05-03T02:14:00Z","severity":"low",
-           "status":"Resolved","eventType":"NetworkConnection",
-           "computer":{"hostName":"prod-server-02","serial":"GHI003"},
-           "actions":[]}
+          {"analytics":"Suspicious Process","computer":"lab-mac-01.example",
+           "created":"2026-05-01T08:00:00.000Z","eventType":"GPProcessEvent",
+           "received":"2026-05-01T08:00:01.000Z","severity":"High","status":"New","uuid":"a1"},
+          {"analytics":"Document Drop","computer":"exec-mbp-09.example",
+           "created":"2026-05-02T11:30:00.000Z","eventType":"GPFSEvent",
+           "received":"2026-05-02T11:30:02.000Z","severity":"Medium","status":"InProgress",
+           "uuid":"a2"},
+          {"computer":"build-mini-02.example","created":"2026-05-03T02:14:00.000Z",
+           "eventType":"GPUSBEvent","received":"2026-05-03T02:14:05.000Z","severity":"Low",
+           "status":"Resolved","uuid":"a3"}
         ]
         """
         try seedJSON(json, kind: "protect-alerts", in: dir)
@@ -419,8 +411,15 @@ final class CoreDashboardParityTests: XCTestCase {
         XCTAssertNoThrow(try dash.writeProtectThreatOverview(),
                          "writeProtectThreatOverview must not throw on valid data")
 
-        let ws = dash.workbook.sheet(named: "Protect Threat Overview")
-        XCTAssertNotNil(ws, "Protect Threat Overview sheet must be created")
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Threat Overview"),
+                               "Protect Threat Overview sheet must be created")
+        XCTAssertEqual(rowText(ws, row: 3, columns: 6),
+                       ["Device", "Type", "Severity", "Date", "Status", "Analytics"])
+        XCTAssertEqual(rowText(ws, row: 4, columns: 6), [
+            "lab-mac-01.example", "GPProcessEvent", "High", "2026-05-01T08:00:00.000Z", "New",
+            "Suspicious Process",
+        ])
+        XCTAssertEqual(rowText(ws, row: 6, columns: 6)[5], "", "the Low alert has no analytics")
     }
 
     func testWriteProtectThreatOverviewEmptyArrayThrows() throws {
@@ -458,21 +457,12 @@ final class CoreDashboardParityTests: XCTestCase {
 
         let dash = makeDashboard(dataDir: dir)
         XCTAssertNoThrow(try dash.writeProtectThreatOverview())
-        XCTAssertNotNil(dash.workbook.sheet(named: "Protect Threat Overview"))
-    }
-
-    func testWriteProtectThreatOverviewMixedActionsShape() throws {
-        // Actions can be [{name: "X"}] or bare ["X"] — both must extract cleanly.
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let json = """
-        [{"uuid":"x","created":"2026-01-01","severity":"high","status":"New",
-          "eventType":"Test","computer":{"hostName":"test-mac"},
-          "actions":[{"name":"Quarantine"},"Notify"]}]
-        """
-        try seedJSON(json, kind: "protect-alerts", in: dir)
-        let dash = makeDashboard(dataDir: dir)
-        XCTAssertNoThrow(try dash.writeProtectThreatOverview())
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Threat Overview"))
+        // The fixture's Informational alert has no computer, so its Device cell is empty.
+        XCTAssertEqual(rowText(ws, row: 7, columns: 6), [
+            "", "GPGatekeeperEvent", "Informational", "2026-05-04T09:45:00.000Z",
+            "AutoResolved", "Gatekeeper Override",
+        ])
     }
 
     // MARK: - Severity sorting (Threat Overview)
@@ -482,18 +472,37 @@ final class CoreDashboardParityTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let json = """
         [
-          {"uuid":"low","created":"2026-01-01","severity":"low","status":"","eventType":"A",
-           "computer":{"hostName":"mac-low"},"actions":[]},
-          {"uuid":"crit","created":"2026-01-02","severity":"critical","status":"","eventType":"B",
-           "computer":{"hostName":"mac-crit"},"actions":[]},
-          {"uuid":"med","created":"2026-01-03","severity":"medium","status":"","eventType":"C",
-           "computer":{"hostName":"mac-med"},"actions":[]}
+          {"computer":"mac-low.example","created":"2026-01-01T00:00:00.000Z",
+           "eventType":"GPFSEvent","received":"2026-01-01T00:00:01.000Z","severity":"Low",
+           "status":"New","uuid":"low"},
+          {"computer":"mac-high.example","created":"2026-01-02T00:00:00.000Z",
+           "eventType":"GPProcessEvent","received":"2026-01-02T00:00:01.000Z",
+           "severity":"High","status":"New","uuid":"high"},
+          {"computer":"mac-medium.example","created":"2026-01-03T00:00:00.000Z",
+           "eventType":"GPUSBEvent","received":"2026-01-03T00:00:01.000Z",
+           "severity":"Medium","status":"New","uuid":"medium"}
         ]
         """
         try seedJSON(json, kind: "protect-alerts", in: dir)
         let dash = makeDashboard(dataDir: dir)
         XCTAssertNoThrow(try dash.writeProtectThreatOverview())
-        // Critical must appear before medium before low — validated by no throw
-        // (full cell inspection would require Workbook API not in scope).
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Protect Threat Overview"))
+        let devices = (4...6).map { rowText(ws, row: $0, columns: 1)[0] }
+        XCTAssertEqual(devices, ["mac-high.example", "mac-medium.example", "mac-low.example"])
+    }
+
+    // MARK: - Cell text
+
+    /// Text of one sheet row: strings as written, integers in decimal, "" for anything else.
+    private func rowText(_ ws: Worksheet, row: Int, columns: Int) -> [String] {
+        var text = Array(repeating: "", count: columns)
+        for cell in ws.dedupedCells where cell.row == row && cell.col < columns {
+            switch cell.value {
+            case .string(let value): text[cell.col] = value
+            case .int(let value): text[cell.col] = String(value)
+            default: break
+            }
+        }
+        return text
     }
 }

@@ -36,7 +36,8 @@ struct PolicyProfileView: View {
                 kicker: "Operations",
                 title: "Policy & Profile Health",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is frozen on purpose; an age warning on it is noise.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
 
             SegmentedControl(
@@ -112,49 +113,9 @@ struct PolicyProfileView: View {
 
     private func reload() {
         snapshot = workspace.demoMode
-            ? Self.demoSnapshot
+            ? DemoData.policyHealth
             : PolicyHealthService.load(profile: workspace.profile)
     }
-
-    private static let demoSnapshot = PolicyHealthService.Snapshot(
-        summary: PolicyStatusSummary(
-            totalPolicies: 47,
-            enabled: 38,
-            disabled: 9,
-            configFindings: 12,
-            warnings: 8,
-            info: 4
-        ),
-        findings: [
-            PolicyFinding(severity: "critical", policy: "Software Update Policy", policyId: "123", check: "Maintenance Window", detail: "No maintenance window configured for major updates"),
-            PolicyFinding(severity: "warning", policy: "FileVault Enforcement", policyId: "124", check: "Scope Verification", detail: "Policy scope excludes mobile devices but includes server targets"),
-            PolicyFinding(severity: "info", policy: "Chrome Configuration", policyId: "125", check: "Payload Optimization", detail: "Redundant payload keys detected in configuration profile"),
-            PolicyFinding(severity: "warning", policy: "Antivirus Deployment", policyId: "126", check: "Trigger Frequency", detail: "Policy triggers on every checkin but should use custom events"),
-            PolicyFinding(severity: "critical", policy: "macOS Installer Policy", policyId: "127", check: "Package Verification", detail: "Referenced installer package no longer exists in Jamf Pro"),
-            PolicyFinding(severity: "warning", policy: "Dock Configuration", policyId: "128", check: "User Experience", detail: "Policy removes user customization without providing alternatives"),
-            PolicyFinding(severity: "info", policy: "Login Window Settings", policyId: "129", check: "Accessibility", detail: "Login window message could be more user-friendly"),
-            PolicyFinding(severity: "warning", policy: "Certificate Distribution", policyId: "130", check: "Expiry Monitoring", detail: "Certificate expires in 45 days with no renewal policy configured"),
-            PolicyFinding(severity: "critical", policy: "Security Baseline", policyId: "131", check: "Compliance Drift", detail: "Policy conflicts with newly applied mSCP requirements"),
-            PolicyFinding(severity: "info", policy: "Printer Setup Policy", policyId: "132", check: "Documentation", detail: "Policy description does not match actual configuration"),
-            PolicyFinding(severity: "warning", policy: "VPN Configuration", policyId: "133", check: "Network Security", detail: "Legacy VPN protocol configured instead of IKEv2"),
-            PolicyFinding(severity: "warning", policy: "Application Restriction", policyId: "134", check: "Business Impact", detail: "Policy blocks productivity apps during work hours")
-        ],
-        profiles: [
-            PolicyHealthService.ProfileFailure(id: "0-104", name: "Certificate Authority", deviceType: "Computer", errors: 15, devices: 11, lastError: "2026-06-09", topError: "The certificate payload could not be installed"),
-            PolicyHealthService.ProfileFailure(id: "1-109", name: "Chrome Enterprise", deviceType: "Computer", errors: 7, devices: 6, lastError: "2026-06-08", topError: "Profile installation timed out"),
-            PolicyHealthService.ProfileFailure(id: "2-107", name: "Dock Preferences", deviceType: "Computer", errors: 8, devices: 5, lastError: "2026-06-10", topError: "Payload rejected by managed client"),
-            PolicyHealthService.ProfileFailure(id: "3-102", name: "Exchange Email Setup", deviceType: "Computer", errors: 3, devices: 3, lastError: "2026-06-07", topError: "Account already exists on device"),
-            PolicyHealthService.ProfileFailure(id: "4-111", name: "Time Zone Settings", deviceType: "Mobile Device", errors: 1, devices: 1, lastError: "2026-06-05", topError: "Device offline during push")
-        ],
-        profileSummary: ProfileFailureSummary(
-            totalErrors: 34,
-            uniqueProfiles: 5,
-            uniqueDevices: 22,
-            days: 30
-        ),
-        sourceFile: nil,
-        snapshotDate: Date()
-    )
 
     // MARK: - Policy Sections
 

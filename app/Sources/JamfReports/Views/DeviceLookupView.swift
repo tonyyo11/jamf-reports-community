@@ -96,15 +96,21 @@ struct DeviceLookupView: View {
                     ) {
                         performLookup()
                     }
-                    .disabled(state == .loading || trimmedTerm.isEmpty)
+                    .disabled(workspace.demoMode || state == .loading || trimmedTerm.isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
                 }
+                .disabled(workspace.demoMode)
                 FieldHelp(text: helpLineText)
             }
         }
     }
 
     private var helpLineText: String {
+        // Demo mode has no jamf-cli profile behind it, so there is no cache to
+        // name and nothing a Refresh could populate.
+        if workspace.demoMode {
+            return "Demo mode: lookups run against a live jamf-cli profile's cached inventory."
+        }
         let count = index.candidates.count
         let countLabel: String
         if count == 0 {
@@ -343,6 +349,10 @@ struct DeviceLookupView: View {
     // MARK: - Lookup
 
     private func performLookup() {
+        // Field submit, the button and the post-refresh retry all funnel here;
+        // in demo mode the ID fallback would run jamf-cli against the demo
+        // profile name.
+        guard !workspace.demoMode else { return }
         let term = trimmedTerm
         guard !term.isEmpty else { return }
         let profile = workspace.profile

@@ -151,7 +151,8 @@ enum HtmlSectionFormatters {
         case "error":                   cls = "sev-error"
         case "medium", "moderate":      cls = "sev-medium"
         case "warning", "warn":         cls = "sev-warn"
-        case "info", "low":             cls = "sev-info"
+        case "info", "informational", "low":
+                                        cls = "sev-info"
         default:                        cls = "sev-unknown"
         }
         return "<span class=\"sev-pill \(cls)\">\(escapeHTML(severity))</span>"

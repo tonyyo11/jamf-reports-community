@@ -26,6 +26,22 @@ struct ReportsView: View {
         return workspace.appendingPathComponent("Generated Reports", isDirectory: true)
     }
 
+    /// The header's folder. Demo mode names the demo workspace, not this Mac's
+    /// configured root, which may be a synced team folder.
+    private var reportsFolderDisplayPath: String {
+        workspace.demoMode
+            ? DemoData.workspaceDisplayPath(
+                profile: DemoData.org.profile, subpath: "Generated Reports") + "/"
+            : WorkspaceRootStore.displayPath(profile: workspace.profile,
+                                             subpath: "Generated Reports") + "/"
+    }
+
+    private func revealReportsFolder() {
+        // Demo reports are not on disk; the demo profile's folder could be real.
+        guard !workspace.demoMode else { return }
+        SystemActions.openFolder(reportsDirectory)
+    }
+
     private var filteredReports: [Report] {
         let typeFiltered: [Report]
         if filter == "All" {
@@ -111,7 +127,12 @@ struct ReportsView: View {
                     .frame(minHeight: 360)
                     .scrollContentBackground(.hidden)
                     .contextMenu(forSelectionType: Report.ID.self) { selection in
-                        if let reportID = selection.first,
+                        if workspace.demoMode {
+                            // Demo reports are not on disk, and looking one up
+                            // by name would search a real workspace's folder.
+                            Button("Reveal in Finder") {}.disabled(true)
+                            Button("Open") {}.disabled(true)
+                        } else if let reportID = selection.first,
                            let url = ReportLibrary().url(
                             profile: workspace.profile,
                             reportName: reportID
@@ -171,27 +192,32 @@ struct ReportsView: View {
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
                 title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
-                subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                                         subpath: "Generated Reports") + "/"
+                subtitle: reportsFolderDisplayPath
             ) {
                 AnyView(
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             PNPButton(title: "Reveal in Finder", icon: "folder") {
-                                SystemActions.openFolder(reportsDirectory)
+                                revealReportsFolder()
                             }
-                            .help("Open the Generated Reports folder in Finder")
+                            .disabled(workspace.demoMode)
+                            .help(workspace.demoMode
+                                  ? "Demo reports are not on disk. Revealing their folder "
+                                    + "needs a live profile."
+                                  : "Open the Generated Reports folder in Finder")
                             PNPButton(
                                 title: "Period report",
                                 icon: "calendar.badge.clock",
                                 style: .neutral
                             ) {
+                                // The sheet reads the workspace's summaries.
+                                guard !workspace.demoMode else { return }
                                 showPeriodReport = true
                             }
                             .disabled(workspace.demoMode)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Fleet numbers for a period, with start, end and change"
                             )
                             PNPButton(
@@ -204,7 +230,7 @@ struct ReportsView: View {
                             .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Generate a self-contained HTML instance report"
                             )
                             PNPButton(
@@ -217,7 +243,7 @@ struct ReportsView: View {
                             .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Render the HTML report to PDF via WKWebView"
                             )
                             PNPButton(
@@ -230,7 +256,7 @@ struct ReportsView: View {
                             .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
-                                ? "Available in live mode only"
+                                ? DemoData.liveOnlyHelp
                                 : "Export a wide CSV of all computer inventory"
                             )
                         }
@@ -324,7 +350,7 @@ struct ReportsView: View {
             StatTile(
                 label: "Snapshots archived",
                 value: "\(snapshotCount)",
-                sub: "\(snapshotFamilies.count) families"
+                sub: snapshotFamilies.count == 1 ? "1 family" : "\(snapshotFamilies.count) families"
             )
             StatTile(
                 label: "Auto-archived",
@@ -335,10 +361,18 @@ struct ReportsView: View {
     }
 
     private func reload() {
-        let library = ReportLibrary()
-        reports = library.list(profile: workspace.profile)
-        reportStats = library.stats(profile: workspace.profile)
-        snapshotFamilies = SnapshotArchiveService().families(profile: workspace.profile)
+        if workspace.demoMode {
+            // The demo profile's name could match a real workspace on this Mac;
+            // demo mode lists the demo's reports and never reads a folder.
+            reports = DemoData.generatedReports
+            reportStats = DemoData.generatedReportStats
+            snapshotFamilies = DemoData.snapshotFamilies(for: DemoData.org.profile)
+        } else {
+            let library = ReportLibrary()
+            reports = library.list(profile: workspace.profile)
+            reportStats = library.stats(profile: workspace.profile)
+            snapshotFamilies = SnapshotArchiveService().families(profile: workspace.profile)
+        }
         selectedReports = selectedReports.intersection(Set(reports.map(\.id)))
         updateAvailableProfiles()
     }
@@ -365,8 +399,12 @@ struct ReportsView: View {
         NotificationCenter.default.post(name: .requestOverviewTab, object: nil)
     }
 
+    // The generate and export actions run jamf-cli against the selected
+    // profile, a fictional one in demo mode; their buttons are disabled there.
+
     @MainActor
     private func generateHTMLReport() {
+        guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -428,6 +466,7 @@ struct ReportsView: View {
 
     @MainActor
     private func generatePDFReport() {
+        guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -475,6 +514,7 @@ struct ReportsView: View {
 
     @MainActor
     private func runExportInventoryCSV() {
+        guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -521,7 +561,9 @@ struct ReportsView: View {
     }
 
     private func handleSpaceKeyPress() {
-        guard let selectedReport = selectedReports.first,
+        // Quick Look opens the file on disk, which a demo report does not have.
+        guard !workspace.demoMode,
+              let selectedReport = selectedReports.first,
               let url = ReportLibrary().url(profile: workspace.profile, reportName: selectedReport) else {
             return
         }
@@ -531,18 +573,21 @@ struct ReportsView: View {
 
     private func updateAvailableProfiles() {
         let profileTokens = Set(reports.compactMap { report in
-            extractProfileFromFilename(report.name)
+            Self.profile(fromReportFilename: report.name)
         })
         availableProfiles = Array(profileTokens).sorted()
     }
 
-    private func extractProfileFromFilename(_ filename: String) -> String? {
-        // Extract the profile token from filename patterns like
-        // "report_PROFILE_date.ext", "jamf_report_PROFILE_date.ext", or
-        // "inventory_PROFILE_date.ext". Multi-word prefixes are matched
-        // longest-first so "jamf_report_prod_..." yields "prod", not "report".
+    /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
+    /// ("report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
+    /// prefix and the date is the profile, so a hyphen or underscore in it stays;
+    /// profile names allow both, and treating any hyphen as a date dropped every
+    /// such profile from the menu. Without a date, the first `_` segment is taken.
+    /// Nil for an unknown prefix, or when no profile precedes the date.
+    nonisolated static func profile(fromReportFilename filename: String) -> String? {
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         let lowered = stem.lowercased()
+        // Longest first, so "jamf_report_prod_..." yields "prod", not "report".
         let knownPrefixes = [
             "jamf_report_", "school_report_", "school-report_",
             "report_", "compliance_", "mobile_", "inventory_",
@@ -551,14 +596,14 @@ struct ReportsView: View {
             return nil
         }
         let rest = String(stem.dropFirst(prefix.count))
-        guard let profileCandidate = rest.split(separator: "_").first.map(String.init) else {
-            return nil
+        let profile: Substring
+        if let date = rest.range(of: #"(^|_)\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
+            profile = rest[..<date.lowerBound]
+        } else {
+            profile = rest.split(separator: "_").first ?? ""
         }
-        // Filter out date-like tokens (all numbers, or yyyy-MM-dd patterns).
-        if profileCandidate.allSatisfy({ $0.isNumber }) || profileCandidate.contains("-") {
-            return nil
-        }
-        return profileCandidate
+        guard !profile.isEmpty, !profile.allSatisfy(\.isNumber) else { return nil }
+        return String(profile)
     }
 }
 

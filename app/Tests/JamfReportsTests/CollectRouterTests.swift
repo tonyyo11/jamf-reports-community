@@ -170,6 +170,7 @@ final class CollectRouterTests: XCTestCase {
     }
 
     /// For a Pro profile with protect.enabled, proCollect then protectCollect are both called.
+    /// The spy's Pro collect returns `.collected` — the one disposition that runs Protect.
     func test_router_proWithProtect_callsBothProAndProtect() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("CollectRouterTests-\(UUID().uuidString)", isDirectory: true)
@@ -234,7 +235,7 @@ final class CollectRouterTests: XCTestCase {
             profile: profile,
             config: config,
             workspacePaths: WorkspacePaths.self,
-            proCollect: { _, _, _, _, _, _ in },
+            proCollect: { _, _, _, _, _, _ in .collected },
             schoolCollect: { _, _, _ in },
             protectCollect: { _, _, _ in throw NSError(domain: "test", code: 42) },
             onLine: { line in
@@ -280,6 +281,7 @@ final class CollectRouterTests: XCTestCase {
             proCollect: { _, _, _, skipExpensive, force, _ in
                 capturedSkip.set(skipExpensive)
                 capturedForce.set(force)
+                return .collected
             },
             schoolCollect: { _, _, _ in },
             protectCollect: { _, _, _ in },
@@ -288,6 +290,71 @@ final class CollectRouterTests: XCTestCase {
 
         XCTAssertEqual(capturedForce.value, true, "force must be passed through unchanged")
         XCTAssertEqual(capturedSkip.value, true, "skipExpensive must be passed through unchanged")
+    }
+
+    // MARK: - Protect follows only a Pro collect that ran
+
+    /// A Pro collect that stood down for a peer fetched nothing, and the peer holds
+    /// the shared-workspace claim: Protect must not collect beside it.
+    func test_router_proStoodDown_skipsProtect() async throws {
+        let (spy, lines) = try await runProtectEnabledProfile(proReturning: .stoodDown)
+
+        XCTAssertEqual(spy.proCallCount, 1, "Pro collect must still be asked")
+        XCTAssertEqual(spy.protectCallCount, 0, "Protect must not run after a stand-down")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[skip] protect:") },
+                      "the skip must be visible in the run log; got: \(lines)")
+    }
+
+    /// The once-per-day guard skipped the Pro collect, so Protect skips with it.
+    func test_router_proAlreadyCollected_skipsProtect() async throws {
+        let (spy, lines) = try await runProtectEnabledProfile(proReturning: .alreadyCollected)
+
+        XCTAssertEqual(spy.proCallCount, 1)
+        XCTAssertEqual(spy.protectCallCount, 0,
+                       "Protect must not run when today's Pro collect already ran")
+        XCTAssertTrue(lines.contains { $0.hasPrefix("[skip] protect:") }, "got: \(lines)")
+    }
+
+    // MARK: - Helpers
+
+    /// Runs the router for a Protect-enabled Pro profile whose workspace exists, so
+    /// `WorkspacePaths.dataDir(for:)` resolves and a skipped Protect can only come
+    /// from the Pro collect's disposition.
+    private func runProtectEnabledProfile(
+        proReturning disposition: ReportEngine.CollectDisposition
+    ) async throws -> (spy: RouterSpy, lines: [String]) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CollectRouterTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testdisposition\(Int.random(in: 1000...9999))"
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent(profile, isDirectory: true),
+            withIntermediateDirectories: true
+        )
+
+        let config = try ConfigLoader.loadFromString("""
+        protect:
+          enabled: true
+          profile: my-protect
+        """)
+        let spy = RouterSpy(proDisposition: disposition)
+        let lines = RouterLineCollector()
+
+        try await CollectRouter.run(
+            profile: profile,
+            config: config,
+            workspacePaths: WorkspacePaths.self,
+            proCollect: spy.proCollect,
+            schoolCollect: spy.schoolCollect,
+            protectCollect: spy.protectCollect,
+            onLine: { line in lines.append(line.text) }
+        )
+        return (spy, lines.texts)
     }
 }
 
@@ -312,10 +379,21 @@ private final class RouterValueBox<T>: @unchecked Sendable {
     func set(_ newValue: T) { lock.withLock { _value = newValue } }
 }
 
+/// Thread-safe record of the text of every line the router streams to `onLine`.
+private final class RouterLineCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _texts: [String] = []
+    var texts: [String] { lock.withLock { _texts } }
+    func append(_ text: String) { lock.withLock { _texts.append(text) } }
+}
+
 private struct RouterSpy {
     let proCounter = RouterCallCounter()
     let schoolCounter = RouterCallCounter()
     let protectCounter = RouterCallCounter()
+    /// What the spy's Pro collect reports; `.collected` is the only value that
+    /// lets Protect follow.
+    var proDisposition: ReportEngine.CollectDisposition = .collected
 
     var proCallCount: Int { proCounter.value }
     var schoolCallCount: Int { schoolCounter.value }
@@ -323,7 +401,11 @@ private struct RouterSpy {
 
     var proCollect: CollectRouter.ProCollect {
         let counter = proCounter
-        return { _, _, _, _, _, _ in counter.increment() }
+        let disposition = proDisposition
+        return { _, _, _, _, _, _ in
+            counter.increment()
+            return disposition
+        }
     }
 
     var schoolCollect: CollectRouter.SchoolCollect {

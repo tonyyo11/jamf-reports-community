@@ -74,9 +74,11 @@ back in filename order, never by modification date. You simply get two collects
 where you wanted one.
 
 **Coordination covers Jamf Pro collects only.** A Jamf School profile on a
-shared workspace gets none of the stand-down or claim behavior above — School
-collects on its own schedule with no cross-Mac awareness. Jamf Protect data is
-collected inside the same run as Jamf Pro, so it is covered in practice.
+shared workspace gets none of the stand-down or claim behavior above, by design
+— School collects on its own schedule with no cross-Mac awareness. Jamf Protect
+runs only after a Jamf Pro collect that actually collected: when the Pro collect
+stands down for another Mac, or skips because today's collect already ran,
+Protect is skipped with it and the run log says so.
 
 ### What a shared workspace still costs you
 
@@ -190,7 +192,7 @@ themselves do not need version control — only the input config.
 logs in `~/Jamf-Reports/<profile>/automation/logs/` and cleans up older ones automatically.
 
 **In regulated environments**, collect and ship logs to your SIEM (Splunk, Elastic, etc.)
-for a durable audit trail, especially for the write-path `patch-managed` command:
+for a durable audit trail:
 
 ```bash
 # Example: tail-ship logs to syslog
@@ -198,8 +200,7 @@ tail -f ~/Jamf-Reports/<profile>/automation/logs/*.log | nc -q1 siem.example.com
 ```
 
 Logs include timestamps, profile name, command, exit status, and error details — but NOT
-credential/secret material (always redacted). The `patch-managed` command logs device IDs
-affected and the managed-state change requested.
+credential/secret material (always redacted).
 
 ## Diagnostic Bundle Redaction Scope
 

@@ -129,8 +129,12 @@ struct DDMDeviceStatusService: Sendable {
             )
             return .unreadable
         }
+        // The scan writes a row per `computers` entry, so a device listed there twice would
+        // count twice in every aggregate above. One row per device; the first one wins.
+        var seen = Set<String>()
+        let records = rows.filter { seen.insert($0.deviceId).inserted }
         let date = CloudStorage.snapshotTimestamp(of: url)
-        return Snapshot(records: rows, isDetected: true, readFailed: false, snapshotDate: date,
+        return Snapshot(records: records, isDetected: true, readFailed: false, snapshotDate: date,
                         sourceDates: date.map { [kind: $0] } ?? [:])
     }
 

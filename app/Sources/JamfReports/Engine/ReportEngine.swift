@@ -700,33 +700,55 @@ struct ReportEngine: Sendable {
         // Stable identity that lets the trend chart bridge a later baseline rename.
         var mscpBandColumnsSnapshot: [String: String]? = nil
         // cachedData records the source automatically (live/cache/absent), so a single
-        // call here covers both the recordSource and the data load. Guard on eaBaselines
-        // so "absent" is not recorded for tenants that never configured an EA baseline.
+        // call here covers both the recordSource and the data load. Guarded on something
+        // needing it, so "absent" is not recorded for tenants that configured neither an
+        // EA baseline nor a security agent.
         let eaBaselines = config.compliance?.resolvedBaselines ?? []
-        if !eaBaselines.isEmpty, let eaData = cachedData(kind: "ea-results") {
+        // The EDR score card is labelled with the first named security agent
+        // (`WorkspaceStore.edrAgentName`); its value comes from the same agent.
+        let edrAgent = (config.securityAgents ?? []).first {
+            !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        var eaRows: [EAResultRow]? = nil
+        if !eaBaselines.isEmpty || edrAgent != nil, let eaData = cachedData(kind: "ea-results") {
             let decoded = EAResultRow.decodeSnapshot(eaData)
-            if let eaRows = decoded.rows {
-                let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
-                if let primary = results.first, let realPct = primary.compliancePct {
-                    complianceFinalPct = realPct
-                    complianceIsRealData = true
-                }
-                // Map all baseline results into the mscpBands summary field so the
-                // trend chart has per-date band data from the first collect onward.
-                let bandsMap = Self.mscpBandsMap(from: results)
-                if !bandsMap.isEmpty {
-                    mscpBandsSnapshot = bandsMap
-                    // Only the baselines that produced bands carry a column entry.
-                    mscpBandColumnsSnapshot = Self.mscpBandColumnsMap(
-                        from: results, baselines: eaBaselines)
-                }
-            } else {
+            eaRows = decoded.rows
+            if decoded.rows == nil {
                 // `.notice` (not `.debug`) so the shape surfaces without verbose logging;
                 // `reason` is keys-only (PII-safe).
                 AppLogger.platform.notice(
                     "ReportEngine: ea-results undecodable — \(decoded.reason, privacy: .public)"
                 )
             }
+        }
+        if !eaBaselines.isEmpty, let eaRows {
+            let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+            if let primary = results.first, let realPct = primary.compliancePct {
+                complianceFinalPct = realPct
+                complianceIsRealData = true
+            }
+            // Map all baseline results into the mscpBands summary field so the
+            // trend chart has per-date band data from the first collect onward.
+            let bandsMap = Self.mscpBandsMap(from: results)
+            if !bandsMap.isEmpty {
+                mscpBandsSnapshot = bandsMap
+                // Only the baselines that produced bands carry a column entry.
+                mscpBandColumnsSnapshot = Self.mscpBandColumnsMap(
+                    from: results, baselines: eaBaselines)
+            }
+        }
+        // EDR coverage, stored under the legacy `crowdstrikePct` key. Before this
+        // the jamf-cli writer always left it nil, so the EDR score card, its trend
+        // and the security score's EDR weight were empty on every jamf-cli
+        // profile. Over the whole fleet, so a Mac that reports no value counts as
+        // not connected; nil (unknown, not 0%) when no Mac reports the agent's
+        // extension attribute at all — usually a column name that doesn't match.
+        var edrConnectedPct: Double? = nil
+        if let edrAgent, let eaRows,
+           let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: [edrAgent]).first,
+           coverage.reporting > 0 {
+            edrConnectedPct = SecurityAgentCoverage.percent(
+                installed: coverage.installed, fleet: totalDevices)
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -776,7 +798,7 @@ struct ReportEngine: Sendable {
             compliancePct: complianceFinalPct.map(round1),
             staleCount: staleCount,
             osCurrentPct: osCurrentPct.map(round1),
-            crowdstrikePct: nil,
+            crowdstrikePct: edrConnectedPct,
             patchPct: patchPct.map(round1),
             source: "jamf-cli",
             sipPct: sipPct.map(round1),
@@ -878,28 +900,10 @@ struct ReportEngine: Sendable {
         totalDevices: Int
     ) -> Double? {
         guard !macOSRows.isEmpty, totalDevices > 0 else { return nil }
-        // Build latest-version-per-major from SOFA macOS rows.
-        // When two rows share a major (e.g., two macOS 15 entries), keep the
-        // numerically greatest product version — that is the true latest.
-        var latestByMajor: [Int: String] = [:]
-        for row in macOSRows {
-            let tuple = SOFAFeedService.versionTuple(row.productVersion)
-            guard let major = tuple.first else { continue }
-            if let existing = latestByMajor[major] {
-                let existingTuple = SOFAFeedService.versionTuple(existing)
-                // Compare component-by-component; keep the greater version.
-                let len = max(tuple.count, existingTuple.count)
-                var newer = false
-                for i in 0..<len {
-                    let a = i < tuple.count ? tuple[i] : 0
-                    let b = i < existingTuple.count ? existingTuple[i] : 0
-                    if a != b { newer = a > b; break }
-                }
-                if newer { latestByMajor[major] = row.productVersion }
-            } else {
-                latestByMajor[major] = row.productVersion
-            }
-        }
+        // Latest version per major, greatest version winning where two rows share
+        // a major. Shared with the Overview's macOS Distribution card, so the card's
+        // "on current" share and this percentage use one definition of current.
+        let latestByMajor = SOFAFeedService.latestByMajor(macOSRows)
         guard !latestByMajor.isEmpty else { return nil }
         // Count devices whose version >= their major's SOFA latest.
         // fleetCurrency internally filters osCounts to the given major, so
@@ -1015,7 +1019,11 @@ struct ReportEngine: Sendable {
                                              color: ChartPalette.color(for: 1), points: fvPoints))
             }
             if !patchPoints.isEmpty {
-                secSeries.append(ChartSeries(label: "Patch Compliance %",
+                // patchPct averages per-title compliance without weighting by devices,
+                // unlike the Executive Summary's Patch Fleet Compliance. The line-chart
+                // legend keeps only 14 characters of a label (ChartRenderer.drawLegend),
+                // so the qualifier must fit: "Patch Compliance %" showed as "Patch Complian".
+                secSeries.append(ChartSeries(label: "Patch % (avg)",
                                              color: ChartPalette.color(for: 2), points: patchPoints))
             }
             if !secSeries.isEmpty {
@@ -1380,6 +1388,14 @@ struct ReportEngine: Sendable {
         "blueprint-status",
     ]
 
+    /// Kinds Jamf Account cannot grant a tenant-level Platform API integration: it offers neither
+    /// the Compliance Benchmarks nor the Blueprints permission at that level.
+    static let environmentLevelKinds: Set<String> = [
+        "compliance-devices",
+        "compliance-rules",
+        "blueprint-status",
+    ]
+
     /// The profile's auth method when it positively rules out
     /// `platformOnlyKinds`; nil for a platform profile and — deliberately —
     /// for an unknown method. Unknown fails toward collecting: never skip a
@@ -1474,28 +1490,22 @@ struct ReportEngine: Sendable {
     struct CollectOutcome: Equatable, Sendable {
         let kind: String
         let exitCode: Int32
+        /// The failed attempt's classified cause; nil for successes and launch failures.
+        var cause: FailureCause.Kind? = nil
     }
 
     /// Whether a collect's per-command outcomes mean the profile's credentials are
     /// dead (vs a partial failure that should fall back to cache).
     ///
-    /// Auth-dead requires BOTH: zero successful live calls (no `exit 0` with a
-    /// non-empty body) AND at least one `exit 3` (HTTP 401 — expired/revoked).
-    /// A single 401 among successes is NOT auth-dead: a working call proves auth is
-    /// alive, so the 401 is transient/per-endpoint and falls back to cache. Chronic
-    /// non-auth failures (Platform-API 404 → exit 1 on on-prem) carry no 401 and
-    /// cannot trip this on their own. An empty outcome set (no auth-bearing command
-    /// ran) is never auth-dead.
-    static func isCollectAuthDead(_ outcomes: [CollectOutcome]) -> Bool {
-        guard !outcomes.isEmpty else { return false }
-        // exit 0 and exit 7 (partial failure, v1.19.0+) both prove auth was accepted
-        // (auth precedes the response body), so both count as success here. A single
-        // such success means auth is alive, so a co-occurring 401 is transient.
-        let anySuccess = outcomes.contains {
-            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
-        }
-        let anyAuthFailure = outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
-        return !anySuccess && anyAuthFailure
+    /// Auth-dead requires no kind to have landed this run (`savedKinds.isEmpty`) and
+    /// at least one `exit 3` (HTTP 401 — expired/revoked). A landed kind proves the
+    /// credentials work, so a co-occurring 401 is transient/per-endpoint and falls
+    /// back to cache. An exit code alone proves nothing — some commands exit 0 after
+    /// a failed fetch (spec §13.2) — so `savedKinds` is the only evidence of success.
+    /// An empty outcome set is never auth-dead.
+    static func isCollectAuthDead(_ outcomes: [CollectOutcome], savedKinds: Set<String>) -> Bool {
+        guard !outcomes.isEmpty, savedKinds.isEmpty else { return false }
+        return outcomes.contains { $0.exitCode == CLIBridge.exitCodeUnauthorized }
     }
 
     /// Whether a collect's per-command outcomes represent a total outage where live
@@ -1523,17 +1533,39 @@ struct ReportEngine: Sendable {
     ///   excluded from the "failure" evidence; an all-exit-2 run is a broken invocation,
     ///   not an outage, and only warns per-kind.
     ///
-    /// Returns false for an empty outcome set, for any outcome set that includes at least
-    /// one `exit 0` or `exit 7` (partial failure) success, for any run where at least one
-    /// kind was skipped as not-due, and for a failure set that is exit-2-only.
-    static func isCollectDead(_ outcomes: [CollectOutcome], skippedNotDueCount: Int = 0) -> Bool {
-        guard !outcomes.isEmpty else { return false }
-        let anySuccess = outcomes.contains {
-            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
-        }
-        guard !anySuccess else { return false }
+    /// Returns false for an empty outcome set, when any kind landed a snapshot this run, when
+    /// at least one kind was skipped as not due, and for a failure set that is exit-2-only.
+    /// An exit code is not evidence of success: `pro report update-status` exits 0 after both
+    /// its fetches fail (connection-access spec §13.2), so success means data reached disk.
+    static func isCollectDead(
+        _ outcomes: [CollectOutcome], savedKinds: Set<String>, skippedNotDueCount: Int = 0
+    ) -> Bool {
+        guard !outcomes.isEmpty, savedKinds.isEmpty else { return false }
         guard skippedNotDueCount == 0 else { return false }
         return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
+    }
+
+    /// What a dead run's failures say, for its message (spec §9.6).
+    enum DeadRunCause: Equatable, Sendable {
+        case outage
+        /// Every failure was a missing permission: Jamf answered, nothing was readable.
+        case noPermission
+        /// A failure named a rejected scope ID. One is enough: Jamf Pro commands on a gateway
+        /// profile drop the 404 body (spec §14.1), so they never name it themselves.
+        case rejectedID
+    }
+
+    /// Exit-2 outcomes are left out, as in `isCollectDead`: a usage error says nothing about
+    /// access.
+    static func deadRunCause(_ outcomes: [CollectOutcome]) -> DeadRunCause {
+        let causes = outcomes.filter { $0.exitCode != CLIBridge.exitCodeUsage }.map(\.cause)
+        if causes.contains(where: { $0 == .scopeRejected || $0 == .unknownEnvironment }) {
+            return .rejectedID
+        }
+        if !causes.isEmpty, causes.allSatisfy({ $0 == .missingPermission }) {
+            return .noPermission
+        }
+        return .outage
     }
 
     /// Confirmation probe run before honoring an `isCollectAuthDead` verdict — one
@@ -1585,8 +1617,8 @@ struct ReportEngine: Sendable {
         return exitCode == 0
     }
 
-    /// What `collect` must do once an `isCollectAuthDead(outcomes)` verdict has
-    /// been resolved with the confirmation probe.
+    /// What `collect` must do once an `isCollectAuthDead(outcomes, savedKinds:)`
+    /// verdict has been resolved with the confirmation probe.
     enum AuthDeadDecision: Equatable {
         /// The probe confirmed credentials are alive — warn (naming the 401'd
         /// kinds) and let the run continue as an ordinary partial failure.
@@ -1596,17 +1628,18 @@ struct ReportEngine: Sendable {
     }
 
     /// Resolves the auth-dead branch: runs the confirmation `probe` ONLY when
-    /// `isCollectAuthDead(outcomes)` is true (never for a healthy run or one with
-    /// no 401 evidence), and returns `nil` when there is nothing to resolve.
-    /// Isolated from the process-spawning `collect` loop so it is directly
+    /// `isCollectAuthDead(outcomes, savedKinds:)` is true (never for a healthy run
+    /// or one with no 401 evidence), and returns `nil` when there is nothing to
+    /// resolve. Isolated from the process-spawning `collect` loop so it is directly
     /// testable with a spy probe — no jamf-cli binary required.
     static func evaluateAuthDead(
         outcomes: [CollectOutcome],
+        savedKinds: Set<String>,
         profile: String,
         bin: URL,
         probe: AuthConfirmationProbe
     ) async -> AuthDeadDecision? {
-        guard Self.isCollectAuthDead(outcomes) else { return nil }
+        guard Self.isCollectAuthDead(outcomes, savedKinds: savedKinds) else { return nil }
         let authFailedKinds = outcomes
             .filter { $0.exitCode == CLIBridge.exitCodeUnauthorized }
             .map(\.kind)
@@ -1616,6 +1649,22 @@ struct ReportEngine: Sendable {
         return .confirmedDead(failedCount: authFailedKinds.count)
     }
 
+    /// Whether a `collect` call that returned normally actually ran its loop.
+    ///
+    /// The two early returns collected nothing, and a caller chaining more work
+    /// onto the collect must not treat them as a run: `CollectRouter` runs Jamf
+    /// Protect only after `.collected`, so a Mac that stood down for a peer does
+    /// not fetch Protect while the peer holds the workspace claim.
+    enum CollectDisposition: Equatable, Sendable {
+        /// The collect loop ran to the end (whatever landed, failed or was not due).
+        case collected
+        /// Skipped by the once-per-day guard: a full collect already ran today.
+        case alreadyCollected
+        /// Stood down for another Mac working in this shared workspace.
+        case stoodDown
+    }
+
+    @discardableResult
     static func collect(
         profile: String,
         workspacePaths: WorkspacePaths.Type,
@@ -1625,7 +1674,7 @@ struct ReportEngine: Sendable {
         authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws {
+    ) async throws -> CollectDisposition {
         guard ProfileService.isValid(profile) else {
             throw ReportEngineError.invalidProfile(profile)
         }
@@ -1661,7 +1710,7 @@ struct ReportEngine: Sendable {
                 let msg = "[info] already collected today — skipping (use Refresh to force)"
                 AppLogger.collect.info("\(msg, privacy: .public)")
                 onLine(.init(timestamp: Date(), level: .info, text: msg))
-                return
+                return .alreadyCollected
             }
         }
 
@@ -1681,7 +1730,7 @@ struct ReportEngine: Sendable {
             let line = Self.standDownLine(reason: reason)
             AppLogger.collect.info("\(line, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .warn, text: line))
-            return
+            return .stoodDown
         case .proceed(let state, let notes):
             holdsClaim = state.holdsClaim
             for note in notes {
@@ -1765,9 +1814,10 @@ struct ReportEngine: Sendable {
         } ?? false
 
         // Resolved once per run, not per kind — it spawns `config list`.
-        let nonPlatformAuth = Self.nonPlatformAuthMethod(
-            ProfileAuthMethod.resolve(profile: profile, binary: bin)
-        )
+        let profileAuth = ProfileAuthMethod.resolve(profile: profile, binary: bin)
+        let nonPlatformAuth = Self.nonPlatformAuthMethod(profileAuth?.authMethod)
+        let tenantLevel = profileAuth?.isTenantLevel == true
+        let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -1779,6 +1829,8 @@ struct ReportEngine: Sendable {
         // about server reachability. Feeds isCollectDead's veto: a run that skipped
         // fresh-cache kinds and failed only the chronic residue is not an outage.
         var skippedNotDueCount = 0
+        // Listed at most once per run, by whichever compliance kind runs first.
+        var benchmarkDiscovery: BenchmarkDiscovery?
         for (args, kind) in plannedCommands {
             // Platform-only filter. Recorded nowhere: a kind this profile's API
             // cannot serve is not a failure, so it must not advance a failure
@@ -1788,6 +1840,24 @@ struct ReportEngine: Sendable {
                     timestamp: Date(), level: .info,
                     text: "[skip] \(kind): requires a Platform API profile "
                         + "(auth-method is \(nonPlatformAuth))"
+                ))
+                continue
+            }
+            // Same rule for kinds Jamf Account cannot grant a tenant-level integration.
+            if tenantLevel, Self.environmentLevelKinds.contains(kind) {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): needs a platform environment integration "
+                        + "(this profile is tenant level)"
+                ))
+                continue
+            }
+            // And for kinds the operator listed in jamf_cli.collect_skip to keep an
+            // on-prem server from stalling — even on a forced collect.
+            if collectSkip.contains(kind) {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[skip] \(kind): listed in jamf_cli.collect_skip"
                 ))
                 continue
             }
@@ -1818,13 +1888,26 @@ struct ReportEngine: Sendable {
 
             // Every kind that got this far produces an outcome, launch failures
             // included — see `launchFailureExitCode` for why that matters.
-            let result = try await Self.collectOneKind(
-                kind: kind, profile: profile, arguments: args,
-                supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
-                dataDir: dataDir, recordManifest: recordManifest,
-                useCachedData: useCachedData, stateStore: stateStore,
-                collectStart: collectStart, onLine: onLine
-            )
+            let result: KindCollectResult
+            if Self.benchmarkReportKinds.contains(kind) {
+                result = try await Self.collectBenchmarkReport(
+                    kind: kind, profile: profile, arguments: args,
+                    configuredTitles: loadedConfig?.platform?.benchmarkTitles ?? [],
+                    discovery: &benchmarkDiscovery,
+                    supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
+                    dataDir: dataDir, recordManifest: recordManifest,
+                    useCachedData: useCachedData, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine
+                )
+            } else {
+                result = try await Self.collectOneKind(
+                    kind: kind, profile: profile, arguments: args,
+                    supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge,
+                    dataDir: dataDir, recordManifest: recordManifest,
+                    useCachedData: useCachedData, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine
+                )
+            }
             outcomes.append(result.outcome)
             if result.saved { savedKinds.insert(kind) }
         }
@@ -1834,6 +1917,11 @@ struct ReportEngine: Sendable {
             skippedNotDueCount: skippedNotDueCount, profile: profile, bin: bin,
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
+
+        // Judged before the scan phase adds its kinds. The scan works from the cached
+        // `computers` snapshot and lands an EMPTY ddm-device-status for a fleet with no
+        // DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
+        let matrixLandedNothing = !outcomes.isEmpty && savedKinds.isEmpty
 
         // 2.8.0: per-device scan phase. After the verdicts (so a dead run never
         // starts a fleet-wide fan-out) and before finalize (so its kinds count
@@ -1848,7 +1936,7 @@ struct ReportEngine: Sendable {
 
         await Self.finalizeCollect(
             profile: profile, tiers: tiers, bin: bin, dataDir: dataDir,
-            savedKinds: savedKinds, nothingLanded: !outcomes.isEmpty && savedKinds.isEmpty,
+            savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
             loadedConfig: loadedConfig,
             workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
         )
@@ -1859,6 +1947,7 @@ struct ReportEngine: Sendable {
         if case .proceed(let state, _) = coordination, state.coordinating {
             SharedWorkspace.recordActivity(profile: profile)
         }
+        return .collected
     }
 
     /// The three post-loop honesty checks, in the order they have to run:
@@ -1888,7 +1977,8 @@ struct ReportEngine: Sendable {
         // defect this fixes): one endpoint's 401 is not proof credentials are dead.
         // evaluateAuthDead only calls the probe when isCollectAuthDead is true.
         if let decision = await Self.evaluateAuthDead(
-            outcomes: outcomes, profile: profile, bin: bin, probe: authConfirmationProbe
+            outcomes: outcomes, savedKinds: savedKinds, profile: profile, bin: bin,
+            probe: authConfirmationProbe
         ) {
             switch decision {
             case .confirmedAlive(let warnedKinds):
@@ -1917,13 +2007,16 @@ struct ReportEngine: Sendable {
         // entirely stale cache. Abort BEFORE SOFA/summary for the same reason as
         // auth-dead: no degraded snapshot should be promoted as fresh data. See
         // isCollectDead's doc comment for the field defect this veto set fixes.
-        if Self.isCollectDead(outcomes, skippedNotDueCount: skippedNotDueCount) {
-            let failedCount = outcomes.count
-            let msg = "[error] all \(failedCount) live jamf-cli call(s) failed for '\(profile)' " +
-                "(server unreachable or jamf-cli broken) — no snapshot written."
+        if Self.isCollectDead(
+            outcomes, savedKinds: savedKinds, skippedNotDueCount: skippedNotDueCount
+        ) {
+            let error = ReportEngineError.collectDead(
+                profile: profile, failedCount: outcomes.count, cause: Self.deadRunCause(outcomes)
+            )
+            let msg = "[error] " + (error.errorDescription ?? "collect failed")
             AppLogger.collect.error("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .fail, text: msg))
-            throw ReportEngineError.collectDead(profile: profile, failedCount: failedCount)
+            throw error
         }
 
         // Degraded-run summary. A run where some kinds fell back to cache is not
@@ -2165,7 +2258,7 @@ struct ReportEngine: Sendable {
 
     /// What one kind's attempt produced: the outcome that feeds the post-loop
     /// verdicts, and whether a snapshot actually reached disk.
-    private struct KindCollectResult: Sendable {
+    struct KindCollectResult: Sendable {
         let outcome: CollectOutcome
         let saved: Bool
     }
@@ -2196,9 +2289,11 @@ struct ReportEngine: Sendable {
             timestamp: Date(), level: .info,
             text: "[info] collecting \(kind) for \(profile)"
         ))
+        let stderrWatcher = StderrSignalWatcher()
         let captureResult = await Self.invokeWithRetry(
             kind: kind, arguments: arguments, supportsQuietFlags: supportsQuietFlags,
-            bin: bin, bridge: bridge, onLine: onLine
+            bin: bin, bridge: bridge, onLine: stderrWatcher.forwarding(to: onLine),
+            beforeRetry: { stderrWatcher.reset() }
         )
 
         guard let (exitCode, data) = captureResult else {
@@ -2213,59 +2308,92 @@ struct ReportEngine: Sendable {
         }
         let outcome = CollectOutcome(kind: kind, exitCode: exitCode)
         let isPartialFailure = exitCode == CLIBridge.exitCodePartialFailure
-        if (exitCode == 0 || isPartialFailure), !data.isEmpty {
-            return try Self.saveCollectedPayload(
-                kind: kind, data: data, outcome: outcome,
-                isPartialFailure: isPartialFailure, dataDir: dataDir,
-                recordManifest: recordManifest, stateStore: stateStore,
-                collectStart: collectStart, onLine: onLine
+        // A failed blueprint listing exits non-zero, so exit 0 with jamf-cli's
+        // "No blueprints found." line is a real empty answer, not lost output.
+        let noBlueprints = exitCode == 0 && data.isEmpty && stderrWatcher.sawNoBlueprints
+        if noBlueprints {
+            onLine(.init(
+                timestamp: Date(), level: .info,
+                text: "[info] \(kind): jamf-cli found no blueprints — saving an empty list"
+            ))
+        }
+        let payload = noBlueprints ? Data("[]".utf8) : data
+        guard exitCode == 0 || isPartialFailure, !payload.isEmpty else {
+            return try Self.recordUnlandedAttempt(
+                kind: kind, exitCode: exitCode, data: data,
+                sawForbidden: stderrWatcher.sawForbidden,
+                sawNoDeclarationData: stderrWatcher.sawNoDeclarationData,
+                sawSoftwareUpdatePlansOff: stderrWatcher.sawSoftwareUpdatePlansOff,
+                useCachedData: useCachedData,
+                dataDir: dataDir, stateStore: stateStore, collectStart: collectStart,
+                onLine: onLine
             )
-        } else if useCachedData {
-            // use_cached_data=true: warn and skip. Only claim "using cached" when a
-            // cached snapshot for this kind actually exists on disk — otherwise the
-            // generate step has nothing to fall back to and the copy would mislead.
-            let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
-            let hasCachedSnapshot = FileManager.newestJSONFile(in: kindDir) != nil
-            let cacheNote = hasCachedSnapshot
-                ? "skipped (using cached)"
-                : "no cached snapshot available"
-            // THE swallow this whole track exists to close: before the
-            // counter, this warn line was the only trace that a kind failed,
-            // and the run still exited 0. Persisting it is what lets
-            // DataFreshnessHealth report a kind that has been failing nightly
-            // for months without anyone opening its screen.
-            stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
-            // jamf-cli reports its own reason as a JSON error object; an
-            // exit code alone sends the operator hunting. "exit 2 — no
-            // cached snapshot available" is very nearly useless next to
-            // "needs Jamf Security Cloud credentials", which is what
-            // actually stopped the fleet security report on a live tenant.
-            let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
-            onLine(.init(timestamp: Date(), level: .warn,
-                         text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"))
-            return KindCollectResult(outcome: outcome, saved: false)
-        } else {
-            // use_cached_data=false: treat collect failure as fatal for this kind.
-            stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart)
+        }
+        return try Self.saveCollectedPayload(
+            kind: kind, data: payload, outcome: outcome,
+            isPartialFailure: isPartialFailure, dataDir: dataDir,
+            recordManifest: recordManifest, stateStore: stateStore,
+            collectStart: collectStart, onLine: onLine
+        )
+    }
+
+    /// An attempt that produced nothing to save: classify it, count it, say why, and keep the
+    /// cache, or fail the run under `use_cached_data: false`. Shared with the per-benchmark
+    /// reports.
+    static func recordUnlandedAttempt(
+        kind: String,
+        exitCode: Int32,
+        data: Data,
+        sawForbidden: Bool = false,
+        sawNoDeclarationData: Bool = false,
+        sawSoftwareUpdatePlansOff: Bool = false,
+        useCachedData: Bool,
+        dataDir: URL,
+        stateStore: StateFileStore?,
+        collectStart: Date,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) throws -> KindCollectResult {
+        let cause = FailureCause.classify(
+            exitCode: exitCode, stdout: data, sawForbiddenOnStderr: sawForbidden,
+            sawNoDeclarationDataOnStderr: sawNoDeclarationData,
+            sawSoftwareUpdatePlansOffOnStderr: sawSoftwareUpdatePlansOff)
+        let outcome = CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind)
+        stateStore?.record(.failed(exitCode: exitCode), report: kind, at: collectStart,
+                           cause: cause)
+        guard useCachedData else {
             onLine(.init(
                 timestamp: Date(), level: .fail,
-                text: "[error] \(kind): exit \(exitCode) — failing (use_cached_data=false)"
+                text: "[error] \(kind): exit \(exitCode)\(Self.causeSuffix(cause)) "
+                    + "— failing (use_cached_data=false)"
             ))
             throw ReportEngineError.collectFailed(kind: kind, exitCode: exitCode)
         }
+        // Only claim "using cached" when a cached snapshot for this kind exists; otherwise
+        // the generate step has nothing to fall back to and the copy would mislead.
+        let kindDir = dataDir.appendingPathComponent(kind, isDirectory: true)
+        let cacheNote = FileManager.newestJSONFile(in: kindDir) != nil
+            ? "skipped (using cached)"
+            : "no cached snapshot available"
+        // jamf-cli's own reason beats a bare exit code in Run History.
+        let reason = Self.jamfCLIErrorMessage(in: data).map { " (\($0))" } ?? ""
+        onLine(.init(timestamp: Date(), level: .warn,
+                     text: "[warn] \(kind): exit \(exitCode)\(reason) — \(cacheNote)"
+                        + Self.causeSuffix(cause)))
+        return KindCollectResult(outcome: outcome, saved: false)
     }
 
     /// One kind's jamf-cli invocation plus the single in-run retry. nil means
     /// the process never launched — twice.
     ///
     /// Split out of `collectOneKind` for length only; a pure move.
-    private static func invokeWithRetry(
+    static func invokeWithRetry(
         kind: String,
         arguments: [String],
         supportsQuietFlags: Bool,
         bin: URL,
         bridge: CLIBridge,
-        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void,
+        beforeRetry: @Sendable () -> Void = {}
     ) async -> (Int32, Data)? {
         // --no-hints suppresses interactive usage tips; --no-version-check
         // suppresses the "new version available" banner that jamf-cli 1.18+
@@ -2300,6 +2428,7 @@ struct ReportEngine: Sendable {
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): \(reason) — retrying once"))
             try? await Task.sleep(nanoseconds: Self.retryDelayNanoseconds)
+            beforeRetry()
             if let retried = await invoke() { captureResult = retried }
         }
         return captureResult
@@ -2311,7 +2440,7 @@ struct ReportEngine: Sendable {
     /// Split out of `collectOneKind` only for length; the two together are the
     /// original loop body verbatim, in the original order. Not `async` — every
     /// step here is synchronous file work.
-    private static func saveCollectedPayload(
+    static func saveCollectedPayload(
         kind: String,
         data: Data,
         outcome: CollectOutcome,
@@ -2343,6 +2472,13 @@ struct ReportEngine: Sendable {
             ? Self.patchDeviceFailurePayload(from: data, onLine: onLine)
             : jsonPayload(from: data)
         guard let payload = salvaged else {
+            if sectionedCollectKinds.contains(kind), let fetch = Self.patchFetchError(in: data) {
+                return Self.recordSectionFetchError(
+                    kind: kind, section: fetch.section, error: fetch.error,
+                    exitCode: outcome.exitCode, stateStore: stateStore,
+                    collectStart: collectStart, onLine: onLine
+                )
+            }
             onLine(.init(timestamp: Date(), level: .warn,
                 text: "[warn] \(kind): output is not JSON (renamed/unsupported "
                     + "command on this jamf-cli?) — snapshot not saved"))
@@ -2868,6 +3004,7 @@ struct ReportEngine: Sendable {
 
         let bridge = CLIBridge()
         var schoolOutcomes: [CollectOutcome] = []
+        var schoolSaved: Set<String> = []
         for (args, kind) in commands {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting \(kind) for \(profile)"))
@@ -2896,6 +3033,7 @@ struct ReportEngine: Sendable {
                     continue
                 }
                 try saveSnapshot(data: data, kind: kind, dataDir: dataDir)
+                schoolSaved.insert(kind)
                 onLine(.init(timestamp: Date(), level: .ok,
                              text: "[ok] \(kind): \(data.count) bytes"))
             } else {
@@ -2909,7 +3047,7 @@ struct ReportEngine: Sendable {
         // Checked after the full loop (same as Jamf Pro collect) so partial failures
         // still warm the cache. Launch-failures (nil schoolResult) are excluded from
         // schoolOutcomes intentionally — they carry no exit code signal.
-        if Self.isCollectDead(schoolOutcomes) {
+        if Self.isCollectDead(schoolOutcomes, savedKinds: schoolSaved) {
             let failedCount = schoolOutcomes.count
             let msg = "[error] all \(failedCount) live jamf-cli school call(s) failed for " +
                 "'\(profile)' — server unreachable or credentials broken. No snapshot written."
@@ -3187,6 +3325,16 @@ struct ReportEngine: Sendable {
         return trimmed.count > limit ? String(trimmed.prefix(limit)) + "…" : trimmed
     }
 
+    /// The cause and jamf-cli's whole hint for a Run History line (spec §10.3). The 300-character
+    /// cap applies to jamf-cli's message, not to this.
+    static func causeSuffix(_ cause: FailureCause) -> String {
+        var suffix = cause.kind == .other ? "" : " — cause: \(cause.label)"
+        if let hint = cause.hint {
+            suffix += " — hint: " + hint.components(separatedBy: .newlines).joined(separator: " ")
+        }
+        return suffix
+    }
+
     static func isJSONSnapshot(_ data: Data) -> Bool {
         jsonPayload(from: data) != nil
     }
@@ -3277,7 +3425,7 @@ struct ReportEngine: Sendable {
             guard let rows = try? JSONSerialization.jsonObject(with: section, options: [])
                     as? [[String: Any]] else { continue }
             guard let first = rows.first else { continue }
-            if first["section"] != nil { return envelopeDeviceRows(rows, onLine: onLine) }
+            if first["section"] != nil { return envelopeDeviceRows(rows) }
             if first["device_id"] != nil { return section }
         }
         if sections.count > 1 {
@@ -3294,27 +3442,64 @@ struct ReportEngine: Sendable {
     /// of `{section, data, fetch_error}` objects. A non-empty `fetch_error` on
     /// either failures section means upstream could not ask (device rows depend
     /// on policy rows), which is not a clean zero — nil lets the caller record
-    /// the kind as not landed.
-    private static func envelopeDeviceRows(
-        _ sections: [[String: Any]],
-        onLine: @Sendable (CLIBridge.LogLine) -> Void
-    ) -> Data? {
+    /// the kind as not landed, with `patchFetchError` saying why.
+    ///
+    /// With no fetch error, a device section whose `data` is null or absent is
+    /// the same healthy zero as `[]`: Go encodes a nil slice as null and
+    /// drops it under `omitempty`. Only a missing section, or `data` of some
+    /// other type, is output this cannot read.
+    private static func envelopeDeviceRows(_ sections: [[String: Any]]) -> Data? {
+        guard sectionFetchError(in: sections) == nil else { return nil }
+        guard let device = sections.first(where: { $0["section"] as? String == "device_failures" })
+        else { return nil }
+        guard let value = device["data"], !(value is NSNull) else { return Data("[]".utf8) }
+        guard let rows = value as? [[String: Any]] else { return nil }
+        return try? JSONSerialization.data(withJSONObject: rows, options: [])
+    }
+
+    /// The first failures section a jamf-cli 1.29 `--scan-failures` document could not fetch.
+    static func patchFetchError(in data: Data) -> (section: String, error: String)? {
+        for chunk in jsonSections(from: data) {
+            guard let sections = try? JSONSerialization.jsonObject(with: chunk, options: [])
+                    as? [[String: Any]],
+                  sections.first?["section"] != nil,
+                  let found = sectionFetchError(in: sections) else { continue }
+            return found
+        }
+        return nil
+    }
+
+    private static func sectionFetchError(
+        in sections: [[String: Any]]
+    ) -> (section: String, error: String)? {
         for section in sections {
             guard let name = section["section"] as? String,
-                  name == "policy_failures" || name == "device_failures" else { continue }
-            if let error = section["fetch_error"] as? String, !error.isEmpty {
-                onLine(.init(
-                    timestamp: Date(), level: .warn,
-                    text: "[warn] patch-device-failures: jamf-cli could not fetch \(name): "
-                        + String(error.prefix(200))
-                ))
-                return nil
-            }
+                  name == "policy_failures" || name == "device_failures",
+                  let error = section["fetch_error"] as? String, !error.isEmpty else { continue }
+            return (name, error)
         }
-        guard let device = sections.first(where: { $0["section"] as? String == "device_failures" }),
-              let rows = device["data"] as? [[String: Any]]
-        else { return nil }
-        return try? JSONSerialization.data(withJSONObject: rows, options: [])
+        return nil
+    }
+
+    /// Records a section jamf-cli could not fetch as the kind's cause, in one Run History line,
+    /// rather than calling the output unreadable.
+    static func recordSectionFetchError(
+        kind: String, section: String, error: String, exitCode: Int32,
+        stateStore: StateFileStore?, collectStart: Date,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> KindCollectResult {
+        let cause = FailureCause.fetchError(error, exitCode: exitCode)
+        stateStore?.record(
+            .failed(exitCode: exitCode), report: kind, at: collectStart, cause: cause)
+        onLine(.init(
+            timestamp: Date(), level: .warn,
+            text: "[warn] \(kind): jamf-cli could not fetch \(section) — snapshot not saved"
+                + Self.causeSuffix(cause)
+        ))
+        return KindCollectResult(
+            outcome: CollectOutcome(kind: kind, exitCode: exitCode, cause: cause.kind),
+            saved: false
+        )
     }
 
     static func jsonPayload(from data: Data) -> Data? {
@@ -3809,7 +3994,7 @@ enum ReportEngineError: Error, LocalizedError {
     /// `emitSummaryJSON` so no stale-cache summary is promoted as fresh data.
     /// Partial failures (≥1 success) do NOT reach this — they warm the cache
     /// and the run continues normally.
-    case collectDead(profile: String, failedCount: Int)
+    case collectDead(profile: String, failedCount: Int, cause: ReportEngine.DeadRunCause = .outage)
     /// PR-10 / threat-model T-11: raised at run start when
     /// `jamf_cli.require_manifest: true` and at least one snapshot directory's
     /// newest JSON fails SHA-256 verification (mismatch or corrupt manifest).
@@ -3840,10 +4025,22 @@ enum ReportEngineError: Error, LocalizedError {
             return "Authentication failed for profile '\(p)': all \(n) live Jamf Pro call(s) " +
                 "returned 401 (expired or revoked credentials) and none succeeded. " +
                 "Re-authenticate with: jamf-cli -p \(p) pro auth token. No snapshot was written."
-        case .collectDead(let p, let n):
-            return "All \(n) live jamf-cli call(s) failed for profile '\(p)' (server unreachable " +
-                "or jamf-cli broken). No snapshot was written. Check network connectivity and " +
-                "jamf-cli health, then re-run collect."
+        case .collectDead(let p, let n, let cause):
+            switch cause {
+            case .outage:
+                return "All \(n) live jamf-cli call(s) failed for profile '\(p)' (server " +
+                    "unreachable or jamf-cli broken). No snapshot was written. Check network " +
+                    "connectivity and jamf-cli health, then re-run collect."
+            case .noPermission:
+                return "All \(n) live jamf-cli call(s) failed for profile '\(p)': the connection " +
+                    "reached Jamf but cannot read any data source. No snapshot was written. " +
+                    "Grant read permissions to the profile's API role or integration; the " +
+                    "Permissions & Access wiki page lists them per report area."
+            case .rejectedID:
+                return "All \(n) live jamf-cli call(s) failed for profile '\(p)': the Jamf " +
+                    "Platform gateway rejected the profile's environment or tenant ID. No " +
+                    "snapshot was written. Correct the ID with Update credentials in Data Sources."
+            }
         case .snapshotIntegrityViolation(let summary, let dataDir):
             var parts: [String] = []
             if summary.mismatch > 0 { parts.append("\(summary.mismatch) hash mismatch") }

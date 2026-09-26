@@ -423,6 +423,14 @@ struct StatTile: View {
     var deltaTrend: Trend = .flat
     var sparkValues: [Double]? = nil
     var sparkColor: Color? = nil
+    /// Stretch the surface to the height the container offers — set inside an
+    /// `EqualHeightTileGrid` so a tile without a caption or sparkline matches
+    /// its row instead of sitting short. Off, the tile keeps its own height.
+    var fillsHeight: Bool = false
+    /// Lines the label may take, overriding any `lineLimit` set around the tile —
+    /// a caller that holds the caption to one line can still let a long title
+    /// wrap. Nil leaves the label to the surrounding `lineLimit`.
+    var labelLineLimit: Int? = nil
 
     // WCAG 1.4.4: scaled relative to .largeTitle so the KPI numeral responds
     // to Accessibility text size while keeping the design baseline at 32pt.
@@ -431,6 +439,9 @@ struct StatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Kicker(text: label)
+                .transformEnvironment(\.lineLimit) { limit in
+                    if let labelLineLimit { limit = labelLineLimit }
+                }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(value)
                     .font(Theme.Fonts.serif(displaySize, weight: .bold))
@@ -458,7 +469,10 @@ struct StatTile: View {
             }
         }
         .padding(EdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // With `fillsHeight` off, maxHeight is nil and the frame is as tall as
+        // its content, so `.topLeading` lays out exactly as `.leading` did.
+        .frame(maxWidth: .infinity, maxHeight: fillsHeight ? CGFloat.infinity : nil,
+               alignment: .topLeading)
         .background(Theme.Colors.winBG2)
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Metrics.cardRadius, style: .continuous)
@@ -758,16 +772,22 @@ struct EditableNumberStepper: View {
     var body: some View {
         HStack(spacing: 4) {
             if let prefix {
+                // Labels keep their width; at the minimum window width "Stale" read "S…".
                 Text(prefix)
                     .font(Theme.Fonts.mono(11.5))
                     .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize()
             }
             TextField("", value: $value, format: .number)
                 .textFieldStyle(.plain)
                 .multilineTextAlignment(.trailing)
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Colors.fg2)
-                .frame(minWidth: fieldWidth)
+                // DRAFT — needs visual verification. A fixed width, as the
+                // property's doc says: with only a minimum, the field took
+                // every spare point of the Devices header, stretching "Stale
+                // 30 d" across half the toolbar row.
+                .frame(width: fieldWidth)
                 .onChange(of: value) { _, newValue in
                     let clamped = max(range.lowerBound, min(range.upperBound, newValue))
                     if clamped != newValue { value = clamped }
@@ -776,6 +796,7 @@ struct EditableNumberStepper: View {
                 Text(suffix)
                     .font(Theme.Fonts.mono(11.5))
                     .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize()
             }
             Stepper("", value: $value, in: range, step: 1)
                 .labelsHidden()
@@ -797,5 +818,28 @@ struct EditableNumberStepper: View {
 
 // MARK: - Data Table Components
 
-/// Reusable table header for hand-rolled tables that need custom row layouts.
-/// A column with `width == nil` flexes to fill remaining space.
+// MARK: - Filter chip
+
+/// An active filter as a removable token: an xmark beside the filter's label,
+/// cleared with one click. The look of the Devices screen's OS-version chip,
+/// shared so a screen that filters from a chart shows what the click did and
+/// how to undo it.
+struct FilterChip: View {
+    let label: String
+    let onClear: () -> Void
+
+    var body: some View {
+        Button(action: onClear) {
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                Mono(text: label, color: Theme.Colors.goldBright)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear filter: \(label)")
+        .help("Clear this filter")
+    }
+}
