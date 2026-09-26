@@ -133,6 +133,27 @@ struct TrendsView: View {
         return (delta / baseline) * 100
     }
 
+    /// A gap longer than this many typical intervals between points breaks the hero line.
+    nonisolated static let lineGapFactor: Double = 2.5
+    /// No shorter gap breaks it, so a weekday-only schedule's weekends stay joined.
+    nonisolated static let minimumLineGap: TimeInterval = 4 * 24 * 3600
+
+    /// The line segment each point belongs to, from 0. The cadence is the median interval
+    /// between points, so daily and weekly histories each break only at their own gaps.
+    /// `dates` must be ascending, as the trend points are.
+    nonisolated static func lineSegmentIndices(_ dates: [Date]) -> [Int] {
+        guard dates.count > 1 else { return dates.map { _ in 0 } }
+        let intervals = zip(dates.dropFirst(), dates).map { $0.timeIntervalSince($1) }
+        let sorted = intervals.sorted()
+        let typical = sorted[sorted.count / 2]
+        let limit = max(typical * lineGapFactor, minimumLineGap)
+        var segment = 0
+        return [0] + intervals.map { interval in
+            if interval > limit { segment += 1 }
+            return segment
+        }
+    }
+
     private var pctDelta: Double? {
         Self.relativeChangePercent(delta: delta, baseline: startVal)
     }
@@ -562,10 +583,15 @@ struct TrendsView: View {
                             // The area starts at the axis floor, not 0: Charts does not clip marks
                             // to the plot, so a floor above 0 let the fill run down over the card.
                             let areaFloor = chartYDomain.lowerBound
-                            ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
+                            // Each segment is its own series, so a gap in the history breaks the
+                            // line instead of a curve being drawn through weeks with no data.
+                            let segments = Self.lineSegmentIndices(trendPoints.map(\.date))
+                            ForEach(Array(trendPoints.enumerated()), id: \.offset) { idx, point in
+                                let segment = segments[safe: idx] ?? 0
                                 AreaMark(x: .value("Date", point.date),
                                          yStart: .value(metric.displayLabel, areaFloor),
-                                         yEnd: .value(metric.displayLabel, point.value))
+                                         yEnd: .value(metric.displayLabel, point.value),
+                                         series: .value("Segment", segment))
                                     .foregroundStyle(LinearGradient(
                                         colors: [Color(hex: metric.colorHex).opacity(0.14),
                                                  Color(hex: metric.colorHex).opacity(0.0)],
@@ -573,7 +599,8 @@ struct TrendsView: View {
                                     ))
                                     .interpolationMethod(.monotone)
                                 LineMark(x: .value("Date", point.date),
-                                         y: .value(metric.displayLabel, point.value))
+                                         y: .value(metric.displayLabel, point.value),
+                                         series: .value("Segment", segment))
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                                     .interpolationMethod(.monotone)
