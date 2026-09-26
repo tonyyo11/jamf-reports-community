@@ -457,6 +457,17 @@ struct DevicesView: View {
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)
+                .overlay {
+                    // A filter that matches nothing otherwise leaves blank zebra rows.
+                    if filteredDevices.isEmpty {
+                        EmptyStateView(
+                            systemImage: "line.3.horizontal.decrease.circle",
+                            title: "No matching devices",
+                            message: "No inventory rows match the current filters."
+                        )
+                        .padding(24)
+                    }
+                }
                 .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { selection in
                     if let id = selection.first, let device = activeSnapshot.devices.first(where: { $0.id == id }) {
                         Button("Copy Serial Number") {
