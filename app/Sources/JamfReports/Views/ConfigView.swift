@@ -228,9 +228,7 @@ struct ConfigView: View {
         ViewThatFits(in: .horizontal) {
             segments(\.label)
             segments(\.shortLabel)
-                .accessibilityRepresentation { segments(\.label) }
             ScrollView(.horizontal, showsIndicators: false) { segments(\.shortLabel) }
-                .accessibilityRepresentation { segments(\.label) }
         }
     }
 
