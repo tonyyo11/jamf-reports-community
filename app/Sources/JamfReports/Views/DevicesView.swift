@@ -544,6 +544,8 @@ struct DevicesView: View {
                     HStack {
                         Mono(text: device.source)
                             .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(device.source)
                         Spacer()
                         PNPButton(title: "Copy Serial", icon: "doc.on.doc", size: .sm) {
                             SystemActions.copyToClipboard(device.serial)
