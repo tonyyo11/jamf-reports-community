@@ -743,8 +743,10 @@ struct DevicesView: View {
                             Image(systemName: file.hasSuffix(".csv") ? "tablecells" : "curlybraces")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
-                            Mono(text: file)
+                            Mono(text: Self.sourceRowLabel(file))
                                 .lineLimit(1)
+                                .truncationMode(.middle)
+                                .help(file)
                         }
                     }
                 }
@@ -759,6 +761,13 @@ struct DevicesView: View {
                 }
             }
         }
+    }
+
+    /// The shared workspace prefix filled the narrow rail, so every path truncated to
+    /// the same text; the filename begins with the kind and tells the rows apart.
+    static func sourceRowLabel(_ displayPath: String) -> String {
+        let name = (displayPath as NSString).lastPathComponent
+        return name.isEmpty ? displayPath : name
     }
 
     private var emptyState: some View {
