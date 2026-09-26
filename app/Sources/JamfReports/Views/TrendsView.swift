@@ -417,6 +417,28 @@ struct TrendsView: View {
 
     // MARK: Hero chart
 
+    private var deltaText: String {
+        let magnitude = "\(abs(Int(delta.rounded())))\(metric.unit)"
+        return pctDelta.map { "\(magnitude) (\(String(format: "%.1f", $0))%)" } ?? magnitude
+    }
+
+    /// The delta, plus the range pill when asked.
+    @ViewBuilder
+    private func heroIdleDetail(showsRange: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                .font(.system(size: 11, weight: .bold))
+            Text(deltaText)
+                .lineLimit(1)
+        }
+        .font(Theme.Fonts.mono(14, weight: .semibold))
+        .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+        .fixedSize(horizontal: true, vertical: false)
+        if showsRange {
+            Pill(text: rangeBadgeText, tone: .muted)
+        }
+    }
+
     /// Number plus the delta (idle) or hovered date; the range pill joins only when asked.
     private func heroValueRow(showsRange: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -429,27 +451,20 @@ struct TrendsView: View {
                 .fixedSize()
 
             if selectedPoint == nil {
-                HStack(spacing: 4) {
-                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
-                        .font(.system(size: 11, weight: .bold))
-                    Text(
-                        pctDelta.map {
-                            "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
-                        } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
-                    )
-                    .lineLimit(1)
-                }
-                .font(Theme.Fonts.mono(14, weight: .semibold))
-                .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
-                .fixedSize(horizontal: true, vertical: false)
-                if showsRange {
-                    Pill(text: rangeBadgeText, tone: .muted)
-                }
+                heroIdleDetail(showsRange: showsRange)
             } else {
-                Text("at \(displayDate)")
-                    .font(Theme.Fonts.mono(14, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.goldBright)
-                    .lineLimit(1)
+                // The hidden idle detail keeps the row as wide as it is idle, so hovering
+                // cannot make ViewThatFits pick the other arrangement and move the chart.
+                ZStack(alignment: .leadingFirstTextBaseline) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        heroIdleDetail(showsRange: showsRange)
+                    }
+                    .hidden()
+                    Text("at \(displayDate)")
+                        .font(Theme.Fonts.mono(14, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.goldBright)
+                        .lineLimit(1)
+                }
             }
         }
     }
@@ -466,9 +481,10 @@ struct TrendsView: View {
                             heroValueRow(showsRange: true)
                             VStack(alignment: .leading, spacing: 6) {
                                 heroValueRow(showsRange: false)
-                                if selectedPoint == nil {
-                                    Pill(text: rangeBadgeText, tone: .muted)
-                                }
+                                // Hidden, not removed, on hover so the chart below stays put.
+                                Pill(text: rangeBadgeText, tone: .muted)
+                                    .opacity(selectedPoint == nil ? 1 : 0)
+                                    .accessibilityHidden(selectedPoint != nil)
                             }
                         }
                     }
