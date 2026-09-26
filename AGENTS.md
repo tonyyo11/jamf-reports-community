@@ -351,11 +351,12 @@ own `HtmlReport` engine and `ReportEngine.generate` pipeline; these additions ar
 additive and do not conflict. No changes to existing command flags or JSON output shapes.
 
 **v1.31.1 (2026-09-18) — Pagination, blueprint YAML, group-tools resilience.** Patch fixes:
-`--all` now respects each endpoint's max page size (was hardcoded 100); blueprint YAML export
-rendering corrected; group-tools skips unscoped blueprints gracefully; member count reads from
-the correct collection object. The app does not invoke `--all` directly and does not use
-group-tools — no code changes required; group snapshot data will be more accurate when
-collected with jamf-cli ≥ 1.31.1.
+a list command's `--all` now respects each endpoint's max page size (was hardcoded 100);
+blueprint YAML export rendering corrected; `group-tools` skips unscoped blueprints instead of
+failing; group member counts in `group-tools` and `audit` read from the correct collection
+object. No code change: the app's only `--all` is `pro report ea-results --all`, where it
+includes devices with empty EA values rather than paging. The app runs `pro group-tools analyze
+--unused` and `pro audit` (`CLIBridge`), whose member counts are correct from 1.31.1.
 
 ### notify config (v2.2.0 — opt-in webhook digest)
 
