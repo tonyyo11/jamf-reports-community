@@ -19,7 +19,7 @@ Refresh workflow:
 3. Replace the curated fixture file with the new file, keeping the committed name stable.
 4. For jamf-cli JSON, keep one latest-good sample per command shape.
 5. For trend tests, add or replace dated CSV snapshots under `snapshots/`.
-6. Run `python3 -m pytest tests -q` before committing.
+6. Run `swift test` from `app/` before committing.
 
 Scrub checklist (apply to every refreshed fixture):
 

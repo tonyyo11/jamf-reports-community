@@ -178,7 +178,7 @@ struct PeriodReportSheet: View {
                 style: .gold
             ) { generate() }
             .disabled(isGenerating || selected.isEmpty || workspace.demoMode)
-            .help(workspace.demoMode ? "Available in live mode only" : "Write the workbook")
+            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "Write the workbook")
         }
     }
 

@@ -113,7 +113,7 @@ Packages the notarized app into a distributable DMG.
 
 **Exit codes:**
 - 0 = DMG created successfully
-- 1 = App not found or DMG creation failed
+- 1 = App not found, the app's build number is not an integer, or DMG creation failed
 
 **Idempotent:** Removes old DMG first, so re-running is safe.
 
@@ -158,7 +158,10 @@ ls -la app/build/JamfReports.app
 
 All scripts are:
 - POSIX-compliant zsh (`#!/bin/zsh`, `set -euo pipefail`)
-- Self-contained (no external shell libraries)
+- Self-contained, except for one shared library: `lib/versioning.zsh` holds the
+  release-channel, build-number and artifact-naming rules that `build-app.sh`,
+  `build-pkg.sh` and `package-dmg.sh` all source. `test-versioning.zsh` tests it
+  (`zsh scripts/test-versioning.zsh`), and CI runs that test on every push.
 - Idempotent where possible (safe to re-run)
 - Fail-fast with clear error messages
 

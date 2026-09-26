@@ -76,6 +76,11 @@ struct DevicesView: View {
     /// full fidelity. Drives the responsive Device + User column behavior.
     private var isCompact: Bool { pageWidth < 1200 }
 
+    /// One label column for every detail-panel section. Fixed rather than a minimum,
+    /// so LAST INVENTORY (the widest label, about 102 pt) no longer pushes its value
+    /// past the others.
+    static let detailLabelWidth: CGFloat = 112
+
     private var filteredDevices: [DeviceInventoryRecord] {
         activeSnapshot.devices.filter { device in
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -233,7 +238,8 @@ struct DevicesView: View {
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Devices",
             subtitle: "\(activeSnapshot.totalDevices) records · \(workspace.profile)",
-            lastModified: activeSnapshot.generatedDate
+            // The demo dataset is frozen on purpose; an age warning on it is noise.
+            lastModified: workspace.demoMode ? nil : activeSnapshot.generatedDate
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -251,7 +257,7 @@ struct DevicesView: View {
                     }
                     .disabled(workspace.demoMode || isExportingCSV || filteredDevices.isEmpty)
                     .help(workspace.demoMode
-                          ? "Available in live mode only"
+                          ? DemoData.liveOnlyHelp
                           : "Export the currently filtered device list to a CSV file")
                 }
             )
@@ -277,65 +283,84 @@ struct DevicesView: View {
         )
     }
 
+    /// One row when it fits; otherwise the search field sits above the filters. At the
+    /// minimum window width the single row was wider than the page and pushed the sidebar
+    /// off the window.
     private var controls: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.Colors.fgMuted)
-                TextField("Search devices", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.callout)
-                    .foregroundStyle(Theme.Colors.fg)
-                    .focused($isSearchFocused)
-                    .accessibilityLabel("Search devices")
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                searchField
+                filterControls
             }
-            .padding(.horizontal, 10)
-            .frame(width: 260, height: 30)
-            .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
-                    .strokeBorder(
-                        isSearchFocused ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
-                        lineWidth: isSearchFocused ? 1 : 0.5
-                    )
-                    .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
-            )
-
-            SegmentedControl(
-                selection: $filter,
-                options: DeviceFilter.allCases.map { ($0, $0.label, $0.icon) }
-            )
-
-            if let osFilter {
-                Button {
-                    self.osFilter = nil
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 11))
-                        Mono(text: osFilter, color: Theme.Colors.goldBright)
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: 28)
-                    .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
+            VStack(alignment: .leading, spacing: 10) {
+                searchField
+                HStack(spacing: 10) {
+                    filterControls
                 }
-                .buttonStyle(.plain)
             }
+        }
+    }
 
-            Spacer()
-
-            let isFiltered = filteredDevices.count < activeSnapshot.devices.count
-            HStack(spacing: 6) {
-                if isFiltered {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.goldBright)
-                }
-                Pill(
-                    text: "\(filteredDevices.count) shown",
-                    tone: isFiltered ? .gold : .muted
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.Colors.fgMuted)
+            TextField("Search devices", text: $query)
+                .textFieldStyle(.plain)
+                .font(.callout)
+                .foregroundStyle(Theme.Colors.fg)
+                .focused($isSearchFocused)
+                .accessibilityLabel("Search devices")
+        }
+        .padding(.horizontal, 10)
+        .frame(width: 260, height: 30)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius)
+                .strokeBorder(
+                    isSearchFocused ? Theme.Colors.gold.opacity(0.6) : Theme.Colors.hairlineStrong,
+                    lineWidth: isSearchFocused ? 1 : 0.5
                 )
+                .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+        )
+    }
+
+    @ViewBuilder
+    private var filterControls: some View {
+        SegmentedControl(
+            selection: $filter,
+            options: DeviceFilter.allCases.map { ($0, $0.label, $0.icon) }
+        )
+
+        if let osFilter {
+            Button {
+                self.osFilter = nil
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                    Mono(text: osFilter, color: Theme.Colors.goldBright)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(Theme.Colors.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 7))
             }
+            .buttonStyle(.plain)
+        }
+
+        Spacer()
+
+        let isFiltered = filteredDevices.count < activeSnapshot.devices.count
+        HStack(spacing: 6) {
+            if isFiltered {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.goldBright)
+            }
+            Pill(
+                text: "\(filteredDevices.count) shown",
+                tone: isFiltered ? .gold : .muted
+            )
         }
     }
 
@@ -355,10 +380,19 @@ struct DevicesView: View {
     private var inventoryTable: some View {
         Card(padding: 0) {
             VStack(spacing: 0) {
-                HStack {
-                    SectionHeader(title: "Device Inventory")
-                    Spacer()
-                    riskLegend
+                // Beside the table's detail panel the card can be too narrow for the
+                // title and legend on one row; the legend then drops below the title
+                // instead of hyphenating its words.
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        SectionHeader(title: "Device Inventory")
+                        Spacer()
+                        riskLegend
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Device Inventory")
+                        riskLegend
+                    }
                 }
                 .padding(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
                 Divider().background(Theme.Colors.hairlineStrong)
@@ -423,6 +457,18 @@ struct DevicesView: View {
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)
+                .overlay {
+                    // A filter that matches nothing otherwise leaves blank zebra rows. An
+                    // empty inventory (still loading, or none) is not a filter result.
+                    if filteredDevices.isEmpty && !activeSnapshot.devices.isEmpty {
+                        EmptyStateView(
+                            systemImage: "line.3.horizontal.decrease.circle",
+                            title: "No matching devices",
+                            message: "No inventory rows match the current filters."
+                        )
+                        .padding(24)
+                    }
+                }
                 .contextMenu(forSelectionType: DeviceInventoryRecord.ID.self) { selection in
                     if let id = selection.first, let device = activeSnapshot.devices.first(where: { $0.id == id }) {
                         Button("Copy Serial Number") {
@@ -449,6 +495,7 @@ struct DevicesView: View {
             legendDot(color: Theme.Colors.warn, label: "Attention")
             legendDot(color: Theme.Colors.ok, label: "OK")
         }
+        .fixedSize()
     }
 
     private func detailPanel(_ device: DeviceInventoryRecord?) -> some View {
@@ -514,6 +561,8 @@ struct DevicesView: View {
                     HStack {
                         Mono(text: device.source)
                             .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(device.source)
                         Spacer()
                         PNPButton(title: "Copy Serial", icon: "doc.on.doc", size: .sm) {
                             SystemActions.copyToClipboard(device.serial)
@@ -551,7 +600,7 @@ struct DevicesView: View {
             }
 
             if workspace.demoMode {
-                Text("Available in live mode only.")
+                Text(DemoData.liveOnlyHelp + ".")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             } else {
@@ -592,7 +641,7 @@ struct DevicesView: View {
                             Text(item.label)
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
-                                .frame(width: 112, alignment: .leading)
+                                .frame(width: Self.detailLabelWidth, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.value)
                                     .font(.footnote)
@@ -706,8 +755,10 @@ struct DevicesView: View {
                             Image(systemName: file.hasSuffix(".csv") ? "tablecells" : "curlybraces")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
-                            Mono(text: file)
+                            Mono(text: Self.sourceRowLabel(file))
                                 .lineLimit(1)
+                                .truncationMode(.middle)
+                                .help(file)
                         }
                     }
                 }
@@ -722,6 +773,13 @@ struct DevicesView: View {
                 }
             }
         }
+    }
+
+    /// The shared workspace prefix filled the narrow rail, so every path truncated to
+    /// the same text; the filename begins with the kind and tells the rows apart.
+    static func sourceRowLabel(_ displayPath: String) -> String {
+        let name = (displayPath as NSString).lastPathComponent
+        return name.isEmpty ? displayPath : name
     }
 
     private var emptyState: some View {
@@ -760,7 +818,7 @@ struct DevicesView: View {
                             .font(Theme.Fonts.mono(10.5, weight: .semibold))
                             .tracking(1.0)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
-                            .frame(minWidth: 92, alignment: .leading)
+                            .frame(width: Self.detailLabelWidth, alignment: .leading)
                         Text(row.1)
                             .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .footnote)
                             .foregroundStyle(Theme.Colors.fg2)
@@ -789,7 +847,7 @@ struct DevicesView: View {
                         .font(Theme.Fonts.mono(10.5, weight: .semibold))
                         .tracking(1.0)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(minWidth: 92, alignment: .leading)
+                        .frame(width: Self.detailLabelWidth, alignment: .leading)
                     Text(device.failedRules == 0 ? "0" : "\(device.failedRules)")
                         .font(.footnote)
                         .foregroundStyle(device.failedRules == 0 ? Theme.Colors.fg2 : Theme.Colors.warn)
@@ -828,11 +886,11 @@ struct DevicesView: View {
                                 Text(entry.factor.displayLabel(agentName: agentName))
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
-                                if let detail = entry.detail {
-                                    Mono(text: detail)
-                                }
                                 Spacer()
                                 Pill(text: "+\(entry.points)", tone: .warn)
+                            }
+                            if let detail = entry.detail {
+                                Mono(text: detail)
                             }
                             Text(entry.factor.remediation(agentName: agentName))
                                 .font(.caption)
@@ -904,19 +962,31 @@ struct DevicesView: View {
 
     private func scanSection(title: String, lines: [(String, String)], date: Date?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                SectionHeader(title: title)
-                Spacer()
-                if let date {
-                    Mono(
-                        text: "snapshot " + date.formatted(date: .abbreviated, time: .shortened),
-                        size: 10.5)
+            if let date {
+                let caption = Mono(
+                    text: "snapshot " + date.formatted(date: .abbreviated, time: .shortened),
+                    size: 10.5)
+                    .fixedSize()
+                // The detail panel is too narrow at the minimum width for both on one
+                // row; the caption then sits under the title rather than wrapping.
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        SectionHeader(title: title)
+                        Spacer()
+                        caption
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        SectionHeader(title: title)
+                        caption
+                    }
                 }
+            } else {
+                SectionHeader(title: title)
             }
             ForEach(lines, id: \.0) { line in
                 HStack(alignment: .top, spacing: 8) {
                     Text(line.0).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(width: 110, alignment: .leading)
+                        .frame(width: Self.detailLabelWidth, alignment: .leading)
                     Text(line.1).font(.footnote).foregroundStyle(Theme.Colors.fg)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -941,7 +1011,7 @@ struct DevicesView: View {
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .tracking(1.0)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .frame(minWidth: 92, alignment: .leading)
+                    .frame(width: Self.detailLabelWidth, alignment: .leading)
                 Pill(text: value, tone: securityTone(for: value))
                 Spacer(minLength: 0)
             }
@@ -949,13 +1019,14 @@ struct DevicesView: View {
         }
     }
 
+    /// Positive words used to be matched first, so "UNENCRYPTED" and "Not Enabled"
+    /// showed a green check; `SecurityValueState` checks the negative forms first.
     private func securityTone(for value: String) -> Pill.Tone {
-        let v = value.lowercased()
-        let positives = ["enabled", "on", "active", "encrypted", "yes", "true", "escrowed", "installed"]
-        let negatives = ["disabled", "off", "inactive", "decrypted", "no", "false", "missing", "not installed"]
-        if positives.contains(where: { v.contains($0) }) { return .teal }
-        if negatives.contains(where: { v.contains($0) }) { return .danger }
-        return .muted
+        switch SecurityValueState(value) {
+        case .good: return .teal
+        case .bad: return .danger
+        case .unknown: return .muted
+        }
     }
 
     // Per-control glyph row for the inventory table. Five tight icons:

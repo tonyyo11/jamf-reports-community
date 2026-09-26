@@ -25,6 +25,8 @@ struct DataFreshnessIssue: Identifiable, Sendable, Equatable {
     /// Consecutive failed attempts recorded by `StateFileStore`.
     let consecutiveFailures: Int
     let lastFailure: Date?
+    /// The newest failure's classified cause, when one was recorded.
+    var cause: FailureCause? = nil
 
     /// Never attempted on this workspace: no success AND no failure recorded.
     /// A property rather than a `Kind` case because views switch over `kind`.
@@ -52,6 +54,8 @@ struct KindCollectionState: Sendable, Equatable {
     let lastSuccess: Date?
     let consecutiveFailures: Int
     let lastFailure: Date?
+    /// The newest failure's classified cause, when one was recorded.
+    var cause: FailureCause? = nil
 }
 
 /// Pure evaluator for per-kind data freshness. No I/O — the caller reads
@@ -93,7 +97,7 @@ enum DataFreshnessHealth {
                     snapshotKind: state.kind, tier: tier, kind: .failing,
                     lastSuccess: state.lastSuccess,
                     consecutiveFailures: state.consecutiveFailures,
-                    lastFailure: state.lastFailure
+                    lastFailure: state.lastFailure, cause: state.cause
                 )
             }
 
@@ -103,7 +107,7 @@ enum DataFreshnessHealth {
                     snapshotKind: state.kind, tier: tier, kind: .stale,
                     lastSuccess: nil,
                     consecutiveFailures: state.consecutiveFailures,
-                    lastFailure: state.lastFailure
+                    lastFailure: state.lastFailure, cause: state.cause
                 )
             }
 
@@ -113,7 +117,7 @@ enum DataFreshnessHealth {
                 snapshotKind: state.kind, tier: tier, kind: .stale,
                 lastSuccess: lastSuccess,
                 consecutiveFailures: state.consecutiveFailures,
-                lastFailure: state.lastFailure
+                lastFailure: state.lastFailure, cause: state.cause
             )
         }
         .sorted { lhs, rhs in

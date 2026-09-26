@@ -88,4 +88,21 @@ final class CLIBridgeExplainExitTests: XCTestCase {
             CLIBridge.explainExit(CLIBridge.exitCodeRefusedByPolicy, operation: "X"),
             CLIBridge.explainExit(CLIBridge.exitCodeUsage, operation: "X"))
     }
+
+    func testPermissionDeniedNamesBothPlacesAGrantLives() {
+        let msg = CLIBridge.explainExit(CLIBridge.exitCodePermissionDenied, operation: "Collect")
+        XCTAssertTrue(msg.contains("API role in Jamf Pro"), msg)
+        XCTAssertTrue(msg.contains("integration in Jamf Account"), msg)
+    }
+
+    func testUnauthorizedNotesThatIntegrationsExpire() {
+        let msg = CLIBridge.explainExit(CLIBridge.exitCodeUnauthorized, operation: "Collect")
+        XCTAssertTrue(msg.contains("six months"), msg)
+    }
+
+    /// A gateway URL in another region answers 401 exactly like a wrong secret.
+    func testUnauthorizedNamesAWrongRegion() {
+        let msg = CLIBridge.explainExit(CLIBridge.exitCodeUnauthorized, operation: "Collect")
+        XCTAssertTrue(msg.contains("region"), msg)
+    }
 }

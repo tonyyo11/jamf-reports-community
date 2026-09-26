@@ -35,10 +35,14 @@ extension ReportEngine {
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
-            id = try c.decodeIfPresent(AnyCodable.self, forKey: .id)?.stringValue ?? ""
+            // Both ids are trimmed once, here: `isSafeDeviceIdentifier` trims before it
+            // checks, so the value it passes has to be the value argv and the rows get.
+            let rawId = try c.decodeIfPresent(AnyCodable.self, forKey: .id)?.stringValue ?? ""
+            id = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
             let g = try? c.nestedContainer(keyedBy: General.self, forKey: .general)
             name = (try? g?.decodeIfPresent(String.self, forKey: .name)) ?? ""
-            managementId = try? g?.decodeIfPresent(String.self, forKey: .managementId)
+            managementId = (try? g?.decodeIfPresent(String.self, forKey: .managementId))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             // Two if-let steps: try? flattens decodeIfPresent's result to a single optional.
             var ddm = false
             if let container = g,
@@ -58,6 +62,17 @@ extension ReportEngine {
             switch self {
             case .history: return ReportEngine.mdmCommandHealthKind
             case .statusItems: return ReportEngine.ddmDeviceStatusKind
+            }
+        }
+
+        /// What exit 5 needs when jamf-cli's hint names nothing: the Jamf Pro API role
+        /// privilege, or the Jamf Account permission of a Platform API integration.
+        var permissionFallback: String {
+            switch self {
+            case .history:
+                return "Read Computers (API role) or Inventory > Device history (Jamf Account)"
+            case .statusItems:
+                return "Read Computers (API role) or Inventory > Devices (Jamf Account)"
             }
         }
     }
@@ -115,6 +130,7 @@ extension ReportEngine {
             return []
         }
         var targets: [DeviceScanTarget] = []
+        var seenIDs = Set<String>()
         for t in all {
             guard CLIBridge.isSafeDeviceIdentifier(t.id) else {
                 onLine(.init(
@@ -123,6 +139,9 @@ extension ReportEngine {
                 ))
                 continue
             }
+            // A device listed twice in `computers` is scanned once: a second pass
+            // repeats both jamf-cli calls and writes the Mac twice into each snapshot.
+            guard seenIDs.insert(t.id).inserted else { continue }
             targets.append(t)
         }
         guard !targets.isEmpty else {
@@ -278,7 +297,7 @@ extension ReportEngine {
             }
             result = retry
         }
-        await gate.observe(result.0, for: type, onLine: onLine)
+        await gate.observe(result.0, stdout: result.1, for: type, onLine: onLine)
         return .ran(exit: result.0, data: result.1)
     }
 
@@ -344,7 +363,7 @@ extension ReportEngine {
         }
 
         func observe(
-            _ exit: Int32, for type: CallType,
+            _ exit: Int32, stdout: Data, for type: CallType,
             onLine: @Sendable (CLIBridge.LogLine) -> Void
         ) {
             guard stopped[type] == nil else { return }
@@ -352,10 +371,15 @@ extension ReportEngine {
             switch exit {
             case CLIBridge.exitCodePermissionDenied:
                 stopped[type] = exit
+                // jamf-cli's hint names the grant in the terms of the API that answered.
+                let cause = FailureCause.classify(exitCode: exit, stdout: stdout)
+                let reason = cause.kind == .missingPermission && cause.names.isEmpty
+                    ? "needs " + type.permissionFallback
+                    : cause.label
                 onLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[warn] \(kind): exit 5 from a device — the API "
-                        + "role needs Read Computers; skipping the rest of the run"
+                    text: "[warn] \(kind): exit 5 from a device — \(reason); "
+                        + "skipping the rest of the run"
                 ))
             case CLIBridge.exitCodeRefusedByPolicy:
                 stopped[type] = exit
@@ -575,9 +599,11 @@ extension ReportEngine {
                 text: "[ok] \(kind): \(rows.count) device(s)"
             ))
             if failed > 0 {
+                // Shared suffix: the honesty watcher must not queue a retry for a landed kind.
                 onLine(.init(
                     timestamp: Date(), level: .warn,
-                    text: "[partial] \(kind): \(failed) of \(attempted) devices did not respond"
+                    text: "[partial] \(kind): \(failed) of \(attempted) "
+                        + deviceScanGapsMarkerSuffix
                 ))
             }
         } catch {

@@ -226,7 +226,9 @@ struct AuditView: View {
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: auditTabTitle(selectedTab),
             subtitle: auditTabSubtitle(selectedTab),
-            lastModified: auditTabLastModified(selectedTab)
+            // The demo's run dates are fixed; an age measured from today would grow
+            // for as long as the demo stays open. "Last run" below still shows them.
+            lastModified: workspace.demoMode ? nil : auditTabLastModified(selectedTab)
         ) {
             AnyView(
                 VStack(alignment: .trailing, spacing: 6) {
@@ -263,7 +265,7 @@ struct AuditView: View {
                             PNPButton(title: "Copy All", icon: "doc.on.clipboard", style: .neutral) {
                                 copyAllGroups()
                             }
-                            .disabled(sortedHygiene.isEmpty || workspace.demoMode)
+                            .disabled(sortedHygiene.isEmpty)
                             .help("Copy all unused group IDs and names as tab-separated values")
                             PNPButton(
                                 title: isRunningHygiene ? "Analyzing…" : "Analyze Groups",
@@ -854,9 +856,14 @@ struct AuditView: View {
                                     .lineLimit(2)
                             }
                             TableColumn("Actions") { g in
+                                // The demo profile's console URL is fictional.
                                 PNPButton(title: "View", size: .sm) {
                                     openInJamfPro(g)
                                 }
+                                .disabled(workspace.demoMode)
+                                .help(workspace.demoMode
+                                      ? "Opening a group in Jamf Pro needs a live profile."
+                                      : "Open this group in the Jamf Pro console.")
                             }
                         }
                         .frame(height: tableHeight(rowCount: sortedHygiene.count, maxHeight: 430))
@@ -867,6 +874,7 @@ struct AuditView: View {
     }
 
     private func openInJamfPro(_ group: UnusedGroup) {
+        guard !workspace.demoMode else { return }
         guard let groupID = Int(group.id) else {
             workspace.toast = Toast(
                 message: "Group `\(group.name)` has a non-numeric id (\(group.id)) — cannot build console URL.",
@@ -973,12 +981,16 @@ struct AuditView: View {
 
     private func loadCached() async {
         if workspace.demoMode {
-            findings = []
-            unusedGroups = []
+            // The demo's own findings, groups and run dates. The dates replace a
+            // live run's, which otherwise stayed on the header through the demo.
+            findings = DemoData.auditFindings
+            unusedGroups = DemoData.unusedGroups
+            lastAuditDate = DemoData.auditRunDate
+            lastHygieneDate = DemoData.groupAnalysisRunDate
             newFindingKeys = []
             resolvedFindings = []
             integritySummary = nil
-            duplicateSerials = .empty
+            duplicateSerials = DemoData.duplicateSerialsSnapshot
             commandHealth = .empty
             commandFindings = []
             return
@@ -1072,6 +1084,9 @@ struct AuditView: View {
     }
 
     private func runAudit() {
+        // ⌘R reaches here as well as the (disabled) button; jamf-cli must never run
+        // against the fictional demo profile.
+        guard !workspace.demoMode else { return }
         isRunningAudit = true
         workspace.globalStatus = "audit · profile=\(workspace.profile)"
         Task {
@@ -1108,6 +1123,7 @@ struct AuditView: View {
     }
 
     private func runHygiene() {
+        guard !workspace.demoMode else { return }
         isRunningHygiene = true
         workspace.globalStatus = "group-tools analyze · profile=\(workspace.profile)"
         Task {

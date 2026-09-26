@@ -23,7 +23,7 @@ import SwiftUI
 ///     flow.setClientSecret(data)
 /// }
 /// ```
-struct SecureSecretField: NSViewRepresentable {
+struct SecureSecretField: View {
 
     var placeholder: String = ""
     /// Called on every keystroke with `true` if the field is non-empty.
@@ -31,28 +31,51 @@ struct SecureSecretField: NSViewRepresentable {
     var onTextChange: ((Bool) -> Void)?
     var onFinalize: (Data) -> Void
 
-    func makeNSView(context: Context) -> NSSecureTextField {
-        let field = NSSecureTextField()
-        field.placeholderString = placeholder
-        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        field.isBezeled = true
-        field.bezelStyle = .roundedBezel
-        field.delegate = context.coordinator
-        field.target = context.coordinator
-        field.action = #selector(Coordinator.fieldAction(_:))
-        field.setAccessibilityLabel("Client Secret")
-        field.setAccessibilityPlaceholderValue(placeholder)
-        return field
+    /// Drawn with `PNPTextField`'s chrome rather than the native bezel, which is
+    /// shorter and styled differently from the Client ID field it sits beside.
+    var body: some View {
+        NativeField(placeholder: placeholder, onTextChange: onTextChange, onFinalize: onFinalize)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(
+                Color.white.opacity(0.05),
+                in: RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Metrics.buttonRadius, style: .continuous)
+                    .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
+            )
     }
 
-    func updateNSView(_ nsView: NSSecureTextField, context: Context) {
-        nsView.placeholderString = placeholder
-        context.coordinator.onFinalize = onFinalize
-        context.coordinator.onTextChange = onTextChange
-    }
+    struct NativeField: NSViewRepresentable {
+        var placeholder: String
+        var onTextChange: ((Bool) -> Void)?
+        var onFinalize: (Data) -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onFinalize: onFinalize, onTextChange: onTextChange)
+        func makeNSView(context: Context) -> NSSecureTextField {
+            let field = NSSecureTextField()
+            field.placeholderString = placeholder
+            field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            field.isBezeled = false
+            field.isBordered = false
+            field.drawsBackground = false
+            field.delegate = context.coordinator
+            field.target = context.coordinator
+            field.action = #selector(Coordinator.fieldAction(_:))
+            field.setAccessibilityLabel("Client Secret")
+            field.setAccessibilityPlaceholderValue(placeholder)
+            return field
+        }
+
+        func updateNSView(_ nsView: NSSecureTextField, context: Context) {
+            nsView.placeholderString = placeholder
+            context.coordinator.onFinalize = onFinalize
+            context.coordinator.onTextChange = onTextChange
+        }
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(onFinalize: onFinalize, onTextChange: onTextChange)
+        }
     }
 
     // MARK: Coordinator

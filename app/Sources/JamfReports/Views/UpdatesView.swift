@@ -19,7 +19,8 @@ struct UpdatesView: View {
                 kicker: "Operations",
                 title: "OS Updates",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate
+                // The demo dataset is frozen on purpose; an age warning on it is noise.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate
             )
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
@@ -72,76 +73,19 @@ struct UpdatesView: View {
     }
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? Self.demoSnapshot
-            : UpdateStatusService.load(profile: workspace.profile)
-        if !workspace.demoMode,
-           let dir = try? WorkspacePaths.dataDir(for: workspace.profile) {
+        guard !workspace.demoMode else {
+            snapshot = DemoData.updateStatus
+            // SOFA rows come from the workspace's cache. Left in place, a live
+            // profile's rows stayed on screen after switching to the demo.
+            sofaRows = []
+            return
+        }
+        snapshot = UpdateStatusService.load(profile: workspace.profile)
+        if let dir = try? WorkspacePaths.dataDir(for: workspace.profile) {
             let sofaSnap = SOFAFeedService.load(dataDir: dir)
             sofaRows = sofaSnap.rows
         }
     }
-
-    private static let demoSnapshot = UpdateStatusService.Snapshot(
-        total: 485,
-        planTotal: 18,
-        statusBreakdown: [
-            .init(label: "COMPLETED", count: 320, colorHex: 0x30D158),
-            .init(label: "PENDING", count: 95, colorHex: 0x007AFF),
-            .init(label: "INSTALLING", count: 42, colorHex: 0x007AFF),
-            .init(label: "ERROR", count: 28, colorHex: 0xFF453A)
-        ],
-        planStateBreakdown: [
-            .init(label: "PlanCompleted", count: 12, colorHex: 0x30D158),
-            .init(label: "PlanActive", count: 3, colorHex: 0x007AFF),
-            .init(label: "PlanPending", count: 2, colorHex: 0x007AFF),
-            .init(label: "PlanFailed", count: 1, colorHex: 0xFF453A)
-        ],
-        errorDevices: [
-            UpdateErrorDevice(name: "MacBook-001", serial: "ABC123", deviceType: "Computer",
-                             osVersion: "15.2.1", username: "jdoe", status: "ERROR",
-                             productKey: "macOS Sequoia 15.3", updated: "2026-05-10T10:30:00Z"),
-            UpdateErrorDevice(name: "MacBook-047", serial: "DEF456", deviceType: "Computer",
-                             osVersion: "14.7.5", username: "asmith", status: "TIMEOUT",
-                             productKey: "macOS Sonoma 14.8", updated: "2026-05-09T15:45:00Z"),
-            UpdateErrorDevice(name: "iMac-Pro-12", serial: "GHI789", deviceType: "Computer",
-                             osVersion: "15.2.1", username: "bwilson", status: "FAILED",
-                             productKey: "macOS Sequoia 15.3", updated: "2026-05-08T09:15:00Z")
-        ],
-        failedPlans: [
-            UpdateFailedPlan(name: "MacBook-035", serial: "JKL012", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "cjohnson", state: "PlanFailed",
-                            action: "Install", version: "15.3", error: "Insufficient disk space",
-                            lastEvent: "2026-05-11T14:20:00Z"),
-            UpdateFailedPlan(name: "MacBook-078", serial: "MNO345", deviceType: "Computer",
-                            osVersion: "15.2.1", username: "dlee", state: "PlanException",
-                            action: "Download", version: "15.3", error: "Network timeout after 3 retries",
-                            lastEvent: "2026-05-11T11:45:00Z"),
-            UpdateFailedPlan(name: "iMac-024", serial: "PQR678", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "egarcia", state: "PlanCanceled",
-                            action: "Install", version: "15.3", error: "User canceled installation",
-                            lastEvent: "2026-05-10T16:30:00Z"),
-            UpdateFailedPlan(name: "MacBook-Air-67", serial: "STU901", deviceType: "Computer",
-                            osVersion: "15.1.2", username: "fmartinez", state: "PlanFailed",
-                            action: "Validate", version: "15.3", error: "Signature verification failed",
-                            lastEvent: "2026-05-10T13:10:00Z"),
-            UpdateFailedPlan(name: "Mac-Pro-03", serial: "VWX234", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "gbrown", state: "PlanException",
-                            action: "Install", version: "15.3", error: "Power management conflict",
-                            lastEvent: "2026-05-09T20:25:00Z"),
-            UpdateFailedPlan(name: "MacBook-Pro-89", serial: "YZA567", deviceType: "Computer",
-                            osVersion: "15.2.1", username: "hdavis", state: "PlanFailed",
-                            action: "Restart", version: "15.3", error: "Failed to apply updates on restart",
-                            lastEvent: "2026-05-09T18:00:00Z"),
-            UpdateFailedPlan(name: "iMac-Pro-45", serial: "BCD890", deviceType: "Computer",
-                            osVersion: "14.7.5", username: "ithompson", state: "PlanException",
-                            action: "Download", version: "15.3", error: "Storage full during download",
-                            lastEvent: "2026-05-08T22:40:00Z")
-        ],
-        sourceFile: nil,
-        snapshotDate: Date(),
-        scanFailuresAvailable: true
-    )
 
     // MARK: - Computed values
 
@@ -174,9 +118,17 @@ struct UpdatesView: View {
             EmptyStateView(
                 systemImage: "arrow.triangle.2.circlepath",
                 title: "No update status data yet",
-                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report update-status` — and it will populate."
+                message: "Collect data for this screen with the Collect now banner when it "
+                    + "shows, or collect the Inventory and Scan tiers from the command line.",
+                commands: [Self.collectCommand(profile: workspace.profile)]
             )
         }
+    }
+
+    /// `collect` has no default profile; without the flag the pasted command fails
+    /// on a missing `--profile`.
+    nonisolated static func collectCommand(profile: String) -> String {
+        "jamf-reports collect --profile \(profile) --tiers inventory,scan"
     }
 
     private var kpiGrid: some View {
@@ -187,10 +139,12 @@ struct UpdatesView: View {
                 value: "\(snapshot.total)",
                 sub: "Tracked for updates"
             )
+            // plan_total is every plan, completed and failed ones included (the
+            // donut's percentages divide by it); "Plans Active" misnamed it.
             StatTile(
-                label: "Plans Active",
+                label: "Total Plans",
                 value: "\(snapshot.planTotal)",
-                sub: "Update plans in flight"
+                sub: "Update plans tracked"
             )
             StatTile(
                 label: "Failing Plans",
@@ -262,7 +216,7 @@ struct UpdatesView: View {
                 angularInset: 1.6
             )
             .foregroundStyle(Color(hex: slice.colorHex))
-            .accessibilityLabel(slice.label)
+            .accessibilityLabel(UpdateStatusService.planStateDisplayName(slice.label))
             .accessibilityValue("\(slice.count) plans")
         }
         .chartLegend(.hidden)
@@ -273,7 +227,7 @@ struct UpdatesView: View {
                 unit: " plans",
                 slices: snapshot.planStateBreakdown.filter { $0.count > 0 }.map { slice in
                     SectorChartDescriptor.Slice(
-                        label: slice.label,
+                        label: UpdateStatusService.planStateDisplayName(slice.label),
                         value: Double(slice.count)
                     )
                 }
@@ -284,11 +238,15 @@ struct UpdatesView: View {
     private var planStateLegend: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(snapshot.planStateBreakdown) { slice in
+                let name = UpdateStatusService.planStateDisplayName(slice.label)
+                let pct = snapshot.planTotal > 0
+                    ? (Double(slice.count) / Double(snapshot.planTotal)) * 100
+                    : 0
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color(hex: slice.colorHex))
                         .frame(width: 12, height: 12)
-                    Text(slice.label)
+                    Text(name)
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                     Spacer()
@@ -296,9 +254,6 @@ struct UpdatesView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    let pct = snapshot.planTotal > 0
-                        ? (Double(slice.count) / Double(snapshot.planTotal)) * 100
-                        : 0
                     Text(String(format: "%.1f%%", pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -306,7 +261,7 @@ struct UpdatesView: View {
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(slice.label), \(slice.count) plans, \(Int((snapshot.planTotal > 0 ? (Double(slice.count) / Double(snapshot.planTotal)) * 100 : 0).rounded())) percent")
+                .accessibilityLabel("\(name), \(slice.count) plans, \(Int(pct.rounded())) percent")
             }
         }
     }
@@ -400,8 +355,9 @@ struct UpdatesView: View {
                     .width(min: 80, ideal: 100)
 
                     TableColumn("State") { plan in
-                        Pill(text: plan.state, tone: pillTone(for: plan.state))
-                            .accessibilityLabel("State \(plan.state)")
+                        let state = UpdateStatusService.planStateDisplayName(plan.state)
+                        Pill(text: state, tone: pillTone(for: plan.state))
+                            .accessibilityLabel("State \(state)")
                     }
                     .width(min: 118, ideal: 138)
 
@@ -437,7 +393,7 @@ struct UpdatesView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Error Devices", trailing: "\(snapshot.errorDevices.count) total")
-                Table(snapshot.errorDevices) {
+                Table(Array(snapshot.errorDevices.prefix(50))) {
                     TableColumn("Device") { device in
                         Text(device.name)
                             .font(.footnote)
@@ -470,6 +426,13 @@ struct UpdatesView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .frame(minHeight: 150)
+
+                if snapshot.errorDevices.count > 50 {
+                    Text("+ \(snapshot.errorDevices.count - 50) more")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                        .padding(.top, 4)
+                }
             }
         }
     }
@@ -589,7 +552,7 @@ private struct UpdatesPlanStateDonutExport: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Color(hex: slice.colorHex))
                             .frame(width: 10, height: 10)
-                        Text(slice.label)
+                        Text(UpdateStatusService.planStateDisplayName(slice.label))
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(Color(hex: 0x111827))
                         Spacer(minLength: 6)

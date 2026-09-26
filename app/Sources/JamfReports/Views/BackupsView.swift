@@ -30,6 +30,31 @@ struct BackupsView: View {
         return root.appendingPathComponent("backups", isDirectory: true)
     }
 
+    /// The header's folder. Demo mode names the demo workspace, not this Mac's
+    /// configured root, which may be a synced team folder.
+    private var backupsFolderDisplayPath: String {
+        workspace.demoMode
+            ? DemoData.workspaceDisplayPath(profile: DemoData.org.profile, subpath: "backups")
+                + "/"
+            : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "backups") + "/"
+    }
+
+    private static let demoRevealHelp =
+        "Demo backups are not on disk. Revealing them needs a live profile."
+
+    // Demo backups are not on disk, and the demo profile's folder could be a
+    // real workspace's: nothing below opens, runs or deletes in demo mode.
+
+    private func revealBackupsFolder() {
+        guard !workspace.demoMode else { return }
+        SystemActions.openFolder(backupsDirectory)
+    }
+
+    private func reveal(_ backup: BackupRecord) {
+        guard !workspace.demoMode else { return }
+        SystemActions.reveal(backup.url)
+    }
+
     private var latestBackup: BackupRecord? {
         backups.first
     }
@@ -89,17 +114,19 @@ struct BackupsView: View {
         PageHeader(
             kicker: "Configuration Backups",
             title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
-            subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                                     subpath: "backups") + "/"
+            subtitle: backupsFolderDisplayPath
         ) {
             AnyView(
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         backupLabelField
                         PNPButton(title: "Reveal in Finder", icon: "folder") {
-                            SystemActions.openFolder(backupsDirectory)
+                            revealBackupsFolder()
                         }
-                        .help("Open the backups directory for this workspace in Finder.")
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode
+                              ? Self.demoRevealHelp
+                              : "Open the backups directory for this workspace in Finder.")
                         Mono(
                             text: diffSelectionHint,
                             size: 10.5,
@@ -113,7 +140,7 @@ struct BackupsView: View {
                             diffSelected()
                         }
                         .disabled(workspace.demoMode || isRunningBackup || isRunningDiff || selectedBackups.count != 2)
-                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                         PNPButton(
                             title: isRunningBackup ? "Backing Up..." : "New Backup",
                             icon: "externaldrive.badge.plus",
@@ -122,7 +149,7 @@ struct BackupsView: View {
                             runBackup()
                         }
                         .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
-                        .help(workspace.demoMode ? "Available in live mode only" : "")
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     }
                 }
             )
@@ -193,28 +220,34 @@ struct BackupsView: View {
                     TableColumn("") { backup in
                         HStack(spacing: 6) {
                             PNPButton(title: "Reveal", icon: "folder", size: .sm) {
-                                SystemActions.reveal(backup.url)
+                                reveal(backup)
                             }
+                            .disabled(workspace.demoMode)
+                            .help(workspace.demoMode ? Self.demoRevealHelp : "")
                             PNPButton(title: "Diff Latest", icon: "arrow.left.arrow.right", size: .sm) {
                                 diff(backup, against: latestBackup)
                             }
                             .disabled(workspace.demoMode || isRunningDiff || latestBackup?.id == backup.id)
-                            .help(workspace.demoMode ? "Available in live mode only" : "")
+                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                             PNPButton(title: "Delete", icon: "trash", style: .danger, size: .sm) {
                                 pendingDelete = backup
                                 showDeleteConfirm = true
                             }
                             .disabled(workspace.demoMode || isRunningBackup)
-                            .help(workspace.demoMode ? "Available in live mode only" : "Delete this backup")
+                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "Delete this backup")
                             .accessibilityHint("Shows a confirmation dialog to delete this backup")
                         }
                         .contextMenu {
-                            Button("Reveal in Finder") { SystemActions.reveal(backup.url) }
+                            Button("Reveal in Finder") { reveal(backup) }
+                                .disabled(workspace.demoMode)
                             Divider()
+                            // Disabled like the row's Delete button: a demo
+                            // backup's delete must never reach a real folder.
                             Button("Delete…", role: .destructive) {
                                 pendingDelete = backup
                                 showDeleteConfirm = true
                             }
+                            .disabled(workspace.demoMode || isRunningBackup)
                         }
                     }
                 }
@@ -406,6 +439,7 @@ struct BackupsView: View {
     }
 
     private func runBackup() {
+        guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let label = backupLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         backupOutput.removeAll()
@@ -443,7 +477,7 @@ struct BackupsView: View {
     }
 
     private func diff(_ backup: BackupRecord, against latest: BackupRecord?) {
-        guard let latest, latest.id != backup.id else { return }
+        guard !workspace.demoMode, let latest, latest.id != backup.id else { return }
         diffOutput.removeAll()
         diffGroups = []
         diffHeadline = ""
@@ -480,12 +514,15 @@ struct BackupsView: View {
     }
 
     private func reload() {
-        backups = BackupLibrary().list(profile: workspace.profile)
+        backups = workspace.demoMode
+            ? DemoData.backups
+            : BackupLibrary().list(profile: workspace.profile)
         selectedBackups = selectedBackups.intersection(Set(backups.map(\.id)))
     }
 
     @MainActor
     private func deleteBackup(_ backup: BackupRecord) async {
+        guard !workspace.demoMode else { return }
         do {
             try FileManager.default.removeItem(at: backup.url)
         } catch {

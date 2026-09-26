@@ -77,7 +77,9 @@ enum DeviceScanBuilders {
                 if depth == 0 { start = s.index(after: i) }
                 depth += 1
             case "}":
-                depth -= 1
+                // Clamped at zero: one stray `}` used to drive depth negative, so no later
+                // group could open. `start` is nil at depth zero, so the stray adds nothing.
+                depth = max(0, depth - 1)
                 if depth == 0, let st = start { groups.append(String(s[st..<i])) ; start = nil }
             default: break
             }

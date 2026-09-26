@@ -36,9 +36,9 @@ routes start the same onboarding flow.
    before you do, because everyone with access to that folder can read raw device data.
 4. **Authenticate** — connect Jamf Pro with either OAuth2 API client credentials (URL,
    client ID, client secret) or a Platform API scope (environment ID, or tenant ID for
-   a legacy integration; organization scope needs no ID). The secret is passed to
-   `jamf-cli` over a controlling TTY and cleared immediately; the app never persists it.
-   `jamf-cli` stores the resulting token in the macOS keychain.
+   a legacy integration). The secret is passed to `jamf-cli` over a controlling TTY and
+   cleared immediately; the app never persists it. `jamf-cli` stores the resulting token
+   in the macOS keychain.
 5. **Validate** — the app runs `jamf-cli config validate` against the new profile and
    reports success or a redacted error.
 6. **CSV mapping** — optionally pick a Jamf Pro CSV export. The app scaffolds a

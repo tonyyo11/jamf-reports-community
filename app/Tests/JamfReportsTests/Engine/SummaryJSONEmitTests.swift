@@ -297,6 +297,51 @@ final class SummaryJSONEmitTests: XCTestCase {
                         "Proxy compliancePct must be populated when device security data is present")
     }
 
+    // MARK: - EDR coverage (crowdstrikePct)
+
+    /// The jamf-cli writer used to leave the EDR field nil unconditionally, so
+    /// the EDR score card was empty on every jamf-cli profile.
+    func testEmitRecordsEDRCoverageFromEAResults() throws {
+        let column = "CrowdStrike Falcon - Status"
+        var cfg = ReportConfig()
+        cfg.securityAgents = [
+            SecurityAgentConfig(name: "CrowdStrike Falcon", column: column,
+                                connectedValue: "Running")
+        ]
+        let dataDir = tmpDir.appendingPathComponent("edr-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+        // A 5-Mac fleet: 3 running, 1 stopped, 1 reporting nothing at all.
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeAgentEAResults(to: dataDir, column: column,
+                                values: ["Running", "running", "Running", "Stopped"])
+
+        let localSummaries = tmpDir.appendingPathComponent("edr-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
+        // Over the whole fleet: the Mac with no value counts as not connected.
+        XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
+    }
+
+    func testEmitLeavesEDRCoverageUnknownWhenNoMacReportsTheAgent() throws {
+        var cfg = ReportConfig()
+        cfg.securityAgents = [
+            SecurityAgentConfig(name: "CrowdStrike Falcon", column: "Falcon Status",
+                                connectedValue: "Running")
+        ]
+        let dataDir = tmpDir.appendingPathComponent("edr-nomatch-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeAgentEAResults(to: dataDir, column: "Some Other EA", values: ["Running"])
+
+        let localSummaries = tmpDir.appendingPathComponent(
+            "edr-nomatch-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
+        XCTAssertNil(s.crowdstrikePct, "A column no Mac reports is unknown, not 0%")
+    }
+
     // MARK: - mobileDeviceCount derivation wiring
 
     /// A mobile-devices-list snapshot on disk at collect time is reflected in
@@ -754,6 +799,18 @@ final class SummaryJSONEmitTests: XCTestCase {
         }
         for i in 0..<failCount {
             rows.append(["device": "mac-fail-\(i)", "ea_name": eaColumn, "value": 60])
+        }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        let file = eaDir.appendingPathComponent("ea-results_\(recentStamp).json")
+        try data.write(to: file)
+    }
+
+    /// ea-results rows for one security-agent column, one Mac per value.
+    private func writeAgentEAResults(to dataDir: URL, column: String, values: [String]) throws {
+        let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
+        try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
+        let rows: [[String: Any]] = values.enumerated().map { index, value in
+            ["device": "mac-agent-\(index)", "ea_name": column, "value": value]
         }
         let data = try JSONSerialization.data(withJSONObject: rows)
         let file = eaDir.appendingPathComponent("ea-results_\(recentStamp).json")

@@ -21,10 +21,11 @@ struct ProtectDashboardService: Sendable {
         let webProtectionActiveCount: Int
         let fullDiskAccessCount: Int
         let connectedCount: Int
-        let criticalAlerts: Int
         let highAlerts: Int
         let mediumAlerts: Int
         let lowAlerts: Int
+        /// Protect's SEVERITY enum has no Critical; Informational is its lowest tier.
+        let informationalAlerts: Int
         let failingInsights: Int
 
         let sourceFile: URL?
@@ -53,10 +54,10 @@ struct ProtectDashboardService: Sendable {
             webProtectionActiveCount: 0,
             fullDiskAccessCount: 0,
             connectedCount: 0,
-            criticalAlerts: 0,
             highAlerts: 0,
             mediumAlerts: 0,
             lowAlerts: 0,
+            informationalAlerts: 0,
             failingInsights: 0,
             sourceFile: nil,
             snapshotDate: nil
@@ -69,10 +70,10 @@ struct ProtectDashboardService: Sendable {
             lhs.webProtectionActiveCount == rhs.webProtectionActiveCount &&
             lhs.fullDiskAccessCount == rhs.fullDiskAccessCount &&
             lhs.connectedCount == rhs.connectedCount &&
-            lhs.criticalAlerts == rhs.criticalAlerts &&
             lhs.highAlerts == rhs.highAlerts &&
             lhs.mediumAlerts == rhs.mediumAlerts &&
             lhs.lowAlerts == rhs.lowAlerts &&
+            lhs.informationalAlerts == rhs.informationalAlerts &&
             lhs.failingInsights == rhs.failingInsights &&
             lhs.plans.count == rhs.plans.count &&
             lhs.sourceFile == rhs.sourceFile &&
@@ -136,7 +137,7 @@ struct ProtectDashboardService: Sendable {
         let fullDiskAccessCount = computers.filter { $0.fullDiskAccess == true }.count
         let connectedCount = computers.filter { isConnected($0.connectionStatus) }.count
 
-        let (critical, high, medium, low) = alertSeverityCounts(alerts)
+        let (high, medium, low, informational) = alertSeverityCounts(alerts)
         let failingInsights = insights.filter { ($0.totalFail ?? 0) > 0 }.count
 
         // Per-kind freshness for the chip row, based on file presence — honest
@@ -166,10 +167,10 @@ struct ProtectDashboardService: Sendable {
             webProtectionActiveCount: webProtectionActiveCount,
             fullDiskAccessCount: fullDiskAccessCount,
             connectedCount: connectedCount,
-            criticalAlerts: critical,
             highAlerts: high,
             mediumAlerts: medium,
             lowAlerts: low,
+            informationalAlerts: informational,
             failingInsights: failingInsights,
             sourceFile: sourceFile,
             snapshotDate: snapshotDate,
@@ -219,23 +220,14 @@ struct ProtectDashboardService: Sendable {
         return decoded
     }
 
-    /// Plans arrive either as a bare array or a `{ "nodes": [...] }` GraphQL
-    /// envelope (same two shapes the workbook's `writeProtectPlans` handles).
     private static func loadPlans(
         from url: URL?, success: inout Bool
     ) -> [ProtectPlanRow] {
-        guard let url, let data = try? Data(contentsOf: url) else { return [] }
-        let decoder = JSONDecoder()
-        if let rows = try? decoder.decode([ProtectPlanRow].self, from: data) {
-            success = true
-            return rows
-        }
-        struct Envelope: Decodable { let nodes: [ProtectPlanRow] }
-        if let env = try? decoder.decode(Envelope.self, from: data) {
-            success = true
-            return env.nodes
-        }
-        return []
+        guard let url, let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([ProtectPlanRow].self, from: data)
+        else { return [] }
+        success = true
+        return decoded
     }
 
     /// Connection predicate: matches the canonical positive states only.
@@ -245,7 +237,8 @@ struct ProtectDashboardService: Sendable {
     /// `Self.connectedStates` rather than loosening the predicate.
     private static let connectedStates: Set<String> = ["connected", "online"]
 
-    private static func isConnected(_ status: String?) -> Bool {
+    /// ProtectView's connection pill uses this too, so the rows and the KPI agree.
+    static func isConnected(_ status: String?) -> Bool {
         guard let status else { return false }
         let normalized = status.lowercased().trimmingCharacters(in: .whitespaces)
         return Self.connectedStates.contains(normalized)
@@ -292,43 +285,41 @@ struct ProtectDashboardService: Sendable {
             }
     }
 
-    /// Chronological alert timeline for a specific device, identified by
-    /// hostname OR serial (case-insensitive). Returned newest-first so the
-    /// detail panel renders the most recent event at the top.
+    /// Chronological alert timeline for one device, matched on host name (case-insensitive),
+    /// newest first. jamf-cli's alert rows carry no serial number.
     static func alertTimeline(
         for deviceIdentifier: String,
         in alerts: [ProtectAlertRow]
     ) -> [ProtectAlertRow] {
         let needle = deviceIdentifier.lowercased().trimmingCharacters(in: .whitespaces)
         guard !needle.isEmpty else { return [] }
-        let matching = alerts.filter { alert in
-            let host = alert.hostName?.lowercased() ?? ""
-            let serial = alert.serial?.lowercased() ?? ""
-            return host == needle || serial == needle
-        }
+        let matching = alerts.filter { ($0.hostName?.lowercased() ?? "") == needle }
         return matching.sorted { ($0.created ?? "") > ($1.created ?? "") }
     }
 
-    /// Count alerts by severity level (case-insensitive).
-    private static func alertSeverityCounts(_ alerts: [ProtectAlertRow]) -> (critical: Int, high: Int, medium: Int, low: Int) {
-        var critical = 0, high = 0, medium = 0, low = 0
+    /// Count alerts by severity level (case-insensitive). Protect's SEVERITY
+    /// enum is High/Medium/Low/Informational — there is no Critical.
+    private static func alertSeverityCounts(
+        _ alerts: [ProtectAlertRow]
+    ) -> (high: Int, medium: Int, low: Int, informational: Int) {
+        var high = 0, medium = 0, low = 0, informational = 0
 
         for alert in alerts {
             guard let severity = alert.severity?.lowercased() else { continue }
             switch severity {
-            case let s where s.contains("critical"):
-                critical += 1
             case let s where s.contains("high"):
                 high += 1
             case let s where s.contains("medium") || s.contains("med"):
                 medium += 1
             case let s where s.contains("low"):
                 low += 1
+            case let s where s.hasPrefix("info"):
+                informational += 1
             default:
                 break
             }
         }
 
-        return (critical, high, medium, low)
+        return (high, medium, low, informational)
     }
 }

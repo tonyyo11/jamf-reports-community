@@ -57,6 +57,16 @@ struct ConfigView: View {
             case .scoring:    "scalemass"
             }
         }
+        /// Lets the strip fit PageScaffold.minSupportedWidth when the full labels do not.
+        var shortLabel: String {
+            switch self {
+            case .agents:   "Agents"
+            case .eas:      "EAs"
+            case .platform: "Platform"
+            case .output:   "Output"
+            default:        label
+            }
+        }
     }
 
     // MARK: Save-status feedback pill
@@ -77,10 +87,7 @@ struct ConfigView: View {
     var body: some View {
         PageScaffold(spacing: 16) {
             header
-            SegmentedControl(
-                selection: $tab,
-                options: ConfigTab.allCases.map { ($0, $0.label, $0.icon) }
-            )
+            tabStrip
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
@@ -213,14 +220,32 @@ struct ConfigView: View {
         }
     }
 
+    // MARK: Tab strip
+
+    /// Full labels need ~804 pt; the page has 672 at the minimum window with the
+    /// sidebar expanded, and a wider row pushes the sidebar off the window.
+    private var tabStrip: some View {
+        ViewThatFits(in: .horizontal) {
+            segments(\.label)
+            segments(\.shortLabel)
+            ScrollView(.horizontal, showsIndicators: false) { segments(\.shortLabel) }
+        }
+    }
+
+    private func segments(_ label: KeyPath<ConfigTab, String>) -> some View {
+        SegmentedControl(
+            selection: $tab,
+            options: ConfigTab.allCases.map { ($0, $0[keyPath: label], $0.icon) }
+        )
+    }
+
     // MARK: Header
 
     private var header: some View {
         PageHeader(
             kicker: "Workspace · \(workspace.profile)",
             title: "config.yaml",
-            subtitle: WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                                     subpath: "config.yaml")
+            subtitle: configDisplayPath
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -230,6 +255,8 @@ struct ConfigView: View {
                     }
                     saveStatusPill
                     PNPButton(title: "View YAML", icon: "chevron.left.forwardslash.chevron.right", action: viewYAML)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     // Switches to Columns because that is where the results
                     // render. Worth knowing if this ever reads as a bug again:
                     // the check used only to validate column mappings, which
@@ -241,15 +268,29 @@ struct ConfigView: View {
                         tab = .columns
                         triggerColumnsCheck = true
                     }
-                    .help("Check this profile's config and data, and show what to fix "
-                          + "(results appear under Columns)")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Check this profile's config and data, and show what to fix "
+                              + "(results appear under Columns)")
+                    // Demo edits apply on screen but have no file to be saved to.
                     PNPButton(title: "Save", icon: "checkmark", style: .gold, action: save)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             )
         }
     }
 
+    /// The demo's own path, not this Mac's root, which may have been moved.
+    private var configDisplayPath: String {
+        workspace.demoMode
+            ? DemoData.workspaceDisplayPath(profile: workspace.profile, subpath: "config.yaml")
+            : WorkspaceRootStore.displayPath(profile: workspace.profile, subpath: "config.yaml")
+    }
+
     private func viewYAML() {
+        guard !workspace.demoMode else { return }
         guard let url = ProfileService.workspaceURL(for: workspace.profile) else {
             workspace.toast = Toast(
                 message: "Workspace not found for profile `\(workspace.profile)`.",
@@ -275,7 +316,10 @@ struct ConfigView: View {
             Pill(text: "saved", tone: .teal, icon: "checkmark")
                 .transition(.opacity)
         case .error(let msg):
-            Pill(text: "error: \(msg)", tone: .danger)
+            // The message goes in the tooltip and a toast: Pill is fixed-size, so a
+            // long error here widened the header past the window.
+            Pill(text: "save failed", tone: .danger, icon: "exclamationmark.triangle")
+                .help(msg)
                 .transition(.opacity)
         case .saving:
             Pill(text: "saving…", tone: .muted)
@@ -303,6 +347,7 @@ struct ConfigView: View {
     // MARK: Button actions
 
     private func save() {
+        guard !workspace.demoMode else { return }
         saveTask?.cancel()
         saveStatus = .saving
         saveTask = Task { @MainActor in
@@ -310,17 +355,15 @@ struct ConfigView: View {
                 try await workspace.saveConfig()
                 withAnimation { saveStatus = .saved }
             } catch {
-                withAnimation { saveStatus = .error(shortMessage(error)) }
+                let message = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+                withAnimation { saveStatus = .error(message) }
+                workspace.toast = Toast(message: "Save failed: \(message)", style: .danger)
             }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
             withAnimation { saveStatus = .idle }
         }
-    }
-
-    private func shortMessage(_ error: Error) -> String {
-        let full = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        return full.count > 60 ? String(full.prefix(57)) + "…" : full
     }
 }
 
@@ -495,7 +538,11 @@ private struct ColumnsTab: View {
                 }
                 HStack(spacing: 6) {
                     PNPButton(title: "Re-check", icon: "arrow.clockwise", size: .sm, action: runCheck)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                     PNPButton(title: "Open CSV", icon: "arrow.up.right.square", style: .ghost, size: .sm, action: openCSV)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             }
         }
@@ -523,12 +570,17 @@ private struct ColumnsTab: View {
                     .foregroundStyle(Theme.Text.secondary)
                 PNPButton(title: "Re-scaffold from CSV", icon: "bolt", style: .gold, size: .sm,
                           action: runScaffold)
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 TipView(ConfigTips.rescaffold)
             }
         }
     }
 
+    /// Runs the report engine's check against the real workspace and its CSV,
+    /// so never in demo mode.
     private func runCheck() {
+        guard !workspace.demoMode else { return }
         Task {
             checkOutput = ["Running check…"]
             let csvPath = newestCSVPath()
@@ -556,6 +608,7 @@ private struct ColumnsTab: View {
     }
 
     private func openCSV() {
+        guard !workspace.demoMode else { return }
         guard let url = newestCSVURL() else {
             workspace.toast = Toast(
                 message: "No CSV export found in the workspace yet.",
@@ -574,6 +627,7 @@ private struct ColumnsTab: View {
     }
 
     private func runScaffold() {
+        guard !workspace.demoMode else { return }
         guard let csvURL = newestCSVURL() else {
             workspace.toast = Toast(
                 message: "Drop a CSV export into the workspace before scaffolding.",
@@ -590,8 +644,8 @@ private struct ColumnsTab: View {
                 // thresholds) untouched. ConfigService.save preserves unmanaged keys.
                 // File reads + config load/save; keep off the main actor so a
                 // large CSV export never blocks the UI.
-                let (report, familyLabel) = try await Task.detached {
-                    () throws -> (ScaffoldService.ColumnMergeReport, String) in
+                let (report, familyLabel, merged) = try await Task.detached {
+                    () throws -> (ScaffoldService.ColumnMergeReport, String, ConfigState) in
                     let sample = try ScaffoldService.readSample(from: csvURL)
                     let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
                     var loaded = try ConfigService.load(profile: profile)
@@ -626,7 +680,7 @@ private struct ColumnsTab: View {
                     _ = try ConfigService.save(
                         profile: profile, state: loaded.state, existingDocument: loaded.document)
                     let familyLabel = isMobile ? "mobile device export" : "computer export"
-                    return (report, familyLabel)
+                    return (report, familyLabel, loaded.state)
                 }.value
                 await MainActor.run {
                     workspace.toast = Toast(
@@ -637,6 +691,11 @@ private struct ColumnsTab: View {
                     )
                 }
                 workspace.reloadFromDisk()
+                // reloadFromDisk() leaves the loaded config alone, so without this the
+                // Columns tab showed the old mappings and Save wrote them back.
+                if workspace.profile == profile {
+                    workspace.adoptScaffoldedColumns(from: merged)
+                }
             } catch {
                 await MainActor.run {
                     workspace.toast = Toast(
@@ -1006,15 +1065,14 @@ private struct PlatformTab: View {
         @Bindable var ws = workspace
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 14) {
+                // The Platform API Gateway went GA in September 2026.
                 HStack(alignment: .center, spacing: 10) {
-                    SectionHeader(title: "Jamf Platform API · Preview")
-                    Pill(text: "PREVIEW", tone: .warn)
+                    SectionHeader(title: "Jamf Platform API")
+                    Pill(text: "GA", tone: .teal)
                 }
-                (Text("Public beta · requires ")
+                (Text("Generally available · reached through ")
                  + Text("jamf-cli").font(.caption.monospaced())
-                 + Text(" build with ")
-                 + Text("pro report").font(.caption.monospaced())
-                 + Text(" commands."))
+                 + Text(" with a Platform Gateway profile."))
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Divider().background(Theme.Hairline.standard)
@@ -1050,7 +1108,7 @@ private struct PlatformTab: View {
                         }
                     }
                     PNPButton(title: "Add benchmark", icon: "plus", style: .ghost, size: .sm, action: { ws.addComplianceBenchmark() })
-                    FieldHelp(text: "Benchmark titles or IDs. Generates per-rule and per-device sheets.")
+                    FieldHelp(text: "Exact titles, case-sensitive. Empty collects every benchmark.")
                 }
             }
         }
@@ -1092,11 +1150,10 @@ private struct PlatformTab: View {
                 Text("Requires a Platform Gateway profile")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
-                (Text("Run ")
-                 + Text("jamf-cli platform setup").font(.caption.monospaced())
-                 + Text(" to create a Platform Gateway profile. "
-                        + "This routes Pro API traffic through the Jamf Platform Gateway "
-                        + "and unlocks Platform API commands used by these sheets."))
+                Text("Create an integration in Jamf Account under Integrations, then add it "
+                     + "with Settings → Add connection and choose Platform Gateway. That routes "
+                     + "Jamf Pro API traffic through the gateway and unlocks the Platform "
+                     + "commands these sheets use.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                 Button {
@@ -1400,7 +1457,10 @@ private struct ScoringTab: View {
         raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
     }
 
+    /// The weights are an app-wide preference that scores live profiles too, so
+    /// demo mode shows them without letting an edit reach that preference.
     private func update(_ mutate: (inout SecurityScoreWeights) -> Void) {
+        guard !workspace.demoMode else { return }
         var c = config
         mutate(&c.weights)
         raw = c.serialize()
@@ -1423,9 +1483,14 @@ private struct ScoringTab: View {
                             icon: totalWeight == 100 ? "checkmark" : "scalemass"
                         )
                         PNPButton(title: "Reset to v3.5 defaults", size: .sm) {
+                            guard !workspace.demoMode else { return }
                             raw = ""
                         }
-                        .help("Restore the eight default weights from the v3.5 production script.")
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode
+                              ? DemoData.liveOnlyHelp
+                              : "Restore the eight default weights from the v3.5 production "
+                                  + "script.")
                     }
                     Text("These weights drive the Security Score on the Security Posture screen. " +
                          "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
@@ -1458,6 +1523,8 @@ private struct ScoringTab: View {
                                   value: Binding(get: { Int(config.weights.secureBoot) },
                                                  set: { v in update { $0.secureBoot = Double(v) } }))
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             }
             .accessibilityElement(children: .contain)

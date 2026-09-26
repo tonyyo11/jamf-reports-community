@@ -10,10 +10,17 @@ import Foundation
 /// only the first justifies skipping a kind.
 enum ProfileAuthMethod {
 
-    nonisolated(unsafe) private static var cache: [String: String] = [:]
+    struct Resolved: Equatable, Sendable {
+        /// Lowercased, for example `platform` or `oauth2`.
+        let authMethod: String
+        /// A Platform API profile whose integration is tenant level.
+        let isTenantLevel: Bool
+    }
+
+    nonisolated(unsafe) private static var cache: [String: Resolved] = [:]
     private static let cacheLock = NSLock()
 
-    /// The profile's auth method (lowercased), or nil when it cannot be
+    /// The profile's auth method and scope level, or nil when they cannot be
     /// determined — no jamf-cli, the probe failed, or the profile is not in
     /// jamf-cli's config. Resolved values are cached for the process lifetime;
     /// unknowns are never cached, so a transient probe failure cannot freeze
@@ -21,7 +28,7 @@ enum ProfileAuthMethod {
     static func resolve(
         profile: String,
         binary: URL? = ExecutableLocator.locate("jamf-cli")
-    ) -> String? {
+    ) -> Resolved? {
         cacheLock.lock()
         let cached = cache[profile]
         cacheLock.unlock()
@@ -30,11 +37,16 @@ enum ProfileAuthMethod {
         guard let binary, let data = configList(binary: binary),
               let method = PlatformCapabilityService.authMethod(data: data, profile: profile)
         else { return nil }
+        let resolved = Resolved(
+            authMethod: method,
+            isTenantLevel: PlatformCapabilityService.isTenantLevel(data: data, profile: profile)
+                ?? false
+        )
 
         cacheLock.lock()
-        cache[profile] = method
+        cache[profile] = resolved
         cacheLock.unlock()
-        return method
+        return resolved
     }
 
     /// Drops the cache. Called when profile configuration changes (and by

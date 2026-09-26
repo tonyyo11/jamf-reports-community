@@ -283,9 +283,93 @@ final class ConfigDoctorServiceTests: XCTestCase {
         XCTAssertEqual(row(rows, id: "custom_ea.FileVault.column")?.severity, .fail)
     }
 
+    // MARK: - custom_eas without a CSV
+
+    /// One EA whose column is a collected EA name, one whose column is not.
+    private let noCSVEAYAML = """
+    custom_eas:
+      - name: "FileVault"
+        column: "FileVault 2 Status"
+        type: text
+      - name: "Battery"
+        column: "Battery Health"
+        type: text
+    """
+
+    /// A custom EA's sheet is built from the CSV alone; with no CSV it silently
+    /// renders nothing, so the doctor has to say so.
+    func testCustomEAWithoutCSVWarnsThatItProducesNothing() throws {
+        let rows = ConfigDoctorService.evaluate(
+            config: try makeConfig(noCSVEAYAML), parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: ["Some Other EA"]
+        )
+        let finding = try XCTUnwrap(row(rows, id: "custom_ea.Battery.no_csv"))
+        XCTAssertEqual(finding.severity, .warn)
+        XCTAssertTrue(finding.detail.contains("Battery Health"), "got: \(finding.detail)")
+        XCTAssertTrue(finding.hint?.contains("csv-inbox") ?? false,
+                      "the fix names where the CSV goes; got: \(String(describing: finding.hint))")
+    }
+
+    /// Collected as an extension attribute: the sheet still needs a CSV, but the
+    /// values exist and the period report can use them — a suggestion, not a warning.
+    func testCustomEAWithoutCSVOnlySuggestsWhenItsColumnIsACollectedEA() throws {
+        let rows = ConfigDoctorService.evaluate(
+            config: try makeConfig(noCSVEAYAML), parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: ["filevault 2 status"]  // case-insensitive match
+        )
+        let finding = try XCTUnwrap(row(rows, id: "custom_ea.FileVault.no_csv"))
+        XCTAssertEqual(finding.severity, .suggest)
+        XCTAssertTrue(finding.detail.contains("period report"), "got: \(finding.detail)")
+        XCTAssertEqual(row(rows, id: "custom_ea.Battery.no_csv")?.severity, .warn,
+                       "an EA not collected still produces nothing")
+    }
+
+    /// With a CSV, the CSV check (`custom_ea.<name>.column`) covers the EA instead.
+    func testCustomEANoCSVRowIsAbsentWhenACSVIsPresent() throws {
+        let rows = ConfigDoctorService.evaluate(
+            config: try makeConfig(noCSVEAYAML), parseError: nil,
+            csvHeaders: ["Computer Name", "FileVault 2 Status", "Battery Health"],
+            csvFamily: .computers, eaCoverageNames: []
+        )
+        XCTAssertFalse(rows.contains { $0.id.hasSuffix(".no_csv") }, "got: \(rows.map(\.id))")
+        XCTAssertEqual(row(rows, id: "custom_ea.FileVault.column")?.severity, .pass)
+    }
+
+    /// An EA with no column configured has nothing to look for.
+    func testCustomEAWithEmptyColumnGetsNoNoCSVRow() throws {
+        let yaml = """
+        custom_eas:
+          - name: "Unmapped"
+            column: ""
+            type: text
+        """
+        let rows = ConfigDoctorService.evaluate(
+            config: try makeConfig(yaml), parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        XCTAssertNil(row(rows, id: "custom_ea.Unmapped.no_csv"))
+    }
+
+    /// Only `.fail` rows reach a scheduled run's log. A jamf-cli-only workspace with
+    /// EAs configured is valid, so these rows must never be able to turn a run red.
+    func testCustomEANoCSVRowsNeverFail() throws {
+        let coverages: [[String]] = [
+            [], ["FileVault 2 Status"], ["FileVault 2 Status", "Battery Health"],
+        ]
+        for coverage in coverages {
+            let rows = ConfigDoctorService.evaluate(
+                config: try makeConfig(noCSVEAYAML), parseError: nil, csvHeaders: nil,
+                csvFamily: nil, eaCoverageNames: coverage
+            )
+            let noCSV = rows.filter { $0.id.hasSuffix(".no_csv") }
+            XCTAssertEqual(noCSV.count, 2, "one row per mapped EA; coverage: \(coverage)")
+            XCTAssertFalse(noCSV.contains { $0.severity == .fail }, "coverage: \(coverage)")
+        }
+    }
+
     // MARK: - platform
 
-    func testPlatformEnabledWithoutBenchmarksWarns() throws {
+    func testPlatformEnabledWithoutBenchmarksRaisesNoRow() throws {
         let yaml = """
         platform:
           enabled: true
@@ -296,7 +380,7 @@ final class ConfigDoctorServiceTests: XCTestCase {
             config: config, parseError: nil, csvHeaders: nil,
             csvFamily: nil, eaCoverageNames: []
         )
-        XCTAssertEqual(row(rows, id: "platform.benchmarks")?.severity, .warn)
+        XCTAssertNil(row(rows, id: "platform.benchmarks"))
     }
 
     // MARK: - security_agents

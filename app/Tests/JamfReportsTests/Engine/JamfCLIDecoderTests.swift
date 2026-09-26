@@ -340,7 +340,7 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].attempt, 3)
         XCTAssertEqual(rows[0].lastAction, "Retrying")
         XCTAssertEqual(rows[0].osVersion, "15.7.3")
-        XCTAssertEqual(rows[0].id, "123-42-3")
+        XCTAssertEqual(rows[0].id, "123-42", "attempt is not part of a failure's identity")
     }
 
     func testPatchFailureFixtureDecodesWithoutError() throws {
@@ -762,93 +762,153 @@ final class JamfCLIDecoderTests: XCTestCase {
 
     // MARK: - ProtectOverviewItem
 
-    func testProtectOverviewItemDynamicFieldsDecoding() throws {
-        // ProtectOverviewItem reads arbitrary keys via DynamicCodingKey.
+    func testProtectOverviewItemDecodesJamfCLIOverviewRows() throws {
+        // overviewToRows: string section, resource and value; `status` only with a colour hint.
         let json = """
-        [{"resource":"Devices Enrolled","value":42,"trend":"up"}]
+        [{"resource":"Computers","section":"Endpoints","value":"1,204"},
+         {"resource":"Alerts","section":"Endpoints","status":"yellow",
+          "value":"3 New  1 In Progress"}]
         """
         let items = try JSONDecoder().decode([ProtectOverviewItem].self, from: Data(json.utf8))
-        XCTAssertEqual(items.count, 1)
-        XCTAssertEqual(items[0].value?.intValue, 42)
-        XCTAssertEqual(items[0].extraFields["resource"]?.stringValue, "Devices Enrolled")
-        XCTAssertEqual(items[0].extraFields["trend"]?.stringValue, "up")
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[0].value?.stringValue, "1,204")
+        XCTAssertEqual(items[0].extraFields["resource"]?.stringValue, "Computers")
+        XCTAssertEqual(items[0].extraFields["section"]?.stringValue, "Endpoints")
+        XCTAssertNil(items[0].extraFields["status"])
+        XCTAssertEqual(items[1].extraFields["status"]?.stringValue, "yellow")
     }
 
     // MARK: - ProtectAlertRow
 
-    func testProtectAlertRowDecoding() throws {
+    func testProtectAlertRowReadsHostNameFromComputerString() throws {
+        // flattenAlert writes `computer` as the host name and omits it for an alert without one.
         let json = """
-        [{"uuid":"alert-1","created":"2026-05-01T08:00:00Z",
-          "severity":"high","status":"New","eventType":"ProcessExecution",
-          "hostName":"lab-mac-01","serial":"ABC123"}]
+        [{"analytics":"Suspicious Process","computer":"lab-mac-01.example",
+          "created":"2026-05-01T08:00:00.000Z","eventType":"GPProcessEvent",
+          "received":"2026-05-01T08:00:01.000Z","severity":"High","status":"New",
+          "uuid":"alert-1"},
+         {"created":"2026-05-02T08:00:00.000Z","eventType":"GPGatekeeperEvent",
+          "received":"2026-05-02T08:00:01.000Z","severity":"Informational",
+          "status":"AutoResolved","uuid":"alert-2"}]
         """
         let rows = try JSONDecoder().decode([ProtectAlertRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.count, 2)
         XCTAssertEqual(rows[0].uuid, "alert-1")
-        XCTAssertEqual(rows[0].created, "2026-05-01T08:00:00Z")
-        XCTAssertEqual(rows[0].severity, "high")
-        XCTAssertEqual(rows[0].eventType, "ProcessExecution")
-        XCTAssertEqual(rows[0].hostName, "lab-mac-01")
-        XCTAssertEqual(rows[0].serial, "ABC123")
+        XCTAssertEqual(rows[0].created, "2026-05-01T08:00:00.000Z")
+        XCTAssertEqual(rows[0].severity, "High")
+        XCTAssertEqual(rows[0].status, "New")
+        XCTAssertEqual(rows[0].eventType, "GPProcessEvent")
+        XCTAssertEqual(rows[0].hostName, "lab-mac-01.example")
+        XCTAssertNil(rows[1].hostName)
+        XCTAssertEqual(rows[1].status, "AutoResolved")
     }
 
-    func testProtectAlertFixtureDecodesWithoutError() throws {
-        let fixtureURL = fixturesDir
-            .appendingPathComponent("jamf-cli-data/protect-alerts/alerts_happy.json")
-        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
-            throw XCTSkip("Fixture not available")
-        }
-        let data = try Data(contentsOf: fixtureURL)
-        XCTAssertNoThrow(
-            try JSONDecoder().decode([ProtectAlertRow].self, from: data)
-        )
+    func testProtectAlertFixtureDecodes() throws {
+        let data = try Data(contentsOf: fixturesDir
+            .appendingPathComponent("jamf-cli-data/protect-alerts/alerts_happy.json"))
+        let rows = try JSONDecoder().decode([ProtectAlertRow].self, from: data)
+        XCTAssertEqual(rows.map(\.hostName), [
+            "lab-mac-01.example", "exec-mbp-09.example", "build-mini-02.example", nil,
+        ])
+        XCTAssertEqual(rows.map(\.severity), ["High", "Medium", "Low", "Informational"])
     }
 
     // MARK: - ProtectComputerRow
 
-    func testProtectComputerRowExtractsNestedPlanName() throws {
-        // `plan` is a nested object {id, name}; decoder pulls name into planName.
+    func testProtectComputerRowReadsJamfCLIFlattenedRow() throws {
+        // flattenComputer: lower-case `hostname`, `plan` as a name, `fullDiskAccess` as an enum.
         let json = """
-        [{"uuid":"comp-1","hostName":"lab-mac-01","serial":"ABC123",
-          "modelName":"MacBookPro18,3","osString":"15.4.1",
-          "plan":{"id":"p1","name":"Engineering Plan"},
-          "webProtectionActive":true,"fullDiskAccess":false,
-          "connectionStatus":"Connected","lastConnection":"2026-05-01T08:00:00Z",
-          "insightsStatsPass":18,"insightsStatsFail":2}]
+        [{"connectionStatus":"Connected","fullDiskAccess":"Authorized",
+          "hostname":"lab-mac-01.example","insightsStatsFail":4,
+          "lastConnection":"2026-05-01T09:45:00.000Z","memorySize":32,"modelName":"Mac Studio",
+          "osMajor":15,"osMinor":7,"osPatch":3,"osString":"15.7.3","plan":"Engineering Lab",
+          "serial":"SYNTH0000001","tags":"[lab dev]","uuid":"comp-1","version":"6.1.0.2",
+          "webProtectionActive":true}]
         """
         let rows = try JSONDecoder().decode([ProtectComputerRow].self, from: Data(json.utf8))
         XCTAssertEqual(rows[0].uuid, "comp-1")
-        XCTAssertEqual(rows[0].hostName, "lab-mac-01")
-        XCTAssertEqual(rows[0].planName, "Engineering Plan")
+        XCTAssertEqual(rows[0].hostName, "lab-mac-01.example")
+        XCTAssertEqual(rows[0].serial, "SYNTH0000001")
+        XCTAssertEqual(rows[0].modelName, "Mac Studio")
+        XCTAssertEqual(rows[0].osString, "15.7.3")
+        XCTAssertEqual(rows[0].planName, "Engineering Lab")
+        XCTAssertEqual(rows[0].version, "6.1.0.2")
         XCTAssertEqual(rows[0].webProtectionActive, true)
-        XCTAssertEqual(rows[0].fullDiskAccess, false)
-        XCTAssertEqual(rows[0].insightsStatsPass, 18)
+        XCTAssertEqual(rows[0].fullDiskAccess, true)
+        XCTAssertEqual(rows[0].connectionStatus, "Connected")
+        XCTAssertEqual(rows[0].lastConnection, "2026-05-01T09:45:00.000Z")
+        XCTAssertEqual(rows[0].insightsStatsFail, 4)
     }
 
-    func testProtectComputerRowNilPlanWhenMissing() throws {
-        // No `plan` key — planName must be nil rather than crashing.
+    func testProtectComputerRowOmittedFieldsAreNil() throws {
+        // flattenComputer omits unset fields; Unknown access is neither granted nor denied.
         let json = """
-        [{"uuid":"comp-2","hostName":"lab-mac-02","serial":"DEF456"}]
+        [{"fullDiskAccess":"Unknown","hostname":"lab-mac-02.example","uuid":"comp-2"}]
         """
         let rows = try JSONDecoder().decode([ProtectComputerRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].uuid, "comp-2")
+        XCTAssertEqual(rows[0].hostName, "lab-mac-02.example")
         XCTAssertNil(rows[0].planName)
+        XCTAssertNil(rows[0].webProtectionActive)
+        XCTAssertNil(rows[0].fullDiskAccess)
+    }
+
+    func testProtectFullDiskAccessStatusMapping() {
+        XCTAssertEqual(ProtectComputerRow.fullDiskAccessGranted("Authorized"), true)
+        XCTAssertEqual(ProtectComputerRow.fullDiskAccessGranted("Unauthorized"), false)
+        XCTAssertNil(ProtectComputerRow.fullDiskAccessGranted("Unknown"))
+        XCTAssertNil(ProtectComputerRow.fullDiskAccessGranted(nil))
+    }
+
+    func testProtectComputerFixtureCoversEveryAccessStatus() throws {
+        let data = try Data(contentsOf: fixturesDir
+            .appendingPathComponent("jamf-cli-data/protect-computers/computers_happy.json"))
+        let rows = try JSONDecoder().decode([ProtectComputerRow].self, from: data)
+        XCTAssertEqual(rows.map(\.fullDiskAccess), [true, false, nil])
+        XCTAssertEqual(rows.map(\.planName), ["Engineering Lab", "Executive Strict", nil])
+        XCTAssertEqual(rows.map(\.hostName), [
+            "lab-mac-01.example", "exec-mbp-09.example", "build-mini-02.example",
+        ])
     }
 
     // MARK: - ProtectInsightRow
 
-    func testProtectInsightRowDecoding() throws {
+    func testProtectInsightRowReadsJamfCLIFlattenedRow() throws {
+        // flattenInsight carries no uuid or description; `cisIDs` is one comma-joined string.
         let json = """
-        [{"uuid":"ins-1","label":"FileVault Coverage",
-          "section":"Encryption","description":"Devices with FV enabled",
-          "totalPass":48,"totalFail":2,"enabled":true}]
+        [{"cisIDs":"2.3.1, 2.3.2","enabled":true,"label":"Bluetooth sharing disabled",
+          "section":"Sharing","totalFail":12,"totalNone":0,"totalPass":88}]
         """
         let rows = try JSONDecoder().decode([ProtectInsightRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].uuid, "ins-1")
-        XCTAssertEqual(rows[0].label, "FileVault Coverage")
-        XCTAssertEqual(rows[0].section, "Encryption")
-        XCTAssertEqual(rows[0].totalPass, 48)
-        XCTAssertEqual(rows[0].totalFail, 2)
+        XCTAssertEqual(rows[0].label, "Bluetooth sharing disabled")
+        XCTAssertEqual(rows[0].section, "Sharing")
+        XCTAssertEqual(rows[0].totalPass, 88)
+        XCTAssertEqual(rows[0].totalFail, 12)
         XCTAssertEqual(rows[0].enabled, true)
+    }
+
+    func testProtectInsightListSurvivesOddFieldType() throws {
+        let json = """
+        [{"enabled":true,"label":"A","totalFail":"12","totalPass":88},
+         {"enabled":false,"label":"B","totalFail":0,"totalPass":100}]
+        """
+        let rows = try JSONDecoder().decode([ProtectInsightRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.map(\.label), ["A", "B"])
+        XCTAssertEqual(rows.map(\.totalFail), [nil, 0])
+    }
+
+    // MARK: - ProtectPlanRow
+
+    func testProtectPlanFixtureReadsTelemetryName() throws {
+        // flattenPlan: `telemetry` is the configuration's name, absent when none is assigned.
+        let data = try Data(contentsOf: fixturesDir
+            .appendingPathComponent("jamf-cli-data/protect-plans/plans_happy.json"))
+        let rows = try JSONDecoder().decode([ProtectPlanRow].self, from: data)
+        XCTAssertEqual(rows.map(\.name), [
+            "Production Default", "Engineering Lab", "Executive Strict",
+        ])
+        XCTAssertEqual(rows.map(\.telemetry), ["Standard Telemetry", nil, "Extended Telemetry"])
+        XCTAssertEqual(rows.map(\.autoUpdate), [true, false, true])
+        XCTAssertEqual(rows.map(\.logLevel), ["ERROR", "DEBUG", "INFO"])
     }
 
     // MARK: - AdvancedMobileSearchEnvelope / AdvancedMobileSearchRow

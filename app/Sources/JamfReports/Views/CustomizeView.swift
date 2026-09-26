@@ -1,32 +1,35 @@
 import SwiftUI
 
+/// Report options that live outside the Config tab: the two chart settings the
+/// workbook reads, and pointers to where the rest of a report's shape is chosen.
+///
+/// Before 2.8.1 this screen also had a grid of sheet toggles, an Executive preset,
+/// a workbook preview and three more chart switches. None of them was saved or
+/// read by any generate path, yet Apply then read "Saved" (#207 G9). The app
+/// generates the Full Instance template; the command-line tool takes `--template`.
 struct CustomizeView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
-    @State private var sheets: [SheetGroup] = []
 
-    // Chart toggle state matches the order in the prototype
-    @State private var chartOSAdoption: Bool = true
-    @State private var chartComplianceTrend: Bool = true
-    @State private var chartDeviceStateTrend: Bool = true
     @State private var chartPerMajor: Bool = true
     @State private var chartSavePNGs: Bool = false
+    @State private var chartsLoaded = false
 
     @State private var applySaved = false
     @State private var saveError: String?
     @State private var showGuide = false
 
-    private static let executiveSheets: Set<String> = [
-        "Fleet Overview", "Security Posture", "Compliance", "Patch Compliance",
-    ]
+    /// The smaller templates `jamf-reports generate --template` accepts; the CLI
+    /// refuses `custom`, which needs a sheet list only a GUI could supply.
+    private static let cliTemplates: [String] = TemplateResolver.allTemplates
+        .map(\.identifier)
+        .filter { $0 != FullInstanceTemplate().identifier && $0 != "custom" }
 
-    private var enabledCount: Int {
-        sheets.flatMap(\.items).filter(\.on).count
-    }
-
-    private var totalCount: Int {
-        sheets.flatMap(\.items).count
-    }
+    /// Non-breaking hyphens keep `security-posture` whole when the caption wraps.
+    /// Display only: the caption is not selectable, so nothing pastes them.
+    private static let cliTemplateList: String = cliTemplates
+        .map { $0.replacingOccurrences(of: "-", with: "\u{2011}") }
+        .joined(separator: ", ")
 
     var body: some View {
         ScrollView {
@@ -61,7 +64,7 @@ struct CustomizeView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
                 HStack(alignment: .top, spacing: 14) {
-                    sheetGroupsList
+                    sheetsCard
                     rightRail
                 }
             }
@@ -73,29 +76,35 @@ struct CustomizeView: View {
             ))
         }
         .onAppear {
-            if sheets.isEmpty { loadFromWorkspace() }
+            guard !chartsLoaded else { return }
+            chartsLoaded = true
+            loadChartOptions()
         }
+        // A profile switch or leaving demo mode keeps this view, so the toggles reload.
+        // Before, Apply wrote the previous profile's values, or the demo's defaults, into
+        // the current profile's config.yaml.
+        .onChange(of: chartSource) { loadChartOptions() }
     }
 
-    private func loadFromWorkspace() {
-        sheets = workspace.sheetCatalog
-        let all = sheets.flatMap(\.items)
-        chartOSAdoption = all.first(where: { $0.name == "OS Adoption" })?.on ?? true
-        chartComplianceTrend = all.first(where: { $0.name == "Compliance Trend" })?.on ?? true
-        chartDeviceStateTrend = all.first(where: { $0.name == "Device State Trend" })?.on ?? true
-        // These two are config keys, not sheet toggles, so they come from
-        // config.yaml rather than the sheet catalogue. Before 2.7.0 they were
-        // never loaded or saved at all — the switches moved and nothing else did.
-        let charts = ChartsConfigLoader.load(profile: workspace.profile)
+    /// Which config the chart options were read from.
+    private var chartSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
+    /// Both options are config keys, so they come from config.yaml. Before 2.7.0
+    /// they were never loaded or saved at all. Demo mode has no config.yaml to
+    /// read, so it shows the defaults.
+    private func loadChartOptions() {
+        let charts = workspace.demoMode
+            ? ChartsOptions.defaults : ChartsConfigLoader.load(profile: workspace.profile)
         chartSavePNGs = charts.savePNGs
         chartPerMajor = charts.perMajorCharts
     }
 
     private var header: some View {
         PageHeader(
-            kicker: "Workbook Composition",
+            kicker: "Report Options",
             title: "Customize Reports",
-            subtitle: "Choose which sheets appear in the generated workbook · \(enabledCount) of \(totalCount) enabled"
+            subtitle: "Chart options for generated workbooks, and where to change "
+                + "what else a report shows"
         ) {
             AnyView(
                 HStack(spacing: 8) {
@@ -107,9 +116,8 @@ struct CustomizeView: View {
                     ) {
                         showGuide = true
                     }
-                    PNPButton(title: "Preset: Executive") {
-                        applyExecutivePreset()
-                    }
+                    // Apply writes the chart options into config.yaml, which in
+                    // demo mode would create one under the demo profile's name.
                     PNPButton(
                         title: applySaved ? "Saved" : "Apply",
                         icon: applySaved ? "checkmark.circle" : "checkmark",
@@ -118,6 +126,8 @@ struct CustomizeView: View {
                         saveError = nil
                         applyAndSave()
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
                 .sheet(isPresented: $showGuide) {
                     CustomizeGuideSheet()
@@ -126,132 +136,81 @@ struct CustomizeView: View {
         }
     }
 
-    // MARK: Left column — sheet groups
+    // MARK: Left column — workbook sheets
 
-    private var sheetGroupsList: some View {
-        VStack(spacing: 12) {
-            ForEach($sheets) { $group in
-                sheetGroupCard(group: $group)
+    /// Which sheets a workbook has is set by its report template, not here.
+    private var sheetsCard: some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Workbook sheets", style: .body)
+                Text("A workbook generated in the app has every sheet: the Full Instance "
+                     + "report. For a shorter one, generate a smaller template with the "
+                     + "command-line tool:")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                // One line in a horizontal scroll: wrapping broke the command at
+                // its hyphens, and it must copy exactly as shown.
+                ScrollView(.horizontal) {
+                    Mono(
+                        text: "jamf-reports generate --profile \(workspace.profile) "
+                            + "--template executive",
+                        size: 11,
+                        color: Theme.Text.primary
+                    )
+                    .textSelection(.enabled)
+                    .fixedSize()
+                }
+                Text("Templates: \(Self.cliTemplateList).")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                PNPButton(title: "Command-line tool", icon: "terminal", size: .sm) {
+                    NotificationCenter.default.post(
+                        name: .navigateToTab,
+                        object: nil,
+                        userInfo: ["tab": Tab.settings.rawValue]
+                    )
+                }
+                .help("Open Settings, where the command-line tool is installed.")
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    private func sheetGroupCard(group: Binding<SheetGroup>) -> some View {
-        Card(padding: 16) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    SectionHeader(title: group.wrappedValue.group, style: .body)
-                    Spacer()
-                    Kicker(
-                        text: "\(group.wrappedValue.items.filter(\.on).count)/\(group.wrappedValue.items.count)"
-                    )
-                }
-                LazyVGrid(
-                    columns: [GridItem(.flexible()), GridItem(.flexible())],
-                    spacing: 6
-                ) {
-                    ForEach(group.items) { $item in
-                        SheetToggleCell(item: $item)
-                    }
-                }
-            }
-        }
     }
 
     // MARK: Right rail
 
     private var rightRail: some View {
         VStack(spacing: 12) {
-            workbookPreviewCard
             scoreCardsCard
             chartsCard
         }
         .frame(width: 260)
     }
 
+    /// The Overview's score cards and sections are chosen in one editor on the
+    /// Overview itself, where it can say which ones this profile can fill.
+    /// This card only points there; a second, availability-blind copy of the
+    /// toggles would drift from it.
     private var scoreCardsCard: some View {
         Card(padding: 16) {
-            VStack(alignment: .leading, spacing: 0) {
-                SectionHeader(title: "Overview Score Cards", style: .body)
-                    .padding(.bottom, 10)
-                
-                Text("Choose the metrics to show on the Overview dashboard.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .padding(.bottom, 12)
-
-                // No selection cap — the Overview grid is adaptive and wraps
-                // to additional rows as more score cards are enabled.
-                ForEach(TrendSeries.Metric.allCases) { metric in
-                    let isOn = Binding<Bool>(
-                        get: { workspace.selectedScoreCards.contains(metric) },
-                        set: { newValue in
-                            if newValue {
-                                if !workspace.selectedScoreCards.contains(metric) {
-                                    workspace.selectedScoreCards.append(metric)
-                                }
-                            } else {
-                                workspace.selectedScoreCards.removeAll { $0 == metric }
-                            }
-                        }
-                    )
-
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text(metric.displayLabel)
-                                .font(.footnote.weight(.medium))
-                                .foregroundStyle(Theme.Text.primary)
-                            Spacer()
-                            PNPToggle(isOn: isOn)
-                        }
-                        .padding(.vertical, 6)
-                        if metric != TrendSeries.Metric.allCases.last {
-                            Divider().background(Theme.Hairline.standard)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var workbookPreviewCard: some View {
-        Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
-                SectionHeader(title: "Workbook Preview", style: .body)
-
-                let enabledSheets = sheets.flatMap(\.items).filter(\.on)
-                ScrollView {
-                    VStack(spacing: 0) {
-                        ForEach(Array(enabledSheets.enumerated()), id: \.element.id) { idx, item in
-                            HStack(spacing: 8) {
-                                Mono(
-                                    text: "\(idx + 1)",
-                                    size: 10,
-                                    color: Theme.Text.tertiary(contrast)
-                                )
-                                .frame(width: 18, alignment: .trailing)
-                                Image(systemName: "doc")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.Colors.gold)
-                                Text(item.name)
-                                    .font(.caption)
-                                    .foregroundStyle(Theme.Text.secondary)
-                                Spacer()
-                                Mono(text: item.req, size: 9.5, color: Theme.Text.tertiary(contrast))
-                            }
-                            .padding(.vertical, 4)
-                            .padding(.horizontal, 12)
-                        }
-                    }
-                }
-                .frame(maxHeight: 360)
-                .background(Theme.Surface.high)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-                Text("Estimated workbook · \(enabledSheets.count) sheets · native charts embedded")
+                SectionHeader(title: "Overview", style: .body)
+                Text("Score cards and Overview sections — what shows, in what order — "
+                     + "are chosen on the Overview. \(workspace.selectedScoreCards.count) "
+                     + "score cards selected.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                PNPButton(title: "Customize Overview", icon: "slider.horizontal.3", size: .sm) {
+                    workspace.overviewCustomizeRequested = true
+                    NotificationCenter.default.post(
+                        name: .navigateToTab,
+                        object: nil,
+                        userInfo: ["tab": Tab.overview.rawValue]
+                    )
+                }
+                .help("Open the Overview with its Customize sheet.")
             }
         }
     }
@@ -263,26 +222,8 @@ struct CustomizeView: View {
                     .padding(.bottom, 10)
 
                 chartToggleRow(
-                    title: "OS Adoption",
-                    detail: "Per-major-version charts",
-                    isOn: $chartOSAdoption,
-                    hasDivider: true
-                )
-                chartToggleRow(
-                    title: "Compliance Trend",
-                    detail: "Failed-rule bands over time",
-                    isOn: $chartComplianceTrend,
-                    hasDivider: true
-                )
-                chartToggleRow(
-                    title: "Device State Trend",
-                    detail: "jamf-cli history",
-                    isOn: $chartDeviceStateTrend,
-                    hasDivider: true
-                )
-                chartToggleRow(
                     title: "Per-major macOS charts",
-                    detail: "10, 11, 12, 13, 14, 15",
+                    detail: "Majors found in the fleet",
                     isOn: $chartPerMajor,
                     hasDivider: true
                 )
@@ -292,6 +233,12 @@ struct CustomizeView: View {
                     isOn: $chartSavePNGs,
                     hasDivider: false
                 )
+                Text("The stale-device trend and the compliance bands are set under "
+                     + "charts in config.yaml.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
             }
         }
     }
@@ -324,121 +271,26 @@ struct CustomizeView: View {
 
     // MARK: Actions
 
-    private func applyExecutivePreset() {
-        sheets = sheets.map { group in
-            var g = group
-            g.items = g.items.map { item in
-                var i = item
-                i.on = Self.executiveSheets.contains(item.name)
-                return i
-            }
-            return g
-        }
-        chartOSAdoption = false
-        chartComplianceTrend = false
-        chartDeviceStateTrend = false
-    }
-
     private func applyAndSave() {
-        var updatedSheets = sheets
-        let chartNameToToggle: [String: Bool] = [
-            "OS Adoption": chartOSAdoption,
-            "Compliance Trend": chartComplianceTrend,
-            "Device State Trend": chartDeviceStateTrend,
-        ]
-        for gi in updatedSheets.indices {
-            for ii in updatedSheets[gi].items.indices {
-                let name = updatedSheets[gi].items[ii].name
-                if let toggle = chartNameToToggle[name] {
-                    updatedSheets[gi].items[ii].on = toggle
-                }
-            }
-        }
-        workspace.sheetCatalog = updatedSheets
-        sheets = updatedSheets
-
+        guard !workspace.demoMode else { return }
         let chartOptions = ChartsOptions(
             savePNGs: chartSavePNGs, perMajorCharts: chartPerMajor
         )
         let profile = workspace.profile
         Task {
             do {
-                try await workspace.saveConfig()
-                // Written separately: saveConfig round-trips the Config tab's
-                // managed keys, which deliberately exclude charts.
+                // Only the chart options. This screen edits nothing else, so it
+                // no longer saves the Config tab's unsaved edits along with them.
                 try ChartsConfigWriter.save(chartOptions, profile: profile)
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
             } catch {
                 AppLogger.ui.warning(
-                    "CustomizeView: saveConfig failed: \(error.localizedDescription, privacy: .private)"
+                    "CustomizeView: save failed: \(error.localizedDescription, privacy: .private)"
                 )
                 saveError = error.localizedDescription
             }
         }
-    }
-}
-
-// MARK: - SheetToggleCell
-
-private struct SheetToggleCell: View {
-    @Binding var item: SheetItem
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    var body: some View {
-        Button {
-            item.on.toggle()
-        } label: {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(item.on ? Theme.Colors.gold.opacity(0.25) : Color.white.opacity(0.05))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .strokeBorder(
-                                    item.on ? Theme.Colors.gold.opacity(0.6) : Theme.Hairline.strong,
-                                    lineWidth: 0.5
-                                )
-                        )
-                        .frame(width: 16, height: 16)
-                    if item.on {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Theme.Colors.goldBright)
-                    }
-                }
-
-                Text(item.name)
-                    .font(.footnote)
-                    .foregroundStyle(item.on ? Theme.Text.primary : Theme.Text.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .lineLimit(1)
-
-                Mono(
-                    text: item.req.uppercased(),
-                    size: 9.5,
-                    color: Theme.Text.tertiary(contrast)
-                )
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                item.on
-                    ? Theme.Colors.gold.opacity(0.08)
-                    : Color.white.opacity(0.025)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(
-                        item.on
-                            ? Theme.Colors.gold.opacity(0.35)
-                            : Theme.Hairline.standard,
-                        lineWidth: 0.5
-                    )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        }
-        .buttonStyle(.plain)
     }
 }

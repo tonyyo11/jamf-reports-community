@@ -115,25 +115,22 @@ final class OnboardingFlow {
     /// True when the secure field has keystrokes but `clientSecret` is not yet finalized.
     var secretFieldHasText = false
 
-    /// The Platform API scope level: which flag `config add-profile` sends.
+    /// The Platform API scope level: which flag `config add-profile` sends. Organization level is
+    /// not offered: it sends no scope header, and every call the app makes needs one.
     enum PlatformScope: String, CaseIterable, Sendable {
-        case environment, tenant, organization
+        case environment, tenant
 
         var label: String {
             switch self {
             case .environment: "Environment"
             case .tenant: "Tenant (legacy)"
-            case .organization: "Organization"
             }
         }
-
-        /// Organization scope sends no ID flag at all.
-        var needsID: Bool { self != .organization }
 
         var idFieldLabel: String {
             switch self {
             case .environment: "Environment ID"
-            case .tenant, .organization: "Tenant ID"
+            case .tenant: "Tenant ID"
             }
         }
 
@@ -197,6 +194,9 @@ final class OnboardingFlow {
     var lastError: String?
     var validationOutput: [CLIBridge.LogLine] = []
     var validationExitCode: Int32?
+    /// The gateway's answer about a Platform API profile's scope ID; nil for OAuth2 profiles
+    /// and before validation.
+    var connectionCheck: ConnectionCheck.Verdict?
     var csvOutput: [CLIBridge.LogLine] = []
     var firstReportOutput: [CLIBridge.LogLine] = []
 
@@ -262,7 +262,7 @@ final class OnboardingFlow {
                     && (!clientSecret.isEmpty || secretFieldHasText) && !isRegisteringProfile
             case .platformGateway:
                 isProfileNameValid && isGatewayURLValid
-                    && (!platformScope.needsID || !platformScopeID.trimmed.isEmpty)
+                    && !platformScopeID.trimmed.isEmpty
                     && !platformClientID.trimmed.isEmpty
                     && (!platformClientSecret.isEmpty || platformSecretFieldHasText)
                     && !isRegisteringProfile
@@ -297,6 +297,17 @@ final class OnboardingFlow {
 
     var isProfileNameValid: Bool {
         ProfileService.isValid(profileName.trimmed)
+    }
+
+    /// What a validated field shows under it. A field nothing has been typed into shows its
+    /// rule as a hint: marking it red reports a mistake the user has not made yet.
+    enum FieldFeedback: Equatable {
+        case hint, valid, invalid
+    }
+
+    static func feedback(for value: String, isValid: Bool) -> FieldFeedback {
+        if value.trimmed.isEmpty { return .hint }
+        return isValid ? .valid : .invalid
     }
 
     var isJamfURLValid: Bool {
@@ -428,6 +439,10 @@ final class OnboardingFlow {
         case .platformGateway:
             try await registerPlatformGatewayProfile()
         }
+        // Update credentials can switch a profile's auth method or scope level. Collect and
+        // the health strip read both through ProfileAuthMethod's process-lifetime cache,
+        // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
+        ProfileAuthMethod.invalidateCache()
     }
 
     private func registerOAuth2Profile() async throws {
@@ -468,6 +483,7 @@ final class OnboardingFlow {
         connectionValidated = false
         validationExitCode = nil
         validationOutput.removeAll()
+        connectionCheck = nil
         lastError = nil
     }
 
@@ -510,6 +526,7 @@ final class OnboardingFlow {
         connectionValidated = false
         validationExitCode = nil
         validationOutput.removeAll()
+        connectionCheck = nil
         lastError = nil
     }
 
@@ -526,6 +543,14 @@ final class OnboardingFlow {
         }
         guard let binary = CLIBridge().locate("jamf-cli") else {
             protectConnectionError = FlowError.missingJamfCLI.localizedDescription
+            return
+        }
+        // The client secret goes to this binary, so it passes the same signature gate as
+        // the Jamf Pro paths.
+        do {
+            try verifyJamfCLISignatureGate(binary: binary)
+        } catch {
+            protectConnectionError = error.localizedDescription
             return
         }
         // S1: reject http:// URLs before any secret reaches the PTY.
@@ -588,6 +613,14 @@ final class OnboardingFlow {
         }
         guard let binary = CLIBridge().locate("jamf-cli") else {
             schoolConnectionError = FlowError.missingJamfCLI.localizedDescription
+            return
+        }
+        // The API key goes to this binary, so it passes the same signature gate as the
+        // Jamf Pro paths.
+        do {
+            try verifyJamfCLISignatureGate(binary: binary)
+        } catch {
+            schoolConnectionError = error.localizedDescription
             return
         }
         // S1: reject http:// URLs before any secret reaches the PTY.
@@ -694,9 +727,8 @@ final class OnboardingFlow {
         return data
     }
 
-    /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth.
-    /// Sends exactly one scope flag (`--environment-id` / `--tenant-id`), or
-    /// none for organization scope — the flags are mutually exclusive.
+    /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth. Sends exactly one
+    /// scope flag (`--environment-id` / `--tenant-id`); the flags are mutually exclusive.
     static func platformGatewayArguments(
         profile: String, gatewayURL: String, scope: PlatformScope, scopeID: String,
         noVerify: Bool = false
@@ -706,7 +738,6 @@ final class OnboardingFlow {
         switch scope {
         case .environment: args += ["--environment-id", scopeID]
         case .tenant: args += ["--tenant-id", scopeID]
-        case .organization: break
         }
         args += ["--url", gatewayURL, "--no-color"]
         if noVerify { args.append("--no-verify") }
@@ -798,6 +829,7 @@ final class OnboardingFlow {
         validationOutput.removeAll()
         validationExitCode = nil
         connectionValidated = false
+        connectionCheck = nil
         lastError = nil
 
         let profile = profileName.trimmed
@@ -821,11 +853,46 @@ final class OnboardingFlow {
         }
 
         validationExitCode = exit
-        if exit == 0 {
-            connectionValidated = true
-        } else {
-            lastError = "jamf-cli config validate failed for \(profile). Review the URL, client ID, secret, and API role privileges, then retry."
+        guard exit == 0 else {
+            lastError = "jamf-cli config validate failed for \(profile). Review the URL, "
+                + "client ID, secret, and API role privileges, then retry."
+            return
         }
+        guard proConnectionType == .platformGateway else {
+            connectionValidated = true
+            return
+        }
+        applyConnectionCheck(await runConnectionCheck(profile: profile))
+    }
+
+    private func runConnectionCheck(profile: String) async -> ConnectionCheck.Verdict {
+        guard let binary = ExecutableLocator.locate("jamf-cli"),
+              let runner = ConnectionCheck.liveRunner() else {
+            return .undecided(exitCode: nil)
+        }
+        let specNames = JamfCLIInstaller.supportsSpecDerivedNames(
+            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
+        )
+        return await ConnectionCheck.run(profile: profile, specNames: specNames, runner: runner)
+    }
+
+    /// A rejected or unconfirmed ID stays unvalidated; an ID the gateway recognised validates even
+    /// when no Jamf Pro answered, which the banner reports as a warning.
+    func applyConnectionCheck(_ verdict: ConnectionCheck.Verdict) {
+        connectionCheck = verdict
+        switch verdict {
+        case .accepted, .noJamfPro: connectionValidated = true
+        case .rejectedID, .undecided: connectionValidated = false
+        }
+    }
+
+    /// "Continue without validating" after a failed validation. For a Platform API profile,
+    /// not after the gateway rejected the ID (spec §10.4).
+    var offersContinueWithoutValidating: Bool {
+        guard !connectionValidated, canAdvance, let exit = validationExitCode else { return false }
+        guard proConnectionType == .platformGateway, exit == 0 else { return exit != 0 }
+        if case .undecided = connectionCheck { return true }
+        return false
     }
 
     func scaffoldCSV(from url: URL) async {
@@ -1000,10 +1067,23 @@ final class OnboardingFlow {
     private func finishFirstReport(exit: Int32, workspaceStore: WorkspaceStore) {
         firstReportExitCode = exit
         if exit == 0 {
-            UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
-            workspaceStore.reloadFromDisk()
+            finishSetup(in: workspaceStore)
         } else {
             lastError = "Generate exited \(exit) — check the log above."
+        }
+    }
+
+    /// Point the app at the profile setup just created. Demo mode is left
+    /// through `setDemoMode(false)`: clearing its flag directly, as setup did,
+    /// skipped the cleanup of what earlier builds wrote under the demo
+    /// profile. The exception is a new profile named like the demo's, whose
+    /// fresh workspace and schedules that cleanup would delete.
+    func finishSetup(in workspaceStore: WorkspaceStore) {
+        if workspaceStore.demoMode && profileName.trimmed != DemoData.org.profile {
+            workspaceStore.setDemoMode(false)
+        } else {
+            UserDefaults.standard.removeObject(forKey: WorkspaceStore.forceDemoModeKey)
+            workspaceStore.reloadFromDisk()
         }
     }
 

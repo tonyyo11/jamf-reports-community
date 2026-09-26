@@ -12,7 +12,7 @@ final class DeviceScanBuildersTests: XCTestCase {
     func testRecordKeepsOnlyAllowListedKeysAndNeverTheTokens() throws {
         let payload = try JSONDecoder().decode(
             DDMStatusItemsPayload.self,
-            from: fixture("ddm-status-items-raw/ddm-status-items-prod-macos27.json"))
+            from: fixture("ddm-status-items-raw/ddm-status-items-synthetic-macos27.json"))
         XCTAssertTrue(payload.statusItems.contains { $0.key == "mdm.push-token" },
                       "the raw fixture must carry the secret so this test proves the filter")
         let rec = DeviceScanBuilders.ddmRecord(
@@ -40,6 +40,8 @@ final class DeviceScanBuildersTests: XCTestCase {
             XCTAssertFalse(key.hasPrefix("mdm."), key)
             XCTAssertFalse(key.hasPrefix("security."), key)
             XCTAssertFalse(key.hasPrefix("content-cache."), key)
+            // Serial number and UDID: hardware identifiers the snapshot has no use for.
+            XCTAssertFalse(key.hasPrefix("device.identifier."), key)
         }
     }
 
@@ -97,6 +99,21 @@ final class DeviceScanBuildersTests: XCTestCase {
     func testGroupWithoutIdentifierIsDropped() {
         XCTAssertTrue(DeviceScanBuilders.parseDeclarations("{active=true, valid=true}").isEmpty)
         XCTAssertTrue(DeviceScanBuilders.parseDeclarations("").isEmpty)
+    }
+
+    /// A stray `}` used to drive the brace depth negative, so every group after it was lost.
+    func testStrayClosingBraceDoesNotDropLaterGroups() {
+        let leading = DeviceScanBuilders.parseDeclarations("}{identifier=A}")
+        XCTAssertEqual(leading.map(\.identifier), ["A"])
+        let extra = DeviceScanBuilders.parseDeclarations(
+            "{identifier=A, reasons={description=x}}}, {identifier=B}")
+        XCTAssertEqual(extra.map(\.identifier), ["A", "B"])
+    }
+
+    /// An unclosed trailing group is not a declaration; the groups that closed still count.
+    func testUnclosedTrailingGroupKeepsOnlyTheClosedOnes() {
+        let d = DeviceScanBuilders.parseDeclarations("{identifier=A, valid=valid}, {identifier=B")
+        XCTAssertEqual(d.map(\.identifier), ["A"])
     }
 
     // MARK: history → record

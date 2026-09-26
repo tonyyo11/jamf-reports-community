@@ -54,12 +54,19 @@ extension ProfileProductType {
 /// and the function returns normally — the Pro run already succeeded and is the primary
 /// deliverable. Do not rethrow.
 ///
+/// Protect runs only when the Pro collect returned `.collected`. A Pro collect that
+/// stood down for a peer on a shared workspace, or found today's full collect already
+/// done, fetched nothing — and Protect has no claim or cadence of its own, so running
+/// it anyway would collect beside the peer that holds the claim, or fetch Protect
+/// again on a day the Pro collect itself skipped.
+///
 /// School collect does not emit a `summary.json` trend snapshot today. That is a
 /// noted gap, not a regression: School profiles had no collect at all before this
 /// router was introduced.
 enum CollectRouter {
 
     /// Type of the pro-collect closure, matching `ReportEngine.collect`'s signature.
+    /// The returned disposition decides whether Protect follows (see above).
     typealias ProCollect = @Sendable (
         _ profile: String,
         _ workspacePaths: WorkspacePaths.Type,
@@ -67,7 +74,7 @@ enum CollectRouter {
         _ skipExpensive: Bool,
         _ force: Bool,
         _ onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
-    ) async throws -> Void
+    ) async throws -> ReportEngine.CollectDisposition
 
     /// Type of the school-collect closure, matching `ReportEngine.schoolCollect`'s signature.
     typealias SchoolCollect = @Sendable (
@@ -117,8 +124,18 @@ enum CollectRouter {
             try await schoolCollect(profile, workspacePaths, onLine)
 
         case .jamfPro:
-            try await proCollect(profile, workspacePaths, tiers, skipExpensive, force, onLine)
+            let disposition = try await proCollect(
+                profile, workspacePaths, tiers, skipExpensive, force, onLine
+            )
             guard detected.runsProtect else { return }
+            guard disposition == .collected else {
+                let reason = disposition == .stoodDown
+                    ? "the Jamf Pro collect stood down for another Mac"
+                    : "Jamf Pro already collected today"
+                onLine(.init(timestamp: Date(), level: .info,
+                             text: "[skip] protect: \(reason) — Protect not collected"))
+                return
+            }
             // Protect augments Pro; failure is non-fatal — Pro run already succeeded.
             let protectProfile = config?.protect?.resolvedProfile ?? profile
             guard let dataDir = try? workspacePaths.dataDir(for: profile) else {

@@ -177,7 +177,10 @@ struct PatchFailureRow: Decodable, Sendable, Identifiable, Equatable {
     let osVersion: String
     let username: String
 
-    var id: String { "\(deviceId)-\(policyId)-\(attempt)" }
+    /// One row per failing device and patch policy. `attempt` stays out of the
+    /// identity: it rises as Jamf retries, so the same failure would read as a
+    /// different row from one scan to the next.
+    var id: String { "\(deviceId)-\(policyId)" }
 
     private enum CodingKeys: String, CodingKey {
         case policy
@@ -197,19 +200,23 @@ extension PatchFailureRow {
     /// jamf-cli writes `attempt` as text ("3") on 1.28 and 1.29; the numeric
     /// form the fixtures were written from is accepted too. A strict `Int`
     /// made the whole failures array undecodable on prod (2.8.0 field pass).
+    /// Every other field is read as leniently: one row with a numeric id or no
+    /// username must cost that field, not the whole array.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        policy = try c.decode(String.self, forKey: .policy)
-        policyId = try c.decode(String.self, forKey: .policyId)
-        device = try c.decode(String.self, forKey: .device)
-        deviceId = try c.decode(String.self, forKey: .deviceId)
-        statusDate = try c.decode(String.self, forKey: .statusDate)
-        attempt = (try? c.decode(Int.self, forKey: .attempt))
-            ?? Int((try? c.decode(String.self, forKey: .attempt)) ?? "") ?? 0
-        lastAction = try c.decode(String.self, forKey: .lastAction)
-        serial = try c.decode(String.self, forKey: .serial)
-        osVersion = try c.decode(String.self, forKey: .osVersion)
-        username = try c.decode(String.self, forKey: .username)
+        func text(_ key: CodingKeys) -> String {
+            (try? c.decodeIfPresent(AnyCodable.self, forKey: key))?.stringValue ?? ""
+        }
+        policy = text(.policy)
+        policyId = text(.policyId)
+        device = text(.device)
+        deviceId = text(.deviceId)
+        statusDate = text(.statusDate)
+        attempt = (try? c.decodeIfPresent(AnyCodable.self, forKey: .attempt))?.intValue ?? 0
+        lastAction = text(.lastAction)
+        serial = text(.serial)
+        osVersion = text(.osVersion)
+        username = text(.username)
     }
 }
 
@@ -1112,7 +1119,9 @@ private struct DynamicCodingKey: CodingKey {
 }
 
 // MARK: - Protect alert
-// `jamf-cli protect alerts list --output json`
+// `jamf-cli protect alerts list --output json`: flattenAlert rows, `computer` is the host name.
+// Protect rows decode field by field with `try?`, so a value of an unexpected type costs that
+// field instead of emptying the whole list.
 
 struct ProtectAlertRow: Decodable, Sendable {
     let uuid: String?
@@ -1121,35 +1130,24 @@ struct ProtectAlertRow: Decodable, Sendable {
     let status: String?
     let eventType: String?
     let hostName: String?
-    let serial: String?
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, created, severity, status, eventType
-        case hostName, serial, computer
-    }
-
-    private struct Computer: Decodable {
-        let hostName: String?
-        let serial: String?
+        case uuid, created, severity, status, eventType, computer
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        uuid = try c.decodeIfPresent(String.self, forKey: .uuid)
-        created = try c.decodeIfPresent(String.self, forKey: .created)
-        severity = try c.decodeIfPresent(String.self, forKey: .severity)
-        status = try c.decodeIfPresent(String.self, forKey: .status)
-        eventType = try c.decodeIfPresent(String.self, forKey: .eventType)
-        // Real Protect API nests host/serial under `computer`; older shapes use flat top-level
-        // keys. Prefer the nested values, fall back to flat for backward compatibility.
-        let nested = try c.decodeIfPresent(Computer.self, forKey: .computer)
-        hostName = try nested?.hostName ?? c.decodeIfPresent(String.self, forKey: .hostName)
-        serial = try nested?.serial ?? c.decodeIfPresent(String.self, forKey: .serial)
+        uuid = try? c.decodeIfPresent(String.self, forKey: .uuid)
+        created = try? c.decodeIfPresent(String.self, forKey: .created)
+        severity = try? c.decodeIfPresent(String.self, forKey: .severity)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        eventType = try? c.decodeIfPresent(String.self, forKey: .eventType)
+        hostName = try? c.decodeIfPresent(String.self, forKey: .computer)
     }
 }
 
 // MARK: - Protect computer
-// `jamf-cli protect computers list --output json`
+// `jamf-cli protect computers list --output json`: flattenComputer rows, unset fields omitted.
 
 struct ProtectComputerRow: Decodable, Sendable {
     let uuid: String?
@@ -1160,75 +1158,91 @@ struct ProtectComputerRow: Decodable, Sendable {
     let planName: String?
     let version: String?
     let webProtectionActive: Bool?
+    /// Protect's full disk access status: Authorized is true, Unauthorized false, Unknown nil.
     let fullDiskAccess: Bool?
     let connectionStatus: String?
     let lastConnection: String?
-    let insightsStatsPass: Int?
     let insightsStatsFail: Int?
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, hostName, serial, modelName, osString, version
+        case uuid, hostname, serial, modelName, osString, plan, version
         case webProtectionActive, fullDiskAccess, connectionStatus, lastConnection
-        case insightsStatsPass, insightsStatsFail
-        case plan
+        case insightsStatsFail
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        uuid = try c.decodeIfPresent(String.self, forKey: .uuid)
-        hostName = try c.decodeIfPresent(String.self, forKey: .hostName)
-        serial = try c.decodeIfPresent(String.self, forKey: .serial)
-        modelName = try c.decodeIfPresent(String.self, forKey: .modelName)
-        osString = try c.decodeIfPresent(String.self, forKey: .osString)
-        version = try c.decodeIfPresent(String.self, forKey: .version)
-        webProtectionActive = try c.decodeIfPresent(Bool.self, forKey: .webProtectionActive)
-        fullDiskAccess = try c.decodeIfPresent(Bool.self, forKey: .fullDiskAccess)
-        connectionStatus = try c.decodeIfPresent(String.self, forKey: .connectionStatus)
-        lastConnection = try c.decodeIfPresent(String.self, forKey: .lastConnection)
-        insightsStatsPass = try c.decodeIfPresent(Int.self, forKey: .insightsStatsPass)
-        insightsStatsFail = try c.decodeIfPresent(Int.self, forKey: .insightsStatsFail)
-        // plan is a nested object {id, name}; extract name only.
-        if let planObj = try? c.decodeIfPresent([String: AnyCodable].self, forKey: .plan) {
-            planName = planObj["name"]?.stringValue
-        } else {
-            planName = nil
+        uuid = try? c.decodeIfPresent(String.self, forKey: .uuid)
+        hostName = try? c.decodeIfPresent(String.self, forKey: .hostname)
+        serial = try? c.decodeIfPresent(String.self, forKey: .serial)
+        modelName = try? c.decodeIfPresent(String.self, forKey: .modelName)
+        osString = try? c.decodeIfPresent(String.self, forKey: .osString)
+        planName = try? c.decodeIfPresent(String.self, forKey: .plan)
+        version = try? c.decodeIfPresent(String.self, forKey: .version)
+        webProtectionActive = try? c.decodeIfPresent(Bool.self, forKey: .webProtectionActive)
+        let access = try? c.decodeIfPresent(String.self, forKey: .fullDiskAccess)
+        fullDiskAccess = ProtectComputerRow.fullDiskAccessGranted(access)
+        connectionStatus = try? c.decodeIfPresent(String.self, forKey: .connectionStatus)
+        lastConnection = try? c.decodeIfPresent(String.self, forKey: .lastConnection)
+        insightsStatsFail = try? c.decodeIfPresent(Int.self, forKey: .insightsStatsFail)
+    }
+
+    /// Maps a FULL_DISK_ACCESS_STATUS value; the Protect Computers sheet uses it too.
+    static func fullDiskAccessGranted(_ status: String?) -> Bool? {
+        guard let status = status?.lowercased() else { return nil }
+        switch status {
+        case "authorized": return true
+        case "unauthorized": return false
+        default: return nil
         }
     }
 }
 
 // MARK: - Protect insight
-// `jamf-cli protect insights list --output json`
+// `jamf-cli protect insights list --output json`: flattenInsight rows.
 
 struct ProtectInsightRow: Decodable, Sendable {
-    let uuid: String?
     let label: String?
     let section: String?
-    let description: String?
     let totalPass: Int?
     let totalFail: Int?
     let enabled: Bool?
 
     private enum CodingKeys: String, CodingKey {
-        case uuid, label, section, description, totalPass, totalFail, enabled
+        case label, section, totalPass, totalFail, enabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        label = try? c.decodeIfPresent(String.self, forKey: .label)
+        section = try? c.decodeIfPresent(String.self, forKey: .section)
+        totalPass = try? c.decodeIfPresent(Int.self, forKey: .totalPass)
+        totalFail = try? c.decodeIfPresent(Int.self, forKey: .totalFail)
+        enabled = try? c.decodeIfPresent(Bool.self, forKey: .enabled)
     }
 }
 
-/// A Jamf Protect plan from `protect plans list --output json`. Mirrors the
-/// fields the "Protect Plans" workbook sheet renders; the live ProtectView
-/// surfaces a focused subset (name, strategy, telemetry, auto-update).
-struct ProtectPlanRow: Decodable, Sendable, Equatable {
+/// A Jamf Protect plan from `protect plans list --output json` (flattenPlan rows).
+/// `telemetry` is the assigned telemetry configuration's name, absent when none is assigned.
+struct ProtectPlanRow: Sendable, Equatable {
     let name: String?
-    let uuid: String?
-    let description: String?
     let logLevel: String?
     let autoUpdate: Bool?
-    let threatPreventionStrategy: String?
-    let profileVersion: Int?
-    let telemetry: Bool?
+    let telemetry: String?
+}
 
+// Decoding sits in an extension so the memberwise initializer stays available to demo data.
+extension ProtectPlanRow: Decodable {
     private enum CodingKeys: String, CodingKey {
-        case name, uuid, description, logLevel, autoUpdate
-        case threatPreventionStrategy, profileVersion, telemetry
+        case name, logLevel, autoUpdate, telemetry
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try? c.decodeIfPresent(String.self, forKey: .name)
+        logLevel = try? c.decodeIfPresent(String.self, forKey: .logLevel)
+        autoUpdate = try? c.decodeIfPresent(Bool.self, forKey: .autoUpdate)
+        telemetry = try? c.decodeIfPresent(String.self, forKey: .telemetry)
     }
 }
 

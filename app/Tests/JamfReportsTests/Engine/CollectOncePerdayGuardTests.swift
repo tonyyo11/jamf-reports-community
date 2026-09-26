@@ -68,7 +68,7 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         // binary check. If it did reach the binary check and jamf-cli is absent,
         // it would throw ReportEngineError.jamfCLINotFound. Catching that error
         // would be a test failure. The test passes when no error is thrown.
-        try await ReportEngine.collect(
+        let disposition = try await ReportEngine.collect(
             profile: testProfile,
             workspacePaths: WorkspacePaths.self,
             force: false
@@ -80,6 +80,8 @@ final class CollectOncePerdayGuardTests: XCTestCase {
             collector.texts.contains { $0.contains("already collected today") },
             "Expected skip log line; got: \(collector.texts)"
         )
+        XCTAssertEqual(disposition, .alreadyCollected,
+                       "CollectRouter must be able to tell the guard's skip from a collect")
     }
 
     /// When `force` is true, `collect` must proceed past the once-per-day

@@ -79,6 +79,21 @@ final class DDMDeviceStatusServiceTests: XCTestCase {
         XCTAssertNil(s.record(forDeviceId: "99"))
     }
 
+    /// The scan writes a row per `computers` entry, so a device listed twice arrives twice.
+    /// It is one device, counted once in the reported count and per identifier.
+    func testDuplicateDeviceRowsCountOnce() throws {
+        let url = try write([
+            rec("1", decl: [("A", true, true)]),
+            rec("1", decl: [("A", true, true)]),
+        ])
+        let s = DDMDeviceStatusService.load(url: url)
+        XCTAssertEqual(s.records.count, 1)
+        XCTAssertEqual(s.ddmReportedCount, 1)
+        let a = try XCTUnwrap(s.byIdentifier.first { $0.identifier == "A" })
+        XCTAssertEqual(a.active, 1)
+        XCTAssertEqual(a.devices.map(\.id), ["1"])
+    }
+
     func testSourceDatesComeFromTheFilenameStamp() throws {
         let url = try write([rec("1")])
         let s = DDMDeviceStatusService.load(url: url)

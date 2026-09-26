@@ -85,11 +85,22 @@ next collect fetches it.
   started, then two hours after that, then four, and then waits for the schedule's next
   time. A retry only re-collects what is still due, so sources that already landed are not
   fetched again. Report-from-cache and backup schedules are not retried.
-- **Two failures are never retried automatically.** A usage or credentials-gate error
-  (exit 2) and a refused-by-policy error (exit 8 — the command is outside what this
-  profile's API publishes) fail identically every time. Those sources stay in the strip so
-  you can see them, but the hourly repair skips them. Pressing **Collect now** yourself
-  does try them, on the assumption that you have just fixed the cause.
+- **Some failures are never retried automatically.** They fail identically every time until
+  something outside the app changes:
+  - a usage or credentials-gate error (exit 2)
+  - credentials the server rejected (exit 3 — re-authenticate the profile)
+  - a refused-by-policy error (exit 8 — the command is outside what this profile's API
+    publishes)
+  - a missing permission, which the strip names
+  - a scope ID or environment ID the gateway rejects
+  - an endpoint the connection does not serve
+  - no DDM declaration data
+  - Managed Software Update Plans turned off in Jamf Pro (OS update status and failures)
+  - Compliance Benchmark titles that match none on the tenant
+
+  Those sources stay in the strip so you can see them, but the hourly repair skips them.
+  Pressing **Collect now** yourself does try them, on the assumption that you have just
+  fixed the cause.
 
 The strip re-evaluates after any manual refresh, not only at launch, so a collect you just
 ran is reflected immediately.
@@ -102,6 +113,10 @@ They are now skipped rather than attempted, failed and reported every day, and t
 says so. They never appear in the strip and the hourly repair never retries them. A
 profile whose authentication method cannot be determined is *not* skipped: "we could not
 ask" is never read as "not platform".
+
+Sources you list in `jamf_cli.collect_skip` — any of the four per-device-heavy reports that
+stall some on-premise servers — are handled the same way: never attempted, even by
+**Collect now**, never counted as failures, and left out of the strip.
 
 ### Where the state lives
 

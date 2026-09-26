@@ -142,6 +142,7 @@ enum ConfigDoctorService {
             // No CSV to validate against: fall back to config-presence checks.
             rows += requiredColumnRows(config)
             rows += securityAgentStructuralRows(config)
+            rows += customEANoCSVRows(config, eaCoverageNames: eaCoverageNames)
         }
         rows += structuralRows(config)
         rows += baselineRows(config, eaCoverageNames: eaCoverageNames)
@@ -288,6 +289,40 @@ enum ConfigDoctorService {
         }
     }
 
+    /// The no-CSV counterpart of `customEARows`. A custom EA's workbook sheet is
+    /// built from the CSV export alone, so without one the EA silently renders
+    /// nothing. Never `.fail`: only fail rows reach the run log, and a jamf-cli-only
+    /// workspace with EAs configured is a valid setup. A column that names a
+    /// collected extension attribute (case-insensitive, as `baselineRows` matches)
+    /// only rates a `.suggest` — those values exist, and the period report reads them.
+    private static func customEANoCSVRows(
+        _ config: ReportConfig,
+        eaCoverageNames: [String]
+    ) -> [DoctorRow] {
+        let collected = Set(eaCoverageNames.map { $0.lowercased() })
+        return (config.customEas ?? []).compactMap { ea in
+            let column = ea.column.trimmingCharacters(in: .whitespaces)
+            guard !column.isEmpty else { return nil }
+            let id = "custom_ea.\(ea.name).no_csv"
+            if collected.contains(column.lowercased()) {
+                return DoctorRow(
+                    id: id, severity: .suggest, title: "EA: \(ea.name)",
+                    detail: "No CSV export, so no workbook sheet — but '\(column)' is among "
+                        + "the collected extension attributes, so the period report can "
+                        + "still use it.",
+                    hint: "Drop a Jamf Pro CSV export with a '\(column)' column into "
+                        + "csv-inbox for the sheet."
+                )
+            }
+            return DoctorRow(
+                id: id, severity: .warn, title: "EA: \(ea.name)",
+                detail: "No CSV export to read, so this EA produces nothing — its sheet is "
+                    + "built from the CSV column '\(column)'.",
+                hint: "Drop a Jamf Pro CSV export with a '\(column)' column into csv-inbox."
+            )
+        }
+    }
+
     private static func securityAgentCSVRows(
         _ config: ReportConfig,
         normalized: Set<String>
@@ -360,7 +395,6 @@ enum ConfigDoctorService {
         var rows: [DoctorRow] = []
         rows += complianceStructuralRows(config)
         rows += duplicateColumnRows(config)
-        rows += platformRows(config)
         rows += customEAStructuralRows(config)
         return rows
     }
@@ -402,16 +436,6 @@ enum ConfigDoctorService {
                 hint: "Each CSV column should map to a single logical field."
             )
         }
-    }
-
-    private static func platformRows(_ config: ReportConfig) -> [DoctorRow] {
-        guard let platform = config.platform, platform.isEnabled,
-              platform.benchmarkTitles.isEmpty else { return [] }
-        return [DoctorRow(
-            id: "platform.benchmarks", severity: .warn, title: "Platform enabled",
-            detail: "Platform is on but no compliance_benchmarks are listed.",
-            hint: "Add at least one benchmark title, or disable platform."
-        )]
     }
 
     private static func customEAStructuralRows(_ config: ReportConfig) -> [DoctorRow] {

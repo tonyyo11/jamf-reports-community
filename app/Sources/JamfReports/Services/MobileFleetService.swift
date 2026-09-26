@@ -9,10 +9,82 @@ import Foundation
 /// sources exist — many tenants don't manage mobile devices.
 struct MobileFleetService: Sendable {
 
-    /// Slice kind used by the MobileFleetView supervision donut so the view
-    /// can pick a colour without leaking string literals.
-    enum SupervisionRole: Sendable {
-        case supervised, unsupervised, unmanaged
+    /// The supervision donut's buckets, in slice order. The view picks a colour
+    /// per case and filters the devices table by it; the raw value is the label
+    /// the legend shows. `unknown` holds the devices `supervisionRole(of:)`
+    /// cannot place, so the ring adds up to the fleet.
+    enum SupervisionRole: String, Sendable, CaseIterable {
+        case supervised = "Supervised"
+        case unsupervised = "Unsupervised"
+        case unmanaged = "Unmanaged"
+        case unknown = "Unknown"
+
+        var label: String { rawValue }
+    }
+
+    /// One plotted slice of the supervision donut.
+    typealias SupervisionSlice = (role: SupervisionRole, count: Int)
+
+    /// The donut bucket a device falls in, or nil when it cannot be placed: an
+    /// unknown management state, or a managed device whose supervision state
+    /// is unknown. Unmanaged wins over supervised, because an unmanaged
+    /// device's supervised flag may be stale.
+    static func supervisionRole(of device: MobileDeviceInventoryItem) -> SupervisionRole? {
+        guard let managed = device.general?.managed else { return nil }
+        guard managed else { return .unmanaged }
+        guard let supervised = device.general?.supervised else { return nil }
+        return supervised ? .supervised : .unsupervised
+    }
+
+    /// The donut bucket a device is counted and filtered in: its role, or
+    /// `unknown` when it has none.
+    static func bucket(of device: MobileDeviceInventoryItem) -> SupervisionRole {
+        supervisionRole(of: device) ?? .unknown
+    }
+
+    /// The slice at an angle value. An angle value is the running device count
+    /// at an angle, so walk the plotted slices in order: a slice owns the values
+    /// up to and including its running total, and the first also owns 0. Nil
+    /// below 0 or past the ring's total. Pass the exact array the chart plots,
+    /// or a click resolves against slices that were never drawn.
+    static func role(
+        atAngleValue value: Double, in slices: [SupervisionSlice]
+    ) -> SupervisionRole? {
+        guard value >= 0 else { return nil }
+        var runningTotal = 0
+        for slice in slices where slice.count > 0 {
+            runningTotal += slice.count
+            if value <= Double(runningTotal) { return slice.role }
+        }
+        return nil
+    }
+
+    /// The slice under a click at `point`, relative to the donut's plot, or nil
+    /// in the hole or outside the ring. Charts draws the ring across the plot's
+    /// shorter side, starting at 12 o'clock and running clockwise.
+    static func role(
+        at point: CGPoint, plotSize: CGSize, innerRadiusRatio: Double,
+        in slices: [SupervisionSlice]
+    ) -> SupervisionRole? {
+        let total = slices.reduce(0) { $0 + max($1.count, 0) }
+        let outer = min(plotSize.width, plotSize.height) / 2
+        guard total > 0, outer > 0 else { return nil }
+        let dx = point.x - plotSize.width / 2
+        let dy = point.y - plotSize.height / 2
+        let radius = (dx * dx + dy * dy).squareRoot()
+        guard radius >= outer * innerRadiusRatio, radius <= outer else { return nil }
+        var radians = atan2(dx, -dy)
+        if radians < 0 { radians += 2 * .pi }
+        return role(atAngleValue: radians / (2 * .pi) * Double(total), in: slices)
+    }
+
+    /// The devices in `role`'s bucket, in their original order, or all of them
+    /// when `role` is nil: the devices table's filter.
+    static func devices(
+        _ devices: [MobileDeviceInventoryItem], in role: SupervisionRole?
+    ) -> [MobileDeviceInventoryItem] {
+        guard let role else { return devices }
+        return devices.filter { bucket(of: $0) == role }
     }
 
     /// Coarse device form factor. jamf-cli's `deviceType` is the OS family
@@ -53,6 +125,56 @@ struct MobileFleetService: Sendable {
             if t.localizedCaseInsensitiveContains("iPhone") { return .iPhone }
         }
         return .other
+    }
+
+    /// Form factor of one list row, read from the same fields `Snapshot` counts
+    /// iPads and iPhones with: the current shape's `hardware` and `deviceType`,
+    /// or the older flat shape's top-level `model` and `type`.
+    static func formFactor(of row: MobileDeviceListRow) -> FormFactor {
+        classifyFormFactor(
+            model: row.hardware?.model ?? row.model,
+            modelIdentifier: row.hardware?.modelIdentifier,
+            deviceType: row.deviceType ?? row.type
+        )
+    }
+
+    /// Form factor of one inventory row. The collected inventory's `hardware`
+    /// section is null and its `deviceType` is the OS family ("iOS"), so when
+    /// the row's own fields name nothing, the model comes from `listRow`: the
+    /// `mobile-devices-list` row with the same id.
+    static func formFactor(
+        of device: MobileDeviceInventoryItem, listRow: MobileDeviceListRow?
+    ) -> FormFactor {
+        let own = classifyFormFactor(
+            model: device.hardware?.model,
+            modelIdentifier: device.hardware?.modelIdentifier,
+            deviceType: device.deviceType
+        )
+        guard own == .other, let listRow else { return own }
+        return formFactor(of: listRow)
+    }
+
+    /// Text for the devices table's Type pill: the form factor when the model
+    /// names one, otherwise the type jamf-cli reported, or "Unknown".
+    static func typeLabel(for formFactor: FormFactor, deviceType: String?) -> String {
+        switch formFactor {
+        case .iPad: return "iPad"
+        case .iPhone: return "iPhone"
+        case .appleTV: return "Apple TV"
+        case .other:
+            let type = (deviceType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return type.isEmpty ? "Unknown" : type
+        }
+    }
+
+    /// Version distribution order: higher count first, then the newer version.
+    /// Dictionary order changes between runs, so tied counts need the tiebreak
+    /// or their rows swap places between renders.
+    static func osDistributionOrder(
+        _ lhs: (osVersion: String, count: Int), _ rhs: (osVersion: String, count: Int)
+    ) -> Bool {
+        if lhs.count != rhs.count { return lhs.count > rhs.count }
+        return lhs.osVersion.compare(rhs.osVersion, options: .numeric) == .orderedDescending
     }
 
     /// Everything the MobileFleetView needs from mobile device snapshots.
@@ -116,6 +238,18 @@ struct MobileFleetService: Sendable {
             }.count
         }
 
+        /// List rows keyed by id, to join an inventory row to its list row:
+        /// jamf-cli's list `id` is the inventory's `mobileDeviceId`. The first
+        /// row wins when an id repeats.
+        var lightDevicesByID: [String: MobileDeviceListRow] {
+            var byID: [String: MobileDeviceListRow] = [:]
+            for row in lightDevices {
+                guard let id = row.id, byID[id] == nil else { continue }
+                byID[id] = row
+            }
+            return byID
+        }
+
         var iPadCount: Int { formFactorCount(.iPad) }
 
         var iPhoneCount: Int { formFactorCount(.iPhone) }
@@ -135,22 +269,28 @@ struct MobileFleetService: Sendable {
         }
 
         /// Bucket count of supervised / unsupervised / unmanaged devices for the
-        /// MobileFleetView supervision donut. Unmanaged dominates over
-        /// supervised: an unmanaged device's supervised flag may be stale, so
-        /// we surface it as the more actionable bucket.
+        /// MobileFleetView supervision donut, counted through
+        /// `MobileFleetService.bucket(of:)` so the donut and the devices table's
+        /// filter can never disagree about a device. The Unknown row appears
+        /// only when some device falls in it; the other three always show.
         var supervisionBreakdown: [(label: String, count: Int, role: SupervisionRole)] {
-            let unmanaged = unmanagedCount
-            let supervised = richDevices.filter {
-                $0.general?.managed == true && $0.general?.supervised == true
-            }.count
-            let unsupervised = richDevices.filter {
-                $0.general?.managed == true && $0.general?.supervised == false
-            }.count
-            return [
-                ("Supervised", supervised, .supervised),
-                ("Unsupervised", unsupervised, .unsupervised),
-                ("Unmanaged", unmanaged, .unmanaged),
-            ]
+            var counts: [SupervisionRole: Int] = [:]
+            for device in richDevices {
+                counts[MobileFleetService.bucket(of: device), default: 0] += 1
+            }
+            return SupervisionRole.allCases
+                .filter { $0 != .unknown || counts[$0] != nil }
+                .map { role in (label: role.label, count: counts[role] ?? 0, role: role) }
+        }
+
+        /// The slices the donut plots: the breakdown without its empty buckets.
+        /// The chart and the click path, which enters through
+        /// `MobileFleetService.role(at:plotSize:innerRadiusRatio:in:)`, both read
+        /// this one array.
+        var supervisionSlices: [SupervisionSlice] {
+            supervisionBreakdown
+                .filter { $0.count > 0 }
+                .map { (role: $0.role, count: $0.count) }
         }
 
         /// Per-method counts derived from `general.deviceOwnershipType`. Maps the
@@ -172,11 +312,20 @@ struct MobileFleetService: Sendable {
                 }
         }
 
-        /// Number of managed apps reported for a rich device. Returns 0 when
-        /// the `applications` array is `nil` (jamf-cli wasn't asked for the
-        /// APPLICATIONS section) or empty.
-        func managedAppCount(for device: MobileDeviceInventoryItem) -> Int {
-            device.applications?.count ?? 0
+        /// Whether any rich device carries an `applications` array. The collect
+        /// never requests the APPLICATIONS section, so on real snapshots it is
+        /// null on every device.
+        var reportsApplications: Bool {
+            richDevices.contains { $0.applications != nil }
+        }
+
+        /// Number of managed apps reported for a rich device, or nil when no
+        /// device in the snapshot carries the APPLICATIONS section: unknown, not
+        /// zero. In a snapshot that has the section, a device without the array
+        /// counts 0.
+        func managedAppCount(for device: MobileDeviceInventoryItem) -> Int? {
+            guard reportsApplications else { return nil }
+            return device.applications?.count ?? 0
         }
 
         /// Map a raw `deviceOwnershipType` value to a display label that matches
@@ -194,22 +343,39 @@ struct MobileFleetService: Sendable {
             }
         }
 
-        var passcodeCompliantCount: Int {
-            richDevices.filter { $0.general?.passcodeCompliant == true }.count
+        // The three posture counts below are nil when no device in the snapshot
+        // carries the field at all. The collected inventory holds only the
+        // GENERAL section, which has none of them, so "absent everywhere" means
+        // not collected; counting it as 0 compliant or "Clean" states a fact
+        // the data does not hold.
+
+        /// Devices reporting `passcodeCompliant == true`, or nil when no device
+        /// reports the field.
+        var passcodeCompliantCount: Int? {
+            let reported = richDevices.compactMap { $0.general?.passcodeCompliant }
+            guard !reported.isEmpty else { return nil }
+            return reported.filter { $0 }.count
         }
 
-        var activationLockEnabledCount: Int {
-            richDevices.filter { $0.general?.activationLockEnabled == true }.count
+        /// Devices reporting `activationLockEnabled == true`, or nil when no
+        /// device reports the field.
+        var activationLockEnabledCount: Int? {
+            let reported = richDevices.compactMap { $0.general?.activationLockEnabled }
+            guard !reported.isEmpty else { return nil }
+            return reported.filter { $0 }.count
         }
 
-        var jailbreakDetectedCount: Int {
-            richDevices.filter { device in
-                guard let status = device.general?.jailbreakDetected,
-                      !status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    return false
-                }
-                return !status.localizedCaseInsensitiveContains("none")
-            }.count
+        /// Devices whose jailbreak status is anything but "none", or nil when no
+        /// device reports a status. A blank status is not a report.
+        var jailbreakDetectedCount: Int? {
+            let reported = richDevices.compactMap { device -> String? in
+                guard let status = device.general?.jailbreakDetected?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !status.isEmpty
+                else { return nil }
+                return status
+            }
+            guard !reported.isEmpty else { return nil }
+            return reported.filter { !$0.localizedCaseInsensitiveContains("none") }.count
         }
 
         var osDistribution: [(osVersion: String, count: Int)] {
@@ -219,7 +385,7 @@ struct MobileFleetService: Sendable {
 
             let grouped = Dictionary(grouping: osVersions) { $0 }
             let sorted = grouped.map { (osVersion: $0.key, count: $0.value.count) }
-                .sorted { $0.count > $1.count }
+                .sorted { MobileFleetService.osDistributionOrder($0, $1) }
             return Array(sorted.prefix(10))
         }
 

@@ -58,11 +58,9 @@ struct ReauthenticateSheet: View {
     /// Whether the Platform Gateway "Verify & save" action may run. Mirrors
     /// `OnboardingFlow.canAdvance`'s authenticate/platformGateway branch.
     nonisolated static func canVerifyPlatform(
-        isBusy: Bool, gatewayURLValid: Bool, scope: OnboardingFlow.PlatformScope, scopeID: String,
-        clientID: String, hasSecret: Bool
+        isBusy: Bool, gatewayURLValid: Bool, scopeID: String, clientID: String, hasSecret: Bool
     ) -> Bool {
-        let scopeFilled = !scope.needsID
-            || !scopeID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let scopeFilled = !scopeID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let idFilled = !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return !isBusy && gatewayURLValid && scopeFilled && idFilled && hasSecret
     }
@@ -221,19 +219,18 @@ struct ReauthenticateSheet: View {
                     Text(
                         "Environment is where a GA integration is usually created "
                             + "(needs jamf-cli 1.28 or later). Tenant is the legacy "
-                            + "single-tenant level. Organization sends no scope at all."
+                            + "single-tenant level and cannot reach Compliance Benchmarks "
+                            + "or blueprint status."
                     )
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.fg2)
-                    if flow.platformScope.needsID {
-                        FieldLabel(label: flow.platformScope.idFieldLabel)
-                        PNPTextField(
-                            value: binding(\.platformScopeID),
-                            placeholder: flow.platformScope == .environment
-                                ? "your-environment-id" : "your-tenant-id",
-                            mono: true
-                        )
-                    }
+                    FieldLabel(label: flow.platformScope.idFieldLabel)
+                    PNPTextField(
+                        value: binding(\.platformScopeID),
+                        placeholder: flow.platformScope == .environment
+                            ? "your-environment-id" : "your-tenant-id",
+                        mono: true
+                    )
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -270,6 +267,10 @@ struct ReauthenticateSheet: View {
                     .foregroundStyle(Theme.Colors.fg2)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+
+        if let check = flow.connectionCheck {
+            ConnectionCheckBanner(verdict: check)
         }
 
         if flow.connectionValidated {
@@ -365,7 +366,6 @@ struct ReauthenticateSheet: View {
             return Self.canVerifyPlatform(
                 isBusy: isBusy,
                 gatewayURLValid: flow.isGatewayURLValid,
-                scope: flow.platformScope,
                 scopeID: flow.platformScopeID,
                 clientID: flow.platformClientID,
                 hasSecret: !flow.platformClientSecret.isEmpty || flow.platformSecretFieldHasText

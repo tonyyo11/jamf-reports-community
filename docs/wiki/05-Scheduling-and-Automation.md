@@ -203,9 +203,19 @@ scheduled fires, the next wake catches up:
   **last 15 minutes** — the same rule these modes have always followed.
 
 "Run now" (GUI button, or `jamf-reports schedules run <label>`) spawns an immediate,
-one-shot run for that one schedule under the same lock every wake uses, so it never
-overlaps a run already in progress; if the lock is held, the request is queued and the very
-next wake runs it instead.
+one-shot run for that one schedule under the same lock every wake uses. If another run
+holds the lock, the request is queued and the first wake that gets the lock runs it. A
+queued request stays on disk until its run actually starts, so a wake that is stopped
+partway through an earlier, longer run does not lose it.
+
+The lock only keeps a second run out while the one holding it looks alive. A running
+schedule refreshes the lock every five minutes, for up to six hours per schedule. A run
+still going after that is treated as hung: once the lock has gone an hour without a
+refresh, the next wake takes it over and starts whatever is due, which can be the same
+schedule again, as a
+[same-day retry](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust)
+or a queued Run now. So a run that was merely slow, not hung, can overlap another run of
+the same schedule until it finishes.
 
 A development build (`swift run JamfReports`) has no bundled agent, so registration is
 skipped and the Automation screen shows "Ticker unavailable in this build" — `JamfReports
@@ -216,8 +226,9 @@ skipped and the Automation screen shows "Ticker unavailable in this build" — `
 A scheduled run logs to **per-run logs** at `~/Jamf-Reports/<profile>/automation/logs/` —
 one file per run, read by the **Run History** screen (pruned to the most recent 50 per
 workspace). There is no separate `launchd` stdout/stderr file per schedule any more; the
-background item's own diagnostics (lock contention, import, registration) go to
-Console.app under the `com.github.tonyyo11.jamf-reports-community` subsystem.
+background item's own diagnostics (lock contention, import, registration, a schedule
+skipped because its start could not be recorded) go to Console.app under the
+`com.github.tonyyo11.jamf-reports-community` subsystem.
 
 ## Collection cadence
 
@@ -231,7 +242,9 @@ is no on-prem/cloud/custom preset picker (removed in 2.3.0):
 | Scan | Full device inventory and patch/update failure scans — minutes on large fleets | Every 7 days |
 
 These cadences gate the app's own background refresh: opening a dashboard that already has
-data within its tier's window does not re-fetch. To force fresh data on demand:
+data within its tier's window does not re-fetch. A tier counts as due up to an hour early, so a
+scheduled run that starts a few minutes earlier than the last one still collects it instead of
+waiting a whole extra cycle. To force fresh data on demand:
 
 - **Refresh all** — the toolbar refresh button re-collects every tier now.
 - **Collect now** — each dashboard's freshness banner re-collects just that page's tier(s).

@@ -308,6 +308,8 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self),
                         "the history call type carried on")
         XCTAssertTrue(lines.contains { $0.contains("Read Computers") }, "\(lines)")
+        XCTAssertTrue(lines.contains { $0.contains("Inventory > Devices (Jamf Account)") },
+                      "a gateway profile needs the Jamf Account permission: \(lines)")
 
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertEqual(
@@ -315,6 +317,27 @@ final class DeviceScanCollectTests: XCTestCase {
             CLIBridge.exitCodePermissionDenied
         )
         XCTAssertNotNil(store.lastRun(report: "mdm-command-health"))
+    }
+
+    /// jamf-cli's hint names the grant for the API that answered; the scan passes it on.
+    func testExit5NamesThePermissionFromJamfCLIsHint() async throws {
+        try writeComputers([("1", "A", "m1", true)])
+        try answer("hist-1", cleanHistory)
+        let hint = "grant the Jamf Platform API integration these permissions in Jamf Account: "
+            + "Inventory > Devices: Read (devices:read). Names are as the permission picker "
+            + "shows them: <map URL>"
+        let envelope: [String: Any] = [
+            "error": "request failed", "message": "permission denied (HTTP 403)",
+            "exitCode": 5, "exitCodeName": "permission", "hint": hint,
+        ]
+        let body = String(
+            decoding: try JSONSerialization.data(withJSONObject: envelope), as: UTF8.self)
+        try answer("ddm-m1", body, exit: Int(CLIBridge.exitCodePermissionDenied))
+        let lines = try await runScan()
+        let warn = try XCTUnwrap(lines.first { $0.contains("exit 5 from a device") }, "\(lines)")
+        XCTAssertTrue(
+            warn.contains("missing permission: Inventory > Devices: Read (devices:read)"), warn)
+        XCTAssertFalse(warn.contains("Read Computers"), warn)
     }
 
     func testExit8SkipsHistoryForTheRun() async throws {
@@ -495,6 +518,42 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertTrue(lines.contains { $0.contains("unsafe id") }, "\(lines)")
     }
 
+    /// `isSafeDeviceIdentifier` trims before it checks, so a padded id used to pass the check
+    /// and reach argv padded. Both ids are trimmed once at decode, for argv and the rows alike.
+    func testPaddedIdsReachArgvAndRowsTrimmed() async throws {
+        try writeComputers([(" 2 ", "B", " m2 ", true)])
+        try answer("hist-2", cleanHistory)
+        try answer("ddm-m2", ddmPayload)
+        _ = try await runScan()
+
+        XCTAssertEqual(historyCalls(for: "2"), 1, callsLog())
+        XCTAssertTrue(callsLog().contains("status-items m2 "), callsLog())
+        let health = try XCTUnwrap(
+            try latest("mdm-command-health", as: [MDMCommandHealthRecord].self)
+        )
+        XCTAssertEqual(health.map(\.deviceId), ["2"])
+        let ddm = try XCTUnwrap(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertEqual(ddm.map(\.deviceId), ["2"])
+        XCTAssertEqual(ddm.map(\.managementId), ["m2"])
+    }
+
+    /// A device listed twice in `computers` is scanned once and lands once in each
+    /// snapshot, so the DDM and command-health sheets do not repeat it.
+    func testADeviceListedTwiceIsScannedOnce() async throws {
+        try writeComputers([("2", "B", "m2", true), ("2", "B", "m2", true)])
+        try answer("hist-2", cleanHistory)
+        try answer("ddm-m2", ddmPayload)
+        _ = try await runScan()
+
+        XCTAssertEqual(historyCalls(for: "2"), 1, callsLog())
+        let health = try XCTUnwrap(
+            try latest("mdm-command-health", as: [MDMCommandHealthRecord].self)
+        )
+        XCTAssertEqual(health.map(\.deviceId), ["2"])
+        let ddm = try XCTUnwrap(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+        XCTAssertEqual(ddm.map(\.deviceId), ["2"])
+    }
+
     /// Every device is filtered out by the unsafe-id guard, so `targets` is
     /// empty. Nothing was attempted: no snapshot lands, and neither the
     /// success nor the failure counters advance — a run that reaches no
@@ -509,6 +568,28 @@ final class DeviceScanCollectTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertNil(store.lastRun(report: "mdm-command-health"))
         XCTAssertNil(store.failures(report: "mdm-command-health"))
+    }
+
+    // MARK: - jamf_cli.collect_skip
+
+    /// A listed kind never reaches jamf-cli, even on a forced collect, and records
+    /// nothing — like the Platform-only skip, it is not a failure. The scan tier's
+    /// other argv kind still runs.
+    func testCollectSkipKeepsAListedKindAwayFromJamfCLI() async throws {
+        let ws = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try "jamf_cli:\n  profile: \"\(profile)\"\n  collect_skip: [patch_device_failures]\n"
+            .write(to: ws.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let lines = try await runScan()
+
+        XCTAssertTrue(
+            lines.contains("[skip] patch-device-failures: listed in jamf_cli.collect_skip"),
+            "\(lines)")
+        let calls = callsLog()
+        XCTAssertFalse(calls.contains("patch-status --scan-failures"), calls)
+        XCTAssertTrue(calls.contains("update-status --scan-failures"), calls)
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertNil(store.lastRun(report: "patch-device-failures"))
+        XCTAssertNil(store.failures(report: "patch-device-failures"))
     }
 }
 

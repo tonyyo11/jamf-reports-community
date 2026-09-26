@@ -67,15 +67,17 @@ private struct GuideRow: Identifiable {
             id: "templates",
             icon: "doc.badge.plus",
             title: "Report templates",
-            description: "Full Instance, Executive, Operational, Compliance, and Custom presets "
-                + "control which sheets go into the generated workbook.",
-            destination: nil
+            description: "The app generates the Full Instance report, with every sheet. The "
+                + "command-line tool generates the smaller Executive, Operational, Compliance, "
+                + "Asset, Security Posture and School templates; install it from Settings.",
+            destination: .settings
         ),
         GuideRow(
-            id: "sheets",
-            icon: "checkmark.square",
-            title: "Sheet visibility",
-            description: "Toggle individual sheets on or off in the grid on this screen.",
+            id: "charts",
+            icon: "chart.bar.xaxis",
+            title: "Chart options",
+            description: "Per-major-version macOS charts, and whether chart images are saved "
+                + "beside the workbook.",
             destination: nil
         ),
         GuideRow(

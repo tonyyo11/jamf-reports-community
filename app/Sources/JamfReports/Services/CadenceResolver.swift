@@ -3,8 +3,8 @@ import Foundation
 /// How often a report should be fetched.
 ///
 /// - `.seconds(N)`: fetch when the last successful run is at least
-///   N seconds old. Cadence math is inclusive: a report fetched
-///   exactly N seconds ago is due.
+///   N seconds old, less `CadenceResolver.dueTolerance(for:)`. Cadence
+///   math is inclusive: a report fetched exactly N seconds ago is due.
 /// - `.never`: never fetch. Unknown/unmapped report kinds resolve here.
 ///
 /// `.never` is the type-safe alternative to overloading nil.
@@ -36,8 +36,8 @@ enum CadenceResolver {
     /// last successful fetch and target cadence.
     ///
     /// - `lastRun: nil` (never fetched) is due unless cadence is `.never`.
-    /// - `lastRun` ≥ cadence ago is due.
-    /// - `lastRun` < cadence ago is not due.
+    /// - `lastRun` ≥ cadence − tolerance ago is due.
+    /// - `lastRun` < cadence − tolerance ago is not due.
     /// - `cadence: .never` is never due regardless of `lastRun`.
     ///
     /// `now` defaults to `Date()` for production callers; tests inject
@@ -53,8 +53,22 @@ enum CadenceResolver {
         case .seconds(let interval):
             guard let lastRun else { return true }
             let elapsed = now.timeIntervalSince(lastRun)
-            return elapsed >= TimeInterval(interval)
+            return elapsed >= TimeInterval(interval) - dueTolerance(for: interval)
         }
+    }
+
+    /// How early a kind counts as due: an hour, or a tenth of the interval
+    /// when that is shorter.
+    ///
+    /// A schedule fires at the same clock time each period, a run's success is
+    /// stamped when it starts, and the tick wakes every 300 s. A run that starts
+    /// a few minutes earlier than the last one, from tick timing or from waiting
+    /// behind another schedule, would otherwise find its kinds not due: the
+    /// weekly scan then waited a second week, and the 48-hour inventory tier on a
+    /// daily schedule ran every third day (#207 G1). The tenth caps it for short
+    /// intervals, so a small cadence is never due at once.
+    static func dueTolerance(for interval: Int) -> TimeInterval {
+        min(3_600, TimeInterval(interval) / 10)
     }
 
     /// Resolve the fixed cloud cadence for `report`.

@@ -82,11 +82,20 @@ struct SettingsView: View {
         // id: workspace.profile — re-run when the sidebar chip switches
         // profiles, otherwise the Performance card + migration banner would
         // keep showing the first profile's config (PR-23 advisor finding).
-        .task(id: workspace.profile) {
+        // The demo flag is part of the id so turning demo mode on or off here
+        // reloads the connections even when the profile name stays the same.
+        .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
+            testResults = [:]
+            guard !workspace.demoMode else {
+                // Demo mode runs no jamf-cli and reloads nothing: a reload here
+                // put a demo profile chosen in the sidebar back to meridian-prod.
+                tokenStatuses = DemoData.tokenStatuses(for: workspace.profiles)
+                platformCapabilityAvailable = false
+                return
+            }
             workspace.refreshToolStatus()
             workspaceRootPath = ProfileService.workspacesRoot().path
             workspace.reloadFromDisk()
-            testResults = [:]
             await loadTokenStatuses()
             await probePlatformCapability()
         }
@@ -116,26 +125,34 @@ struct SettingsView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "jamf-cli")
+                // Demo mode never runs jamf-cli, so this card describes nothing
+                // the demo uses; only its Demo mode switch stays live.
                 settingsRow(
                     label: "Installed version",
-                    sub: jamfCLISubtitle,
+                    sub: workspace.demoMode ? DemoData.jamfCLINote : jamfCLISubtitle,
                     trailing: AnyView(PNPButton(title: "Refresh", size: .sm) {
+                        guard !workspace.demoMode else { return }
                         workspace.refreshToolStatus()
                         workspace.reloadFromDisk()
                     }
-                    .help("Re-detect jamf-cli on PATH and reload workspace state from disk."))
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Re-detect jamf-cli on PATH and reload workspace state from disk."))
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "jamf-cli updates",
-                    sub: jamfCLIUpdateSubtitle,
+                    sub: workspace.demoMode ? DemoData.jamfCLINote : jamfCLIUpdateSubtitle,
                     trailing: AnyView(jamfCLIUpdateControls)
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
                     label: "Auto-update jamf-cli",
                     sub: "Check on launch",
-                    trailing: AnyView(PNPToggle(isOn: $autoUpdate))
+                    trailing: AnyView(PNPToggle(isOn: $autoUpdate)
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : ""))
                 )
                 Divider().background(Theme.Hairline.standard)
                 settingsRow(
@@ -170,7 +187,9 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
 
-                Text(workspaceRootPath)
+                // Demo mode shows where the demo's workspaces would live, and
+                // never moves this Mac's root.
+                Text(workspace.demoMode ? DemoData.workspacesRootDisplay : workspaceRootPath)
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.secondary)
                     .textSelection(.enabled)
@@ -178,7 +197,7 @@ struct SettingsView: View {
                     .truncationMode(.middle)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let provider = CloudStorage.provider(
+                if !workspace.demoMode, let provider = CloudStorage.provider(
                     for: URL(fileURLWithPath: workspaceRootPath)
                 ) {
                     Label(Self.providerLabel(provider.displayName), systemImage: "person.2")
@@ -191,10 +210,13 @@ struct SettingsView: View {
                     PNPButton(title: "Choose folder…", icon: "folder", size: .sm) {
                         chooseWorkspaceRoot()
                     }
-                    .help("Pick the folder that holds your Jamf Reports workspaces.")
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Pick the folder that holds your Jamf Reports workspaces.")
                     .accessibilityHint("Opens a folder picker for the workspace location.")
 
-                    if WorkspaceRootStore.isCustomised() {
+                    if !workspace.demoMode && WorkspaceRootStore.isCustomised() {
                         PNPButton(title: "Use default", icon: "arrow.uturn.backward", size: .sm) {
                             applyWorkspaceRoot(nil)
                         }
@@ -217,6 +239,7 @@ struct SettingsView: View {
     }
 
     private func chooseWorkspaceRoot() {
+        guard !workspace.demoMode else { return }
         guard let url = WorkspaceFolderPicker.choose(
             startingAt: URL(fileURLWithPath: workspaceRootPath), allowCreate: true
         ) else { return }
@@ -237,6 +260,7 @@ struct SettingsView: View {
     /// one click, so the operator either points at a folder that already holds
     /// them or copies them across themselves.
     private func applyWorkspaceRoot(_ url: URL?) {
+        guard !workspace.demoMode else { return }
         do {
             let applied = try WorkspaceRootStore.set(url)
             workspaceRootPath = applied.path
@@ -322,6 +346,7 @@ struct SettingsView: View {
         }
     }
 
+    /// This Mac's jamf-cli: version, install source and path. Live mode only.
     private var jamfCLISubtitle: String {
         guard let path = workspace.jamfCLIPath else { return "Not found in /opt/homebrew/bin or /usr/local/bin" }
         let source = workspace.jamfCLIInstallSource ?? "Unknown source"
@@ -352,10 +377,15 @@ struct SettingsView: View {
                 ProgressView().controlSize(.small)
             } else {
                 PNPButton(title: "Check", size: .sm) {
+                    guard !workspace.demoMode else { return }
                     Task { await workspace.checkJamfCLIUpdate() }
                 }
-                .help("Check GitHub releases (or Homebrew, depending on install source) for a newer jamf-cli.")
-                if workspace.jamfCLIUpdateAvailable {
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : "Check GitHub releases (or Homebrew, depending on install source) for "
+                          + "a newer jamf-cli.")
+                if workspace.jamfCLIUpdateAvailable && !workspace.demoMode {
                     PNPButton(title: "Update", icon: "arrow.down.circle", style: .gold, size: .sm) {
                         Task { await workspace.updateJamfCLI() }
                     }
@@ -423,6 +453,8 @@ struct SettingsView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 4) {
+                    // The way out of demo mode: setup ends it through
+                    // `setDemoMode(false)` once the new profile exists.
                     PNPButton(title: "Add connection", icon: "plus", style: .gold, size: .sm) {
                         NotificationCenter.default.post(
                             name: .navigateToTab,
@@ -430,7 +462,10 @@ struct SettingsView: View {
                             userInfo: ["tab": Tab.onboarding.rawValue]
                         )
                     }
-                    .help("Opens the onboarding wizard so the GUI walks you through jamf-cli profile setup.")
+                    .help(workspace.demoMode
+                          ? "Set up a real connection; demo mode ends when setup finishes."
+                          : "Opens the onboarding wizard so the GUI walks you through jamf-cli "
+                              + "profile setup.")
                     Text("Walks you through profile registration, workspace setup, and CSV mapping without leaving the app.")
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -474,12 +509,17 @@ struct SettingsView: View {
                 PNPButton(title: "Test", size: .sm) {
                     runConnectionTest(for: profileName)
                 }
-                .help("Run `jamf-cli pro auth-status` against this profile to verify the API token is valid.")
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode
+                      ? DemoData.liveOnlyHelp
+                      : "Run `jamf-cli pro auth-status` against this profile to verify the API "
+                          + "token is valid.")
             }
         }
     }
 
     private func runConnectionTest(for profileName: String) {
+        guard !workspace.demoMode else { return }
         testingProfile = profileName
         testErrors[profileName] = nil
         testingTooLong = false
@@ -531,7 +571,7 @@ struct SettingsView: View {
         guard let exp = status.expiresAt else {
             return "Token: valid (no expiry)"
         }
-        if exp <= Date() {
+        if exp <= tokenClock {
             return "Token: expired"
         }
         let formatter = DateFormatter()
@@ -542,8 +582,14 @@ struct SettingsView: View {
 
     private func tokenStatusColor(_ status: TokenStatus) -> Color {
         guard status.isValid else { return Theme.Text.tertiary(contrast) }
-        if let exp = status.expiresAt, exp <= Date() { return Theme.Colors.warn }
+        if let exp = status.expiresAt, exp <= tokenClock { return Theme.Colors.warn }
         return Theme.Colors.ok
+    }
+
+    /// Demo tokens were issued at the demo's reference time, and read against
+    /// the real clock they would all be expired.
+    private var tokenClock: Date {
+        workspace.demoMode ? DemoData.referenceDate : Date()
     }
 
     private func loadTokenStatuses() async {
@@ -582,7 +628,8 @@ struct SettingsView: View {
 
                     HStack(spacing: 14) {
                         metaPair(label: "App:", value: appVersion)
-                        metaPair(label: "CLI:", value: workspace.jamfCLIVersion ?? "not found")
+                        metaPair(label: "CLI:", value: workspace.demoMode
+                                 ? "demo" : workspace.jamfCLIVersion ?? "not found")
                         metaPair(label: "Maintainer:", value: "@tonyyo11")
                         metaPair(label: "License:", value: "MIT")
                     }
@@ -721,6 +768,8 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
+                        // Both act on the real workspace under the demo
+                        // profile's name, which demo mode never touches.
                         PNPButton(
                             title: "Generate diagnostic bundle now",
                             icon: "archivebox",
@@ -728,11 +777,12 @@ struct SettingsView: View {
                         ) {
                             generateDiagnosticBundleNow()
                         }
-                        .disabled(workspace.profile.isEmpty)
-                        .help(
-                            "Build the redacted diagnostic zip in this profile's workspace and " +
-                            "reveal it in Finder. Runs entirely in-app — no Terminal needed."
-                        )
+                        .disabled(workspace.profile.isEmpty || workspace.demoMode)
+                        .help(workspace.demoMode
+                              ? DemoData.liveOnlyHelp
+                              : "Build the redacted diagnostic zip in this profile's workspace "
+                                  + "and reveal it in Finder. Runs entirely in-app — no Terminal "
+                                  + "needed.")
                         .accessibilityHint(
                             "Generates a redacted diagnostic bundle and reveals it in Finder.")
                     }
@@ -740,12 +790,13 @@ struct SettingsView: View {
 
                 HStack(spacing: 8) {
                     PNPButton(title: "Reveal Workspace", size: .sm) {
-                        if let url = currentWorkspaceURL {
-                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                        }
+                        guard !workspace.demoMode, let url = currentWorkspaceURL else { return }
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
                     }
-                    .disabled(currentWorkspaceURL == nil)
-                    .help("Open the active workspace directory in Finder.")
+                    .disabled(workspace.demoMode || currentWorkspaceURL == nil)
+                    .help(workspace.demoMode
+                          ? DemoData.liveOnlyHelp
+                          : "Open the active workspace directory in Finder.")
                 }
 
                 if let msg = diagnosticBundleMessage {
@@ -888,9 +939,12 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
 
+                // Saving writes the `ai:` block of the profile's config.yaml.
                 Toggle("Enable AI insights", isOn: Binding(
                     get: { aiConfig.isEnabled },
                     set: { aiConfig.enabled = $0; saveAIConfig() }))
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
 
                 if aiConfig.isEnabled {
                     // No model picker: Apple Foundation Models is on-device only,
@@ -921,12 +975,15 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("AI Insights")
         .task(id: workspace.profile) {
-            aiConfig = AIConfigLoader.load(profile: workspace.profile)
+            // A config.yaml under a demo profile's name is not the demo's.
+            aiConfig = workspace.demoMode
+                ? AIConfig() : AIConfigLoader.load(profile: workspace.profile)
             aiSaveMessage = nil
         }
     }
 
     private func saveAIConfig() {
+        guard !workspace.demoMode else { return }
         do {
             try AIConfigWriter.save(aiConfig, profile: workspace.profile)
             aiSaveMessage = nil
@@ -950,6 +1007,7 @@ struct SettingsView: View {
     /// static func and its inputs/outputs (`String`, `URL`) are `Sendable`.
     private func generateDiagnosticBundleNow() {
         let profile = workspace.profile
+        guard !workspace.demoMode else { return }
         guard !profile.isEmpty else {
             diagnosticBundleMessage = "Select a workspace profile first."
             return

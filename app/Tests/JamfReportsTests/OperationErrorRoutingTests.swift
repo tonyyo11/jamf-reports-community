@@ -25,4 +25,19 @@ final class OperationErrorRoutingTests: XCTestCase {
         XCTAssertEqual(CLIBridge.explainOperationError(E(), operation: "Refresh"),
                        "Refresh failed — boom")
     }
+
+    func test_collectDeadWithNoReadableSource_routesAsPermissionDenied() {
+        let msg = CLIBridge.explainOperationError(
+            ReportEngineError.collectDead(profile: "p", failedCount: 9, cause: .noPermission),
+            operation: "Collect")
+        XCTAssertEqual(msg, CLIBridge.explainExit(CLIBridge.exitCodePermissionDenied,
+                                                  operation: "Collect"))
+    }
+
+    func test_collectDeadWithARejectedID_namesTheID() {
+        let error = ReportEngineError.collectDead(profile: "p", failedCount: 9, cause: .rejectedID)
+        XCTAssertTrue(CLIBridge.explainOperationError(error, operation: "Collect")
+            .contains("environment or tenant ID"))
+        XCTAssertTrue(error.errorDescription?.contains("environment or tenant ID") ?? false)
+    }
 }

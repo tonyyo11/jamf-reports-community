@@ -50,9 +50,15 @@ final class TitlebarA11yTests: XCTestCase {
         XCTAssertTrue(text.contains("live"), "Live mode must say 'live'")
     }
 
+    /// Demo mode never runs jamf-cli, so this Mac's version is not the demo's.
     func testCLIStatusTextWithVersionDemo() {
         let text = cliStatusText(path: "/usr/local/bin/jamf-cli", version: "1.14.0", demoMode: true)
-        XCTAssertTrue(text.contains("demo"), "Demo mode must say 'demo'")
+        XCTAssertEqual(text, "jamf-cli · demo")
+    }
+
+    /// A Mac without jamf-cli showed "jamf-cli missing" on every demo screen.
+    func testCLIStatusTextDemoWithoutJamfCLI() {
+        XCTAssertEqual(cliStatusText(path: nil, version: nil, demoMode: true), "jamf-cli · demo")
     }
 
     // MARK: - Helpers (mirror the logic in Titlebar)
@@ -63,9 +69,8 @@ final class TitlebarA11yTests: XCTestCase {
         isPresented.toggle()
     }
 
+    /// The chip's own label logic, rather than a copy of it that can drift.
     private func cliStatusText(path: String?, version: String?, demoMode: Bool) -> String {
-        guard path != nil else { return "jamf-cli missing" }
-        let v = version ?? "unknown"
-        return "jamf-cli \(v) \u{00B7} \(demoMode ? "demo" : "live")"
+        CLIStatusChip.statusText(path: path, version: version, demoMode: demoMode)
     }
 }

@@ -49,6 +49,16 @@ final class FleetInsightInputTests: XCTestCase {
         XCTAssertFalse(context.contains("Patch compliance"), "nil metric must be omitted")
     }
 
+    /// patchPct is an unweighted per-title mean; the prompt names it that way so the
+    /// model does not present it as the device-weighted figure the Patch screen shows.
+    func testContextLabelsPatchAsAPerTitleAverage() {
+        let input = FleetInsightInput(
+            current: summary(date: "2026-06-06", patch: 90.0),
+            previous: nil
+        )
+        XCTAssertTrue(input.promptContext().contains("Patch compliance (avg per title): 90.0%"))
+    }
+
     func testContextRendersDeltasVsPrior() {
         let input = FleetInsightInput(
             current: summary(date: "2026-06-06", fileVault: 98.0, stale: 12),

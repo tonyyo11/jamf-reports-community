@@ -12,8 +12,10 @@ struct ProtectView: View {
     @State private var experimentalFeatures = ExperimentalFeatureService()
     @State private var selectedTimelineDevice: String?
 
+    /// The demo shows the deep dive: its data is populated, and a locked card on
+    /// top of it read as a feature the demo tenant could not have.
     private var deepDiveEnabled: Bool {
-        experimentalFeatures.isEnabled(.protect)
+        workspace.demoMode || experimentalFeatures.isEnabled(.protect)
     }
 
     var body: some View {
@@ -22,7 +24,9 @@ struct ProtectView: View {
                 kicker: "Protect",
                 title: "Jamf Protect",
                 subtitle: subtitle,
-                lastModified: snapshot.snapshotDate,
+                // The demo dataset is fixed; an age measured from today would grow
+                // for as long as the demo stays open.
+                lastModified: workspace.demoMode ? nil : snapshot.snapshotDate,
                 trailing: { AnyView(deepDiveEnabled ? AnyView(ExperimentalBadge()) : AnyView(EmptyView())) }
             )
 
@@ -50,29 +54,30 @@ struct ProtectView: View {
             if !snapshot.isDetected {
                 emptyState
             } else {
-                if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty || !snapshot.insights.isEmpty || workspace.demoMode {
+                if snapshot.totalComputers > 0 || !snapshot.alerts.isEmpty
+                    || !snapshot.insights.isEmpty {
                     kpiGrid
                 }
-                if !snapshot.alerts.isEmpty || workspace.demoMode {
+                if !snapshot.alerts.isEmpty {
                     alertsBySeverityCard
                     recentAlertsCard
                 }
                 if deepDiveEnabled {
-                    if !snapshot.alerts.isEmpty || workspace.demoMode {
+                    if !snapshot.alerts.isEmpty {
                         killChainStageCard
                         deviceTimelineCard
                     }
-                    if !snapshot.computers.isEmpty || workspace.demoMode {
+                    if !snapshot.computers.isEmpty {
                         agentVersionCard
                     }
                 }
-                if !snapshot.computers.isEmpty || workspace.demoMode {
+                if !snapshot.computers.isEmpty {
                     computersCard
                 }
-                if !snapshot.insights.isEmpty || workspace.demoMode {
+                if !snapshot.insights.isEmpty {
                     insightsCard
                 }
-                if !snapshot.plans.isEmpty || workspace.demoMode {
+                if !snapshot.plans.isEmpty {
                     plansCard
                 }
             }
@@ -87,11 +92,19 @@ struct ProtectView: View {
 
     private var subtitle: String? {
         guard snapshot.isDetected else { return nil }
+        let severityAlertCount = snapshot.highAlerts + snapshot.mediumAlerts
+            + snapshot.lowAlerts + snapshot.informationalAlerts
+        // Protect covers 12 of the demo fleet's 524 Macs; say it is a pilot rather
+        // than leave the gap to read as missing data.
+        let computers = snapshot.totalComputers
+        let computersPart: String? = computers == 0 ? nil : (workspace.demoMode
+            ? "Pilot: \(computers) of \(DemoData.totalDevices) Macs"
+            : "\(computers) computer\(computers == 1 ? "" : "s")")
         let parts: [String] = [
-            snapshot.totalComputers > 0 ? "\(snapshot.totalComputers) computer\(snapshot.totalComputers == 1 ? "" : "s")" : nil,
+            computersPart,
             !snapshot.alerts.isEmpty ? "\(snapshot.alerts.count) alert\(snapshot.alerts.count == 1 ? "" : "s")" :
-                (snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts > 0 ?
-                 "\(snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts) alert\(snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts == 1 ? "" : "s")" : nil),
+                (severityAlertCount > 0 ?
+                 "\(severityAlertCount) alert\(severityAlertCount == 1 ? "" : "s")" : nil),
             !snapshot.insights.isEmpty ? "\(snapshot.insights.count) insight\(snapshot.insights.count == 1 ? "" : "s")" : nil
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " • ")
@@ -106,85 +119,12 @@ struct ProtectView: View {
     }
 
     private func reload() {
+        // The demo's rows are drawn by the same code as a live tenant's, and its
+        // counts are taken from those rows.
         snapshot = workspace.demoMode
-            ? Self.demoSnapshot
+            ? DemoData.protectSnapshot
             : ProtectDashboardService.load(profile: workspace.profile)
     }
-
-    private static let demoSnapshot = ProtectDashboardService.Snapshot(
-        isDetected: true,
-        overviewItems: [],
-        alerts: [],
-        computers: [],
-        insights: [],
-        plans: demoPlans,
-        totalComputers: 12,
-        webProtectionActiveCount: 10,
-        fullDiskAccessCount: 9,
-        connectedCount: 10,
-        criticalAlerts: 2,
-        highAlerts: 2,
-        mediumAlerts: 2,
-        lowAlerts: 2,
-        failingInsights: 3,
-        sourceFile: nil,
-        snapshotDate: Date()
-    )
-
-    // MARK: - Demo Data Helpers
-
-    private static let demoDemoAlerts: [(severity: String, eventType: String, hostName: String, created: String, status: String)] = [
-            ("Critical", "Malware", "MacBook-001", "2024-05-12T09:30:00Z", "Open"),
-            ("High", "Suspicious Network", "MacBook-002", "2024-05-12T08:15:00Z", "Investigating"),
-            ("Medium", "Policy Violation", "iMac-003", "2024-05-11T16:45:00Z", "Resolved"),
-            ("Low", "Anomaly", "MacBook-004", "2024-05-11T14:20:00Z", "Closed"),
-            ("Critical", "Ransomware", "MacBook-005", "2024-05-11T11:30:00Z", "Open"),
-            ("High", "Data Exfil", "iMac-006", "2024-05-11T10:00:00Z", "Investigating"),
-            ("Medium", "Unauthorized Access", "MacBook-007", "2024-05-10T18:30:00Z", "Open"),
-            ("Low", "Config Change", "iMac-008", "2024-05-10T15:45:00Z", "Resolved")
-        ]
-
-    private static let demoDemoComputers: [(hostName: String, osString: String, planName: String, webProtection: Bool, fullDisk: Bool, connected: Bool, lastConnection: String)] = [
-            ("MacBook-001", "macOS 15.4.1", "Standard", true, true, true, "2024-05-12T10:00:00Z"),
-            ("MacBook-002", "macOS 15.4.1", "Standard", true, true, true, "2024-05-12T09:45:00Z"),
-            ("iMac-003", "macOS 14.7.5", "Standard", true, false, true, "2024-05-12T09:30:00Z"),
-            ("MacBook-004", "macOS 15.4.1", "Standard", false, true, false, "2024-05-10T14:20:00Z"),
-            ("MacBook-005", "macOS 15.4.1", "Premium", true, true, true, "2024-05-12T10:05:00Z"),
-            ("iMac-006", "macOS 14.7.5", "Premium", true, true, true, "2024-05-12T09:50:00Z"),
-            ("MacBook-007", "macOS 13.7.10", "Standard", true, false, true, "2024-05-12T08:30:00Z"),
-            ("iMac-008", "macOS 15.4.1", "Standard", false, false, false, "2024-05-09T16:15:00Z"),
-            ("MacBook-009", "macOS 15.4.1", "Premium", true, true, true, "2024-05-12T10:10:00Z"),
-            ("iMac-010", "macOS 14.7.5", "Standard", true, true, true, "2024-05-12T09:25:00Z"),
-            ("MacBook-011", "macOS 15.4.1", "Standard", true, true, true, "2024-05-12T10:15:00Z"),
-            ("MacBook-012", "macOS 15.4.1", "Premium", true, true, true, "2024-05-12T09:55:00Z")
-        ]
-
-    private static let demoDemoInsights: [(label: String, section: String, totalPass: Int, totalFail: Int, enabled: Bool)] = [
-            ("Firewall Configuration", "Network Security", 10, 2, true),
-            ("FileVault Status", "Data Protection", 12, 0, true),
-            ("Gatekeeper Policy", "Application Security", 11, 1, true),
-            ("SIP Status", "System Integrity", 12, 0, true),
-            ("XProtect Updates", "Malware Protection", 9, 3, false),
-            ("Certificate Validation", "PKI", 11, 1, true)
-        ]
-
-    private static let demoPlans: [ProtectPlanRow] = [
-        ProtectPlanRow(
-            name: "Standard", uuid: "11111111-1111-1111-1111-111111111111",
-            description: "Baseline detection + telemetry", logLevel: "INFO",
-            autoUpdate: true, threatPreventionStrategy: "BALANCED",
-            profileVersion: 3, telemetry: true),
-        ProtectPlanRow(
-            name: "Premium", uuid: "22222222-2222-2222-2222-222222222222",
-            description: "Aggressive prevention for high-risk fleet", logLevel: "DEBUG",
-            autoUpdate: true, threatPreventionStrategy: "AGGRESSIVE",
-            profileVersion: 4, telemetry: true),
-        ProtectPlanRow(
-            name: "Lab", uuid: "33333333-3333-3333-3333-333333333333",
-            description: "Detection-only, no auto-update", logLevel: "INFO",
-            autoUpdate: false, threatPreventionStrategy: "DETECT_ONLY",
-            profileVersion: 2, telemetry: false),
-    ]
 
     // MARK: - Sections
 
@@ -231,9 +171,7 @@ struct ProtectView: View {
     }
 
     private var killChainStageCard: some View {
-        let buckets = workspace.demoMode
-            ? Self.demoKillChainBuckets
-            : ProtectDashboardService.killChainBuckets(snapshot.alerts)
+        let buckets = ProtectDashboardService.killChainBuckets(snapshot.alerts)
         let total = buckets.reduce(0) { $0 + $1.count }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
@@ -289,9 +227,7 @@ struct ProtectView: View {
     }
 
     private var agentVersionCard: some View {
-        let versions = workspace.demoMode
-            ? Self.demoAgentVersions
-            : ProtectDashboardService.agentVersionDistribution(snapshot.computers)
+        let versions = ProtectDashboardService.agentVersionDistribution(snapshot.computers)
         let total = versions.reduce(0) { $0 + $1.count }
         return Card {
             VStack(alignment: .leading, spacing: 12) {
@@ -355,9 +291,7 @@ struct ProtectView: View {
         var seen = Set<String>()
         var ordered: [String] = []
         for alert in snapshot.alerts {
-            let key = alert.hostName?.trimmingCharacters(in: .whitespaces)
-                ?? alert.serial?.trimmingCharacters(in: .whitespaces)
-                ?? ""
+            let key = alert.hostName?.trimmingCharacters(in: .whitespaces) ?? ""
             guard !key.isEmpty, !seen.contains(key.lowercased()) else { continue }
             seen.insert(key.lowercased())
             ordered.append(key)
@@ -365,20 +299,14 @@ struct ProtectView: View {
         return ordered.sorted()
     }
 
-    private static let demoKillChainBuckets: [(stage: String, count: Int)] = [
-        ("Malware", 3), ("Suspicious Network", 2), ("Policy Violation", 1)
-    ]
-
-    private static let demoAgentVersions: [(version: String, count: Int)] = [
-        ("4.6.0", 8), ("4.5.2", 3), ("Unknown", 1)
-    ]
-
+    /// Tiles with and without a caption share a row, so the grid evens each row's height.
     private var kpiGrid: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)], spacing: 16) {
+        EqualHeightTileGrid(minTileWidth: 220) {
             if snapshot.totalComputers > 0 {
                 StatTile(
                     label: "Total Computers",
-                    value: "\(snapshot.totalComputers)"
+                    value: "\(snapshot.totalComputers)",
+                    fillsHeight: true
                 )
             }
 
@@ -386,7 +314,8 @@ struct ProtectView: View {
                 StatTile(
                     label: "Web Protection",
                     value: "\(snapshot.webProtectionActiveCount)",
-                    sub: "\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))"
+                    sub: "\(snapshot.webProtectionActiveCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.webProtectionActiveCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    fillsHeight: true
                 )
             }
 
@@ -394,7 +323,8 @@ struct ProtectView: View {
                 StatTile(
                     label: "Full Disk Access",
                     value: "\(snapshot.fullDiskAccessCount)",
-                    sub: "\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))"
+                    sub: "\(snapshot.fullDiskAccessCount) of \(snapshot.totalComputers) (\(String(format: "%.0f%%", snapshot.totalComputers > 0 ? Double(snapshot.fullDiskAccessCount) / Double(snapshot.totalComputers) * 100 : 0)))",
+                    fillsHeight: true
                 )
             }
 
@@ -402,21 +332,24 @@ struct ProtectView: View {
                 StatTile(
                     label: "Connected",
                     value: "\(snapshot.connectedCount)",
-                    sub: "\(snapshot.connectedCount) of \(snapshot.totalComputers)"
+                    sub: "\(snapshot.connectedCount) of \(snapshot.totalComputers)",
+                    fillsHeight: true
                 )
             }
 
             if !snapshot.alerts.isEmpty {
                 StatTile(
-                    label: "Critical Alerts",
-                    value: "\(snapshot.criticalAlerts)"
+                    label: "High Alerts",
+                    value: "\(snapshot.highAlerts)",
+                    fillsHeight: true
                 )
             }
 
             if snapshot.failingInsights > 0 {
                 StatTile(
                     label: "Failing Insights",
-                    value: "\(snapshot.failingInsights)"
+                    value: "\(snapshot.failingInsights)",
+                    fillsHeight: true
                 )
             }
         }
@@ -425,7 +358,8 @@ struct ProtectView: View {
     private var alertsBySeverityCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                let totalAlerts = snapshot.criticalAlerts + snapshot.highAlerts + snapshot.mediumAlerts + snapshot.lowAlerts
+                let totalAlerts = snapshot.highAlerts + snapshot.mediumAlerts
+                    + snapshot.lowAlerts + snapshot.informationalAlerts
                 HStack {
                     SectionHeader(title: "Alerts by Severity")
                     if totalAlerts > 0 {
@@ -442,9 +376,6 @@ struct ProtectView: View {
                 }
                 if totalAlerts > 0 {
                     VStack(spacing: 6) {
-                        if snapshot.criticalAlerts > 0 {
-                            alertSeverityBar(label: "Critical", count: snapshot.criticalAlerts, total: totalAlerts, color: Theme.Severity.critical.inApp)
-                        }
                         if snapshot.highAlerts > 0 {
                             alertSeverityBar(label: "High", count: snapshot.highAlerts, total: totalAlerts, color: Theme.Severity.high.inApp)
                         }
@@ -454,6 +385,12 @@ struct ProtectView: View {
                         if snapshot.lowAlerts > 0 {
                             alertSeverityBar(label: "Low", count: snapshot.lowAlerts, total: totalAlerts, color: Theme.Severity.low.inApp)
                         }
+                        if snapshot.informationalAlerts > 0 {
+                            alertSeverityBar(
+                                label: "Informational", count: snapshot.informationalAlerts,
+                                total: totalAlerts, color: Theme.Severity.informational.inApp
+                            )
+                        }
                     }
                 }
             }
@@ -461,18 +398,20 @@ struct ProtectView: View {
     }
 
     private func exportAlertSeverityChart() {
-        let critical = snapshot.criticalAlerts
         let high = snapshot.highAlerts
         let medium = snapshot.mediumAlerts
         let low = snapshot.lowAlerts
-        let total = critical + high + medium + low
+        let informational = snapshot.informationalAlerts
+        let total = high + medium + low + informational
         let result = DashboardChartExport.run(
             title: "Alerts by Severity",
             subtitle: "Jamf Protect",
             footnote: "Source: jamf-cli protect alerts · \(total) alert\(total == 1 ? "" : "s")",
             suggestedFilename: DashboardChartExport.filename(for: "protect-alerts-by-severity", profile: workspace.profile)
         ) {
-            ProtectAlertsSeverityExport(critical: critical, high: high, medium: medium, low: low)
+            ProtectAlertsSeverityExport(
+                high: high, medium: medium, low: low, informational: informational
+            )
         }
         if case .failure(let error) = result {
             workspace.toast = Toast(message: error.userMessage, style: .danger)
@@ -526,24 +465,19 @@ struct ProtectView: View {
     private var recentAlertsCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Recent Alerts", trailing: workspace.demoMode ? nil : (snapshot.alerts.count > 50 ? "Showing 50 of \(snapshot.alerts.count)" : nil))
+                SectionHeader(
+                    title: "Recent Alerts",
+                    trailing: snapshot.alerts.count > 50
+                        ? "Showing 50 of \(snapshot.alerts.count)" : nil)
 
-                if workspace.demoMode {
+                let sortedAlerts = snapshot.alerts
+                    .sorted { ($0.created ?? "") > ($1.created ?? "") }
+                    .prefix(50)
+
+                if !sortedAlerts.isEmpty {
                     VStack(spacing: 0) {
-                        ForEach(Array(Self.demoDemoAlerts.enumerated()), id: \.offset) { index, alert in
-                            demoAlertRow(alert, isLast: index == Self.demoDemoAlerts.count - 1)
-                        }
-                    }
-                } else {
-                    let sortedAlerts = snapshot.alerts
-                        .sorted { ($0.created ?? "") > ($1.created ?? "") }
-                        .prefix(50)
-
-                    if !sortedAlerts.isEmpty {
-                        VStack(spacing: 0) {
-                            ForEach(Array(sortedAlerts.enumerated()), id: \.offset) { index, alert in
-                                alertRow(alert, isLast: index == sortedAlerts.count - 1)
-                            }
+                        ForEach(Array(sortedAlerts.enumerated()), id: \.offset) { index, alert in
+                            alertRow(alert, isLast: index == sortedAlerts.count - 1)
                         }
                     }
                 }
@@ -555,8 +489,10 @@ struct ProtectView: View {
     private func alertRow(_ alert: ProtectAlertRow, isLast: Bool) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
+                // Pills keep their full width, so each column fits its longest label:
+                // INFORMATIONAL here, AUTO RESOLVED in the status column.
                 severityPill(alert.severity)
-                    .frame(width: 72, alignment: .leading)
+                    .frame(width: 124, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(alert.eventType ?? "Unknown")
@@ -580,43 +516,7 @@ struct ProtectView: View {
                 }
 
                 statusPill(alert.status)
-                    .frame(width: 104, alignment: .trailing)
-            }
-            .padding(.vertical, 8)
-
-            if !isLast {
-                Divider()
-                    .background(Theme.Colors.hairline)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func demoAlertRow(_ alert: (severity: String, eventType: String, hostName: String, created: String, status: String), isLast: Bool) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                severityPill(alert.severity)
-                    .frame(width: 72, alignment: .leading)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(alert.eventType)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(Theme.Colors.fg)
-                        .lineLimit(1)
-
-                    Text(alert.hostName)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text(formatCreatedDate(alert.created))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .frame(width: 80, alignment: .trailing)
-
-                statusPill(alert.status)
-                    .frame(width: 104, alignment: .trailing)
+                    .frame(width: 128, alignment: .trailing)
             }
             .padding(.vertical, 8)
 
@@ -631,10 +531,13 @@ struct ProtectView: View {
         let text = severity?.capitalized ?? "Unknown"
         let (tone, icon): (Pill.Tone, String) = {
             guard let sev = severity?.lowercased() else { return (.muted, "circle.fill") }
-            if sev.contains("critical") { return (Theme.Severity.critical.pillTone, Theme.Severity.critical.systemImage) }
             if sev.contains("high") { return (Theme.Severity.high.pillTone, Theme.Severity.high.systemImage) }
             if sev.contains("medium") || sev.contains("med") { return (Theme.Severity.medium.pillTone, Theme.Severity.medium.systemImage) }
             if sev.contains("low") { return (Theme.Severity.low.pillTone, Theme.Severity.low.systemImage) }
+            if sev.hasPrefix("info") {
+                let info = Theme.Severity.informational
+                return (info.pillTone, info.systemImage)
+            }
             return (.muted, "circle.fill")
         }()
 
@@ -643,25 +546,40 @@ struct ProtectView: View {
     }
 
     private func statusPill(_ status: String?) -> some View {
-        let text = status?.capitalized ?? "Unknown"
+        let text = Self.statusLabel(status)
         let (tone, icon): (Pill.Tone, String) = {
             guard let stat = status?.lowercased() else { return (.muted, "info.circle") }
-            if stat.contains("resolved") { return (.teal, "checkmark.circle") }
-            if stat.contains("closed") { return (.teal, "checkmark") }
-            if stat.contains("open") { return (.warn, "exclamationmark.circle") }
-            if stat.contains("investigating") { return (.gold, "magnifyingglass") }
-            return (.muted, "info.circle")
+            switch stat {
+            case "new": return (.warn, "exclamationmark.circle")
+            case "inprogress": return (.gold, "magnifyingglass")
+            case "resolved", "autoresolved": return (.teal, "checkmark.circle")
+            default: return (.muted, "info.circle")
+            }
         }()
 
         return Pill(text: text, tone: tone, icon: icon)
     }
 
+    /// Status pill text: New/InProgress/Resolved/AutoResolved (Protect's real
+    /// ALERT_STATUS values) get a spaced display form; anything else passes
+    /// through unchanged; empty/nil is "Unknown".
+    nonisolated static func statusLabel(_ status: String?) -> String {
+        guard let status, !status.isEmpty else { return "Unknown" }
+        switch status.lowercased() {
+        case "new": return "New"
+        case "inprogress": return "In Progress"
+        case "resolved": return "Resolved"
+        case "autoresolved": return "Auto Resolved"
+        default: return status
+        }
+    }
+
     private func severityIcon(for label: String) -> String {
         switch label.lowercased() {
-        case "critical": Theme.Severity.critical.systemImage
         case "high": Theme.Severity.high.systemImage
         case "medium": Theme.Severity.medium.systemImage
         case "low": Theme.Severity.low.systemImage
+        case "informational": Theme.Severity.informational.systemImage
         default: "circle.fill"
         }
     }
@@ -669,22 +587,19 @@ struct ProtectView: View {
     private var computersCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Computers", trailing: workspace.demoMode ? nil : (snapshot.computers.count > 50 ? "Showing 50 of \(snapshot.computers.count)" : nil))
+                SectionHeader(
+                    title: "Computers",
+                    trailing: snapshot.computers.count > 50
+                        ? "Showing 50 of \(snapshot.computers.count)" : nil)
 
-                if workspace.demoMode {
+                let displayedComputers = Array(snapshot.computers.prefix(50))
+
+                if !displayedComputers.isEmpty {
                     VStack(spacing: 0) {
-                        ForEach(Array(Self.demoDemoComputers.enumerated()), id: \.offset) { index, computer in
-                            demoComputerRow(computer, isLast: index == Self.demoDemoComputers.count - 1)
-                        }
-                    }
-                } else {
-                    let displayedComputers = Array(snapshot.computers.prefix(50))
-
-                    if !displayedComputers.isEmpty {
-                        VStack(spacing: 0) {
-                            ForEach(Array(displayedComputers.enumerated()), id: \.offset) { index, computer in
-                                computerRow(computer, isLast: index == displayedComputers.count - 1)
-                            }
+                        ForEach(
+                            Array(displayedComputers.enumerated()), id: \.offset
+                        ) { index, computer in
+                            computerRow(computer, isLast: index == displayedComputers.count - 1)
                         }
                     }
                 }
@@ -713,12 +628,13 @@ struct ProtectView: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .leading)
 
+                // Wide enough for INACTIVE and YES, the longest labels these pills show.
                 booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
-                    .frame(width: 64, alignment: .center)
+                    .frame(width: 92, alignment: .center)
                     .accessibilityLabel("Web Protection \(computer.webProtectionActive == true ? "active" : "inactive")")
 
                 booleanPill(computer.fullDiskAccess, trueLabel: "Yes", falseLabel: "No")
-                    .frame(width: 48, alignment: .center)
+                    .frame(width: 56, alignment: .center)
                     .accessibilityLabel("Full Disk Access \(computer.fullDiskAccess == true ? "granted" : "denied")")
 
                 connectionPill(computer.connectionStatus)
@@ -740,70 +656,12 @@ struct ProtectView: View {
         }
     }
 
-    @ViewBuilder
-    private func demoComputerRow(_ computer: (hostName: String, osString: String, planName: String, webProtection: Bool, fullDisk: Bool, connected: Bool, lastConnection: String), isLast: Bool) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(computer.hostName)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(Theme.Colors.fg)
-                        .lineLimit(1)
-
-                    Text(computer.osString)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                }
-                .frame(width: 140, alignment: .leading)
-
-                Text(computer.planName)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .frame(width: 80, alignment: .leading)
-
-                demoBooleanPill(computer.webProtection, trueLabel: "Active", falseLabel: "Inactive")
-                    .frame(width: 64, alignment: .center)
-                    .accessibilityLabel("Web Protection \(computer.webProtection ? "active" : "inactive")")
-
-                demoBooleanPill(computer.fullDisk, trueLabel: "Yes", falseLabel: "No")
-                    .frame(width: 48, alignment: .center)
-                    .accessibilityLabel("Full Disk Access \(computer.fullDisk ? "granted" : "denied")")
-
-                Pill(
-                    text: computer.connected ? "Online" : "Offline",
-                    tone: computer.connected ? .teal : .warn
-                )
-                .frame(width: 88, alignment: .center)
-                .accessibilityLabel("\(computer.connected ? "Online" : "Offline") connection status")
-
-                Text(formatCreatedDate(computer.lastConnection))
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .frame(width: 80, alignment: .trailing)
-            }
-            .padding(.vertical, 8)
-
-            if !isLast {
-                Divider()
-                    .background(Theme.Colors.hairline)
-            }
-        }
-    }
-
     private func booleanPill(_ value: Bool?, trueLabel: String, falseLabel: String) -> some View {
         let isTrue = value == true
         return Pill(
             text: isTrue ? trueLabel : falseLabel,
             tone: isTrue ? .teal : .muted,
             icon: isTrue ? "checkmark" : "xmark"
-        )
-    }
-
-    private func demoBooleanPill(_ value: Bool, trueLabel: String, falseLabel: String) -> some View {
-        return Pill(
-            text: value ? trueLabel : falseLabel,
-            tone: value ? .teal : .muted,
-            icon: value ? "checkmark" : "xmark"
         )
     }
 
@@ -822,14 +680,8 @@ struct ProtectView: View {
                 SectionHeader(title: "Insights")
 
                 VStack(spacing: 8) {
-                    if workspace.demoMode {
-                        ForEach(Array(Self.demoDemoInsights.enumerated()), id: \.offset) { index, insight in
-                            demoInsightRow(insight)
-                        }
-                    } else {
-                        ForEach(Array(snapshot.insights.enumerated()), id: \.offset) { index, insight in
-                            insightRow(insight)
-                        }
+                    ForEach(Array(snapshot.insights.enumerated()), id: \.offset) { index, insight in
+                        insightRow(insight)
                     }
                 }
             }
@@ -897,63 +749,6 @@ struct ProtectView: View {
         .accessibilityLabel("\(insight.label ?? "Unknown insight"), \(pass) pass, \(fail) fail")
     }
 
-    @ViewBuilder
-    private func demoInsightRow(_ insight: (label: String, section: String, totalPass: Int, totalFail: Int, enabled: Bool)) -> some View {
-        let pass = insight.totalPass
-        let fail = insight.totalFail
-        let total = pass + fail
-
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(insight.label)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(Theme.Colors.fg)
-
-                Spacer()
-
-                Pill(text: insight.enabled ? "Enabled" : "Disabled", tone: insight.enabled ? .teal : .muted)
-            }
-
-            Text(insight.section)
-                .font(.caption)
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-
-            if total > 0 {
-                HStack(spacing: 4) {
-                    Text("Pass: \(pass)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.Colors.teal)
-
-                    Text("•")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(Theme.Colors.hairlineStrong)
-
-                    Text("Fail: \(fail)")
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(fail > 0 ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
-
-                    Spacer()
-
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.Colors.hairline)
-                                .frame(height: 4)
-
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Theme.Colors.teal)
-                                .frame(width: max(2, geometry.size.width * Double(pass) / Double(total)), height: 4)
-                        }
-                    }
-                    .frame(width: 60, height: 4)
-                }
-            }
-        }
-        .padding(.vertical, 6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(insight.label), \(pass) pass, \(fail) fail")
-    }
-
     // MARK: - Plans
 
     private var plansCard: some View {
@@ -982,31 +777,25 @@ struct ProtectView: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer()
-                if let strategy = plan.threatPreventionStrategy, !strategy.isEmpty {
-                    Pill(text: strategy, tone: .teal)
-                }
-            }
-            if let description = plan.description, !description.isEmpty {
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
             }
             HStack(spacing: 10) {
                 if let level = plan.logLevel, !level.isEmpty {
                     planTag("Log: \(level)")
                 }
-                if let version = plan.profileVersion {
-                    planTag("Profile v\(version)")
-                }
                 planTag(plan.autoUpdate == true ? "Auto-update on" : "Auto-update off")
-                planTag(plan.telemetry == true ? "Telemetry on" : "Telemetry off")
+                planTag(Self.telemetryTag(plan.telemetry))
                 Spacer()
             }
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            "\(plan.name ?? "Unnamed plan"), strategy \(plan.threatPreventionStrategy ?? "unknown")")
+        .accessibilityLabel("\(plan.name ?? "Unnamed plan"), \(Self.telemetryTag(plan.telemetry))")
+    }
+
+    /// Plan card telemetry tag: the assigned configuration's name, or "No telemetry".
+    nonisolated static func telemetryTag(_ telemetry: String?) -> String {
+        guard let telemetry, !telemetry.isEmpty else { return "No telemetry" }
+        return "Telemetry: \(telemetry)"
     }
 
     private func planTag(_ text: String) -> some View {
@@ -1033,7 +822,8 @@ struct ProtectView: View {
             date = fallbackDate
         }
 
-        let now = Date()
+        // Demo ages are measured from the demo's own "now", not today's date.
+        let now = workspace.demoMode ? DemoData.referenceDate : Date()
         let daysSince = Calendar.current.dateComponents([.day], from: date, to: now).day ?? 0
 
         if daysSince >= 60 {
@@ -1050,27 +840,17 @@ struct ProtectView: View {
     }
 }
 
-// MARK: - Helper extension for service access in view
-private extension ProtectDashboardService {
-    /// Expose the connection check for use in view logic
-    static func isConnected(_ status: String?) -> Bool {
-        guard let status else { return false }
-        let lower = status.lowercased()
-        return lower.contains("connected") || lower.contains("online")
-    }
-}
-
 // MARK: - Export-only chart
 
 /// Light-mode export rendering of the Protect alert severity bars. Hardcodes
-/// light-mode-legible severity colors (red/orange/gold/teal) — the
+/// light-mode-legible severity colors (orange/gold/teal/gray) — the
 /// in-dashboard view uses Theme tokens which read poorly on the light export
 /// canvas.
 private struct ProtectAlertsSeverityExport: View {
-    let critical: Int
     let high: Int
     let medium: Int
     let low: Int
+    let informational: Int
 
     private struct Row: Identifiable {
         let label: String
@@ -1081,14 +861,15 @@ private struct ProtectAlertsSeverityExport: View {
 
     private var rows: [Row] {
         [
-            Row(label: "Critical", count: critical, color: Theme.Severity.critical.export),
-            Row(label: "High",     count: high,     color: Theme.Severity.high.export),
-            Row(label: "Medium",   count: medium,   color: Theme.Severity.medium.export),
-            Row(label: "Low",      count: low,      color: Theme.Severity.low.export)
+            Row(label: "High",          count: high,          color: Theme.Severity.high.export),
+            Row(label: "Medium",        count: medium,        color: Theme.Severity.medium.export),
+            Row(label: "Low",           count: low,           color: Theme.Severity.low.export),
+            Row(label: "Informational", count: informational,
+                color: Theme.Severity.informational.export)
         ].filter { $0.count > 0 }
     }
 
-    private var total: Int { critical + high + medium + low }
+    private var total: Int { high + medium + low + informational }
 
     var body: some View {
         VStack(spacing: 10) {

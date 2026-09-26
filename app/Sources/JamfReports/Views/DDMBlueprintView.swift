@@ -92,9 +92,7 @@ struct DDMBlueprintView: View {
         case .unlockedNoData:
             unlockedEmptyCard
         case .unlockedWithData:
-            if !workspace.demoMode {
-                headerStrip
-            }
+            headerStrip
             if showsPlatformSections {
                 adoptionCard
                 blueprintTableCard
@@ -186,7 +184,7 @@ struct DDMBlueprintView: View {
                         message: "Run a collect with the Scan tier (or wait for the weekly "
                             + "managed scan) to populate per-device DDM status. Platform "
                             + "profiles can also run the blueprint reports.",
-                        commands: ["jamf-reports collect --tiers inventory,scan"]
+                        commands: [UpdatesView.collectCommand(profile: workspace.profile)]
                     )
                 }
             }
@@ -229,7 +227,11 @@ struct DDMBlueprintView: View {
                     DDMBlueprintView.blueprintRow(blueprint, contrast: contrast)
                 }
                 if snapshot.blueprints.count > 20 {
-                    Text("Showing the first 20 blueprints. Full data is in the Excel workbook (\"Platform Blueprints\" sheet).")
+                    // Sheet names come from SheetID so they cannot drift from the workbook
+                    // again: both footnotes kept the v2.1.0 names after the sheets were
+                    // renamed (#207 G14).
+                    Text("Showing the first 20 blueprints. Full data is in the Excel workbook "
+                         + "(\"\(SheetID.blueprintStatus.rawValue)\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -258,7 +260,8 @@ struct DDMBlueprintView: View {
                     DDMBlueprintView.declarationRow(entry, contrast: contrast)
                 }
                 if snapshot.declarations.count > 30 {
-                    Text("Showing the first 30 sources. Full data is in the Excel workbook (\"Platform DDM Status\" sheet).")
+                    Text("Showing the first 30 sources. Full data is in the Excel workbook "
+                         + "(\"\(SheetID.ddmStatus.rawValue)\" sheet).")
                         .font(.caption.monospaced())
                         .foregroundStyle(Theme.Text.tertiary(contrast))
                 }
@@ -357,8 +360,11 @@ struct DDMBlueprintView: View {
 
     static func deviceList(_ devices: [DeviceRef]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(devices.prefix(50)) { d in
-                HStack(spacing: 8) { Mono(text: d.id, size: 10.5); Text(d.name).font(.caption) }
+            // A Grid so names line up however wide each ID is.
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                ForEach(devices.prefix(50)) { d in
+                    GridRow { Mono(text: d.id, size: 10.5); Text(d.name).font(.caption) }
+                }
             }
             if devices.count > 50 {
                 Text("+ \(devices.count - 50) more — full list in the workbook's "
@@ -368,15 +374,19 @@ struct DDMBlueprintView: View {
         }
         .padding(.leading, 12)
         .padding(.vertical, 4)
+        // A DisclosureGroup centres content narrower than the card; pin it under the label.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Helpers
 
     private func reload() {
         if workspace.demoMode {
-            snapshot = Self.demoSnapshot
-            deviceSnapshot = .empty
-            fleetCounts = (0, 0)
+            // The demo fleet: DDM on every Mac but the 17 on Monterey, with the
+            // per-device scan the blueprint counts come from.
+            snapshot = DemoData.ddmBlueprintSnapshot
+            deviceSnapshot = DemoData.ddmDeviceStatusSnapshot
+            fleetCounts = (DemoData.ddmFleetMacs.count, DemoData.fleetMacs.count)
             return
         }
         snapshot = DDMBlueprintService.load(profile: workspace.profile)
@@ -401,7 +411,7 @@ struct DDMBlueprintView: View {
     private static let setupCommands: [String] = [
         "jamf-cli config add-profile <name> --auth-method platform \\",
         "  --url <gateway-url> --environment-id <id>",
-        "Then enable both platform.enabled: true and experimental.platform_features_enabled: true",
+        "Then turn on Platform API in Settings → Experimental Features.",
     ]
 
     private static func lockReason(experimentalOn: Bool, platformAvailable: Bool) -> String {
@@ -630,35 +640,5 @@ struct DDMBlueprintView: View {
         let type = entry.type.isEmpty ? "unknown type" : entry.type
         return "\(source), \(type), \(entry.devices) devices, "
             + "\(entry.successful) successful, \(entry.unsuccessful) unsuccessful"
-    }
-
-    // MARK: - Demo
-
-    private static var demoSnapshot: DDMBlueprintService.Snapshot {
-        DDMBlueprintService.Snapshot(
-            blueprints: [
-                .init(name: "Baseline Security", state: "DEPLOYED", scope: 552,
-                      steps: 4, succeeded: 540, failed: 12, pending: 0),
-                .init(name: "Software Update Eligibility", state: "DEPLOYED", scope: 552,
-                      steps: 2, succeeded: 510, failed: 42, pending: 0),
-                .init(name: "Beta Test Group", state: "DEPLOYED", scope: 24,
-                      steps: 1, succeeded: 22, failed: 0, pending: 2),
-                .init(name: "Legacy Profile Removal", state: "NOT_DEPLOYED", scope: 100,
-                      steps: 1, succeeded: 0, failed: nil, pending: nil),
-                .init(name: "OOO Macs Lockdown", state: "OUT_OF_DATE", scope: 12,
-                      steps: 3, succeeded: 0, failed: nil, pending: nil),
-            ],
-            declarations: [
-                .init(source: "Baseline Security", type: "blueprint",
-                      declarations: 4, devices: 540, successful: 528, unsuccessful: 12),
-                .init(source: "Software Update Eligibility", type: "blueprint",
-                      declarations: 2, devices: 510, successful: 468, unsuccessful: 42),
-                .init(source: "Device Group Membership", type: "system",
-                      declarations: 1, devices: 552, successful: 552, unsuccessful: 0),
-            ],
-            blueprintsSourceFile: nil,
-            declarationsSourceFile: nil,
-            snapshotDate: Date()
-        )
     }
 }
