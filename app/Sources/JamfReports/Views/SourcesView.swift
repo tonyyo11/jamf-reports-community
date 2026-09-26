@@ -197,12 +197,23 @@ struct SourcesView: View {
                         tone: cachedCLICommandCount == 0 ? .muted : .teal
                     )
                 }
-                HStack(spacing: 4) {
-                    Text("jamf-cli profile")
-                    Text(workspace.profile).foregroundStyle(Theme.Colors.goldBright)
-                    scopeChip(for: workspace.profile)
-                        .disabled(workspace.demoMode)
-                    Text("· cache \(cliCacheDisplayPath)")
+                // One line when it fits; otherwise the cache path takes its own line
+                // rather than wrapping every word into a narrow column.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        cliProfileLine(label: "jamf-cli profile")
+                        Text("·")
+                        cliCacheLine
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        // The card title already says jamf-cli; drop it before the
+                        // profile name has to truncate.
+                        ViewThatFits(in: .horizontal) {
+                            cliProfileLine(label: "jamf-cli profile")
+                            cliProfileLine(label: "profile")
+                        }
+                        cliCacheLine
+                    }
                 }
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -225,6 +236,28 @@ struct SourcesView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func cliProfileLine(label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(label).fixedSize()
+            Text(workspace.profile)
+                .foregroundStyle(Theme.Colors.goldBright)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            scopeChip(for: workspace.profile)
+                .disabled(workspace.demoMode)
+        }
+    }
+
+    private var cliCacheLine: some View {
+        HStack(spacing: 4) {
+            Text("cache").fixedSize()
+            Text(cliCacheDisplayPath)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(cliCacheDisplayPath)
+        }
     }
 
     private var csvCard: some View {
