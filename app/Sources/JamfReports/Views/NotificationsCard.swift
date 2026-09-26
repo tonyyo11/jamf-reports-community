@@ -23,6 +23,8 @@ struct NotificationsCard: View {
     @State private var notifyTestResult: String?
     @State private var notifyTesting = false
     @State private var notifyURLSaveTask: Task<Void, Never>?
+    /// The edit `notifyURLSaveTask` will write, captured with its profile at the keystroke.
+    @State private var pendingNotifySave: PendingNotifySave?
 
     var body: some View {
         Card {
@@ -126,14 +128,25 @@ struct NotificationsCard: View {
         notifyTestResult = nil
     }
 
+    /// The form's values and the profile they belong to.
+    private var currentEdit: PendingNotifySave {
+        PendingNotifySave(
+            profile: profile, enabled: notifyEnabled, provider: notifyProvider.rawValue,
+            url: notifyURL, detail: notifyDetail.rawValue)
+    }
+
     private func saveNotifyConfig() {
+        save(currentEdit)
+    }
+
+    private func save(_ edit: PendingNotifySave) {
         do {
             try NotifyConfigWriter.save(
-                enabled: notifyEnabled,
-                provider: notifyProvider.rawValue,
-                url: notifyURL,
-                detail: notifyDetail.rawValue,
-                profile: profile
+                enabled: edit.enabled,
+                provider: edit.provider,
+                url: edit.url,
+                detail: edit.detail,
+                profile: edit.profile
             )
             notifySaveMessage = nil
         } catch {
@@ -143,13 +156,19 @@ struct NotificationsCard: View {
 
     /// Debounce URL-keystroke saves: each save is a full config.yaml
     /// read/decode/re-encode/rename, so coalesce rapid typing into one write.
+    /// The edit is captured now. A profile switch inside the delay reloads the form, and
+    /// reading it when the save fired wrote the next profile's settings, webhook URL
+    /// included, into this profile's config.yaml, so its digests posted to that channel.
     private func scheduleDebouncedNotifySave() {
         notifyURLSaveTask?.cancel()
+        let edit = currentEdit
+        pendingNotifySave = edit
         notifyURLSaveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
             notifyURLSaveTask = nil
-            saveNotifyConfig()
+            pendingNotifySave = nil
+            save(edit)
         }
     }
 
@@ -160,7 +179,9 @@ struct NotificationsCard: View {
         guard let pending = notifyURLSaveTask else { return }
         pending.cancel()
         notifyURLSaveTask = nil
-        saveNotifyConfig()
+        let edit = pendingNotifySave ?? currentEdit
+        pendingNotifySave = nil
+        save(edit)
     }
 
     private func sendTestNotification() async {
@@ -177,4 +198,13 @@ struct NotificationsCard: View {
         notifyTesting = false
         notifyTestResult = delivered ? "Delivered" : "Send failed — check the URL"
     }
+}
+
+/// One `notify:` edit and the profile whose config.yaml it goes to.
+private struct PendingNotifySave: Sendable {
+    let profile: String
+    let enabled: Bool
+    let provider: String
+    let url: String
+    let detail: String
 }

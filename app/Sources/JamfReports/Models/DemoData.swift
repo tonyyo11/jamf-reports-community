@@ -143,14 +143,14 @@ enum DemoData {
         .mscpBandTrend:   mscpBandTrend,
     ]
 
+    /// Labelled the way the live Overview labels a version ("macOS 15.4"), so the
+    /// demo legend reads as a live one does.
     static let osDistribution: [OSDistribution] = [
-        .init(version: "macOS Sequoia 15.4", count: 287, pct: 54.8,
-              colorHex: 0xC9970A, current: true),
-        .init(version: "macOS 15.3.2",           count:  98, pct: 18.7, colorHex: 0xA87E08, current: true),
-        .init(version: "macOS Sonoma 14.7.4", count: 84, pct: 16.0,
-              colorHex: 0x7D8794, current: false),
-        .init(version: "macOS 13.7.6 (Ventura)", count:  38, pct:  7.2, colorHex: 0x5A6068, current: false),
-        .init(version: "macOS 12.7.6 (Monterey)",count:  17, pct:  3.2, colorHex: 0x4A4F55, current: false),
+        .init(version: "macOS 15.4",   count: 287, pct: 54.8, colorHex: 0xC9970A, current: true),
+        .init(version: "macOS 15.3.2", count:  98, pct: 18.7, colorHex: 0xA87E08, current: true),
+        .init(version: "macOS 14.7.4", count:  84, pct: 16.0, colorHex: 0x7D8794, current: false),
+        .init(version: "macOS 13.7.6", count:  38, pct:  7.2, colorHex: 0x5A6068, current: false),
+        .init(version: "macOS 12.7.6", count:  17, pct:  3.2, colorHex: 0x4A4F55, current: false),
     ]
 
     static let securityAgents: [SecurityAgent] = [

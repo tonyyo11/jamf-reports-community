@@ -40,21 +40,32 @@ struct Sidebar: View {
                 .padding(.horizontal, mode == .compact ? 14 : 16)
                 .padding(.bottom, 14)
 
+            // Hairlines at both scroll edges, so a row half under the header or
+            // the chip reads as scrolled rather than as text running into them.
             ScrollView {
                 navStack
                     .background(alignment: .top) {
                         if mode == .compact { compactRailTray }
                     }
             }
+            .overlay(alignment: .top) { scrollEdgeHairline }
+            .overlay(alignment: .bottom) { scrollEdgeHairline }
 
+            // The compact chip is the 36 pt avatar plus padding, which 12 pt
+            // gutters would squeeze in a 64 pt rail.
             workspaceChip
-                .padding(.horizontal, 12)
+                .padding(.horizontal, mode == .compact ? 8 : 12)
+                .padding(.top, 8)
                 .padding(.bottom, 12)
         }
         .background(reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.regularMaterial))
         .overlay(alignment: .trailing) {
             Rectangle().fill(Theme.Colors.hairline).frame(width: 0.5)
         }
+    }
+
+    private var scrollEdgeHairline: some View {
+        Rectangle().fill(Theme.Colors.hairline).frame(height: 0.5)
     }
 
     @ViewBuilder
@@ -149,10 +160,16 @@ struct Sidebar: View {
                     .frame(width: mode == .compact ? 20 : 16, height: mode == .compact ? 20 : 16)
 
                 if mode != .compact {
+                    // One line per row: a legacy scroller takes ~15 pt of the
+                    // 232 pt sidebar, which wrapped "Compliance Benchmarks".
                     Text(item.label)
                         .font(.callout)
                         .foregroundStyle(isActive ? Theme.Colors.fg : Theme.Colors.fg2)
-                    Spacer()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.9)
+                        .allowsTightening(true)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
                     if let badge = badge(for: item) {
                         Text(badge)
                             .font(Theme.Fonts.mono(10, weight: .semibold))
@@ -188,7 +205,7 @@ struct Sidebar: View {
         }
         .accessibilityLabel(navAccessibilityLabel(for: item))
         .accessibilityAddTraits(isActive ? .isSelected : [])
-        .help(mode == .compact ? item.label : "")
+        .help(item.label)
     }
 
     private func navAccessibilityLabel(for item: Tab) -> String {
@@ -293,7 +310,11 @@ struct Sidebar: View {
                     )
             )
         }
-        .menuStyle(.borderlessButton)
+        // `.borderlessButton` flattens the label to its first image and text,
+        // which drew a bare chevron and monogram; `.button` with a plain style
+        // draws the whole chip, as the Data Sources scope pill does.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .focused($chipFocused)
         .onHover { chipHovered = $0 }

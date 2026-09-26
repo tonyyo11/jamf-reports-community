@@ -166,6 +166,15 @@ struct GlobalHealthBanner: View {
                 detail: kindList(neverCollected) + " — not attempted yet on this workspace"
             )
         }
+        // A disabled background item is not a run that failed: nothing was allowed to run.
+        if automation.contains(where: { $0.kind == .tickerDisabled }) {
+            return Headline(
+                icon: "calendar.badge.exclamationmark",
+                tone: .warn,
+                text: "Automation is off",
+                detail: "JamfReports is not allowed to run in the background"
+            )
+        }
         if !automation.isEmpty {
             let overdue = automation.filter { $0.kind == .overdue }.count
             let failed = automation.count - overdue

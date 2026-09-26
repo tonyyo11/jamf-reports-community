@@ -831,11 +831,15 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
 }
 
 extension DeviceInventoryRecord {
-    /// FileVault as yes or no; nil when the inventory carried no value, so the
-    /// Overview's Recent Activity can show "—" instead of a guess.
+    /// FileVault as yes or no, read as the Devices table reads it (`SecurityValueState`); nil
+    /// when the inventory carried no value or neither answer, such as ENCRYPTING or UNKNOWN,
+    /// so the Overview's Recent Activity shows "—" instead of a guess.
     var fileVaultEnabled: Bool? {
-        fileVault.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? nil : valueLooksGood(fileVault)
+        switch SecurityValueState(fileVault) {
+        case .good: true
+        case .bad: false
+        case .unknown: nil
+        }
     }
 }
 

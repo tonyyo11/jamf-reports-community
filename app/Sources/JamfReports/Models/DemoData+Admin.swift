@@ -228,6 +228,29 @@ extension DemoData {
         return formatter.string(from: date)
     }
 
+    // MARK: - Diagnostic log
+
+    /// Settings → Logging's events in demo mode, oldest first: the demo org's
+    /// newest run, the collect Run History lists, spread over its length so the
+    /// last line lands when the run ended. The real buffer holds this Mac's
+    /// session, which a demo screen never shows.
+    static let diagnosticEvents: [LogEntry] = {
+        guard let run = runPlan
+            .filter({ $0.schedule.profile == org.profile })
+            .max(by: { $0.start < $1.start })
+        else { return [] }
+        let label = LaunchAgentWriter.label(for: run.schedule) ?? run.schedule.name
+        let lines = logText(run, label: label)
+        let step = TimeInterval(run.seconds) / TimeInterval(max(lines.count - 1, 1))
+        return lines.enumerated().map { index, text in
+            LogEntry(
+                date: run.start.addingTimeInterval(step * TimeInterval(index)),
+                category: "collect",
+                level: LogEntry.Level(CLIBridge.LogLevel.from(line: text)),
+                message: text)
+        }
+    }()
+
     // MARK: - Data Sources
 
     /// When a demo profile last wrote one of the Data Sources card's caches:

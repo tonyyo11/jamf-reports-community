@@ -5,8 +5,10 @@ import AppKit
 /// events), embedded in Settings → Diagnostics. Loads on appear and on manual
 /// Refresh — no continuous polling. Filter by minimum level, time window, and
 /// free-text search (which also matches the `[category]` prefix). Messages are
-/// `LogRedactor`-scrubbed at display and export.
+/// `LogRedactor`-scrubbed at display and export. Demo mode shows the demo
+/// org's run instead of this session's buffer and does not export.
 struct LogViewerView: View {
+    @Environment(WorkspaceStore.self) private var workspace
     @State private var entries: [LogEntry] = []
     @State private var search = ""
     @State private var minLevel: LogEntry.Level = .info
@@ -28,14 +30,29 @@ struct LogViewerView: View {
                 EmptyStateView(
                     systemImage: "doc.text.magnifyingglass",
                     title: "No diagnostic events yet",
-                    message: "Events are captured as you use the app this session — "
-                        + "trigger a Refresh or report run, then Refresh this view."
+                    message: workspace.demoMode
+                        ? "No demo events match these filters."
+                        : "Events are captured as you use the app this session — "
+                            + "trigger a Refresh or report run, then Refresh this view."
                 )
             } else {
                 logRows
             }
         }
-        .task { await load() }
+        .task(id: workspace.demoMode) { await load() }
+    }
+
+    /// The events to list: the demo org's run in demo mode, measured from the
+    /// demo's "now", otherwise this session's buffer.
+    static func events(demoMode: Bool, minLevel: LogEntry.Level, windowHours: Int,
+                       buffer: LogBuffer = .shared, now: Date = Date()) -> [LogEntry] {
+        let window = -Double(windowHours) * 3600
+        guard demoMode else {
+            return buffer.snapshot(minLevel: minLevel, since: now.addingTimeInterval(window))
+        }
+        return LogBuffer.select(
+            DemoData.diagnosticEvents, minLevel: minLevel,
+            since: DemoData.referenceDate.addingTimeInterval(window))
     }
 
     private var controls: some View {
@@ -57,7 +74,8 @@ struct LogViewerView: View {
             Button { Task { await load() } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                 .disabled(isLoading)
             Button { export() } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                .disabled(filtered.isEmpty)
+                .disabled(filtered.isEmpty || workspace.demoMode)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
         }
     }
 
@@ -82,11 +100,12 @@ struct LogViewerView: View {
     @MainActor private func load() async {
         isLoading = true
         defer { isLoading = false }
-        let since = Date().addingTimeInterval(-Double(windowHours) * 3600)
-        entries = LogBuffer.shared.snapshot(minLevel: minLevel, since: since)
+        entries = Self.events(
+            demoMode: workspace.demoMode, minLevel: minLevel, windowHours: windowHours)
     }
 
     private func export() {
+        guard !workspace.demoMode else { return }
         let body = filtered.map { "\(time($0.date)) [\($0.category)] \($0.message)" }.joined(separator: "\n")
         let scrubbed = LogRedactor.redact(body)
         let panel = NSSavePanel()

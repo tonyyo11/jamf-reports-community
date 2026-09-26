@@ -132,20 +132,24 @@ extension WorkspaceStore {
         defer { globalStatus = nil }
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
+        let outcome: Toast
         do {
             let exit = try await collect(activeProfile, Set(tiers), CLIBridge.bufferingOnLine)
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
-                toast = Toast(message: "\(labels) data refreshed", style: .success)
+                outcome = Toast(message: "\(labels) data refreshed", style: .success)
             } else {
-                toast = Toast(
+                outcome = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",
                     style: .danger
                 )
             }
         } catch {
-            toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
+            outcome = Toast(
+                message: CLIBridge.explainOperationError(error, operation: "Refresh"),
+                style: .danger
+            )
         }
         // Re-probe rather than clear: exit 0 means the run finished, not that each
         // tier's probe kind landed, so clearing on exit 0 hid the prompt for a tier
@@ -155,6 +159,9 @@ extension WorkspaceStore {
         // happened — before 2.7.0 it kept its launch-time verdict until the app
         // was backgrounded, so a manual refresh appeared to change nothing.
         await refreshDataFreshness()
+        // Same ordering as `runTierRefresh`: the caller's button reads "Refreshing…"
+        // until this returns.
+        toast = outcome
     }
 
     /// Force-collect the given `tiers` and surface progress through `globalStatus`
@@ -176,26 +183,33 @@ extension WorkspaceStore {
         defer { globalStatus = nil }
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
+        let outcome: Toast
         do {
             let exit = try await collect(activeProfile, tiers, CLIBridge.bufferingOnLine)
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
-                toast = Toast(message: "Data refreshed", style: .success)
+                outcome = Toast(message: "Data refreshed", style: .success)
             } else {
-                toast = Toast(
+                outcome = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",
                     style: .danger
                 )
             }
         } catch {
-            toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
+            outcome = Toast(
+                message: CLIBridge.explainOperationError(error, operation: "Refresh"),
+                style: .danger
+            )
         }
         // The Overview scan prompt reads `staleHeavyTiers`, which only the prompt's
         // own button cleared — so a toolbar refresh that collected every tier left
         // it on its launch-time verdict (2.8.0 field pass). Re-probe from disk.
         await checkHeavyTierStaleness()
         await refreshDataFreshness()
+        // Callers show "Collecting…" until this returns; a toast posted before the
+        // re-probes read "Data refreshed" beside a button still collecting.
+        toast = outcome
     }
 
     /// First full collect for a never-fetched workspace (#181) — the
@@ -234,21 +248,24 @@ extension WorkspaceStore {
                 "First-collect run recorder unavailable — this run will not appear in Run History"
             )
         }
+        let outcome: Toast
         do {
             let exit = try await collect(activeProfile) { line in
                 recorder?.record(line.text)
             }
             recorder?.finish(exitCode: exit)
-            toast = Self.firstCollectToast(exitCode: exit, runRecorded: recorder != nil)
+            outcome = Self.firstCollectToast(exitCode: exit, runRecorded: recorder != nil)
         } catch {
             recorder?.record("[error] \(error.localizedDescription)")
             recorder?.finish(exitCode: 1)
-            toast = Toast(
+            outcome = Toast(
                 message: CLIBridge.explainOperationError(error, operation: "Collect"), style: .danger
             )
         }
         await checkHeavyTierStaleness()
         await refreshDataFreshness()
+        // Same ordering as `runTierRefresh`: the banner reads "Collecting…" until this returns.
+        toast = outcome
     }
 
     /// Must carry the LaunchAgent label prefix or `ScheduledRunRecorder.init`

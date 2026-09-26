@@ -299,6 +299,17 @@ final class OnboardingFlow {
         ProfileService.isValid(profileName.trimmed)
     }
 
+    /// What a validated field shows under it. A field nothing has been typed into shows its
+    /// rule as a hint: marking it red reports a mistake the user has not made yet.
+    enum FieldFeedback: Equatable {
+        case hint, valid, invalid
+    }
+
+    static func feedback(for value: String, isValid: Bool) -> FieldFeedback {
+        if value.trimmed.isEmpty { return .hint }
+        return isValid ? .valid : .invalid
+    }
+
     var isJamfURLValid: Bool {
         normalizedJamfURL != nil
     }
@@ -428,6 +439,10 @@ final class OnboardingFlow {
         case .platformGateway:
             try await registerPlatformGatewayProfile()
         }
+        // Update credentials can switch a profile's auth method or scope level. Collect and
+        // the health strip read both through ProfileAuthMethod's process-lifetime cache,
+        // which kept the old answer, and skipped kinds, until Settings opened or a relaunch.
+        ProfileAuthMethod.invalidateCache()
     }
 
     private func registerOAuth2Profile() async throws {
@@ -530,6 +545,14 @@ final class OnboardingFlow {
             protectConnectionError = FlowError.missingJamfCLI.localizedDescription
             return
         }
+        // The client secret goes to this binary, so it passes the same signature gate as
+        // the Jamf Pro paths.
+        do {
+            try verifyJamfCLISignatureGate(binary: binary)
+        } catch {
+            protectConnectionError = error.localizedDescription
+            return
+        }
         // S1: reject http:// URLs before any secret reaches the PTY.
         // Mirrors the Platform Gateway guard at registerPlatformGatewayProfile().
         guard isProtectURLValid else {
@@ -590,6 +613,14 @@ final class OnboardingFlow {
         }
         guard let binary = CLIBridge().locate("jamf-cli") else {
             schoolConnectionError = FlowError.missingJamfCLI.localizedDescription
+            return
+        }
+        // The API key goes to this binary, so it passes the same signature gate as the
+        // Jamf Pro paths.
+        do {
+            try verifyJamfCLISignatureGate(binary: binary)
+        } catch {
+            schoolConnectionError = error.localizedDescription
             return
         }
         // S1: reject http:// URLs before any secret reaches the PTY.

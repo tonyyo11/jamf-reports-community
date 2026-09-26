@@ -65,6 +65,20 @@ final class GlobalHealthBannerTests: XCTestCase {
         XCTAssertEqual(headline.detail, "Managed Reports")
     }
 
+    func testDisabledBackgroundItemSaysAutomationIsOffNotFailing() throws {
+        let disabled = AutomationHealthIssue(
+            label: AutomationHealth.tickerLabel, displayName: "Background item disabled",
+            kind: .tickerDisabled, isMulti: true, profile: "",
+            expectedFire: nil, lastRunFinishedAt: nil)
+        let headline = try XCTUnwrap(GlobalHealthBanner.headline(
+            freshness: [], automation: [disabled]
+        ))
+        XCTAssertEqual(headline.text, "Automation is off")
+        XCTAssertFalse(headline.text.contains("failing"), headline.text)
+        XCTAssertEqual(GlobalHealthBanner.primaryAction(freshness: [], canCollect: true),
+                       .openAutomation)
+    }
+
     func testSingularAndPluralAgree() throws {
         let one = try XCTUnwrap(GlobalHealthBanner.headline(
             freshness: [freshness("security", .stale)], automation: []

@@ -150,6 +150,48 @@ final class MobileFleetServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
+    /// Tied counts list the newer version first, compared numerically, on
+    /// every run: the rows no longer swap places between renders. Asserted on
+    /// the comparator itself, because Dictionary order is fixed within one
+    /// process and a count-only sort could pass by luck.
+    func testOSDistributionOrderBreaksTiesByVersionDescending() {
+        let order = MobileFleetService.osDistributionOrder
+        XCTAssertTrue(order(("18.2.1", 2), ("17.6.1", 2)))
+        XCTAssertFalse(order(("17.6.1", 2), ("18.2.1", 2)))
+        XCTAssertTrue(order(("18.10", 1), ("18.2", 1)))
+        XCTAssertFalse(order(("18.2", 1), ("18.10", 1)))
+        XCTAssertTrue(order(("18.10", 1), ("9.3.6", 1)))
+        XCTAssertFalse(order(("9.3.6", 1), ("18.10", 1)))
+        XCTAssertTrue(order(("9.3.6", 3), ("18.10", 1)))
+        XCTAssertFalse(order(("18.2.1", 2), ("18.2.1", 2)))
+    }
+
+    /// Six versions tied at one device each: a sort that ignored the tiebreak
+    /// would land this exact order about once in 720 runs.
+    func testOSDistributionUsesTheVersionTiebreak() {
+        let versions = ["17.6.1", "18.2", "9.3.6", "18.10", "16.7.10", "18.2.1", "18.2.1"]
+        let fleet = versions.map { version in
+            MobileDeviceInventoryItem(
+                mobileDeviceId: UUID().uuidString,
+                general: MobileDeviceGeneral(
+                    displayName: nil, serialNumber: nil, osVersion: version,
+                    managed: nil, supervised: nil,
+                    lastInventoryUpdateDate: nil, deviceOwnershipType: nil,
+                    activationLockEnabled: nil, passcodeCompliant: nil,
+                    dataProtectionEnabled: nil, jailbreakDetected: nil,
+                    enrollmentMethodPrestage: nil
+                )
+            )
+        }
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: fleet,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.osDistribution.map { $0.osVersion },
+                       ["18.2.1", "18.10", "18.2", "17.6.1", "16.7.10", "9.3.6"])
+        XCTAssertEqual(snapshot.osDistribution.map { $0.count }, [2, 1, 1, 1, 1, 1])
+    }
+
     func testOSDistributionSortedAndLimited() throws {
         let inventoryJSON = """
         [
@@ -764,14 +806,34 @@ final class MobileFleetServiceTests: XCTestCase {
 
         let breakdown = snapshot.supervisionBreakdown
         XCTAssertEqual(breakdown.map { $0.role }, MobileFleetService.SupervisionRole.allCases)
-        XCTAssertEqual(breakdown.map { $0.label }, ["Supervised", "Unsupervised", "Unmanaged"])
-        XCTAssertEqual(breakdown.map { $0.count }, [2, 1, 1])
+        XCTAssertEqual(
+            breakdown.map { $0.label }, ["Supervised", "Unsupervised", "Unmanaged", "Unknown"]
+        )
+        XCTAssertEqual(breakdown.map { $0.count }, [2, 1, 1, 2])
+        XCTAssertEqual(breakdown.reduce(0) { $0 + $1.count }, snapshot.totalDevices)
         for slice in breakdown {
             XCTAssertEqual(
                 MobileFleetService.devices(fleet, in: slice.role).count, slice.count, slice.label
             )
         }
         XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, fleet.count)
+        XCTAssertEqual(snapshot.supervisionSlices.map { $0.role }.last, .unknown)
+    }
+
+    /// A fleet whose every device has a supervision state shows no Unknown
+    /// row, while an empty known bucket keeps its row.
+    func testSupervisionBreakdownOmitsAnEmptyUnknownRow() {
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [],
+            richDevices: [
+                inventoryItem(managed: true, supervised: true),
+                inventoryItem(managed: false, supervised: nil),
+            ],
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        let breakdown = snapshot.supervisionBreakdown
+        XCTAssertEqual(breakdown.map { $0.role }, [.supervised, .unsupervised, .unmanaged])
+        XCTAssertEqual(breakdown.map { $0.count }, [1, 0, 1])
     }
 
     func testSupervisionSlicesDropEmptyBuckets() {
@@ -788,8 +850,8 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(slices.map { $0.count }, [1, 1])
     }
 
-    /// A press reports the running device count at the pointer's angle; each
-    /// slice owns the values up to and including its running total.
+    /// An angle value is the running device count at an angle; each slice
+    /// owns the values up to and including its running total.
     func testRoleAtAngleValueWalksRunningTotals() {
         let slices: [MobileFleetService.SupervisionSlice] = [
             (role: .supervised, count: 20),
@@ -821,6 +883,95 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertNil(MobileFleetService.role(atAngleValue: 1, in: []))
     }
 
+    private static let ringSlices: [MobileFleetService.SupervisionSlice] = [
+        (role: .supervised, count: 20),
+        (role: .unsupervised, count: 3),
+        (role: .unmanaged, count: 2),
+    ]
+
+    /// A point `radius` from the plot's centre at `degrees` clockwise from 12 o'clock.
+    private func point(degrees: Double, radius: Double, in size: CGSize) -> CGPoint {
+        let radians = degrees * .pi / 180
+        return CGPoint(
+            x: size.width / 2 + radius * sin(radians),
+            y: size.height / 2 - radius * cos(radians)
+        )
+    }
+
+    private func roleAt(
+        degrees: Double, radius: Double, in size: CGSize,
+        slices: [MobileFleetService.SupervisionSlice]? = nil
+    ) -> MobileFleetService.SupervisionRole? {
+        MobileFleetService.role(
+            at: point(degrees: degrees, radius: radius, in: size), plotSize: size,
+            innerRadiusRatio: 0.62, in: slices ?? Self.ringSlices
+        )
+    }
+
+    /// 20/3/2 devices: supervised spans 0–288°, unsupervised to 331.2°, unmanaged to 360°.
+    func testRoleAtPointWalksTheRingClockwiseFrom12() {
+        let size = CGSize(width: 200, height: 200)
+        let expected: [(degrees: Double, role: MobileFleetService.SupervisionRole)] = [
+            (1, .supervised), (90, .supervised), (180, .supervised),
+            (300, .unsupervised), (345, .unmanaged), (359, .unmanaged),
+        ]
+        for entry in expected {
+            XCTAssertEqual(
+                roleAt(degrees: entry.degrees, radius: 80, in: size), entry.role,
+                "\(entry.degrees)°"
+            )
+        }
+    }
+
+    /// Two equal slices: 3 o'clock is the first, 9 o'clock the second. A
+    /// counterclockwise or flipped conversion swaps them.
+    func testRoleAtPointIsClockwise() {
+        let size = CGSize(width: 200, height: 200)
+        let halves: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 1), (role: .unmanaged, count: 1),
+        ]
+        XCTAssertEqual(roleAt(degrees: 90, radius: 80, in: size, slices: halves), .supervised)
+        XCTAssertEqual(roleAt(degrees: 270, radius: 80, in: size, slices: halves), .unmanaged)
+    }
+
+    func testRoleAtPointIgnoresTheHoleAndOutsideTheRing() {
+        let size = CGSize(width: 200, height: 200)
+        let hole = MobileFleetService.role(
+            at: CGPoint(x: 100, y: 100), plotSize: size, innerRadiusRatio: 0.62,
+            in: Self.ringSlices
+        )
+        XCTAssertNil(hole)
+        XCTAssertNil(roleAt(degrees: 45, radius: 50, in: size))
+        XCTAssertNil(roleAt(degrees: 45, radius: 61, in: size))
+        XCTAssertNotNil(roleAt(degrees: 45, radius: 62, in: size))
+        XCTAssertNotNil(roleAt(degrees: 45, radius: 100, in: size))
+        for corner in [CGPoint(x: 5, y: 5), CGPoint(x: 100, y: -1)] {
+            XCTAssertNil(
+                MobileFleetService.role(
+                    at: corner, plotSize: size, innerRadiusRatio: 0.62, in: Self.ringSlices
+                ),
+                "\(corner)"
+            )
+        }
+    }
+
+    /// The ring's radius is half the plot's shorter side, not its width.
+    func testRoleAtPointUsesThePlotsShorterSide() {
+        let size = CGSize(width: 300, height: 200)
+        XCTAssertEqual(roleAt(degrees: 0, radius: 85, in: size), .supervised)
+        XCTAssertNil(roleAt(degrees: 90, radius: 110, in: size))
+    }
+
+    func testRoleAtPointNeedsSlicesAndASize() {
+        let size = CGSize(width: 200, height: 200)
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: size, slices: []))
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: .zero))
+        let empty: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 0), (role: .unmanaged, count: 0),
+        ]
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: size, slices: empty))
+    }
+
     /// The table filters before its 50-row cap, so a bucket whose devices all
     /// sit after the fleet's first 50 still reaches the table, in order.
     func testDevicesInRoleFiltersTheWholeFleetInOrder() {
@@ -831,5 +982,34 @@ final class MobileFleetServiceTests: XCTestCase {
         let filtered = MobileFleetService.devices(fleet, in: .unmanaged)
         XCTAssertEqual(filtered.map { $0.mobileDeviceId }, unmanaged.map { $0.mobileDeviceId })
         XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, 60)
+    }
+
+    // MARK: - Table heights
+
+    /// A short list sizes the table to its rows, so no blank striped rows
+    /// trail it; a long one stops at the cap and scrolls.
+    func testTableHeightFitsItsRowsUpToTheCap() {
+        let row = MobileFleetView.deviceRowHeight
+        let three = MobileFleetView.tableHeight(rows: 3, rowHeight: row, cap: 430)
+        XCTAssertEqual(three, 33 + 3 * row)
+        XCTAssertLessThan(three, 430)
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 4, rowHeight: row, cap: 430) - three, row
+        )
+        XCTAssertEqual(MobileFleetView.tableHeight(rows: 50, rowHeight: row, cap: 430), 430)
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 8, rowHeight: MobileFleetView.profileRowHeight,
+                                        cap: 280),
+            33 + 8 * 24
+        )
+    }
+
+    /// An empty list keeps a row's height under the header rather than
+    /// collapsing to the header alone.
+    func testTableHeightKeepsOneRowWhenEmpty() {
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 0, rowHeight: 26, cap: 430),
+            MobileFleetView.tableHeight(rows: 1, rowHeight: 26, cap: 430)
+        )
     }
 }

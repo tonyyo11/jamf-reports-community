@@ -225,6 +225,49 @@ struct UpdateStatusService: Sendable {
         }
     }
 
+    /// Readable label for a plan state: `PlanCompleted` → `Completed`,
+    /// `PLAN_FAILED` → `Failed`, `PendingPlanValidation` → `Pending Plan Validation`.
+    /// Display only — matching, colouring and exports keep the raw value.
+    static func planStateDisplayName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let shouting = !trimmed.contains(where: \.isLowercase)
+        var words = trimmed
+            .split(whereSeparator: { $0 == "_" || $0 == "-" || $0 == " " })
+            .flatMap { camelCaseWords(String($0)) }
+        if words.count > 1, words[0].caseInsensitiveCompare("plan") == .orderedSame {
+            words.removeFirst()
+        }
+        guard !words.isEmpty else { return raw }
+        // All-caps input carries no word casing to keep; mixed case keeps acronyms (DDM).
+        return words
+            .map { word -> String in
+                shouting ? word.capitalized : word.prefix(1).uppercased() + word.dropFirst()
+            }
+            .joined(separator: " ")
+    }
+
+    /// Splits `PendingPlanValidation` at each lower→upper step, and an acronym
+    /// from the word after it (`DDMPlan` → `DDM`, `Plan`).
+    private static func camelCaseWords(_ token: String) -> [String] {
+        let chars = Array(token)
+        var words: [String] = []
+        var current = ""
+        for (index, char) in chars.enumerated() {
+            if !current.isEmpty, char.isUppercase {
+                let previous = chars[index - 1]
+                let nextIsLower = index + 1 < chars.count && chars[index + 1].isLowercase
+                let acronymEnds = previous.isUppercase && nextIsLower
+                if previous.isLowercase || previous.isNumber || acronymEnds {
+                    words.append(current)
+                    current = ""
+                }
+            }
+            current.append(char)
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
+    }
+
     private static func planStateColor(for state: String) -> UInt32 {
         let upper = state.uppercased()
         switch upper {

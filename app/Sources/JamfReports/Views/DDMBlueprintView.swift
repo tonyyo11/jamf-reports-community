@@ -184,7 +184,7 @@ struct DDMBlueprintView: View {
                         message: "Run a collect with the Scan tier (or wait for the weekly "
                             + "managed scan) to populate per-device DDM status. Platform "
                             + "profiles can also run the blueprint reports.",
-                        commands: ["jamf-reports collect --tiers inventory,scan"]
+                        commands: [UpdatesView.collectCommand(profile: workspace.profile)]
                     )
                 }
             }
@@ -360,8 +360,11 @@ struct DDMBlueprintView: View {
 
     static func deviceList(_ devices: [DeviceRef]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(devices.prefix(50)) { d in
-                HStack(spacing: 8) { Mono(text: d.id, size: 10.5); Text(d.name).font(.caption) }
+            // A Grid so names line up however wide each ID is.
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                ForEach(devices.prefix(50)) { d in
+                    GridRow { Mono(text: d.id, size: 10.5); Text(d.name).font(.caption) }
+                }
             }
             if devices.count > 50 {
                 Text("+ \(devices.count - 50) more — full list in the workbook's "
@@ -371,6 +374,8 @@ struct DDMBlueprintView: View {
         }
         .padding(.leading, 12)
         .padding(.vertical, 4)
+        // A DisclosureGroup centres content narrower than the card; pin it under the label.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Helpers

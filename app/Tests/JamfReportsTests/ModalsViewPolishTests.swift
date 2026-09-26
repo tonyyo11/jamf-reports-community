@@ -8,7 +8,7 @@ import XCTest
 /// Smoke tests for P9-A-07 SecureSecretField + per-view polish.
 ///
 /// These tests verify:
-/// - SecureSecretField conforms to NSViewRepresentable (compile-time).
+/// - SecureSecretField wraps an NSViewRepresentable (compile-time).
 /// - The `onFinalize` closure receives the correct bytes and the field is
 ///   zeroed afterward (coordinator behavior).
 /// - OnboardingFlow.setClientSecret(_:) writes the UTF-8 string.
@@ -19,11 +19,11 @@ final class ModalsViewPolishTests: XCTestCase {
 
     // MARK: - SecureSecretField: NSViewRepresentable conformance
 
-    /// Verifies at compile time that SecureSecretField is NSViewRepresentable.
-    /// If it isn't, this test will not compile.
-    func testSecureSecretFieldConformsToNSViewRepresentable() {
+    /// Verifies at compile time that SecureSecretField wraps a native
+    /// NSViewRepresentable field. If it doesn't, this test will not compile.
+    func testSecureSecretFieldWrapsNSViewRepresentable() {
         func acceptRepresentable<T: NSViewRepresentable>(_: T.Type) {}
-        acceptRepresentable(SecureSecretField.self)
+        acceptRepresentable(SecureSecretField.NativeField.self)
     }
 
     // MARK: - SecureSecretField coordinator: onFinalize behavior

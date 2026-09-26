@@ -1154,7 +1154,15 @@ struct PlatformConfig: Decodable, Sendable {
     }
 
     var isEnabled: Bool { enabled ?? false }
-    var benchmarkTitles: [String] { complianceBenchmarks?.compactMap { $0.isEmpty ? nil : $0 } ?? [] }
+    /// Configured titles, trimmed, with blanks and repeats dropped. A title listed twice was
+    /// collected twice and its rows saved twice.
+    var benchmarkTitles: [String] {
+        var seen: Set<String> = []
+        return (complianceBenchmarks ?? []).compactMap { raw in
+            let title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !title.isEmpty && seen.insert(title).inserted ? title : nil
+        }
+    }
 }
 
 // MARK: - YAML loader

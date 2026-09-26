@@ -363,7 +363,11 @@ struct SchoolDashboard: Sendable {
         ws.write("OS Version", row: row, col: 0, format: .header)
         ws.write("Count", row: row, col: 1, format: .header)
         row += 1
-        for (ver, count) in counts.sorted(by: { $0.key > $1.key }) {
+        // Numeric, so "macOS 26" sorts above "macOS 9".
+        let byVersion = counts.sorted {
+            $0.key.compare($1.key, options: .numeric) == .orderedDescending
+        }
+        for (ver, count) in byVersion {
             ws.write(ver, row: row, col: 0, format: .cell)
             ws.write(count, row: row, col: 1, format: .cell)
             row += 1
@@ -519,12 +523,15 @@ struct SchoolDashboard: Sendable {
         return Int(Date().timeIntervalSince(date) / 86400)
     }
 
-    /// The major version in jamf-cli's `os`, which reads "Prefix Version" (e.g. "macOS 14.3").
+    /// The platform and major version in jamf-cli's `os`, which reads "Prefix Version": "macOS
+    /// 14.3" is "macOS 14". The platform stays because from 26 on every Apple platform shares
+    /// its major version, and "26" alone merged Macs with iPads. A bare "17.4" is "17".
     private func majorVersion(from os: String) -> String {
         guard let start = os.firstIndex(where: { $0.isNumber }) else { return "Unknown" }
         let numeric = os[start...].prefix(while: { $0.isNumber || $0 == "." })
         guard let major = numeric.split(separator: ".").first else { return "Unknown" }
-        return String(major)
+        let platform = os[..<start].trimmingCharacters(in: .whitespaces)
+        return platform.isEmpty ? String(major) : "\(platform) \(major)"
     }
 }
 

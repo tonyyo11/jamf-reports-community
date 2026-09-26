@@ -427,6 +427,10 @@ struct StatTile: View {
     /// `EqualHeightTileGrid` so a tile without a caption or sparkline matches
     /// its row instead of sitting short. Off, the tile keeps its own height.
     var fillsHeight: Bool = false
+    /// Lines the label may take, overriding any `lineLimit` set around the tile —
+    /// a caller that holds the caption to one line can still let a long title
+    /// wrap. Nil leaves the label to the surrounding `lineLimit`.
+    var labelLineLimit: Int? = nil
 
     // WCAG 1.4.4: scaled relative to .largeTitle so the KPI numeral responds
     // to Accessibility text size while keeping the design baseline at 32pt.
@@ -435,6 +439,9 @@ struct StatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Kicker(text: label)
+                .transformEnvironment(\.lineLimit) { limit in
+                    if let labelLineLimit { limit = labelLineLimit }
+                }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(value)
                     .font(Theme.Fonts.serif(displaySize, weight: .bold))
@@ -765,9 +772,11 @@ struct EditableNumberStepper: View {
     var body: some View {
         HStack(spacing: 4) {
             if let prefix {
+                // Labels keep their width; at the minimum window width "Stale" read "S…".
                 Text(prefix)
                     .font(Theme.Fonts.mono(11.5))
                     .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize()
             }
             TextField("", value: $value, format: .number)
                 .textFieldStyle(.plain)
@@ -787,6 +796,7 @@ struct EditableNumberStepper: View {
                 Text(suffix)
                     .font(Theme.Fonts.mono(11.5))
                     .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize()
             }
             Stepper("", value: $value, in: range, step: 1)
                 .labelsHidden()

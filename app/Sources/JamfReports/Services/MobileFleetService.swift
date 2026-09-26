@@ -11,11 +11,13 @@ struct MobileFleetService: Sendable {
 
     /// The supervision donut's buckets, in slice order. The view picks a colour
     /// per case and filters the devices table by it; the raw value is the label
-    /// the legend shows.
+    /// the legend shows. `unknown` holds the devices `supervisionRole(of:)`
+    /// cannot place, so the ring adds up to the fleet.
     enum SupervisionRole: String, Sendable, CaseIterable {
         case supervised = "Supervised"
         case unsupervised = "Unsupervised"
         case unmanaged = "Unmanaged"
+        case unknown = "Unknown"
 
         var label: String { rawValue }
     }
@@ -34,12 +36,17 @@ struct MobileFleetService: Sendable {
         return supervised ? .supervised : .unsupervised
     }
 
-    /// The slice under a donut selection. `chartAngleSelection` reports the
-    /// running total at the pointer's angle, so walk the plotted slices in
-    /// order: a slice owns the values up to and including its running total,
-    /// and the first also owns 0. Nil below 0 or past the ring's total. Pass
-    /// the exact array the chart plots, or a click resolves against slices
-    /// that were never drawn.
+    /// The donut bucket a device is counted and filtered in: its role, or
+    /// `unknown` when it has none.
+    static func bucket(of device: MobileDeviceInventoryItem) -> SupervisionRole {
+        supervisionRole(of: device) ?? .unknown
+    }
+
+    /// The slice at an angle value. An angle value is the running device count
+    /// at an angle, so walk the plotted slices in order: a slice owns the values
+    /// up to and including its running total, and the first also owns 0. Nil
+    /// below 0 or past the ring's total. Pass the exact array the chart plots,
+    /// or a click resolves against slices that were never drawn.
     static func role(
         atAngleValue value: Double, in slices: [SupervisionSlice]
     ) -> SupervisionRole? {
@@ -52,13 +59,32 @@ struct MobileFleetService: Sendable {
         return nil
     }
 
+    /// The slice under a click at `point`, relative to the donut's plot, or nil
+    /// in the hole or outside the ring. Charts draws the ring across the plot's
+    /// shorter side, starting at 12 o'clock and running clockwise.
+    static func role(
+        at point: CGPoint, plotSize: CGSize, innerRadiusRatio: Double,
+        in slices: [SupervisionSlice]
+    ) -> SupervisionRole? {
+        let total = slices.reduce(0) { $0 + max($1.count, 0) }
+        let outer = min(plotSize.width, plotSize.height) / 2
+        guard total > 0, outer > 0 else { return nil }
+        let dx = point.x - plotSize.width / 2
+        let dy = point.y - plotSize.height / 2
+        let radius = (dx * dx + dy * dy).squareRoot()
+        guard radius >= outer * innerRadiusRatio, radius <= outer else { return nil }
+        var radians = atan2(dx, -dy)
+        if radians < 0 { radians += 2 * .pi }
+        return role(atAngleValue: radians / (2 * .pi) * Double(total), in: slices)
+    }
+
     /// The devices in `role`'s bucket, in their original order, or all of them
     /// when `role` is nil: the devices table's filter.
     static func devices(
         _ devices: [MobileDeviceInventoryItem], in role: SupervisionRole?
     ) -> [MobileDeviceInventoryItem] {
         guard let role else { return devices }
-        return devices.filter { supervisionRole(of: $0) == role }
+        return devices.filter { bucket(of: $0) == role }
     }
 
     /// Coarse device form factor. jamf-cli's `deviceType` is the OS family
@@ -139,6 +165,16 @@ struct MobileFleetService: Sendable {
             let type = (deviceType ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return type.isEmpty ? "Unknown" : type
         }
+    }
+
+    /// Version distribution order: higher count first, then the newer version.
+    /// Dictionary order changes between runs, so tied counts need the tiebreak
+    /// or their rows swap places between renders.
+    static func osDistributionOrder(
+        _ lhs: (osVersion: String, count: Int), _ rhs: (osVersion: String, count: Int)
+    ) -> Bool {
+        if lhs.count != rhs.count { return lhs.count > rhs.count }
+        return lhs.osVersion.compare(rhs.osVersion, options: .numeric) == .orderedDescending
     }
 
     /// Everything the MobileFleetView needs from mobile device snapshots.
@@ -234,21 +270,22 @@ struct MobileFleetService: Sendable {
 
         /// Bucket count of supervised / unsupervised / unmanaged devices for the
         /// MobileFleetView supervision donut, counted through
-        /// `MobileFleetService.supervisionRole(of:)` so the donut and the
-        /// devices table's filter can never disagree about a device.
+        /// `MobileFleetService.bucket(of:)` so the donut and the devices table's
+        /// filter can never disagree about a device. The Unknown row appears
+        /// only when some device falls in it; the other three always show.
         var supervisionBreakdown: [(label: String, count: Int, role: SupervisionRole)] {
             var counts: [SupervisionRole: Int] = [:]
             for device in richDevices {
-                guard let role = MobileFleetService.supervisionRole(of: device) else { continue }
-                counts[role, default: 0] += 1
+                counts[MobileFleetService.bucket(of: device), default: 0] += 1
             }
-            return SupervisionRole.allCases.map { role in
-                (label: role.label, count: counts[role] ?? 0, role: role)
-            }
+            return SupervisionRole.allCases
+                .filter { $0 != .unknown || counts[$0] != nil }
+                .map { role in (label: role.label, count: counts[role] ?? 0, role: role) }
         }
 
         /// The slices the donut plots: the breakdown without its empty buckets.
-        /// The chart and `MobileFleetService.role(atAngleValue:in:)` both read
+        /// The chart and the click path, which enters through
+        /// `MobileFleetService.role(at:plotSize:innerRadiusRatio:in:)`, both read
         /// this one array.
         var supervisionSlices: [SupervisionSlice] {
             supervisionBreakdown
@@ -348,7 +385,7 @@ struct MobileFleetService: Sendable {
 
             let grouped = Dictionary(grouping: osVersions) { $0 }
             let sorted = grouped.map { (osVersion: $0.key, count: $0.value.count) }
-                .sorted { $0.count > $1.count }
+                .sorted { MobileFleetService.osDistributionOrder($0, $1) }
             return Array(sorted.prefix(10))
         }
 

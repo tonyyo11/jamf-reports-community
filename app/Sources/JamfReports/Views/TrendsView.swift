@@ -81,17 +81,37 @@ struct TrendsView: View {
         )
     }
 
+    private var chartYDomain: ClosedRange<Double> {
+        Self.chartYDomain(metric: metric, values: chartYDomainValues)
+    }
+
     /// Y-axis domain that respects the metric's preferred "good frame" but
     /// always expands to fit actual data. Without this, a Stability Index of
     /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
     /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
     /// non-negative by construction (validated in the data layer).
-    private var chartYDomain: ClosedRange<Double> {
-        let dataMin = chartYDomainValues.min()
-        let dataMax = chartYDomainValues.max()
+    /// Device counts have no good frame: a fixed 0–1,000 flattened a small
+    /// fleet, so their top follows the data.
+    nonisolated static func chartYDomain(
+        metric: TrendSeries.Metric,
+        values: [Double]
+    ) -> ClosedRange<Double> {
+        let dataMin = values.min()
+        let dataMax = values.max()
+        if metric == .managedDevices || metric == .activeDevices, let dataMax {
+            return 0...deviceCountAxisTop(dataMax)
+        }
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
         let hi = max(metric.maxY, dataMax ?? metric.maxY)
         return lo...hi
+    }
+
+    /// About a tenth of headroom over the largest count, rounded up to a fifth of its order of
+    /// magnitude (524 → 580, 1,100 → 1,400), and never under 10.
+    nonisolated static func deviceCountAxisTop(_ dataMax: Double) -> Double {
+        let target = max(dataMax * 1.1, 10)
+        let step = pow(10, floor(log10(target))) / 5
+        return (target / step).rounded(.up) * step
     }
 
     private var selectedPoint: TrendPoint? {
@@ -101,8 +121,9 @@ struct TrendsView: View {
         }
     }
 
-    private var displayVal: Double {
-        selectedPoint?.value ?? trendPoints.last?.value ?? 0
+    /// Nil when the metric has no points in range.
+    private var displayVal: Double? {
+        selectedPoint?.value ?? trendPoints.last?.value
     }
 
     private var displayDate: String {
@@ -131,6 +152,50 @@ struct TrendsView: View {
     nonisolated static func relativeChangePercent(delta: Double, baseline: Double) -> Double? {
         guard abs(baseline) >= relativeChangeBaselineFloor else { return nil }
         return (delta / baseline) * 100
+    }
+
+    /// A gap longer than this many typical intervals between points breaks the hero line.
+    nonisolated static let lineGapFactor: Double = 2.5
+    /// No shorter gap breaks it, so a weekday-only schedule's weekends stay joined.
+    nonisolated static let minimumLineGap: TimeInterval = 4 * 24 * 3600
+
+    /// The line segment each point belongs to, from 0. The cadence is the lower median interval
+    /// between points, so daily and weekly histories each break only at their own gaps; the
+    /// lower one because a gap is always a high outlier and must not set the cadence itself.
+    /// `dates` must be ascending, as the trend points are.
+    nonisolated static func lineSegmentIndices(_ dates: [Date]) -> [Int] {
+        guard dates.count > 1 else { return dates.map { _ in 0 } }
+        let intervals = zip(dates.dropFirst(), dates).map { $0.timeIntervalSince($1) }
+        let sorted = intervals.sorted()
+        let typical = sorted[(sorted.count - 1) / 2]
+        let limit = max(typical * lineGapFactor, minimumLineGap)
+        var segment = 0
+        return [0] + intervals.map { interval in
+            if interval > limit { segment += 1 }
+            return segment
+        }
+    }
+
+    /// A metric value as the hero shows it. No value is a dash: "0%" would read as measured.
+    nonisolated static func metricValueText(_ value: Double?, unit: String) -> String {
+        guard let value else { return "—" }
+        return "\(Int(value.rounded()))\(unit)"
+    }
+
+    /// Min, max and mean of the values in range, or nil when there are none.
+    nonisolated static func valueStats(
+        _ values: [Double]
+    ) -> (min: Double, max: Double, avg: Double)? {
+        guard let low = values.min(), let high = values.max() else { return nil }
+        return (low, high, values.reduce(0, +) / Double(values.count))
+    }
+
+    /// A pill's change over the range; a metric with no points shows a dash, not "±0".
+    nonisolated static func pillDeltaText(series: [Double], unit: String) -> String {
+        guard let first = series.first, let last = series.last else { return "—" }
+        let change = Int((last - first).rounded())
+        if change == 0 { return "±0\(unit)" }
+        return "\(change > 0 ? "+" : "")\(change)\(unit)"
     }
 
     private var pctDelta: Double? {
@@ -358,7 +423,7 @@ struct TrendsView: View {
                 Text(metricLabel(m))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
+                Text(Self.pillDeltaText(series: series, unit: m.unit))
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(
                         deltaState == .flat ? Theme.Text.tertiary(contrast)
@@ -374,6 +439,8 @@ struct TrendsView: View {
                     .opacity(0.85)
                 }
             }
+            // The sparkline's height, so a pill without one (under two points) matches its row.
+            .frame(minHeight: 18)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
@@ -404,7 +471,9 @@ struct TrendsView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(metricPillAccessibilityLabel(m, delta: dl, goodTrend: goodTrend))
+        .accessibilityLabel(Self.metricPillAccessibilityLabel(
+            label: metricLabel(m), unit: m.unit, series: series, goodTrend: goodTrend
+        ))
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(metricLabel(m)) trend")
         .onAppear {
@@ -417,56 +486,96 @@ struct TrendsView: View {
 
     // MARK: Hero chart
 
+    private var deltaText: String {
+        let magnitude = "\(abs(Int(delta.rounded())))\(metric.unit)"
+        return pctDelta.map { "\(magnitude) (\(String(format: "%.1f", $0))%)" } ?? magnitude
+    }
+
+    /// The delta, plus the range pill when asked.
+    @ViewBuilder
+    private func heroIdleDetail(showsRange: Bool) -> some View {
+        // With no points there is no change to report; the range pill says "No snapshots".
+        if !values.isEmpty {
+            HStack(spacing: 4) {
+                Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                    .font(.system(size: 11, weight: .bold))
+                Text(deltaText)
+                    .lineLimit(1)
+            }
+            .font(Theme.Fonts.mono(14, weight: .semibold))
+            .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        if showsRange {
+            Pill(text: rangeBadgeText, tone: .muted)
+        }
+    }
+
+    /// Number plus the delta (idle) or hovered date; the range pill joins only when asked.
+    private func heroValueRow(showsRange: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(Self.metricValueText(displayVal, unit: metric.unit))
+                .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
+                .foregroundStyle(Theme.Colors.fg)
+                .monospacedDigit()
+                .contentTransition(.numericText(countsDown: delta < 0))
+                .animation(.snappy(duration: 0.35), value: displayVal)
+                .fixedSize()
+
+            if selectedPoint == nil {
+                heroIdleDetail(showsRange: showsRange)
+            } else {
+                // The hidden idle detail keeps the row as wide as it is idle, so hovering
+                // cannot make ViewThatFits pick the other arrangement and move the chart.
+                ZStack(alignment: .leadingFirstTextBaseline) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        heroIdleDetail(showsRange: showsRange)
+                    }
+                    .hidden()
+                    Text("at \(displayDate)")
+                        .font(Theme.Fonts.mono(14, weight: .semibold))
+                        .foregroundStyle(Theme.Colors.goldBright)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
     private var heroChart: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         Kicker(text: metricLabel(metric))
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text("\(Int(displayVal.rounded()))\(metric.unit)")
-                                .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
-                                .foregroundStyle(Theme.Colors.fg)
-                                .monospacedDigit()
-                                .contentTransition(.numericText(countsDown: delta < 0))
-                                .animation(.snappy(duration: 0.35), value: displayVal)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-
-                            if selectedPoint == nil {
-                                HStack(spacing: 4) {
-                                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
-                                        .font(.system(size: 11, weight: .bold))
-                                    Text(
-                                        pctDelta.map {
-                                            "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
-                                        } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
-                                    )
-                                    .lineLimit(1)
-                                }
-                                .font(Theme.Fonts.mono(14, weight: .semibold))
-                                .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
-                                .fixedSize(horizontal: true, vertical: false)
+                        // The range pill drops under the number only when the one-line row
+                        // does not fit, so the wide layout is unchanged.
+                        ViewThatFits(in: .horizontal) {
+                            heroValueRow(showsRange: true)
+                            VStack(alignment: .leading, spacing: 6) {
+                                heroValueRow(showsRange: false)
+                                // Hidden, not removed, on hover so the chart below stays put.
                                 Pill(text: rangeBadgeText, tone: .muted)
-                            } else {
-                                Text("at \(displayDate)")
-                                    .font(Theme.Fonts.mono(14, weight: .semibold))
-                                    .foregroundStyle(Theme.Colors.goldBright)
-                                    .lineLimit(1)
+                                    .opacity(selectedPoint == nil ? 1 : 0)
+                                    .accessibilityHidden(selectedPoint != nil)
                             }
                         }
                     }
+                    // Without this the outer row offers the left block half its width, and the
+                    // number is the only child in it that can give ground.
+                    .layoutPriority(1)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 6) {
                         Kicker(text: "Min · Max · Avg")
+                        let stats = Self.valueStats(values)
                         HStack(spacing: 14) {
-                            Text("\(Int((values.min() ?? 0).rounded()))\(metric.unit)")
-                            Text("\(Int((values.max() ?? 0).rounded()))\(metric.unit)")
-                            Text("\(Int((values.reduce(0,+) / Double(max(values.count,1))).rounded()))\(metric.unit)")
+                            Text(Self.metricValueText(stats?.min, unit: metric.unit))
+                            Text(Self.metricValueText(stats?.max, unit: metric.unit))
+                            Text(Self.metricValueText(stats?.avg, unit: metric.unit))
                         }
                         .font(Theme.Fonts.mono(12))
                         .foregroundStyle(Theme.Colors.fg2)
                     }
+                    .fixedSize()
                 }
 
                 if metric == .mscpBandTrend, !workspaceStore.demoMode, trendStore.mscpBaselineNames.count > 1 {
@@ -523,9 +632,18 @@ struct TrendsView: View {
                             }
                         } else {
                             // Standard line + area chart for other metrics
-                            ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
+                            // The area starts at the axis floor, not 0: Charts does not clip marks
+                            // to the plot, so a floor above 0 let the fill run down over the card.
+                            let areaFloor = chartYDomain.lowerBound
+                            // Each segment is its own series, so a gap in the history breaks the
+                            // line instead of a curve being drawn through weeks with no data.
+                            let segments = Self.lineSegmentIndices(trendPoints.map(\.date))
+                            ForEach(Array(trendPoints.enumerated()), id: \.offset) { idx, point in
+                                let segment = segments[safe: idx] ?? 0
                                 AreaMark(x: .value("Date", point.date),
-                                         y: .value(metric.displayLabel, point.value))
+                                         yStart: .value(metric.displayLabel, areaFloor),
+                                         yEnd: .value(metric.displayLabel, point.value),
+                                         series: .value("Segment", segment))
                                     .foregroundStyle(LinearGradient(
                                         colors: [Color(hex: metric.colorHex).opacity(0.14),
                                                  Color(hex: metric.colorHex).opacity(0.0)],
@@ -533,7 +651,8 @@ struct TrendsView: View {
                                     ))
                                     .interpolationMethod(.monotone)
                                 LineMark(x: .value("Date", point.date),
-                                         y: .value(metric.displayLabel, point.value))
+                                         y: .value(metric.displayLabel, point.value),
+                                         series: .value("Segment", segment))
                                     .foregroundStyle(Color(hex: metric.colorHex))
                                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                                     .interpolationMethod(.monotone)
@@ -582,7 +701,12 @@ struct TrendsView: View {
                             }
                         }
                     }
-                    .chartXScale(domain: domain)
+                    // Inset so the first and last point markers clear the y-axis labels and the
+                    // plot edge; the band chart has no markers and fills the full width.
+                    .chartXScale(
+                        domain: domain,
+                        range: .plotDimension(padding: metric == .mscpBandTrend ? 0 : 10)
+                    )
                     .chartYScale(domain: chartYDomain)
                     .chartXSelection(value: $selectedDate)
                     .chartXAxis {
@@ -600,6 +724,15 @@ struct TrendsView: View {
                         domain: heroChartForegroundScale.labels,
                         range: heroChartForegroundScale.colors
                     )
+                    .chartLegend(heroLegendVisibility)
+                    .overlay {
+                        if trendPoints.isEmpty, metric != .mscpBandTrend,
+                           metric != .managedDevices {
+                            Text("No snapshot in this range records \(metricLabel(metric)).")
+                                .font(.callout)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                    }
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
                     .accessibilityLabel(Self.metricTrendChartLabel(metricLabel(metric)))
@@ -891,6 +1024,12 @@ struct TrendsView: View {
         metric == .managedDevices ? managedDevicesChartScale : mscpBandChartScale
     }
 
+    /// The scale above is applied to every metric, so Charts would list its domain (the band
+    /// fallback "Band") under single-line charts. Only the two multi-series charts get a legend.
+    private var heroLegendVisibility: Visibility {
+        metric == .managedDevices || metric == .mscpBandTrend ? .automatic : .hidden
+    }
+
     /// Band legend for the live stacked-area chart.
     private var liveBandsLegend: some View {
         let series = trendStore.mscpStackedSeries()
@@ -1012,14 +1151,21 @@ struct TrendsView: View {
         }
     }
 
-    private func metricPillAccessibilityLabel(
-        _ m: TrendSeries.Metric,
-        delta: Double,
+    /// A pill's VoiceOver label; a metric with no points says so rather than "+0% change",
+    /// matching the dash the pill shows.
+    nonisolated static func metricPillAccessibilityLabel(
+        label: String,
+        unit: String,
+        series: [Double],
         goodTrend: Bool
     ) -> String {
+        guard let first = series.first, let last = series.last else {
+            return "\(label), no snapshots in range"
+        }
+        let delta = last - first
         let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
-        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(m.unit)"
-        return "\(metricLabel(m)), \(direction), \(deltaStr) change"
+        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(unit)"
+        return "\(label), \(direction), \(deltaStr) change"
     }
 
     /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless

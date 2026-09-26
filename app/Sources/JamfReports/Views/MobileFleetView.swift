@@ -14,13 +14,6 @@ struct MobileFleetView: View {
     /// Supervision bucket the devices table is filtered to. Set from a donut
     /// slice or legend row, cleared by the same control or the filter chip.
     @State private var supervisionFilter: MobileFleetService.SupervisionRole?
-    /// The donut's `chartAngleSelection`: the running device count under the
-    /// pointer while it is pressed. Plotted and bound as Double so a press is
-    /// placed exactly, with no rounding of the angle to a whole device.
-    @State private var supervisionAngle: Double?
-    /// The slice the current press last toggled, so dragging within one slice
-    /// toggles once instead of on every move.
-    @State private var lastAngleRole: MobileFleetService.SupervisionRole?
 
     var body: some View {
         PageScaffold {
@@ -63,9 +56,7 @@ struct MobileFleetView: View {
                 if let device = selectedRichDevice {
                     deviceDetailCard(device)
                 }
-                if !snapshot.profiles.isEmpty {
-                    profilesTable
-                }
+                profilesTable
             }
         }
         .tint(Theme.Colors.goldBright)
@@ -94,8 +85,6 @@ struct MobileFleetView: View {
             ? Self.demoSnapshot
             : MobileFleetService.load(profile: workspace.profile)
         supervisionFilter = nil
-        supervisionAngle = nil
-        lastAngleRole = nil
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
@@ -227,23 +216,27 @@ struct MobileFleetView: View {
         }
     }
 
+    // Both tile rows use the Overview's grid: the adaptive LazyVGrid capped
+    // tiles at 320 pt, leaving an empty band beside them on a wide window.
     private var kpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
-        return LazyVGrid(columns: columns, spacing: 12) {
+        EqualHeightTileGrid(minTileWidth: 220) {
             StatTile(
                 label: "Total Mobile Devices",
                 value: "\(snapshot.totalDevices)",
-                sub: "iOS and iPadOS devices"
+                sub: "iOS and iPadOS devices",
+                fillsHeight: true
             )
             StatTile(
                 label: "iPads",
                 value: "\(snapshot.iPadCount)",
-                sub: pctString(count: snapshot.iPadCount, total: snapshot.totalDevices)
+                sub: pctString(count: snapshot.iPadCount, total: snapshot.totalDevices),
+                fillsHeight: true
             )
             StatTile(
                 label: "iPhones",
                 value: "\(snapshot.iPhoneCount)",
-                sub: pctString(count: snapshot.iPhoneCount, total: snapshot.totalDevices)
+                sub: pctString(count: snapshot.iPhoneCount, total: snapshot.totalDevices),
+                fillsHeight: true
             )
         }
     }
@@ -251,17 +244,18 @@ struct MobileFleetView: View {
     @ViewBuilder
     private var complianceKpiGrid: some View {
         if !snapshot.richDevices.isEmpty {
-            let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
-            LazyVGrid(columns: columns, spacing: 12) {
+            EqualHeightTileGrid(minTileWidth: 220) {
                 StatTile(
                     label: "Passcode Compliant",
                     value: fleetPercentText(snapshot.passcodeCompliantCount),
-                    sub: fleetCountCaption(snapshot.passcodeCompliantCount)
+                    sub: fleetCountCaption(snapshot.passcodeCompliantCount),
+                    fillsHeight: true
                 )
                 StatTile(
                     label: "Activation Lock",
                     value: fleetPercentText(snapshot.activationLockEnabledCount),
-                    sub: fleetCountCaption(snapshot.activationLockEnabledCount)
+                    sub: fleetCountCaption(snapshot.activationLockEnabledCount),
+                    fillsHeight: true
                 )
                 jailbreakTile
             }
@@ -287,16 +281,19 @@ struct MobileFleetView: View {
     /// "Clean" only when some device actually reported a jailbreak status.
     private var jailbreakTile: StatTile {
         guard let detected = snapshot.jailbreakDetectedCount else {
-            return StatTile(label: "Jailbreak Status", value: "—", sub: Self.notCollectedCaption)
+            return StatTile(label: "Jailbreak Status", value: "—", sub: Self.notCollectedCaption,
+                            fillsHeight: true)
         }
         if detected > 0 {
             return StatTile(
                 label: "Jailbreak Detected",
                 value: "\(detected)",
-                sub: "Devices requiring attention"
+                sub: "Devices requiring attention",
+                fillsHeight: true
             )
         }
-        return StatTile(label: "Jailbreak Status", value: "Clean", sub: "No compromised devices")
+        return StatTile(label: "Jailbreak Status", value: "Clean", sub: "No compromised devices",
+                        fillsHeight: true)
     }
 
     @ViewBuilder
@@ -314,7 +311,10 @@ struct MobileFleetView: View {
                     HStack(alignment: .top, spacing: 28) {
                         supervisionDonut
                             .frame(width: 180, height: 180)
+                        // The rows' 6 pt highlight inset runs into the gutter, so
+                        // their figures stay flush with the other cards' figures.
                         supervisionLegend
+                            .padding(.horizontal, -6)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
@@ -322,14 +322,20 @@ struct MobileFleetView: View {
         }
     }
 
+    /// Shared by the drawing and the click hit test so the two cannot drift.
+    private static let donutHoleRatio = 0.62
+
     /// Clicking a slice filters the devices table to it, clicking it again
-    /// clears the filter. Unselected slices dim while a filter is active.
+    /// clears the filter. While a filter is active the other slices dim and
+    /// shrink toward the hole, so the selected one reads as selected even when
+    /// its colour is darker than theirs.
     private var supervisionDonut: some View {
         let slices = snapshot.supervisionSlices
         return Chart(slices, id: \.role) { slice in
             SectorMark(
                 angle: .value("Count", Double(slice.count)),
-                innerRadius: .ratio(0.62),
+                innerRadius: .ratio(Self.donutHoleRatio),
+                outerRadius: .ratio(sliceOuterRatio(for: slice.role)),
                 angularInset: 1.6
             )
             .foregroundStyle(supervisionColor(for: slice.role))
@@ -338,9 +344,25 @@ struct MobileFleetView: View {
             .accessibilityValue("\(slice.count) devices")
         }
         .chartLegend(.hidden)
-        .chartAngleSelection(value: $supervisionAngle)
-        .onChange(of: supervisionAngle) { _, newValue in
-            selectSupervisionSlice(at: newValue, in: slices)
+        // A tap, not chartAngleSelection: on macOS that selection follows the
+        // pointer, so hovering toggled the filter and a click did nothing.
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard let anchor = proxy.plotFrame else { return }
+                        let plot = geometry[anchor]
+                        let point = CGPoint(x: location.x - plot.minX, y: location.y - plot.minY)
+                        guard let role = MobileFleetService.role(
+                            at: point, plotSize: plot.size,
+                            innerRadiusRatio: Self.donutHoleRatio, in: slices
+                        ) else { return }
+                        toggleSupervisionFilter(role)
+                    }
+                    .accessibilityHidden(true)
+            }
         }
         .accessibilityLabel("Mobile fleet supervision breakdown")
     }
@@ -350,22 +372,25 @@ struct MobileFleetView: View {
     private var supervisionLegend: some View {
         let total = snapshot.totalDevices
         let breakdown = snapshot.supervisionBreakdown
-        return VStack(alignment: .leading, spacing: 8) {
+        // Rows carry 3 pt of padding for the selected row's highlight, so
+        // spacing 2 keeps the 8 pt rhythm between their text.
+        return VStack(alignment: .leading, spacing: 2) {
             ForEach(breakdown, id: \.label) { slice in
                 let percentage = total > 0 ? Double(slice.count) / Double(total) * 100 : 0
                 let isActive = supervisionFilter == slice.role
                 let action: String = isActive
                     ? "Show every device in the table"
-                    : "Show only \(slice.label.lowercased()) devices in the table"
+                    : "Show only \(Self.filterNoun(for: slice.role)) in the table"
                 Button {
                     toggleSupervisionFilter(slice.role)
                 } label: {
                     HStack(spacing: 10) {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(supervisionColor(for: slice.role))
+                            .opacity(sliceOpacity(for: slice.role))
                             .frame(width: 12, height: 12)
                         Text(slice.label)
-                            .font(.footnote.weight(.medium))
+                            .font(.footnote.weight(isActive ? .semibold : .medium))
                             .foregroundStyle(Theme.Colors.fg)
                         Spacer()
                         Text("\(slice.count)")
@@ -378,6 +403,12 @@ struct MobileFleetView: View {
                             .frame(minWidth: 48, alignment: .trailing)
                             .monospacedDigit()
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isActive ? Theme.Colors.goldBright.opacity(0.14) : .clear)
+                    )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -391,24 +422,14 @@ struct MobileFleetView: View {
 
     /// Full strength while no filter is set, and for the filtered slice.
     private func sliceOpacity(for role: MobileFleetService.SupervisionRole) -> Double {
-        supervisionFilter == nil || supervisionFilter == role ? 1 : 0.3
+        supervisionFilter == nil || supervisionFilter == role ? 1 : 0.25
     }
 
-    /// Turns a donut press into one filter toggle per slice entered. Charts may
-    /// or may not reset the selection to nil on mouse-up, so nil ends a press,
-    /// and further movement within the slice already toggled does nothing.
-    private func selectSupervisionSlice(
-        at angleValue: Double?, in slices: [MobileFleetService.SupervisionSlice]
-    ) {
-        guard let angleValue else {
-            lastAngleRole = nil
-            return
-        }
-        guard let role = MobileFleetService.role(atAngleValue: angleValue, in: slices),
-              role != lastAngleRole
-        else { return }
-        lastAngleRole = role
-        toggleSupervisionFilter(role)
+    /// The ring's full width while no filter is set, and for the filtered
+    /// slice. The click hit test still spans the full ring, so a click where
+    /// a narrowed slice used to reach still selects it.
+    private func sliceOuterRatio(for role: MobileFleetService.SupervisionRole) -> Double {
+        supervisionFilter == nil || supervisionFilter == role ? 1 : 0.9
     }
 
     /// Filters the devices table to `role`, or clears the filter when it is
@@ -424,8 +445,18 @@ struct MobileFleetView: View {
         switch role {
         case .supervised: return Theme.Colors.goldBright
         case .unsupervised: return Theme.Colors.warn
-        case .unmanaged: return Theme.Colors.hairlineStrong
+        // A mid grey rather than a hairline tone: at 12% white the slice
+        // almost vanished, and selected it read dimmer than the dimmed ones.
+        case .unmanaged: return Theme.Colors.fgMuted
+        case .unknown: return Theme.Colors.fgMuted.opacity(0.45)
         }
+    }
+
+    /// The devices a legend row's filter shows, for its hint.
+    private static func filterNoun(for role: MobileFleetService.SupervisionRole) -> String {
+        role == .unknown
+            ? "devices with no supervision state"
+            : "\(role.label.lowercased()) devices"
     }
 
     @ViewBuilder
@@ -634,6 +665,11 @@ struct MobileFleetView: View {
                     .width(min: 100, ideal: 120)
                 }
                 .font(.callout)
+                // A Table has no height of its own inside the page's ScrollView; without this
+                // it collapses under the header and shows no rows. Sized to its rows, so a
+                // filtered list does not trail blank striped rows, up to Devices' 430 pt.
+                .frame(height: Self.tableHeight(
+                    rows: rows.count, rowHeight: Self.deviceRowHeight, cap: 430))
                 if matching.count > rows.count {
                     Text("Generated reports include every mobile device.")
                         .font(.caption)
@@ -748,34 +784,77 @@ struct MobileFleetView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Config Profiles", trailingTag: snapshot.profiles.count <= 30 ? nil : "\(min(30, snapshot.profiles.count)) of \(snapshot.profiles.count)")
-                Table(Array(snapshot.profiles.prefix(30).enumerated()).map { ProfileWithIndex(profile: $0.element, index: $0.offset) }) {
-                    TableColumn("Name") { item in
-                        Text(item.profile.name ?? "Untitled Profile")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(Theme.Colors.fg)
-                    }
-                    .width(min: 180, ideal: 220)
-
-                    TableColumn("Category") { item in
-                        Text(item.profile.category ?? "—")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    .width(min: 100, ideal: 120)
-
-                    TableColumn("Site") { item in
-                        Text(item.profile.site ?? "—")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    .width(min: 80, ideal: 100)
+                if snapshot.profiles.isEmpty {
+                    Text(profilesEmptyMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                } else {
+                    profilesTableRows
                 }
-                .font(.callout)
             }
         }
     }
 
+    /// Tells a profiles snapshot that was never collected from one that listed none.
+    /// `sourceDates` records only that the file exists, and an undecodable file also
+    /// loads as no profiles, so the second message must not claim zero.
+    private var profilesEmptyMessage: String {
+        snapshot.sourceDates["classic-ios-profiles"] == nil
+            ? "Configuration profiles have not been collected yet."
+            : "The collected profiles snapshot lists none, or could not be read."
+    }
+
+    private var profilesTableRows: some View {
+        let rows = snapshot.profiles.prefix(30).enumerated().map {
+            ProfileWithIndex(profile: $0.element, index: $0.offset)
+        }
+        return Table(rows) {
+            TableColumn("Name") { item in
+                Text(item.profile.name ?? "Untitled Profile")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+            }
+            .width(min: 180, ideal: 220)
+
+            TableColumn("Category") { item in
+                Text(item.profile.category ?? "—")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            .width(min: 100, ideal: 120)
+
+            TableColumn("Site") { item in
+                Text(item.profile.site ?? "—")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            .width(min: 80, ideal: 100)
+        }
+        .font(.callout)
+        // A Table has no height of its own inside the page's ScrollView; without this
+        // it collapses under the header. Sized to its rows up to 280 pt; rows past
+        // that scroll in place.
+        .frame(height: Self.tableHeight(
+            rows: rows.count, rowHeight: Self.profileRowHeight, cap: 280))
+    }
+
     // MARK: - Helpers
+
+    /// Header, its separator and the inset above the first row, measured from
+    /// a screenshot at the default text size.
+    private nonisolated static let tableChromeHeight: CGFloat = 33
+    /// The devices table's rows hold a Type pill, which makes them 26 pt.
+    nonisolated static let deviceRowHeight: CGFloat = 26
+    /// Text-only rows; 24 pt is the table's own row height.
+    nonisolated static let profileRowHeight: CGFloat = 24
+
+    /// A table's height for `rows` rows, at most `cap`. Past the last row the
+    /// table draws empty striped rows that read as blank devices, so it stops
+    /// at the rows it has; an empty list keeps one row's height under its
+    /// header. Larger text makes rows taller than this, and they scroll.
+    nonisolated static func tableHeight(rows: Int, rowHeight: CGFloat, cap: CGFloat) -> CGFloat {
+        min(cap, tableChromeHeight + CGFloat(max(rows, 1)) * rowHeight)
+    }
 
     /// The rows the devices table can list before its 50-row cap: inventory rows
     /// in the active supervision bucket when inventory details exist, list rows

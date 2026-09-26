@@ -7,18 +7,29 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- The HTML report includes jamf-cli's fleet dashboard. With jamf-cli 1.31.0 or later,
+  collect saves the dashboard every two days: one page of fleet-wide totals across Jamf Pro
+  and, where your profile reaches them, the Jamf Platform API, Jamf Protect and Jamf Security
+  Cloud, with no device names, serials or usernames. The report shows it as its last section,
+  as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
+  says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
+
+### Changed
+
+- Tracks jamf-cli v1.31.1 (was v1.30.0). Nothing the app runs changed its flags or output. With
+  jamf-cli 1.31.1 or later, group member counts from jamf-cli's audit and unused-groups analysis
+  are correct; that fix is in jamf-cli.
+
+## [2.8.1] - 2026-09-26
+
 Jamf Platform API profiles collect Compliance Benchmarks, setup catches a wrong environment ID,
 and a source that fails for want of a permission says which one. The Overview shows your
 tenant's real data in every section, and you choose what it shows.
 
 ### Added
 
-- The HTML report includes jamf-cli's fleet dashboard (2.9). With jamf-cli 1.31.0 or later,
-  collect saves the dashboard every two days: one page of fleet-wide totals across Jamf Pro
-  and, where your profile reaches them, the Jamf Platform API, Jamf Protect and Jamf Security
-  Cloud, with no device names, serials or usernames. The report shows it as its last section,
-  as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
-  says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
 - The Overview is yours to arrange. **Customize** (in its header) lists every section and score
   card: show or hide each one, move it up or down, and see which ones this profile can fill.
   Reset to Defaults puts back the standard layout, which is the order the Overview has always
@@ -32,7 +43,8 @@ tenant's real data in every section, and you choose what it shows.
   that fixes it and a control to hide it.
 - The EDR agent score card, its trend and the security score's EDR weight fill on jamf-cli
   profiles, from the first security agent in Config and its extension attribute. They were always
-  empty there before.
+  empty there before. An agent with no connected value counts any value it reports as connected,
+  as Run Check says.
 - Run Check says when a custom extension attribute has no CSV export to build its report sheet
   from. It warns, or only suggests when that attribute is already collected and usable in period
   reports.
@@ -47,7 +59,8 @@ tenant's real data in every section, and you choose what it shows.
   benchmarks and fetches rule and device results for each; with several, the screen has a
   benchmark picker, and the workbook sheets gain a Benchmark column. Leave
   `platform.compliance_benchmarks` empty to collect every benchmark, or list titles to collect
-  only those.
+  only those. Titles must match exactly, case included; when none of them is on the tenant, Run
+  History and the health strip say so and the last results stay.
 - Validating a Jamf Platform API profile checks the environment or tenant ID with the gateway,
   in onboarding and in Update credentials. A rejected ID stops setup and says where the right one
   is; an ID with no Jamf Pro behind it, including an environment with no tenant in it, is a
@@ -72,14 +85,21 @@ tenant's real data in every section, and you choose what it shows.
 - When DDM status comes back empty, Run History says the environment may have no declarations
   or the integration may lack Deployment > Declarations reporting, and it is no longer retried
   every hour.
+- When Managed Software Update Plans is turned off in Jamf Pro, Run History and the health strip
+  say so for OS update status and failures, and those sources are no longer retried every hour.
+  Turn the setting on, or list them in `jamf_cli.collect_skip`.
 - When jamf-cli cannot read patch policies, Run History gives its reason, and a missing
   permission is no longer retried every hour. It no longer calls the output unreadable.
 - The device scan's permission warning names what jamf-cli reports as missing, or both the Jamf
   Pro API role privilege and the Jamf Account permission when it names nothing.
+- Run History no longer drops the last warnings jamf-cli prints before it exits. When jamf-cli
+  exits without an error code, those warnings are how the app recognises a missing permission,
+  no blueprints or no DDM data, so each was sometimes missed.
 - Jamf School workbooks show each device's OS, managed and supervised state, device group member
   counts and stale devices, and School Overview lists one row per line. Columns jamf-cli never
   provides (app install counts, profile categories, location addresses, user roles, teacher
-  names) show what it does provide instead, and location columns are labelled as IDs.
+  names) show what it does provide instead, and location columns are labelled as IDs. OS Versions
+  counts each platform separately, so macOS 26 and iPadOS 26 are two rows.
 - Jamf Protect alerts and computers appear on the Protect screen, which had never loaded them,
   and plans load even when a plan has telemetry assigned. A disconnected Mac reads Offline
   instead of Online, and the Protect sheets show what Jamf Protect provides (alert analytics, CIS
@@ -112,7 +132,9 @@ tenant's real data in every section, and you choose what it shows.
   profile's name, and no longer runs jamf-cli. Controls that would (reveal, export, save, run,
   delete, refresh, update jamf-cli) are disabled with a note saying they need a live profile.
 - Turning demo mode off no longer deletes the workspace and schedules of a real jamf-cli profile
-  that happens to be named like the demo's (meridian-prod). Finishing setup from demo mode also
+  that happens to be named like the demo's (meridian-prod), or of any workspace by that name that
+  holds snapshots, summaries or backups, such as a shared folder another Mac collects into. This
+  Mac's jamf-cli does not have to know the profile. Finishing setup from demo mode also
   clears what earlier demo sessions left behind, as turning it off in Settings always did.
 - Offline Outreach's Dormant tier reads 181+ days instead of overlapping Inactive by a day. OS
   Updates labels its plan tile Total Plans, since it counts completed and failed plans too, and
@@ -122,6 +144,35 @@ tenant's real data in every section, and you choose what it shows.
   workspace, because it looked under an older folder name.
 - Opening a workspace folder that has not been created yet says so, instead of saying the folder
   is outside the app's allowed folders.
+- In a window narrower than 1,100 pt the sidebar shows its icons only, which leaves the page more
+  room; widening the window brings it back, and ⌘0 still sets it the way you want.
+- At the smallest window size, Devices, Config and the first setup step no longer push the
+  sidebar out of the window: the Devices search field moves above the filters, Config's tabs use
+  shorter names, and the setup badges wrap.
+- Mobile Fleet's Mobile Devices table and Config Profiles card list their devices and profiles.
+  They showed only their titles.
+- Trends charts with a single line no longer show a "Band" legend underneath, and the headline
+  number no longer shortens to "5…" or disappears in a small window.
+- DDM Blueprints' expanded device lists sit under their heading instead of mid-card.
+- Trends shows a dash, not 0%, for a metric with no snapshots in the range. Lines stop at a gap in
+  the data instead of drawing across it, and the Managed and Active Devices axis fits the size of
+  the fleet rather than starting at 1,000.
+- Mobile Fleet counts devices that report no supervision state as Unknown, so the donut adds up
+  to the device total, and the selected slice and its legend row stand out. Its tile rows fill
+  the page width, and its tables end at their last row instead of blank striped rows.
+- OS Updates shows plan states as words ("Completed", "Exception") instead of Jamf's codes. The
+  collect command it and DDM Blueprints print when there is no data now names the profile, so it
+  runs as pasted, and "Data refreshed" appears once the screen has reloaded, not before.
+- Devices says when a filter matches no devices, keeps legend words whole, lines up the detail
+  panel's values, and keeps file extensions and kind names visible in the source names.
+- Data Sources keeps the jamf-cli card's labels on one line and its command names whole, and
+  the Client Secret field is the same height as Client ID.
+- The Overview score cards show their whole title, and side-by-side cards end level.
+- The setup step strip fits a small window, and a workspace name is checked once you type one.
+- Sidebar rows keep to one line and pass under a divider at the top and bottom.
+- In demo mode the log viewer shows demo entries instead of this session's own log.
+- With JamfReports turned off in Login Items, the health strip says "Automation is off" instead
+  of "1 scheduled run is failing".
 - Generated Reports' profile menu lists profiles with a hyphen or underscore in the name, such as
   acme-prod, which it used to leave out or cut short.
 - Security Posture no longer tells you to run a collect to add EDR, mSCP, XProtect, CVE and Secure
@@ -196,6 +247,18 @@ tenant's real data in every section, and you choose what it shows.
   its last inventory update. Devices, Offline Outreach and the Overview also show the last
   check-in for Macs the device compliance report does not cover. Jamf Pro's v4 inventory API,
   which jamf-cli has used since 1.28.0, renamed the field.
+- Acknowledgements… in the app menu no longer quits the app on a Mac other than the one that
+  built it, and the license and notices it shows now ship inside the app.
+- The HTML report shows an `&`, quote or `<` in a Jamf Protect insight label or an Exception
+  List entry as typed, not as `&amp;` or `&#39;`.
+- After Update credentials, collect and the health strip use the connection's new auth method
+  and scope level straight away, not after a relaunch or a visit to Settings.
+- Config → Re-scaffold from CSV shows the merged column mappings on the Columns tab at once, and
+  Save no longer puts the old ones back. Unsaved edits elsewhere on the Config screen stay.
+- Switching profiles just after editing a webhook URL no longer saves the next profile's
+  notification settings, URL included, into the first profile's config.yaml. Customize Reports
+  reloads its chart options when you switch profiles or leave demo mode, so Apply saves the
+  right profile's values.
 
 ### Removed
 
@@ -206,6 +269,11 @@ tenant's real data in every section, and you choose what it shows.
   never read, so it never affected a report. `school-check` is unchanged, and a config.yaml that
   still has `school_columns` keeps working; the section is ignored.
 - The `experimental:` block in config.example.yaml. Nothing read it.
+- The `protect` block's `use_cached_data` and per-sheet `enabled` switches, and the
+  `school_cli` block's `data_dir`, `multi` and `use_cached_data`, from config.example.yaml.
+  Nothing read them: Protect and School snapshots live under `jamf_cli.data_dir`, and each
+  Protect sheet is written when its data landed. A config.yaml that still has them keeps
+  working; they are ignored.
 - Customize Reports' sheet toggles, Executive preset and workbook preview, and its OS Adoption,
   Compliance Trend and Device State Trend switches. None of them was saved or used when a
   report was generated, yet Apply said Saved. The screen keeps the two chart options that do
@@ -221,11 +289,16 @@ tenant's real data in every section, and you choose what it shows.
 - The patch figure in period reports, fleet insights and the workbook's trend chart is labelled
   as an average per patch title, since it is not weighted by devices like the Patch screen and the
   Executive Summary.
+- An empty `platform.compliance_benchmarks` list collects every benchmark on the tenant. The
+  2.8.0 example config said an empty list skipped the compliance sheets; list titles to collect
+  fewer.
 
 ### Security
 
 - Diagnostic bundles redact every device name, serial and user name found in the workspace. On a
   fleet with more than 5,000 of one kind, the shortest could previously be left in log excerpts.
+- Connecting Jamf Protect or Jamf School checks jamf-cli's code signature before handing it the
+  client secret or API key, as Jamf Pro setup already did.
 
 ## [2.8.0] - 2026-09-14
 

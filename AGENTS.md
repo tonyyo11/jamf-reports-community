@@ -239,20 +239,24 @@ still collected: the gateway still answered tenant requests to DDM reporting on
 **Compliance Benchmarks (2.8.1).** `pro report compliance-rules` and `compliance-devices` take a
 benchmark title. `ReportEngine+ComplianceBenchmarks` lists benchmarks once per run
 (`pro compliance-benchmarks list`), narrows them to `platform.compliance_benchmarks` when set
-(empty collects every benchmark on the tenant; jamf-cli matches titles exactly; a title two
-benchmarks share is skipped), runs both reports per title and saves one snapshot per kind whose
-rows carry `benchmark`. A tenant with no benchmarks lands empty snapshots. A failed listing fails
-both kinds with its exit code.
+(empty collects every benchmark on the tenant; configured titles are trimmed and deduplicated,
+and jamf-cli matches them exactly; a title two benchmarks share is skipped), runs both reports per
+title and saves one snapshot per kind whose rows carry `benchmark`. A tenant with no benchmarks
+lands empty snapshots. A failed listing fails both kinds with its exit code. Configured titles of
+which none can be collected fail both kinds with the permanent `.noConfiguredBenchmark` cause,
+whose hint lists the tenant's titles, and save nothing, so the last snapshot stays the newest.
 
 **Failure causes (2.8.1).** `recordUnlandedAttempt` classifies a jamf-cli attempt that exits
 non-zero or returns no data with `FailureCause.classify` (the JSON envelope on stdout, or what
 `StderrSignalWatcher` saw on stderr for commands that exit 0 without data: a
-`permission denied (HTTP 403)` line is a missing permission, and `ddm-status`'s
+`permission denied (HTTP 403)` line is a missing permission, `ddm-status`'s
 `No DDM declaration data found.` is `.noDeclarationData`, which cannot tell an environment with
-no declarations from refused device reports), stores it in `state/<kind>.cause.json` (removed
-on landing, outside the manifest), and appends ` — cause: … — hint: …` (each part only when
-known) to the Run History warning line. `blueprint-status`'s `No blueprints found.` with exit 0
-lands an empty snapshot instead, because a failed listing exits non-zero. A
+no declarations from refused device reports, and `update-status`'s 503 naming the Managed
+Software Update Plans toggle is `.softwareUpdatePlansOff`), stores it in
+`state/<kind>.cause.json` (removed on landing, outside the manifest), and appends
+` — cause: … — hint: …` (each part only when known) to the Run History warning line.
+`blueprint-status`'s `No blueprints found.` with exit 0 lands an empty snapshot instead,
+because a failed listing exits non-zero. A
 `patch-device-failures` document with a `fetch_error` records `FailureCause.fetchError` (a 403
 is a missing permission). `isCollectDead` asks whether any kind landed, not whether any
 exited 0.
@@ -332,6 +336,28 @@ gate adds `--no-verify` to `config add-profile` in onboarding and Reauthenticate
 a local write on 1.29 (which otherwise checks the pair against the server first) and the
 Validate step remains the connection check. When the floor reaches 1.29, delete the gate and
 the old literals rather than keep both.
+
+**v1.30.0 (2026-09-16) — Classic scope by ID, Jamf Pro 11.32.** `pro classic-*` commands
+now accept scope as an integer `id` and expose per-resource `categories`; the change is marked
+breaking (`feat!`) in the upstream changelog. The `list` commands used in
+`collectCommandMatrix` (`classic-computer-groups`, `classic-mobile-device-groups`,
+`classic-macos-config-profiles`, `classic-mobile-config-profiles`, `classic-policies`)
+do not pass scope parameters — their invocation and JSON output shape are unaffected. A new
+`pro open` command opens a product's web UI at a named section; not used by the app. SDK
+upgraded to ingest Jamf Pro 11.32 — no breaking shape changes for fields the app reads.
+
+**v1.31.0 (2026-09-18) — MCP server and HTML fleet dashboard.** jamf-cli now ships an MCP
+server (`jamf-cli mcp`) and can generate cross-product HTML fleet dashboards. The app has its
+own `HtmlReport` engine and `ReportEngine.generate` pipeline; these additions are purely
+additive and do not conflict. No changes to existing command flags or JSON output shapes.
+
+**v1.31.1 (2026-09-18) — Pagination, blueprint YAML, group-tools resilience.** Patch fixes:
+a list command's `--all` now respects each endpoint's max page size (was hardcoded 100);
+blueprint YAML export rendering corrected; `group-tools` skips unscoped blueprints instead of
+failing; group member counts in `group-tools` and `audit` read from the correct collection
+object. No code change: the app's only `--all` is `pro report ea-results --all`, where it
+includes devices with empty EA values rather than paging. The app runs `pro group-tools analyze
+--unused` and `pro audit` (`CLIBridge`), whose member counts are correct from 1.31.1.
 
 ### notify config (v2.2.0 — opt-in webhook digest)
 
@@ -513,7 +539,7 @@ the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 | `SnapshotFreshness` | Decides fresh / stale / no-snapshots for a data dir by newest-file mtime. Gates the Overview "skip collect when fresh" path and the launch freshness sweep. |
 | `ProfileAuthMethod` | (2.7.0) Resolves a jamf-cli profile's `auth-method` via `config list --output json`, cached per profile for the process lifetime. Tri-state on purpose — `nil` means "could not ask", never "not platform" — which is why it exists alongside `PlatformCapabilityService` (that one collapses the same probe to a Bool because it only gates a Settings toggle). Unknowns are never cached, so one failed probe cannot freeze the app on "unknown" until relaunch; `invalidateCache()` runs beside `PlatformCapabilityService.refresh()`. |
 | `DataFreshnessHealth` | (2.7.0) Per-kind twin of `AutomationHealth`: given each snapshot kind's last success and consecutive-failure count (both from `StateFileStore`), reports kinds that are `.failing` (>= 2 consecutive failures) or `.stale` (past 3x their tier cadence, or never landed on a workspace that has collected; `neverCollected` marks a kind with no success and no failure, which `GlobalHealthBanner` words as "not collected yet"). `.failing` wins over `.stale` so the operator sees the cause, not the symptom. Pure; `WorkspaceStore.refreshDataFreshness` supplies the I/O and publishes to `AutomationHealthModel.freshnessIssues`, which `GlobalHealthBanner` renders above every screen. `tiersToRemediate` scopes the automatic re-collect. Automatic collects (self-remediation and catch-up) stand down without claiming their hour or day marker while `WorkspaceStore.isCollectInFlight` sees another collect in this process (a GUI collect, a generate run, or the refresh coordinator) or `TickLock.isHeldByAnotherLiveProcess()` sees a tick mid-run. Self-remediation (`WorkspaceStore.remediateStaleDataIfNeeded`) issues one `CollectRouter.run` call PER TIER rather than the full tier set at once — passing every tier together equals `CollectionTier.allCases`, which trips `ReportEngine.collect`'s once-per-day full-collect guard and silently no-ops. It also skips any kind whose last recorded failure exit code was `CLIBridge.exitCodeUsage` (2) — a usage or credentials-gate error (e.g. the jamf-cli 1.24–1.27 Security Cloud gate on `pro report security`, fixed in 1.28.0) — `CLIBridge.exitCodeUnauthorized` (3), credentials the server rejected, which only a re-authentication fixes — `CLIBridge.exitCodeRefusedByPolicy` (8, jamf-cli 1.28+), a command outside the profile's published API, or a permanent recorded `FailureCause` (rejected scope ID, unknown environment ID, endpoint not served, missing permission); all fail identically on retry, and that kind stays in the banner but is left out of the re-collect. Collect now and the tick's same-day retries still reach an exit-3 kind once credentials are fixed, and the device scan's exit-3 cadence carve-out (`lastAttemptDate`) is unchanged. The banner's own action is **Collect now** (`WorkspaceStore.collectFailingNow` → `manualCollectTiers` → `runTierRefresh`), which unlike self-remediation applies no hourly limit and no exit-2/3/8 or permanent-cause exclusion — a person clicking has usually just fixed the thing that made a retry pointless; "Open Automation" remains the action for schedule-only issues, since `InlineBanner` renders one button. Every GUI collect path (`runTierRefresh`, `runHeavyTierRefresh`, `runFirstCollect`) calls `refreshDataFreshness()` when it finishes, so the strip describes the run that just happened rather than holding its launch-time verdict. `WorkspaceStore.expectedKinds` decides which kinds may be reported at all: it drops the expensive per-device kinds when the Settings toggle is on, the kinds listed in `jamf_cli.collect_skip`, and `ReportEngine.platformOnlyKinds` when the profile's auth method is positively non-platform — the latter regardless of the `.fail` counters on disk, since a workspace that ran for months before the collect-side skip has a standing pile of them. |
-| `FailureCause` | (2.8.1) Pure classifier for why a jamf-cli call failed (connection-access spec §9.2): scope rejected (including a request with no scope header, `REQUEST_CONTEXT_NOT_PROVIDED`), unknown environment, gateway edge block, not served, missing permission (names parsed from jamf-cli's hint), no DDM declaration data, other. `JamfCLIErrorEnvelope` decodes `error`/`message`/`hint` from stdout. `isPermanent` drives the remediation exclusion and `ReportEngine.deadRunCause` reads `kind`; `label` feeds Run History and the health banner. `StderrSignalWatcher` reads stderr for commands that exit 0 without data: a 403 line, `No blueprints found.` (a real empty answer) and `No DDM declaration data found.` (`.noDeclarationData`, permanent because an hourly retry repeats one refused request per device). `fetchError` classifies a `--scan-failures` `fetch_error`. |
+| `FailureCause` | (2.8.1) Pure classifier for why a jamf-cli call failed (connection-access spec §9.2): scope rejected (including a request with no scope header, `REQUEST_CONTEXT_NOT_PROVIDED`), unknown environment, gateway edge block, not served, missing permission (names parsed from jamf-cli's hint), no DDM declaration data, Managed Software Update Plans turned off, no configured benchmark (recorded by the benchmark collect, never classified), other. `JamfCLIErrorEnvelope` decodes `error`/`message`/`hint` from stdout. `isPermanent` drives the remediation exclusion and `ReportEngine.deadRunCause` reads `kind`; `label` feeds Run History and the health banner. `StderrSignalWatcher` reads stderr for commands that exit 0 without data: a 403 line, `No blueprints found.` (a real empty answer), `No DDM declaration data found.` (`.noDeclarationData`, permanent because an hourly retry repeats one refused request per device) and the 503 body naming the Managed Software Update Plans toggle (`.softwareUpdatePlansOff`, permanent until the setting is turned on). `fetchError` classifies a `--scan-failures` `fetch_error`. |
 | `ConnectionCheck` | (2.8.1) Checks a Platform API profile's environment or tenant ID when it validates, because the gateway issues a token before reading the scope header: `pro jamf-pro-version list` (`jamf-pro-versions` before 1.29), then after a bare 404 a `platform-devices list` filter that matches nothing. Verdicts accepted / rejected ID / no Jamf Pro (including an environment with no tenant, `TENANT_NOT_FOUND`) / undecided; `OnboardingFlow.applyConnectionCheck` blocks setup on a rejected ID and offers Continue without validating only when undecided. Runs through `CLIBridge.runAndCapture` rather than `CLIExecutor`, which drops stdout on a non-zero exit. |
 | `RefreshDebouncer` | Debounce helper extracted from the refresh path for testability. |
 | `WorkspaceRootStore` | (2.7.0) Owns where `~/Jamf-Reports` actually lives. Resolution order: `JRC_TEST_WORKSPACES_ROOT` (DEBUG) → `JRC_WORKSPACES_ROOT` (env; usable by the included CLI) → the stored preference → `~/Jamf-Reports`. **Per-machine on purpose** — a sync provider mounts the same team folder under each user's home, so the path is not shareable and cannot live in `config.yaml`. An unreachable stored root is NOT silently replaced with the default (that would start a second, empty history beside the real one); it is returned as configured and `ConfigDoctorService` explains why nothing reads. `set(_:)` validates against `WorkspacePaths.isSensitiveAbsolutePath` and creates the folder if absent but never moves existing workspaces; a root move needs no rewrite of anything on disk (2.8.0), since the tick reads this same preference directly on every wake. `ProfileService.workspacesRoot()` and `SystemActions.allowedParents()` both derive from it. |

@@ -69,36 +69,18 @@ with `jamf-cli -p <profile>`.
 ## Jamf Pro API permissions
 
 If you create the API role yourself rather than letting `jamf-cli pro setup` do it, the
-client needs only read access. A dedicated role with these privileges is enough:
-
-| Resource | Privilege |
-|---|---|
-| Computers | Read |
-| Mobile Devices | Read |
-| Mobile Device Configuration Profiles | Read |
-| Computer Extension Attributes | Read |
-| Policies | Read |
-| Patch Management | Read |
-| Mobile Device Applications | Read |
-| Managed Software Updates | Read |
-| Computer Groups | Read |
-
-This is the minimum read-only set the project's reports need. jamf-cli itself does not
-publish a canonical required-privileges list — Jamf's
+client needs read access only. [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access#permissions-by-report-area)
+lists the privileges each report area needs, both for a direct Jamf Pro connection and for a
+Jamf Platform API integration. Grant the areas you report on. Jamf's
 [Privileges and Deprecations](https://developer.jamf.com/jamf-pro/docs/privileges-and-deprecations)
-reference is the authoritative privilege catalog. Do not use a full-administrator API
-client for scheduled reporting.
+reference is the authoritative privilege catalog. Do not use a full-administrator API client
+for scheduled reporting.
 
-On newer jamf-cli releases, a `403 Forbidden` response names the specific missing
-privilege in its error text rather than only the generic exit code — check the app's
-Run History output for that detail before guessing from the table above.
-
-**Exception: the `patch-managed` command.** The `patch-managed` CLI command issues PATCH
-writes to bulk-update managed/unmanaged status on computers. It requires additional
-privilege: **Computers → Update**. This is the only write-path command in the project; it
-is optional and disabled by default. If you use `patch-managed`, create a separate API
-role granted to read the initial inventory plus write to Computers, and use that credential
-only for that command.
+Nothing in JamfReports writes to Jamf, so no role needs a create, update or delete privilege.
+When a privilege is missing, that source fails and the rest of the collect still lands. Run
+History and the health strip name the missing privilege from jamf-cli's error. The hourly
+automatic retry skips that source, since retrying cannot help; scheduled runs and **Collect now**
+still try it, so it fills in once the role has the privilege.
 
 ## Verify
 

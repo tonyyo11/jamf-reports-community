@@ -763,12 +763,22 @@ struct OverviewView: View {
         }
     }
 
+    /// A pair too wide for the page stacks: side by side at the minimum width, the macOS
+    /// legend and the rule bars were squeezed to nothing. Side by side, the row is as
+    /// tall as its taller card and both cards fill it, so their bottoms line up.
     @ViewBuilder
     private func sectionRow(_ row: [OverviewSection]) -> some View {
         if row.count == 2 {
-            HStack(alignment: .top, spacing: 12) {
-                sectionView(row[0]).frame(maxWidth: .infinity)
-                sectionView(row[1]).frame(maxWidth: .infinity)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    sectionView(row[0]).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    sectionView(row[1]).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                VStack(spacing: 20) {
+                    sectionView(row[0])
+                    sectionView(row[1])
+                }
             }
         } else if let section = row.first {
             sectionView(section)
@@ -1144,15 +1154,16 @@ struct OverviewView: View {
             deltaTrend: trend,
             sparkValues: values,
             sparkColor: Color(hex: metric.colorHex),
-            fillsHeight: true
+            fillsHeight: true,
+            // Two lines hold "Security Score (Weighted)" or "CrowdStrike Falcon
+            // Installed" at 220 pt and the default text size; the row shares its
+            // tallest tile's height, so a wrapped title stays aligned.
+            labelLineLimit: 2
         )
         // The label can be an operator-configured string (compliance baseline
         // name, EDR agent name) with no length guarantee — in the field these
-        // are sometimes a raw audit-plist filename. StatTile's Kicker doesn't cap
-        // line count, so a long value wraps mid-word onto a second line.
-        // `.lineLimit`/`.truncationMode` are environment modifiers that
-        // cascade into the Kicker's Text without touching the shared
-        // component — constrain to a single elided line here instead.
+        // are sometimes a raw audit-plist filename — so past two lines it elides
+        // rather than growing the row. The caption keeps to one line.
         .lineLimit(1)
         .truncationMode(.tail)
     }
@@ -1196,6 +1207,8 @@ struct OverviewView: View {
                         }
                     }
                 }
+                // Fills the height a side-by-side pair offers; stacked, it is its own.
+                .frame(maxHeight: .infinity, alignment: .top)
             }
             .drillDownChrome()
         }
@@ -1230,6 +1243,7 @@ struct OverviewView: View {
                         failingRulesBars
                     }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
             .drillDownChrome()
         }

@@ -57,6 +57,16 @@ struct ConfigView: View {
             case .scoring:    "scalemass"
             }
         }
+        /// Lets the strip fit PageScaffold.minSupportedWidth when the full labels do not.
+        var shortLabel: String {
+            switch self {
+            case .agents:   "Agents"
+            case .eas:      "EAs"
+            case .platform: "Platform"
+            case .output:   "Output"
+            default:        label
+            }
+        }
     }
 
     // MARK: Save-status feedback pill
@@ -77,10 +87,7 @@ struct ConfigView: View {
     var body: some View {
         PageScaffold(spacing: 16) {
             header
-            SegmentedControl(
-                selection: $tab,
-                options: ConfigTab.allCases.map { ($0, $0.label, $0.icon) }
-            )
+            tabStrip
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
@@ -213,6 +220,25 @@ struct ConfigView: View {
         }
     }
 
+    // MARK: Tab strip
+
+    /// Full labels need ~804 pt; the page has 672 at the minimum window with the
+    /// sidebar expanded, and a wider row pushes the sidebar off the window.
+    private var tabStrip: some View {
+        ViewThatFits(in: .horizontal) {
+            segments(\.label)
+            segments(\.shortLabel)
+            ScrollView(.horizontal, showsIndicators: false) { segments(\.shortLabel) }
+        }
+    }
+
+    private func segments(_ label: KeyPath<ConfigTab, String>) -> some View {
+        SegmentedControl(
+            selection: $tab,
+            options: ConfigTab.allCases.map { ($0, $0[keyPath: label], $0.icon) }
+        )
+    }
+
     // MARK: Header
 
     private var header: some View {
@@ -290,7 +316,10 @@ struct ConfigView: View {
             Pill(text: "saved", tone: .teal, icon: "checkmark")
                 .transition(.opacity)
         case .error(let msg):
-            Pill(text: "error: \(msg)", tone: .danger)
+            // The message goes in the tooltip and a toast: Pill is fixed-size, so a
+            // long error here widened the header past the window.
+            Pill(text: "save failed", tone: .danger, icon: "exclamationmark.triangle")
+                .help(msg)
                 .transition(.opacity)
         case .saving:
             Pill(text: "saving…", tone: .muted)
@@ -326,17 +355,15 @@ struct ConfigView: View {
                 try await workspace.saveConfig()
                 withAnimation { saveStatus = .saved }
             } catch {
-                withAnimation { saveStatus = .error(shortMessage(error)) }
+                let message = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+                withAnimation { saveStatus = .error(message) }
+                workspace.toast = Toast(message: "Save failed: \(message)", style: .danger)
             }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
             withAnimation { saveStatus = .idle }
         }
-    }
-
-    private func shortMessage(_ error: Error) -> String {
-        let full = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        return full.count > 60 ? String(full.prefix(57)) + "…" : full
     }
 }
 
@@ -617,8 +644,8 @@ private struct ColumnsTab: View {
                 // thresholds) untouched. ConfigService.save preserves unmanaged keys.
                 // File reads + config load/save; keep off the main actor so a
                 // large CSV export never blocks the UI.
-                let (report, familyLabel) = try await Task.detached {
-                    () throws -> (ScaffoldService.ColumnMergeReport, String) in
+                let (report, familyLabel, merged) = try await Task.detached {
+                    () throws -> (ScaffoldService.ColumnMergeReport, String, ConfigState) in
                     let sample = try ScaffoldService.readSample(from: csvURL)
                     let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
                     var loaded = try ConfigService.load(profile: profile)
@@ -653,7 +680,7 @@ private struct ColumnsTab: View {
                     _ = try ConfigService.save(
                         profile: profile, state: loaded.state, existingDocument: loaded.document)
                     let familyLabel = isMobile ? "mobile device export" : "computer export"
-                    return (report, familyLabel)
+                    return (report, familyLabel, loaded.state)
                 }.value
                 await MainActor.run {
                     workspace.toast = Toast(
@@ -664,6 +691,11 @@ private struct ColumnsTab: View {
                     )
                 }
                 workspace.reloadFromDisk()
+                // reloadFromDisk() leaves the loaded config alone, so without this the
+                // Columns tab showed the old mappings and Save wrote them back.
+                if workspace.profile == profile {
+                    workspace.adoptScaffoldedColumns(from: merged)
+                }
             } catch {
                 await MainActor.run {
                     workspace.toast = Toast(
@@ -1076,7 +1108,7 @@ private struct PlatformTab: View {
                         }
                     }
                     PNPButton(title: "Add benchmark", icon: "plus", style: .ghost, size: .sm, action: { ws.addComplianceBenchmark() })
-                    FieldHelp(text: "Benchmark titles or IDs. Generates per-rule and per-device sheets.")
+                    FieldHelp(text: "Exact titles, case-sensitive. Empty collects every benchmark.")
                 }
             }
         }

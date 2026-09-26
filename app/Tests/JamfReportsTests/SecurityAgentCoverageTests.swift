@@ -45,4 +45,29 @@ final class SecurityAgentCoverageTests: XCTestCase {
         XCTAssertEqual(SecurityAgentCoverage.percent(installed: 0, fleet: 10), 0)
         XCTAssertNil(SecurityAgentCoverage.percent(installed: 3, fleet: 0))
     }
+
+    /// Config's Add agent leaves connected_value blank, and Config Doctor says any value then
+    /// counts as connected. The daily summary recorded 0% EDR coverage instead.
+    func testABlankConnectedValueCountsAnyValueAsConnected() throws {
+        let data = try rows("""
+        [
+          {"device": "mac-1", "ea_name": "Falcon - Status", "value": "Running"},
+          {"device": "mac-2", "ea_name": "Falcon - Status", "value": "Stopped"},
+          {"device": "mac-3", "ea_name": "Falcon - Status", "value": ""}
+        ]
+        """)
+        let unset = SecurityAgentConfig(
+            name: "CrowdStrike Falcon", column: "Falcon - Status", connectedValue: " ")
+
+        let result = SecurityAgentCoverage.compute(rows: data, agents: [unset])
+
+        XCTAssertEqual(result.first?.installed, 2)
+        XCTAssertEqual(result.first?.reporting, 2, "an empty value is still not reporting")
+    }
+
+    /// ea-results and the security report land on different cadences, so the count can
+    /// briefly exceed a fleet that shrank in between.
+    func testPercentNeverPassesOneHundred() {
+        XCTAssertEqual(SecurityAgentCoverage.percent(installed: 12, fleet: 10), 100)
+    }
 }

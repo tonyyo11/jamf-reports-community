@@ -118,9 +118,17 @@ struct UpdatesView: View {
             EmptyStateView(
                 systemImage: "arrow.triangle.2.circlepath",
                 title: "No update status data yet",
-                message: "Collect data for this screen — use the Collect now banner when shown, or run `jamf-cli pro report update-status` — and it will populate."
+                message: "Collect data for this screen with the Collect now banner when it "
+                    + "shows, or collect the Inventory and Scan tiers from the command line.",
+                commands: [Self.collectCommand(profile: workspace.profile)]
             )
         }
+    }
+
+    /// `collect` has no default profile; without the flag the pasted command fails
+    /// on a missing `--profile`.
+    nonisolated static func collectCommand(profile: String) -> String {
+        "jamf-reports collect --profile \(profile) --tiers inventory,scan"
     }
 
     private var kpiGrid: some View {
@@ -208,7 +216,7 @@ struct UpdatesView: View {
                 angularInset: 1.6
             )
             .foregroundStyle(Color(hex: slice.colorHex))
-            .accessibilityLabel(slice.label)
+            .accessibilityLabel(UpdateStatusService.planStateDisplayName(slice.label))
             .accessibilityValue("\(slice.count) plans")
         }
         .chartLegend(.hidden)
@@ -219,7 +227,7 @@ struct UpdatesView: View {
                 unit: " plans",
                 slices: snapshot.planStateBreakdown.filter { $0.count > 0 }.map { slice in
                     SectorChartDescriptor.Slice(
-                        label: slice.label,
+                        label: UpdateStatusService.planStateDisplayName(slice.label),
                         value: Double(slice.count)
                     )
                 }
@@ -230,11 +238,15 @@ struct UpdatesView: View {
     private var planStateLegend: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(snapshot.planStateBreakdown) { slice in
+                let name = UpdateStatusService.planStateDisplayName(slice.label)
+                let pct = snapshot.planTotal > 0
+                    ? (Double(slice.count) / Double(snapshot.planTotal)) * 100
+                    : 0
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color(hex: slice.colorHex))
                         .frame(width: 12, height: 12)
-                    Text(slice.label)
+                    Text(name)
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                     Spacer()
@@ -242,9 +254,6 @@ struct UpdatesView: View {
                         .font(Theme.Fonts.mono(12, weight: .semibold))
                         .foregroundStyle(Theme.Colors.fg2)
                         .monospacedDigit()
-                    let pct = snapshot.planTotal > 0
-                        ? (Double(slice.count) / Double(snapshot.planTotal)) * 100
-                        : 0
                     Text(String(format: "%.1f%%", pct))
                         .font(Theme.Fonts.mono(11))
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -252,7 +261,7 @@ struct UpdatesView: View {
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(slice.label), \(slice.count) plans, \(Int((snapshot.planTotal > 0 ? (Double(slice.count) / Double(snapshot.planTotal)) * 100 : 0).rounded())) percent")
+                .accessibilityLabel("\(name), \(slice.count) plans, \(Int(pct.rounded())) percent")
             }
         }
     }
@@ -346,8 +355,9 @@ struct UpdatesView: View {
                     .width(min: 80, ideal: 100)
 
                     TableColumn("State") { plan in
-                        Pill(text: plan.state, tone: pillTone(for: plan.state))
-                            .accessibilityLabel("State \(plan.state)")
+                        let state = UpdateStatusService.planStateDisplayName(plan.state)
+                        Pill(text: state, tone: pillTone(for: plan.state))
+                            .accessibilityLabel("State \(state)")
                     }
                     .width(min: 118, ideal: 138)
 
@@ -542,7 +552,7 @@ private struct UpdatesPlanStateDonutExport: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(Color(hex: slice.colorHex))
                             .frame(width: 10, height: 10)
-                        Text(slice.label)
+                        Text(UpdateStatusService.planStateDisplayName(slice.label))
                             .font(.system(size: 11.5, weight: .medium))
                             .foregroundStyle(Color(hex: 0x111827))
                         Spacer(minLength: 6)
