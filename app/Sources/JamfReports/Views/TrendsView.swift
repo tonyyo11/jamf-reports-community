@@ -649,7 +649,12 @@ struct TrendsView: View {
                             }
                         }
                     }
-                    .chartXScale(domain: domain)
+                    // Inset so the first and last point markers clear the y-axis labels and the
+                    // plot edge; the band chart has no markers and fills the full width.
+                    .chartXScale(
+                        domain: domain,
+                        range: .plotDimension(padding: metric == .mscpBandTrend ? 0 : 10)
+                    )
                     .chartYScale(domain: chartYDomain)
                     .chartXSelection(value: $selectedDate)
                     .chartXAxis {
