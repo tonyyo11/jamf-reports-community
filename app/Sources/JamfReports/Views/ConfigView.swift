@@ -318,7 +318,10 @@ struct ConfigView: View {
             Pill(text: "saved", tone: .teal, icon: "checkmark")
                 .transition(.opacity)
         case .error(let msg):
-            Pill(text: "error: \(msg)", tone: .danger)
+            // The message goes in the tooltip and a toast: Pill is fixed-size, so a
+            // long error here widened the header past the window.
+            Pill(text: "save failed", tone: .danger, icon: "exclamationmark.triangle")
+                .help(msg)
                 .transition(.opacity)
         case .saving:
             Pill(text: "saving…", tone: .muted)
@@ -354,17 +357,15 @@ struct ConfigView: View {
                 try await workspace.saveConfig()
                 withAnimation { saveStatus = .saved }
             } catch {
-                withAnimation { saveStatus = .error(shortMessage(error)) }
+                let message = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+                withAnimation { saveStatus = .error(message) }
+                workspace.toast = Toast(message: "Save failed: \(message)", style: .danger)
             }
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled else { return }
             withAnimation { saveStatus = .idle }
         }
-    }
-
-    private func shortMessage(_ error: Error) -> String {
-        let full = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        return full.count > 60 ? String(full.prefix(57)) + "…" : full
     }
 }
 
