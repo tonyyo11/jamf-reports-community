@@ -1,6 +1,7 @@
 import XCTest
 @testable import JamfReports
 
+@MainActor
 final class SidebarModeTests: XCTestCase {
 
     func testExpandedShowsCompactWhenNarrow() {
@@ -30,21 +31,24 @@ final class SidebarModeTests: XCTestCase {
         }
     }
 
-    /// Mirrors ContentView.cycleSidebar: cycling from the mode on screen while narrow sets the
-    /// override, so the third press lands on a visible expanded sidebar.
+    /// The third press while narrow lands on a visible expanded sidebar, which cycling from the
+    /// stored mode would skip.
     func testCyclingWhileNarrowReachesExpanded() {
-        var stored = SidebarMode.expanded
-        var overridden = false
+        var state = (stored: SidebarMode.expanded, overridden: false)
         var shown: [SidebarMode] = []
         for _ in 0..<3 {
-            let current = SidebarMode.effective(stored: stored, isNarrow: true,
-                                                overridden: overridden)
-            overridden = true
-            stored = current.next()
-            shown.append(SidebarMode.effective(stored: stored, isNarrow: true,
-                                               overridden: overridden))
+            state = SidebarMode.cycled(stored: state.stored, isNarrow: true,
+                                       overridden: state.overridden)
+            shown.append(SidebarMode.effective(stored: state.stored, isNarrow: true,
+                                               overridden: state.overridden))
         }
         XCTAssertEqual(shown, [.hidden, .expanded, .compact])
+    }
+
+    func testCyclingWhileWideCyclesStoredModeWithoutOverride() {
+        let result = SidebarMode.cycled(stored: .expanded, isNarrow: false, overridden: false)
+        XCTAssertEqual(result.stored, .compact)
+        XCTAssertFalse(result.overridden)
     }
 
     /// At or below the minimum window the rule could never apply.

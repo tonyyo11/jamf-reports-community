@@ -282,11 +282,14 @@ struct ContentView: View {
         }
     }
 
-    /// Cycles from the mode on screen, so the first press while auto-compacted changes what the
-    /// user sees.
     private func cycleSidebar() {
-        if isNarrowWindow == true { sidebarOverriddenWhileNarrow = true }
-        sidebarModeRaw = sidebarMode.next().rawValue
+        let result = SidebarMode.cycled(
+            stored: SidebarMode(rawValue: sidebarModeRaw) ?? .expanded,
+            isNarrow: isNarrowWindow ?? false,
+            overridden: sidebarOverriddenWhileNarrow
+        )
+        sidebarOverriddenWhileNarrow = result.overridden
+        sidebarModeRaw = result.stored.rawValue
     }
 
     private func applyWindowWidth(narrow: Bool) {
@@ -360,5 +363,14 @@ extension SidebarMode {
     /// narrowed. Compact and hidden are never changed.
     static func effective(stored: SidebarMode, isNarrow: Bool, overridden: Bool) -> SidebarMode {
         stored == .expanded && isNarrow && !overridden ? .compact : stored
+    }
+
+    /// Cycles from the mode on screen, so the first press while auto-compacted changes what the
+    /// user sees, and a press while narrow overrides the rule until the window widens.
+    static func cycled(
+        stored: SidebarMode, isNarrow: Bool, overridden: Bool
+    ) -> (stored: SidebarMode, overridden: Bool) {
+        let shown = effective(stored: stored, isNarrow: isNarrow, overridden: overridden)
+        return (shown.next(), overridden || isNarrow)
     }
 }
