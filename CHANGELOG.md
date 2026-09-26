@@ -156,6 +156,8 @@ tenant's real data in every section, and you choose what it shows.
 - The setup step strip fits a small window, and a workspace name is checked once you type one.
 - Sidebar rows keep to one line and pass under a divider at the top and bottom.
 - In demo mode the log viewer shows demo entries instead of this session's own log.
+- With JamfReports turned off in Login Items, the health strip says "Automation is off" instead
+  of "1 scheduled run is failing".
 - Generated Reports' profile menu lists profiles with a hyphen or underscore in the name, such as
   acme-prod, which it used to leave out or cut short.
 - Security Posture no longer tells you to run a collect to add EDR, mSCP, XProtect, CVE and Secure
