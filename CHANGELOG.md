@@ -137,6 +137,23 @@ tenant's real data in every section, and you choose what it shows.
 - Trends charts with a single line no longer show a "Band" legend underneath, and the headline
   number no longer shortens to "5…" or disappears in a small window.
 - DDM Blueprints' expanded device lists sit under their heading instead of mid-card.
+- Trends shows a dash, not 0%, for a metric with no snapshots in the range. Lines stop at a gap in
+  the data instead of drawing across it, and the Managed and Active Devices axis fits the size of
+  the fleet rather than starting at 1,000.
+- Mobile Fleet counts devices that report no supervision state as Unknown, so the donut adds up
+  to the device total, and the selected slice and its legend row stand out. Its tile rows fill
+  the page width, and its tables end at their last row instead of blank striped rows.
+- OS Updates shows plan states as words ("Completed", "Exception") instead of Jamf's codes. The
+  collect command it and DDM Blueprints print when there is no data now names the profile, so it
+  runs as pasted, and "Data refreshed" appears once the screen has reloaded, not before.
+- Devices says when a filter matches no devices, keeps legend words whole, lines up the detail
+  panel's values, and keeps file extensions and kind names visible in the source names.
+- Data Sources keeps the jamf-cli card's labels on one line and its command names whole, and
+  the Client Secret field is the same height as Client ID.
+- The Overview score cards show their whole title, and side-by-side cards end level.
+- The setup step strip fits a small window, and a workspace name is checked once you type one.
+- Sidebar rows keep to one line and pass under a divider at the top and bottom.
+- In demo mode the log viewer shows demo entries instead of this session's own log.
 - Generated Reports' profile menu lists profiles with a hyphen or underscore in the name, such as
   acme-prod, which it used to leave out or cut short.
 - Security Posture no longer tells you to run a collect to add EDR, mSCP, XProtect, CVE and Secure
