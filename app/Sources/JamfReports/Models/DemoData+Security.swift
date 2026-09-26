@@ -8,8 +8,7 @@ extension DemoData {
 
     // MARK: - macOS versions
 
-    /// The version number in an `osDistribution` label: "macOS Sequoia 15.4" is
-    /// "15.4" and "macOS 13.7.6 (Ventura)" is "13.7.6".
+    /// The version number in an `osDistribution` label: "macOS 15.4" is "15.4".
     static func osVersionNumber(_ label: String) -> String {
         let number = label.split(separator: " ").first { $0.first?.isNumber == true }
         return number.map(String.init) ?? label
