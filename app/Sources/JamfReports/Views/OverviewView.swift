@@ -764,15 +764,17 @@ struct OverviewView: View {
     }
 
     /// A pair too wide for the page stacks: side by side at the minimum width, the macOS
-    /// legend and the rule bars were squeezed to nothing.
+    /// legend and the rule bars were squeezed to nothing. Side by side, the row is as
+    /// tall as its taller card and both cards fill it, so their bottoms line up.
     @ViewBuilder
     private func sectionRow(_ row: [OverviewSection]) -> some View {
         if row.count == 2 {
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 12) {
-                    sectionView(row[0]).frame(maxWidth: .infinity)
-                    sectionView(row[1]).frame(maxWidth: .infinity)
+                    sectionView(row[0]).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    sectionView(row[1]).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 VStack(spacing: 20) {
                     sectionView(row[0])
                     sectionView(row[1])
@@ -1205,6 +1207,8 @@ struct OverviewView: View {
                         }
                     }
                 }
+                // Fills the height a side-by-side pair offers; stacked, it is its own.
+                .frame(maxHeight: .infinity, alignment: .top)
             }
             .drillDownChrome()
         }
@@ -1239,6 +1243,7 @@ struct OverviewView: View {
                         failingRulesBars
                     }
                 }
+                .frame(maxHeight: .infinity, alignment: .top)
             }
             .drillDownChrome()
         }
