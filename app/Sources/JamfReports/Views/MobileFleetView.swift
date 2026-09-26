@@ -311,7 +311,10 @@ struct MobileFleetView: View {
                     HStack(alignment: .top, spacing: 28) {
                         supervisionDonut
                             .frame(width: 180, height: 180)
+                        // The rows' 6 pt highlight inset runs into the gutter, so
+                        // their figures stay flush with the other cards' figures.
                         supervisionLegend
+                            .padding(.horizontal, -6)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
