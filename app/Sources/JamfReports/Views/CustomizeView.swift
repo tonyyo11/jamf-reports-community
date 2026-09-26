@@ -25,6 +25,12 @@ struct CustomizeView: View {
         .map(\.identifier)
         .filter { $0 != FullInstanceTemplate().identifier && $0 != "custom" }
 
+    /// Non-breaking hyphens keep `security-posture` whole when the caption wraps.
+    /// Display only: the caption is not selectable, so nothing pastes them.
+    private static let cliTemplateList: String = cliTemplates
+        .map { $0.replacingOccurrences(of: "-", with: "\u{2011}") }
+        .joined(separator: ", ")
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -143,15 +149,19 @@ struct CustomizeView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Mono(
-                    text: "jamf-reports generate --profile \(workspace.profile) "
-                        + "--template executive",
-                    size: 11,
-                    color: Theme.Text.primary
-                )
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                Text("Templates: \(Self.cliTemplates.joined(separator: ", ")).")
+                // One line in a horizontal scroll: wrapping broke the command at
+                // its hyphens, and it must copy exactly as shown.
+                ScrollView(.horizontal) {
+                    Mono(
+                        text: "jamf-reports generate --profile \(workspace.profile) "
+                            + "--template executive",
+                        size: 11,
+                        color: Theme.Text.primary
+                    )
+                    .textSelection(.enabled)
+                    .fixedSize()
+                }
+                Text("Templates: \(Self.cliTemplateList).")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
