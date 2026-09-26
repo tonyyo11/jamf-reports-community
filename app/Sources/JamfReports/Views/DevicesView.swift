@@ -961,14 +961,26 @@ struct DevicesView: View {
 
     private func scanSection(title: String, lines: [(String, String)], date: Date?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                SectionHeader(title: title)
-                Spacer()
-                if let date {
-                    Mono(
-                        text: "snapshot " + date.formatted(date: .abbreviated, time: .shortened),
-                        size: 10.5)
+            if let date {
+                let caption = Mono(
+                    text: "snapshot " + date.formatted(date: .abbreviated, time: .shortened),
+                    size: 10.5)
+                    .fixedSize()
+                // The detail panel is too narrow at the minimum width for both on one
+                // row; the caption then sits under the title rather than wrapping.
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        SectionHeader(title: title)
+                        Spacer()
+                        caption
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        SectionHeader(title: title)
+                        caption
+                    }
                 }
+            } else {
+                SectionHeader(title: title)
             }
             ForEach(lines, id: \.0) { line in
                 HStack(alignment: .top, spacing: 8) {
