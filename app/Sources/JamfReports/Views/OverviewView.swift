@@ -1152,15 +1152,16 @@ struct OverviewView: View {
             deltaTrend: trend,
             sparkValues: values,
             sparkColor: Color(hex: metric.colorHex),
-            fillsHeight: true
+            fillsHeight: true,
+            // Two lines hold "Security Score (Weighted)" or "CrowdStrike Falcon
+            // Installed" at 220 pt and the default text size; the row shares its
+            // tallest tile's height, so a wrapped title stays aligned.
+            labelLineLimit: 2
         )
         // The label can be an operator-configured string (compliance baseline
         // name, EDR agent name) with no length guarantee — in the field these
-        // are sometimes a raw audit-plist filename. StatTile's Kicker doesn't cap
-        // line count, so a long value wraps mid-word onto a second line.
-        // `.lineLimit`/`.truncationMode` are environment modifiers that
-        // cascade into the Kicker's Text without touching the shared
-        // component — constrain to a single elided line here instead.
+        // are sometimes a raw audit-plist filename — so past two lines it elides
+        // rather than growing the row. The caption keeps to one line.
         .lineLimit(1)
         .truncationMode(.tail)
     }
