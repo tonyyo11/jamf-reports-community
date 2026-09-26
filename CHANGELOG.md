@@ -127,10 +127,16 @@ tenant's real data in every section, and you choose what it shows.
   workspace, because it looked under an older folder name.
 - Opening a workspace folder that has not been created yet says so, instead of saying the folder
   is outside the app's allowed folders.
-- At the smallest window size, Devices and the first setup step no longer push the sidebar out of
-  the window: the Devices search field moves above the filters, and the setup badges wrap.
-- Mobile Fleet's Mobile Devices table shows its devices. It showed only its header.
-- Trends charts with a single line no longer show a "Band" legend underneath.
+- In a window narrower than 1,100 pt the sidebar shows its icons only, which leaves the page more
+  room; widening the window brings it back, and ⌘0 still sets it the way you want.
+- At the smallest window size, Devices, Config and the first setup step no longer push the
+  sidebar out of the window: the Devices search field moves above the filters, Config's tabs use
+  shorter names, and the setup badges wrap.
+- Mobile Fleet's Mobile Devices table and Config Profiles card list their devices and profiles.
+  They showed only their titles.
+- Trends charts with a single line no longer show a "Band" legend underneath, and the headline
+  number no longer shortens to "5…" or disappears in a small window.
+- DDM Blueprints' expanded device lists sit under their heading instead of mid-card.
 - Generated Reports' profile menu lists profiles with a hyphen or underscore in the name, such as
   acme-prod, which it used to leave out or cut short.
 - Security Posture no longer tells you to run a collect to add EDR, mSCP, XProtect, CVE and Secure
