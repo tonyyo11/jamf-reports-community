@@ -45,6 +45,11 @@ final class TrendsViewLineSegmentTests: XCTestCase {
         XCTAssertEqual(TrendsView.lineSegmentIndices(dates), [0, 0, 0, 1, 1])
     }
 
+    func testGapIsNotTakenAsTheCadenceWhenHalfTheIntervalsAreIt() {
+        // A daily history clipped by the range start: intervals of 1 and 14 days.
+        XCTAssertEqual(TrendsView.lineSegmentIndices(days([4, 5, 19])), [0, 0, 1])
+    }
+
     func testEachGapStartsANewSegment() {
         let dates = days([0, 1, 2, 10, 11, 12, 30, 31])
         XCTAssertEqual(TrendsView.lineSegmentIndices(dates), [0, 0, 0, 1, 1, 1, 2, 2])

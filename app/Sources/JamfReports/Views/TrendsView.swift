@@ -159,14 +159,15 @@ struct TrendsView: View {
     /// No shorter gap breaks it, so a weekday-only schedule's weekends stay joined.
     nonisolated static let minimumLineGap: TimeInterval = 4 * 24 * 3600
 
-    /// The line segment each point belongs to, from 0. The cadence is the median interval
-    /// between points, so daily and weekly histories each break only at their own gaps.
+    /// The line segment each point belongs to, from 0. The cadence is the lower median interval
+    /// between points, so daily and weekly histories each break only at their own gaps; the
+    /// lower one because a gap is always a high outlier and must not set the cadence itself.
     /// `dates` must be ascending, as the trend points are.
     nonisolated static func lineSegmentIndices(_ dates: [Date]) -> [Int] {
         guard dates.count > 1 else { return dates.map { _ in 0 } }
         let intervals = zip(dates.dropFirst(), dates).map { $0.timeIntervalSince($1) }
         let sorted = intervals.sorted()
-        let typical = sorted[sorted.count / 2]
+        let typical = sorted[(sorted.count - 1) / 2]
         let limit = max(typical * lineGapFactor, minimumLineGap)
         var segment = 0
         return [0] + intervals.map { interval in
