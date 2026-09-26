@@ -150,6 +150,34 @@ final class MobileFleetServiceTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempURL)
     }
 
+    /// Tied counts list the newer version first, compared numerically, on
+    /// every run: the rows no longer swap places between renders.
+    func testOSDistributionBreaksTiesByVersionDescending() {
+        let versions = ["17.6.1", "18.2.1", "9.3.6", "18.10", "18.2.1", "17.6.1"]
+        let fleet = versions.map { version in
+            MobileDeviceInventoryItem(
+                mobileDeviceId: UUID().uuidString,
+                general: MobileDeviceGeneral(
+                    displayName: nil, serialNumber: nil, osVersion: version,
+                    managed: nil, supervised: nil,
+                    lastInventoryUpdateDate: nil, deviceOwnershipType: nil,
+                    activationLockEnabled: nil, passcodeCompliant: nil,
+                    dataProtectionEnabled: nil, jailbreakDetected: nil,
+                    enrollmentMethodPrestage: nil
+                )
+            )
+        }
+        for _ in 0..<5 {
+            let snapshot = MobileFleetService.Snapshot(
+                isDetected: true, lightDevices: [], richDevices: fleet.shuffled(),
+                profiles: [], sourceFile: nil, snapshotDate: nil
+            )
+            XCTAssertEqual(snapshot.osDistribution.map { $0.osVersion },
+                           ["18.2.1", "17.6.1", "18.10", "9.3.6"])
+            XCTAssertEqual(snapshot.osDistribution.map { $0.count }, [2, 2, 1, 1])
+        }
+    }
+
     func testOSDistributionSortedAndLimited() throws {
         let inventoryJSON = """
         [

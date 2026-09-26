@@ -366,8 +366,14 @@ struct MobileFleetService: Sendable {
             }.filter { !$0.isEmpty }
 
             let grouped = Dictionary(grouping: osVersions) { $0 }
+            // Dictionary order changes between runs, so tied counts need a
+            // tiebreak or their rows swap places between renders.
             let sorted = grouped.map { (osVersion: $0.key, count: $0.value.count) }
-                .sorted { $0.count > $1.count }
+                .sorted { lhs, rhs in
+                    if lhs.count != rhs.count { return lhs.count > rhs.count }
+                    return lhs.osVersion.compare(rhs.osVersion, options: .numeric)
+                        == .orderedDescending
+                }
             return Array(sorted.prefix(10))
         }
 
