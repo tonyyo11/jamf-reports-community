@@ -204,6 +204,7 @@ final class DemoDataOperationsTests: XCTestCase {
         XCTAssertEqual(counts[.supervised], 20)
         XCTAssertEqual(counts[.unsupervised], 3)
         XCTAssertEqual(counts[.unmanaged], 2)
+        XCTAssertNil(counts[.unknown])
         XCTAssertEqual(methods["ADE / Institutional"], counts[.supervised])
         XCTAssertEqual(methods["User Enrollment"], 3)
         XCTAssertEqual(methods["Account-Driven User Enrollment"], 2)
