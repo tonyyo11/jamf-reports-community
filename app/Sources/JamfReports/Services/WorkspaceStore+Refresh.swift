@@ -176,26 +176,33 @@ extension WorkspaceStore {
         defer { globalStatus = nil }
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
+        let outcome: Toast
         do {
             let exit = try await collect(activeProfile, tiers, CLIBridge.bufferingOnLine)
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
-                toast = Toast(message: "Data refreshed", style: .success)
+                outcome = Toast(message: "Data refreshed", style: .success)
             } else {
-                toast = Toast(
+                outcome = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",
                     style: .danger
                 )
             }
         } catch {
-            toast = Toast(message: CLIBridge.explainOperationError(error, operation: "Refresh"), style: .danger)
+            outcome = Toast(
+                message: CLIBridge.explainOperationError(error, operation: "Refresh"),
+                style: .danger
+            )
         }
         // The Overview scan prompt reads `staleHeavyTiers`, which only the prompt's
         // own button cleared — so a toolbar refresh that collected every tier left
         // it on its launch-time verdict (2.8.0 field pass). Re-probe from disk.
         await checkHeavyTierStaleness()
         await refreshDataFreshness()
+        // Callers show "Collecting…" until this returns; a toast posted before the
+        // re-probes read "Data refreshed" beside a button still collecting.
+        toast = outcome
     }
 
     /// First full collect for a never-fetched workspace (#181) — the
