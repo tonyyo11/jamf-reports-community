@@ -312,6 +312,16 @@ struct OnboardingView: View {
                 }
             }
 
+            // Setup is the way out of demo mode, so it checks the real jamf-cli rather than
+            // showing a demo one; say so, since the title bar still reads demo.
+            if workspaceStore.demoMode {
+                Text("Demo mode is on. Setup checks the jamf-cli on this Mac because it "
+                    + "creates a real profile, and demo mode ends when setup finishes.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Card(padding: 0) {
                 HStack(spacing: 10) {
                     Mono(text: flow.brewCommand, size: 12, color: Theme.Colors.fg2)
