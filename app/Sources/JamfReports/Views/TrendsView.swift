@@ -395,6 +395,8 @@ struct TrendsView: View {
                     .opacity(0.85)
                 }
             }
+            // The sparkline's height, so a pill without one (under two points) matches its row.
+            .frame(minHeight: 18)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
