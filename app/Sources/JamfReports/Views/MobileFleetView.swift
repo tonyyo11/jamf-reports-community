@@ -216,23 +216,27 @@ struct MobileFleetView: View {
         }
     }
 
+    // Both tile rows use the Overview's grid: the adaptive LazyVGrid capped
+    // tiles at 320 pt, leaving an empty band beside them on a wide window.
     private var kpiGrid: some View {
-        let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
-        return LazyVGrid(columns: columns, spacing: 12) {
+        EqualHeightTileGrid(minTileWidth: 220) {
             StatTile(
                 label: "Total Mobile Devices",
                 value: "\(snapshot.totalDevices)",
-                sub: "iOS and iPadOS devices"
+                sub: "iOS and iPadOS devices",
+                fillsHeight: true
             )
             StatTile(
                 label: "iPads",
                 value: "\(snapshot.iPadCount)",
-                sub: pctString(count: snapshot.iPadCount, total: snapshot.totalDevices)
+                sub: pctString(count: snapshot.iPadCount, total: snapshot.totalDevices),
+                fillsHeight: true
             )
             StatTile(
                 label: "iPhones",
                 value: "\(snapshot.iPhoneCount)",
-                sub: pctString(count: snapshot.iPhoneCount, total: snapshot.totalDevices)
+                sub: pctString(count: snapshot.iPhoneCount, total: snapshot.totalDevices),
+                fillsHeight: true
             )
         }
     }
@@ -240,17 +244,18 @@ struct MobileFleetView: View {
     @ViewBuilder
     private var complianceKpiGrid: some View {
         if !snapshot.richDevices.isEmpty {
-            let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
-            LazyVGrid(columns: columns, spacing: 12) {
+            EqualHeightTileGrid(minTileWidth: 220) {
                 StatTile(
                     label: "Passcode Compliant",
                     value: fleetPercentText(snapshot.passcodeCompliantCount),
-                    sub: fleetCountCaption(snapshot.passcodeCompliantCount)
+                    sub: fleetCountCaption(snapshot.passcodeCompliantCount),
+                    fillsHeight: true
                 )
                 StatTile(
                     label: "Activation Lock",
                     value: fleetPercentText(snapshot.activationLockEnabledCount),
-                    sub: fleetCountCaption(snapshot.activationLockEnabledCount)
+                    sub: fleetCountCaption(snapshot.activationLockEnabledCount),
+                    fillsHeight: true
                 )
                 jailbreakTile
             }
@@ -276,16 +281,19 @@ struct MobileFleetView: View {
     /// "Clean" only when some device actually reported a jailbreak status.
     private var jailbreakTile: StatTile {
         guard let detected = snapshot.jailbreakDetectedCount else {
-            return StatTile(label: "Jailbreak Status", value: "—", sub: Self.notCollectedCaption)
+            return StatTile(label: "Jailbreak Status", value: "—", sub: Self.notCollectedCaption,
+                            fillsHeight: true)
         }
         if detected > 0 {
             return StatTile(
                 label: "Jailbreak Detected",
                 value: "\(detected)",
-                sub: "Devices requiring attention"
+                sub: "Devices requiring attention",
+                fillsHeight: true
             )
         }
-        return StatTile(label: "Jailbreak Status", value: "Clean", sub: "No compromised devices")
+        return StatTile(label: "Jailbreak Status", value: "Clean", sub: "No compromised devices",
+                        fillsHeight: true)
     }
 
     @ViewBuilder
