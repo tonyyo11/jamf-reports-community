@@ -40,4 +40,28 @@ final class TrendsViewNoDataTests: XCTestCase {
         XCTAssertEqual(TrendsView.pillDeltaText(series: [50, 50.3], unit: "%"), "±0%")
         XCTAssertEqual(TrendsView.pillDeltaText(series: [50], unit: "%"), "±0%")
     }
+
+    func testPillWithNoPointsTellsVoiceOverSo() {
+        XCTAssertEqual(
+            TrendsView.metricPillAccessibilityLabel(
+                label: "Patch Compliance", unit: "%", series: [], goodTrend: false
+            ),
+            "Patch Compliance, no snapshots in range"
+        )
+    }
+
+    func testPillAccessibilityLabelKeepsDirectionAndChange() {
+        XCTAssertEqual(
+            TrendsView.metricPillAccessibilityLabel(
+                label: "FileVault", unit: "%", series: [70, 72.4], goodTrend: true
+            ),
+            "FileVault, improving, +2% change"
+        )
+        XCTAssertEqual(
+            TrendsView.metricPillAccessibilityLabel(
+                label: "FileVault", unit: "%", series: [70], goodTrend: false
+            ),
+            "FileVault, unchanged, +0% change"
+        )
+    }
 }

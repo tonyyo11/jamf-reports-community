@@ -471,7 +471,9 @@ struct TrendsView: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(metricPillAccessibilityLabel(m, delta: dl, goodTrend: goodTrend))
+        .accessibilityLabel(Self.metricPillAccessibilityLabel(
+            label: metricLabel(m), unit: m.unit, series: series, goodTrend: goodTrend
+        ))
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(metricLabel(m)) trend")
         .onAppear {
@@ -1149,14 +1151,21 @@ struct TrendsView: View {
         }
     }
 
-    private func metricPillAccessibilityLabel(
-        _ m: TrendSeries.Metric,
-        delta: Double,
+    /// A pill's VoiceOver label; a metric with no points says so rather than "+0% change",
+    /// matching the dash the pill shows.
+    nonisolated static func metricPillAccessibilityLabel(
+        label: String,
+        unit: String,
+        series: [Double],
         goodTrend: Bool
     ) -> String {
+        guard let first = series.first, let last = series.last else {
+            return "\(label), no snapshots in range"
+        }
+        let delta = last - first
         let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
-        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(m.unit)"
-        return "\(metricLabel(m)), \(direction), \(deltaStr) change"
+        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(unit)"
+        return "\(label), \(direction), \(deltaStr) change"
     }
 
     /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
