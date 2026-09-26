@@ -792,14 +792,34 @@ final class MobileFleetServiceTests: XCTestCase {
 
         let breakdown = snapshot.supervisionBreakdown
         XCTAssertEqual(breakdown.map { $0.role }, MobileFleetService.SupervisionRole.allCases)
-        XCTAssertEqual(breakdown.map { $0.label }, ["Supervised", "Unsupervised", "Unmanaged"])
-        XCTAssertEqual(breakdown.map { $0.count }, [2, 1, 1])
+        XCTAssertEqual(
+            breakdown.map { $0.label }, ["Supervised", "Unsupervised", "Unmanaged", "Unknown"]
+        )
+        XCTAssertEqual(breakdown.map { $0.count }, [2, 1, 1, 2])
+        XCTAssertEqual(breakdown.reduce(0) { $0 + $1.count }, snapshot.totalDevices)
         for slice in breakdown {
             XCTAssertEqual(
                 MobileFleetService.devices(fleet, in: slice.role).count, slice.count, slice.label
             )
         }
         XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, fleet.count)
+        XCTAssertEqual(snapshot.supervisionSlices.map { $0.role }.last, .unknown)
+    }
+
+    /// A fleet whose every device has a supervision state shows no Unknown
+    /// row, while an empty known bucket keeps its row.
+    func testSupervisionBreakdownOmitsAnEmptyUnknownRow() {
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [],
+            richDevices: [
+                inventoryItem(managed: true, supervised: true),
+                inventoryItem(managed: false, supervised: nil),
+            ],
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        let breakdown = snapshot.supervisionBreakdown
+        XCTAssertEqual(breakdown.map { $0.role }, [.supervised, .unsupervised, .unmanaged])
+        XCTAssertEqual(breakdown.map { $0.count }, [1, 0, 1])
     }
 
     func testSupervisionSlicesDropEmptyBuckets() {

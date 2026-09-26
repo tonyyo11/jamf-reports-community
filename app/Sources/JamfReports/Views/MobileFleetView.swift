@@ -364,7 +364,7 @@ struct MobileFleetView: View {
                 let isActive = supervisionFilter == slice.role
                 let action: String = isActive
                     ? "Show every device in the table"
-                    : "Show only \(slice.label.lowercased()) devices in the table"
+                    : "Show only \(Self.filterNoun(for: slice.role)) in the table"
                 Button {
                     toggleSupervisionFilter(slice.role)
                 } label: {
@@ -416,7 +416,15 @@ struct MobileFleetView: View {
         case .supervised: return Theme.Colors.goldBright
         case .unsupervised: return Theme.Colors.warn
         case .unmanaged: return Theme.Colors.hairlineStrong
+        case .unknown: return Theme.Colors.fgMuted.opacity(0.45)
         }
+    }
+
+    /// The devices a legend row's filter shows, for its hint.
+    private static func filterNoun(for role: MobileFleetService.SupervisionRole) -> String {
+        role == .unknown
+            ? "devices with no supervision state"
+            : "\(role.label.lowercased()) devices"
     }
 
     @ViewBuilder

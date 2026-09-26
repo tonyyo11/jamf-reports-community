@@ -11,11 +11,13 @@ struct MobileFleetService: Sendable {
 
     /// The supervision donut's buckets, in slice order. The view picks a colour
     /// per case and filters the devices table by it; the raw value is the label
-    /// the legend shows.
+    /// the legend shows. `unknown` holds the devices `supervisionRole(of:)`
+    /// cannot place, so the ring adds up to the fleet.
     enum SupervisionRole: String, Sendable, CaseIterable {
         case supervised = "Supervised"
         case unsupervised = "Unsupervised"
         case unmanaged = "Unmanaged"
+        case unknown = "Unknown"
 
         var label: String { rawValue }
     }
@@ -32,6 +34,12 @@ struct MobileFleetService: Sendable {
         guard managed else { return .unmanaged }
         guard let supervised = device.general?.supervised else { return nil }
         return supervised ? .supervised : .unsupervised
+    }
+
+    /// The donut bucket a device is counted and filtered in: its role, or
+    /// `unknown` when it has none.
+    static func bucket(of device: MobileDeviceInventoryItem) -> SupervisionRole {
+        supervisionRole(of: device) ?? .unknown
     }
 
     /// The slice at an angle value. An angle value is the running device count
@@ -76,7 +84,7 @@ struct MobileFleetService: Sendable {
         _ devices: [MobileDeviceInventoryItem], in role: SupervisionRole?
     ) -> [MobileDeviceInventoryItem] {
         guard let role else { return devices }
-        return devices.filter { supervisionRole(of: $0) == role }
+        return devices.filter { bucket(of: $0) == role }
     }
 
     /// Coarse device form factor. jamf-cli's `deviceType` is the OS family
@@ -252,17 +260,17 @@ struct MobileFleetService: Sendable {
 
         /// Bucket count of supervised / unsupervised / unmanaged devices for the
         /// MobileFleetView supervision donut, counted through
-        /// `MobileFleetService.supervisionRole(of:)` so the donut and the
-        /// devices table's filter can never disagree about a device.
+        /// `MobileFleetService.bucket(of:)` so the donut and the devices table's
+        /// filter can never disagree about a device. The Unknown row appears
+        /// only when some device falls in it; the other three always show.
         var supervisionBreakdown: [(label: String, count: Int, role: SupervisionRole)] {
             var counts: [SupervisionRole: Int] = [:]
             for device in richDevices {
-                guard let role = MobileFleetService.supervisionRole(of: device) else { continue }
-                counts[role, default: 0] += 1
+                counts[MobileFleetService.bucket(of: device), default: 0] += 1
             }
-            return SupervisionRole.allCases.map { role in
-                (label: role.label, count: counts[role] ?? 0, role: role)
-            }
+            return SupervisionRole.allCases
+                .filter { $0 != .unknown || counts[$0] != nil }
+                .map { role in (label: role.label, count: counts[role] ?? 0, role: role) }
         }
 
         /// The slices the donut plots: the breakdown without its empty buckets.
