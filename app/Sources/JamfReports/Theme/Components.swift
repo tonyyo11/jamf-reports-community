@@ -765,9 +765,11 @@ struct EditableNumberStepper: View {
     var body: some View {
         HStack(spacing: 4) {
             if let prefix {
+                // Labels keep their width; at the minimum window width "Stale" read "S…".
                 Text(prefix)
                     .font(Theme.Fonts.mono(11.5))
                     .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize()
             }
             TextField("", value: $value, format: .number)
                 .textFieldStyle(.plain)
@@ -787,6 +789,7 @@ struct EditableNumberStepper: View {
                 Text(suffix)
                     .font(Theme.Fonts.mono(11.5))
                     .foregroundStyle(Theme.Colors.fgMuted)
+                    .fixedSize()
             }
             Stepper("", value: $value, in: range, step: 1)
                 .labelsHidden()
