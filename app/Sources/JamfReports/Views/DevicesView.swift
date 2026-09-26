@@ -858,11 +858,11 @@ struct DevicesView: View {
                                 Text(entry.factor.displayLabel(agentName: agentName))
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
-                                if let detail = entry.detail {
-                                    Mono(text: detail)
-                                }
                                 Spacer()
                                 Pill(text: "+\(entry.points)", tone: .warn)
+                            }
+                            if let detail = entry.detail {
+                                Mono(text: detail)
                             }
                             Text(entry.factor.remediation(agentName: agentName))
                                 .font(.caption)
