@@ -56,9 +56,7 @@ struct MobileFleetView: View {
                 if let device = selectedRichDevice {
                     deviceDetailCard(device)
                 }
-                if !snapshot.profiles.isEmpty {
-                    profilesTable
-                }
+                profilesTable
             }
         }
         .tint(Theme.Colors.goldBright)
@@ -744,31 +742,51 @@ struct MobileFleetView: View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Config Profiles", trailingTag: snapshot.profiles.count <= 30 ? nil : "\(min(30, snapshot.profiles.count)) of \(snapshot.profiles.count)")
-                Table(Array(snapshot.profiles.prefix(30).enumerated()).map { ProfileWithIndex(profile: $0.element, index: $0.offset) }) {
-                    TableColumn("Name") { item in
-                        Text(item.profile.name ?? "Untitled Profile")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(Theme.Colors.fg)
-                    }
-                    .width(min: 180, ideal: 220)
-
-                    TableColumn("Category") { item in
-                        Text(item.profile.category ?? "—")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    .width(min: 100, ideal: 120)
-
-                    TableColumn("Site") { item in
-                        Text(item.profile.site ?? "—")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    .width(min: 80, ideal: 100)
+                if snapshot.profiles.isEmpty {
+                    Text(profilesEmptyMessage)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                } else {
+                    profilesTableRows
                 }
-                .font(.callout)
             }
         }
+    }
+
+    /// Tells a profiles snapshot that was never collected from one that listed none.
+    private var profilesEmptyMessage: String {
+        snapshot.sourceDates["classic-ios-profiles"] == nil
+            ? "Configuration profiles have not been collected yet."
+            : "No configuration profiles in the collected snapshot."
+    }
+
+    private var profilesTableRows: some View {
+        Table(Array(snapshot.profiles.prefix(30).enumerated()).map { ProfileWithIndex(profile: $0.element, index: $0.offset) }) {
+            TableColumn("Name") { item in
+                Text(item.profile.name ?? "Untitled Profile")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(Theme.Colors.fg)
+            }
+            .width(min: 180, ideal: 220)
+
+            TableColumn("Category") { item in
+                Text(item.profile.category ?? "—")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            .width(min: 100, ideal: 120)
+
+            TableColumn("Site") { item in
+                Text(item.profile.site ?? "—")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+            .width(min: 80, ideal: 100)
+        }
+        .font(.callout)
+        // A Table has no height of its own inside the page's ScrollView; without this
+        // it collapses under the header. Rows past the minimum scroll in place.
+        .frame(minHeight: 280)
     }
 
     // MARK: - Helpers
