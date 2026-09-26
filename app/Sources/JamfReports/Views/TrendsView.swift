@@ -417,45 +417,64 @@ struct TrendsView: View {
 
     // MARK: Hero chart
 
+    /// Number plus the delta (idle) or hovered date; the range pill joins only when asked.
+    private func heroValueRow(showsRange: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("\(Int(displayVal.rounded()))\(metric.unit)")
+                .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
+                .foregroundStyle(Theme.Colors.fg)
+                .monospacedDigit()
+                .contentTransition(.numericText(countsDown: delta < 0))
+                .animation(.snappy(duration: 0.35), value: displayVal)
+                .fixedSize()
+
+            if selectedPoint == nil {
+                HStack(spacing: 4) {
+                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                        .font(.system(size: 11, weight: .bold))
+                    Text(
+                        pctDelta.map {
+                            "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
+                        } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
+                    )
+                    .lineLimit(1)
+                }
+                .font(Theme.Fonts.mono(14, weight: .semibold))
+                .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+                .fixedSize(horizontal: true, vertical: false)
+                if showsRange {
+                    Pill(text: rangeBadgeText, tone: .muted)
+                }
+            } else {
+                Text("at \(displayDate)")
+                    .font(Theme.Fonts.mono(14, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.goldBright)
+                    .lineLimit(1)
+            }
+        }
+    }
+
     private var heroChart: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
                         Kicker(text: metricLabel(metric))
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
-                            Text("\(Int(displayVal.rounded()))\(metric.unit)")
-                                .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
-                                .foregroundStyle(Theme.Colors.fg)
-                                .monospacedDigit()
-                                .contentTransition(.numericText(countsDown: delta < 0))
-                                .animation(.snappy(duration: 0.35), value: displayVal)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-
-                            if selectedPoint == nil {
-                                HStack(spacing: 4) {
-                                    Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
-                                        .font(.system(size: 11, weight: .bold))
-                                    Text(
-                                        pctDelta.map {
-                                            "\(abs(Int(delta.rounded())))\(metric.unit) (\(String(format: "%.1f", $0))%)"
-                                        } ?? "\(abs(Int(delta.rounded())))\(metric.unit)"
-                                    )
-                                    .lineLimit(1)
+                        // The range pill drops under the number only when the one-line row
+                        // does not fit, so the wide layout is unchanged.
+                        ViewThatFits(in: .horizontal) {
+                            heroValueRow(showsRange: true)
+                            VStack(alignment: .leading, spacing: 6) {
+                                heroValueRow(showsRange: false)
+                                if selectedPoint == nil {
+                                    Pill(text: rangeBadgeText, tone: .muted)
                                 }
-                                .font(Theme.Fonts.mono(14, weight: .semibold))
-                                .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
-                                .fixedSize(horizontal: true, vertical: false)
-                                Pill(text: rangeBadgeText, tone: .muted)
-                            } else {
-                                Text("at \(displayDate)")
-                                    .font(Theme.Fonts.mono(14, weight: .semibold))
-                                    .foregroundStyle(Theme.Colors.goldBright)
-                                    .lineLimit(1)
                             }
                         }
                     }
+                    // Without this the outer row offers the left block half its width, and the
+                    // number is the only child in it that can give ground.
+                    .layoutPriority(1)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 6) {
                         Kicker(text: "Min · Max · Avg")
@@ -467,6 +486,7 @@ struct TrendsView: View {
                         .font(Theme.Fonts.mono(12))
                         .foregroundStyle(Theme.Colors.fg2)
                     }
+                    .fixedSize()
                 }
 
                 if metric == .mscpBandTrend, !workspaceStore.demoMode, trendStore.mscpBaselineNames.count > 1 {
