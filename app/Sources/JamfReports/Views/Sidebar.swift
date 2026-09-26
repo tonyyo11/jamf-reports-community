@@ -51,8 +51,10 @@ struct Sidebar: View {
             .overlay(alignment: .top) { scrollEdgeHairline }
             .overlay(alignment: .bottom) { scrollEdgeHairline }
 
+            // The compact chip is the 36 pt avatar plus padding, which 12 pt
+            // gutters would squeeze in a 64 pt rail.
             workspaceChip
-                .padding(.horizontal, 12)
+                .padding(.horizontal, mode == .compact ? 8 : 12)
                 .padding(.top, 8)
                 .padding(.bottom, 12)
         }
@@ -308,7 +310,11 @@ struct Sidebar: View {
                     )
             )
         }
-        .menuStyle(.borderlessButton)
+        // `.borderlessButton` flattens the label to its first image and text,
+        // which drew a bare chevron and monogram; `.button` with a plain style
+        // draws the whole chip, as the Data Sources scope pill does.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .focused($chipFocused)
         .onHover { chipHovered = $0 }
