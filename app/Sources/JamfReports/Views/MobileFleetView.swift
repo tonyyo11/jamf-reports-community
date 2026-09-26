@@ -14,13 +14,6 @@ struct MobileFleetView: View {
     /// Supervision bucket the devices table is filtered to. Set from a donut
     /// slice or legend row, cleared by the same control or the filter chip.
     @State private var supervisionFilter: MobileFleetService.SupervisionRole?
-    /// The donut's `chartAngleSelection`: the running device count under the
-    /// pointer while it is pressed. Plotted and bound as Double so a press is
-    /// placed exactly, with no rounding of the angle to a whole device.
-    @State private var supervisionAngle: Double?
-    /// The slice the current press last toggled, so dragging within one slice
-    /// toggles once instead of on every move.
-    @State private var lastAngleRole: MobileFleetService.SupervisionRole?
 
     var body: some View {
         PageScaffold {
@@ -94,8 +87,6 @@ struct MobileFleetView: View {
             ? Self.demoSnapshot
             : MobileFleetService.load(profile: workspace.profile)
         supervisionFilter = nil
-        supervisionAngle = nil
-        lastAngleRole = nil
     }
 
     private static let demoSnapshot: MobileFleetService.Snapshot = makeDemoSnapshot()
@@ -322,6 +313,9 @@ struct MobileFleetView: View {
         }
     }
 
+    /// Shared by the drawing and the click hit test so the two cannot drift.
+    private static let donutHoleRatio = 0.62
+
     /// Clicking a slice filters the devices table to it, clicking it again
     /// clears the filter. Unselected slices dim while a filter is active.
     private var supervisionDonut: some View {
@@ -329,7 +323,7 @@ struct MobileFleetView: View {
         return Chart(slices, id: \.role) { slice in
             SectorMark(
                 angle: .value("Count", Double(slice.count)),
-                innerRadius: .ratio(0.62),
+                innerRadius: .ratio(Self.donutHoleRatio),
                 angularInset: 1.6
             )
             .foregroundStyle(supervisionColor(for: slice.role))
@@ -338,9 +332,25 @@ struct MobileFleetView: View {
             .accessibilityValue("\(slice.count) devices")
         }
         .chartLegend(.hidden)
-        .chartAngleSelection(value: $supervisionAngle)
-        .onChange(of: supervisionAngle) { _, newValue in
-            selectSupervisionSlice(at: newValue, in: slices)
+        // A tap, not chartAngleSelection: on macOS that selection follows the
+        // pointer, so hovering toggled the filter and a click did nothing.
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard let anchor = proxy.plotFrame else { return }
+                        let plot = geometry[anchor]
+                        let point = CGPoint(x: location.x - plot.minX, y: location.y - plot.minY)
+                        guard let role = MobileFleetService.role(
+                            at: point, plotSize: plot.size,
+                            innerRadiusRatio: Self.donutHoleRatio, in: slices
+                        ) else { return }
+                        toggleSupervisionFilter(role)
+                    }
+                    .accessibilityHidden(true)
+            }
         }
         .accessibilityLabel("Mobile fleet supervision breakdown")
     }
@@ -392,23 +402,6 @@ struct MobileFleetView: View {
     /// Full strength while no filter is set, and for the filtered slice.
     private func sliceOpacity(for role: MobileFleetService.SupervisionRole) -> Double {
         supervisionFilter == nil || supervisionFilter == role ? 1 : 0.3
-    }
-
-    /// Turns a donut press into one filter toggle per slice entered. Charts may
-    /// or may not reset the selection to nil on mouse-up, so nil ends a press,
-    /// and further movement within the slice already toggled does nothing.
-    private func selectSupervisionSlice(
-        at angleValue: Double?, in slices: [MobileFleetService.SupervisionSlice]
-    ) {
-        guard let angleValue else {
-            lastAngleRole = nil
-            return
-        }
-        guard let role = MobileFleetService.role(atAngleValue: angleValue, in: slices),
-              role != lastAngleRole
-        else { return }
-        lastAngleRole = role
-        toggleSupervisionFilter(role)
     }
 
     /// Filters the devices table to `role`, or clears the filter when it is

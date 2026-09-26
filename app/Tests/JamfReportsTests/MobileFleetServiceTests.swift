@@ -788,8 +788,8 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(slices.map { $0.count }, [1, 1])
     }
 
-    /// A press reports the running device count at the pointer's angle; each
-    /// slice owns the values up to and including its running total.
+    /// An angle value is the running device count at an angle; each slice
+    /// owns the values up to and including its running total.
     func testRoleAtAngleValueWalksRunningTotals() {
         let slices: [MobileFleetService.SupervisionSlice] = [
             (role: .supervised, count: 20),
@@ -819,6 +819,95 @@ final class MobileFleetServiceTests: XCTestCase {
         ]
         XCTAssertEqual(MobileFleetService.role(atAngleValue: 0, in: slices), .unsupervised)
         XCTAssertNil(MobileFleetService.role(atAngleValue: 1, in: []))
+    }
+
+    private static let ringSlices: [MobileFleetService.SupervisionSlice] = [
+        (role: .supervised, count: 20),
+        (role: .unsupervised, count: 3),
+        (role: .unmanaged, count: 2),
+    ]
+
+    /// A point `radius` from the plot's centre at `degrees` clockwise from 12 o'clock.
+    private func point(degrees: Double, radius: Double, in size: CGSize) -> CGPoint {
+        let radians = degrees * .pi / 180
+        return CGPoint(
+            x: size.width / 2 + radius * sin(radians),
+            y: size.height / 2 - radius * cos(radians)
+        )
+    }
+
+    private func roleAt(
+        degrees: Double, radius: Double, in size: CGSize,
+        slices: [MobileFleetService.SupervisionSlice]? = nil
+    ) -> MobileFleetService.SupervisionRole? {
+        MobileFleetService.role(
+            at: point(degrees: degrees, radius: radius, in: size), plotSize: size,
+            innerRadiusRatio: 0.62, in: slices ?? Self.ringSlices
+        )
+    }
+
+    /// 20/3/2 devices: supervised spans 0–288°, unsupervised to 331.2°, unmanaged to 360°.
+    func testRoleAtPointWalksTheRingClockwiseFrom12() {
+        let size = CGSize(width: 200, height: 200)
+        let expected: [(degrees: Double, role: MobileFleetService.SupervisionRole)] = [
+            (1, .supervised), (90, .supervised), (180, .supervised),
+            (300, .unsupervised), (345, .unmanaged), (359, .unmanaged),
+        ]
+        for entry in expected {
+            XCTAssertEqual(
+                roleAt(degrees: entry.degrees, radius: 80, in: size), entry.role,
+                "\(entry.degrees)°"
+            )
+        }
+    }
+
+    /// Two equal slices: 3 o'clock is the first, 9 o'clock the second. A
+    /// counterclockwise or flipped conversion swaps them.
+    func testRoleAtPointIsClockwise() {
+        let size = CGSize(width: 200, height: 200)
+        let halves: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 1), (role: .unmanaged, count: 1),
+        ]
+        XCTAssertEqual(roleAt(degrees: 90, radius: 80, in: size, slices: halves), .supervised)
+        XCTAssertEqual(roleAt(degrees: 270, radius: 80, in: size, slices: halves), .unmanaged)
+    }
+
+    func testRoleAtPointIgnoresTheHoleAndOutsideTheRing() {
+        let size = CGSize(width: 200, height: 200)
+        let hole = MobileFleetService.role(
+            at: CGPoint(x: 100, y: 100), plotSize: size, innerRadiusRatio: 0.62,
+            in: Self.ringSlices
+        )
+        XCTAssertNil(hole)
+        XCTAssertNil(roleAt(degrees: 45, radius: 50, in: size))
+        XCTAssertNil(roleAt(degrees: 45, radius: 61, in: size))
+        XCTAssertNotNil(roleAt(degrees: 45, radius: 62, in: size))
+        XCTAssertNotNil(roleAt(degrees: 45, radius: 100, in: size))
+        for corner in [CGPoint(x: 5, y: 5), CGPoint(x: 100, y: -1)] {
+            XCTAssertNil(
+                MobileFleetService.role(
+                    at: corner, plotSize: size, innerRadiusRatio: 0.62, in: Self.ringSlices
+                ),
+                "\(corner)"
+            )
+        }
+    }
+
+    /// The ring's radius is half the plot's shorter side, not its width.
+    func testRoleAtPointUsesThePlotsShorterSide() {
+        let size = CGSize(width: 300, height: 200)
+        XCTAssertEqual(roleAt(degrees: 0, radius: 85, in: size), .supervised)
+        XCTAssertNil(roleAt(degrees: 90, radius: 110, in: size))
+    }
+
+    func testRoleAtPointNeedsSlicesAndASize() {
+        let size = CGSize(width: 200, height: 200)
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: size, slices: []))
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: .zero))
+        let empty: [MobileFleetService.SupervisionSlice] = [
+            (role: .supervised, count: 0), (role: .unmanaged, count: 0),
+        ]
+        XCTAssertNil(roleAt(degrees: 90, radius: 80, in: size, slices: empty))
     }
 
     /// The table filters before its 50-row cap, so a bucket whose devices all
