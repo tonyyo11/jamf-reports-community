@@ -76,6 +76,11 @@ struct DevicesView: View {
     /// full fidelity. Drives the responsive Device + User column behavior.
     private var isCompact: Bool { pageWidth < 1200 }
 
+    /// One label column for every detail-panel section. Fixed rather than a minimum,
+    /// so LAST INVENTORY (the widest label, about 102 pt) no longer pushes its value
+    /// past the others.
+    static let detailLabelWidth: CGFloat = 112
+
     private var filteredDevices: [DeviceInventoryRecord] {
         activeSnapshot.devices.filter { device in
             if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -624,7 +629,7 @@ struct DevicesView: View {
                             Text(item.label)
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
-                                .frame(width: 112, alignment: .leading)
+                                .frame(width: Self.detailLabelWidth, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.value)
                                     .font(.footnote)
@@ -792,7 +797,7 @@ struct DevicesView: View {
                             .font(Theme.Fonts.mono(10.5, weight: .semibold))
                             .tracking(1.0)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
-                            .frame(minWidth: 92, alignment: .leading)
+                            .frame(width: Self.detailLabelWidth, alignment: .leading)
                         Text(row.1)
                             .font(row.0 == "Serial" ? Theme.Fonts.mono(11.5) : .footnote)
                             .foregroundStyle(Theme.Colors.fg2)
@@ -821,7 +826,7 @@ struct DevicesView: View {
                         .font(Theme.Fonts.mono(10.5, weight: .semibold))
                         .tracking(1.0)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(minWidth: 92, alignment: .leading)
+                        .frame(width: Self.detailLabelWidth, alignment: .leading)
                     Text(device.failedRules == 0 ? "0" : "\(device.failedRules)")
                         .font(.footnote)
                         .foregroundStyle(device.failedRules == 0 ? Theme.Colors.fg2 : Theme.Colors.warn)
@@ -948,7 +953,7 @@ struct DevicesView: View {
             ForEach(lines, id: \.0) { line in
                 HStack(alignment: .top, spacing: 8) {
                     Text(line.0).font(.footnote).foregroundStyle(Theme.Text.tertiary(contrast))
-                        .frame(width: 110, alignment: .leading)
+                        .frame(width: Self.detailLabelWidth, alignment: .leading)
                     Text(line.1).font(.footnote).foregroundStyle(Theme.Colors.fg)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -973,7 +978,7 @@ struct DevicesView: View {
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .tracking(1.0)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .frame(minWidth: 92, alignment: .leading)
+                    .frame(width: Self.detailLabelWidth, alignment: .leading)
                 Pill(text: value, tone: securityTone(for: value))
                 Spacer(minLength: 0)
             }
