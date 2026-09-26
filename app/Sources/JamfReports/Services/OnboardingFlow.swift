@@ -299,6 +299,17 @@ final class OnboardingFlow {
         ProfileService.isValid(profileName.trimmed)
     }
 
+    /// What a validated field shows under it. A field nothing has been typed into shows its
+    /// rule as a hint: marking it red reports a mistake the user has not made yet.
+    enum FieldFeedback: Equatable {
+        case hint, valid, invalid
+    }
+
+    static func feedback(for value: String, isValid: Bool) -> FieldFeedback {
+        if value.trimmed.isEmpty { return .hint }
+        return isValid ? .valid : .invalid
+    }
+
     var isJamfURLValid: Bool {
         normalizedJamfURL != nil
     }

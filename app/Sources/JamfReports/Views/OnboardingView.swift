@@ -343,8 +343,18 @@ struct OnboardingView: View {
                     FieldLabel(label: "Profile name", trailing: "required")
                     PNPTextField(value: binding(\.profileName), placeholder: "my-tenant", mono: true)
                     HStack(spacing: 6) {
-                        Image(systemName: flow.isProfileNameValid ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .foregroundStyle(flow.isProfileNameValid ? Theme.Colors.ok : Theme.Colors.danger)
+                        switch OnboardingFlow.feedback(
+                            for: flow.profileName, isValid: flow.isProfileNameValid
+                        ) {
+                        case .hint:
+                            EmptyView()
+                        case .valid:
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Theme.Colors.ok)
+                        case .invalid:
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(Theme.Colors.danger)
+                        }
                         FieldHelp(text: "Use lowercase letters, numbers, dots, underscores, or hyphens.")
                     }
                 }
@@ -401,7 +411,10 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     FieldLabel(label: "Jamf Pro URL")
                     PNPTextField(value: binding(\.jamfURL), placeholder: "https://example.jamfcloud.com")
-                    validationLine(ok: flow.isJamfURLValid, text: "Must use https:// and include a host")
+                    validationLine(
+                        value: flow.jamfURL, ok: flow.isJamfURLValid,
+                        text: "Must use https:// and include a host"
+                    )
                 }
 
                 HStack(alignment: .top, spacing: 12) {
@@ -473,7 +486,10 @@ struct OnboardingView: View {
                             placeholder: "https://us.api.jamfcloud.com",
                             mono: true
                         )
-                        validationLine(ok: flow.isGatewayURLValid, text: "Must use https:// and include a host")
+                        validationLine(
+                            value: flow.gatewayURL, ok: flow.isGatewayURLValid,
+                            text: "Must use https:// and include a host"
+                        )
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -795,7 +811,10 @@ struct OnboardingView: View {
                                 value: binding(\.schoolURL),
                                 placeholder: "https://yourorg.jamfcloud.com"
                             )
-                            validationLine(ok: flow.isSchoolURLValid, text: "Must use https:// and include a host")
+                            validationLine(
+                                value: flow.schoolURL, ok: flow.isSchoolURLValid,
+                                text: "Must use https:// and include a host"
+                            )
                         }
 
                         HStack(alignment: .top, spacing: 12) {
@@ -1141,14 +1160,20 @@ struct OnboardingView: View {
             .frame(width: 34)
     }
 
-    private func validationLine(ok: Bool, text: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: ok ? "checkmark" : "xmark")
-                .font(.system(size: 9, weight: .bold))
+    private func validationLine(value: String, ok: Bool, text: String) -> some View {
+        let feedback = OnboardingFlow.feedback(for: value, isValid: ok)
+        return HStack(spacing: 5) {
+            if feedback != .hint {
+                Image(systemName: feedback == .valid ? "checkmark" : "xmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
             Text(text)
         }
         .font(.caption)
-        .foregroundStyle(ok ? Theme.Chart.tealLight : Theme.Colors.danger)
+        .foregroundStyle(
+            feedback == .hint ? Theme.Colors.fgMuted
+                : feedback == .valid ? Theme.Chart.tealLight : Theme.Colors.danger
+        )
     }
 
     private func logViewer(title: String, lines: [CLIBridge.LogLine], exitCode: Int32?) -> some View {
