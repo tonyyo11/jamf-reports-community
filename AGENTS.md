@@ -347,9 +347,9 @@ do not pass scope parameters — their invocation and JSON output shape are unaf
 upgraded to ingest Jamf Pro 11.32 — no breaking shape changes for fields the app reads.
 
 **v1.31.0 (2026-09-18) — MCP server and HTML fleet dashboard.** jamf-cli now ships an MCP
-server (`jamf-cli mcp`) and can generate cross-product HTML fleet dashboards. The app has its
-own `HtmlReport` engine and `ReportEngine.generate` pipeline; these additions are purely
-additive and do not conflict. No changes to existing command flags or JSON output shapes.
+server (`jamf-cli mcp`) and can generate cross-product HTML fleet dashboards. The app keeps
+its own `HtmlReport` engine and embeds that dashboard as the report's last section (see
+**jamf-cli dashboard (2.9)** below). No changes to existing command flags or JSON output shapes.
 
 **v1.31.1 (2026-09-18) — Pagination, blueprint YAML, group-tools resilience.** Patch fixes:
 a list command's `--all` now respects each endpoint's max page size (was hardcoded 100);
