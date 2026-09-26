@@ -101,8 +101,9 @@ struct TrendsView: View {
         }
     }
 
-    private var displayVal: Double {
-        selectedPoint?.value ?? trendPoints.last?.value ?? 0
+    /// Nil when the metric has no points in range.
+    private var displayVal: Double? {
+        selectedPoint?.value ?? trendPoints.last?.value
     }
 
     private var displayDate: String {
@@ -152,6 +153,28 @@ struct TrendsView: View {
             if interval > limit { segment += 1 }
             return segment
         }
+    }
+
+    /// A metric value as the hero shows it. No value is a dash: "0%" would read as measured.
+    nonisolated static func metricValueText(_ value: Double?, unit: String) -> String {
+        guard let value else { return "—" }
+        return "\(Int(value.rounded()))\(unit)"
+    }
+
+    /// Min, max and mean of the values in range, or nil when there are none.
+    nonisolated static func valueStats(
+        _ values: [Double]
+    ) -> (min: Double, max: Double, avg: Double)? {
+        guard let low = values.min(), let high = values.max() else { return nil }
+        return (low, high, values.reduce(0, +) / Double(values.count))
+    }
+
+    /// A pill's change over the range; a metric with no points shows a dash, not "±0".
+    nonisolated static func pillDeltaText(series: [Double], unit: String) -> String {
+        guard let first = series.first, let last = series.last else { return "—" }
+        let change = Int((last - first).rounded())
+        if change == 0 { return "±0\(unit)" }
+        return "\(change > 0 ? "+" : "")\(change)\(unit)"
     }
 
     private var pctDelta: Double? {
@@ -379,7 +402,7 @@ struct TrendsView: View {
                 Text(metricLabel(m))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text(deltaState == .flat ? "±0\(m.unit)" : "\(dl >= 0 ? "+" : "")\(deltaInt)\(m.unit)")
+                Text(Self.pillDeltaText(series: series, unit: m.unit))
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(
                         deltaState == .flat ? Theme.Text.tertiary(contrast)
@@ -448,15 +471,18 @@ struct TrendsView: View {
     /// The delta, plus the range pill when asked.
     @ViewBuilder
     private func heroIdleDetail(showsRange: Bool) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
-                .font(.system(size: 11, weight: .bold))
-            Text(deltaText)
-                .lineLimit(1)
+        // With no points there is no change to report; the range pill says "No snapshots".
+        if !values.isEmpty {
+            HStack(spacing: 4) {
+                Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                    .font(.system(size: 11, weight: .bold))
+                Text(deltaText)
+                    .lineLimit(1)
+            }
+            .font(Theme.Fonts.mono(14, weight: .semibold))
+            .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .font(Theme.Fonts.mono(14, weight: .semibold))
-        .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
-        .fixedSize(horizontal: true, vertical: false)
         if showsRange {
             Pill(text: rangeBadgeText, tone: .muted)
         }
@@ -465,7 +491,7 @@ struct TrendsView: View {
     /// Number plus the delta (idle) or hovered date; the range pill joins only when asked.
     private func heroValueRow(showsRange: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("\(Int(displayVal.rounded()))\(metric.unit)")
+            Text(Self.metricValueText(displayVal, unit: metric.unit))
                 .font(Theme.Fonts.serif(heroMetricSize, weight: .bold))
                 .foregroundStyle(Theme.Colors.fg)
                 .monospacedDigit()
@@ -517,10 +543,11 @@ struct TrendsView: View {
                     Spacer()
                     VStack(alignment: .trailing, spacing: 6) {
                         Kicker(text: "Min · Max · Avg")
+                        let stats = Self.valueStats(values)
                         HStack(spacing: 14) {
-                            Text("\(Int((values.min() ?? 0).rounded()))\(metric.unit)")
-                            Text("\(Int((values.max() ?? 0).rounded()))\(metric.unit)")
-                            Text("\(Int((values.reduce(0,+) / Double(max(values.count,1))).rounded()))\(metric.unit)")
+                            Text(Self.metricValueText(stats?.min, unit: metric.unit))
+                            Text(Self.metricValueText(stats?.max, unit: metric.unit))
+                            Text(Self.metricValueText(stats?.avg, unit: metric.unit))
                         }
                         .font(Theme.Fonts.mono(12))
                         .foregroundStyle(Theme.Colors.fg2)
@@ -675,6 +702,14 @@ struct TrendsView: View {
                         range: heroChartForegroundScale.colors
                     )
                     .chartLegend(heroLegendVisibility)
+                    .overlay {
+                        if trendPoints.isEmpty, metric != .mscpBandTrend,
+                           metric != .managedDevices {
+                            Text("No snapshot in this range records \(metricLabel(metric)).")
+                                .font(.callout)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
+                        }
+                    }
                     .frame(height: 260)
                     .animation(.snappy(duration: 0.35), value: metric)
                     .accessibilityLabel(Self.metricTrendChartLabel(metricLabel(metric)))
