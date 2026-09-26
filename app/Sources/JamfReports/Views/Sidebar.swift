@@ -158,10 +158,16 @@ struct Sidebar: View {
                     .frame(width: mode == .compact ? 20 : 16, height: mode == .compact ? 20 : 16)
 
                 if mode != .compact {
+                    // One line per row: a legacy scroller takes ~15 pt of the
+                    // 232 pt sidebar, which wrapped "Compliance Benchmarks".
                     Text(item.label)
                         .font(.callout)
                         .foregroundStyle(isActive ? Theme.Colors.fg : Theme.Colors.fg2)
-                    Spacer()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.9)
+                        .allowsTightening(true)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 4)
                     if let badge = badge(for: item) {
                         Text(badge)
                             .font(Theme.Fonts.mono(10, weight: .semibold))
@@ -197,7 +203,7 @@ struct Sidebar: View {
         }
         .accessibilityLabel(navAccessibilityLabel(for: item))
         .accessibilityAddTraits(isActive ? .isSelected : [])
-        .help(mode == .compact ? item.label : "")
+        .help(item.label)
     }
 
     private func navAccessibilityLabel(for item: Tab) -> String {
