@@ -81,17 +81,37 @@ struct TrendsView: View {
         )
     }
 
+    private var chartYDomain: ClosedRange<Double> {
+        Self.chartYDomain(metric: metric, values: chartYDomainValues)
+    }
+
     /// Y-axis domain that respects the metric's preferred "good frame" but
     /// always expands to fit actual data. Without this, a Stability Index of
     /// 0% disappears below `metric.minY = 40`, and a Stale count of 100+
     /// clips off the top of `metric.maxY = 60`. Floor at 0 — values are
     /// non-negative by construction (validated in the data layer).
-    private var chartYDomain: ClosedRange<Double> {
-        let dataMin = chartYDomainValues.min()
-        let dataMax = chartYDomainValues.max()
+    /// Device counts have no good frame: a fixed 0–1,000 flattened a small
+    /// fleet, so their top follows the data.
+    nonisolated static func chartYDomain(
+        metric: TrendSeries.Metric,
+        values: [Double]
+    ) -> ClosedRange<Double> {
+        let dataMin = values.min()
+        let dataMax = values.max()
+        if metric == .managedDevices || metric == .activeDevices, let dataMax {
+            return 0...deviceCountAxisTop(dataMax)
+        }
         let lo = max(0, min(metric.minY, dataMin ?? metric.minY))
         let hi = max(metric.maxY, dataMax ?? metric.maxY)
         return lo...hi
+    }
+
+    /// About a tenth of headroom over the largest count, rounded up to a fifth of its order of
+    /// magnitude (524 → 580, 1,100 → 1,400), and never under 10.
+    nonisolated static func deviceCountAxisTop(_ dataMax: Double) -> Double {
+        let target = max(dataMax * 1.1, 10)
+        let step = pow(10, floor(log10(target))) / 5
+        return (target / step).rounded(.up) * step
     }
 
     private var selectedPoint: TrendPoint? {
