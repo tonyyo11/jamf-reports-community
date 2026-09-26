@@ -25,9 +25,19 @@ struct ContentView: View {
     /// "SCHEDULES" when the operator manages hand-built agents directly.
     @AppStorage(AutomationPolicy.storageKey) private var automationPolicyRaw: String = ""
     @State private var isRefreshingAll = false
+    /// Nil until the first measurement, so a window launched narrow compacts without animating.
+    @State private var isNarrowWindow: Bool?
+    /// A sidebar cycle while narrow; cleared when the window widens past the threshold.
+    @State private var sidebarOverriddenWhileNarrow = false
 
+    /// What the shell shows. `sidebarModeRaw` stays the user's choice; the width rule never
+    /// writes it.
     private var sidebarMode: SidebarMode {
-        get { SidebarMode(rawValue: sidebarModeRaw) ?? .expanded }
+        SidebarMode.effective(
+            stored: SidebarMode(rawValue: sidebarModeRaw) ?? .expanded,
+            isNarrow: isNarrowWindow ?? false,
+            overridden: sidebarOverriddenWhileNarrow
+        )
     }
 
     var body: some View {
@@ -110,6 +120,13 @@ struct ContentView: View {
             .navigationSubtitle(subtitle(for: tab) ?? "")
             .toolbar { shellToolbar }
         }
+        // A Bool transform fires only on threshold crossings, and fires once for the initial
+        // width, so a window launched narrow compacts too.
+        .onGeometryChange(for: Bool.self) { proxy in
+            proxy.size.width < Theme.Metrics.sidebarAutoCompactBelow
+        } action: { narrow in
+            applyWindowWidth(narrow: narrow)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cycleSidebar)) { _ in
             cycleSidebar()
         }
@@ -153,7 +170,7 @@ struct ContentView: View {
             // scoped to the affected tiers; no-op when nothing is wrong.
             await workspace.remediateStaleDataIfNeeded()
         }
-        .animation(.snappy(duration: 0.28), value: sidebarModeRaw)
+        .animation(.snappy(duration: 0.28), value: sidebarMode)
         .animation(.snappy, value: workspace.toast != nil)
         .onReceive(NotificationCenter.default.publisher(for: .systemActionDenied)) { note in
             if let message = note.userInfo?["message"] as? String {
@@ -265,8 +282,22 @@ struct ContentView: View {
         }
     }
 
+    /// Cycles from the mode on screen, so the first press while auto-compacted changes what the
+    /// user sees.
     private func cycleSidebar() {
+        if isNarrowWindow == true { sidebarOverriddenWhileNarrow = true }
         sidebarModeRaw = sidebarMode.next().rawValue
+    }
+
+    private func applyWindowWidth(narrow: Bool) {
+        if !narrow { sidebarOverriddenWhileNarrow = false }
+        guard isNarrowWindow != nil else {
+            var launch = Transaction()
+            launch.disablesAnimations = true
+            withTransaction(launch) { isNarrowWindow = narrow }
+            return
+        }
+        isNarrowWindow = narrow
     }
 
     @ViewBuilder
@@ -321,5 +352,13 @@ struct ContentView: View {
         case .success: Theme.Colors.ok
         case .danger:  Theme.Colors.danger
         }
+    }
+}
+
+extension SidebarMode {
+    /// Expanded shows compact in a narrow window unless the user cycled the sidebar since it
+    /// narrowed. Compact and hidden are never changed.
+    static func effective(stored: SidebarMode, isNarrow: Bool, overridden: Bool) -> SidebarMode {
+        stored == .expanded && isNarrow && !overridden ? .compact : stored
     }
 }

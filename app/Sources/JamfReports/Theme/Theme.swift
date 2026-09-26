@@ -95,6 +95,9 @@ enum Theme {
         static let buttonRadius: CGFloat = 6
         static let sidebarWidthExpanded: CGFloat = 232
         static let sidebarWidthCompact: CGFloat = 64
+        /// Below this window width an expanded sidebar shows compact: 1100 - 232 - 56 leaves
+        /// 812 pt of page, room for the widest fixed row today (Config's 804 pt tab strip).
+        static let sidebarAutoCompactBelow: CGFloat = 1100
         static let titlebarHeight: CGFloat = 38
     }
 }
