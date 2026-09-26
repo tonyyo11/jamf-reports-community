@@ -7,6 +7,8 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-09-26
+
 Jamf Platform API profiles collect Compliance Benchmarks, setup catches a wrong environment ID,
 and a source that fails for want of a permission says which one. The Overview shows your
 tenant's real data in every section, and you choose what it shows.
