@@ -559,9 +559,13 @@ struct TrendsView: View {
                             }
                         } else {
                             // Standard line + area chart for other metrics
+                            // The area starts at the axis floor, not 0: Charts does not clip marks
+                            // to the plot, so a floor above 0 let the fill run down over the card.
+                            let areaFloor = chartYDomain.lowerBound
                             ForEach(Array(trendPoints.enumerated()), id: \.offset) { _, point in
                                 AreaMark(x: .value("Date", point.date),
-                                         y: .value(metric.displayLabel, point.value))
+                                         yStart: .value(metric.displayLabel, areaFloor),
+                                         yEnd: .value(metric.displayLabel, point.value))
                                     .foregroundStyle(LinearGradient(
                                         colors: [Color(hex: metric.colorHex).opacity(0.14),
                                                  Color(hex: metric.colorHex).opacity(0.0)],
