@@ -220,12 +220,16 @@ struct SourcesView: View {
 
                 VStack(spacing: 0) {
                     ForEach(Array(cliCommands.enumerated()), id: \.element.id) { idx, c in
-                        HStack {
+                        // The label wraps at its full height: truncated, it still
+                        // reserved the wrapped height below the cards row.
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
                             Mono(text: c.label, color: Theme.Text.secondary)
-                            Spacer()
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Text(c.status)
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .fixedSize()
                         }
                         .padding(.vertical, 6)
                         if idx < cliCommands.count - 1 {
