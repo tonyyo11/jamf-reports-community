@@ -315,13 +315,16 @@ struct MobileFleetView: View {
     private static let donutHoleRatio = 0.62
 
     /// Clicking a slice filters the devices table to it, clicking it again
-    /// clears the filter. Unselected slices dim while a filter is active.
+    /// clears the filter. While a filter is active the other slices dim and
+    /// shrink toward the hole, so the selected one reads as selected even when
+    /// its colour is darker than theirs.
     private var supervisionDonut: some View {
         let slices = snapshot.supervisionSlices
         return Chart(slices, id: \.role) { slice in
             SectorMark(
                 angle: .value("Count", Double(slice.count)),
                 innerRadius: .ratio(Self.donutHoleRatio),
+                outerRadius: .ratio(sliceOuterRatio(for: slice.role)),
                 angularInset: 1.6
             )
             .foregroundStyle(supervisionColor(for: slice.role))
@@ -358,7 +361,9 @@ struct MobileFleetView: View {
     private var supervisionLegend: some View {
         let total = snapshot.totalDevices
         let breakdown = snapshot.supervisionBreakdown
-        return VStack(alignment: .leading, spacing: 8) {
+        // Rows carry 3 pt of padding for the selected row's highlight, so
+        // spacing 2 keeps the 8 pt rhythm between their text.
+        return VStack(alignment: .leading, spacing: 2) {
             ForEach(breakdown, id: \.label) { slice in
                 let percentage = total > 0 ? Double(slice.count) / Double(total) * 100 : 0
                 let isActive = supervisionFilter == slice.role
@@ -371,9 +376,10 @@ struct MobileFleetView: View {
                     HStack(spacing: 10) {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(supervisionColor(for: slice.role))
+                            .opacity(sliceOpacity(for: slice.role))
                             .frame(width: 12, height: 12)
                         Text(slice.label)
-                            .font(.footnote.weight(.medium))
+                            .font(.footnote.weight(isActive ? .semibold : .medium))
                             .foregroundStyle(Theme.Colors.fg)
                         Spacer()
                         Text("\(slice.count)")
@@ -386,6 +392,12 @@ struct MobileFleetView: View {
                             .frame(minWidth: 48, alignment: .trailing)
                             .monospacedDigit()
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(isActive ? Theme.Colors.goldBright.opacity(0.14) : .clear)
+                    )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -399,7 +411,14 @@ struct MobileFleetView: View {
 
     /// Full strength while no filter is set, and for the filtered slice.
     private func sliceOpacity(for role: MobileFleetService.SupervisionRole) -> Double {
-        supervisionFilter == nil || supervisionFilter == role ? 1 : 0.3
+        supervisionFilter == nil || supervisionFilter == role ? 1 : 0.25
+    }
+
+    /// The ring's full width while no filter is set, and for the filtered
+    /// slice. The click hit test still spans the full ring, so a click where
+    /// a narrowed slice used to reach still selects it.
+    private func sliceOuterRatio(for role: MobileFleetService.SupervisionRole) -> Double {
+        supervisionFilter == nil || supervisionFilter == role ? 1 : 0.9
     }
 
     /// Filters the devices table to `role`, or clears the filter when it is
@@ -415,7 +434,9 @@ struct MobileFleetView: View {
         switch role {
         case .supervised: return Theme.Colors.goldBright
         case .unsupervised: return Theme.Colors.warn
-        case .unmanaged: return Theme.Colors.hairlineStrong
+        // A mid grey rather than a hairline tone: at 12% white the slice
+        // almost vanished, and selected it read dimmer than the dimmed ones.
+        case .unmanaged: return Theme.Colors.fgMuted
         case .unknown: return Theme.Colors.fgMuted.opacity(0.45)
         }
     }
