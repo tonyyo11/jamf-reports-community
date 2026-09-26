@@ -57,6 +57,16 @@ struct ConfigView: View {
             case .scoring:    "scalemass"
             }
         }
+        /// Lets the strip fit PageScaffold.minSupportedWidth when the full labels do not.
+        var shortLabel: String {
+            switch self {
+            case .agents:   "Agents"
+            case .eas:      "EAs"
+            case .platform: "Platform"
+            case .output:   "Output"
+            default:        label
+            }
+        }
     }
 
     // MARK: Save-status feedback pill
@@ -77,10 +87,7 @@ struct ConfigView: View {
     var body: some View {
         PageScaffold(spacing: 16) {
             header
-            SegmentedControl(
-                selection: $tab,
-                options: ConfigTab.allCases.map { ($0, $0.label, $0.icon) }
-            )
+            tabStrip
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
@@ -211,6 +218,27 @@ struct ConfigView: View {
                 }
             }
         }
+    }
+
+    // MARK: Tab strip
+
+    /// Full labels need ~804 pt; the page has 672 at the minimum window with the
+    /// sidebar expanded, and a wider row pushes the sidebar off the window.
+    private var tabStrip: some View {
+        ViewThatFits(in: .horizontal) {
+            segments(\.label)
+            segments(\.shortLabel)
+                .accessibilityRepresentation { segments(\.label) }
+            ScrollView(.horizontal, showsIndicators: false) { segments(\.shortLabel) }
+                .accessibilityRepresentation { segments(\.label) }
+        }
+    }
+
+    private func segments(_ label: KeyPath<ConfigTab, String>) -> some View {
+        SegmentedControl(
+            selection: $tab,
+            options: ConfigTab.allCases.map { ($0, $0[keyPath: label], $0.icon) }
+        )
     }
 
     // MARK: Header
