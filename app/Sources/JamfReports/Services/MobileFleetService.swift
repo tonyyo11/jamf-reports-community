@@ -167,6 +167,16 @@ struct MobileFleetService: Sendable {
         }
     }
 
+    /// Version distribution order: higher count first, then the newer version.
+    /// Dictionary order changes between runs, so tied counts need the tiebreak
+    /// or their rows swap places between renders.
+    static func osDistributionOrder(
+        _ lhs: (osVersion: String, count: Int), _ rhs: (osVersion: String, count: Int)
+    ) -> Bool {
+        if lhs.count != rhs.count { return lhs.count > rhs.count }
+        return lhs.osVersion.compare(rhs.osVersion, options: .numeric) == .orderedDescending
+    }
+
     /// Everything the MobileFleetView needs from mobile device snapshots.
     /// Provides both light and rich device data sources, with computed KPIs
     /// preferring rich data when available.
@@ -374,14 +384,8 @@ struct MobileFleetService: Sendable {
             }.filter { !$0.isEmpty }
 
             let grouped = Dictionary(grouping: osVersions) { $0 }
-            // Dictionary order changes between runs, so tied counts need a
-            // tiebreak or their rows swap places between renders.
             let sorted = grouped.map { (osVersion: $0.key, count: $0.value.count) }
-                .sorted { lhs, rhs in
-                    if lhs.count != rhs.count { return lhs.count > rhs.count }
-                    return lhs.osVersion.compare(rhs.osVersion, options: .numeric)
-                        == .orderedDescending
-                }
+                .sorted { MobileFleetService.osDistributionOrder($0, $1) }
             return Array(sorted.prefix(10))
         }
 

@@ -151,9 +151,25 @@ final class MobileFleetServiceTests: XCTestCase {
     }
 
     /// Tied counts list the newer version first, compared numerically, on
-    /// every run: the rows no longer swap places between renders.
-    func testOSDistributionBreaksTiesByVersionDescending() {
-        let versions = ["17.6.1", "18.2.1", "9.3.6", "18.10", "18.2.1", "17.6.1"]
+    /// every run: the rows no longer swap places between renders. Asserted on
+    /// the comparator itself, because Dictionary order is fixed within one
+    /// process and a count-only sort could pass by luck.
+    func testOSDistributionOrderBreaksTiesByVersionDescending() {
+        let order = MobileFleetService.osDistributionOrder
+        XCTAssertTrue(order(("18.2.1", 2), ("17.6.1", 2)))
+        XCTAssertFalse(order(("17.6.1", 2), ("18.2.1", 2)))
+        XCTAssertTrue(order(("18.10", 1), ("18.2", 1)))
+        XCTAssertFalse(order(("18.2", 1), ("18.10", 1)))
+        XCTAssertTrue(order(("18.10", 1), ("9.3.6", 1)))
+        XCTAssertFalse(order(("9.3.6", 1), ("18.10", 1)))
+        XCTAssertTrue(order(("9.3.6", 3), ("18.10", 1)))
+        XCTAssertFalse(order(("18.2.1", 2), ("18.2.1", 2)))
+    }
+
+    /// Six versions tied at one device each: a sort that ignored the tiebreak
+    /// would land this exact order about once in 720 runs.
+    func testOSDistributionUsesTheVersionTiebreak() {
+        let versions = ["17.6.1", "18.2", "9.3.6", "18.10", "16.7.10", "18.2.1", "18.2.1"]
         let fleet = versions.map { version in
             MobileDeviceInventoryItem(
                 mobileDeviceId: UUID().uuidString,
@@ -167,15 +183,13 @@ final class MobileFleetServiceTests: XCTestCase {
                 )
             )
         }
-        for _ in 0..<5 {
-            let snapshot = MobileFleetService.Snapshot(
-                isDetected: true, lightDevices: [], richDevices: fleet.shuffled(),
-                profiles: [], sourceFile: nil, snapshotDate: nil
-            )
-            XCTAssertEqual(snapshot.osDistribution.map { $0.osVersion },
-                           ["18.2.1", "17.6.1", "18.10", "9.3.6"])
-            XCTAssertEqual(snapshot.osDistribution.map { $0.count }, [2, 2, 1, 1])
-        }
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: fleet,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.osDistribution.map { $0.osVersion },
+                       ["18.2.1", "18.10", "18.2", "17.6.1", "16.7.10", "9.3.6"])
+        XCTAssertEqual(snapshot.osDistribution.map { $0.count }, [2, 1, 1, 1, 1, 1])
     }
 
     func testOSDistributionSortedAndLimited() throws {
