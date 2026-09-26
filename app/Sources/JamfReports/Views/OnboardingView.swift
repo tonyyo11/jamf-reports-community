@@ -52,8 +52,9 @@ struct OnboardingView: View {
     private var progressStrip: some View {
         let sequence = flow.stepSequence
         let currentIndex = sequence.firstIndex(of: flow.currentStep) ?? 0
-        // The named strip is wider than the setup column at the narrowest window, where it
-        // clipped steps 6 to 8 out of sight; the compact strip names only the current step.
+        // The 8-step Pro strip, named, needs about 920 pt, more than the 800 pt setup column at
+        // any window size, so it always falls to the compact row; the 6-step School strip
+        // stays named on a wide window.
         return ViewThatFits(in: .horizontal) {
             stepRow(sequence, currentIndex: currentIndex, compact: false)
             stepRow(sequence, currentIndex: currentIndex, compact: true)
