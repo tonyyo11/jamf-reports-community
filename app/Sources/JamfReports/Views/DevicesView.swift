@@ -458,8 +458,9 @@ struct DevicesView: View {
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)
                 .overlay {
-                    // A filter that matches nothing otherwise leaves blank zebra rows.
-                    if filteredDevices.isEmpty {
+                    // A filter that matches nothing otherwise leaves blank zebra rows. An
+                    // empty inventory (still loading, or none) is not a filter result.
+                    if filteredDevices.isEmpty && !activeSnapshot.devices.isEmpty {
                         EmptyStateView(
                             systemImage: "line.3.horizontal.decrease.circle",
                             title: "No matching devices",
