@@ -663,8 +663,10 @@ struct MobileFleetView: View {
                 }
                 .font(.callout)
                 // A Table has no height of its own inside the page's ScrollView; without this
-                // it collapses under the header and shows no rows. Same minimum as Devices.
-                .frame(minHeight: 430)
+                // it collapses under the header and shows no rows. Sized to its rows, so a
+                // filtered list does not trail blank striped rows, up to Devices' 430 pt.
+                .frame(height: Self.tableHeight(
+                    rows: rows.count, rowHeight: Self.deviceRowHeight, cap: 430))
                 if matching.count > rows.count {
                     Text("Generated reports include every mobile device.")
                         .font(.caption)
@@ -827,11 +829,29 @@ struct MobileFleetView: View {
         }
         .font(.callout)
         // A Table has no height of its own inside the page's ScrollView; without this
-        // it collapses under the header. Rows past the minimum scroll in place.
-        .frame(minHeight: 280)
+        // it collapses under the header. Sized to its rows up to 280 pt; rows past
+        // that scroll in place.
+        .frame(height: Self.tableHeight(
+            rows: rows.count, rowHeight: Self.profileRowHeight, cap: 280))
     }
 
     // MARK: - Helpers
+
+    /// Header, its separator and the inset above the first row, measured from
+    /// a screenshot at the default text size.
+    private nonisolated static let tableChromeHeight: CGFloat = 33
+    /// The devices table's rows hold a Type pill, which makes them 26 pt.
+    nonisolated static let deviceRowHeight: CGFloat = 26
+    /// Text-only rows; 24 pt is the table's own row height.
+    nonisolated static let profileRowHeight: CGFloat = 24
+
+    /// A table's height for `rows` rows, at most `cap`. Past the last row the
+    /// table draws empty striped rows that read as blank devices, so it stops
+    /// at the rows it has; an empty list keeps one row's height under its
+    /// header. Larger text makes rows taller than this, and they scroll.
+    nonisolated static func tableHeight(rows: Int, rowHeight: CGFloat, cap: CGFloat) -> CGFloat {
+        min(cap, tableChromeHeight + CGFloat(max(rows, 1)) * rowHeight)
+    }
 
     /// The rows the devices table can list before its 50-row cap: inventory rows
     /// in the active supervision bucket when inventory details exist, list rows

@@ -969,4 +969,33 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(filtered.map { $0.mobileDeviceId }, unmanaged.map { $0.mobileDeviceId })
         XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, 60)
     }
+
+    // MARK: - Table heights
+
+    /// A short list sizes the table to its rows, so no blank striped rows
+    /// trail it; a long one stops at the cap and scrolls.
+    func testTableHeightFitsItsRowsUpToTheCap() {
+        let row = MobileFleetView.deviceRowHeight
+        let three = MobileFleetView.tableHeight(rows: 3, rowHeight: row, cap: 430)
+        XCTAssertEqual(three, 33 + 3 * row)
+        XCTAssertLessThan(three, 430)
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 4, rowHeight: row, cap: 430) - three, row
+        )
+        XCTAssertEqual(MobileFleetView.tableHeight(rows: 50, rowHeight: row, cap: 430), 430)
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 8, rowHeight: MobileFleetView.profileRowHeight,
+                                        cap: 280),
+            33 + 8 * 24
+        )
+    }
+
+    /// An empty list keeps a row's height under the header rather than
+    /// collapsing to the header alone.
+    func testTableHeightKeepsOneRowWhenEmpty() {
+        XCTAssertEqual(
+            MobileFleetView.tableHeight(rows: 0, rowHeight: 26, cap: 430),
+            MobileFleetView.tableHeight(rows: 1, rowHeight: 26, cap: 430)
+        )
+    }
 }
