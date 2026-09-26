@@ -7,6 +7,12 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Tracks jamf-cli v1.31.1 (was v1.30.0). Nothing the app runs changed its flags or output. With
+  jamf-cli 1.31.1 or later, group member counts from jamf-cli's audit and unused-groups analysis
+  are correct; that fix is in jamf-cli.
+
 ## [2.8.1] - 2026-09-26
 
 Jamf Platform API profiles collect Compliance Benchmarks, setup catches a wrong environment ID,
