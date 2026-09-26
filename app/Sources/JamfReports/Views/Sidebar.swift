@@ -40,21 +40,30 @@ struct Sidebar: View {
                 .padding(.horizontal, mode == .compact ? 14 : 16)
                 .padding(.bottom, 14)
 
+            // Hairlines at both scroll edges, so a row half under the header or
+            // the chip reads as scrolled rather than as text running into them.
             ScrollView {
                 navStack
                     .background(alignment: .top) {
                         if mode == .compact { compactRailTray }
                     }
             }
+            .overlay(alignment: .top) { scrollEdgeHairline }
+            .overlay(alignment: .bottom) { scrollEdgeHairline }
 
             workspaceChip
                 .padding(.horizontal, 12)
+                .padding(.top, 8)
                 .padding(.bottom, 12)
         }
         .background(reduceTransparency ? AnyShapeStyle(Theme.Colors.winBG2) : AnyShapeStyle(.regularMaterial))
         .overlay(alignment: .trailing) {
             Rectangle().fill(Theme.Colors.hairline).frame(width: 0.5)
         }
+    }
+
+    private var scrollEdgeHairline: some View {
+        Rectangle().fill(Theme.Colors.hairline).frame(height: 0.5)
     }
 
     @ViewBuilder
