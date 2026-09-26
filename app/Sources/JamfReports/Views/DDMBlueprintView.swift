@@ -184,7 +184,7 @@ struct DDMBlueprintView: View {
                         message: "Run a collect with the Scan tier (or wait for the weekly "
                             + "managed scan) to populate per-device DDM status. Platform "
                             + "profiles can also run the blueprint reports.",
-                        commands: ["jamf-reports collect --tiers inventory,scan"]
+                        commands: [UpdatesView.collectCommand(profile: workspace.profile)]
                     )
                 }
             }
