@@ -97,7 +97,7 @@ final class CLICommandTests: XCTestCase {
         #if DEBUG
         throw XCTSkip("assertionFailure fires in debug — invalid-profile argv guard is verified in release builds")
         #else
-        let invalidProfiles = ["", "../escape", "foo bar", "--config=/etc/passwd", "UPPER"]
+        let invalidProfiles = ["", "../escape", "foo bar", "--config=/etc/passwd", "dotted.name"]
         for profile in invalidProfiles {
             XCTAssertEqual(
                 CLICommand.proAuthToken(profile: profile).argv, [],

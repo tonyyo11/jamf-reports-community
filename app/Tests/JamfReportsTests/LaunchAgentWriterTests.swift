@@ -11,14 +11,15 @@ final class LaunchAgentWriterTests: XCTestCase {
             "\(prefix).dummy.daily",
             "\(prefix).fixture-edu_v2",
             "\(prefix).school-test.weekly-mon",
+            // Capitalised jamf-cli profile names carry into their labels.
+            "\(prefix).Acme-Dev.daily",
         ]
         for label in valid {
             XCTAssertTrue(LaunchAgentWriter.isValidLabel(label), label)
         }
 
         let invalid = [
-            "\(prefix).Dummy",
-            "\(prefix).DAILY",
+            "\(prefix).Dümmy",
             "\(prefix).dummy.",
             "\(prefix).dummy..weekly",
             "\(prefix).dummy daily",

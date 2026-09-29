@@ -99,16 +99,16 @@ final class FailureModeTests: XCTestCase {
         XCTAssertTrue(collector.hasFailLine, "A failure log line must be emitted for invalid profile")
     }
 
-    func testValidateConnectionRejectsUppercaseSlug() async {
+    func testValidateConnectionRejectsNonASCIISlug() async {
         let bridge = CLIBridge()
         let collector = LineCollector()
         do {
-            _ = try await bridge.validateConnection(profile: "Dummy") { line in
+            _ = try await bridge.validateConnection(profile: "Dümmy") { line in
                 collector.append(line)
             }
-            XCTFail("validateConnection must throw for uppercase profile slug")
+            XCTFail("validateConnection must throw for a non-ASCII profile slug")
         } catch let e as CLIBridgeError {
-            XCTAssertEqual(e, .invalidProfile("Dummy"))
+            XCTAssertEqual(e, .invalidProfile("Dümmy"))
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
@@ -171,7 +171,7 @@ final class FailureModeTests: XCTestCase {
     // MARK: - ProfileService.isValid: invalid slugs rejected before subprocess
 
     func testInvalidProfileSlugRejectedByProfileService() {
-        let invalids = ["../evil", "Uppercase", "has space", "", "-start", ".start", "/absolute"]
+        let invalids = ["../evil", "Ümlaut", "has space", "", "-start", ".start", "/absolute"]
         for slug in invalids {
             XCTAssertFalse(
                 ProfileService.isValid(slug),

@@ -366,7 +366,7 @@ struct OnboardingView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(Theme.Colors.danger)
                         }
-                        FieldHelp(text: "Use lowercase letters, numbers, dots, underscores, or hyphens.")
+                        FieldHelp(text: "Use letters, numbers, hyphens, or underscores.")
                     }
                 }
 
@@ -615,7 +615,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: binding(\.protectProfileName), placeholder: "protect", mono: true)
-                        FieldHelp(text: "Lowercase letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -714,7 +714,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: binding(\.schoolProfileName), placeholder: "school", mono: true)
-                        FieldHelp(text: "Lowercase letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {

@@ -169,12 +169,14 @@ enum LaunchAgentWriter {
     /// `LaunchAgentService.profileAndSlug` so it can reject legacy
     /// 3-component labels at parse time without rejecting them at the
     /// syntactic level (where some callers historically accept
-    /// `<prefix>.<profile>` shapes too).
+    /// `<prefix>.<profile>` shapes too). Capitals are allowed because the
+    /// profile component may have them (`ProfileService.isValid`).
     static func isValidLabel(_ label: String) -> Bool {
         guard label.hasPrefix("\(labelPrefix).") else { return false }
         let tail = String(label.dropFirst(labelPrefix.count + 1))
         guard !tail.isEmpty, !tail.contains(".."), !tail.hasSuffix(".") else { return false }
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789._-")
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
         return tail.unicodeScalars.allSatisfy { allowed.contains($0) }
             && !tail.components(separatedBy: ".").isEmpty
     }

@@ -136,7 +136,13 @@ struct ExistingCLISetupView: View {
                 ForEach(flow.profileNames, id: \.self) { name in
                     Toggle(name, isOn: selectionBinding(name))
                         .toggleStyle(.checkbox)
-                        .disabled(flow.isRunning || flow.didComplete)
+                        .disabled(flow.isRunning || flow.didComplete || flow.unusable[name] != nil)
+                    if let reason = flow.unusable[name] {
+                        Text("\(name) can't be used. \(reason.explanation)")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.warnSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Text(
                     "Each profile gets its own workspace under "

@@ -117,7 +117,7 @@ struct ProductConnectSheetView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: protectProfileNameBinding, placeholder: "protect", mono: true)
-                        FieldHelp(text: "Lowercase letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -210,7 +210,7 @@ struct ProductConnectSheetView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: schoolProfileNameBinding, placeholder: "school", mono: true)
-                        FieldHelp(text: "Lowercase letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {

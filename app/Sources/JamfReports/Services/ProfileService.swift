@@ -42,12 +42,25 @@ enum ProfileService {
             authMethod = try container.decodeIfPresent(String.self, forKey: .authMethod)
             isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
         }
+
+        init(name: String, url: String?, authMethod: String?, isDefault: Bool) {
+            self.name = name
+            self.url = url
+            self.authMethod = authMethod
+            self.isDefault = isDefault
+        }
     }
 
-    /// `^[a-z0-9][a-z0-9_-]*$` — the regex used everywhere a profile
+    /// `^[A-Za-z0-9][A-Za-z0-9_-]*$` — the regex used everywhere a profile
     /// slug enters either path construction (`~/Jamf-Reports/<name>/`)
     /// or LaunchAgent labels
     /// (`com.github.tonyyo11.jamf-reports-community.<name>.<slug>`).
+    ///
+    /// Capitals are allowed: jamf-cli profile names are free text, admins
+    /// capitalise them, and jamf-cli cannot rename a profile. The rule was
+    /// lowercase-only until 2026-09, which failed setup for every such profile.
+    /// ASCII letters give a path or label nothing to abuse; names that differ
+    /// only by case are handled by `unusableProfiles(in:)`.
     ///
     /// S-03 (2026-05-15): `.` was previously permitted but caused
     /// ambiguous parsing in `LaunchAgentService.profileAndSlug`. The
@@ -62,9 +75,109 @@ enum ProfileService {
     /// this rule is surfaced via `dottedLegacyWorkspaces()` so the
     /// user knows why a previously-visible profile no longer appears.
     static func isValid(_ name: String) -> Bool {
-        guard let first = name.first, first.isLowercase || first.isNumber else { return false }
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_-")
+        let alphanumerics = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        guard let first = name.unicodeScalars.first, alphanumerics.contains(first) else {
+            return false
+        }
+        let allowed = alphanumerics.union(CharacterSet(charactersIn: "_-"))
         return name.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
+    /// Why Jamf Reports can't use a configured jamf-cli profile.
+    enum UnusableReason: Equatable, Sendable {
+        /// The name fails `isValid`.
+        case unsupportedName
+        /// The name matches `owner` except for letter case. The workspace root is
+        /// normally on a case-insensitive volume, where both would use one folder.
+        case sharesFolder(with: String)
+
+        /// Full sentence for the setup screen.
+        var explanation: String {
+            switch self {
+            case .unsupportedName:
+                return "Profile names can use only letters, numbers, - and _, starting with a "
+                    + "letter or number. jamf-cli can't rename a profile, so add this "
+                    + "connection again under a new name."
+            case .sharesFolder(let owner):
+                return "Matches \(owner) except for letter case, so both would use one workspace "
+                    + "folder, which belongs to \(owner). To use this profile, add it again in "
+                    + "jamf-cli under a name that differs by more than case."
+            }
+        }
+
+        /// Short form for one-line connection rows.
+        var label: String {
+            switch self {
+            case .unsupportedName: return "(unsupported name)"
+            case .sharesFolder(let owner): return "(same folder as \(owner))"
+            }
+        }
+    }
+
+    /// Configured profiles Jamf Reports can't use. Of names that differ only by
+    /// case, the one an existing workspace folder records keeps it, matching the
+    /// bind and collect guards; with no folder, the all-lowercase spelling (the
+    /// only one older builds accepted), else the first listed.
+    /// `recordedOwner` maps a lowercased name to that folder's profile.
+    static func unusableProfiles(
+        in names: [String],
+        recordedOwner: (String) -> String? = recordedWorkspaceOwner(matching:)
+    ) -> [String: UnusableReason] {
+        var reasons: [String: UnusableReason] = [:]
+        for name in names where !isValid(name) {
+            reasons[name] = .unsupportedName
+        }
+        let spellings = Dictionary(grouping: names.filter(isValid)) { $0.lowercased() }
+        for (key, group) in spellings where group.count > 1 {
+            let recorded = recordedOwner(key)
+            let owner = group.first { $0 == recorded } ?? group.first { $0 == key } ?? group[0]
+            for name in group where name != owner {
+                reasons[name] = .sharesFolder(with: owner)
+            }
+        }
+        return reasons
+    }
+
+    /// The profile an existing workspace folder spelled like `key` (any case)
+    /// records in `jamf_cli.profile`, or the folder's own name when that is blank.
+    static func recordedWorkspaceOwner(matching key: String) -> String? {
+        guard let folder = workspaceFolders(lowercased: key).first else { return nil }
+        let config = workspacesRoot().appendingPathComponent(folder)
+            .appendingPathComponent("config.yaml")
+        let recorded = (try? ConfigLoader.load(from: config))?.jamfCli?.resolvedProfile ?? ""
+        return recorded.isEmpty ? folder : recorded
+    }
+
+    /// Workspace folders (holding a `config.yaml`) whose name lowercases to `key`.
+    /// More than one exists only on a case-sensitive volume.
+    private static func workspaceFolders(lowercased key: String) -> [String] {
+        let root = workspacesRoot()
+        let names: [String]
+        do {
+            names = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        } catch let error as NSError where error.code == NSFileReadNoSuchFileError {
+            return [] // no workspace root yet — first-run state
+        } catch {
+            AppLogger.collect.error(
+                """
+                workspaceFolders: enumeration failed at \(root.path, privacy: .public): \
+                \(error.localizedDescription, privacy: .private)
+                """
+            )
+            return []
+        }
+        return names.filter { name in
+            let config = root.appendingPathComponent(name).appendingPathComponent("config.yaml")
+            return name.lowercased() == key && FileManager.default.fileExists(atPath: config.path)
+        }
+    }
+
+    /// True when a workspace's recorded `jamf_cli.profile` is another profile
+    /// spelled like `profile` apart from case: the two share the folder, and
+    /// using it would mix their tenants' data.
+    static func isCaseVariant(_ recorded: String, of profile: String) -> Bool {
+        recorded != profile && recorded.lowercased() == profile.lowercased()
     }
 
     /// Workspace directory names on disk that fail the current
@@ -116,6 +229,12 @@ enum ProfileService {
         return workspacesRoot().appendingPathComponent(profile, isDirectory: true)
     }
 
+    /// An existing workspace folder spelled like `profile` apart from letter
+    /// case. On a case-insensitive volume it is `profile`'s folder as well.
+    static func caseVariantWorkspace(of profile: String) -> String? {
+        workspaceFolders(lowercased: profile.lowercased()).first { $0 != profile }
+    }
+
     /// Discover real profiles from `jamf-cli config list` first, then merge in
     /// local `~/Jamf-Reports/<profile>/config.yaml` workspaces. Returns sorted by
     /// default profile first, then by name. In demo mode, the caller falls back
@@ -126,7 +245,6 @@ enum ProfileService {
         ).mapValues(\.count)
 
         var profiles = discoverJamfCLIProfiles(scheduleCounts: scheduleCounts)
-        let namesFromCLI = Set(profiles.map(\.name))
 
         // S-03 migration: surface dotted legacy workspace dirs so the
         // user knows why a previously-visible profile is no longer
@@ -139,31 +257,50 @@ enum ProfileService {
             )
         }
 
-        let root = workspacesRoot()
+        let workspaceProfiles = localOnlyWorkspaces(
+            under: workspacesRoot(), cliNames: profiles.map(\.name)
+        ).map { name in
+            JamfCLIProfile(
+                name: name,
+                url: "(local workspace)",
+                schedules: scheduleCounts[name] ?? 0,
+                status: .idle
+            )
+        }
+        profiles.append(contentsOf: workspaceProfiles)
+        return profiles.sorted(by: profileSort)
+    }
+
+    /// Workspace folders under `root` (valid name, holding a `config.yaml`) that
+    /// no jamf-cli profile names. Compared lowercased: on a case-insensitive
+    /// volume a folder spelled unlike a profile is still that profile's folder.
+    static func localOnlyWorkspaces(under root: URL, cliNames: [String]) -> [String] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
         ) else {
-            return profiles.sorted(by: profileSort)
+            return []
         }
-        let workspaceProfiles = entries
+        let claimed = Set(cliNames.map { $0.lowercased() })
+        return entries
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
             .map { $0.lastPathComponent }
             .filter(isValid)
-            .filter { !namesFromCLI.contains($0) }
+            .filter { !claimed.contains($0.lowercased()) }
             .filter { name in
                 let cfg = root.appendingPathComponent(name).appendingPathComponent("config.yaml")
                 return FileManager.default.fileExists(atPath: cfg.path)
             }
-            .map { name in
-                JamfCLIProfile(
-                    name: name,
-                    url: "(local workspace)",
-                    schedules: scheduleCounts[name] ?? 0,
-                    status: .idle
-                )
-            }
-        profiles.append(contentsOf: workspaceProfiles)
-        return profiles.sorted(by: profileSort)
+    }
+
+    /// The profiles a multi-profile run collects: exclusions applied, and the
+    /// `.error` ones dropped. Discovery marks a profile the app can't use that way
+    /// (unsupported name, or a case variant sharing another's folder); it has no
+    /// workspace to run in, and counting it failed every run of the schedule.
+    static func runnableProfiles(
+        _ profiles: [JamfCLIProfile],
+        excluding excluded: Set<String>
+    ) -> [JamfCLIProfile] {
+        applyingExclusions(profiles, excluding: excluded).filter { $0.status != .error }
     }
 
     // MARK: - Run-time exclusion (--exclude-profiles)
@@ -269,55 +406,61 @@ enum ProfileService {
         guard let decoded = try? JSONDecoder().decode([JamfCLIConfigProfile].self, from: data) else {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
+        return rows(for: decoded, scheduleCounts: scheduleCounts)
+    }
 
-        return decoded.map { item in
-            if isValid(item.name) {
+    /// Profiles Jamf Reports can't use stay listed, marked `.error` with the
+    /// reason, so the user can see why they do nothing (SettingsView greys them
+    /// out, the setup screen won't initialize them, WorkspaceStore never makes one
+    /// active, multi-profile runs and catch-up skip them).
+    private static func rows(
+        for configured: [JamfCLIConfigProfile],
+        scheduleCounts: [String: Int]
+    ) -> [JamfCLIProfile] {
+        let unusable = unusableProfiles(in: configured.map(\.name))
+        return configured.map { item in
+            if let reason = unusable[item.name] {
                 return JamfCLIProfile(
                     name: item.name,
                     url: displayURL(item.url),
-                    schedules: scheduleCounts[item.name] ?? 0,
-                    status: item.isDefault ? .ok : .idle,
-                    authMethod: item.authMethod ?? "",
-                    isDefault: item.isDefault
+                    schedules: 0,
+                    status: .error,
+                    authMethod: reason.label,
+                    isDefault: false
                 )
             }
-            // Surface invalid-named profiles so the user can see why they
-            // appear missing. They cannot be selected for workspace use until
-            // renamed in jamf-cli (see SettingsView for greyed-out rendering).
             return JamfCLIProfile(
                 name: item.name,
                 url: displayURL(item.url),
-                schedules: 0,
-                status: .error,
-                authMethod: "(unsupported name — rename in jamf-cli)",
-                isDefault: false
+                schedules: scheduleCounts[item.name] ?? 0,
+                status: item.isDefault ? .ok : .idle,
+                authMethod: item.authMethod ?? "",
+                isDefault: item.isDefault
             )
         }
     }
 
-    private static func fallbackConfigProfiles(scheduleCounts: [String: Int]) -> [JamfCLIProfile] {
-        let config = FileManager.default.homeDirectoryForCurrentUser
+    /// Reads profiles straight from jamf-cli's config file when `config list`
+    /// can't run. `configURL` is a test seam; production callers omit it.
+    static func fallbackConfigProfiles(
+        scheduleCounts: [String: Int],
+        configURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/jamf-cli/config.yaml")
-        guard let text = try? String(contentsOf: config, encoding: .utf8) else { return [] }
+    ) -> [JamfCLIProfile] {
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else { return [] }
 
         let defaultProfile = firstScalar("default-profile", in: text)
-        var profiles: [JamfCLIProfile] = []
+        var configured: [JamfCLIConfigProfile] = []
         var currentName: String?
         var currentURL: String?
         var currentAuthMethod: String?
 
         func flush() {
-            guard let name = currentName, isValid(name) else { return }
-            profiles.append(
-                JamfCLIProfile(
-                    name: name,
-                    url: displayURL(currentURL),
-                    schedules: scheduleCounts[name] ?? 0,
-                    status: name == defaultProfile ? .ok : .idle,
-                    authMethod: currentAuthMethod ?? "",
-                    isDefault: name == defaultProfile
-                )
-            )
+            guard let name = currentName else { return }
+            configured.append(JamfCLIConfigProfile(
+                name: name, url: currentURL, authMethod: currentAuthMethod,
+                isDefault: name == defaultProfile
+            ))
         }
 
         var inProfiles = false
@@ -346,7 +489,7 @@ enum ProfileService {
             }
         }
         flush()
-        return profiles
+        return rows(for: configured, scheduleCounts: scheduleCounts)
     }
 
     private static func firstScalar(_ key: String, in text: String) -> String? {

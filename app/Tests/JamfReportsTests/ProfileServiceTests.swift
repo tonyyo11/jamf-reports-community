@@ -15,6 +15,9 @@ final class ProfileServiceTests: XCTestCase {
             "school-test",
             "profile_01",
             "tenant-1-prod",
+            // jamf-cli profile names are free text and often capitalised.
+            "Dummy",
+            "Acme-Dev-API",
         ]
 
         for profile in valid {
@@ -25,7 +28,8 @@ final class ProfileServiceTests: XCTestCase {
     func testProfileSlugValidationRejectsBadInput() {
         let invalid = [
             "",
-            "Dummy",
+            "Dümmy",
+            "Ｄummy",
             "dummy profile",
             "dummy/profile",
             "../dummy",
@@ -63,7 +67,7 @@ final class ProfileServiceTests: XCTestCase {
 
         try withTemporaryWorkspaceRoot(root) {
             XCTAssertNil(ProfileService.workspaceURL(for: "../dummy"))
-            XCTAssertNil(ProfileService.workspaceURL(for: "Dummy"))
+            XCTAssertNil(ProfileService.workspaceURL(for: "dummy profile"))
             XCTAssertNil(ProfileService.workspaceURL(for: "dummy/profile"))
         }
     }
@@ -74,8 +78,8 @@ final class ProfileServiceTests: XCTestCase {
         XCTAssertEqual(ProfileService.parseExclusions("dummy, lighthouse ,"), ["dummy", "lighthouse"])
         XCTAssertEqual(ProfileService.parseExclusions(nil), [])
         XCTAssertEqual(ProfileService.parseExclusions(""), [])
-        // Invalid slugs (uppercase, dots) are dropped, not passed through.
-        XCTAssertEqual(ProfileService.parseExclusions("Dummy,ok-1,a.b"), ["ok-1"])
+        // Invalid slugs (dots, spaces) are dropped, not passed through.
+        XCTAssertEqual(ProfileService.parseExclusions("Dummy,ok-1,a.b,a b"), ["Dummy", "ok-1"])
     }
 
     func testApplyingExclusionsDropsOnlyNamedProfiles() {
