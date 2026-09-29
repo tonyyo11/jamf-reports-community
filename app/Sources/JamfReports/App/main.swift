@@ -837,10 +837,7 @@ if cliArgs.count > 1, cliArgs[1] == "--tick" {
     let code = Task.detached { await runTick(arguments: cliArgs) }
     exit(await code.value)
 } else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
-   let profileIdx = cliArgs.firstIndex(of: "--profile"),
-   profileIdx + 1 < cliArgs.count,
-   isFlagValue(cliArgs[profileIdx + 1]) {
-    let profile = cliArgs[profileIdx + 1]
+   let profile = ProfileService.profileArgument(in: cliArgs) {
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)

@@ -214,7 +214,14 @@ fileprivate extension DeviceInventoryService {
         let rootPath = root.standardizedFileURL.path
         guard path.hasPrefix(rootPath) else { return url.lastPathComponent }
         let suffix = path.dropFirst(rootPath.count).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return WorkspaceRootStore.displayPath(profile: root.lastPathComponent, subpath: suffix)
+        return WorkspaceRootStore.displayPath(
+            profile: profileName(ofWorkspace: root), subpath: suffix
+        )
+    }
+
+    /// The profile a workspace folder belongs to: its name decoded (`a%2Fb` is `a/b`).
+    static func profileName(ofWorkspace root: URL) -> String {
+        ProfileName.name(fromPathComponent: root.lastPathComponent) ?? root.lastPathComponent
     }
 }
 
@@ -230,7 +237,7 @@ fileprivate extension DeviceInventoryService {
             values = parseSimpleYAML(text)
         }
 
-        let profile = root.lastPathComponent
+        let profile = profileName(ofWorkspace: root)
         let jamfCLIDataDir = (try? WorkspacePaths.dataDir(for: profile))
             ?? resolvedDirectory("jamf-cli-data", fallback: "jamf-cli-data", root: root)
         let historicalCSVDir = (try? WorkspacePaths.historicalDir(for: profile))

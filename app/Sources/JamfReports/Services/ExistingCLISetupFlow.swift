@@ -145,7 +145,8 @@ final class ExistingCLISetupFlow {
     /// looked for, since "nothing found" alone leaves them guessing whether
     /// they picked the parent folder or the profile folder.
     nonisolated static func missingWorkspaceMessage(root: String, profiles: [String]) -> String {
-        let example = "\(root)/\(profiles.first ?? "<profile>")/config.yaml"
+        let folder = profiles.first.map(ProfileName.pathComponent) ?? "<profile>"
+        let example = "\(root)/\(folder)/config.yaml"
         return "No workspace for \(profiles.joined(separator: ", ")) under \(root) — "
             + "expected \(example). Pick the folder that contains the profile folders, "
             + "or initialize a new workspace below."

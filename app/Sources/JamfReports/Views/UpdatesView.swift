@@ -128,7 +128,7 @@ struct UpdatesView: View {
     /// `collect` has no default profile; without the flag the pasted command fails
     /// on a missing `--profile`.
     nonisolated static func collectCommand(profile: String) -> String {
-        "jamf-reports collect --profile \(ProfileName.shellWord(profile)) --tiers inventory,scan"
+        "jamf-reports collect \(ProfileName.profileOption(profile)) --tiers inventory,scan"
     }
 
     private var kpiGrid: some View {

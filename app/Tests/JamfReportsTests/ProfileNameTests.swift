@@ -67,6 +67,8 @@ struct ProfileNameTests {
         #expect(ProfileName.name(fromPathComponent: "a%20b") == nil, "a space is kept as is")
         #expect(ProfileName.name(fromPathComponent: "%2e.") == nil, "hex is upper case")
         #expect(ProfileName.name(fromLabelComponent: "acme.prod") == nil)
+        // A folder name Finder or a sync provider stored decomposed still reads back.
+        #expect(ProfileName.name(fromPathComponent: "Zu\u{0308}rich") == "Z\u{00FC}rich")
     }
 
     @Test("the names the app still refuses")
@@ -74,6 +76,9 @@ struct ProfileNameTests {
         #expect(ProfileName.problem(with: "") == .empty)
         #expect(ProfileName.problem(with: "a\nb") == .controlCharacter)
         #expect(ProfileName.problem(with: "a\tb") == .controlCharacter)
+        #expect(ProfileName.problem(with: "a\u{2028}b") == .controlCharacter, "line separator")
+        #expect(ProfileName.problem(with: "a\u{2029}b") == .controlCharacter, "paragraph separator")
+        #expect(ProfileName.problem(with: "a\u{85}b") == .controlCharacter, "next line")
         #expect(ProfileName.problem(with: " acme") == .edgeWhitespace)
         #expect(ProfileName.problem(with: "acme ") == .edgeWhitespace)
         #expect(ProfileName.problem(with: String(repeating: "a", count: 120)) == nil)

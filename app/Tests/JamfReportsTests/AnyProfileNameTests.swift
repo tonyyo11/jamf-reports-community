@@ -12,7 +12,7 @@ final class AnyProfileNameTests: XCTestCase {
 
     private let names = [
         "Acme Prod", "acme.prod", "Zürich", "a,b", "a:b", "a/b", "-lead", "#hash", "it's",
-        "..", "_fleet-reports", "R&D (EU)", "true", "2024",
+        "..", "_fleet-reports", "R&D (EU)", "true", "2024", #"say "hi""#, #"back\slash"#,
     ]
 
     override func setUpWithError() throws {
@@ -81,6 +81,60 @@ final class AnyProfileNameTests: XCTestCase {
         XCTAssertTrue(RunHistoryService.loadLog(stray.appendingPathComponent(log)).isEmpty)
     }
 
+    /// The Devices screen reads jamf-cli inventory from an encoded workspace folder.
+    func testDevicesReadInventoryFromAnEncodedWorkspace() throws {
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: "a/b"))
+        let kind = workspace.appendingPathComponent("jamf-cli-data/computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: kind, withIntermediateDirectories: true)
+        try Data(#"[{"general": {"name": "Mac", "id": "42"}, "hardware": {"serialNumber": "E1"}}]"#
+            .utf8).write(to: kind.appendingPathComponent("computers_20260825T090000.json"))
+        let snapshot = DeviceInventoryService.load(profile: "a/b", demoMode: false)
+        XCTAssertEqual(snapshot.devices.map(\.serial), ["E1"])
+    }
+
+    /// A copied folder (Finder's `prod copy`) still records `prod`, so it is not a workspace
+    /// of its own that every all-profiles run would then try and fail.
+    func testACopiedWorkspaceFolderIsNotAProfile() throws {
+        for (folder, recorded) in [
+            ("prod", "prod"), ("prod copy", "prod"), ("lab", "lab"), ("bare", ""),
+        ] {
+            let dir = tempRoot.appendingPathComponent(folder, isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try Data("jamf_cli:\n  profile: \"\(recorded)\"\n".utf8)
+                .write(to: dir.appendingPathComponent("config.yaml"))
+        }
+        XCTAssertEqual(
+            Set(ProfileService.localOnlyWorkspaces(under: tempRoot, cliNames: ["prod"])),
+            ["lab", "bare"]
+        )
+    }
+
+    func testShownPathsNameTheRealFolder() {
+        XCTAssertTrue(WorkspaceRootStore.displayPath(profile: "a/b").hasSuffix("/a%2Fb"))
+        XCTAssertTrue(WorkspaceRootStore.displayPath(profile: "Acme Prod", subpath: "backups")
+            .hasSuffix("/Acme Prod/backups"))
+        XCTAssertTrue(ExistingCLISetupFlow.missingWorkspaceMessage(root: "~/R", profiles: ["a/b"])
+            .contains("~/R/a%2Fb/config.yaml"))
+    }
+
+    func testAuthHintsQuoteTheProfile() {
+        let error = ReportEngineError.authExpired(profile: "Acme Prod", failedCount: 3)
+        XCTAssertTrue(error.errorDescription?.contains("jamf-cli -p 'Acme Prod' pro auth token")
+            == true, error.errorDescription ?? "")
+    }
+
+    func testProfileOptionsParseBack() {
+        XCTAssertEqual(ProfileName.profileOption("acme"), "--profile acme")
+        XCTAssertEqual(ProfileName.profileOption("Acme Prod"), "--profile 'Acme Prod'")
+        XCTAssertEqual(ProfileName.profileOption("-lead"), "--profile=-lead")
+        let run = ["JamfReports", "--scheduled-run"]
+        XCTAssertEqual(ProfileService.profileArgument(in: run + ["--profile", "Acme Prod"]),
+                       "Acme Prod")
+        XCTAssertEqual(ProfileService.profileArgument(in: run + ["--profile=--lead"]), "--lead")
+        XCTAssertNil(ProfileService.profileArgument(in: run + ["--profile", "--all-profiles"]))
+        XCTAssertNil(ProfileService.profileArgument(in: run))
+    }
+
     func testCaseAndAccentVariantsShareOneFolder() {
         XCTAssertEqual(
             ProfileService.unusableProfiles(
@@ -89,6 +143,8 @@ final class AnyProfileNameTests: XCTestCase {
             ["Zürich": .sharesFolder(with: "zürich")]
         )
         XCTAssertTrue(ProfileService.isCaseVariant("ACME PROD", of: "Acme Prod"))
+        // Checked on APFS: a folder named Straße also answers to STRASSE (full case folding).
+        XCTAssertTrue(ProfileService.isCaseVariant("STRASSE", of: "Straße"))
         XCTAssertFalse(ProfileService.isCaseVariant("Acme Prod", of: "Acme-Prod"))
     }
 

@@ -11,6 +11,7 @@ struct OnboardingView: View {
 
     /// The profile name as the commands on this screen show it.
     private var shellProfile: String { ProfileName.shellWord(flow.profileName.trimmedForView) }
+    private var profileOption: String { ProfileName.profileOption(flow.profileName.trimmedForView) }
 
     private let privileges = [
         "Computers: Read", "Mobile Devices: Read", "Mobile Profiles: Read",
@@ -945,7 +946,7 @@ struct OnboardingView: View {
                         Text("Run profile \(flow.profileName.trimmedForView)")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
-                        Mono(text: "generate --profile \(shellProfile)", size: 11.5)
+                        Mono(text: "generate \(profileOption)", size: 11.5)
                     }
                     Spacer()
                     if let exit = flow.firstReportExitCode {

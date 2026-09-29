@@ -30,7 +30,7 @@ struct Schedules: AsyncParsableCommand {
         @Option(help: "Workspace profile slug (the base profile when --all-profiles).")
         var profile: String
         @Flag(help: "Run for every local profile.") var allProfiles = false
-        @Option(help: "Comma-separated profiles to skip (with --all-profiles); %2C is a comma.")
+        @Option(help: "Comma-separated profiles to skip (--all-profiles); %2C is ',', %25 is '%'.")
         var exclude: String?
         @Option(help: "snapshot-only | jamf-cli-only | jamf-cli-full | csv-assisted | backup")
         var mode: String

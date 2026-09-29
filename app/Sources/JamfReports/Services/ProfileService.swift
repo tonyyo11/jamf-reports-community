@@ -209,7 +209,8 @@ enum ProfileService {
 
     /// Profiles of the workspace folders under `root` (holding a `config.yaml`) that no
     /// jamf-cli profile names. Compared by folder key: on a case-insensitive volume a
-    /// folder spelled unlike a profile is still that profile's folder.
+    /// folder spelled unlike a profile is still that profile's folder. A folder whose config
+    /// records another profile is a copy (Finder's `prod copy`), not a workspace of its own.
     static func localOnlyWorkspaces(under root: URL, cliNames: [String]) -> [String] {
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
@@ -219,13 +220,18 @@ enum ProfileService {
         let claimed = Set(cliNames.map(ProfileName.folderKey))
         return entries
             .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true }
-            .filter { folder in
+            .compactMap { folder -> String? in
                 let config = folder.appendingPathComponent("config.yaml")
-                return FileManager.default.fileExists(atPath: config.path)
+                guard FileManager.default.fileExists(atPath: config.path),
+                      let name = ProfileName.name(fromPathComponent: folder.lastPathComponent),
+                      isValid(name), !claimed.contains(ProfileName.folderKey(name))
+                else { return nil }
+                let loaded = try? ConfigLoader.load(from: config)
+                let recorded = loaded?.jamfCli?.resolvedProfile ?? ""
+                let recordsAnother = !recorded.isEmpty
+                    && ProfileName.folderKey(recorded) != ProfileName.folderKey(name)
+                return recordsAnother ? nil : name
             }
-            .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
-            .filter(isValid)
-            .filter { !claimed.contains(ProfileName.folderKey($0)) }
     }
 
     /// The profiles a multi-profile run collects: exclusions applied, and the
@@ -237,6 +243,20 @@ enum ProfileService {
         excluding excluded: Set<String>
     ) -> [JamfCLIProfile] {
         applyingExclusions(profiles, excluding: excluded).filter { $0.status != .error }
+    }
+
+    // MARK: - Command-line arguments
+
+    /// The `--profile` value of `--scheduled-run`, given as `--profile <name>` or as
+    /// `--profile=<name>`, the form a name starting with `-` needs. A separate value starting
+    /// with `--` is another flag, not the profile (`--profile --all-profiles`).
+    static func profileArgument(in args: [String]) -> String? {
+        if let joined = args.first(where: { $0.hasPrefix("--profile=") }) {
+            return String(joined.dropFirst("--profile=".count))
+        }
+        guard let index = args.firstIndex(of: "--profile"), index + 1 < args.count,
+              !args[index + 1].hasPrefix("--") else { return nil }
+        return args[index + 1]
     }
 
     // MARK: - Run-time exclusion (--exclude-profiles)

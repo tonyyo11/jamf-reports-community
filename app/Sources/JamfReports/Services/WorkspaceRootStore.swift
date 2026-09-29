@@ -120,9 +120,10 @@ enum WorkspaceRootStore {
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
-    /// Display path for one profile's workspace, with an optional subpath.
+    /// Display path for one profile's workspace, with an optional subpath. Shows the folder's
+    /// real name (`ProfileName.pathComponent`), which is what the user would look for in Finder.
     static func displayPath(profile: String, subpath: String = "") -> String {
-        let base = "\(displayRoot)/\(profile)"
+        let base = "\(displayRoot)/\(ProfileName.pathComponent(profile))"
         return subpath.isEmpty ? base : "\(base)/\(subpath)"
     }
 

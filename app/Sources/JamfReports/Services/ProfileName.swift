@@ -91,14 +91,22 @@ enum ProfileName {
         return "'" + name.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 
+    /// `--profile <word>` for the app's own command line. A name starting with `-` is joined
+    /// with `=`, because swift-argument-parser reads a separate dash-leading value as an option.
+    static func profileOption(_ name: String) -> String {
+        name.hasPrefix("-") ? "--profile=\(shellWord(name))" : "--profile \(shellWord(name))"
+    }
+
     /// Names whose keys match share one folder on a case- and normalization-insensitive volume,
     /// which is how macOS formats APFS by default.
     static func folderKey(_ name: String) -> String {
         name.folding(options: .caseInsensitive, locale: nil).precomposedStringWithCanonicalMapping
     }
 
+    /// Control characters plus the line and paragraph separators (U+2028, U+2029), which are
+    /// not category `.control` but split lines for YAMLCodec and the line-based run logs.
     private static func isControl(_ scalar: Unicode.Scalar) -> Bool {
-        scalar.properties.generalCategory == .control
+        scalar.properties.generalCategory == .control || CharacterSet.newlines.contains(scalar)
     }
 
     private static func encode(
