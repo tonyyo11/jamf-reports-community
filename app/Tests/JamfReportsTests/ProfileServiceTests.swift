@@ -26,28 +26,21 @@ final class ProfileServiceTests: XCTestCase {
     }
 
     func testProfileSlugValidationRejectsBadInput() {
-        let invalid = [
-            "",
-            "Dümmy",
-            "Ｄummy",
-            "dummy profile",
-            "dummy/profile",
-            "../dummy",
-            "-dummy",
-            ".dummy",
-            "_dummy",
-            "dummy$",
-            "dummy\nprofile",
-            "dummy:profile",
-            // S-03: dotted names cause ambiguous LaunchAgent label parsing.
-            "school.test",
-            "tenant-1.prod",
-            "dummy.prod",
-            "a.b.c",
-        ]
-
+        let invalid = ["", "dummy\nprofile", "dummy\tprofile", " dummy", "dummy ", "\u{7F}dummy"]
         for profile in invalid {
             XCTAssertFalse(ProfileService.isValid(profile), profile)
+        }
+    }
+
+    /// Everything else jamf-cli accepts is usable from 2.8.3 (paths and labels encode it);
+    /// S-03's dotted names included, since labels no longer carry a raw `.`.
+    func testProfileSlugValidationAcceptsWhatJamfCLIAccepts() {
+        let valid = [
+            "Dümmy", "Ｄummy", "dummy profile", "dummy/profile", "../dummy", "-dummy", ".dummy",
+            "_dummy", "dummy$", "dummy:profile", "school.test", "tenant-1.prod", "a.b.c",
+        ]
+        for profile in valid {
+            XCTAssertTrue(ProfileService.isValid(profile), profile)
         }
     }
 
@@ -66,9 +59,13 @@ final class ProfileServiceTests: XCTestCase {
         let root = try temporaryWorkspaceRoot()
 
         try withTemporaryWorkspaceRoot(root) {
-            XCTAssertNil(ProfileService.workspaceURL(for: "../dummy"))
-            XCTAssertNil(ProfileService.workspaceURL(for: "dummy profile"))
-            XCTAssertNil(ProfileService.workspaceURL(for: "dummy/profile"))
+            XCTAssertNil(ProfileService.workspaceURL(for: " dummy"))
+            XCTAssertNil(ProfileService.workspaceURL(for: "dummy\tprofile"))
+            XCTAssertNil(ProfileService.workspaceURL(for: ""))
+            XCTAssertEqual(
+                ProfileService.workspaceURL(for: "dummy profile")?.lastPathComponent,
+                "dummy profile"
+            )
         }
     }
 
@@ -78,8 +75,12 @@ final class ProfileServiceTests: XCTestCase {
         XCTAssertEqual(ProfileService.parseExclusions("dummy, lighthouse ,"), ["dummy", "lighthouse"])
         XCTAssertEqual(ProfileService.parseExclusions(nil), [])
         XCTAssertEqual(ProfileService.parseExclusions(""), [])
-        // Invalid slugs (dots, spaces) are dropped, not passed through.
-        XCTAssertEqual(ProfileService.parseExclusions("Dummy,ok-1,a.b,a b"), ["Dummy", "ok-1"])
+        XCTAssertEqual(ProfileService.parseExclusions("Dummy,ok-1,a.b,a b"),
+                       ["Dummy", "ok-1", "a.b", "a b"])
+        // A comma inside a name is written %2C (a percent sign %25); a stray % stays as is.
+        XCTAssertEqual(ProfileService.parseExclusions("a%2Cb, 100%25 ,50%"), ["a,b", "100%", "50%"])
+        XCTAssertEqual(ProfileService.parseExclusions("ok,a%0Ab"), ["ok"],
+                       "a line break is dropped")
     }
 
     func testApplyingExclusionsDropsOnlyNamedProfiles() {
@@ -123,8 +124,8 @@ final class ProfileServiceTests: XCTestCase {
     func testScopeRejectsInvalidSlug() {
         let store = makeSuiteStore()
         // setScope silently no-ops; scope returns .limited for the same bad slug
-        ProfileService.setScope(.fullAdmin, for: "../evil", store: store)
-        XCTAssertEqual(ProfileService.scope(for: "../evil", store: store), .limited)
+        ProfileService.setScope(.fullAdmin, for: "evil\nname", store: store)
+        XCTAssertEqual(ProfileService.scope(for: "evil\nname", store: store), .limited)
     }
 
     func testTwoProfilesHaveIndependentScopeStorage() {

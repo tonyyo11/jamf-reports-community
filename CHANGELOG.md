@@ -7,6 +7,35 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.8.3] - 2026-09-29
+
+Every jamf-cli profile name works in Jamf Reports, whatever it contains: spaces, dots, accented
+letters and punctuation included.
+
+### Fixed
+
+- Every jamf-cli profile name works, whatever it contains: spaces (`Acme Prod`), dots
+  (`acme.prod`), accented letters (`Zürich`), punctuation, or a leading `-`. Setup, collect,
+  schedules, Run History and the Reports list use the name exactly as jamf-cli spells it.
+  Workspace folders and file names keep the name and encode only what a folder name can't hold
+  (`a/b` becomes `a%2Fb`), so existing workspaces keep their folders. The app still can't use a
+  name with a line break or tab, one that starts or ends with a space, or a very long one, and
+  setup says which. On the `jamf-reports` command line, give a name that starts with `-` as
+  `--profile=-name`.
+- A workspace folder for a profile with a dot in its name, which earlier versions stopped
+  listing, belongs to that profile again.
+- A copy of a workspace folder (Finder's `prod copy`) is no longer listed as a profile of its
+  own, so runs across all profiles no longer try it and fail.
+- A profile named `true`, `false` or `null` no longer makes its workspace's `config.yaml`
+  unreadable.
+- Names that differ only by letter case now include accented letters (`Zürich` and `zürich`),
+  and the app keeps them apart the same way it keeps `Prod` and `prod` apart.
+- The Reports list reads a profile name that contains a date, or is only digits (`2024`), from
+  a report's file name correctly.
+- Commands the app shows for copying quote a profile name that needs it.
+- `--exclude-profiles` and `jamf-reports schedules add --exclude` take a comma inside a profile
+  name written as `%2C`, and a percent sign as `%25`.
+
 ## [2.8.2] - 2026-09-29
 
 First-launch setup works with jamf-cli profiles whose names have capital letters, and the Reports

@@ -30,7 +30,7 @@ struct Schedules: AsyncParsableCommand {
         @Option(help: "Workspace profile slug (the base profile when --all-profiles).")
         var profile: String
         @Flag(help: "Run for every local profile.") var allProfiles = false
-        @Option(help: "Comma-separated profiles to skip (with --all-profiles).")
+        @Option(help: "Comma-separated profiles to skip (--all-profiles); %2C is ',', %25 is '%'.")
         var exclude: String?
         @Option(help: "snapshot-only | jamf-cli-only | jamf-cli-full | csv-assisted | backup")
         var mode: String
@@ -54,7 +54,7 @@ struct Schedules: AsyncParsableCommand {
             _ = try LaunchAgentWriter.calendarIntervals(for: cadence)
             let tierSet: Set<CollectionTier>? = tiers.map(CLIRun.parseTiers)
             let excluded = exclude?.split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                .map(ProfileName.name(fromListElement:)).filter { !$0.isEmpty }
             let schedule = Schedule(
                 name: name, profile: profile, schedule: cadence, cadence: "custom", mode: runMode,
                 next: "—", last: "—", lastStatus: .ok, artifacts: [], enabled: !disabled,

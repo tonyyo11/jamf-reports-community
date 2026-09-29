@@ -878,8 +878,8 @@ final class CLIBridge {
         } else {
             onLine(.init(
                 timestamp: Date(), level: .fail,
-                text: "[error] auth check failed for profile '\(profile)' — " +
-                      "re-authenticate with: jamf-cli -p \(profile) pro auth token"
+                text: "[error] auth check failed for profile '\(profile)' — re-authenticate "
+                      + "with: jamf-cli -p \(ProfileName.shellWord(profile)) pro auth token"
             ))
         }
         return false
@@ -1705,17 +1705,16 @@ final class CLIBridge {
     /// when the config sets a usable one, otherwise the workspace slug.
     ///
     /// Best-effort by design — a missing, unreadable, or profile-less config falls
-    /// back to the slug, which is the pre-existing behavior. Empty and leading-dash
-    /// values are rejected: `-p ""` and `-p --foo` (re-read by jamf-cli as a flag)
-    /// are both worse than the fallback. Never used for path construction.
+    /// back to the slug, which is the pre-existing behavior. An empty or unusable value
+    /// (`ProfileService.isValid`) falls back too. A leading `-` is fine: jamf-cli takes the
+    /// argument after `-p` as its value. Never used for path construction.
     nonisolated static func resolvedCLIProfile(forWorkspace profile: String) -> String {
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let config = try? ConfigLoader.load(
                   from: workspace.appendingPathComponent("config.yaml")
               ),
               let candidate = config.jamfCli?.resolvedProfile,
-              !candidate.isEmpty,
-              !candidate.hasPrefix("-") else {
+              ProfileService.isValid(candidate) else {
             return profile
         }
         return candidate

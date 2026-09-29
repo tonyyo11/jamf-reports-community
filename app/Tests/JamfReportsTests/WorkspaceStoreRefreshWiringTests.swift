@@ -25,10 +25,10 @@ final class WorkspaceStoreRefreshWiringTests: XCTestCase {
 
     func testCanRefreshIsFalseForInvalidProfile() {
         let store = WorkspaceStore(demoMode: false)
-        // Spaces, punctuation, and empty all fail ProfileService.isValid.
-        XCTAssertFalse(store.canRefresh(profileSlug: "Bad Profile!"))
+        // A control character, an edge space and empty all fail ProfileService.isValid.
+        XCTAssertFalse(store.canRefresh(profileSlug: "Bad\tProfile"))
         XCTAssertFalse(store.canRefresh(profileSlug: ""))
-        XCTAssertFalse(store.canRefresh(profileSlug: "../escape"))
+        XCTAssertFalse(store.canRefresh(profileSlug: "escape "))
     }
 
     func testTriggerRefreshEngagesCoordinatorForValidProfile() {

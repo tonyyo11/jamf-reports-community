@@ -153,8 +153,9 @@ struct CustomizeView: View {
                 // its hyphens, and it must copy exactly as shown.
                 ScrollView(.horizontal) {
                     Mono(
-                        text: "jamf-reports generate --profile \(workspace.profile) "
-                            + "--template executive",
+                        text: "jamf-reports generate "
+                            + ProfileName.profileOption(workspace.profile)
+                            + " --template executive",
                         size: 11,
                         color: Theme.Text.primary
                     )

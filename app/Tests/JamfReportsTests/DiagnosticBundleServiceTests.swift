@@ -410,7 +410,7 @@ final class DiagnosticBundleServiceTests: XCTestCase {
     }
 
     func testGenerateRejectsInvalidProfile() {
-        XCTAssertThrowsError(try DiagnosticBundleService.generate(profile: "Bad Name!"))
+        XCTAssertThrowsError(try DiagnosticBundleService.generate(profile: "Bad Name! "))
     }
 
     func testSymlinkedInputsAreSkipped() throws {

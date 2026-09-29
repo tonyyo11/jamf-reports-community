@@ -12,12 +12,12 @@ final class CLIBridgeBackupTests: XCTestCase {
         let bridge = CLIBridge()
         let collector = LineCollector()
         do {
-            _ = try await bridge.backup(profile: "../etc/passwd", label: nil) { line in
+            _ = try await bridge.backup(profile: "bad\nslug", label: nil) { line in
                 collector.append(line)
             }
             XCTFail("backup must throw for an invalid profile slug")
         } catch let e as CLIBridgeError {
-            XCTAssertEqual(e, .invalidProfile("../etc/passwd"), "backup must throw .invalidProfile")
+            XCTAssertEqual(e, .invalidProfile("bad\nslug"), "backup must throw .invalidProfile")
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
@@ -246,9 +246,16 @@ final class CLIBridgeBackupTests: XCTestCase {
         XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), profile)
     }
 
-    /// A leading-dash value would be re-read by jamf-cli as a flag.
-    func test_resolvedCLIProfile_fallsBackOnLeadingDashProfile() throws {
+    /// A leading dash is a valid jamf-cli name, and jamf-cli reads the argument after `-p`
+    /// as its value (checked against 1.31.1), so it passes through (2.8.3).
+    func test_resolvedCLIProfile_passesALeadingDashProfileThrough() throws {
         let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"--output\"\n")
+        XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), "--output")
+    }
+
+    /// A name the app can't use (here a tab) falls back to the workspace's own profile.
+    func test_resolvedCLIProfile_fallsBackOnUnusableProfile() throws {
+        let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"tenant\u{9}b\"\n")
         XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), profile)
     }
 

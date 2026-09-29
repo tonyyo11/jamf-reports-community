@@ -28,8 +28,9 @@ routes start the same onboarding flow.
    the `brew install Jamf-Concepts/tap/jamf-cli` command if it is not. See
    [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for details.
 3. **Workspace** — choose a profile name. The name becomes a folder under
-   `~/Jamf-Reports/<profile>/` and must match `^[A-Za-z0-9][A-Za-z0-9_-]*$` — letters,
-   numbers, `-` and `_`, no spaces or dots. Pick something short like `prod`. `~/Jamf-Reports` is the default location,
+   `~/Jamf-Reports/<profile>/`. Any name works except one with a line break or a space at
+   either end; a character a folder name can't hold, such as `/`, is written `%2F` in the
+   folder's name. Pick something short like `prod`. `~/Jamf-Reports` is the default location,
    not a fixed one — **Settings → Workspace location** can point it at a shared team
    folder so several Macs build one pooled history; see
    [Security & Operational Considerations](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations)

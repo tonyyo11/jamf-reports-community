@@ -493,9 +493,10 @@ struct DeviceLookupView: View {
     }
 
     private func cliCommand(kind: DeviceLookupIndex.Kind, profile: String, id: String) -> String {
+        let word = ProfileName.shellWord(profile)
         switch kind {
-        case .computer: "jamf-cli -p \(profile) pro device \(id)"
-        case .mobile:   "jamf-cli -p \(profile) pro mobile-devices get \(id)"
+        case .computer: return "jamf-cli -p \(word) pro device \(id)"
+        case .mobile:   return "jamf-cli -p \(word) pro mobile-devices get \(id)"
         }
     }
 

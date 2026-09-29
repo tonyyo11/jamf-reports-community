@@ -9,6 +9,10 @@ struct OnboardingView: View {
     @State private var flow = OnboardingFlow()
     @State private var showingCSVImporter = false
 
+    /// The profile name as the commands on this screen show it.
+    private var shellProfile: String { ProfileName.shellWord(flow.profileName.trimmedForView) }
+    private var profileOption: String { ProfileName.profileOption(flow.profileName.trimmedForView) }
+
     private let privileges = [
         "Computers: Read", "Mobile Devices: Read", "Mobile Profiles: Read",
         "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
@@ -231,7 +235,7 @@ struct OnboardingView: View {
                         Text("Validate profile \(flow.profileName.trimmedForView)")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
-                        Mono(text: "jamf-cli -p \(flow.profileName.trimmedForView) config validate", size: 11.5)
+                        Mono(text: "jamf-cli -p \(shellProfile) config validate", size: 11.5)
                     }
                     Spacer()
                     if let exit = flow.validationExitCode {
@@ -366,7 +370,7 @@ struct OnboardingView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(Theme.Colors.danger)
                         }
-                        FieldHelp(text: "Use letters, numbers, hyphens, or underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
                 }
 
@@ -615,7 +619,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: binding(\.protectProfileName), placeholder: "protect", mono: true)
-                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -714,7 +718,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: binding(\.schoolProfileName), placeholder: "school", mono: true)
-                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -942,7 +946,7 @@ struct OnboardingView: View {
                         Text("Run profile \(flow.profileName.trimmedForView)")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
-                        Mono(text: "generate --profile \(flow.profileName.trimmedForView)", size: 11.5)
+                        Mono(text: "generate \(profileOption)", size: 11.5)
                     }
                     Spacer()
                     if let exit = flow.firstReportExitCode {

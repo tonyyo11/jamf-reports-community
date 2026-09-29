@@ -412,7 +412,8 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "jamf_report_\(profile)_\(dateStr).html"
+        let part = ExportNaming.profilePart(profile)
+        panel.nameFieldStringValue = "jamf_report_\(part)_\(dateStr).html"
         panel.allowedContentTypes = [.html]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
@@ -474,7 +475,8 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "jamf_report_\(profile)_\(dateStr).pdf"
+        let part = ExportNaming.profilePart(profile)
+        panel.nameFieldStringValue = "jamf_report_\(part)_\(dateStr).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
@@ -522,7 +524,7 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "inventory_\(profile)_\(dateStr).csv"
+        panel.nameFieldStringValue = "inventory_\(ExportNaming.profilePart(profile))_\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
@@ -595,9 +597,8 @@ struct ReportsView: View {
 
     /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
     /// ("report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
-    /// prefix and the date is the profile, so a hyphen or underscore in it stays;
-    /// profile names allow both, and treating any hyphen as a date dropped every
-    /// such profile from the menu. Without a date, the first `_` segment is taken.
+    /// prefix and the last date is the profile, decoded with `ProfileName`, so any
+    /// name reads back exactly. Without a date, the first `_` segment is taken.
     /// `ExportNaming` files (`<kind>-<profile>-<yyyy-MM-dd_HHmmss>`) are read only for
     /// the kinds that save into a reports folder: kinds and profiles both have hyphens.
     /// Nil for an unknown prefix or kind, or when no profile precedes the date.
@@ -609,7 +610,7 @@ struct ReportsView: View {
             -(.+)-\d{4}-\d{2}-\d{2}_\d{6}
             /#
         if let match = stem.wholeMatch(of: exportName) {
-            return String(match.1)
+            return ProfileName.name(fromPathComponent: String(match.1))
         }
         let lowered = stem.lowercased()
         // Longest first, so "jamf_report_prod_..." yields "prod", not "report".
@@ -621,14 +622,16 @@ struct ReportsView: View {
             return nil
         }
         let rest = String(stem.dropFirst(prefix.count))
-        let profile: Substring
-        if let date = rest.range(of: #"(^|_)\d{4}-\d{2}-\d{2}"#, options: .regularExpression) {
-            profile = rest[..<date.lowerBound]
+        let part: Substring
+        if let date = rest.matches(of: #/(?:^|_)\d{4}-\d{2}-\d{2}/#).last {
+            part = rest[..<date.range.lowerBound]
         } else {
-            profile = rest.split(separator: "_").first ?? ""
+            part = rest.split(separator: "_").first ?? ""
         }
-        guard !profile.isEmpty, !profile.allSatisfy(\.isNumber) else { return nil }
-        return String(profile)
+        // "report_20240101" carries a compact date where the profile would be.
+        let compactDate = part.count == 8 && part.allSatisfy(\.isNumber)
+        guard !part.isEmpty, !compactDate else { return nil }
+        return ProfileName.name(fromPathComponent: String(part))
     }
 }
 

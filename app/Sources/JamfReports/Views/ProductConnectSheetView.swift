@@ -117,7 +117,7 @@ struct ProductConnectSheetView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: protectProfileNameBinding, placeholder: "protect", mono: true)
-                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -210,7 +210,7 @@ struct ProductConnectSheetView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: schoolProfileNameBinding, placeholder: "school", mono: true)
-                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {

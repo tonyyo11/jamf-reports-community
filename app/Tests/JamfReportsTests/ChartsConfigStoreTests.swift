@@ -149,7 +149,7 @@ final class ChartsConfigStoreTests: XCTestCase {
 
     func testWriterRejectsAnInvalidProfileName() {
         XCTAssertThrowsError(
-            try ChartsConfigWriter.save(.defaults, profile: "../escape"))
+            try ChartsConfigWriter.save(.defaults, profile: "escape\n"))
     }
 
     /// Writing into a workspace with no config.yaml yet must create a usable one

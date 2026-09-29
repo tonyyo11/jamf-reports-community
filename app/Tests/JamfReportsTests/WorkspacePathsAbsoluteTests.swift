@@ -164,7 +164,7 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
     }
 
     func test_runHistoryDir_invalidProfile_throws() {
-        XCTAssertThrowsError(try WorkspacePaths.runHistoryDir(for: "../escape")) { error in
+        XCTAssertThrowsError(try WorkspacePaths.runHistoryDir(for: "escape\n")) { error in
             guard case WorkspacePaths.PathError.invalidProfile = error else {
                 return XCTFail("expected invalidProfile, got \(error)")
             }
