@@ -233,6 +233,59 @@ final class ArchiveRotationTests: XCTestCase {
         XCTAssertEqual(archived.count, 1, "One workbook should be in the archive")
     }
 
+    // MARK: - Profiles sharing an output folder
+
+    /// `acme`'s rotation must neither count nor move the workbooks of a profile whose name
+    /// starts with the same text, even when those are older than every `acme` run.
+    func testRotationLeavesProfilesSharingAPrefixAlone() throws {
+        let acme = [
+            "report_acme_2024-01-01_100000.xlsx",
+            "report_acme_2024-01-02_100000.xlsx",
+            "report_acme_2024-01-03_100000.xlsx",
+        ]
+        let others = [
+            "report_acme-prod_2023-12-01_100000.xlsx",
+            "report_acme-prod_2023-12-02_100000.xlsx",
+            "report_acme_2_2023-12-03_100000.xlsx",
+        ]
+        try createFiles(names: acme + others, in: outputDir)
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "report_acme", keep: 2
+        )
+        XCTAssertEqual(try xlsxNames(in: archiveDir), ["report_acme_2024-01-01_100000.xlsx"])
+        XCTAssertEqual(try xlsxNames(in: outputDir), (acme.dropFirst() + others).sorted())
+    }
+
+    /// With `timestamp_outputs: false` the workbook is the stem alone; it is still a run.
+    func testUntimestampedWorkbookCountsAsARun() throws {
+        try createFiles(
+            names: ["report_acme.xlsx", "report_acme_2024-01-01_100000.xlsx"], in: outputDir
+        )
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "report_acme", keep: 1
+        )
+        XCTAssertEqual(try xlsxNames(in: archiveDir), ["report_acme_2024-01-01_100000.xlsx"])
+    }
+
+    func testIsRunAcceptsEachTimestampFormatOnly() {
+        let runs = [
+            "report_acme", "report_acme_20240101", "report_acme_2024-01-01",
+            "report_acme_2024-01-01_100000", "report_acme_2024-01-01T100000",
+            "report_acme_2024-01-01T10_00_00", "report_acme_2024-01-01T10-00-00",
+        ]
+        for name in runs {
+            XCTAssertTrue(ReportEngine.isRun(named: name, of: "report_acme"), name)
+        }
+        let notRuns = [
+            "report_acme-prod_2024-01-01_100000", "report_acme_2_2024-01-01_100000",
+            "report_acme_dev", "report_acme_2024-01-01_100000 2", "report_acm",
+            "jamf_report_acme_2024-01-01_100000",
+        ]
+        for name in notRuns {
+            XCTAssertFalse(ReportEngine.isRun(named: name, of: "report_acme"), name)
+        }
+    }
+
     // MARK: - Helpers
 
     private func createFiles(names: [String], in dir: URL) throws {

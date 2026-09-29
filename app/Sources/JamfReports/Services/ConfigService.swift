@@ -213,7 +213,7 @@ enum ConfigService {
     }
 
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
-        // ProfileService.isValid enforces the slug regex (^[a-z0-9][a-z0-9._-]*$),
+        // ProfileService.isValid enforces the slug regex (^[A-Za-z0-9][A-Za-z0-9_-]*$),
         // which is the real path-traversal control. `standardizedFileURL` already
         // collapses any `..` components, so no separate guard is needed.
         guard ProfileService.isValid(profile) else {

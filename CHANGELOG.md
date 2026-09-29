@@ -7,11 +7,45 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-09-29
+
+First-launch setup works with jamf-cli profiles whose names have capital letters, and the Reports
+screen keeps profiles that share a folder apart.
+
 ### Changed
 
 - Tracks jamf-cli v1.31.1 (was v1.30.0). Nothing the app runs changed its flags or output. With
   jamf-cli 1.31.1 or later, group member counts from jamf-cli's audit and unused-groups analysis
   are correct; that fix is in jamf-cli.
+
+### Fixed
+
+- First-launch setup works with jamf-cli profiles whose names have capital letters, such as
+  `Acme-Dev`. Setup used to fail every such profile with "Workspace not found", and the rest
+  of the app treated them as unusable; since jamf-cli can't rename a profile, the only way round
+  it was adding each connection again. Their schedules and Run History records work too.
+- A jamf-cli profile the app still can't use, such as one with a space or a dot in its name,
+  shows on the setup screen as unavailable with the reason, instead of failing when setup runs.
+  Choosing it from the profile menu says why instead of doing nothing, the app no longer opens
+  on it when another profile works, scheduled runs across all profiles skip it rather than
+  failing every time, and managed automation no longer ends up with no runs at all when that
+  profile is listed first.
+- Two jamf-cli profiles whose names differ only by letter case (`Prod` and `prod`) would share
+  one workspace folder, so the app uses one of them: the one that already has a workspace, or
+  else the lowercase one. The other shows as unavailable with the reason, is never opened or
+  scheduled, and can't bind or collect into that folder. Onboarding refuses a new name that
+  differs from an existing workspace only by case.
+- Setup and collect name what went wrong with a workspace instead of reporting it as not found:
+  an unsupported profile name, a folder that couldn't be created, or a `config.yaml` that
+  couldn't be read.
+- The one-time permission tightening after an update touches only workspace folders (those
+  with a `config.yaml`), so other folders kept in the workspace location keep their permissions.
+- When several profiles save reports to the same folder, the Reports screen keeps each
+  profile's reports apart: choosing `acme` no longer also lists `acme-dev` reports. The profile
+  menu is now a checklist, so you can show one profile, several, or all of them.
+- In that same shared folder, keeping only the latest runs no longer moves another profile's
+  workbooks: `acme` used to count `acme-dev`'s workbooks as its own and move the older ones into
+  its archive folder.
 
 ## [2.8.1] - 2026-09-26
 

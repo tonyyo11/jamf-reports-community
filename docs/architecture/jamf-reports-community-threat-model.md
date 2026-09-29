@@ -52,7 +52,7 @@ Scope basis: full repo (`app/`, CI workflows, scripts)
 
 | # | Boundary | Mechanism / controls observed |
 |---|---|---|
-| TB-1 | User UI ↔ on-disk workspace | `ProfileService.isValid` regex `^[a-z0-9][a-z0-9._-]*$` enforced at every path-construction site; `WorkspacePaths` typed constants; `SystemActions.canonicalize` resolves symlinks then `hasPrefix(root + "/")` check (`SystemActions.swift:46-89`). Dotted-slug rejection added in PR-3 (S-03). |
+| TB-1 | User UI ↔ on-disk workspace | `ProfileService.isValid` regex `^[A-Za-z0-9][A-Za-z0-9_-]*$` enforced at every path-construction site (capitals allowed 2026-09; a workspace recorded for a case-variant spelling is never rebound or collected into, since both names resolve to one folder on a case-insensitive volume); `WorkspacePaths` typed constants; `SystemActions.canonicalize` resolves symlinks then `hasPrefix(root + "/")` check (`SystemActions.swift:46-89`). Dotted-slug rejection added in PR-3 (S-03). |
 | TB-2 | App ↔ `jamf-cli` subprocess | `CLIBridge.environmentForJamfCLI()` pins minimal env (`PATH`, `HOME`, `LANG`, `TMPDIR`, `HTTP[S]_PROXY` allow-list, `CLIBridge.swift:1316-1330`). Code-signature Team-ID verification before every spawn at every site (PR-2 + PR-6 + PR-9 closed 4 sites total). |
 | TB-3 | App ↔ Jamf Pro/School/Protect servers (over network) | TLS via `jamf-cli`; `authGuard` probes `pro auth token` before live calls (`CLIBridge.swift:460-498`); School profiles skip probe (API-key auth). |
 | TB-4 | App ↔ macOS Keychain | Indirect — only `jamf-cli` reads/writes; secret passed by app via stdin during onboarding (`OnboardingFlow.swift:250-264`) with `resetBytes` zeroing after dispatch. |

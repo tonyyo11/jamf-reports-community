@@ -149,10 +149,14 @@ final class WorkspaceStore {
         )
     }
 
+    /// Profiles with a workspace on disk. An `.error` profile is left out even
+    /// when a folder answers to it: a case variant finds the owner's folder, and
+    /// Fleet Overview would count that workspace twice.
     var initializedProfiles: [JamfCLIProfile] {
         if demoMode { return profiles }
         return profiles.filter { profile in
-            guard let url = ProfileService.workspaceURL(for: profile.name) else { return false }
+            guard profile.status != .error,
+                  let url = ProfileService.workspaceURL(for: profile.name) else { return false }
             return FileManager.default.fileExists(
                 atPath: url.appendingPathComponent("config.yaml").path
             )
@@ -251,8 +255,9 @@ final class WorkspaceStore {
         let isDemo = demoMode ?? userForcedDemo
 
         self.demoMode = isDemo
-        self.org = isDemo ? DemoData.org : Self.org(for: realProfiles.first)
-        self.profile = isDemo ? DemoData.org.profile : (realProfiles.first?.name ?? DemoData.org.profile)
+        let start = Self.initialProfile(in: realProfiles)
+        self.org = isDemo ? DemoData.org : Self.org(for: start)
+        self.profile = isDemo ? DemoData.org.profile : (start?.name ?? DemoData.org.profile)
         self.profiles = isDemo ? DemoData.cliProfiles : realProfiles
         self.schedules = isDemo ? DemoData.scheduledRuns
             : Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
@@ -286,6 +291,17 @@ final class WorkspaceStore {
     // MARK: Profile switching
 
     func setProfile(_ id: String) {
+        // An `.error` profile never becomes active: a case variant's paths reach
+        // another profile's folder, and Audit and Refresh write there unchecked.
+        if profiles.first(where: { $0.name == id })?.status == .error {
+            let reason = ProfileService.unusableProfiles(in: profiles.map(\.name))[id]
+            toast = Toast(
+                message: reason.map { "\(id) can't be used. \($0.explanation)" }
+                    ?? "\(id) can't be used.",
+                style: .danger
+            )
+            return
+        }
         guard ProfileService.isValid(id) else { return }
         profile = id
         authStatus = nil
@@ -333,8 +349,8 @@ final class WorkspaceStore {
             profiles = real
             schedules = Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
                 profiles: real, policy: AutomationPolicy.current()))
-            if !real.contains(where: { $0.name == profile }) {
-                profile = real.first!.name
+            if let next = Self.activeProfile(keeping: profile, in: real), next != profile {
+                profile = next
             }
             org = Self.org(for: real.first(where: { $0.name == profile }))
             Task { await refreshAuthStatus() }
@@ -960,6 +976,23 @@ final class WorkspaceStore {
     private func activeProfileURL() -> String {
         if demoMode { return org.jamfURL }
         return profiles.first(where: { $0.name == profile })?.url ?? ""
+    }
+
+    /// The profile a launch or reload opens on: the first one the app can use,
+    /// else the first, so an `.error` profile is active only when nothing else is.
+    nonisolated static func initialProfile(in profiles: [JamfCLIProfile]) -> JamfCLIProfile? {
+        profiles.first { $0.status != .error } ?? profiles.first
+    }
+
+    /// The profile a reload keeps active: the current one while it is still
+    /// listed and usable, else `initialProfile(in:)`.
+    nonisolated static func activeProfile(
+        keeping current: String, in profiles: [JamfCLIProfile]
+    ) -> String? {
+        if profiles.contains(where: { $0.name == current && $0.status != .error }) {
+            return current
+        }
+        return initialProfile(in: profiles)?.name
     }
 
     private static func org(for profile: JamfCLIProfile?) -> Org {

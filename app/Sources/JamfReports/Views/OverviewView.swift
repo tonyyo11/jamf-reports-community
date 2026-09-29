@@ -453,7 +453,7 @@ struct OverviewView: View {
 
     private var workspaceInitDefaultMessage: String {
         guard let url = ProfileService.workspaceURL(for: workspace.profile) else {
-            return "Invalid workspace profile. Choose another profile or rename it in jamf-cli."
+            return ProfileService.UnusableReason.unsupportedName.explanation
         }
         let config = url.appendingPathComponent("config.yaml")
         if FileManager.default.fileExists(atPath: url.path) {

@@ -84,8 +84,12 @@ final class ExistingCLISetupFlow {
     /// jamf-cli profiles discovered at launch, in discovery order.
     let profileNames: [String]
 
-    /// Profiles the user wants set up. Defaults to all — the common case is
-    /// one tenant, and excluding is the exception.
+    /// Profiles the app can't set up, with the reason the screen shows. They are
+    /// never selected or run: initializing one used to fail as "Workspace not found".
+    let unusable: [String: ProfileService.UnusableReason]
+
+    /// Profiles the user wants set up. Defaults to every usable one — the common
+    /// case is one tenant, and excluding is the exception.
     var selected: Set<String>
 
     /// Whether completing the setup also turns on managed automation.
@@ -109,7 +113,9 @@ final class ExistingCLISetupFlow {
 
     init(profileNames: [String]) {
         self.profileNames = profileNames
-        self.selected = Set(profileNames)
+        let unusable = ProfileService.unusableProfiles(in: profileNames)
+        self.unusable = unusable
+        self.selected = Set(profileNames.filter { unusable[$0] == nil })
         let defaults = AutomationPolicy()
         self.scanWeekday = defaults.scanWeekday
         self.reportsCadence = defaults.reportsCadence
@@ -218,7 +224,7 @@ final class ExistingCLISetupFlow {
         isRunning = true
         defer { isRunning = false }
 
-        for name in profileNames where selected.contains(name) {
+        for name in profileNames where selected.contains(name) && unusable[name] == nil {
             statuses[name] = .initializing
             do {
                 let initExit = try await initialize(name)

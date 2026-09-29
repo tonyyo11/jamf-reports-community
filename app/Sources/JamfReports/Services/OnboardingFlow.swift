@@ -73,6 +73,7 @@ final class OnboardingFlow {
 
     enum FlowError: LocalizedError {
         case invalidProfile
+        case profileCaseConflict(existing: String)
         case invalidJamfURL
         case missingJamfCLI
         case missingWorkspace
@@ -82,7 +83,11 @@ final class OnboardingFlow {
         var errorDescription: String? {
             switch self {
             case .invalidProfile:
-                "Profile names must start with a lowercase letter or number and use only lowercase letters, numbers, dots, underscores, or hyphens."
+                "Profile names must start with a letter or number and use only letters, numbers, "
+                    + "hyphens, or underscores."
+            case .profileCaseConflict(let existing):
+                "A workspace named \(existing) already exists, and a name that differs from it "
+                    + "only by letter case would share its folder. Choose a different name."
             case .invalidJamfURL:
                 "Jamf Pro URL must start with https:// and include a valid host."
             case .missingJamfCLI:
@@ -372,6 +377,11 @@ final class OnboardingFlow {
         guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile
+        }
+        // Checked before jamf-cli has a profile by this name: the connection
+        // scaffold would otherwise overwrite that workspace's config.yaml.
+        if let existing = ProfileService.caseVariantWorkspace(of: profile) {
+            throw FlowError.profileCaseConflict(existing: existing)
         }
 
         let fm = FileManager.default

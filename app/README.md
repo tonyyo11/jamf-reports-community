@@ -132,7 +132,7 @@ The app is designed as a non-privileged GUI shell over the CLI tool:
   bounded to `~/Jamf-Reports`, `~/Library/LaunchAgents`, and standard user
   folders. The app refuses to interact with paths outside this scope.
 - **Profile-name regex:** Workspace and profile names are validated against
-  `^[a-z0-9][a-z0-9._-]*$` to prevent path traversal and malformed plist labels.
+  `^[A-Za-z0-9][A-Za-z0-9_-]*$` to prevent path traversal and malformed plist labels.
 - **No persisted credentials in app:** During onboarding, the GUI passes the API
   client secret to `jamf-cli` over stdin, redacts failure output, and clears the
   field afterward. Persistent secrets remain in the system keychain through

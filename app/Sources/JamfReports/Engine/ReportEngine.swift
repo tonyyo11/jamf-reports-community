@@ -174,6 +174,19 @@ struct ReportEngine: Sendable {
 
     // MARK: - Output rotation (mirrors Python _archive_old_output_runs)
 
+    /// True when `fileStem` is `stem` alone or `stem` plus one run timestamp, so in a shared
+    /// output folder `report_acme` does not claim `report_acme-prod_…` or `report_acme_2_…`.
+    static func isRun(named fileStem: String, of stem: String) -> Bool {
+        guard fileStem.hasPrefix(stem) else { return false }
+        let rest = fileStem.dropFirst(stem.count)
+        let timestamp = #/
+            _(?: \d{8}
+               | \d{4}-\d{2}-\d{2}
+                 (?: _\d{6} | T\d{6} | T\d{2}_\d{2}_\d{2} | T\d{2}-\d{2}-\d{2} )? )
+            /#
+        return rest.isEmpty || rest.wholeMatch(of: timestamp) != nil
+    }
+
     /// Move older timestamped report files into `archiveDir`, keeping `keep` newest.
     ///
     /// Supports 6 date suffix patterns:
@@ -198,7 +211,8 @@ struct ReportEngine: Sendable {
         ) else { return }
 
         let candidates = files.filter {
-            $0.pathExtension == "xlsx" && $0.lastPathComponent.hasPrefix(stem)
+            $0.pathExtension == "xlsx"
+                && Self.isRun(named: $0.deletingPathExtension().lastPathComponent, of: stem)
         }
 
         let sorted = candidates.sorted {
