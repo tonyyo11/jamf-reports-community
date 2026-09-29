@@ -434,8 +434,8 @@ sidebar re-routes every screen.
 
 ### Profile slug
 The string identifier for a profile. Validated against
-`^[a-z0-9][a-z0-9._-]*$` at every path-construction site (security
-invariant — blocks path traversal). Examples: `prod`, `dev`, `cust-1`.
+`^[A-Za-z0-9][A-Za-z0-9_-]*$` at every path-construction site (security
+invariant — blocks path traversal). Examples: `prod`, `Dev`, `cust-1`.
 
 ### Refresh tier
 The cheapest, most frequent collection tier — the `overview`, `security`,
