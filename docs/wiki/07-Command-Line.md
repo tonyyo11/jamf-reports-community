@@ -45,6 +45,12 @@ creates carry it automatically; a cron job or script you wrote yourself does not
 and without it the CLI reads the default `~/Jamf-Reports` and reports an empty
 workspace rather than failing.
 
+`--profile` takes the jamf-cli profile name exactly as jamf-cli spells it. Quote a
+name with spaces or shell characters (`--profile 'Acme Prod'`), and join a name that
+starts with `-` with an equals sign (`--profile=-lab`), since a separate value that
+starts with `-` reads as another option. In `--exclude` lists, write a comma inside a
+name as `%2C` and a percent sign as `%25`.
+
 | Command | What it does | Key options |
 |---------|--------------|-------------|
 | `generate` | Generate an `.xlsx` workbook from cached snapshots | `--profile`, `--output <path>`, `--template <id>` |

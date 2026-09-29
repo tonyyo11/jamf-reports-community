@@ -15,9 +15,12 @@ versions in this repository map to git tags.
   Workspace folders and file names keep the name and encode only what a folder name can't hold
   (`a/b` becomes `a%2Fb`), so existing workspaces keep their folders. The app still can't use a
   name with a line break or tab, one that starts or ends with a space, or a very long one, and
-  setup says which.
+  setup says which. On the `jamf-reports` command line, give a name that starts with `-` as
+  `--profile=-name`.
 - A workspace folder for a profile with a dot in its name, which earlier versions stopped
   listing, belongs to that profile again.
+- A copy of a workspace folder (Finder's `prod copy`) is no longer listed as a profile of its
+  own, so runs across all profiles no longer try it and fail.
 - A profile named `true`, `false` or `null` no longer makes its workspace's `config.yaml`
   unreadable.
 - Names that differ only by letter case now include accented letters (`Zürich` and `zürich`),
@@ -26,7 +29,7 @@ versions in this repository map to git tags.
   a report's file name correctly.
 - Commands the app shows for copying quote a profile name that needs it.
 - `--exclude-profiles` and `jamf-reports schedules add --exclude` take a comma inside a profile
-  name written as `%2C`.
+  name written as `%2C`, and a percent sign as `%25`.
 
 ## [2.8.2] - 2026-09-29
 
