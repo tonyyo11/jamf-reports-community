@@ -20,6 +20,9 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     case invalidProfile(String)
     /// The workspace directory does not exist for the given profile.
     case workspaceMissing(profile: String)
+    /// The workspace folder is recorded for `owner`, spelled like `profile` apart
+    /// from letter case: on a case-insensitive volume the two share it.
+    case profileCaseConflict(profile: String, owner: String)
     /// `config.yaml` exists but could not be parsed. `detail` carries the
     /// decoder's YAML key path + problem (never a filesystem path) so the
     /// user can locate the misconfiguration without log spelunking (#181).
@@ -44,9 +47,15 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             // Reason omitted: may contain a system path or sandbox detail.
             return "Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact."
         case .invalidProfile(let slug):
-            return "Invalid profile name '\(slug)'."
+            let why = ProfileName.problem(with: slug)?.explanation ?? ""
+            return "Profile name '\(slug)' isn't supported. \(why)"
         case .workspaceMissing(let profile):
             return "Workspace not found for profile '\(profile)'."
+        case .profileCaseConflict(let profile, let owner):
+            return "The workspace folder for '\(profile)' belongs to profile '\(owner)', which "
+                + "differs from it only by letter case. If both name the same Jamf server, set "
+                + "jamf_cli.profile to \(profile) in that folder's config.yaml; otherwise add "
+                + "this profile again in jamf-cli under a name that differs by more than case."
         case .configLoadFailed(_, let detail):
             // Path omitted: may contain the home directory. The detail is a
             // YAML key path from the decoder, safe to display.
@@ -337,7 +346,7 @@ extension CLIBridge {
             AppLogger.cli.warning(
                 "htmlOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
         }
-        let stem = "jamf_report_\(profile)_\(htmlTimestamp())"
+        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
         return dir.appendingPathComponent("\(stem).html")
     }
 
@@ -360,7 +369,7 @@ extension CLIBridge {
             AppLogger.cli.warning(
                 "pdfOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
         }
-        let stem = "jamf_report_\(profile)_\(htmlTimestamp())"
+        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
         return dir.appendingPathComponent("\(stem).pdf")
     }
 

@@ -75,7 +75,7 @@ full detail on each:
 1. **Welcome** — a short intro to what onboarding will do.
 2. **Install CLI** — confirms `jamf-cli` is installed and on `PATH` (shows the install
    command if not).
-3. **Workspace** — pick a short, lowercase profile name (for example `prod`). This
+3. **Workspace** — pick a short profile name (for example `prod`). This
    becomes the workspace folder under `~/Jamf-Reports/<profile>/`. That location is
    the default, not a fixed one: **Settings → Workspace location** can move it to a
    shared team folder so several Macs build one pooled history — see

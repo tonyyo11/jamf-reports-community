@@ -1517,7 +1517,7 @@ extension ConfigDoctorService {
     private static func summaryCount(profile: String, root: URL) -> Int {
         guard ProfileService.isValid(profile) else { return 0 }
         let dir = root
-            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
             .appendingPathComponent("snapshots/summaries", isDirectory: true)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
         return names.filter { $0.hasPrefix("summary_") && $0.hasSuffix(".json") }.count

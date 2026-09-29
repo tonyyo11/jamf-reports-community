@@ -245,7 +245,8 @@ private func scheduledRunSingle(
     // stream capture); the recorder is the structured per-run record.
     // Legacy plists without --label fall back to a profile+mode label so
     // their runs are recorded too.
-    let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(profile).\(mode.rawValue)"
+    let labelProfile = ProfileName.labelComponent(profile)
+    let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(labelProfile).\(mode.rawValue)"
     let recorder = ScheduledRunRecorder(workspace: workspace, label: runLabel)
     if recorder == nil {
         fputs("[warn] could not open run record in automation/logs — run will not appear in Run History\n", stderr)
@@ -625,8 +626,15 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
         return ScheduleRunOutcome(exitCode: code, incomplete: honesty.incomplete)
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
-    let profiles = ProfileService.applyingExclusions(
-        ProfileService.discoverLocal(), excluding: excluded)
+    let discovered = ProfileService.discoverLocal()
+    let profiles = ProfileService.runnableProfiles(discovered, excluding: excluded)
+    for p in discovered where p.status == .error && !excluded.contains(p.name) {
+        fputs("[info] skipping \(p.name): \(p.authMethod)\n", stderr)
+        // The background item's stderr goes nowhere; the log keeps the reason.
+        AppLogger.schedule.notice(
+            "skipping \(p.name, privacy: .public): \(p.authMethod, privacy: .public)"
+        )
+    }
     guard !profiles.isEmpty else {
         fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
         return ScheduleRunOutcome(exitCode: 1, incomplete: false)
@@ -829,10 +837,7 @@ if cliArgs.count > 1, cliArgs[1] == "--tick" {
     let code = Task.detached { await runTick(arguments: cliArgs) }
     exit(await code.value)
 } else if cliArgs.count > 1, cliArgs[1] == "--scheduled-run",
-   let profileIdx = cliArgs.firstIndex(of: "--profile"),
-   profileIdx + 1 < cliArgs.count,
-   isFlagValue(cliArgs[profileIdx + 1]) {
-    let profile = cliArgs[profileIdx + 1]
+   let profile = ProfileService.profileArgument(in: cliArgs) {
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)

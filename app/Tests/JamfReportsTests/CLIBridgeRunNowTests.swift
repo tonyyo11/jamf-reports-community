@@ -52,12 +52,12 @@ final class CLIBridgeRunNowTests: XCTestCase {
         let collector = RunLineCollector()
         do {
             _ = try await bridge.runNow(
-                profile: "../evil",
+                profile: "evil\nname",
                 mode: .jamfCLIFull
             ) { line in collector.append(line) }
             XCTFail("runNow must throw for an invalid profile")
         } catch let e as CLIBridgeError {
-            XCTAssertEqual(e, .invalidProfile("../evil"), "runNow must throw .invalidProfile")
+            XCTAssertEqual(e, .invalidProfile("evil\nname"), "runNow must throw .invalidProfile")
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }

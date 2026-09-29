@@ -433,9 +433,11 @@ A logical tenant within JamfReports. Each profile gets its own
 sidebar re-routes every screen.
 
 ### Profile slug
-The string identifier for a profile. Validated against
-`^[a-z0-9][a-z0-9._-]*$` at every path-construction site (security
-invariant — blocks path traversal). Examples: `prod`, `dev`, `cust-1`.
+The string identifier for a profile: its jamf-cli profile name, used exactly as jamf-cli
+spells it. Any name jamf-cli accepts works except one that is empty, has a control
+character, starts or ends with a space, or is very long. Folders, file names and schedule
+labels use an encoded form, so no name can reach outside the workspace root (security
+invariant). Examples: `prod`, `Dev`, `Acme Prod`.
 
 ### Refresh tier
 The cheapest, most frequent collection tier — the `overview`, `security`,

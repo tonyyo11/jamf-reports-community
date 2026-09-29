@@ -26,7 +26,8 @@ struct BackupsView: View {
 
     private var backupsDirectory: URL {
         let root = ProfileService.workspaceURL(for: workspace.profile)
-            ?? ProfileService.workspacesRoot().appendingPathComponent(workspace.profile)
+            ?? ProfileService.workspacesRoot()
+                .appendingPathComponent(ProfileName.pathComponent(workspace.profile))
         return root.appendingPathComponent("backups", isDirectory: true)
     }
 

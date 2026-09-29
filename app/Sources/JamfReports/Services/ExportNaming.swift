@@ -13,12 +13,18 @@ enum ExportNaming {
     /// when `profile` is empty (single-tenant fallback).
     static func filename(kind: String, profile: String, ext: String, now: Date = Date()) -> String {
         let kindPart = sanitize(kind)
-        let profilePart = sanitize(profile)
+        let profilePart = profilePart(profile)
         let stamp = timestamp(now)
         if profilePart.isEmpty {
             return "\(kindPart)-\(stamp).\(ext)"
         }
         return "\(kindPart)-\(profilePart)-\(stamp).\(ext)"
+    }
+
+    /// A profile name inside a file name: kept whole (spaces, dots and accents included) so it
+    /// reads back exactly, with only what a file name can't hold encoded (`ProfileName`).
+    static func profilePart(_ profile: String) -> String {
+        ProfileName.pathComponent(profile)
     }
 
     /// `yyyy-MM-dd_HHmmss` in the local time zone — sortable, collision-safe

@@ -112,10 +112,12 @@ enum WorkspaceMigration {
 
     // MARK: - Private
 
-    /// Enumerate immediate subdirectories of the workspaces root whose names
-    /// pass `ProfileService.isValid`. Mirrors `ProfileService.discoverLocal`'s
-    /// disk-walk filter but skips the jamf-cli enrichment because we only need
-    /// directory names here.
+    /// Profiles of the immediate subdirectories of the workspaces root whose names
+    /// encode a valid profile and that hold a `config.yaml`. Mirrors
+    /// `ProfileService.discoverLocal`'s disk-walk filter but skips the jamf-cli
+    /// enrichment because we only need directory names here. The config check
+    /// keeps the chmod sweep off other folders in a root that is shared, such as
+    /// an "Archive" beside the workspaces now that capitals are valid.
     private static func discoverProfiles(under root: URL) -> [String] {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
@@ -143,7 +145,8 @@ enum WorkspaceMigration {
                 }
                 return vals?.isDirectory == true
             }
-            .map { $0.lastPathComponent }
+            .filter { fm.fileExists(atPath: $0.appendingPathComponent("config.yaml").path) }
+            .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
             .filter(ProfileService.isValid)
     }
 

@@ -46,6 +46,17 @@ final class ManagedAutomationTests: XCTestCase {
             names: profiles.map(\.name), policy: policy))
     }
 
+    /// The base must pass `desiredSchedules`' slug check: an unsupported name
+    /// listed first used to leave managed automation with no schedules at all.
+    func testManagedBaseProfileSkipsUnsupportedNames() {
+        var policy = AutomationPolicy()
+        policy.isManaged = true
+        let names = ["Old Tenant ", "Acme"]
+        let base = ManagedAutomation.managedBaseProfile(names: names, policy: policy)
+        XCTAssertEqual(base, "Acme")
+        XCTAssertFalse(ManagedAutomation.desiredSchedules(for: policy, baseProfile: base).isEmpty)
+    }
+
     // MARK: - Desired specs
 
     func testNoDesiredWhenUnmanaged() {

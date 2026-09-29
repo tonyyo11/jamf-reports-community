@@ -473,9 +473,7 @@ final class CLIBridge {
         aiNarrative: String? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: profile)
-        }
+        try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
@@ -605,9 +603,7 @@ final class CLIBridge {
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: profile)
-        }
+        try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
@@ -694,9 +690,7 @@ final class CLIBridge {
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: profile)
-        }
+        try await ensureWorkspace(profile: profile, onLine: onLine)
         // Honor the Settings "Skip expensive collections" toggle. UserDefaults
         // backs the @AppStorage in SettingsView, so this is a direct read.
         // Scheduled collects run from main.swift and pass skipExpensive=false
@@ -884,8 +878,8 @@ final class CLIBridge {
         } else {
             onLine(.init(
                 timestamp: Date(), level: .fail,
-                text: "[error] auth check failed for profile '\(profile)' — " +
-                      "re-authenticate with: jamf-cli -p \(profile) pro auth token"
+                text: "[error] auth check failed for profile '\(profile)' — re-authenticate "
+                      + "with: jamf-cli -p \(ProfileName.shellWord(profile)) pro auth token"
             ))
         }
         return false
@@ -1201,9 +1195,7 @@ final class CLIBridge {
     ) async throws -> Int32 {
         // HTML generation reads only cached jamf-cli JSON snapshots; no live API calls are made.
         // authGuard is intentionally omitted — stale/expired credentials do not prevent rendering.
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: profile)
-        }
+        try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
@@ -1271,9 +1263,7 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // PDF generation reads only cached jamf-cli JSON snapshots; no live API calls.
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: profile)
-        }
+        try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
@@ -1354,9 +1344,7 @@ final class CLIBridge {
         guard await authGuard(profile: profile, onLine: onLine) else {
             return Self.exitCodeUnauthorized
         }
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: profile)
-        }
+        try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"
             onLine(LogLine(timestamp: Date(), level: .fail, text: msg))
@@ -1717,17 +1705,16 @@ final class CLIBridge {
     /// when the config sets a usable one, otherwise the workspace slug.
     ///
     /// Best-effort by design — a missing, unreadable, or profile-less config falls
-    /// back to the slug, which is the pre-existing behavior. Empty and leading-dash
-    /// values are rejected: `-p ""` and `-p --foo` (re-read by jamf-cli as a flag)
-    /// are both worse than the fallback. Never used for path construction.
+    /// back to the slug, which is the pre-existing behavior. An empty or unusable value
+    /// (`ProfileService.isValid`) falls back too. A leading `-` is fine: jamf-cli takes the
+    /// argument after `-p` as its value. Never used for path construction.
     nonisolated static func resolvedCLIProfile(forWorkspace profile: String) -> String {
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let config = try? ConfigLoader.load(
                   from: workspace.appendingPathComponent("config.yaml")
               ),
               let candidate = config.jamfCli?.resolvedProfile,
-              !candidate.isEmpty,
-              !candidate.hasPrefix("-") else {
+              ProfileService.isValid(candidate) else {
             return profile
         }
         return candidate
@@ -1873,9 +1860,7 @@ final class CLIBridge {
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
-        guard await ensureWorkspace(profile: profile, onLine: onLine) != nil else {
-            throw CLIBridgeError.workspaceMissing(profile: profile)
-        }
+        try await ensureWorkspace(profile: profile, onLine: onLine)
         return 0
     }
 
@@ -1986,53 +1971,62 @@ final class CLIBridge {
         return env
     }
 
+    /// Creates `profile`'s workspace on first use and records the profile in its
+    /// config. Throws the reason the workspace can't be used, so callers need not
+    /// guess one: a bare "not found" once hid a rejected profile name.
     private func ensureWorkspace(
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) async -> URL? {
-        guard ProfileService.isValid(profile),
-              let workspace = ProfileService.workspaceURL(for: profile) else {
+    ) async throws {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] invalid profile name: \(profile)"))
-            return nil
+            throw CLIBridgeError.invalidProfile(profile)
         }
         let config = workspace.appendingPathComponent("config.yaml")
-        if FileManager.default.fileExists(atPath: config.path) {
-            return reconcileConfigProfile(config: config, profile: profile, onLine: onLine)
+        if !FileManager.default.fileExists(atPath: config.path) {
+            onLine(.init(timestamp: Date(), level: .info,
+                         text: "[info] initializing workspace for \(profile)"))
+            do {
+                try ReportEngine.initializeWorkspace(
+                    profile: profile,
+                    workspacesRoot: ProfileService.workspacesRoot(),
+                    seedConfigURL: bundledSeedConfig(),
+                    onLine: onLine
+                )
+            } catch {
+                let reason = error.localizedDescription
+                onLine(.init(timestamp: Date(), level: .fail,
+                             text: "[error] workspace init failed for \(profile): \(reason)"))
+                throw CLIBridgeError.directoryOperationFailed(path: workspace.path)
+            }
+            guard FileManager.default.fileExists(atPath: config.path) else {
+                onLine(.init(timestamp: Date(), level: .fail,
+                             text: "[error] workspace init failed for \(profile)"))
+                throw CLIBridgeError.directoryOperationFailed(path: workspace.path)
+            }
         }
-
-        onLine(.init(timestamp: Date(), level: .info, text: "[info] initializing workspace for \(profile)"))
-        do {
-            try ReportEngine.initializeWorkspace(
-                profile: profile,
-                workspacesRoot: ProfileService.workspacesRoot(),
-                seedConfigURL: bundledSeedConfig(),
-                onLine: onLine
-            )
-        } catch {
-            onLine(.init(timestamp: Date(), level: .fail,
-                         text: "[error] workspace init failed for \(profile): \(error.localizedDescription)"))
-            return nil
-        }
-        guard FileManager.default.fileExists(atPath: config.path) else {
-            onLine(.init(timestamp: Date(), level: .fail, text: "[error] workspace init failed for \(profile)"))
-            return nil
-        }
-        return reconcileConfigProfile(config: config, profile: profile, onLine: onLine)
+        try reconcileConfigProfile(config: config, profile: profile, onLine: onLine)
     }
 
+    /// Refuses a workspace recorded for a case variant of `profile`: the two
+    /// share the folder on a case-insensitive volume, and rebinding it would
+    /// collect a second tenant into the first one's data.
     private func reconcileConfigProfile(
         config: URL,
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
-    ) -> URL? {
+    ) throws {
         do {
             let text = try String(contentsOf: config, encoding: .utf8)
             var document = try YAMLCodec.decode(text)
-            guard case .mapping(var root) = document.root else { return config }
+            guard case .mapping(var root) = document.root else { return }
             var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
             let current = jamfCLI.value(for: "profile")?.stringValue?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard current != profile else { return config }
+            guard current != profile else { return }
+            guard !ProfileService.isCaseVariant(current, of: profile) else {
+                throw CLIBridgeError.profileCaseConflict(profile: profile, owner: current)
+            }
 
             jamfCLI.set("profile", value: .scalar(.string(profile)))
             root.set("jamf_cli", value: .mapping(jamfCLI))
@@ -2058,14 +2052,21 @@ final class CLIBridge {
                 level: .info,
                 text: "[info] set jamf_cli.profile to \(profile) in \(config.path)"
             ))
-            return config
+        } catch let conflict as CLIBridgeError {
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(conflict.localizedDescription)"))
+            throw conflict
         } catch {
             onLine(.init(
                 timestamp: Date(),
                 level: .fail,
                 text: "[error] could not update jamf_cli.profile in \(config.path): \(error.localizedDescription)"
             ))
-            return nil
+            // The workspace exists; what failed is reading or writing its config.
+            if error is YAMLCodec.CodecError {
+                throw CLIBridgeError.configLoadFailed(path: config.path, detail: nil)
+            }
+            throw CLIBridgeError.directoryOperationFailed(path: config.path)
         }
     }
 

@@ -37,8 +37,6 @@ struct OverviewView: View {
     /// stacks are unsupported (the pushed page layers over the outer stack's
     /// root, silently swallowing tab-switch actions fired from inside it).
     @State private var drill: OverviewDrillDown?
-    @State private var legacyWorkspaces: [String] = []
-    @State private var legacySchedules: [String] = []
     @State private var checklist: GettingStartedChecklist?
     @State private var pendingSharedRoot: URL?
     private var defaultTrendRange: TrendRange {
@@ -140,7 +138,6 @@ struct OverviewView: View {
                 if !workspace.demoMode, !workspace.isWorkspaceInitialized {
                     workspaceInitBanner
                 }
-                migrationBanner
                 if !workspace.demoMode, let cl = checklist, !cl.isComplete {
                     gettingStartedCard(cl)
                 }
@@ -453,33 +450,14 @@ struct OverviewView: View {
 
     private var workspaceInitDefaultMessage: String {
         guard let url = ProfileService.workspaceURL(for: workspace.profile) else {
-            return "Invalid workspace profile. Choose another profile or rename it in jamf-cli."
+            let problem = ProfileName.problem(with: workspace.profile) ?? .empty
+            return ProfileService.UnusableReason.unsupportedName(problem).explanation
         }
         let config = url.appendingPathComponent("config.yaml")
         if FileManager.default.fileExists(atPath: url.path) {
             return "\(config.path) is missing. Initialize it to seed config.yaml and helper folders."
         }
         return "\(url.path) does not exist yet. Initialize it to seed config.yaml and helper folders."
-    }
-
-    private var migrationBanner: some View {
-        MigrationBanner(
-            legacyWorkspaces: legacyWorkspaces,
-            legacySchedules: legacySchedules,
-            onDismiss: {
-                legacyWorkspaces = []
-                legacySchedules = []
-            }
-        )
-        .onAppear(perform: loadLegacyItems)
-    }
-
-    private func loadLegacyItems() {
-        legacyWorkspaces = ProfileService.dottedLegacyWorkspaces()
-        // Legacy dotted LaunchAgent detection retired with the plist mechanism
-        // (2.8.0) — the bundled SMAppService ticker has no per-agent plists to
-        // scan for the pre-PR-3 dotted-slug label bug.
-        legacySchedules = []
     }
 
     private var liveWorkspaceState: some View {
@@ -1864,7 +1842,7 @@ struct OverviewView: View {
         )
     }
 
-    /// Card rendered between migrationBanner and StaleDataBanner for new users.
+    /// Card rendered above StaleDataBanner for new users.
     /// Auto-hides once all steps are done — no stored dismiss flag.
     @ViewBuilder
     private func gettingStartedCard(_ cl: GettingStartedChecklist) -> some View {

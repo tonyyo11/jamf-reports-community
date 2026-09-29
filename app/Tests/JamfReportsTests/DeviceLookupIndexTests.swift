@@ -335,7 +335,7 @@ final class DeviceLookupIndexTests: XCTestCase {
     func testInvalidProfileSlugProducesErrorMessage() {
         let index = DeviceLookupIndex()
         // Dotted slugs are rejected by ProfileService.isValid.
-        index.load(profile: "bad.profile")
+        index.load(profile: "bad\nprofile")
         XCTAssertTrue(index.candidates.isEmpty)
         XCTAssertNotNil(index.lastError)
         XCTAssertTrue(

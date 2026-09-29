@@ -1284,7 +1284,13 @@ enum ConfigLoader {
         case .mapping(let mapping):
             var dict: [String: Any] = [:]
             for entry in mapping.entries {
-                dict[entry.key] = nodeToJSONObject(entry.value)
+                // A `profile` value is a jamf-cli profile name, which can be spelled `true` or
+                // `null`. YAMLCodec already types an unquoted token, so a string stays a string.
+                if entry.key == "profile", case .scalar(.string(let name)) = entry.value {
+                    dict[entry.key] = name
+                } else {
+                    dict[entry.key] = nodeToJSONObject(entry.value)
+                }
             }
             return dict
         case .sequence(let items):

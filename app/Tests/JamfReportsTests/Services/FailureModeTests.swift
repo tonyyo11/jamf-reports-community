@@ -87,28 +87,29 @@ final class FailureModeTests: XCTestCase {
         let bridge = CLIBridge()
         let collector = LineCollector()
         do {
-            _ = try await bridge.validateConnection(profile: "../evil") { line in
+            _ = try await bridge.validateConnection(profile: "evil\nname") { line in
                 collector.append(line)
             }
             XCTFail("validateConnection must throw for invalid profile slug")
         } catch let e as CLIBridgeError {
-            XCTAssertEqual(e, .invalidProfile("../evil"), "Invalid slug must throw .invalidProfile")
+            XCTAssertEqual(e, .invalidProfile("evil\nname"),
+                           "Invalid slug must throw .invalidProfile")
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
         XCTAssertTrue(collector.hasFailLine, "A failure log line must be emitted for invalid profile")
     }
 
-    func testValidateConnectionRejectsUppercaseSlug() async {
+    func testValidateConnectionRejectsANameWithATrailingSpace() async {
         let bridge = CLIBridge()
         let collector = LineCollector()
         do {
-            _ = try await bridge.validateConnection(profile: "Dummy") { line in
+            _ = try await bridge.validateConnection(profile: "Dümmy ") { line in
                 collector.append(line)
             }
-            XCTFail("validateConnection must throw for uppercase profile slug")
+            XCTFail("validateConnection must throw for a name ending in a space")
         } catch let e as CLIBridgeError {
-            XCTAssertEqual(e, .invalidProfile("Dummy"))
+            XCTAssertEqual(e, .invalidProfile("Dümmy "))
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
@@ -171,12 +172,29 @@ final class FailureModeTests: XCTestCase {
     // MARK: - ProfileService.isValid: invalid slugs rejected before subprocess
 
     func testInvalidProfileSlugRejectedByProfileService() {
-        let invalids = ["../evil", "Uppercase", "has space", "", "-start", ".start", "/absolute"]
+        let invalids = ["", " lead", "trail ", "tab\tname", "new\nline"]
         for slug in invalids {
             XCTAssertFalse(
                 ProfileService.isValid(slug),
                 "ProfileService.isValid must reject '\(slug)'"
             )
+            XCTAssertNil(ProfileService.workspaceURL(for: slug))
+        }
+    }
+
+    /// jamf-cli accepts these names, so the app does too (2.8.3); each still resolves to one
+    /// folder directly under the workspace root, never above it or beside it.
+    func testTraversalShapedNamesStayInsideTheWorkspaceRoot() throws {
+        let root = ProfileService.workspacesRoot().standardizedFileURL
+        let names = ["../evil", "/absolute", ".start", "..", ".", "a/../../b", "Ümlaut", "-start"]
+        for name in names {
+            let url = try XCTUnwrap(ProfileService.workspaceURL(for: name), name)
+            let parent = url.standardizedFileURL.deletingLastPathComponent()
+            XCTAssertEqual(parent.path, root.path, name)
+            XCTAssertFalse(url.lastPathComponent.hasPrefix("."), name)
+            let config = try ConfigService.configURL(for: name)
+            XCTAssertEqual(config.deletingLastPathComponent().lastPathComponent,
+                           url.lastPathComponent, name)
         }
     }
 
@@ -202,10 +220,10 @@ final class FailureModeTests: XCTestCase {
         let bridge = CLIBridge()
         let executor = DefaultCLIExecutor(bridge: bridge)
         do {
-            _ = try await executor.execute(.proAuthToken(profile: "../evil"))
+            _ = try await executor.execute(.proAuthToken(profile: "evil\nname"))
             XCTFail("Expected CLIExecutorError.invalidProfile to be thrown")
         } catch CLIExecutorError.invalidProfile(let slug) {
-            XCTAssertEqual(slug, "../evil")
+            XCTAssertEqual(slug, "evil\nname")
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }

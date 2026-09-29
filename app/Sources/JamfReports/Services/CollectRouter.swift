@@ -116,6 +116,15 @@ enum CollectRouter {
         protectCollect: ProtectCollect = defaultProtectCollect,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws {
+        // Every collect path passes through here; the GUI's also checks when it
+        // binds the workspace, but the CLI and schedules load config directly.
+        if let owner = config?.jamfCli?.resolvedProfile,
+           ProfileService.isCaseVariant(owner, of: profile) {
+            let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(conflict.localizedDescription)"))
+            throw conflict
+        }
         let detected = ProfileProductType.detect(from: config)
         switch detected.type {
         case .jamfSchool:

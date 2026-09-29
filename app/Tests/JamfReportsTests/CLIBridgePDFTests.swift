@@ -26,7 +26,7 @@ final class CLIBridgePDFTests: XCTestCase {
             .appendingPathComponent("CLIBridgePDFTests_\(UUID().uuidString).pdf")
         do {
             _ = try await bridge.generatePDF(
-                profile: "INVALID/SLUG",
+                profile: "INVALID\nSLUG",
                 outFile: tmp.path,
                 onLine: { _ in }
             )

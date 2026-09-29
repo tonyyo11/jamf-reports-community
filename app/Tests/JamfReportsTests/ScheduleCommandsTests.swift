@@ -31,7 +31,7 @@ final class ScheduleCommandsTests: XCTestCase {
             name: "x", profile: "alpha", allProfiles: false, exclude: nil,
             mode: "backup", cadence: "whenever", tiers: nil, disabled: false))
         XCTAssertThrowsError(try Schedules.Add.record(
-            name: "x", profile: "Bad Profile", allProfiles: false, exclude: nil,
+            name: "x", profile: "Bad Profile ", allProfiles: false, exclude: nil,
             mode: "backup", cadence: "Mon 07:00", tiers: nil, disabled: false))
         XCTAssertThrowsError(try Schedules.Add.record(
             name: "managed-scan", profile: "alpha", allProfiles: true, exclude: nil,

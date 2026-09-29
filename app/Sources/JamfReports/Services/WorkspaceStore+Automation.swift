@@ -839,9 +839,9 @@ extension WorkspaceStore {
         let today = Self.dayKeyFormatter.string(from: now)
         guard Self.lastCatchUpDay != today else { return false }
 
-        let targets = Self.catchUpTargets(
-            policy: policy, discovered: ProfileService.discoverLocal().map(\.name)
-        )
+        let discovered = ProfileService.discoverLocal()
+        let runnable = ProfileService.runnableProfiles(discovered, excluding: [])
+        let targets = Self.catchUpTargets(policy: policy, discovered: runnable.map(\.name))
         guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
 

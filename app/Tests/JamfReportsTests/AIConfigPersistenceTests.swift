@@ -124,7 +124,7 @@ final class AIConfigPersistenceTests: XCTestCase {
     func testWriterThrowsOnInvalidProfileName() {
         var config = AIConfig()
         config.enabled = true
-        XCTAssertThrowsError(try AIConfigWriter.save(config, profile: "../not-a-slug")) { error in
+        XCTAssertThrowsError(try AIConfigWriter.save(config, profile: "not-a\nslug")) { error in
             XCTAssertTrue(error is AIConfigWriter.WriteError)
         }
     }

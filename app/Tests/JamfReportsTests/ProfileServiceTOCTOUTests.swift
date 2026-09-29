@@ -57,8 +57,30 @@ final class ProfileServiceTOCTOUTests: XCTestCase {
     }
 
     func test_removeLocalWorkspace_invalidProfile_throws() {
-        XCTAssertThrowsError(try ProfileService.removeLocalWorkspace(profile: "../evil"))
+        XCTAssertThrowsError(try ProfileService.removeLocalWorkspace(profile: "evil\nname"))
         XCTAssertThrowsError(try ProfileService.removeLocalWorkspace(profile: ""))
+    }
+
+    /// `../<name>` is a valid jamf-cli name from 2.8.3. Its workspace is the folder
+    /// `%2E.%2F<name>` inside the root, so removing it never reaches `<name>` beside the root.
+    func test_removeLocalWorkspace_traversalShapedName_staysInsideTheRoot() throws {
+        let root = try temporaryWorkspaceRoot()
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+
+        let name = "toctou-sibling-\(UUID().uuidString)"
+        let sibling = root.deletingLastPathComponent().appendingPathComponent(name)
+        try fm.createDirectory(at: sibling, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: sibling) }
+
+        XCTAssertFalse(try ProfileService.removeLocalWorkspace(profile: "../\(name)"))
+        XCTAssertTrue(fm.fileExists(atPath: sibling.path), "the folder beside the root survives")
+
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: "../\(name)"))
+        try fm.createDirectory(at: workspace, withIntermediateDirectories: true)
+        XCTAssertTrue(try ProfileService.removeLocalWorkspace(profile: "../\(name)"))
+        XCTAssertTrue(fm.fileExists(atPath: sibling.path))
+        XCTAssertFalse(fm.fileExists(atPath: workspace.path))
     }
 
     // MARK: - Helpers

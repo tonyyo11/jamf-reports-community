@@ -159,8 +159,9 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertFalse(oauth.contains("--no-verify"), "default must fit a pre-1.29 binary")
         let oauthGated = OnboardingFlow.proOAuth2Arguments(
             profile: "p", url: "https://x.jamfcloud.com", noVerify: true)
-        XCTAssertEqual(oauthGated.last, "--no-verify")
-        XCTAssertEqual(Array(oauthGated.dropLast()), oauth, "the flag is the only difference")
+        XCTAssertTrue(oauthGated.contains("--no-verify"))
+        XCTAssertEqual(oauthGated.filter { $0 != "--no-verify" }, oauth,
+                       "the flag is the only difference")
 
         let platform = OnboardingFlow.platformGatewayArguments(
             profile: "p", gatewayURL: "https://us.api.jamfcloud.com",
@@ -169,8 +170,21 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         let platformGated = OnboardingFlow.platformGatewayArguments(
             profile: "p", gatewayURL: "https://us.api.jamfcloud.com",
             scope: .environment, scopeID: "e", noVerify: true)
-        XCTAssertEqual(platformGated.last, "--no-verify")
-        XCTAssertEqual(Array(platformGated.dropLast()), platform)
+        XCTAssertTrue(platformGated.contains("--no-verify"))
+        XCTAssertEqual(platformGated.filter { $0 != "--no-verify" }, platform)
+    }
+
+    /// jamf-cli reads `add-profile -lead` as flags ("unknown shorthand flag: 'l'", checked
+    /// against 1.31.1), so the name goes last, after `--`, where any name is a name.
+    func test_addProfileArguments_putTheNameAfterDoubleDash() {
+        let oauth = OnboardingFlow.proOAuth2Arguments(
+            profile: "-lead", url: "https://x.jamfcloud.com", noVerify: true)
+        XCTAssertEqual(Array(oauth.suffix(2)), ["--", "-lead"])
+        XCTAssertEqual(oauth.filter { $0 == "-lead" }.count, 1)
+        let platform = OnboardingFlow.platformGatewayArguments(
+            profile: "Acme Prod", gatewayURL: "https://us.api.jamfcloud.com",
+            scope: .tenant, scopeID: "t")
+        XCTAssertEqual(Array(platform.suffix(2)), ["--", "Acme Prod"])
     }
 
     func test_platformGatewayArguments_environmentScope_sendsEnvironmentIDOnly() {

@@ -73,6 +73,7 @@ final class OnboardingFlow {
 
     enum FlowError: LocalizedError {
         case invalidProfile
+        case profileCaseConflict(existing: String)
         case invalidJamfURL
         case missingJamfCLI
         case missingWorkspace
@@ -82,7 +83,11 @@ final class OnboardingFlow {
         var errorDescription: String? {
             switch self {
             case .invalidProfile:
-                "Profile names must start with a lowercase letter or number and use only lowercase letters, numbers, dots, underscores, or hyphens."
+                "Use a name without a line break or tab, that doesn't start or end with a space, "
+                    + "and is short enough to be a folder name."
+            case .profileCaseConflict(let existing):
+                "A workspace named \(existing) already exists, and a name that differs from it "
+                    + "only by letter case would share its folder. Choose a different name."
             case .invalidJamfURL:
                 "Jamf Pro URL must start with https:// and include a valid host."
             case .missingJamfCLI:
@@ -372,6 +377,11 @@ final class OnboardingFlow {
         guard ProfileService.isValid(profile) else { throw FlowError.invalidProfile }
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw FlowError.invalidProfile
+        }
+        // Checked before jamf-cli has a profile by this name: the connection
+        // scaffold would otherwise overwrite that workspace's config.yaml.
+        if let existing = ProfileService.caseVariantWorkspace(of: profile) {
+            throw FlowError.profileCaseConflict(existing: existing)
         }
 
         let fm = FileManager.default
@@ -698,16 +708,17 @@ final class OnboardingFlow {
 
     // MARK: - Pure argument builders (testable without PTY)
 
-    /// Arguments for `jamf-cli config add-profile` using OAuth2 auth.
+    /// Arguments for `jamf-cli config add-profile` using OAuth2 auth. The name goes last,
+    /// after `--`, so one starting with `-` is not read as a flag.
     static func proOAuth2Arguments(
         profile: String, url: String, noVerify: Bool = false
     ) -> [String] {
-        var args = ["config", "add-profile", profile,
+        var args = ["config", "add-profile",
                     "--url", url,
                     "--auth-method", "oauth2",
                     "--no-color"]
         if noVerify { args.append("--no-verify") }
-        return args
+        return args + ["--", profile]
     }
 
     /// stdin bytes for OAuth2 profile registration (clientID\nclientSecret\n).
@@ -728,12 +739,13 @@ final class OnboardingFlow {
     }
 
     /// Arguments for `jamf-cli config add-profile` using Platform Gateway auth. Sends exactly one
-    /// scope flag (`--environment-id` / `--tenant-id`); the flags are mutually exclusive.
+    /// scope flag (`--environment-id` / `--tenant-id`); the flags are mutually exclusive. The
+    /// name goes last, after `--`, as for OAuth2.
     static func platformGatewayArguments(
         profile: String, gatewayURL: String, scope: PlatformScope, scopeID: String,
         noVerify: Bool = false
     ) -> [String] {
-        var args = ["config", "add-profile", profile,
+        var args = ["config", "add-profile",
                      "--auth-method", "platform"]
         switch scope {
         case .environment: args += ["--environment-id", scopeID]
@@ -741,7 +753,7 @@ final class OnboardingFlow {
         }
         args += ["--url", gatewayURL, "--no-color"]
         if noVerify { args.append("--no-verify") }
-        return args
+        return args + ["--", profile]
     }
 
     /// stdin bytes for Platform Gateway profile registration (clientID\nclientSecret\n).

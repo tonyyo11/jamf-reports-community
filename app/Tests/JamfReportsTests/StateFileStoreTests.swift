@@ -228,7 +228,7 @@ final class WorkspacePathsStateDirTests: XCTestCase {
     }
 
     func testStateDirThrowsOnInvalidProfile() {
-        XCTAssertThrowsError(try WorkspacePaths.stateDir(for: "Bad Profile!")) { error in
+        XCTAssertThrowsError(try WorkspacePaths.stateDir(for: "Bad Profile! ")) { error in
             guard case WorkspacePaths.PathError.invalidProfile = error else {
                 return XCTFail("Expected invalidProfile, got \(error)")
             }
