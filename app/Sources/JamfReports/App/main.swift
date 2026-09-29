@@ -625,8 +625,15 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
         return ScheduleRunOutcome(exitCode: code, incomplete: honesty.incomplete)
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
-    let profiles = ProfileService.applyingExclusions(
-        ProfileService.discoverLocal(), excluding: excluded)
+    let discovered = ProfileService.discoverLocal()
+    let profiles = ProfileService.runnableProfiles(discovered, excluding: excluded)
+    for p in discovered where p.status == .error && !excluded.contains(p.name) {
+        fputs("[info] skipping \(p.name): \(p.authMethod)\n", stderr)
+        // The background item's stderr goes nowhere; the log keeps the reason.
+        AppLogger.schedule.notice(
+            "skipping \(p.name, privacy: .public): \(p.authMethod, privacy: .public)"
+        )
+    }
     guard !profiles.isEmpty else {
         fputs("[error] \(label ?? "all-profiles"): no local profiles found\n", stderr)
         return ScheduleRunOutcome(exitCode: 1, incomplete: false)

@@ -66,6 +66,30 @@ final class WorkspaceMigrationTests: XCTestCase {
         ))
     }
 
+    // MARK: - Only workspaces are swept
+
+    /// Capitals are valid profile names, so a folder named like one is no longer
+    /// proof it is a workspace: a shared root can hold an "Archive" beside them.
+    func test_run_sweepsCapitalisedWorkspaceButNotOtherFolders() throws {
+        try makeProfile(name: "Acme-Dev", files: ["x.json": 0o644], includeMarker: false)
+        let archive = tempRoot.appendingPathComponent("Archive", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        let kept = archive.appendingPathComponent("notes.txt")
+        try Data("n".utf8).write(to: kept)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Int16(0o644))], ofItemAtPath: kept.path
+        )
+
+        let result = WorkspaceMigration.run(defaults: defaults)
+
+        XCTAssertEqual(result.profiles.map(\.profile), ["Acme-Dev"])
+        XCTAssertEqual(try mode(of: profilePath("Acme-Dev", "x.json")), 0o600)
+        XCTAssertEqual(try mode(of: kept), 0o644, "a folder without config.yaml is not a workspace")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: archive.appendingPathComponent(".metadata_never_index").path
+        ))
+    }
+
     // MARK: - Sentinel gates re-runs
 
     func test_runIfNeeded_skipsWhenSentinelMatches() throws {
@@ -124,6 +148,9 @@ final class WorkspaceMigrationTests: XCTestCase {
         let profile = tempRoot.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: NSNumber(value: Int16(0o755))])
+        // Every workspace the app makes has one; the sweep keys on it.
+        try Data("jamf_cli:\n  profile: \(name)\n".utf8)
+            .write(to: profile.appendingPathComponent("config.yaml"))
         for (relPath, mode) in files {
             let url = profile.appendingPathComponent(relPath)
             try FileManager.default.createDirectory(

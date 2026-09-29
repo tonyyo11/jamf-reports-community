@@ -39,10 +39,11 @@ enum ManagedAutomation {
     }
 
     /// The profile a managed schedule carries as its base `--profile`: the
-    /// first one the policy has not excluded. The run itself fans out over
+    /// first valid one the policy has not excluded. The run itself fans out over
     /// `--all-profiles`, so the base is only ever a valid-slug placeholder —
     /// but three call sites derived it separately and two of them ignored the
     /// exclusions, so an excluded first profile could end up naming the run.
+    /// An unsupported first name used to leave `desiredSchedules` empty.
     static func managedBaseProfile(
         profiles: [JamfCLIProfile], policy: AutomationPolicy
     ) -> String? {
@@ -51,7 +52,7 @@ enum ManagedAutomation {
 
     /// Name-list form, for the callers that only ever hold profile slugs.
     static func managedBaseProfile(names: [String], policy: AutomationPolicy) -> String? {
-        names.first { !policy.excludedProfiles.contains($0) }
+        names.first { !policy.excludedProfiles.contains($0) && ProfileService.isValid($0) }
     }
 
     // MARK: - Desired specs (pure)

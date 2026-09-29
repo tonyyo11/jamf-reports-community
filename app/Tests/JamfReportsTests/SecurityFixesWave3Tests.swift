@@ -95,6 +95,8 @@ final class SecurityFixesWave3Tests: XCTestCase {
                 at: profile, withIntermediateDirectories: true,
                 attributes: [.posixPermissions: NSNumber(value: Int16(0o755))]
             )
+            try Data("jamf_cli:\n  profile: \(name)\n".utf8)
+                .write(to: profile.appendingPathComponent("config.yaml"))
             let f = profile.appendingPathComponent("a.json")
             try Data("x".utf8).write(to: f)
             try fileManager.setAttributes(
@@ -132,6 +134,9 @@ final class SecurityFixesWave3Tests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: victim) }
         let victimFile = victim.appendingPathComponent("untouchable.txt")
         try Data("v".utf8).write(to: victimFile)
+        // Looks like a workspace, so only the symlink filter keeps the sweep out.
+        try Data("jamf_cli:\n  profile: hostile\n".utf8)
+            .write(to: victim.appendingPathComponent("config.yaml"))
         try fileManager.setAttributes(
             [.posixPermissions: NSNumber(value: Int16(0o644))],
             ofItemAtPath: victimFile.path
@@ -145,6 +150,8 @@ final class SecurityFixesWave3Tests: XCTestCase {
         let realProfile = tempRoot.appendingPathComponent("real", isDirectory: true)
         try fileManager.createDirectory(at: realProfile, withIntermediateDirectories: true,
                                         attributes: [.posixPermissions: NSNumber(value: Int16(0o755))])
+        try Data("jamf_cli:\n  profile: real\n".utf8)
+            .write(to: realProfile.appendingPathComponent("config.yaml"))
         let realFile = realProfile.appendingPathComponent("ok.json")
         try Data("r".utf8).write(to: realFile)
         try fileManager.setAttributes(
