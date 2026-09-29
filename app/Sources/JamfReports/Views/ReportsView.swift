@@ -14,7 +14,7 @@ struct ReportsView: View {
     @State private var isExportingCSV = false
     @State private var reportError: String?
     @State private var searchText = ""
-    @State private var profileFilter: String? = nil
+    @State private var profileFilter: Set<String> = []
     @State private var availableProfiles: [String] = []
     @State private var showPeriodReport = false
     @State private var showQuickLook = false
@@ -61,16 +61,16 @@ struct ReportsView: View {
         snapshotFamilies.reduce(0) { $0 + $1.snapshotCount }
     }
 
-    /// Pure filter function for testing. Filters reports by search text and profile.
-    /// Search matches report name and source (case-insensitive). Profile filter matches
-    /// profile tokens in the filename (case-insensitive).
+    /// Pure filter function for testing. Search matches report name and source
+    /// (case-insensitive). A report belongs to the profile its filename names, compared
+    /// exactly, so `acme` never takes in `acme-dev` reports sharing a folder with it;
+    /// an empty `profileFilter` shows every report.
     static func filteredReports(
         reports: [Report],
         searchText: String,
-        profileFilter: String?
+        profileFilter: Set<String>
     ) -> [Report] {
         let trimmedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedProfile = profileFilter?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return reports.filter { report in
             // Search filter: match name or source (case-insensitive)
@@ -82,15 +82,19 @@ struct ReportsView: View {
                 searchMatch = searchableText.contains(trimmedSearch.lowercased())
             }
 
-            // Profile filter: match profile token in filename (case-insensitive)
-            let profileMatch: Bool
-            if let profile = trimmedProfile, !profile.isEmpty {
-                profileMatch = report.name.lowercased().contains(profile.lowercased())
-            } else {
-                profileMatch = true
-            }
+            let profileMatch = profileFilter.isEmpty
+                || profile(fromReportFilename: report.name).map(profileFilter.contains) == true
 
             return searchMatch && profileMatch
+        }
+    }
+
+    /// The profile menu's label: "All Profiles", the one chosen, or how many.
+    static func profileFilterLabel(_ selection: Set<String>) -> String {
+        switch selection.count {
+        case 0: return "All Profiles"
+        case 1: return selection.first ?? "All Profiles"
+        default: return "\(selection.count) profiles"
         }
     }
 
@@ -275,16 +279,16 @@ struct ReportsView: View {
                     ]
                 )
                 Menu {
-                    Button("All Profiles") { profileFilter = nil }
+                    Button("All Profiles") { profileFilter = [] }
                     if !availableProfiles.isEmpty {
                         Divider()
                         ForEach(availableProfiles, id: \.self) { profile in
-                            Button(profile) { profileFilter = profile }
+                            Toggle(profile, isOn: profileSelection(profile))
                         }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(profileFilter ?? "All Profiles")
+                        Text(Self.profileFilterLabel(profileFilter))
                             .font(.footnote)
                             .foregroundStyle(Theme.Colors.fg)
                         Image(systemName: "chevron.down")
@@ -295,7 +299,7 @@ struct ReportsView: View {
                     .padding(.vertical, 4)
                     .background(Theme.Colors.winBG2, in: RoundedRectangle(cornerRadius: 6))
                 }
-                .help("Filter reports by profile")
+                .help("Choose which profiles' reports to show")
                 Spacer()
             }
             if let err = reportError {
@@ -576,6 +580,17 @@ struct ReportsView: View {
             Self.profile(fromReportFilename: report.name)
         })
         availableProfiles = Array(profileTokens).sorted()
+        // A chosen profile with no reports left would hide the whole list.
+        profileFilter.formIntersection(profileTokens)
+    }
+
+    private func profileSelection(_ profile: String) -> Binding<Bool> {
+        Binding(
+            get: { profileFilter.contains(profile) },
+            set: { on in
+                if on { profileFilter.insert(profile) } else { profileFilter.remove(profile) }
+            }
+        )
     }
 
     /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
@@ -583,9 +598,19 @@ struct ReportsView: View {
     /// prefix and the date is the profile, so a hyphen or underscore in it stays;
     /// profile names allow both, and treating any hyphen as a date dropped every
     /// such profile from the menu. Without a date, the first `_` segment is taken.
-    /// Nil for an unknown prefix, or when no profile precedes the date.
+    /// `ExportNaming` files (`<kind>-<profile>-<yyyy-MM-dd_HHmmss>`) are read only for
+    /// the kinds that save into a reports folder: kinds and profiles both have hyphens.
+    /// Nil for an unknown prefix or kind, or when no profile precedes the date.
     nonisolated static func profile(fromReportFilename filename: String) -> String? {
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+        let exportName = #/
+            (?: period-report-\d{8}-\d{8} | outreach-stale-devices | patch-compliance
+              | audit-findings | devices )
+            -(.+)-\d{4}-\d{2}-\d{2}_\d{6}
+            /#
+        if let match = stem.wholeMatch(of: exportName) {
+            return String(match.1)
+        }
         let lowered = stem.lowercased()
         // Longest first, so "jamf_report_prod_..." yields "prod", not "report".
         let knownPrefixes = [

@@ -35,6 +35,9 @@ versions in this repository map to git tags.
   couldn't be read.
 - The one-time permission tightening after an update touches only workspace folders (those
   with a `config.yaml`), so other folders kept in the workspace location keep their permissions.
+- When several profiles save reports to the same folder, the Reports screen keeps each
+  profile's reports apart: choosing `acme` no longer also lists `acme-dev` reports. The profile
+  menu is now a checklist, so you can show one profile, several, or all of them.
 
 ## [2.8.1] - 2026-09-26
 

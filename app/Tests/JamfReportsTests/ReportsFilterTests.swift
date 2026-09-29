@@ -26,14 +26,24 @@ final class ReportsFilterTests {
     @Test func profileFromFilenameRejectsDatesAndUnknownPrefixes() {
         #expect(profile("report_2026-04-24_073305.xlsx") == nil)
         #expect(profile("report_20260424.xlsx") == nil)
-        #expect(profile("patch-compliance-prod-2026-04-24_073305.csv") == nil)
+        #expect(profile("fleet-bands-prod-2026-04-24_073305.png") == nil)
+        #expect(profile("devices-2026-04-24_073305.csv") == nil)
+    }
+
+    /// `ExportNaming` files saved into a reports folder: `<kind>-<profile>-<timestamp>`.
+    @Test func profileFromExportNamingFiles() {
+        #expect(profile("patch-compliance-prod-2026-04-24_073305.csv") == "prod")
+        #expect(profile("devices-acme-dev-2026-09-29_120000.csv") == "acme-dev")
+        #expect(profile("outreach-stale-devices-Acme-2026-09-29_120000.csv") == "Acme")
+        #expect(profile("audit-findings-acme_east-2026-09-29_120000.csv") == "acme_east")
+        #expect(profile("period-report-20260601-20260831-acme-2026-09-29_120000.xlsx") == "acme")
     }
 
     @Test func emptySearchReturnsAll() {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered == sampleReports)
     }
@@ -42,7 +52,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "   ",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered == sampleReports)
     }
@@ -51,7 +61,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "compliance_main_2024-05-02.html",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered.count == 1)
         #expect(filtered.first?.name == "compliance_main_2024-05-02.html")
@@ -61,7 +71,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "compliance",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered.count == 1)
         #expect(filtered.first?.name == "compliance_main_2024-05-02.html")
@@ -71,7 +81,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "JAMF_REPORT",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered.count == 1)
         #expect(filtered.first?.name == "jamf_report_main_2024-05-01.xlsx")
@@ -81,7 +91,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "Weekly Executive",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered.count == 1)
         #expect(filtered.first?.source == "Weekly Executive")
@@ -91,7 +101,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "2024-05",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered.count == 5)
     }
@@ -100,7 +110,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "nonexistent",
-            profileFilter: nil
+            profileFilter: []
         )
         #expect(filtered.isEmpty)
     }
@@ -109,27 +119,56 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "",
-            profileFilter: "main"
+            profileFilter: ["main"]
         )
         #expect(filtered.count == 2)
         #expect(filtered.allSatisfy { $0.name.contains("main") })
     }
 
-    @Test func profileFilterCaseInsensitive() {
-        let filtered = ReportsView.filteredReports(
-            reports: sampleReports,
-            searchText: "",
-            profileFilter: "EDU"
+    /// jamf-cli profile names are case-sensitive, so `EDU` is another profile.
+    @Test func profileFilterMatchesCaseExactly() {
+        let upper = ReportsView.filteredReports(
+            reports: sampleReports, searchText: "", profileFilter: ["EDU"]
         )
-        #expect(filtered.count == 1)
-        #expect(filtered.first?.name.contains("edu") == true)
+        #expect(upper.isEmpty)
+        let lower = ReportsView.filteredReports(
+            reports: sampleReports, searchText: "", profileFilter: ["edu"]
+        )
+        #expect(lower.map(\.name) == ["school_report_edu_2024-05-05.xlsx"])
+    }
+
+    /// Two jamf-cli profiles saving to one folder: `acme` must not take in `acme-dev`,
+    /// and choosing both shows both.
+    @Test func profileFilterKeepsProfilesSharingAPrefixApart() {
+        let shared = [
+            "report_acme_2026-09-29_120000.xlsx",
+            "report_acme-dev_2026-09-29_120001.xlsx",
+            "jamf_report_acme-dev_2026-09-29_120002.html",
+            "devices-acme-2026-09-29_120003.csv",
+            "period-report-20260601-20260831-acme-dev-2026-09-29_120004.xlsx",
+        ].map { Report(name: $0, size: "1 KB", date: "", source: "", sheets: 0, devices: 0) }
+        func names(_ profiles: Set<String>) -> [String] {
+            ReportsView.filteredReports(reports: shared, searchText: "", profileFilter: profiles)
+                .map(\.name)
+        }
+        #expect(names(["acme"]) == ["report_acme_2026-09-29_120000.xlsx",
+                                   "devices-acme-2026-09-29_120003.csv"])
+        #expect(names(["acme-dev"]).count == 3)
+        #expect(names(["acme", "acme-dev"]).count == 5)
+        #expect(names([]).count == 5)
+    }
+
+    @Test func profileFilterLabelNamesTheSelection() {
+        #expect(ReportsView.profileFilterLabel([]) == "All Profiles")
+        #expect(ReportsView.profileFilterLabel(["acme-dev"]) == "acme-dev")
+        #expect(ReportsView.profileFilterLabel(["acme", "acme-dev"]) == "2 profiles")
     }
 
     @Test func profileFilterNoMatches() {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "",
-            profileFilter: "nonexistent"
+            profileFilter: ["nonexistent"]
         )
         #expect(filtered.isEmpty)
     }
@@ -138,7 +177,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "xlsx",
-            profileFilter: "main"
+            profileFilter: ["main"]
         )
         #expect(filtered.count == 1)
         #expect(filtered.first?.name == "jamf_report_main_2024-05-01.xlsx")
@@ -148,7 +187,7 @@ final class ReportsFilterTests {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
             searchText: "xlsx",
-            profileFilter: "edu"
+            profileFilter: ["edu"]
         )
         #expect(filtered.count == 1)
         #expect(filtered.first?.name.contains("school_report_edu") == true)
