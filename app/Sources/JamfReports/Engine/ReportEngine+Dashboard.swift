@@ -17,13 +17,15 @@ extension ReportEngine {
     /// The matrix row's argv plus the Protect profile, when Protect is on and has
     /// a profile of its own. jamf-cli refuses two profiles of one product (a Pro and
     /// a Platform profile count as one), so Protect is the only one ever added.
-    /// Passed as `--include-profile=<name>` so a name can never read as a flag.
+    /// Passed as `--include-profile=<name>`, so any name jamf-cli accepts, a leading `-`
+    /// included, is the flag's value. A name the app can't use (`ProfileService.isValid`)
+    /// is left out.
     static func dashboardArguments(
         base: [String], profile: String, protect: ProtectConfig?
     ) -> [String] {
         guard let protect, protect.isEnabled else { return base }
         let other = protect.resolvedProfile
-        guard !other.isEmpty, other != profile, !other.hasPrefix("-") else { return base }
+        guard ProfileService.isValid(other), other != profile else { return base }
         return base + ["--include-profile=\(other)"]
     }
 

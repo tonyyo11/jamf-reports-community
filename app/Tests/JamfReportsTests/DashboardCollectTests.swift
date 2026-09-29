@@ -65,7 +65,12 @@ final class DashboardCollectTests: XCTestCase {
         XCTAssertEqual(args(ProtectConfig(enabled: true, profile: "")), base)
         XCTAssertEqual(args(ProtectConfig(enabled: true, profile: "prod")), base,
                        "the same profile twice is refused by jamf-cli")
-        XCTAssertEqual(args(ProtectConfig(enabled: true, profile: "-x")), base)
+        XCTAssertEqual(args(ProtectConfig(enabled: true, profile: "-x")),
+                       base + ["--include-profile=-x"], "after = a leading dash is the value")
+        XCTAssertEqual(args(ProtectConfig(enabled: true, profile: "Acme Protect")),
+                       base + ["--include-profile=Acme Protect"])
+        XCTAssertEqual(args(ProtectConfig(enabled: true, profile: "a\tb")), base,
+                       "a name the app can't use is left out")
         XCTAssertEqual(args(ProtectConfig(enabled: true, profile: " prod-protect ")),
                        base + ["--include-profile=prod-protect"])
     }
