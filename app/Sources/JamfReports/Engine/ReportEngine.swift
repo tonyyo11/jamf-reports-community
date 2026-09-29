@@ -3219,8 +3219,8 @@ struct ReportEngine: Sendable {
         // `report_prod_2026-06-01_120000.xlsx`, not `report_2026-06-01_120000.xlsx`.
         let namedStem: String = {
             guard let profile else { return stem }
-            let sanitized = ExportNaming.sanitize(profile)
-            return sanitized.isEmpty ? stem : "\(stem)_\(sanitized)"
+            let part = ExportNaming.profilePart(profile)
+            return part.isEmpty ? stem : "\(stem)_\(part)"
         }()
 
         let shouldTimestamp = config.output?.timestampOutputs ?? true

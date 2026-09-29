@@ -878,8 +878,8 @@ final class CLIBridge {
         } else {
             onLine(.init(
                 timestamp: Date(), level: .fail,
-                text: "[error] auth check failed for profile '\(profile)' — " +
-                      "re-authenticate with: jamf-cli -p \(profile) pro auth token"
+                text: "[error] auth check failed for profile '\(profile)' — re-authenticate "
+                      + "with: jamf-cli -p \(ProfileName.shellWord(profile)) pro auth token"
             ))
         }
         return false

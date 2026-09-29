@@ -9,6 +9,9 @@ struct OnboardingView: View {
     @State private var flow = OnboardingFlow()
     @State private var showingCSVImporter = false
 
+    /// The profile name as the commands on this screen show it.
+    private var shellProfile: String { ProfileName.shellWord(flow.profileName.trimmedForView) }
+
     private let privileges = [
         "Computers: Read", "Mobile Devices: Read", "Mobile Profiles: Read",
         "Computer EAs: Read", "Policies: Read", "Patch Mgmt: Read",
@@ -231,7 +234,7 @@ struct OnboardingView: View {
                         Text("Validate profile \(flow.profileName.trimmedForView)")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
-                        Mono(text: "jamf-cli -p \(flow.profileName.trimmedForView) config validate", size: 11.5)
+                        Mono(text: "jamf-cli -p \(shellProfile) config validate", size: 11.5)
                     }
                     Spacer()
                     if let exit = flow.validationExitCode {
@@ -942,7 +945,7 @@ struct OnboardingView: View {
                         Text("Run profile \(flow.profileName.trimmedForView)")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Theme.Colors.fg)
-                        Mono(text: "generate --profile \(flow.profileName.trimmedForView)", size: 11.5)
+                        Mono(text: "generate --profile \(shellProfile)", size: 11.5)
                     }
                     Spacer()
                     if let exit = flow.firstReportExitCode {

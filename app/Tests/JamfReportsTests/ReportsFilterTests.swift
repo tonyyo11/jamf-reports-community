@@ -39,6 +39,20 @@ final class ReportsFilterTests {
         #expect(profile("period-report-20260601-20260831-acme-2026-09-29_120000.xlsx") == "acme")
     }
 
+    /// From 2.8.3 file names carry any jamf-cli name, encoded only where a file name can't hold
+    /// it (`ProfileName.pathComponent`), so the name reads back exactly.
+    @Test func profileFromFilenameDecodesAnyName() {
+        #expect(profile("report_Acme Prod_2026-09-29_120000.xlsx") == "Acme Prod")
+        #expect(profile("jamf_report_acme.prod_2026-09-29_120000.html") == "acme.prod")
+        #expect(profile("report_Zürich_2026-09-29_120000.xlsx") == "Zürich")
+        #expect(profile("report_a%2Fb_2026-09-29_120000.xlsx") == "a/b")
+        #expect(profile("devices-R&D (EU)-2026-09-29_120000.csv") == "R&D (EU)")
+        #expect(profile("report_2024_2026-09-29_120000.xlsx") == "2024", "an all-digit name")
+        #expect(profile("report_x_2024-01-01_2026-09-29_120000.xlsx") == "x_2024-01-01",
+                "the last date is the timestamp")
+        #expect(profile("report_100%_2026-09-29_120000.xlsx") == nil, "no name encodes to 100%")
+    }
+
     @Test func emptySearchReturnsAll() {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,

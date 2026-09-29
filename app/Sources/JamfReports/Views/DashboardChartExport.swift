@@ -138,7 +138,7 @@ enum DashboardChartExport {
     /// Sanitization and the timestamp come from `ExportNaming` so chart PNGs,
     /// CSV exports, and engine reports all share one convention.
     static func filename(for label: String, profile: String) -> String {
-        let sanitizedProfile = ExportNaming.sanitize(profile)
+        let sanitizedProfile = ExportNaming.profilePart(profile)
         let sanitizedLabel = ExportNaming.sanitize(label)
         let stamp = ExportNaming.timestamp()
         if sanitizedProfile.isEmpty {

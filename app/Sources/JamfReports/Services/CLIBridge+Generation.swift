@@ -346,7 +346,7 @@ extension CLIBridge {
             AppLogger.cli.warning(
                 "htmlOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
         }
-        let stem = "jamf_report_\(profile)_\(htmlTimestamp())"
+        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
         return dir.appendingPathComponent("\(stem).html")
     }
 
@@ -369,7 +369,7 @@ extension CLIBridge {
             AppLogger.cli.warning(
                 "pdfOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
         }
-        let stem = "jamf_report_\(profile)_\(htmlTimestamp())"
+        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
         return dir.appendingPathComponent("\(stem).pdf")
     }
 
