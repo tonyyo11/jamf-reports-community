@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-09-29
+
+First-launch setup works with jamf-cli profiles whose names have capital letters, and the Reports
+screen keeps profiles that share a folder apart.
+
 ### Changed
 
 - Tracks jamf-cli v1.31.1 (was v1.30.0). Nothing the app runs changed its flags or output. With
