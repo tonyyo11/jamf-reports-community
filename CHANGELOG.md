@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.8.3] - 2026-09-29
+
+Every jamf-cli profile name works in Jamf Reports, whatever it contains: spaces, dots, accented
+letters and punctuation included.
+
 ### Fixed
 
 - Every jamf-cli profile name works, whatever it contains: spaces (`Acme Prod`), dots
