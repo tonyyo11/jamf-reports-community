@@ -131,12 +131,14 @@ been revoked. Re-authenticate:
 jamf-cli pro setup --url https://your-instance.jamfcloud.com
 ```
 
-**Profile slug rejected.** A profile name must match `^[A-Za-z0-9][A-Za-z0-9_-]*$` — no
-spaces, dots, accented letters, or leading punctuation. Capitals are fine (`Prod`,
-`Tenant-East`). jamf-cli has no rename command, so for an existing jamf-cli profile with an
-unsupported name, add the same connection again under a supported name
-(`jamf-cli config add-profile <name>`) and remove the old one. Two profiles whose names
-differ only by letter case (`Prod` and `prod`) would share one workspace folder on a
+**Profile name rejected.** The app uses any name jamf-cli accepts (spaces, dots, accented
+letters and punctuation included) except one with a line break or tab, one that starts or ends
+with a space, or a very long one. jamf-cli has no rename command, so for an existing jamf-cli
+profile with such a name, add the same connection again under another name
+(`jamf-cli config add-profile <name>`) and remove the old one. A character a folder name can't
+hold appears encoded in the workspace folder's name: `a/b` uses the folder `a%2Fb`. Two
+profiles whose names differ only by letter case (`Prod` and `prod`, or `Zürich` and `zürich`)
+would share one workspace folder on a
 case-insensitive volume, so the app uses only one of them: the one that already has a
 workspace, or else the lowercase spelling. The first-launch setup screen and Settings →
 Connections show which profile is skipped and why, and choosing it from the profile menu says

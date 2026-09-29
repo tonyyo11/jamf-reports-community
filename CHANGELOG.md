@@ -7,6 +7,27 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Fixed
+
+- Every jamf-cli profile name works, whatever it contains: spaces (`Acme Prod`), dots
+  (`acme.prod`), accented letters (`Zürich`), punctuation, or a leading `-`. Setup, collect,
+  schedules, Run History and the Reports list use the name exactly as jamf-cli spells it.
+  Workspace folders and file names keep the name and encode only what a folder name can't hold
+  (`a/b` becomes `a%2Fb`), so existing workspaces keep their folders. The app still can't use a
+  name with a line break or tab, one that starts or ends with a space, or a very long one, and
+  setup says which.
+- A workspace folder for a profile with a dot in its name, which earlier versions stopped
+  listing, belongs to that profile again.
+- A profile named `true`, `false` or `null` no longer makes its workspace's `config.yaml`
+  unreadable.
+- Names that differ only by letter case now include accented letters (`Zürich` and `zürich`),
+  and the app keeps them apart the same way it keeps `Prod` and `prod` apart.
+- The Reports list reads a profile name that contains a date, or is only digits (`2024`), from
+  a report's file name correctly.
+- Commands the app shows for copying quote a profile name that needs it.
+- `--exclude-profiles` and `jamf-reports schedules add --exclude` take a comma inside a profile
+  name written as `%2C`.
+
 ## [2.8.2] - 2026-09-29
 
 First-launch setup works with jamf-cli profiles whose names have capital letters, and the Reports
