@@ -12,12 +12,12 @@ final class CLIBridgeBackupTests: XCTestCase {
         let bridge = CLIBridge()
         let collector = LineCollector()
         do {
-            _ = try await bridge.backup(profile: "../etc/passwd", label: nil) { line in
+            _ = try await bridge.backup(profile: "bad\nslug", label: nil) { line in
                 collector.append(line)
             }
             XCTFail("backup must throw for an invalid profile slug")
         } catch let e as CLIBridgeError {
-            XCTAssertEqual(e, .invalidProfile("../etc/passwd"), "backup must throw .invalidProfile")
+            XCTAssertEqual(e, .invalidProfile("bad\nslug"), "backup must throw .invalidProfile")
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }

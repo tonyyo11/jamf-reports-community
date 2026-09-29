@@ -47,8 +47,8 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             // Reason omitted: may contain a system path or sandbox detail.
             return "Could not launch jamf-cli — check that jamf-cli is installed and the executable is intact."
         case .invalidProfile(let slug):
-            return "Profile name '\(slug)' isn't supported — use only letters, numbers, - and _, "
-                + "starting with a letter or number."
+            let why = ProfileName.problem(with: slug)?.explanation ?? ""
+            return "Profile name '\(slug)' isn't supported. \(why)"
         case .workspaceMissing(let profile):
             return "Workspace not found for profile '\(profile)'."
         case .profileCaseConflict(let profile, let owner):

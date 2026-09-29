@@ -90,6 +90,21 @@ final class WorkspaceMigrationTests: XCTestCase {
         ))
     }
 
+    /// From 2.8.3 a folder's name encodes its profile. A folder no profile encodes to
+    /// (`100%`) is not a workspace even with a config.yaml; `a%2Fb` is profile `a/b`'s.
+    func test_run_sweepsEncodedWorkspaceFoldersOnly() throws {
+        try makeProfile(
+            name: ProfileName.pathComponent("a/b"), files: ["x.json": 0o644], includeMarker: false
+        )
+        try makeProfile(name: "100%", files: ["y.json": 0o644], includeMarker: false)
+
+        let result = WorkspaceMigration.run(defaults: defaults)
+
+        XCTAssertEqual(result.profiles, [.init(profile: "a/b", succeeded: true)])
+        XCTAssertEqual(try mode(of: profilePath("a%2Fb", "x.json")), 0o600)
+        XCTAssertEqual(try mode(of: profilePath("100%", "y.json")), 0o644)
+    }
+
     // MARK: - Sentinel gates re-runs
 
     func test_runIfNeeded_skipsWhenSentinelMatches() throws {

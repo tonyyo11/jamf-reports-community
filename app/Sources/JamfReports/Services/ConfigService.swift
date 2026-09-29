@@ -213,9 +213,8 @@ enum ConfigService {
     }
 
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
-        // ProfileService.isValid enforces the slug regex (^[A-Za-z0-9][A-Za-z0-9_-]*$),
-        // which is the real path-traversal control. `standardizedFileURL` already
-        // collapses any `..` components, so no separate guard is needed.
+        // ProfileName.pathComponent is the path-traversal control: it encodes `/`, and the
+        // leading `.` of `.` and `..`, so the name is always one folder under the root.
         guard ProfileService.isValid(profile) else {
             throw ConfigError.invalidProfile(profile)
         }
@@ -224,7 +223,7 @@ enum ConfigService {
             .resolvingSymlinksInPath()
             .standardizedFileURL
         let workspace = root
-            .appendingPathComponent(profile, isDirectory: true)
+            .appendingPathComponent(ProfileName.pathComponent(profile), isDirectory: true)
             .standardizedFileURL
         let config = workspace
             .appendingPathComponent("config.yaml", isDirectory: false)

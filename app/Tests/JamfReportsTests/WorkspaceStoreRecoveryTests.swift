@@ -172,7 +172,7 @@ final class WorkspaceStoreRecoveryTests: XCTestCase {
     func testRunFirstCollectBailIsNotSilent() async {
         let store = WorkspaceStore()
         store.demoMode = false
-        store.profile = "INVALID SLUG"
+        store.profile = "INVALID\nSLUG"
 
         await store.runFirstCollect { _, _ in
             XCTFail("collect must not run for an invalid profile")

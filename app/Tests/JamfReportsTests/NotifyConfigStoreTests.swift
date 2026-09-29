@@ -140,7 +140,7 @@ final class NotifyConfigStoreTests: XCTestCase {
         XCTAssertThrowsError(
             try NotifyConfigWriter.save(
                 enabled: true, provider: "teams", url: "https://x.example.com",
-                detail: "full", profile: "../not-a-slug"
+                detail: "full", profile: "not-a\nslug"
             )
         ) { error in
             guard case NotifyConfigWriter.WriteError.invalidProfile = error else {

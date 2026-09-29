@@ -459,7 +459,9 @@ struct CLIRunSignals: Sendable {
     /// Run History (`<prefix>.<profile>.cli-collect` / `.cli-generate`) rather
     /// than being attributed to a scheduled agent.
     static func cliLabel(profile: String, kind: Kind) -> String {
-        "\(LaunchAgentWriter.labelPrefix).\(profile).cli-\(kind == .collect ? "collect" : "generate")"
+        let kindSlug = kind == .collect ? "collect" : "generate"
+        let labelProfile = ProfileName.labelComponent(profile)
+        return "\(LaunchAgentWriter.labelPrefix).\(labelProfile).cli-\(kindSlug)"
     }
 
     /// Best-effort setup for an included-CLI run. Resolves the workspace, loads

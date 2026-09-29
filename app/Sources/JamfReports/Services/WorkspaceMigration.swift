@@ -112,8 +112,8 @@ enum WorkspaceMigration {
 
     // MARK: - Private
 
-    /// Enumerate immediate subdirectories of the workspaces root whose names
-    /// pass `ProfileService.isValid` and that hold a `config.yaml`. Mirrors
+    /// Profiles of the immediate subdirectories of the workspaces root whose names
+    /// encode a valid profile and that hold a `config.yaml`. Mirrors
     /// `ProfileService.discoverLocal`'s disk-walk filter but skips the jamf-cli
     /// enrichment because we only need directory names here. The config check
     /// keeps the chmod sweep off other folders in a root that is shared, such as
@@ -146,7 +146,7 @@ enum WorkspaceMigration {
                 return vals?.isDirectory == true
             }
             .filter { fm.fileExists(atPath: $0.appendingPathComponent("config.yaml").path) }
-            .map { $0.lastPathComponent }
+            .compactMap { ProfileName.name(fromPathComponent: $0.lastPathComponent) }
             .filter(ProfileService.isValid)
     }
 

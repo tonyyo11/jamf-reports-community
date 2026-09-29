@@ -13,19 +13,15 @@ import XCTest
 /// `audit` and `backup` also accept free-text user input bound to
 /// `--checks` / `--label`. Leading-dash values must be rejected so they
 /// cannot be re-interpreted as flags by jamf-cli/Cobra.
+///
+/// From 2.8.3 every name jamf-cli accepts is a valid profile, `-foo` included, so the
+/// refused names are the few the app can't represent, and the argv-injection guard is
+/// where a name goes: see `test_flagShapedProfileNamesOnlyEverFollowTheProfileFlag`.
 @MainActor
 final class CLIBridgeProfileValidationTests: XCTestCase {
 
     // Profile names that must be refused.
-    private let invalidProfiles: [String] = [
-        "",
-        "--config=/etc/passwd",
-        "-foo",
-        "foo bar",
-        "foo/bar",
-        "foo\u{0000}bar",
-        "../escape",
-    ]
+    private let invalidProfiles: [String] = ["", "foo\u{0000}bar", "foo\nbar", " foo", "foo "]
 
     func test_audit_rejectsInvalidProfile() async {
         let bridge = CLIBridge()
@@ -57,12 +53,12 @@ final class CLIBridgeProfileValidationTests: XCTestCase {
 
     func test_runMulti_rejectsInvalidProfileInList() async {
         let bridge = CLIBridge()
-        let target = MultiTarget(scope: .list(["good-profile", "--config=/etc/passwd"]))
+        let target = MultiTarget(scope: .list(["good-profile", "bad\nprofile"]))
         do {
             _ = try await bridge.runMulti(target: target, subcommand: ["pro", "collect"]) { _ in }
             XCTFail("runMulti must throw for an invalid profile in the list")
         } catch let e as CLIBridgeError {
-            XCTAssertEqual(e, .invalidProfile("--config=/etc/passwd"))
+            XCTAssertEqual(e, .invalidProfile("bad\nprofile"))
         } catch {
             XCTFail("Unexpected error type: \(error)")
         }
@@ -81,6 +77,29 @@ final class CLIBridgeProfileValidationTests: XCTestCase {
             } catch {
                 XCTFail("Unexpected error type for profile \(profile): \(error)")
             }
+        }
+    }
+
+    // MARK: - B-02 — a flag-shaped profile name is only ever a flag's value
+
+    /// jamf-cli's parser takes the argument after `-p` as its value whatever it looks like
+    /// (checked against 1.31.1: `-p --output=yaml config show` still prints JSON), and
+    /// `config add-profile` is the one command that takes the name positionally, after `--`.
+    func test_flagShapedProfileNamesOnlyEverFollowTheProfileFlag() throws {
+        for profile in ["--config=/etc/passwd", "-foo", "--help"] {
+            let commands: [CLICommand] = [
+                .proAuthToken(profile: profile), .proDoctor(profile: profile),
+                .schoolDepDevicesList(profile: profile), .schoolIBeaconsList(profile: profile),
+            ]
+            for command in commands {
+                let argv = command.argv
+                let index = try XCTUnwrap(argv.firstIndex(of: profile), "\(argv)")
+                XCTAssertEqual(argv[argv.index(before: index)], "-p", "\(argv)")
+                XCTAssertEqual(argv.filter { $0 == profile }.count, 1, "\(argv)")
+            }
+            let add = OnboardingFlow.proOAuth2Arguments(
+                profile: profile, url: "https://x.jamfcloud.com")
+            XCTAssertEqual(Array(add.suffix(2)), ["--", profile])
         }
     }
 

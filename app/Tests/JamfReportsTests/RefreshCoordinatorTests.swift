@@ -161,10 +161,10 @@ final class RefreshCoordinatorTests: XCTestCase {
     @MainActor
     func testRefreshIfStaleNoOpsForInvalidProfile() {
         let coordinator = RefreshCoordinator(bridge: CLIBridge())
-        // Spaces + punctuation fail ProfileService.isValid — the guard must
+        // A line break fails ProfileService.isValid — the guard must
         // catch it before any task is queued.
-        coordinator.refreshIfStale(profile: "Bad Profile!", tier: .refresh)
-        XCTAssertFalse(coordinator.isRefreshing(profile: "Bad Profile!", tier: .refresh))
+        coordinator.refreshIfStale(profile: "Bad\nProfile", tier: .refresh)
+        XCTAssertFalse(coordinator.isRefreshing(profile: "Bad\nProfile", tier: .refresh))
     }
 
     @MainActor

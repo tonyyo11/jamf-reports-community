@@ -245,7 +245,8 @@ private func scheduledRunSingle(
     // stream capture); the recorder is the structured per-run record.
     // Legacy plists without --label fall back to a profile+mode label so
     // their runs are recorded too.
-    let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(profile).\(mode.rawValue)"
+    let labelProfile = ProfileName.labelComponent(profile)
+    let runLabel = label ?? "\(LaunchAgentWriter.labelPrefix).\(labelProfile).\(mode.rawValue)"
     let recorder = ScheduledRunRecorder(workspace: workspace, label: runLabel)
     if recorder == nil {
         fputs("[warn] could not open run record in automation/logs — run will not appear in Run History\n", stderr)

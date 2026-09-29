@@ -366,7 +366,7 @@ struct OnboardingView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(Theme.Colors.danger)
                         }
-                        FieldHelp(text: "Use letters, numbers, hyphens, or underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
                 }
 
@@ -615,7 +615,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: binding(\.protectProfileName), placeholder: "protect", mono: true)
-                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {
@@ -714,7 +714,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 5) {
                         FieldLabel(label: "Profile name")
                         PNPTextField(value: binding(\.schoolProfileName), placeholder: "school", mono: true)
-                        FieldHelp(text: "Letters, numbers, hyphens, and underscores.")
+                        FieldHelp(text: "Any name without line breaks or spaces at either end.")
                     }
 
                     HStack(alignment: .top, spacing: 12) {

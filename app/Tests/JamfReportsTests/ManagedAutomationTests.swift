@@ -51,7 +51,7 @@ final class ManagedAutomationTests: XCTestCase {
     func testManagedBaseProfileSkipsUnsupportedNames() {
         var policy = AutomationPolicy()
         policy.isManaged = true
-        let names = ["Old Tenant", "Acme"]
+        let names = ["Old Tenant ", "Acme"]
         let base = ManagedAutomation.managedBaseProfile(names: names, policy: policy)
         XCTAssertEqual(base, "Acme")
         XCTAssertFalse(ManagedAutomation.desiredSchedules(for: policy, baseProfile: base).isEmpty)

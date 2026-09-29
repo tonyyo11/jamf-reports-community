@@ -3252,7 +3252,9 @@ struct ReportEngine: Sendable {
         guard ProfileService.isValid(profile) else {
             throw ReportEngineError.invalidProfile(profile)
         }
-        let workspace = workspacesRoot.appendingPathComponent(profile, isDirectory: true)
+        let workspace = workspacesRoot.appendingPathComponent(
+            ProfileName.pathComponent(profile), isDirectory: true
+        )
         let fm = FileManager.default
         let attrs: [FileAttributeKey: Any] = [.posixPermissions: NSNumber(value: Int16(0o700))]
         let paths = [

@@ -139,7 +139,7 @@ enum RunHistoryService {
                 .components(separatedBy: "/")
             // Expected: <profile>/automation/logs/<file>.log → 4 components minimum
             return parts.count >= 4
-                && ProfileService.isValid(parts[0])
+                && ProfileName.name(fromPathComponent: parts[0]).map(ProfileService.isValid) == true
                 && parts[1] == "automation"
                 && parts[2] == "logs"
         }

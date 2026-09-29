@@ -10,7 +10,9 @@ import XCTest
 ///
 /// Allowing capitals makes names that differ only by case possible; on the
 /// default case-insensitive volume those share one workspace folder, so the
-/// second spelling must never bind it or collect into it.
+/// second spelling must never bind it or collect into it. From 2.8.3 every name
+/// jamf-cli accepts is usable except a few (`ProfileNameTests`); "Old Tenant ",
+/// with its trailing space, stands for those here.
 @MainActor
 final class ProfileSlugCaseTests: XCTestCase {
 
@@ -37,17 +39,19 @@ final class ProfileSlugCaseTests: XCTestCase {
         }
     }
 
-    func testIsValidStillRejectsWhatPathsAndLabelsCannotCarry() {
-        let names = ["", "Acme Dev", "Acme.Dev", "Äcme", "-Acme", "_Acme", "A/B"]
-        for name in names {
+    func testIsValidRejectsOnlyNamesItCannotRepresent() {
+        for name in ["Acme Dev", "Acme.Dev", "Äcme", "-Acme", "_Acme", "A/B"] {
+            XCTAssertTrue(ProfileService.isValid(name), "'\(name)' is a jamf-cli name")
+        }
+        for name in ["", "Acme ", " Acme", "Acme\tDev", "Acme\nDev"] {
             XCTAssertFalse(ProfileService.isValid(name), "'\(name)' must stay invalid")
         }
     }
 
     func testUnusableProfilesFlagsUnsupportedNamesAndCaseVariants() {
         XCTAssertEqual(
-            ProfileService.unusableProfiles(in: ["Acme", "Acme-API", "Old Tenant"]),
-            ["Old Tenant": .unsupportedName]
+            ProfileService.unusableProfiles(in: ["Acme", "Acme-API", "Old Tenant "]),
+            ["Old Tenant ": .unsupportedName(.edgeWhitespace)]
         )
         // With no workspace folder yet, the lowercase spelling keeps it even when
         // listed second: it is the only one older builds could have created.
@@ -77,15 +81,15 @@ final class ProfileSlugCaseTests: XCTestCase {
     }
 
     func testInitialProfileSkipsProfilesTheAppCannotUse() {
-        let unusable = JamfCLIProfile(name: "Old Tenant", url: "", schedules: 0, status: .error)
+        let unusable = JamfCLIProfile(name: "Old Tenant ", url: "", schedules: 0, status: .error)
         let usable = JamfCLIProfile(name: "Acme", url: "", schedules: 0, status: .idle)
         XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable, usable])?.name, "Acme")
-        XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable])?.name, "Old Tenant")
+        XCTAssertEqual(WorkspaceStore.initialProfile(in: [unusable])?.name, "Old Tenant ")
         XCTAssertNil(WorkspaceStore.initialProfile(in: []))
 
         let both = [unusable, usable]
         XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "Acme", in: both), "Acme")
-        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "Old Tenant", in: both), "Acme",
+        XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "Old Tenant ", in: both), "Acme",
                        "a reload moves off a profile that became unusable")
         XCTAssertEqual(WorkspaceStore.activeProfile(keeping: "gone", in: both), "Acme")
         XCTAssertNil(WorkspaceStore.activeProfile(keeping: "Acme", in: []))
@@ -105,9 +109,11 @@ final class ProfileSlugCaseTests: XCTestCase {
     func testDiscoveryKeepsCapitalisedProfilesUsable() throws {
         let stub = tempRoot.appendingPathComponent("fake-cli")
         let json = #"[{"name":"Acme","url":"https://acme.example.invalid","auth-method":"oauth2","#
-            + #""default":true},{"name":"Acme-Dev","url":"https://acme-dev.example.invalid","#
+            + #""default":true},"#
+            + #"{"name":"Acme Prod","url":"https://acme-prod.example.invalid","auth-method":""},"#
+            + #"{"name":"Acme-Dev","url":"https://acme-dev.example.invalid","#
             + #""auth-method":"oauth2"},"#
-            + #"{"name":"Old Tenant","url":"https://old.example.invalid","auth-method":""},"#
+            + #"{"name":"Old Tenant ","url":"https://old.example.invalid","auth-method":""},"#
             + #"{"name":"acme-dev","url":"https://other.example.invalid","auth-method":""}]"#
         try Data("#!/bin/sh\nprintf '%s' '\(json)'\n".utf8).write(to: stub)
         try FileManager.default.setAttributes(
@@ -125,8 +131,9 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertEqual(byName["acme-dev"]?.status, .idle)
         XCTAssertEqual(byName["Acme-Dev"]?.status, .error)
         XCTAssertEqual(byName["Acme-Dev"]?.authMethod, "(same folder as acme-dev)")
-        XCTAssertEqual(byName["Old Tenant"]?.status, .error)
-        XCTAssertEqual(byName["Old Tenant"]?.authMethod, "(unsupported name)")
+        XCTAssertEqual(byName["Acme Prod"]?.status, .idle, "a space is fine from 2.8.3")
+        XCTAssertEqual(byName["Old Tenant "]?.status, .error)
+        XCTAssertEqual(byName["Old Tenant "]?.authMethod, "(unsupported name)")
     }
 
     /// The config-file fallback (jamf-cli missing or failing) reads the same
@@ -143,19 +150,23 @@ final class ProfileSlugCaseTests: XCTestCase {
                 url: https://acme-dev.example.invalid
             acme-dev:
                 url: https://other.example.invalid
-            Old Tenant:
+            "Old Tenant ":
                 url: https://old.example.invalid
+            Acme Prod:
+                url: https://acme-prod.example.invalid
 
         """.utf8).write(to: config)
 
         let rows = ProfileService.fallbackConfigProfiles(scheduleCounts: [:], configURL: config)
         let byName = Dictionary(uniqueKeysWithValues: rows.map { ($0.name, $0) })
 
-        XCTAssertEqual(rows.count, 4, "unusable profiles stay listed so Settings can say why")
+        XCTAssertEqual(rows.count, 5, "unusable profiles stay listed so Settings can say why")
         XCTAssertEqual(byName["Acme"]?.status, .ok)
         XCTAssertEqual(byName["acme-dev"]?.status, .idle)
         XCTAssertEqual(byName["Acme-Dev"]?.authMethod, "(same folder as acme-dev)")
-        XCTAssertEqual(byName["Old Tenant"]?.authMethod, "(unsupported name)")
+        XCTAssertEqual(byName["Old Tenant "]?.authMethod, "(unsupported name)",
+                       "a quoted key is read without its quotes")
+        XCTAssertEqual(byName["Acme Prod"]?.status, .idle)
     }
 
     func testLocalWorkspaceMergeTreatsADifferentSpellingAsTheProfilesFolder() throws {
@@ -175,7 +186,7 @@ final class ProfileSlugCaseTests: XCTestCase {
     func testMultiProfileRunsSkipProfilesTheAppCannotUse() {
         let profiles = [
             JamfCLIProfile(name: "Acme", url: "", schedules: 0, status: .ok),
-            JamfCLIProfile(name: "Old Tenant", url: "", schedules: 0, status: .error),
+            JamfCLIProfile(name: "Old Tenant ", url: "", schedules: 0, status: .error),
             JamfCLIProfile(name: "prod", url: "", schedules: 0, status: .idle),
         ]
         XCTAssertEqual(
@@ -201,12 +212,12 @@ final class ProfileSlugCaseTests: XCTestCase {
     #endif
 
     func testSetupNeverSelectsOrRunsProfilesItCannotUse() async {
-        let flow = ExistingCLISetupFlow(profileNames: ["Acme", "Old Tenant", "ACME"])
-        XCTAssertEqual(flow.unusable["Old Tenant"], .unsupportedName)
+        let flow = ExistingCLISetupFlow(profileNames: ["Acme", "Old Tenant ", "ACME"])
+        XCTAssertEqual(flow.unusable["Old Tenant "], .unsupportedName(.edgeWhitespace))
         XCTAssertEqual(flow.unusable["ACME"], .sharesFolder(with: "Acme"))
         XCTAssertEqual(flow.selected, ["Acme"])
 
-        flow.selected.insert("Old Tenant")
+        flow.selected.insert("Old Tenant ")
         var initialized: [String] = []
         await flow.run(
             initialize: { initialized.append($0); return 0 },
@@ -220,15 +231,15 @@ final class ProfileSlugCaseTests: XCTestCase {
     func testInitializeWorkspaceRejectsUnsupportedNameWithItsReason() async {
         do {
             _ = try await CLIBridge().initializeWorkspace(
-                profile: "Old Tenant", onLine: CLIBridge.noOpOnLine
+                profile: "Old Tenant ", onLine: CLIBridge.noOpOnLine
             )
             XCTFail("an unsupported name must not initialize")
         } catch let error as CLIBridgeError {
-            XCTAssertEqual(error, .invalidProfile("Old Tenant"))
+            XCTAssertEqual(error, .invalidProfile("Old Tenant "))
             XCTAssertFalse(error.localizedDescription.contains("not found"),
                            "the reported failure blamed a missing workspace")
-            XCTAssertTrue(error.localizedDescription.contains("letters, numbers"),
-                          "the message says what a name may contain")
+            XCTAssertTrue(error.localizedDescription.contains("starts or ends with a space"),
+                          "the message says what is wrong with the name")
         } catch {
             XCTFail("unexpected error: \(error)")
         }
