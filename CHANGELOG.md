@@ -43,6 +43,9 @@ screen keeps profiles that share a folder apart.
 - When several profiles save reports to the same folder, the Reports screen keeps each
   profile's reports apart: choosing `acme` no longer also lists `acme-dev` reports. The profile
   menu is now a checklist, so you can show one profile, several, or all of them.
+- In that same shared folder, keeping only the latest runs no longer moves another profile's
+  workbooks: `acme` used to count `acme-dev`'s workbooks as its own and move the older ones into
+  its archive folder.
 
 ## [2.8.1] - 2026-09-26
 
