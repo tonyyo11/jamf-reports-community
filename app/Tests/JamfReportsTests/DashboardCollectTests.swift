@@ -124,6 +124,7 @@ final class DashboardCollectTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertNotNil(store.lastRun(report: "dashboard"))
         XCTAssertTrue(callsLog().contains("dashboard --output json --out-file "), callsLog())
+        assertStagingFilesRemoved()
     }
 
     func testAnOlderJamfCLISkipsItAndRecordsNothing() async throws {
@@ -156,6 +157,55 @@ final class DashboardCollectTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertEqual(store.failures(report: "dashboard")?.count, 1)
         XCTAssertEqual(store.lastFailureExitCode(for: "dashboard"), 5)
+        assertStagingFilesRemoved()
+    }
+
+    /// jamf-cli creates the out-file before it signs in, so exit 0 with no page in it
+    /// must not land.
+    func testAnExitZeroWithoutAPageSavesNothingAndIsCounted() async throws {
+        try answer("dashboard.html", #"{"error":"not a page"}"#)
+        _ = try await runCollect()
+        XCTAssertNil(newestPage())
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        XCTAssertEqual(store.failures(report: "dashboard")?.count, 1)
+    }
+
+    func testAProtectProfileThatStopsTheRunIsDroppedAndTheRunRetried() async throws {
+        try writeConfig("""
+        jamf_cli:
+          profile: "\(profile)"
+        protect:
+          enabled: true
+          profile: "dashprof-protect"
+        """)
+        try answer("dashboard.html", page)
+        try answer("dashboard.protect.exit", "2")
+        let log = try await runCollect()
+        let runs = callsLog().split(separator: "\n").filter { $0.contains(" dashboard ") }
+        XCTAssertEqual(runs.count, 2, callsLog())
+        XCTAssertTrue(runs.first?.contains("--include-profile=dashprof-protect") == true)
+        XCTAssertFalse(runs.last?.contains("--include-profile=") == true)
+        XCTAssertNotNil(newestPage(), "the page lands without the Protect card")
+        XCTAssertTrue(log.contains("[warn] dashboard: jamf-cli stopped with the Protect "
+                                   + "profile included (exit 2); collecting without it"), "\(log)")
+        assertStagingFilesRemoved()
+    }
+
+    /// Takes one in-run retry, so about three seconds.
+    func testALaunchFailureRecordsTheSentinelAndSavesNothing() async throws {
+        let dataDir = root.appendingPathComponent("data", isDirectory: true)
+        let store = StateFileStore(directory: root.appendingPathComponent("state"))
+        let bridge = await MainActor.run { CLIBridge() }
+        let result = try await ReportEngine.collectDashboard(
+            profile: profile, arguments: ["-p", profile, "dashboard", "--output", "json"],
+            supportsQuietFlags: false, bin: binDir.appendingPathComponent("missing-cli"),
+            bridge: bridge, dataDir: dataDir, recordManifest: false, useCachedData: true,
+            stateStore: store, collectStart: Date(), onLine: DashboardLogCollector().append)
+        XCTAssertEqual(result.outcome.exitCode, ReportEngine.launchFailureExitCode)
+        XCTAssertFalse(result.saved)
+        XCTAssertEqual(store.failures(report: "dashboard")?.count, 1)
+        XCTAssertNil(FileManager.newestHTMLSnapshot(
+            in: dataDir.appendingPathComponent("dashboard", isDirectory: true)))
     }
 
     func testTheProtectProfileRidesAlong() async throws {
@@ -200,6 +250,17 @@ final class DashboardCollectTests: XCTestCase {
             ?? ""
     }
 
+    /// Every `--out-file` the stub was handed is gone once collect returns.
+    private func assertStagingFilesRemoved(file: StaticString = #filePath, line: UInt = #line) {
+        let paths = callsLog().components(separatedBy: " --out-file ").dropFirst()
+            .compactMap { $0.split(whereSeparator: { $0 == " " || $0 == "\n" }).first }
+        XCTAssertFalse(paths.isEmpty, "no --out-file in the calls log", file: file, line: line)
+        for path in paths {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: String(path)),
+                           "staging file left behind: \(path)", file: file, line: line)
+        }
+    }
+
     private func newestPage() -> URL? {
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return nil }
         return FileManager.newestHTMLSnapshot(
@@ -208,7 +269,9 @@ final class DashboardCollectTests: XCTestCase {
 
     /// `--version` → answers/version (default 1.31.1). `dashboard … --out-file P` copies
     /// answers/dashboard.html to P when present, prints answers/dashboard.stdout, and
-    /// exits with answers/dashboard.exit (default 0). Anything else prints [] and exits 0.
+    /// exits with answers/dashboard.exit (default 0), except that a run naming
+    /// `--include-profile=` exits with answers/dashboard.protect.exit, when present,
+    /// before writing anything. Anything else prints [] and exits 0.
     private func makeStub() throws -> URL {
         let url = binDir.appendingPathComponent("stub-cli")
         let script = """
@@ -220,6 +283,9 @@ final class DashboardCollectTests: XCTestCase {
             if [ -f "$A/version" ]; then cat "$A/version"; else echo "jamf-cli version 1.31.1"; fi
             exit 0 ;;
           *" dashboard "*)
+            case "$*" in *--include-profile=*)
+              if [ -f "$A/dashboard.protect.exit" ]; then exit "$(cat "$A/dashboard.protect.exit")"; fi ;;
+            esac
             out=""; prev=""
             for a in "$@"; do
               if [ "$prev" = "--out-file" ]; then out="$a"; fi
