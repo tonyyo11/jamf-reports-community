@@ -235,6 +235,21 @@ final class SnapshotManifestTests: XCTestCase {
         XCTAssertEqual(summary.omitted, 0)
     }
 
+    /// jamf-cli's dashboard is saved as `.html` and runs as script in the report, so the
+    /// strict-mode scan has to verify it like the JSON kinds.
+    func testScanWorkspaceVerifiesTheDashboardPage() throws {
+        let page = Data("<!DOCTYPE html><html><head></head><body></body></html>".utf8)
+        try ReportEngine.saveSnapshot(
+            data: page, kind: ReportEngine.dashboardKind, dataDir: tempRoot,
+            fileExtension: "html", recordManifest: true)
+        XCTAssertEqual(SnapshotManifest.scanWorkspace(dataDir: tempRoot).verified, 1)
+
+        let dir = tempRoot.appendingPathComponent(ReportEngine.dashboardKind, isDirectory: true)
+        let saved = try XCTUnwrap(FileManager.newestHTMLSnapshot(in: dir))
+        try Data("<html><script>tampered()</script></html>".utf8).write(to: saved)
+        XCTAssertEqual(SnapshotManifest.scanWorkspace(dataDir: tempRoot).mismatch, 1)
+    }
+
     // MARK: - Helpers
 
     private func writeManifest(files: [String: String]) throws {

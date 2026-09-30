@@ -26,6 +26,12 @@ versions in this repository map to git tags.
   each remaining profile, and switching profiles while Settings was open could mark a
   connection's token invalid when it wasn't.
 
+### Security
+
+- With `jamf_cli.require_manifest` on, report generation also checks the saved jamf-cli
+  dashboard page against its manifest, and stops if the page was changed after collect. The
+  page runs in the HTML report, so it gets the same check as every other snapshot.
+
 ## [2.8.3] - 2026-09-29
 
 Every jamf-cli profile name works in Jamf Reports, whatever it contains: spaces, dots, accented
