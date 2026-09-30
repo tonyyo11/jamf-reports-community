@@ -14,10 +14,4 @@ enum AppConstants {
     /// 365 the bucket is wider than the typical Jamf lifecycle so we cap it.
     static let staleDaysMin = 1
     static let staleDaysMax = 365
-
-    /// Range for the "Keep latest runs" picker in the Customize wizard.
-    /// Below 1 disables the on-disk archive behavior; above 50 the directory
-    /// listing in the GUI gets sluggish on slower disks.
-    static let keepLatestRunsMin = 1
-    static let keepLatestRunsMax = 50
 }
