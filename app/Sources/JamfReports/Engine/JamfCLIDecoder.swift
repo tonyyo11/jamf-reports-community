@@ -648,21 +648,7 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
         guard let dataType, !dataType.isEmpty else { return "Unknown" }
         return dataType.capitalized
     }
-
-    /// Maps Jamf `dataType` to a `custom_eas` type string for config.yaml.
-    var inferredEAType: String {
-        switch (dataType ?? "").uppercased() {
-        case "BOOLEAN":  return "boolean"
-        case "DATE":     return "date"
-        // An Integer EA is any number (a count, days, a size), so it is not assumed to be a
-        // percentage: that type reads values above 100 as No Data.
-        default:         return "text"
-        }
-    }
 }
-
-/// Alias retained for any call sites that referenced the old name.
-typealias ExtensionAttributeDefinition = ExtensionAttribute
 
 // MARK: - Software installs
 // `jamf-cli pro report software-installs --output json`
