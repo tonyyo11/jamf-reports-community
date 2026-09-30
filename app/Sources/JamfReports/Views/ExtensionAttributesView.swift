@@ -498,10 +498,10 @@ struct ExtensionAttributesView: View {
                         }
                         .width(min: 150, ideal: 200)
 
-                        TableColumn("Type") { definition in
+                        TableColumn("Data Type") { definition in
                             Pill(
-                                text: definition.inferredEAType,
-                                tone: pillTone(for: definition.inferredEAType)
+                                text: definition.dataTypeLabel,
+                                tone: pillTone(for: definition.dataType)
                             )
                         }
                         .width(min: 80, ideal: 100)
@@ -532,13 +532,11 @@ struct ExtensionAttributesView: View {
         }
     }
 
-    private func pillTone(for eaType: String) -> Pill.Tone {
-        switch eaType {
-        case "boolean":    return .teal
-        case "date":       return .gold
-        case "percentage": return .warn
-        case "text":       return .muted
-        default:           return .muted
+    private func pillTone(for dataType: String?) -> Pill.Tone {
+        switch (dataType ?? "").uppercased() {
+        case "INTEGER": return .teal
+        case "DATE":    return .gold
+        default:        return .muted
         }
     }
 

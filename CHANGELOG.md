@@ -16,6 +16,11 @@ versions in this repository map to git tags.
   as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
   says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
 
+### Fixed
+
+- Extension Attributes → EA Definitions shows each attribute's data type as Jamf Pro names it
+  (Integer, String, Date). It used to label every Integer attribute "percentage".
+
 ## [2.8.3] - 2026-09-29
 
 Every jamf-cli profile name works in Jamf Reports, whatever it contains: spaces, dots, accented

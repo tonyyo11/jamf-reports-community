@@ -639,16 +639,20 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
         case id, name, dataType, description, inputType, enabled
     }
 
+    /// Jamf's own name for `dataType` ("Integer", "String", "Date"), as the Jamf Pro console
+    /// shows it.
+    var dataTypeLabel: String {
+        guard let dataType, !dataType.isEmpty else { return "Unknown" }
+        return dataType.capitalized
+    }
+
     /// Maps Jamf `dataType` to a `custom_eas` type string for config.yaml.
     var inferredEAType: String {
         switch (dataType ?? "").uppercased() {
         case "BOOLEAN":  return "boolean"
         case "DATE":     return "date"
-        // INTEGER → percentage is a heuristic, not a 1:1 mapping: most INTEGER
-        // EAs we've seen in real tenants are percentages (disk usage, battery
-        // capacity). Tenants with raw-count INTEGER EAs should override the
-        // generated `type` in config.yaml.
-        case "INTEGER":  return "percentage"
+        // An Integer EA is any number (a count, days, a size), so it is not assumed to be a
+        // percentage: that type reads values above 100 as No Data.
         default:         return "text"
         }
     }

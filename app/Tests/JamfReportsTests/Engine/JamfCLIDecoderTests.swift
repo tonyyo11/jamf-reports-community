@@ -172,12 +172,22 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(eas[0].inferredEAType, "date")
     }
 
-    func testExtensionAttributeDecodesIntegerAsPercentage() throws {
+    func testExtensionAttributeDecodesIntegerAsText() throws {
         let json = """
-        [{"id":"3","name":"Disk Usage","dataType":"INTEGER","inputType":"SCRIPT","enabled":true}]
+        [{"id":"3","name":"Battery Cycle Count","dataType":"INTEGER",
+          "inputType":"SCRIPT","enabled":true}]
         """
         let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
-        XCTAssertEqual(eas[0].inferredEAType, "percentage")
+        XCTAssertEqual(eas[0].inferredEAType, "text")
+        XCTAssertEqual(eas[0].dataTypeLabel, "Integer")
+    }
+
+    func testExtensionAttributeDataTypeLabelWithoutDataType() throws {
+        let json = """
+        [{"id":"5","name":"No Type"},{"id":"6","name":"Empty Type","dataType":""}]
+        """
+        let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
+        XCTAssertEqual(eas.map(\.dataTypeLabel), ["Unknown", "Unknown"])
     }
 
     func testExtensionAttributeDecodesStringAsText() throws {
@@ -186,6 +196,7 @@ final class JamfCLIDecoderTests: XCTestCase {
         """
         let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
         XCTAssertEqual(eas[0].inferredEAType, "text")
+        XCTAssertEqual(eas[0].dataTypeLabel, "String")
         XCTAssertEqual(eas[0].enabled, false)
     }
 
