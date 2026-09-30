@@ -144,6 +144,9 @@ final class ModalsViewPolishTests: XCTestCase {
         let state = GenerateSheetState()
         let templates = TemplateResolver.allTemplates
         XCTAssertFalse(templates.isEmpty, "TemplateResolver must expose at least one template")
+        // "custom" resolves to Executive without a persisted selection.
+        state.customSelectedSheets = [.executiveSummary]
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
 
         for template in templates {
             state.selectedTemplateID = template.identifier
