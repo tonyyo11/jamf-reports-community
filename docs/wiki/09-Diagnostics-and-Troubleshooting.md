@@ -124,12 +124,17 @@ which jamf-cli
 The app falls back to CSV-only / cached-snapshot mode when jamf-cli is absent and shows a
 notice.
 
-**`401 Unauthorized` / token expired.** The OAuth token jamf-cli stored has expired or
-been revoked. Re-authenticate:
+**`401 Unauthorized` / token expired.** The OAuth token jamf-cli stored has
+expired or been revoked. Re-authenticate from **Data Sources → Connection
+health → Update credentials…**, or in Terminal:
 
 ```bash
 jamf-cli pro setup --url https://your-instance.jamfcloud.com
 ```
+
+For a Jamf Platform API profile, use **Update credentials…**, which also checks
+the environment or tenant ID. A Jamf Account integration is valid for six
+months; an expired one needs a replacement in Jamf Account first.
 
 **Profile name rejected.** The app uses any name jamf-cli accepts (spaces, dots, accented
 letters and punctuation included) except one with a line break or tab, one that starts or ends
