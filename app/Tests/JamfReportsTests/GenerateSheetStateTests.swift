@@ -200,6 +200,8 @@ final class GenerateSheetStateTests: XCTestCase {
     }
 
     func testCustomSelectedSheetsStartsEmpty() {
+        // A selection left by an interrupted run would persist into this one.
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
         let state = GenerateSheetState()
         XCTAssertTrue(state.customSelectedSheets.isEmpty)
     }
