@@ -885,8 +885,8 @@ struct CoreDashboard: Sendable {
             ws.write(item["id"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
             // jamf-cli writes `dataType`; `data_type` is the legacy `ea-definitions` spelling.
-            let dataType = item["dataType"] as? String ?? item["data_type"] as? String ?? ""
-            ws.write(dataType, row: row, col: 2, format: .cell)
+            let dataType = item["dataType"] as? String ?? item["data_type"] as? String
+            ws.write(ExtensionAttribute.dataTypeLabel(dataType), row: row, col: 2, format: .cell)
             ws.write(item["description"] as? String ?? "", row: row, col: 3, format: .cell)
             row += 1
         }

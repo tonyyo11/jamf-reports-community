@@ -653,7 +653,28 @@ final class CoreDashboardTests: XCTestCase {
         let ws = try XCTUnwrap(dash.workbook.sheet(named: "EA Definitions"))
         XCTAssertEqual(rowText(ws, row: 3, columns: 4), ["ID", "Name", "Data Type", "Description"])
         XCTAssertEqual(rowText(ws, row: 4, columns: 4),
-                       ["7", "Battery Cycle Count", "INTEGER", "Cycles"])
+                       ["7", "Battery Cycle Count", "Integer", "Cycles"],
+                       "the label the app's EA Definitions screen shows")
+    }
+
+    /// The legacy `ea-definitions` kind spells it `data_type`; no type reads Unknown.
+    func testWriteEADefinitionsReadsLegacyDataType() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        let subdir = tmp.appendingPathComponent("ea-definitions", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let json = """
+        [{"id":"8","name":"Cert Expiry","description":"Cert","data_type":"DATE"},
+         {"id":"9","name":"No Type","description":"None"}]
+        """
+        try Data(json.utf8).write(to: subdir.appendingPathComponent("ea-definitions.json"))
+
+        let dash = makeDashboard(dataDir: tmp)
+        try dash.writeEADefinitions()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "EA Definitions"))
+        XCTAssertEqual(rowText(ws, row: 4, columns: 4), ["8", "Cert Expiry", "Date", "Cert"])
+        XCTAssertEqual(rowText(ws, row: 5, columns: 4), ["9", "No Type", "Unknown", "None"])
     }
 
     /// No `protect-overview` fixture exists in the corpus, so write jamf-cli's overview

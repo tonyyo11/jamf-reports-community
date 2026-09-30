@@ -21,7 +21,7 @@ versions in this repository map to git tags.
 - Extension Attributes → EA Definitions shows each attribute's data type as Jamf Pro names it
   (Integer, String, Date). It used to label every Integer attribute "percentage".
 - The workbook's EA Definitions sheet fills in the Data Type column, which was blank for data
-  collected with jamf-cli.
+  collected with jamf-cli. It uses the same names as the app's EA Definitions screen.
 - Leaving Settings stops its connection checks. It used to keep starting a jamf-cli run for
   each remaining profile, and switching profiles while Settings was open could mark a
   connection's token invalid when it wasn't.

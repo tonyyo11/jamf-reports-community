@@ -641,7 +641,10 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
 
     /// Jamf's own name for `dataType` ("Integer", "String", "Date"), as the Jamf Pro console
     /// shows it.
-    var dataTypeLabel: String {
+    var dataTypeLabel: String { Self.dataTypeLabel(dataType) }
+
+    /// The one label rule, shared with the workbook's EA Definitions sheet.
+    static func dataTypeLabel(_ dataType: String?) -> String {
         guard let dataType, !dataType.isEmpty else { return "Unknown" }
         return dataType.capitalized
     }
