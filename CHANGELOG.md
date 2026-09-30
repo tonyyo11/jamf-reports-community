@@ -20,6 +20,8 @@ versions in this repository map to git tags.
 
 - Extension Attributes → EA Definitions shows each attribute's data type as Jamf Pro names it
   (Integer, String, Date). It used to label every Integer attribute "percentage".
+- The workbook's EA Definitions sheet fills in the Data Type column, which was blank for data
+  collected with jamf-cli.
 
 ## [2.8.3] - 2026-09-29
 

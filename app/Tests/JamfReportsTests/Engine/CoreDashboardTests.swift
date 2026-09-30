@@ -633,6 +633,29 @@ final class CoreDashboardTests: XCTestCase {
         return text
     }
 
+    /// jamf-cli writes `dataType`; the sheet read `data_type` and left the column blank.
+    func testWriteEADefinitionsReadsDataType() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        let subdir = tmp.appendingPathComponent("computer-extension-attributes", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let json = """
+        [{"id":"7","name":"Battery Cycle Count","description":"Cycles","dataType":"INTEGER",
+          "inputType":"SCRIPT","enabled":true}]
+        """
+        try Data(json.utf8).write(
+            to: subdir.appendingPathComponent("computer-extension-attributes.json")
+        )
+
+        let dash = makeDashboard(dataDir: tmp)
+        try dash.writeEADefinitions()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "EA Definitions"))
+        XCTAssertEqual(rowText(ws, row: 3, columns: 4), ["ID", "Name", "Data Type", "Description"])
+        XCTAssertEqual(rowText(ws, row: 4, columns: 4),
+                       ["7", "Battery Cycle Count", "INTEGER", "Cycles"])
+    }
+
     /// No `protect-overview` fixture exists in the corpus, so write jamf-cli's overview
     /// shape inline: section, resource and value, plus `status` on highlighted lines.
     func testWriteProtectOverview() throws {
