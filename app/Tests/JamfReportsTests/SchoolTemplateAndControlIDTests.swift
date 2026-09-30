@@ -1,12 +1,10 @@
 import XCTest
 @testable import JamfReports
 
-// MARK: - WizardQ3Tests
+// MARK: - SchoolTemplateAndControlIDTests
 
-/// Lane Q3 acceptance tests:
-///   - SchoolTemplate registration and resolution
-///   - ControlID parsing (canonical vs. non-canonical)
-final class WizardQ3Tests: XCTestCase {
+/// SchoolTemplate registration and resolution, and ControlID parsing (canonical vs. non-canonical).
+final class SchoolTemplateAndControlIDTests: XCTestCase {
 
     // MARK: - #4 SchoolTemplate
 
