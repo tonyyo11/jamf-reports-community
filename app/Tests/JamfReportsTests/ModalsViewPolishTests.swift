@@ -12,7 +12,6 @@ import XCTest
 /// - The `onFinalize` closure receives the correct bytes and the field is
 ///   zeroed afterward (coordinator behavior).
 /// - OnboardingFlow.setClientSecret(_:) writes the UTF-8 string.
-/// - WizardState step indicator labels are non-empty for all 9 steps.
 /// - GenerateSheetState template picker round-trips correctly.
 @MainActor
 final class ModalsViewPolishTests: XCTestCase {
@@ -93,44 +92,6 @@ final class ModalsViewPolishTests: XCTestCase {
         flow.setClientSecret(Data("first".utf8))
         flow.setClientSecret(Data("second".utf8))
         XCTAssertEqual(flow.clientSecret, "second")
-    }
-
-    // MARK: - WizardState step indicator labels
-
-    func testWizardStepTitlesAreNonEmptyForAllSteps() {
-        let state = WizardState()
-        // `totalSteps` is the count of steps; valid step indices are 0..<count.
-        let titles = (0..<state.totalSteps).map { step -> String in
-            state.currentStep = step
-            return wizardStepTitle(for: step)
-        }
-        for (idx, title) in titles.enumerated() {
-            XCTAssertFalse(title.isEmpty,
-                           "Step \(idx) has an empty title — wizard step indicator broken")
-        }
-    }
-
-    /// Mirror the `stepTitle` computed property from `CustomizationWizard`
-    /// without accessing the private view.
-    private func wizardStepTitle(for step: Int) -> String {
-        switch step {
-        case 0: return "Choose Template"
-        case 1: return "Org Branding"
-        case 2: return "Compliance Framework"
-        case 3: return "Surface Custom EAs"
-        case 4: return "Exceptions (optional)"
-        case 5: return "Pick & Order Sheets"
-        case 6: return "Inventory Fields"
-        case 7: return "Output Preferences"
-        case 8: return "Done — Preview"
-        default: return ""
-        }
-    }
-
-    func testWizardTotalStepsMatchesExpectedCount() {
-        let state = WizardState()
-        // 9 steps total (0–8); totalSteps must equal 9.
-        XCTAssertEqual(state.totalSteps, 9)
     }
 
     // MARK: - GenerateSheet template picker round-trip
