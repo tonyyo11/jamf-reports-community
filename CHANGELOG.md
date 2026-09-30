@@ -22,6 +22,9 @@ versions in this repository map to git tags.
   (Integer, String, Date). It used to label every Integer attribute "percentage".
 - The workbook's EA Definitions sheet fills in the Data Type column, which was blank for data
   collected with jamf-cli.
+- Leaving Settings stops its connection checks. It used to keep starting a jamf-cli run for
+  each remaining profile, and switching profiles while Settings was open could mark a
+  connection's token invalid when it wasn't.
 
 ## [2.8.3] - 2026-09-29
 

@@ -97,6 +97,7 @@ struct SettingsView: View {
             workspaceRootPath = ProfileService.workspacesRoot().path
             workspace.reloadFromDisk()
             await loadTokenStatuses()
+            guard !Task.isCancelled else { return }
             await probePlatformCapability()
         }
     }
@@ -594,14 +595,31 @@ struct SettingsView: View {
 
     private func loadTokenStatuses() async {
         let bridge = CLIBridge()
-        let profiles = workspace.profiles
-        for profile in profiles where profile.status != .error {
-            loadingTokenProfiles.insert(profile.name)
-            let status = await bridge.tokenStatus(for: profile.name)
-            loadingTokenProfiles.remove(profile.name)
-            if let status {
-                tokenStatuses[profile.name] = status
-            }
+        let names = workspace.profiles.filter { $0.status != .error }.map(\.name)
+        await Self.probeTokenStatuses(
+            for: names,
+            probe: { name in
+                loadingTokenProfiles.insert(name)
+                defer { loadingTokenProfiles.remove(name) }
+                return await bridge.tokenStatus(for: name)
+            },
+            onStatus: { name, status in tokenStatuses[name] = status }
+        )
+    }
+
+    /// Probes each profile in turn until the task is cancelled (Settings closed or its profile
+    /// changed): no jamf-cli run starts after that, and the cancelled run's result is dropped.
+    static func probeTokenStatuses(
+        for names: [String],
+        probe: (String) async -> TokenStatus?,
+        onStatus: (String, TokenStatus) -> Void
+    ) async {
+        for name in names {
+            if Task.isCancelled { return }
+            let status = await probe(name)
+            // A terminated jamf-cli reads as an invalid token, which is not what the profile has.
+            if Task.isCancelled { return }
+            if let status { onStatus(name, status) }
         }
     }
 
