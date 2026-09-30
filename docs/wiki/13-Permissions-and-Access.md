@@ -141,6 +141,11 @@ to list categories.
 shows N/A for any line the credential cannot read and keeps the rest. The areas above cover
 its main lines; grant more only to fill a specific line you need.
 
+**jamf-cli's dashboard** (jamf-cli 1.31.0 or later, for the HTML report) reads the same
+inventory, groups, patch titles and audit checks as the areas above and, on a Platform API
+profile, blueprints and benchmarks. A section the credential cannot read is left out of the
+page, which says so at the top; the rest of the page still lands.
+
 **Backups** (optional) read every object type they export. A type the credential cannot
 read is listed in the backup's `_failures` file and the rest is kept, so a read-limited
 credential produces a partial backup rather than none.

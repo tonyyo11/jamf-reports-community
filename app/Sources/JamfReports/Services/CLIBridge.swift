@@ -139,7 +139,7 @@ final class CLIBridge {
                     guard let data = try? Data(contentsOf: item.url) else { return nil }
                     // S-01: reject truncated / malformed snapshots so a
                     // partially-written file from a crash mid-write does
-                    // not render green in AuditView or CustomizationWizard.
+                    // not render green in AuditView.
                     // Structural JSON probe is the
                     // cheapest check that catches every case the
                     // downstream decoder would. Default JSONSerialization

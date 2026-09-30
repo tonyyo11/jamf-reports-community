@@ -179,6 +179,11 @@ screen. These include:
 - Group lists (smart-computer-groups, classic-mobile-device-groups) — excel and HTML
   group hygiene analysis
 - Audit and patch release dates — supporting data for trend calculations
+- jamf-cli's dashboard (jamf-cli 1.31.0 or later) — one page of fleet-wide totals across
+  Jamf Pro and, where the profile reaches them, the Jamf Platform API, Jamf Protect and
+  Jamf Security Cloud. It is saved as `.html` under `jamf-cli-data/dashboard/` every two
+  days and shown as the HTML report's last section. Add `dashboard` to
+  `jamf_cli.collect_skip` to stop collecting it.
 
 This is intentional. The app focuses on device posture and compliance; detailed policy
 audit trails and app inventories are report outputs, not interactive screens.

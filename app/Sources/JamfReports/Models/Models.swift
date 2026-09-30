@@ -316,15 +316,6 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     }
 }
 
-// MARK: - Sheet item (CustomizationWizard, TemplateApplier tests)
-
-struct SheetItem: Identifiable, Sendable {
-    var id: String { name }
-    let name: String
-    let req: String   // "csv" | "cli" | "cli-1.2+" | "chart" | "platform"
-    var on: Bool
-}
-
 // MARK: - Column mappings (Config screen)
 
 struct ColumnMapping: Identifiable, Sendable {

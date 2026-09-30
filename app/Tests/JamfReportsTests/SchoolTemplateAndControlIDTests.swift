@@ -1,13 +1,10 @@
 import XCTest
 @testable import JamfReports
 
-// MARK: - WizardQ3Tests
+// MARK: - SchoolTemplateAndControlIDTests
 
-/// Lane Q3 acceptance tests:
-///   - SchoolTemplate registration and resolution
-///   - ControlID parsing (canonical vs. non-canonical)
-///   - WizardState accept-draft flow: expiresDate honored; absent expiry sets warning flag
-final class WizardQ3Tests: XCTestCase {
+/// SchoolTemplate registration and resolution, and ControlID parsing (canonical vs. non-canonical).
+final class SchoolTemplateAndControlIDTests: XCTestCase {
 
     // MARK: - #4 SchoolTemplate
 
@@ -117,73 +114,5 @@ final class WizardQ3Tests: XCTestCase {
         let decoded = try JSONDecoder().decode(ControlID.self, from: data)
         XCTAssertEqual(decoded.raw, original.raw)
         XCTAssertEqual(decoded.isCanonical, original.isCanonical)
-    }
-
-    // MARK: - #17 WizardState accept-draft expiry flow
-
-    @MainActor
-    func testAcceptDraftWithExpiryDateStoresDate() {
-        let state = WizardState()
-        let draft = makeDraft(id: "EXC-001")
-        state.exceptionDrafts = [draft]
-
-        state.acceptDraft(draft, expiresDate: "2027-01-01")
-
-        XCTAssertEqual(state.exceptions.count, 1)
-        XCTAssertEqual(
-            state.exceptions.first?.expiresDate, "2027-01-01",
-            "expiresDate must be stored on the accepted exception"
-        )
-        // With an explicit date, the no-expiry warning should NOT be set.
-        XCTAssertFalse(
-            state.hasNoExpiryWarning,
-            "hasNoExpiryWarning must not be set when expiresDate is provided"
-        )
-    }
-
-    @MainActor
-    func testAcceptDraftWithoutExpiryDateSetsWarningFlag() {
-        let state = WizardState()
-        let draft = makeDraft(id: "EXC-002")
-        state.exceptionDrafts = [draft]
-
-        state.acceptDraft(draft, expiresDate: nil)
-
-        XCTAssertEqual(state.exceptions.count, 1)
-        XCTAssertNil(
-            state.exceptions.first?.expiresDate,
-            "expiresDate must be nil when not provided"
-        )
-        XCTAssertTrue(
-            state.hasNoExpiryWarning,
-            "hasNoExpiryWarning must be true when expiresDate is absent"
-        )
-    }
-
-    @MainActor
-    func testAcceptDraftRemovesDraftFromPending() {
-        let state = WizardState()
-        let draft = makeDraft(id: "EXC-003")
-        state.exceptionDrafts = [draft]
-
-        state.acceptDraft(draft, expiresDate: "2026-12-31")
-
-        XCTAssertTrue(
-            state.exceptionDrafts.isEmpty,
-            "Accepted draft must be removed from exceptionDrafts"
-        )
-    }
-
-    // MARK: - Helpers
-
-    private func makeDraft(id: String) -> CLISuggester.DraftException {
-        CLISuggester.DraftException(
-            draftId: id,
-            description: "Test exception \(id)",
-            linkedFinding: nil,
-            proposedSignedOffBy: "Test User",
-            proposedSignedOffDate: "2026-05-07",
-            severity: "medium"
-        )
     }
 }

@@ -639,23 +639,16 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
         case id, name, dataType, description, inputType, enabled
     }
 
-    /// Maps Jamf `dataType` to a `custom_eas` type string for config.yaml.
-    var inferredEAType: String {
-        switch (dataType ?? "").uppercased() {
-        case "BOOLEAN":  return "boolean"
-        case "DATE":     return "date"
-        // INTEGER → percentage is a heuristic, not a 1:1 mapping: most INTEGER
-        // EAs we've seen in real tenants are percentages (disk usage, battery
-        // capacity). Tenants with raw-count INTEGER EAs should override the
-        // generated `type` in config.yaml.
-        case "INTEGER":  return "percentage"
-        default:         return "text"
-        }
+    /// Jamf's own name for `dataType` ("Integer", "String", "Date"), as the Jamf Pro console
+    /// shows it.
+    var dataTypeLabel: String { Self.dataTypeLabel(dataType) }
+
+    /// The one label rule, shared with the workbook's EA Definitions sheet.
+    static func dataTypeLabel(_ dataType: String?) -> String {
+        guard let dataType, !dataType.isEmpty else { return "Unknown" }
+        return dataType.capitalized
     }
 }
-
-/// Alias retained for any call sites that referenced the old name.
-typealias ExtensionAttributeDefinition = ExtensionAttribute
 
 // MARK: - Software installs
 // `jamf-cli pro report software-installs --output json`

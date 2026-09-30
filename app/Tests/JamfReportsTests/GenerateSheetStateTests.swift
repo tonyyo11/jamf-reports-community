@@ -200,6 +200,8 @@ final class GenerateSheetStateTests: XCTestCase {
     }
 
     func testCustomSelectedSheetsStartsEmpty() {
+        // A selection left by an interrupted run would persist into this one.
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
         let state = GenerateSheetState()
         XCTAssertTrue(state.customSelectedSheets.isEmpty)
     }
@@ -216,6 +218,7 @@ final class GenerateSheetStateTests: XCTestCase {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = [.executiveSummary, .securityPosture]
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         let template = state.resolvedTemplate
         XCTAssertEqual(template.identifier, "custom")
         if let customTemplate = template as? CustomTemplate {
@@ -229,6 +232,7 @@ final class GenerateSheetStateTests: XCTestCase {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = []
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         let template = state.resolvedTemplate
         XCTAssertEqual(template.identifier, "executive")
         XCTAssertTrue(template is ExecutiveTemplate)
@@ -238,6 +242,7 @@ final class GenerateSheetStateTests: XCTestCase {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = [.executiveSummary]
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         XCTAssertTrue(state.canGenerate)
     }
 
@@ -245,6 +250,7 @@ final class GenerateSheetStateTests: XCTestCase {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = []
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         XCTAssertFalse(state.canGenerate)
     }
 

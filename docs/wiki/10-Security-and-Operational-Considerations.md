@@ -80,6 +80,17 @@ runs only after a Jamf Pro collect that actually collected: when the Pro collect
 stands down for another Mac, or skips because today's collect already ran,
 Protect is skipped with it and the run log says so.
 
+**Every Mac must reach Jamf the same way under the same profile name.** The
+workspace's `config.yaml` names the jamf-cli profile collects use
+(`jamf_cli.profile`), but each Mac looks that name up in its own jamf-cli
+configuration and keychain, which never sync. Give every Mac a jamf-cli
+profile of that name that reaches the same Jamf Pro instance the same way:
+all direct, or all through the Jamf Platform API with the same environment
+ID. If one Mac's profile points elsewhere, its collects either write another
+instance's data into the shared history or fail where the others succeed, and
+each screen shows whichever Mac collected last. Compare `jamf-cli config list`
+on each Mac when you add it.
+
 ### What a shared workspace still costs you
 
 **Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
@@ -244,21 +255,36 @@ file, not access-controlled.
 
 ## Multi-Tenant and Team Access
 
-**Each profile is an isolated workspace; one person can manage multiple profiles.**
+**Credentials belong to one person or one Mac; data can be pooled.** Keep the
+two apart.
 
-For team access to the same Jamf Pro instance without sharing credentials:
+- **Never share a credential.** Give each administrator, or each reporting
+  Mac, its own Jamf Pro API client or Jamf Account integration, with read
+  access only (see
+  [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)).
+  Separate credentials keep Jamf's own audit trail attributable and let you
+  revoke one without breaking the rest. The jamf-cli configuration
+  (`~/.config/jamf-cli/`) and its keychain items stay on each Mac; never
+  sync or copy them.
+- **Share data deliberately.** Keep one workspace per person or role (for
+  example `prod-ops` and `prod-audit`), or pool several Macs into one
+  history with a
+  [shared workspace](#shared-workspace-several-macs-one-history). Never copy
+  a workspace folder between machines. A shared workspace also needs every
+  Mac to use the same profile name and connection, described in that
+  section.
+- **Schedules are per Mac.** Recreate them on each Mac with
+  `jamf-reports schedules add` or the Automation screen rather than sharing
+  `schedules.json`; it is per-machine state, not something to check into
+  version control.
 
-1. Create one `config.yaml` and workspace per person or role (e.g., `prod-ops`, `prod-audit`,
-   `prod-dev`).
-2. Authenticate each profile independently via the app's Onboarding flow — each gets its own
-   `jamf-cli` credential.
-3. Recreate the same schedules on each Mac — with `jamf-reports schedules add` or the
-   Automation screen — rather than sharing `schedules.json` itself; it is per-machine
-   state, not something to check into version control.
-
-Do not share the workspace directory (`~/Jamf-Reports/<profile>/`) or the `jamf-cli` keychain
-credential across team members — use separate profiles and credentials for audit trail
-isolation.
+**Scope Platform API integrations narrowly.** One Jamf Account can list
+several environments and tenants — test, production, beta, and instances
+hosted in different places — and Jamf Account lets one integration apply to
+more than one of them. Create each JamfReports integration for the single
+environment its profile reports on, with read permissions only. An
+integration spanning every environment, or carrying write permissions, turns
+a secret leaked from one Mac into access to all of them.
 
 ## Webhook Egress
 

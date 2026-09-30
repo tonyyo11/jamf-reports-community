@@ -140,6 +140,9 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         // Cheap aggregate query (one fleet-wide inventory fetch, no per-device
         // fan-out) — daily-safe, same class as the four rows above.
         "duplicate-serials":              .inventory,
+        // jamf-cli's HTML dashboard (1.31.0+): about 22 requests plus one per 500
+        // computers, the inventory sweep again with no per-device fan-out.
+        "dashboard":                      .inventory,
 
         // Scan — the two --scan-failures per-device fan-outs only.
         // These enumerate every failing device in detail and are the only

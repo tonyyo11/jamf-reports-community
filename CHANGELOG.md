@@ -7,6 +7,31 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Added
+
+- The HTML report includes jamf-cli's fleet dashboard. With jamf-cli 1.31.0 or later,
+  collect saves the dashboard every two days: one page of fleet-wide totals across Jamf Pro
+  and, where your profile reaches them, the Jamf Platform API, Jamf Protect and Jamf Security
+  Cloud, with no device names, serials or usernames. The report shows it as its last section,
+  as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
+  says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
+
+### Fixed
+
+- Extension Attributes → EA Definitions shows each attribute's data type as Jamf Pro names it
+  (Integer, String, Date). It used to label every Integer attribute "percentage".
+- The workbook's EA Definitions sheet fills in the Data Type column, which was blank for data
+  collected with jamf-cli. It uses the same names as the app's EA Definitions screen.
+- Leaving Settings stops its connection checks. It used to keep starting a jamf-cli run for
+  each remaining profile, and switching profiles while Settings was open could mark a
+  connection's token invalid when it wasn't.
+
+### Security
+
+- With `jamf_cli.require_manifest` on, report generation also checks the saved jamf-cli
+  dashboard page against its manifest, and stops if the page was changed after collect. The
+  page runs in the HTML report, so it gets the same check as every other snapshot.
+
 ## [2.8.3] - 2026-09-29
 
 Every jamf-cli profile name works in Jamf Reports, whatever it contains: spaces, dots, accented

@@ -104,6 +104,7 @@ struct FullInstanceTemplate: ReportTemplate {
             .insightsDrift,
             .orgInfo,
             .osCurrency,
+            .jamfDashboard,
         ]
     }
 

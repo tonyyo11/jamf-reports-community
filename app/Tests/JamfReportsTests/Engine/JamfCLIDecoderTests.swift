@@ -161,7 +161,7 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(eas[0].dataType, "BOOLEAN")
         XCTAssertEqual(eas[0].inputType, "SCRIPT")
         XCTAssertEqual(eas[0].enabled, true)
-        XCTAssertEqual(eas[0].inferredEAType, "boolean")
+        XCTAssertEqual(eas[0].dataTypeLabel, "Boolean")
     }
 
     func testExtensionAttributeDecodesDateDataType() throws {
@@ -169,23 +169,32 @@ final class JamfCLIDecoderTests: XCTestCase {
         [{"id":"2","name":"Cert Expiry","dataType":"DATE","inputType":"SCRIPT","enabled":true}]
         """
         let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
-        XCTAssertEqual(eas[0].inferredEAType, "date")
+        XCTAssertEqual(eas[0].dataTypeLabel, "Date")
     }
 
-    func testExtensionAttributeDecodesIntegerAsPercentage() throws {
+    func testExtensionAttributeLabelsInteger() throws {
         let json = """
-        [{"id":"3","name":"Disk Usage","dataType":"INTEGER","inputType":"SCRIPT","enabled":true}]
+        [{"id":"3","name":"Battery Cycle Count","dataType":"INTEGER",
+          "inputType":"SCRIPT","enabled":true}]
         """
         let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
-        XCTAssertEqual(eas[0].inferredEAType, "percentage")
+        XCTAssertEqual(eas[0].dataTypeLabel, "Integer")
     }
 
-    func testExtensionAttributeDecodesStringAsText() throws {
+    func testExtensionAttributeDataTypeLabelWithoutDataType() throws {
+        let json = """
+        [{"id":"5","name":"No Type"},{"id":"6","name":"Empty Type","dataType":""}]
+        """
+        let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
+        XCTAssertEqual(eas.map(\.dataTypeLabel), ["Unknown", "Unknown"])
+    }
+
+    func testExtensionAttributeLabelsString() throws {
         let json = """
         [{"id":"4","name":"OS Version EA","dataType":"STRING","inputType":"TEXT","enabled":false}]
         """
         let eas = try JSONDecoder().decode([ExtensionAttribute].self, from: Data(json.utf8))
-        XCTAssertEqual(eas[0].inferredEAType, "text")
+        XCTAssertEqual(eas[0].dataTypeLabel, "String")
         XCTAssertEqual(eas[0].enabled, false)
     }
 
@@ -201,8 +210,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertFalse(eas.isEmpty, "EA fixture must decode at least one record")
         // Every record should have a name.
         XCTAssertTrue(eas.allSatisfy { $0.name != nil })
-        // inferredEAType should never be empty.
-        XCTAssertTrue(eas.allSatisfy { !$0.inferredEAType.isEmpty })
     }
 
     // MARK: - UpdateStatusReport

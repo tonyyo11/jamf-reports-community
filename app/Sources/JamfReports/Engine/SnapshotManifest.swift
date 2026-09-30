@@ -175,7 +175,7 @@ enum SnapshotManifest {
         }
     }
 
-    /// Walks `<dataDir>/<type>/`, verifies the newest JSON in each, and
+    /// Walks `<dataDir>/<type>/`, verifies the newest snapshot in each, and
     /// reports aggregate counts. Returns a zeroed summary when ``dataDir``
     /// does not exist or has no snapshot subdirectories.
     ///
@@ -279,8 +279,10 @@ enum SnapshotManifest {
         // but anything ending in `manifest.json` (e.g. attacker-planted
         // `xmanifest.json` that would otherwise be picked as a candidate
         // and produce a misleading verification result).
+        // `html` is jamf-cli's dashboard page, the one snapshot the report runs as
+        // script, so strict mode has to cover it too.
         let candidates = entries.filter {
-            $0.pathExtension.lowercased() == "json"
+            ["json", "html"].contains($0.pathExtension.lowercased())
             && !$0.lastPathComponent.hasSuffix(fileName)
         }
         // Order by FILENAME timestamp, matching loadLatestSnapshotData — mtime
