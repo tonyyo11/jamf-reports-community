@@ -55,13 +55,16 @@ enum CellValue: Sendable {
         }
     }
 
-    /// Strip C0 (keeping tab, LF, CR) and C1. Broader than XML 1.0 requires —
-    /// C1 is legal there — so cell values and sheet names sanitize identically.
+    /// Strip C0 (keeping tab, LF, CR), C1, and U+FFFE/U+FFFF, which XML 1.0 forbids.
+    /// Broader than XML 1.0 requires — C1 is legal there — so cell values and sheet
+    /// names sanitize identically. A String holds no unpaired surrogates, so none
+    /// can reach here.
     static func stripControlCharacters(_ raw: String) -> [Unicode.Scalar] {
         raw.unicodeScalars.filter { scalar in
             let v = scalar.value
             let isControl = (v <= 0x1F && v != 0x09 && v != 0x0A && v != 0x0D)
                 || (v >= 0x7F && v <= 0x9F)
+                || v == 0xFFFE || v == 0xFFFF
             return !isControl
         }
     }
