@@ -47,22 +47,10 @@ enum AIConfigWriter {
     }
 
     private static func encode(_ config: AIConfig) -> YAMLCodec.YAMLValue {
-        var entries: [YAMLCodec.YAMLEntry] = [
+        .mapping(.init(entries: [
             .init(key: "enabled", value: .scalar(.bool(config.isEnabled))),
             .init(key: "tier", value: .scalar(.string(config.resolvedTier.rawValue))),
             .init(key: "reasoning_level", value: .scalar(.string(config.resolvedReasoningLevel.rawValue))),
-        ]
-        if let external = config.external {
-            entries.append(.init(key: "external", value: encodeExternal(external)))
-        }
-        return .mapping(.init(entries: entries))
-    }
-
-    private static func encodeExternal(_ external: AIExternalConfig) -> YAMLCodec.YAMLValue {
-        .mapping(.init(entries: [
-            .init(key: "provider", value: .scalar(.string(external.provider ?? ""))),
-            .init(key: "endpoint", value: .scalar(.string(external.endpoint ?? ""))),
-            .init(key: "keychain_key", value: .scalar(.string(external.keychainKey ?? ""))),
         ]))
     }
 }

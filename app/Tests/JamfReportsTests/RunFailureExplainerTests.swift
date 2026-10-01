@@ -1,10 +1,9 @@
 import XCTest
 @testable import JamfReports
 
-/// F2 seam: construction-time redaction, on-device pinning, stub, and factory.
-/// All assertions run on the default toolchain — they exercise the UNGATED
-/// seam/stub/factory and the pure selection path, never constructing a
-/// FoundationModels type.
+/// F2 seam: construction-time redaction, stub, and factory. All assertions run
+/// on the default toolchain — they exercise the UNGATED seam/stub/factory,
+/// never constructing a FoundationModels type.
 final class RunFailureExplainerTests: XCTestCase {
 
     private func input(rawLog: String, label: String = "managed-reports") -> RunFailureInput {
@@ -85,33 +84,23 @@ final class RunFailureExplainerTests: XCTestCase {
         XCTAssertTrue(rendered.contains("the failure line"))
     }
 
-    // MARK: - Privacy invariant 2: on-device only (pure, provable ungated)
+    // MARK: - Privacy invariant 2: on-device only
 
-    func testNormalConfigResolvesOnDeviceForExplainer() {
-        XCTAssertEqual(runFailureGeneratorKind(for: AIConfig(enabled: true)), .onDevice)
-    }
-
-    /// A legacy config still naming the removed `pcc` tier resolves to
-    /// on-device, so log excerpts stay on the box without any migration.
-    func testLegacyPCCTierResolvesOnDeviceForExplainer() {
-        XCTAssertEqual(
-            runFailureGeneratorKind(for: AIConfig(enabled: true, tier: "pcc")), .onDevice,
-            "run-log explanation must never resolve off-box"
-        )
-    }
-
-    /// The one config that does NOT resolve on-device. It must be refused, not
-    /// served: the factory hands back the stub so no off-box model type is ever
-    /// constructed for a log excerpt.
+    /// There is one model to construct, so a log excerpt can only reach the
+    /// on-device one. A config still naming the removed `external` or `pcc`
+    /// tier gets the same explainer as a default config: not a refusal, and
+    /// not an off-box path.
     @MainActor
-    func testExternalTierIsRefusedRatherThanServedOffBox() {
-        let config = AIConfig(enabled: true, tier: "external")
-        XCTAssertEqual(runFailureGeneratorKind(for: config), .external)
-        let explainer = makeRunFailureExplainer(config: config, availability: .available)
-        XCTAssertTrue(
-            explainer is StubRunFailureExplainer,
-            "an off-box tier must never receive a run log"
-        )
+    func testRemovedTiersGetTheOnDeviceExplainer() {
+        for tier in ["external", "pcc"] {
+            let explainer = makeRunFailureExplainer(
+                config: AIConfig(enabled: true, tier: tier), availability: .available
+            )
+            XCTAssertEqual(
+                explainer is StubRunFailureExplainer, !ModelAvailability.platformSupported,
+                "a config naming the \(tier) tier must be served like a default config"
+            )
+        }
     }
 
     // MARK: - Stub determinism

@@ -898,17 +898,18 @@ struct AlertRule: Decodable, Sendable, Equatable {
 /// model ("system — On-device Apple Foundation Model"), and the Private Cloud
 /// Compute tier this block once carried was never reachable anyway — PCC needs
 /// an Apple-granted entitlement tied to App Store distribution, which a
-/// Developer ID build cannot obtain. Both the `pcc` tier and the
-/// `lock_on_device` override that existed to refuse it are gone; on-device is
-/// the default and the only behaviour.
+/// Developer ID build cannot obtain. The `pcc` tier, the `lock_on_device`
+/// override that existed to refuse it, and the never-built `external` tier with
+/// its `external:` sub-block are gone; on-device is the default and the only
+/// behaviour.
 ///
-/// A config that still names `tier: pcc` decodes to `.onDevice` via
-/// `resolvedTier`'s unknown-value fallback, and a stale `lock_on_device` key is
-/// ignored — neither breaks an existing workspace.
+/// A config that still names `tier: pcc` or `tier: external` decodes to
+/// `.onDevice` via `resolvedTier`'s unknown-value fallback, and a stale
+/// `lock_on_device` key or `external:` sub-block is ignored — none of them
+/// breaks an existing workspace, and the next Settings save drops them.
 struct AIConfig: Decodable, Sendable {
     enum Tier: String, Decodable, Sendable, CaseIterable {
         case onDevice = "on_device"
-        case external
     }
 
     enum ReasoningLevel: String, Decodable, Sendable, CaseIterable {
@@ -918,12 +919,10 @@ struct AIConfig: Decodable, Sendable {
     var enabled: Bool?
     var tier: String?
     var reasoningLevel: String?
-    var external: AIExternalConfig?
 
     private enum CodingKeys: String, CodingKey {
         case enabled, tier
         case reasoningLevel = "reasoning_level"
-        case external
     }
 
     var isEnabled: Bool { enabled ?? false }
@@ -937,26 +936,6 @@ struct AIConfig: Decodable, Sendable {
     /// site checks so a disabled block never spins up any model. On-device needs
     /// no URL/key, so `isEnabled` is the whole test.
     var isUsable: Bool { isEnabled }
-}
-
-/// Reserved `external:` sub-block — specced now, built in a later phase (P5).
-/// Present so config.yaml round-trips a stable shape before the tier ships;
-/// inert today.
-///
-/// P5 IMPLEMENTATION REQUIREMENT (threat model T-28): a pre-existing `endpoint`
-/// in config.yaml must NEVER auto-activate when the external tier ships — an
-/// attacker could pre-plant it on synced storage and have it go live on app
-/// update. Require explicit in-app re-consent plus https-only validation (the
-/// `NotifyConfig.isUsable` prefix-check pattern) before the first external send.
-struct AIExternalConfig: Decodable, Sendable {
-    var provider: String?
-    var endpoint: String?
-    var keychainKey: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case provider, endpoint
-        case keychainKey = "keychain_key"
-    }
 }
 
 // MARK: - retention (snapshot archive/cleanup)

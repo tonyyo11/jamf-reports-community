@@ -78,7 +78,8 @@ struct AIInsightCard: View {
             }
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Turn today's fleet data into a plain-language summary using \(tierLabel).")
+                Text("Turn today's fleet data into a plain-language summary using "
+                    + "on-device intelligence.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .fixedSize(horizontal: false, vertical: true)
@@ -135,13 +136,6 @@ struct AIInsightCard: View {
         case .info: Theme.Colors.teal
         case .warning: Theme.Colors.warn
         case .critical: Theme.Colors.danger
-        }
-    }
-
-    private var tierLabel: String {
-        switch GeneratorKind.select(config: config) {
-        case .external: "external provider"
-        case .onDevice: "on-device intelligence"
         }
     }
 

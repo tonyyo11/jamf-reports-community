@@ -525,19 +525,15 @@ retention:
 # inert on any macOS below 27 — set enabled: true to opt in per profile.
 #
 # Apple Foundation Models is on-device only, so tier: "on_device" is the
-#   default and the only built behaviour — no fleet data leaves the Mac, and
-#   there is nothing to configure to keep it that way. "external" is RESERVED —
-#   not yet built.
-# A config still naming the removed "pcc" tier (or a stale lock_on_device key)
-#   keeps working: the tier falls back to on_device and the dead key is ignored.
+#   default and the only behaviour — no fleet data leaves the Mac, and there is
+#   nothing to configure to keep it that way.
+# A config still naming a removed tier ("pcc" or "external"), or carrying a stale
+#   lock_on_device key or external: block, keeps working: the tier falls back to
+#   on_device and the dead keys are ignored. The next Settings save drops them.
 ai:
   enabled: false            # opt-in; inert on macOS < 27
-  tier: "on_device"         # on_device | external (external not yet built)
+  tier: "on_device"         # on_device (the only tier)
   reasoning_level: "light"  # light | moderate | deep
-  external:                 # RESERVED — ignored until the external tier ships (P5)
-    provider: ""            # anthropic | google | openai_compatible
-    endpoint: ""            # https-only, for openai_compatible / self-hosted
-    keychain_key: ""        # name of a system-keychain item; secret never stored here
 
 # =============================================================================
 # JAMF PLATFORM API

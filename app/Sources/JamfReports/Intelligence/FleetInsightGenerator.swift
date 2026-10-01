@@ -60,39 +60,13 @@ struct StubInsightGenerator: FleetInsightGenerator {
     }
 }
 
-// MARK: - Generator selection (pure — ungated)
-
-/// Which kind of generator a config resolves to, independent of any model
-/// construction. Pure and UNGATED so selection is provable on the default
-/// toolchain without importing FoundationModels.
-///
-/// Apple Foundation Models is on-device only, so `.onDevice` is the only kind
-/// that has a real generator behind it. `.external` remains a reserved,
-/// unbuilt tier (see `AIExternalConfig`) and every construction site falls back
-/// to the stub for it.
-enum GeneratorKind: Sendable, Equatable {
-    /// Use the on-device system model — the default and the only built path.
-    case onDevice
-    /// Reserved external provider (built in a later phase), reachable only by
-    /// an explicit `tier: external` in config.yaml.
-    case external
-
-    /// Resolve the generator kind from config.
-    static func select(config: AIConfig) -> GeneratorKind {
-        switch config.resolvedTier {
-        case .onDevice: return .onDevice
-        case .external: return .external
-        }
-    }
-}
-
 // MARK: - Factory (ungated signature; FM branch is gated)
 
 /// Picks the conformer for a config + resolved availability. Returns a
 /// `StubInsightGenerator` when AI is disabled, when the model isn't available,
-/// on the default toolchain (no FoundationModels), or for the not-yet-built
-/// `external` tier. On macOS 27 with an available model it returns the real
-/// `FoundationModelsInsightGenerator`, which runs on-device.
+/// or on the default toolchain (no FoundationModels). On macOS 27 with an
+/// available model it returns the real `FoundationModelsInsightGenerator`,
+/// which runs on-device — the only model there is, whatever `tier` says.
 @MainActor
 func makeInsightGenerator(
     config: AIConfig,
@@ -100,11 +74,6 @@ func makeInsightGenerator(
 ) -> any FleetInsightGenerator {
     guard config.isUsable else { return StubInsightGenerator(availability: .disabledByConfig) }
     guard availability.isReady else { return StubInsightGenerator(availability: availability) }
-
-    // `external` tier is specced but not built; fall back to the stub until P5.
-    if GeneratorKind.select(config: config) == .external {
-        return StubInsightGenerator(availability: .requiresMacOS27)
-    }
 
     #if canImport(FoundationModels) && compiler(>=6.4)
     if #available(macOS 27, *) {
