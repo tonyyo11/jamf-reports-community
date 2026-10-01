@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Version, release-channel and artifact-naming rules shared by build-app.sh
-# (the build number and channel it stamps into Info.plist), build-pkg.sh and
-# scripts/package-dmg.sh (the names they give the .pkg and .dmg). One copy, so
-# the three cannot drift apart; scripts/test-versioning.zsh covers it in CI.
+# (the build number and channel it stamps into Info.plist, and its Swift
+# toolchain check), build-pkg.sh and scripts/package-dmg.sh (the names they give
+# the .pkg and .dmg), and scripts/release.sh (the DMG path it prints). One copy,
+# so they cannot drift apart; scripts/test-versioning.zsh covers it in CI.
 #
 # Sourced, never executed. It defines jr_* functions and nothing else (no
 # variables, no `set` options), so the caller's shell is left as it was. It
