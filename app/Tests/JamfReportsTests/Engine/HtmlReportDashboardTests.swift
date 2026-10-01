@@ -23,11 +23,15 @@ final class HtmlReportDashboardTests: XCTestCase {
         HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
     }
 
-    private func writePage(_ html: String, stamp: String) throws {
+    private func writePage(_ html: String, stamp: String, modified: Date? = nil) throws {
         let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try html.write(to: dir.appendingPathComponent("dashboard_\(stamp).html"),
-                       atomically: true, encoding: .utf8)
+        let file = dir.appendingPathComponent("dashboard_\(stamp).html")
+        try html.write(to: file, atomically: true, encoding: .utf8)
+        if let modified {
+            try FileManager.default.setAttributes(
+                [.modificationDate: modified], ofItemAtPath: file.path)
+        }
     }
 
     func testWithoutASnapshotTheSectionSaysSo() {
@@ -36,20 +40,45 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertFalse(html.contains("<iframe"))
     }
 
+    /// File dates disagree with the filename stamps on purpose, as a sync provider's
+    /// re-stamping makes them: the newest-stamped page is the oldest file and the
+    /// conflict copy is the newest, so a picker ordering by mtime takes the wrong page.
     func testTheNewestPageIsEmbeddedEscapedInASandboxedFrame() throws {
-        try writePage(
-            "<!DOCTYPE html><html><head><title>t</title></head><body>OLDPAGE</body></html>",
-            stamp: "20260901T060000")
+        let day = TimeInterval(86_400)
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
         try writePage(
             "<!DOCTYPE html><html><head><title>t</title></head>"
                 + "<body class=\"x\">A &amp; B</body></html>",
-            stamp: "20260925T060000")
+            stamp: "20260925T060000", modified: base)
+        try writePage(
+            "<!DOCTYPE html><html><head><title>t</title></head><body>OLDPAGE</body></html>",
+            stamp: "20260901T060000", modified: base + day)
+        try writePage(
+            "<!DOCTYPE html><html><head><title>t</title></head><body>CONFLICT</body></html>",
+            stamp: "20260925T060000 2", modified: base + 2 * day)
+        let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
+        let dates = try ["dashboard_20260925T060000.html", "dashboard_20260901T060000.html",
+                         "dashboard_20260925T060000 2.html"].map { name in
+            try XCTUnwrap(FileManager.default.attributesOfItem(
+                atPath: dir.appendingPathComponent(name).path)[.modificationDate] as? Date)
+        }
+        XCTAssertEqual(dates, dates.sorted(), "file dates run opposite to the stamps")
+        XCTAssertEqual(Set(dates).count, 3)
         let html = report().buildJamfDashboardSection()
         XCTAssertTrue(html.contains("sandbox=\"allow-scripts\""), html)
         XCTAssertFalse(html.contains("allow-same-origin"), "the page must not reach the report")
-        XCTAssertFalse(html.contains("OLDPAGE"), "the newest stamp wins")
+        XCTAssertFalse(html.contains("OLDPAGE"), "the newest stamp wins, not the newest file")
+        XCTAssertFalse(html.contains("CONFLICT"), "a sync-conflict copy is never picked")
         XCTAssertTrue(html.contains("&lt;body class=&quot;x&quot;&gt;A &amp;amp; B"),
                       "the page is escaped once for the srcdoc attribute")
+    }
+
+    func testAloneASyncConflictCopyIsNotEmbedded() throws {
+        try writePage("<!DOCTYPE html><html><head></head><body>CONFLICT</body></html>",
+                      stamp: "20260925T060000 2")
+        let html = report().buildJamfDashboardSection()
+        XCTAssertTrue(html.contains("Not collected yet"), String(html.prefix(400)))
+        XCTAssertFalse(html.contains("<iframe"))
     }
 
     func testTheAdditionsGoAtTheEndOfTheHead() throws {
