@@ -75,6 +75,16 @@ final class DashboardCollectTests: XCTestCase {
                        base + ["--include-profile=prod-protect"])
     }
 
+    func testTheProtectArgumentIsTheTrailingOneAndOnlyWhenAppended() {
+        let base = ["-p", "--include-profile=x", "dashboard", "--output", "json"]
+        XCTAssertNil(ReportEngine.dashboardArgumentsWithoutProtect(base),
+                     "a main profile named like the flag is not a Protect profile")
+        XCTAssertEqual(
+            ReportEngine.dashboardArgumentsWithoutProtect(base + ["--include-profile=x"]), base)
+        XCTAssertEqual(
+            ReportEngine.dashboardArgumentsWithoutProtect(base + ["--include-profile=y"]), base)
+    }
+
     func testOnlyAnHTMLDocumentCountsAsAPage() {
         XCTAssertTrue(ReportEngine.isHTMLDocument(Data(page.utf8)))
         XCTAssertTrue(ReportEngine.isHTMLDocument(Data("\n  <html lang=\"en\"></html>".utf8)))
@@ -191,6 +201,31 @@ final class DashboardCollectTests: XCTestCase {
         assertStagingFilesRemoved()
     }
 
+    /// A main profile may be named like the flag (legal since 2.8.3). The retry drops the
+    /// Protect argument by position: a prefix match found the main profile's `-p` value
+    /// first and removed that instead. Protect `x` makes the two arguments identical.
+    func testTheRetryDropsTheProtectArgumentNotAMainProfileNamedLikeIt() async throws {
+        let main = "--include-profile=x"
+        try answer("dashboard.html", page)
+        try answer("dashboard.protect.exit", "2")
+        let base = ["-p", main, "dashboard", "--output", "json"]
+        for protectProfile in ["y", "x"] {
+            try? FileManager.default.removeItem(at: answers.appendingPathComponent("calls.log"))
+            let arguments = ReportEngine.dashboardArguments(
+                base: base, profile: main,
+                protect: ProtectConfig(enabled: true, profile: protectProfile))
+            XCTAssertEqual(arguments, base + ["--include-profile=\(protectProfile)"])
+            let result = try await collectDashboard(
+                profile: main, arguments: arguments, into: "data-\(protectProfile)")
+            let runs = callsLog().split(separator: "\n").filter { $0.contains(" dashboard ") }
+            XCTAssertEqual(runs.count, 2, "Protect \(protectProfile): \(callsLog())")
+            XCTAssertTrue(
+                runs.last?.hasPrefix("-p \(main) dashboard --output json --out-file ") == true,
+                "Protect \(protectProfile): the retry keeps the main profile\n\(callsLog())")
+            XCTAssertTrue(result.saved, "Protect \(protectProfile)")
+        }
+    }
+
     /// Takes one in-run retry, so about three seconds.
     func testALaunchFailureRecordsTheSentinelAndSavesNothing() async throws {
         let dataDir = root.appendingPathComponent("data", isDirectory: true)
@@ -269,9 +304,11 @@ final class DashboardCollectTests: XCTestCase {
 
     /// `--version` → answers/version (default 1.31.1). `dashboard … --out-file P` copies
     /// answers/dashboard.html to P when present, prints answers/dashboard.stdout, and
-    /// exits with answers/dashboard.exit (default 0), except that a run naming
-    /// `--include-profile=` exits with answers/dashboard.protect.exit, when present,
-    /// before writing anything. Anything else prints [] and exits 0.
+    /// exits with answers/dashboard.exit (default 0), except that a run with
+    /// `--include-profile=` straight after `--output json` (the Protect profile; a main
+    /// profile may be named like the flag, after `-p`) exits with
+    /// answers/dashboard.protect.exit, when present, before writing anything.
+    /// Anything else prints [] and exits 0.
     private func makeStub() throws -> URL {
         let url = binDir.appendingPathComponent("stub-cli")
         let script = """
@@ -283,7 +320,7 @@ final class DashboardCollectTests: XCTestCase {
             if [ -f "$A/version" ]; then cat "$A/version"; else echo "jamf-cli version 1.31.1"; fi
             exit 0 ;;
           *" dashboard "*)
-            case "$*" in *--include-profile=*)
+            case "$*" in *"json --include-profile="*)
               if [ -f "$A/dashboard.protect.exit" ]; then exit "$(cat "$A/dashboard.protect.exit")"; fi ;;
             esac
             out=""; prev=""
@@ -301,6 +338,20 @@ final class DashboardCollectTests: XCTestCase {
         try script.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
         return url
+    }
+
+    /// `collectDashboard` against the stub, saving under `root/<into>`.
+    private func collectDashboard(
+        profile: String, arguments: [String], into dataDirName: String
+    ) async throws -> ReportEngine.KindCollectResult {
+        let stub = try makeStub()
+        let store = StateFileStore(directory: root.appendingPathComponent("state-\(dataDirName)"))
+        let bridge = await MainActor.run { CLIBridge() }
+        return try await ReportEngine.collectDashboard(
+            profile: profile, arguments: arguments, supportsQuietFlags: false, bin: stub,
+            bridge: bridge, dataDir: root.appendingPathComponent(dataDirName, isDirectory: true),
+            recordManifest: false, useCachedData: true, stateStore: store,
+            collectStart: Date(), onLine: DashboardLogCollector().append)
     }
 
     private func runCollect() async throws -> [String] {
