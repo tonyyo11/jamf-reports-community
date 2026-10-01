@@ -302,8 +302,9 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertEqual(r.redactText("ab and more"), "ab and more")
     }
 
-    // The layout is the one ProfileSlugCaseTests reads (verified against `config list`); the
-    // `tenant-id` and `environment-id` keys are the names `config list` reports.
+    // The layout is the one ProfileSlugCaseTests reads. `config list` reports `tenant-id` and
+    // `environment-id` as JSON keys; the same names in the YAML config file are inferred from
+    // those, not seen in a Platform profile's file.
     private static let jamfCLIConfig = """
         default-profile: Acme
         profiles:

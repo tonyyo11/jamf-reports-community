@@ -635,7 +635,9 @@ struct ProtectView: View {
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: 80, alignment: .leading)
 
-                // Wide enough for INACTIVE and YES, the longest labels these pills show.
+                // INACTIVE fits the 92 pt column. UNKNOWN, which both columns can show, is wider
+                // than the 56 pt Full Disk Access column and overhangs it; `Pill` is fixed-size,
+                // so nothing truncates.
                 booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
                     .frame(width: 92, alignment: .center)
                     .accessibilityLabel("Web Protection " + Self.spokenState(
