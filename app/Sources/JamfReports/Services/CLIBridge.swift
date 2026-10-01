@@ -550,8 +550,8 @@ final class CLIBridge {
     }
 
     /// Fluent helper for the most common CLI flows the GUI surfaces.
-    /// `aiNarrative` (F3) is set only by GUI-generate call sites; the schedule
-    /// dispatcher (`runNow`) and onboarding leave the nil default.
+    /// `aiNarrative` (F3) is set only by GUI-generate call sites; every other
+    /// caller leaves the nil default.
     func generate(
         profile: String,
         csvPath: String?,
@@ -885,8 +885,8 @@ final class CLIBridge {
     ///   - operation: human phrase for what failed, e.g. "HTML report generation".
     /// True for the exit codes after which `pro backup` has left output on
     /// disk that retention must prune: `0`, and `exitCodePartialFailure` (7 — a
-    /// partial export is still finalized to `backups/<timestamp>/`). All three
-    /// backup call sites (scheduled, GUI, CLI) share this one rule; they used
+    /// partial export is still finalized to `backups/<timestamp>/`). Both
+    /// backup call sites (scheduled run, CLI) share this one rule; they used
     /// to spell it out separately and drifted apart.
     nonisolated static func backupOutputIsPrunable(exit code: Int32) -> Bool {
         code == 0 || code == exitCodePartialFailure

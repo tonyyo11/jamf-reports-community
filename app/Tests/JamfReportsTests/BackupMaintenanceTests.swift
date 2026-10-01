@@ -154,11 +154,11 @@ final class BackupMaintenanceTests: XCTestCase {
         XCTAssertTrue(stamp.allSatisfy(\.isNumber))
     }
 
-    // MARK: - Post-success housekeeping (GUI/headless parity)
+    // MARK: - Post-success housekeeping (CLI/headless parity)
 
     /// `performPostSuccessHousekeeping` must prune scheduled backups beyond
     /// `keep` AND sweep abandoned `.tmp-*` dirs in a single call — the same
-    /// operations `main.swift` and `CLIBridge+Run` both delegate to this helper.
+    /// operations `main.swift` and `UtilityCommands` both delegate to this helper.
     func testPerformPostSuccessHousekeepingPrunesAndSweeps() throws {
         // Two scheduled backups where keep=1 → oldest pruned.
         try makeBackup(name: "20260501T010101", label: "scheduled-20260501", age: 2 * 86_400)

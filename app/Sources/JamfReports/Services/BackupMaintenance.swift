@@ -126,8 +126,8 @@ enum BackupMaintenance {
         }
     }
 
-    /// Post-success housekeeping run by both the GUI "Run now" backup path
-    /// (`CLIBridge+Run`) and the headless `--scheduled-run` path (`main.swift`).
+    /// Post-success housekeeping run by both the `jamf-reports backup` command
+    /// (`UtilityCommands`) and the headless `--scheduled-run` path (`main.swift`).
     /// Prunes old scheduled backups and sweeps abandoned `.tmp-*` staging dirs.
     /// Both paths must call this and nothing else — do not inline the two steps
     /// at call sites or they will diverge again.

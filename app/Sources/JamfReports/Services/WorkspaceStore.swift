@@ -80,7 +80,7 @@ final class WorkspaceStore {
     /// async probe completes). Refreshed by `refreshAuthStatus()`.
     var authStatus: TokenStatus? = nil
     /// Per-profile run-in-progress flags to prevent concurrent collection/generation.
-    /// Checked by `generateAll`/`collectThenGenerate`/`runNow` before starting.
+    /// Checked by `generateAll`/`collectThenGenerate` before starting.
     /// Note: only guards against concurrent GUI runs; LaunchAgent runs are a separate
     /// process and would require an on-disk lock file (not implemented).
     private var runInProgressFlags: [String: Bool] = [:]

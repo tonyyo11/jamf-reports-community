@@ -27,8 +27,6 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// decoder's YAML key path + problem (never a filesystem path) so the
     /// user can locate the misconfiguration without log spelunking (#181).
     case configLoadFailed(path: String, detail: String?)
-    /// `.csvAssisted` mode requires a CSV in `csv-inbox/` but none was found.
-    case csvMissing(profile: String)
     /// jamf-cli executable was not found on the system.
     case executableNotFound
     /// An argument value is invalid (e.g. leading-dash injection risk).
@@ -65,8 +63,6 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             }
             return "config.yaml could not be parsed — the file may be corrupt. The Config "
                 + "page can restore the default config."
-        case .csvMissing(let profile):
-            return "csv-assisted mode requires a CSV in csv-inbox/ for profile '\(profile)' — none found."
         case .executableNotFound:
             return "jamf-cli not found — install via Homebrew: brew install jamf-cli"
         case .invalidArgument(let detail):

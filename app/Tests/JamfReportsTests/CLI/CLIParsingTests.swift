@@ -138,8 +138,8 @@ final class CLIParsingTests: XCTestCase {
                         "a real config must route School — not the nil-degrades-to-Pro default")
     }
 
-    // MARK: - backupOutputIsPrunable (shared by the scheduled, GUI and CLI
-    // backup paths — they used to spell this rule out separately and drifted)
+    // MARK: - backupOutputIsPrunable (shared by the scheduled and CLI backup
+    // paths — they used to spell this rule out separately and drifted)
 
     func testBackupOutputIsPrunableOnlyForFinalizedExports() {
         // 0 = success, 7 = partial export still finalized to backups/<ts>/.
