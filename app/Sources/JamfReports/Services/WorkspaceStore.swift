@@ -68,6 +68,10 @@ final class WorkspaceStore {
     /// Names of this Mac's jamf-cli profiles, for the demo cleanup. Injected so a
     /// test can say which profiles jamf-cli knows without a jamf-cli on the host.
     private let jamfCLIProfileNames: @MainActor () -> Set<String>
+    /// This Mac's workspaces and jamf-cli profiles, and the installed jamf-cli. Both
+    /// run jamf-cli; injected so a test can count the calls without one on the host.
+    private let discoverProfiles: @MainActor () -> [JamfCLIProfile]
+    private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
     var toast: Toast? = nil
@@ -233,10 +237,16 @@ final class WorkspaceStore {
         demoMode: Bool? = nil,
         tickerRegistrar: any TickerRegistrar = SMAppServiceRegistrar(),
         jamfCLIProfileNames: @escaping @MainActor () -> Set<String>
-            = WorkspaceStore.liveJamfCLIProfileNames
+            = WorkspaceStore.liveJamfCLIProfileNames,
+        discoverProfiles: @escaping @MainActor () -> [JamfCLIProfile]
+            = { ProfileService.discoverLocal() },
+        jamfCLIInstallation: @escaping @MainActor () -> JamfCLIInstaller.Installation?
+            = { JamfCLIInstaller.currentInstallation() }
     ) {
         self.tickerRegistrar = tickerRegistrar
         self.jamfCLIProfileNames = jamfCLIProfileNames
+        self.discoverProfiles = discoverProfiles
+        self.jamfCLIInstallation = jamfCLIInstallation
         // MFS-2: one-shot Spotlight + permissions backfill on existing
         // workspaces. Gated on a per-version UserDefaults sentinel so the
         // walk runs at most once per app version. Wave 1 covers the
@@ -244,7 +254,6 @@ final class WorkspaceStore {
         // covers the pre-existing-workspace case.
         WorkspaceMigration.runIfNeeded()
 
-        let realProfiles = ProfileService.discoverLocal()
         // First-launch chooser: an empty real-profile list no longer implies
         // demo mode. Only an explicit `demoMode:` override (tests) or the
         // persisted `forceDemoModeKey` (user previously chose demo) enables
@@ -253,6 +262,8 @@ final class WorkspaceStore {
         // make the call before any synthetic data is bound to the app state.
         let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
         let isDemo = demoMode ?? userForcedDemo
+        // Demo mode runs no jamf-cli, and shows neither answer.
+        let realProfiles = isDemo ? [] : discoverProfiles()
 
         self.demoMode = isDemo
         let start = Self.initialProfile(in: realProfiles)
@@ -267,7 +278,7 @@ final class WorkspaceStore {
         self.selectedScoreCards = Self.loadPersistedScoreCards() ?? Self.defaultScoreCards
         self.overviewLayout = OverviewLayout.parse(
             UserDefaults.standard.string(forKey: Self.overviewLayoutKey))
-        let jamfCLI = JamfCLIInstaller.currentInstallation()
+        let jamfCLI = isDemo ? nil : jamfCLIInstallation()
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
@@ -335,9 +346,9 @@ final class WorkspaceStore {
     /// Respects an explicit user demo-mode preference set via `setDemoMode(_:)`.
     func reloadFromDisk() {
         let wasDemo = demoMode
-        refreshToolStatus()
-        let real = ProfileService.discoverLocal()
         let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
+        // A demo the operator chose stays one whatever jamf-cli lists, so it is not asked.
+        let real = userForcedDemo ? [] : discoverProfiles()
         if real.isEmpty || userForcedDemo {
             demoMode = true
             org = DemoData.org
@@ -346,6 +357,7 @@ final class WorkspaceStore {
             schedules = DemoData.scheduledRuns
         } else {
             demoMode = false
+            refreshToolStatus()
             profiles = real
             schedules = Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
                 profiles: real, policy: AutomationPolicy.current()))
@@ -622,8 +634,10 @@ final class WorkspaceStore {
         return nil
     }
 
+    /// Demo mode runs no jamf-cli; leaving it through `reloadFromDisk` reads the tool.
     func refreshToolStatus() {
-        let jamfCLI = JamfCLIInstaller.currentInstallation()
+        guard !demoMode else { return }
+        let jamfCLI = jamfCLIInstallation()
         jamfCLIPath = jamfCLI?.path
         jamfCLIVersion = jamfCLI?.version
         jamfCLIInstallSource = jamfCLI?.source.label
