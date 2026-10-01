@@ -23,11 +23,19 @@ jr_release_channel() {
 # jr_build_number
 # Prints the build number (CFBundleVersion): $BUILD_NUMBER when it is set and
 # non-empty, otherwise the commit count of the git repository around the
-# current directory, otherwise 0.
+# current directory, otherwise 0. Fails (status 1, message on stderr) in a
+# shallow clone, whose commit count is the fetched depth and not the history.
 jr_build_number() {
   if [[ -n "${BUILD_NUMBER:-}" ]]; then
     printf '%s\n' "$BUILD_NUMBER"
     return 0
+  fi
+  # Prints "false" outside a shallow repository and nothing (an error) outside
+  # any repository, which falls through to 0 below.
+  if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
+    printf 'jr_build_number: %s is a shallow clone, so its commit count is not\n' "$PWD" >&2
+    printf 'the build number; run "git fetch --unshallow" or set BUILD_NUMBER\n' >&2
+    return 1
   fi
   local count
   if count="$(git rev-list --count HEAD 2>/dev/null)" && [[ -n "$count" ]]; then

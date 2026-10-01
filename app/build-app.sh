@@ -24,6 +24,8 @@ MARKETING_VERSION="${MARKETING_VERSION:-2.9.0}"
 # Do NOT set this to the marketing version for releases (that made a beta's
 # integer build look "newer" than its own release to version-comparing tools).
 # A non-empty BUILD_NUMBER in the environment wins; outside a git checkout it is 0.
+# A shallow clone stops the build (its commit count is not the history); run
+# `git fetch --unshallow` or set BUILD_NUMBER.
 BUILD_NUMBER="$(jr_build_number)"
 
 # Release channel. Set RELEASE=1 for a public release build; otherwise the

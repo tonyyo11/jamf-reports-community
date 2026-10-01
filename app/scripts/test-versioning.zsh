@@ -98,6 +98,23 @@ expect "repository with no commits: 0" 0 "$(build_number_in "$empty_repo")"
 expect "outside any repository: 0" 0 "$(build_number_in "$plain_dir")"
 expect "outside any repository, BUILD_NUMBER=77" 77 "$(build_number_in "$plain_dir" 77)"
 
+# A shallow clone counts only the commits it fetched, so its "build number" would
+# repeat across builds. jr_build_number refuses it and names the fix.
+shallow="${tmp_root}/shallow"
+tgit clone -q --depth 1 "file://${repo}" "$shallow"
+expect "the test clone is shallow" true \
+  "$(git -C "$shallow" rev-parse --is-shallow-repository)"
+expect "shallow clone: no build number" "" "$(build_number_in "$shallow" 2>/dev/null)"
+expect "shallow clone: rejected" reject "$(verdict build_number_in "$shallow")"
+shallow_msg="$(build_number_in "$shallow" 2>&1 >/dev/null)"
+expect "shallow clone: message names git fetch --unshallow" yes \
+  "$([[ "$shallow_msg" == *"git fetch --unshallow"* ]] && echo yes || echo no)"
+expect "shallow clone: message names BUILD_NUMBER" yes \
+  "$([[ "$shallow_msg" == *BUILD_NUMBER* ]] && echo yes || echo no)"
+expect "shallow clone, BUILD_NUMBER=4242 is honoured" 4242 "$(build_number_in "$shallow" 4242)"
+git -C "$shallow" fetch -q --unshallow
+expect "unshallowed clone: full commit count" 3 "$(build_number_in "$shallow")"
+
 # --- Validators ----------------------------------------------------------------
 # marketing_row <value> <accept|reject>
 marketing_row() {
