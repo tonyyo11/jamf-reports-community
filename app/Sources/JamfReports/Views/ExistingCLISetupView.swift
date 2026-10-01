@@ -223,11 +223,18 @@ struct ExistingCLISetupView: View {
 
                 if flow.didComplete {
                     completionSummary
-                    PNPButton(
-                        title: isFinishing ? "Finishing…" : "Continue to dashboard",
-                        icon: "arrow.right", style: .gold, size: .lg
-                    ) { finish() }
-                    .disabled(isFinishing)
+                    if flow.canContinue {
+                        PNPButton(
+                            title: isFinishing ? "Finishing…" : "Continue to dashboard",
+                            icon: "arrow.right", style: .gold, size: .lg
+                        ) { finish() }
+                        .disabled(isFinishing)
+                    } else {
+                        PNPButton(
+                            title: "Skip — set up later", icon: "arrow.right",
+                            style: .gold, size: .lg
+                        ) { skip() }
+                    }
                 } else {
                     PNPButton(
                         title: flow.isRunning ? "Collecting…" : "Initialize & run first collection",
@@ -332,9 +339,7 @@ struct ExistingCLISetupView: View {
             Text("Not now?")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
-            Button("Skip — set up later from the dashboard") {
-                outcomeRaw = ExistingCLISetupFlow.SetupOutcome.skipped.rawValue
-            }
+            Button("Skip — set up later from the dashboard") { skip() }
                 .buttonStyle(.link)
                 .font(.footnote)
                 .disabled(flow.isRunning || isFinishing)
@@ -364,12 +369,16 @@ struct ExistingCLISetupView: View {
         )
     }
 
+    private func skip() {
+        outcomeRaw = ExistingCLISetupFlow.SetupOutcome.skipped.rawValue
+    }
+
     /// Persist the automation policy (when enabled), apply it (registers the
     /// ticker), and only then record the completed outcome that re-routes
     /// ContentView to the shell — an unawaited apply would race the view
     /// swap (see the AutomationTab relocation note, 6101086).
     private func finish() {
-        guard !isFinishing else { return }
+        guard flow.canContinue, !isFinishing else { return }
         isFinishing = true
         Task {
             if flow.enableAutomation {

@@ -113,6 +113,8 @@ final class ExistingCLISetupFlow {
     private(set) var statuses: [String: ProfileStatus] = [:]
     /// Why each failed profile failed, beside the row text in `statuses`.
     private(set) var failureStages: [String: FailureStage] = [:]
+    /// Profiles whose workspace initialized this run, whatever the collect then did.
+    private(set) var initializedWorkspaces: Set<String> = []
     private(set) var isRunning = false
     private(set) var didComplete = false
     /// Progress of the profile currently collecting (sequential, so one at a time).
@@ -242,6 +244,7 @@ final class ExistingCLISetupFlow {
         for name in profileNames where selected.contains(name) && unusable[name] == nil {
             statuses[name] = .initializing
             failureStages[name] = nil
+            initializedWorkspaces.remove(name)
             var stage = FailureStage.workspace
             do {
                 let initExit = try await initialize(name)
@@ -249,6 +252,7 @@ final class ExistingCLISetupFlow {
                     fail(name, "workspace init exited \(initExit)", at: stage)
                     continue
                 }
+                initializedWorkspaces.insert(name)
                 stage = .collect
                 statuses[name] = .collecting
                 progress = CollectProgress()
@@ -281,11 +285,19 @@ final class ExistingCLISetupFlow {
         failureStages[name] = stage
     }
 
+    /// True once the run finished with at least one workspace created. With none,
+    /// `ContentView` finds nothing and shows this screen again with its state reset,
+    /// so completion must not be recorded.
+    var canContinue: Bool { didComplete && !initializedWorkspaces.isEmpty }
+
     /// The text under the status rows once the run has finished.
     var completionText: String {
-        Self.summaryText(
+        let summary = Self.summaryText(
             succeeded: selectionSummary.succeeded, failures: Array(failureStages.values)
         )
+        guard !canContinue else { return summary }
+        return summary + " No workspace exists yet, so there is no dashboard to open. Fix the "
+            + "cause above and reopen the app to try again, or skip for now."
     }
 
     /// Names the cause each failure had. Sign-in is blamed only for a collect that

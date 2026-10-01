@@ -214,6 +214,46 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
         XCTAssertFalse(flow.completionText.contains("auth"), flow.completionText)
         XCTAssertTrue(flow.completionText.contains("0 succeeded, 2 failed"))
+        XCTAssertTrue(flow.completionText.contains("No workspace exists yet"),
+                      "says why Continue is not offered: \(flow.completionText)")
+    }
+
+    func testCompletionTextOmitsTheNoWorkspaceNoteWhenOneExists() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
+
+        await flow.run(initialize: { _ in 0 }, collect: { _, _ in CLIBridge.exitCodeUnauthorized })
+
+        XCTAssertTrue(flow.completionText.contains("auth"), flow.completionText)
+        XCTAssertFalse(flow.completionText.contains("No workspace exists yet"))
+    }
+
+    /// `finish()` records completion, and ContentView re-offers setup with its state
+    /// reset when no workspace exists, so a run that created none must not continue.
+    func testCannotContinueWhenNoWorkspaceWasCreated() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
+        XCTAssertFalse(flow.canContinue, "before a run there is nothing to continue from")
+
+        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+
+        XCTAssertTrue(flow.didComplete)
+        XCTAssertFalse(flow.canContinue)
+    }
+
+    func testCanContinueWhenAWorkspaceExistsEvenIfItsCollectFailed() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
+
+        await flow.run(initialize: { _ in 0 }, collect: { _, _ in CLIBridge.exitCodeUnauthorized })
+
+        XCTAssertEqual(flow.statuses["alpha"].map { "\($0)" }?.hasPrefix("failed"), true)
+        XCTAssertTrue(flow.canContinue, "the workspace exists, so ContentView will find it")
+    }
+
+    func testCanContinueWhenOneOfTwoWorkspacesWasCreated() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
+
+        await flow.run(initialize: { $0 == "alpha" ? 1 : 0 }, collect: { _, _ in 0 })
+
+        XCTAssertTrue(flow.canContinue)
     }
 
     // MARK: - Collect progress parsing
