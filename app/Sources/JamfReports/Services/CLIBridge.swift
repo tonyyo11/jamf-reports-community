@@ -321,12 +321,18 @@ final class CLIBridge {
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (Int32, Data) {
         final class DataBox: @unchecked Sendable {
-            var data = Data()
-            let lock = NSLock()
+            private var data = Data()
+            private let lock = NSLock()
             func append(_ newData: Data) {
                 lock.lock()
                 data.append(newData)
                 lock.unlock()
+            }
+            /// A timed-out call resumes without waiting for EOF, so a readability block can
+            /// still be appending while the result is copied.
+            func snapshot() -> Data {
+                lock.lock(); defer { lock.unlock() }
+                return data
             }
         }
         let box = DataBox()
@@ -538,9 +544,9 @@ final class CLIBridge {
             )
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] timed out after \(Int(timeout.rounded(.up)))s — stopped"))
-            return (Self.exitCodeTimedOut, box.data)
+            return (Self.exitCodeTimedOut, box.snapshot())
         }
-        return (code, box.data)
+        return (code, box.snapshot())
     }
 
     /// Fluent helper for the most common CLI flows the GUI surfaces.
