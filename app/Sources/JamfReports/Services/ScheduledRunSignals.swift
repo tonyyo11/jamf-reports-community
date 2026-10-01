@@ -351,6 +351,10 @@ let sheetFailureMarkerSuffix = "sheet failure(s) — see lines above"
 /// and a same-day retry cannot rescan, since the scan's cadence floor makes it not due.
 let deviceScanGapsMarkerSuffix = "devices did not respond"
 
+/// Ends the `[partial]` line a device scan logs for a kind it did not write, stopped or over
+/// its failure budget. `CollectHonestyWatcher` reads the kind from that line.
+let deviceScanNotWrittenMarkerSuffix = "— not written"
+
 /// Watches a run's log lines for the two engine markers that mean a run exiting
 /// 0 did NOT do what "success" implies: it stood down for another machine
 /// (nothing was collected at all), or it could not write the day's summary
@@ -398,14 +402,15 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     }
 
     /// The kinds a `[partial]` line says did not land: the collect's sources line, or a device
-    /// scan kind that was not written (`<kind>: … — not written`). Nil for any other line.
+    /// scan kind that was not written (`deviceScanNotWrittenMarkerSuffix`). Nil for any other
+    /// line.
     static func unlandedKinds(in line: String) -> [String]? {
         if let marker = line.range(of: ReportEngine.unlandedSourcesMarker) {
             let list = line[marker.upperBound...].components(separatedBy: " — ")[0]
             return list.components(separatedBy: ", ").filter { !$0.isEmpty }
         }
         let prefix = "[partial] "
-        guard line.hasPrefix(prefix), line.hasSuffix(" — not written"),
+        guard line.hasPrefix(prefix), line.hasSuffix(" \(deviceScanNotWrittenMarkerSuffix)"),
               let colon = line.firstIndex(of: ":") else { return nil }
         return [String(line[line.index(line.startIndex, offsetBy: prefix.count)..<colon])]
     }
