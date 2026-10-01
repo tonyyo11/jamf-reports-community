@@ -2,6 +2,8 @@
 # Pre-push gate: the "Pre-push CI parity" check from CLAUDE.md. Builds the app
 # and its test target, and blocks the push when the compiler reports an error,
 # so a break the CI build would catch is caught before it leaves this Mac.
+# A diagnostic is a line containing ": error: ", the pattern CI's failure listing
+# uses, so a warning that merely mentions "error:" does not block.
 # CI compiles with Swift 6.1 (Xcode 16.4); a newer local Swift is more lenient
 # about actor isolation, so this catches most CI errors, not every one.
 #
@@ -19,13 +21,13 @@ else
   build_status=$?
 fi
 
-errors="$(printf '%s\n' "$output" | grep "error:" || true)"
+errors="$(printf '%s\n' "$output" | grep ": error: " || true)"
 if [ -n "$errors" ]; then
   printf '%s\n' "$errors" >&2
   echo "pre-push: build errors found, push blocked" >&2
   exit 1
 fi
-# A failed build with no "error:" line (no Swift toolchain, a crash) is not a pass.
+# A failed build with no diagnostic line (no Swift toolchain, a crash) is not a pass.
 if [ "$build_status" -ne 0 ]; then
   printf '%s\n' "$output" | tail -n 20 >&2
   echo "pre-push: swift build exited $build_status, push blocked" >&2
