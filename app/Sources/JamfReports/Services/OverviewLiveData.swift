@@ -76,7 +76,10 @@ struct OverviewLiveData: Sendable {
     /// The benchmark or baseline the rules belong to.
     var failingRulesLabel = ""
 
+    /// Each agent's share is of the Macs reporting its attribute.
     var agents: [SecurityAgent] = []
+    /// Those Macs, by agent name: the denominator each card prints.
+    var agentReportingMacs: [String: Int] = [:]
     /// Configured agents no Mac reports a value for — usually a column name
     /// that does not match the extension attribute.
     var agentsWithoutValues: [String] = []
@@ -102,10 +105,8 @@ enum OverviewLiveDataLoader {
     static let rulesKept = 50
 
     /// Only `sections` are read, so a hidden Recent Activity never pays for
-    /// the device inventory. `fleetCount` is the latest summary's device
-    /// count — the denominator agent cards print — or 0 when unknown.
-    static func load(profile: String, sections: Set<OverviewSection>,
-                     fleetCount: Int) -> OverviewLiveData {
+    /// the device inventory.
+    static func load(profile: String, sections: Set<OverviewSection>) -> OverviewLiveData {
         var data = OverviewLiveData()
         let wanted = sections.intersection(OverviewLiveData.sections)
         guard !wanted.isEmpty else { return data }
@@ -135,7 +136,7 @@ enum OverviewLiveDataLoader {
                              eaRows: eaRows)
         }
         if wanted.contains(.securityAgents) {
-            loadAgents(into: &data, agents: agents, eaRows: eaRows, fleetCount: fleetCount)
+            loadAgents(into: &data, agents: agents, eaRows: eaRows)
         }
         if wanted.contains(.recentActivity) {
             loadRecentActivity(into: &data, profile: profile, baseline: baseline,
@@ -211,8 +212,7 @@ enum OverviewLiveDataLoader {
     private static func loadAgents(
         into data: inout OverviewLiveData,
         agents: [SecurityAgentConfig],
-        eaRows: [EAResultRow]?,
-        fleetCount: Int
+        eaRows: [EAResultRow]?
     ) {
         guard !agents.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
@@ -227,7 +227,9 @@ enum OverviewLiveDataLoader {
                 remedy: .sources)
             return
         }
-        let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: agents)
+        // jamf-cli's rows carry the computer name and no id, and names repeat.
+        let coverage = SecurityAgentCoverage.compute(
+            rows: eaRows, agents: agents, countsRowsWithoutID: true)
         let reported = coverage.filter { $0.reporting > 0 }
         guard !reported.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
@@ -236,16 +238,17 @@ enum OverviewLiveDataLoader {
                 remedy: .config)
             return
         }
-        // The card prints "installed / fleet", so the percentage uses the same
-        // denominator; without a summary, the Macs ea-results knows about.
-        let fleet = fleetCount > 0
-            ? fleetCount : MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
+        // Of the Macs reporting, not the security report's device count: the two
+        // snapshots land on different cadences, and a Mac with no value is unknown.
         data.agents = reported.map {
             SecurityAgent(
                 name: $0.name, installed: $0.installed,
-                pct: SecurityAgentCoverage.percent(installed: $0.installed, fleet: fleet) ?? 0,
+                pct: SecurityAgentCoverage.percent(
+                    installed: $0.installed, fleet: $0.reporting) ?? 0,
                 column: $0.column, trend: .flat)
         }
+        data.agentReportingMacs = Dictionary(
+            reported.map { ($0.name, $0.reporting) }, uniquingKeysWith: { first, _ in first })
         data.agentsWithoutValues = coverage.filter { $0.reporting == 0 }.map(\.name)
     }
 

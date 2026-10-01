@@ -881,9 +881,8 @@ struct OverviewView: View {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let sections = visibleLiveSections
-        let fleet = overviewFleetCount
         let data = await Task.detached(priority: .userInitiated) {
-            OverviewLiveDataLoader.load(profile: profile, sections: sections, fleetCount: fleet)
+            OverviewLiveDataLoader.load(profile: profile, sections: sections)
         }.value
         // A profile switch mid-read must not paint the previous tenant's data.
         guard profile == workspace.profile, !workspace.demoMode else { return }
@@ -925,19 +924,14 @@ struct OverviewView: View {
         return workspace.complianceBenchmarkLabel ?? "Compliance Benchmark"
     }
 
-    /// Live coverage is re-expressed against the fleet count the cards print
-    /// ("installed / fleet") once the trend summaries have loaded.
     private var agents: [SecurityAgent] {
-        guard !workspace.demoMode else { return DemoData.securityAgents }
-        let fleet = overviewFleetCount
-        guard fleet > 0 else { return live.agents }
-        return live.agents.map { agent in
-            SecurityAgent(
-                name: agent.name, installed: agent.installed,
-                pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
-                    ?? agent.pct,
-                column: agent.column, trend: agent.trend)
-        }
+        workspace.demoMode ? DemoData.securityAgents : live.agents
+    }
+
+    /// The Macs an agent's share is of: the demo fleet, or live, the Macs that
+    /// report its extension attribute.
+    private func agentDenominator(_ agent: SecurityAgent) -> Int {
+        workspace.demoMode ? DemoData.totalDevices : live.agentReportingMacs[agent.name] ?? 0
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -1335,7 +1329,7 @@ struct OverviewView: View {
     }
 
     private func agentCard(_ a: SecurityAgent) -> some View {
-        AgentCardView(agent: a, fleetCount: overviewFleetCount)
+        AgentCardView(agent: a, fleetCount: agentDenominator(a))
     }
 
     // MARK: Recent activity table
@@ -1618,7 +1612,8 @@ struct OverviewView: View {
     }
 
     private func securityAgentDetail(_ agent: SecurityAgent) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let denominator = agentDenominator(agent)
+        return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: agent.name,
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
@@ -1627,7 +1622,9 @@ struct OverviewView: View {
             )
             HStack(spacing: 12) {
                 StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
-                StatTile(label: "Installed", value: "\(agent.installed)", sub: overviewFleetCount > 0 ? "of \(overviewFleetCount) tracked devices" : "tracked devices")
+                StatTile(label: "Installed", value: "\(agent.installed)",
+                         sub: denominator > 0
+                            ? "of \(denominator) tracked devices" : "tracked devices")
                 StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
             }
             Card(padding: 18) {

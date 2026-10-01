@@ -70,4 +70,49 @@ final class SecurityAgentCoverageTests: XCTestCase {
     func testPercentNeverPassesOneHundred() {
         XCTAssertEqual(SecurityAgentCoverage.percent(installed: 12, fleet: 10), 100)
     }
+
+    /// jamf-cli 1.31.1 rows carry `{definition_id, device, ea_name, value}` and no id, so
+    /// keying by `device` (the computer name) counted two Macs called "MacBook Pro" as one.
+    func testRowsWithoutAnIDAreSeparateMacsWhenAsked() throws {
+        let data = try rows("""
+        [
+          {"definition_id": "4", "device": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"definition_id": "4", "device": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"definition_id": "4", "device": "mac-3",
+           "ea_name": "Falcon - Status", "value": "Stopped"},
+          {"definition_id": "4", "device": "mac-4", "ea_name": "Falcon - Status", "value": ""}
+        ]
+        """)
+
+        let perRow = SecurityAgentCoverage.compute(
+            rows: data, agents: [falcon], countsRowsWithoutID: true)
+        let byName = SecurityAgentCoverage.compute(rows: data, agents: [falcon])
+
+        XCTAssertEqual(perRow.first?.installed, 2, "two Macs share a name; both are connected")
+        XCTAssertEqual(perRow.first?.reporting, 3, "an empty value is still not reporting")
+        XCTAssertEqual(byName.first?.installed, 1, "the daily summary's count is unchanged")
+        XCTAssertEqual(byName.first?.reporting, 2)
+    }
+
+    /// A row that carries a computer id still counts once per id, however many rows it has.
+    func testRowsWithAnIDCountOncePerIDWhenCountingRows() throws {
+        let data = try rows("""
+        [
+          {"computer_id": "7", "computer_name": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"computer_id": "7", "computer_name": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"computer_id": "8", "computer_name": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Stopped"}
+        ]
+        """)
+
+        let result = SecurityAgentCoverage.compute(
+            rows: data, agents: [falcon], countsRowsWithoutID: true)
+
+        XCTAssertEqual(result.first?.installed, 1)
+        XCTAssertEqual(result.first?.reporting, 2)
+    }
 }

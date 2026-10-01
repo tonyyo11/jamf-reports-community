@@ -80,6 +80,52 @@ final class OverviewLiveDataTests: XCTestCase {
         XCTAssertEqual(built.rules.map(\.fails), [7], "Never summed across benchmarks")
     }
 
+    // MARK: - Security agents
+
+    /// A workspace under a temporary root holding `config` and one ea-results snapshot.
+    private func workspace(profile: String, config: String, eaResults: String) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OverviewLiveData-\(UUID().uuidString)", isDirectory: true)
+        let eaDir = root.appendingPathComponent("\(profile)/jamf-cli-data/ea-results",
+                                                isDirectory: true)
+        try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
+        try Data(config.utf8).write(to: root.appendingPathComponent("\(profile)/config.yaml"))
+        try Data(eaResults.utf8).write(
+            to: eaDir.appendingPathComponent("ea-results_20260930T120000.json"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+    }
+
+    /// The card's share is of the Macs reporting the agent's attribute, not the security
+    /// report's device count, and two Macs that share a name are two Macs.
+    func testAgentShareIsOfTheMacsReportingTheAttribute() throws {
+        try workspace(profile: "acme", config: """
+            security_agents:
+              - name: "CrowdStrike Falcon"
+                column: "Falcon - Status"
+                connected_value: "Running"
+            """, eaResults: """
+            [
+              {"definition_id": "4", "device": "MacBook Pro",
+               "ea_name": "Falcon - Status", "value": "Running"},
+              {"definition_id": "4", "device": "MacBook Pro",
+               "ea_name": "Falcon - Status", "value": "Running"},
+              {"definition_id": "4", "device": "mac-3",
+               "ea_name": "Falcon - Status", "value": "Stopped"},
+              {"definition_id": "4", "device": "mac-4", "ea_name": "Falcon - Status", "value": ""}
+            ]
+            """)
+
+        let data = OverviewLiveDataLoader.load(profile: "acme", sections: [.securityAgents])
+
+        XCTAssertEqual(data.agents.map(\.installed), [2])
+        XCTAssertEqual(data.agents.map(\.pct), [66.7])
+        XCTAssertEqual(data.agentReportingMacs, ["CrowdStrike Falcon": 3])
+    }
+
     // MARK: - Recent activity
 
     private func record(

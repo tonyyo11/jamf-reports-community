@@ -99,13 +99,21 @@ final class RiskScoringServiceTests: XCTestCase {
         XCTAssertEqual(disconnected.isConnected, false)
     }
 
-    func testSecurityAgentCheckHasNoSignalForEmptyValues() {
+    func testSecurityAgentCheckHasNoSignalForAnEmptyValue() {
         XCTAssertNil(RiskScoringService.SecurityAgentCheck(
             value: "", connectedValue: "connected"
         ).isConnected, "empty EA value = no data, not a finding")
         XCTAssertNil(RiskScoringService.SecurityAgentCheck(
-            value: "Connected", connectedValue: ""
-        ).isConnected, "empty connected_value = unconfigured, not a finding")
+            value: " ", connectedValue: ""
+        ).isConnected)
+    }
+
+    /// Config's Add agent leaves connected_value blank, and Overview coverage then counts
+    /// any value as connected. The Devices risk check read the same agent as unknown.
+    func testSecurityAgentCheckCountsAnyValueWhenConnectedValueIsBlank() {
+        XCTAssertEqual(RiskScoringService.SecurityAgentCheck(
+            value: "Stopped", connectedValue: "  "
+        ).isConnected, true)
     }
 
     func testAdapterFeedsAgentCheckIntoScore() {

@@ -54,20 +54,21 @@ struct RiskScoringService: Sendable {
     /// One device's status check against a configured `security_agents` entry.
     ///
     /// `connected_value` follows the config contract: a case-insensitive
-    /// substring match against the device's EA value. An empty EA value means
-    /// "no data" — the factor is not triggered.
+    /// substring match against the device's EA value, and with no
+    /// `connected_value` any value counts, as `SecurityAgentCoverage` counts it.
+    /// An empty EA value means "no data" — the factor is not triggered.
     struct SecurityAgentCheck: Sendable, Equatable {
         /// The device's raw EA value for the agent's configured column.
         let value: String
         /// The configured `connected_value`.
         let connectedValue: String
 
-        /// nil when there is no usable signal (empty value or empty
-        /// connected_value); otherwise whether the value matches.
+        /// nil when the value is empty; otherwise whether it matches.
         var isConnected: Bool? {
             let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedExpected = connectedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty, !trimmedExpected.isEmpty else { return nil }
+            guard !trimmedValue.isEmpty else { return nil }
+            guard !trimmedExpected.isEmpty else { return true }
             return trimmedValue.localizedCaseInsensitiveContains(trimmedExpected)
         }
     }
