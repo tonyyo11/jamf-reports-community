@@ -51,15 +51,22 @@ final class CoreDashboardMobileReportTests: XCTestCase {
         return tmp
     }
 
-    /// Write inline JSON as the only snapshot of `kind`.
-    private func dataDir(kind: String, json: String) throws -> URL {
+    /// Write inline JSON as the only snapshot of each kind.
+    private func dataDir(_ kinds: [String: String]) throws -> URL {
         let tmp = try makeTempDir()
-        let kindDir = tmp.appendingPathComponent(kind, isDirectory: true)
-        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
-        try json.write(
-            to: kindDir.appendingPathComponent("\(kind).json"), atomically: true, encoding: .utf8
-        )
+        for (kind, json) in kinds {
+            let kindDir = tmp.appendingPathComponent(kind, isDirectory: true)
+            try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+            try json.write(
+                to: kindDir.appendingPathComponent("\(kind).json"),
+                atomically: true, encoding: .utf8
+            )
+        }
         return tmp
+    }
+
+    private func dataDir(kind: String, json: String) throws -> URL {
+        try dataDir([kind: json])
     }
 
     private func dashboard(_ dir: URL) -> CoreDashboard {
@@ -145,7 +152,7 @@ final class CoreDashboardMobileReportTests: XCTestCase {
         XCTAssertEqual(row["Jailbreak Status"], "None")
     }
 
-    /// Older snapshots put the posture flags and serial under `general`.
+    /// Earlier decoders read the posture flags and serial under `general`; that stays a fallback.
     func testInventoryFallsBackToGeneralForPostureAndSerial() throws {
         let dir = try dataDir(kind: "mobile-device-inventory-details", json: """
         [{"mobileDeviceId": "3", "deviceType": "iOS",
@@ -229,6 +236,8 @@ final class CoreDashboardMobileReportTests: XCTestCase {
         XCTAssertEqual(summaryValue(ws, "Managed Rows"), "103")
         XCTAssertEqual(summaryValue(ws, "Unmanaged Rows"), "0")
         XCTAssertEqual(summaryValue(ws, "Management State Unknown"), "2")
+        // 103 devices carry an inventory date, all in 2020 to 2022; the other two carry none.
+        XCTAssertEqual(summaryValue(ws, "Inventory Older Than 30 Days"), "103")
     }
 
     /// The list snapshot has no management state at all: every row used to read
@@ -245,6 +254,8 @@ final class CoreDashboardMobileReportTests: XCTestCase {
         XCTAssertEqual(summaryValue(ws, "Managed Rows"), "Unknown")
         XCTAssertEqual(summaryValue(ws, "Unmanaged Rows"), "Unknown")
         XCTAssertEqual(summaryValue(ws, "Supervised Devices"), "Unknown")
+        // No row has an inventory date, so "none are stale" would be a claim nothing measured.
+        XCTAssertEqual(summaryValue(ws, "Inventory Older Than 30 Days"), "Unknown")
         let families = counterBlock(ws, title: "Device Family Distribution")
         XCTAssertEqual(families["iPhone"], "62")
         XCTAssertEqual(families["iPad"], "41")
@@ -285,6 +296,58 @@ final class CoreDashboardMobileReportTests: XCTestCase {
 
         XCTAssertEqual(summaryValue(ws, "Managed"), "Unknown")
         XCTAssertEqual(summaryValue(ws, "Unmanaged"), "Unknown")
+        XCTAssertEqual(summaryValue(ws, "Inventory Older Than Threshold"), "Unknown")
         XCTAssertEqual(summaryValue(ws, "Total Mobile Devices"), "105")
+        XCTAssertNil(summaryValue(ws, "Management State Unknown"),
+                     "all rows unknown is already said by the Unknown counts")
+    }
+
+    /// Managed + Unmanaged + Unknown must add up to the total on this sheet too.
+    func testInventorySummaryListsDevicesWithNoManagementState() throws {
+        let dir = try dataDir(kind: "mobile-device-inventory-details", json: """
+        [{"mobileDeviceId": "1", "deviceType": "iOS",
+          "general": {"displayName": "A", "managed": true,
+                      "lastInventoryUpdateDate": "2020-01-01T00:00:00Z"}},
+         {"mobileDeviceId": "2", "deviceType": "iOS",
+          "general": {"displayName": "B", "managed": false}},
+         {"mobileDeviceId": "3", "deviceType": "iOS", "general": {"displayName": "C"}}]
+        """)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let dash = dashboard(dir)
+        try dash.writeMobileInventory()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Mobile Inventory"))
+
+        XCTAssertEqual(summaryValue(ws, "Total Mobile Devices"), "3")
+        XCTAssertEqual(summaryValue(ws, "Managed"), "1")
+        XCTAssertEqual(summaryValue(ws, "Unmanaged"), "1")
+        XCTAssertEqual(summaryValue(ws, "Management State Unknown"), "1")
+        // One row carries an inventory date, so the count is measured (and it is stale).
+        XCTAssertEqual(summaryValue(ws, "Inventory Older Than Threshold"), "1")
+    }
+
+    /// A blank string in the inventory is not an answer: the list row with the same id
+    /// supplies the name and username, as it does for model and serial.
+    func testInventoryFallsBackToTheListRowWhenTheInventoryIsBlank() throws {
+        let dir = try dataDir([
+            "mobile-device-inventory-details": """
+            [{"mobileDeviceId": "9", "deviceType": "iOS",
+              "general": {"displayName": "  "}, "userAndLocation": {"username": ""}}]
+            """,
+            "mobile-devices-list": """
+            [{"id": "9", "name": "List Name", "username": "listuser", "serialNumber": "S9",
+              "model": "iPad mini 3 (Wi-Fi)", "modelIdentifier": "iPad4,7"}]
+            """,
+        ])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let dash = dashboard(dir)
+        try dash.writeMobileInventory()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Mobile Inventory"))
+        let row = try inventoryRow(ws, jamfID: "9")
+
+        XCTAssertEqual(row["Device Name"], "List Name")
+        XCTAssertEqual(row["Username"], "listuser")
+        XCTAssertEqual(row["Serial Number"], "S9")
     }
 }

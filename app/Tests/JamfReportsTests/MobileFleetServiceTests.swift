@@ -990,7 +990,7 @@ final class MobileFleetServiceTests: XCTestCase {
         try JSONDecoder().decode(MobileDeviceInventoryItem.self, from: Data(json.utf8))
     }
 
-    /// jamf-cli 1.29 returns the flags under `security`; older snapshots under `general`.
+    /// The flags are under `security`; earlier decoders read `general`, kept as a fallback.
     /// A device reporting neither is unknown and counts toward nothing.
     func testPostureCountsReadSecurityThenGeneral() throws {
         let fleet = [

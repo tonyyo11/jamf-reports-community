@@ -963,7 +963,7 @@ struct CoreDashboard: Sendable {
                 ("Assigned Users", summary.assigned),
                 ("Activation Lock Enabled", countCell(summary.activationLock)),
                 ("Passcode Compliant", countCell(summary.passcodeCompliant)),
-                ("Inventory Older Than \(staleThreshold) Days", summary.stale),
+                ("Inventory Older Than \(staleThreshold) Days", countCell(summary.stale)),
             ]
             if summary.managed != nil, summary.managementUnknown > 0 {
                 summaryPairs.insert(("Management State Unknown", summary.managementUnknown), at: 3)
@@ -1051,15 +1051,18 @@ struct CoreDashboard: Sendable {
         var row = ws.writeSheetHeader(title: t("Mobile Inventory"),
                                       subtitle: "Generated: \(ts)", ncols: 20)
 
-        let summaryPairs: [(String, Any)] = [
+        var summaryPairs: [(String, Any)] = [
             ("Total Mobile Devices", summary.total),
             ("Managed", countCell(summary.managed)),
             ("Unmanaged", countCell(summary.unmanaged)),
             ("Supervised", countCell(summary.supervised)),
             ("Shared iPad", countCell(summary.sharedIPad)),
             ("Assigned Users", summary.assigned),
-            ("Inventory Older Than Threshold", summary.stale),
+            ("Inventory Older Than Threshold", countCell(summary.stale)),
         ]
+        if summary.managed != nil, summary.managementUnknown > 0 {
+            summaryPairs.insert(("Management State Unknown", summary.managementUnknown), at: 3)
+        }
         for (label, value) in summaryPairs {
             ws.write(label, row: row, col: 0, format: .cell)
             ws.write(value, row: row, col: 1, format: .cell)
@@ -1540,8 +1543,10 @@ struct CoreDashboard: Sendable {
         let lastInventory = general?.lastInventoryUpdateDate ?? ""
         let factor = MobileFleetService.formFactor(of: device, listRow: listRow)
         return [
-            "Jamf Pro ID": device.mobileDeviceId ?? listRow?.id ?? "",
-            "Device Name": general?.displayName ?? listRow?.name ?? "",
+            "Jamf Pro ID": MobileFleetService.firstNonBlank(device.mobileDeviceId, listRow?.id)
+                ?? "",
+            "Device Name": MobileFleetService.firstNonBlank(general?.displayName, listRow?.name)
+                ?? "",
             "Serial Number": MobileFleetService.serialNumber(of: device, listRow: listRow) ?? "",
             "Device Family": MobileFleetService.typeLabel(
                 for: factor, deviceType: device.deviceType),
@@ -1550,7 +1555,7 @@ struct CoreDashboard: Sendable {
             "Shared iPad": yesNoUnknown(general?.sharedIpad),
             "Model": MobileFleetService.model(of: device, listRow: listRow) ?? "",
             "OS Version": general?.osVersion ?? "",
-            "Username": user?.username ?? listRow?.username ?? "",
+            "Username": MobileFleetService.firstNonBlank(user?.username, listRow?.username) ?? "",
             "Email": user?.emailAddress ?? "",
             "Department": user?.department ?? "",
             "Building": user?.building ?? "",
@@ -1582,8 +1587,9 @@ struct CoreDashboard: Sendable {
 
     /// The counts are nil when no row answers the question: unmeasured, not zero.
     private struct MobileInventorySummary {
-        var total = 0, managementUnknown = 0, assigned = 0, stale = 0
+        var total = 0, managementUnknown = 0, assigned = 0
         var managed, unmanaged, supervised, sharedIPad, activationLock, passcodeCompliant: Int?
+        var stale: Int?
         var families: [String: Int] = [:], osVersions: [String: Int] = [:]
         var models: [String: Int] = [:]
     }
@@ -1611,9 +1617,10 @@ struct CoreDashboard: Sendable {
         s.sharedIPad = count("Shared iPad", "Yes")
         s.activationLock = count("Activation Lock", "Yes")
         s.passcodeCompliant = count("Passcode Compliant", "Yes")
+        let ages = rows.compactMap { $0["Days Since Inventory"] as? Int }
+        if !ages.isEmpty { s.stale = ages.filter { $0 > staleDays }.count }
         for row in rows {
             if !cell(row, "Username").isEmpty { s.assigned += 1 }
-            if let days = row["Days Since Inventory"] as? Int, days > staleDays { s.stale += 1 }
             s.families[cell(row, "Device Family"), default: 0] += 1
             let os = cell(row, "OS Version")
             if !os.isEmpty { s.osVersions[os, default: 0] += 1 }

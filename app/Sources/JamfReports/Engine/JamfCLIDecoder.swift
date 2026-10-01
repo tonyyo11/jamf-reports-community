@@ -940,10 +940,10 @@ struct MobileDeviceHardware: Decodable, Sendable {
     var serialNumber: String? = nil
 }
 
-/// SECURITY section (only requested with `--section SECURITY`). jamf-cli 1.29 returns the
-/// posture flags here, with the jailbreak flag spelled `jailBreakDetected`; older
-/// snapshots put `passcodeCompliant`, `activationLockEnabled` and a jailbreak status
-/// string under `general`.
+/// SECURITY section (only returned when requested with `--section SECURITY`). The Jamf Pro
+/// API carries the posture flags here, with the jailbreak flag spelled `jailBreakDetected`.
+/// Earlier decoders read `passcodeCompliant`, `activationLockEnabled` and a jailbreak
+/// status string under `general`, which `MobileFleetService` keeps as the fallback.
 struct MobileDeviceSecurity: Decodable, Sendable {
     let activationLockEnabled: Bool?
     let passcodeCompliant: Bool?

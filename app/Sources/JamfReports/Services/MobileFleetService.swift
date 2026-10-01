@@ -156,10 +156,10 @@ struct MobileFleetService: Sendable {
 
     // MARK: - Per-device fields
     //
-    // jamf-cli 1.29 puts serial and model under `hardware` and the posture flags under
-    // `security`; older snapshots put them under `general`. Each accessor reads the
-    // current section first and falls back to the old one. nil means the device does
-    // not report the field: unknown, never false or zero.
+    // The Jamf Pro API puts serial and model under `hardware` and the posture flags under
+    // `security`. Earlier decoders read them under `general`, which stays as the fallback:
+    // each accessor reads the current section first. nil means the device does not report
+    // the field: unknown, never false or zero.
 
     /// Serial number from `hardware`, `general`, then the list row with the same id.
     static func serialNumber(
@@ -189,13 +189,14 @@ struct MobileFleetService: Sendable {
     }
 
     /// Jailbreak status text: `security`'s flag as "Detected" or "None", else the status
-    /// string older snapshots keep under `general`. A blank status is not a report.
+    /// string earlier decoders read under `general`. A blank status is not a report.
     static func jailbreakStatus(of device: MobileDeviceInventoryItem) -> String? {
         if let flag = device.security?.jailBreakDetected { return flag ? "Detected" : "None" }
         return firstNonBlank(device.general?.jailbreakDetected)
     }
 
-    private static func firstNonBlank(_ values: String?...) -> String? {
+    /// The first value that is not blank after trimming, or nil when all are.
+    static func firstNonBlank(_ values: String?...) -> String? {
         for value in values {
             let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if !trimmed.isEmpty { return trimmed }
