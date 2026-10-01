@@ -186,6 +186,9 @@ final class ExistingCLISetupFlowTests: XCTestCase {
 
         let plain = ExistingCLISetupFlow.summaryText(succeeded: 1, failures: [.collect])
         XCTAssertTrue(plain.contains("Run History"), plain)
+        // Exit 1 usually means some kinds failed in a collect that finished.
+        XCTAssertTrue(plain.contains("A collect reported failures"), plain)
+        XCTAssertFalse(plain.contains("did not finish"), plain)
         XCTAssertFalse(plain.contains("auth"), plain)
     }
 

@@ -321,7 +321,7 @@ final class ExistingCLISetupFlow {
                 + "re-collect from the Overview banner (Sources page shows connection status).")
         }
         if failures.contains(.collect) {
-            parts.append("A collect did not finish; Run History lists the failing commands, "
+            parts.append("A collect reported failures; Run History lists the failing commands, "
                 + "and the Overview banner can re-collect.")
         }
         return parts.joined(separator: " ")
