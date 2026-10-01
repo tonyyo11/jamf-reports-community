@@ -787,6 +787,39 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertTrue(html.contains("<script>"), "Chart section must still contain a script block")
     }
 
+    /// `<!--` followed by `<script` inside a script block puts the HTML parser in the
+    /// "double escaped" state, where `</script>` no longer ends the block and every
+    /// later section of the report is swallowed. Escaping `</` alone does not stop it.
+    func testJSInjectionCommentOpenerCannotHideLaterSections() {
+        let report = makeReport()
+        let html = report.buildChartsSection(
+            osVersions: [["os_version": "15.1 <!-- <script", "count": 2]],
+            patchStatus: [["title": "Evil <!--<script>&amp;", "compliance_pct": "40%"]],
+            accentColor: "#2D5EA2"
+        )
+        guard let open = html.range(of: "<script>"),
+              let close = html.range(of: "</script>", options: .backwards) else {
+            return XCTFail("Chart section must contain one script block")
+        }
+        let block = String(html[open.upperBound..<close.lowerBound])
+        for raw in ["<!--", "<script", "</script", "<", ">", "&"] {
+            XCTAssertFalse(block.contains(raw), "script block must not contain raw \(raw)")
+        }
+        XCTAssertTrue(block.contains(#"\u003c!--"#), "the title must survive as an escape")
+    }
+
+    /// The escaped array must still decode to the original strings.
+    func testJsonArrayEscapesAngleBracketsAndAmpersandAndRoundTrips() throws {
+        let report = makeReport()
+        let labels = ["a<b", "x>y", "p&q", "<!--<script>alert(1)</script>"]
+        let literal = report.jsonArray(labels)
+        for raw in ["<", ">", "&"] {
+            XCTAssertFalse(literal.contains(raw), "\(raw) must be escaped in \(literal)")
+        }
+        let decoded = try JSONSerialization.jsonObject(with: Data(literal.utf8)) as? [String]
+        XCTAssertEqual(decoded, labels)
+    }
+
     // MARK: - emptySection placeholder
 
     func testEmptySectionHelperRendersTitle() {

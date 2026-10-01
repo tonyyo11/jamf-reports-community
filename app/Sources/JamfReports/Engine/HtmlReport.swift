@@ -1739,11 +1739,13 @@ struct HtmlReport: Sendable {
         result = result
             .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
             .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-            // Foundation does not escape `/`, so a JSON string containing
-            // `</script>` would close the surrounding <script> block. Escape
-            // the closing-tag sequence so user-controlled chart labels
-            // (e.g. patch policy names) cannot break out into HTML context.
-            .replacingOccurrences(of: "</", with: "<\\/")
+            // `<`, `>` and `&` only occur inside JSON strings, where the \u form
+            // decodes to the same character. Escaping every `<` (not just `</`)
+            // also stops `<!--` + `<script` from entering the HTML parser's
+            // double-escaped state, which would hide the rest of the report.
+            .replacingOccurrences(of: "<", with: "\\u003c")
+            .replacingOccurrences(of: ">", with: "\\u003e")
+            .replacingOccurrences(of: "&", with: "\\u0026")
         return result
     }
 
