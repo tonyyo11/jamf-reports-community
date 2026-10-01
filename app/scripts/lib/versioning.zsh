@@ -20,6 +20,23 @@ jr_release_channel() {
   fi
 }
 
+# jr_package_channel <build configuration> <app channel>
+# Prints the channel a package is named by: "release" only for the "release"
+# configuration of a release-channel app, "beta" for anything else. A
+# non-release package is neither signature-checked nor notarized, so it must
+# not carry a release name just because the app it wraps was built with RELEASE=1.
+jr_package_channel() {
+  if (( $# != 2 )); then
+    printf 'jr_package_channel: want 2 args (configuration channel), got %d\n' "$#" >&2
+    return 2
+  fi
+  if [[ "$1" == "release" && "$2" == "release" ]]; then
+    printf 'release\n'
+  else
+    printf 'beta\n'
+  fi
+}
+
 # jr_build_number
 # Prints the build number (CFBundleVersion): $BUILD_NUMBER when it is set and
 # non-empty, otherwise the commit count of the git repository around the
