@@ -434,11 +434,13 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     }
 
     /// The rule self-remediation uses (`WorkspaceStore.lastFailureRepeatsOnRetry`), read from
-    /// `profile`'s state files.
+    /// `profile`'s state files, except that exit 3 still retries (#226 5a).
     func retryCouldHelp(profile: String) -> Bool {
         guard let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return incomplete }
         let store = StateFileStore(directory: stateDir)
-        return retryCouldHelp { WorkspaceStore.lastFailureRepeatsOnRetry($0, in: store) }
+        return retryCouldHelp {
+            WorkspaceStore.lastFailureRepeatsOnRetry($0, in: store, countingUnauthorized: false)
+        }
     }
 
     /// Whether the run may claim it refreshed the fleet's data. False for

@@ -357,19 +357,27 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
     }
 
-    /// Exit 2, 3 and 8 repeat on a retry too: the self-remediation rule.
-    func testUsageCredentialAndPolicyExitsAreNotRetried() throws {
+    /// Exit 2 and 8 repeat on a retry too: the self-remediation rule.
+    func testUsageAndPolicyExitsAreNotRetried() throws {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
-        let codes = [
-            CLIBridge.exitCodeUsage, CLIBridge.exitCodeUnauthorized,
-            CLIBridge.exitCodeRefusedByPolicy,
-        ]
+        let codes = [CLIBridge.exitCodeUsage, CLIBridge.exitCodeRefusedByPolicy]
         for code in codes {
             store.record(.failed(exitCode: code), report: "kind-\(code)", at: Date())
         }
         let watcher = CollectHonestyWatcher()
         watcher.observe(ReportEngine.unlandedSourcesLine(codes.map { "kind-\($0)" }, attempted: 5))
         XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// Unlike self-remediation, the same-day retry still reaches an exit-3 kind, so it lands
+    /// once someone re-authenticates (#226 5a).
+    func testRejectedCredentialsStillGetTheSameDayRetry() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.record(
+            .failed(exitCode: CLIBridge.exitCodeUnauthorized), report: "groups", at: Date())
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["groups"], attempted: 5))
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile))
     }
 
     func testOneMissingSourceARetryCouldFetchStillRetries() throws {

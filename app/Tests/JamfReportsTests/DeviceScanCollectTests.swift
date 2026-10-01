@@ -372,18 +372,36 @@ final class DeviceScanCollectTests: XCTestCase {
     func testAPolicyStoppedScanIsNotRetriedTheSameDay() async throws {
         try writeComputers([("1", "A", "m1", false)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))
-        // The day's freshness run has already written the summary, as before a weekly scan.
+        let watcher = try await scanWithTodaysSummaryWritten()
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// A scan stopped by rejected credentials is retried: its cadence floor leaves exit 3
+    /// out, so the retry rescans once someone re-authenticates.
+    func testACredentialStoppedScanIsStillRetriedTheSameDay() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", "", exit: Int(CLIBridge.exitCodeUnauthorized))
+        let watcher = try await scanWithTodaysSummaryWritten(probe: { _, _ in false })
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// Runs the scan after today's summary is on disk, as the day's freshness run leaves it
+    /// before a weekly scan, and returns a watcher fed with the run's lines.
+    private func scanWithTodaysSummaryWritten(
+        probe: @escaping ReportEngine.AuthConfirmationProbe =
+            ReportEngine.defaultAuthConfirmationProbe
+    ) async throws -> CollectHonestyWatcher {
         let summaries = try WorkspacePaths.summariesDir(for: profile)
         try FileManager.default.createDirectory(at: summaries, withIntermediateDirectories: true)
         let today = SummaryJSONParser.dateFormatter.string(from: Date())
         try #"{"date":"\#(today)","totalDevices":1,"source":"jamf-cli"}"#.write(
             to: summaries.appendingPathComponent("summary_\(today).json"),
             atomically: true, encoding: .utf8)
-        let lines = try await runScan()
+        let lines = try await runScan(probe: probe)
         let watcher = CollectHonestyWatcher()
         lines.forEach(watcher.observe)
         XCTAssertTrue(watcher.incomplete, "\(lines)")
-        XCTAssertFalse(watcher.retryCouldHelp(profile: profile), "\(lines)")
+        return watcher
     }
 
     func testExit3StopsBothCallTypes() async throws {

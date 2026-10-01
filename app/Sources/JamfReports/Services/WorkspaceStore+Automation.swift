@@ -590,13 +590,15 @@ extension WorkspaceStore {
     }
 
     /// The rule above for one kind: its last failure was exit 2, 3 or 8, or carries a
-    /// permanent cause. Shared with the background item's same-day retry.
+    /// permanent cause. The background item's same-day retry shares it with
+    /// `countingUnauthorized: false`, so it still reaches an exit-3 kind once someone
+    /// re-authenticates.
     nonisolated static func lastFailureRepeatsOnRetry(
-        _ kind: String, in store: StateFileStore
+        _ kind: String, in store: StateFileStore, countingUnauthorized: Bool = true
     ) -> Bool {
         let code = store.lastFailureExitCode(for: kind)
         return code == CLIBridge.exitCodeUsage
-            || code == CLIBridge.exitCodeUnauthorized
+            || (countingUnauthorized && code == CLIBridge.exitCodeUnauthorized)
             || code == CLIBridge.exitCodeRefusedByPolicy
             || store.cause(for: kind)?.isPermanent == true
     }
