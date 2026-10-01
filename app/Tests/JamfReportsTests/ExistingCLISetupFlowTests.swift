@@ -259,6 +259,49 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         XCTAssertTrue(flow.canContinue)
     }
 
+    // MARK: - Retry after a run that created no workspace
+
+    func testCanRetryOnlyAfterARunThatCreatedNoWorkspace() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
+        XCTAssertFalse(flow.canRetry, "nothing has run yet")
+
+        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        XCTAssertTrue(flow.canRetry)
+        XCTAssertFalse(flow.canContinue)
+
+        await flow.run(initialize: { _ in 0 }, collect: { _, _ in 0 })
+        XCTAssertFalse(flow.canRetry)
+        XCTAssertTrue(flow.canContinue)
+    }
+
+    func testRetryRerunsInPlaceAndClearsTheEarlierFailure() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha"])
+        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        XCTAssertEqual(flow.failureStages["alpha"], .workspace)
+
+        var completeDuringRetry: Bool?
+        await flow.run(
+            initialize: { _ in completeDuringRetry = flow.didComplete; return 0 },
+            collect: { _, _ in 0 }
+        )
+
+        XCTAssertEqual(completeDuringRetry, false,
+                       "the screen must not show the last attempt's summary while retrying")
+        XCTAssertEqual(flow.statuses["alpha"], .done)
+        XCTAssertNil(flow.failureStages["alpha"])
+        XCTAssertTrue(flow.didComplete)
+    }
+
+    func testRetryWordsTheSummaryFromTheSelectedProfilesOnly() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
+        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+        flow.selected = ["alpha"]
+
+        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+
+        XCTAssertTrue(flow.completionText.contains("0 succeeded, 1 failed"), flow.completionText)
+    }
+
     // MARK: - Collect progress parsing
 
     func testIngestTracksKindLifecycle() {

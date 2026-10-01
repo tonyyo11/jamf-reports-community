@@ -239,6 +239,7 @@ final class ExistingCLISetupFlow {
     ) async {
         guard !isRunning else { return }
         isRunning = true
+        didComplete = false
         defer { isRunning = false }
 
         for name in profileNames where selected.contains(name) && unusable[name] == nil {
@@ -290,14 +291,19 @@ final class ExistingCLISetupFlow {
     /// so completion must not be recorded.
     var canContinue: Bool { didComplete && !initializedWorkspaces.isEmpty }
 
+    /// A finished run that created no workspace: the screen offers another attempt (the
+    /// likely fix, such as a different workspace folder, is made on this same screen).
+    var canRetry: Bool { didComplete && initializedWorkspaces.isEmpty }
+
     /// The text under the status rows once the run has finished.
     var completionText: String {
         let summary = Self.summaryText(
-            succeeded: selectionSummary.succeeded, failures: Array(failureStages.values)
+            succeeded: selectionSummary.succeeded,
+            failures: profileNames.filter(selected.contains).compactMap { failureStages[$0] }
         )
         guard !canContinue else { return summary }
         return summary + " No workspace exists yet, so there is no dashboard to open. Fix the "
-            + "cause above and reopen the app to try again, or skip for now."
+            + "cause above and try again, or skip for now."
     }
 
     /// Names the cause each failure had. Sign-in is blamed only for a collect that
