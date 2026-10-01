@@ -219,7 +219,7 @@ final class CoreDashboardTests: XCTestCase {
         }?.row)
         let headers = rowText(ws, row: headerRow, columns: 20)
         let column = try XCTUnwrap(headers.firstIndex(of: "Shared iPad"))
-        // Rows sort by family ("Mobile" for all three), then by name.
+        // Rows sort by family ("Unknown" for all three), then by name.
         let values = (1...3).map { rowText(ws, row: headerRow + $0, columns: 20)[column] }
         XCTAssertEqual(values, ["Yes", "No", ""])
     }

@@ -956,15 +956,18 @@ struct CoreDashboard: Sendable {
         if !mobileRows.isEmpty {
             summaryPairs += [
                 ("Inventory Rows Returned", summary.total),
-                ("Managed Rows", summary.managed),
-                ("Unmanaged Rows", summary.unmanaged),
-                ("Supervised Devices", summary.supervised),
-                ("Shared iPad Devices", summary.sharedIPad),
+                ("Managed Rows", countCell(summary.managed)),
+                ("Unmanaged Rows", countCell(summary.unmanaged)),
+                ("Supervised Devices", countCell(summary.supervised)),
+                ("Shared iPad Devices", countCell(summary.sharedIPad)),
                 ("Assigned Users", summary.assigned),
-                ("Activation Lock Enabled", summary.activationLock),
-                ("Passcode Compliant", summary.passcodeCompliant),
+                ("Activation Lock Enabled", countCell(summary.activationLock)),
+                ("Passcode Compliant", countCell(summary.passcodeCompliant)),
                 ("Inventory Older Than \(staleThreshold) Days", summary.stale),
             ]
+            if summary.managed != nil, summary.managementUnknown > 0 {
+                summaryPairs.insert(("Management State Unknown", summary.managementUnknown), at: 3)
+            }
         }
         if !profileRows.isEmpty {
             summaryPairs.append(("Mobile Config Profiles (List)", profileRows.count))
@@ -1048,12 +1051,12 @@ struct CoreDashboard: Sendable {
         var row = ws.writeSheetHeader(title: t("Mobile Inventory"),
                                       subtitle: "Generated: \(ts)", ncols: 20)
 
-        let summaryPairs: [(String, Int)] = [
+        let summaryPairs: [(String, Any)] = [
             ("Total Mobile Devices", summary.total),
-            ("Managed", summary.managed),
-            ("Unmanaged", summary.unmanaged),
-            ("Supervised", summary.supervised),
-            ("Shared iPad", summary.sharedIPad),
+            ("Managed", countCell(summary.managed)),
+            ("Unmanaged", countCell(summary.unmanaged)),
+            ("Supervised", countCell(summary.supervised)),
+            ("Shared iPad", countCell(summary.sharedIPad)),
             ("Assigned Users", summary.assigned),
             ("Inventory Older Than Threshold", summary.stale),
         ]
@@ -1502,67 +1505,63 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Mobile inventory helpers
 
-    /// Normalize mobile device records from inventory-details (preferred) or devices-list.
+    /// Normalize mobile device records from inventory-details, joined to the devices-list
+    /// row with the same id, or from the devices-list alone. Fields are read through
+    /// `MobileFleetService`, so the workbook and the Mobile Fleet screen agree. A blank
+    /// string means the snapshot does not report the field.
     private func normalizeMobileInventory() -> [[String: Any]] {
-        let names = ["mobile-device-inventory-details", "mobile_device_inventory_details",
-                     "mobile-devices-list", "mobile_devices_list"]
-        guard let raw = try? loadLatestJSON(names: names),
-              let items = raw as? [[String: Any]] else { return [] }
-
-        return items.compactMap { item -> [String: Any]? in
-            // inventory-details has a `general` sub-dict; devices-list is flat.
-            let general = item["general"] as? [String: Any] ?? item
-            let model = general["model"] as? String ?? item["model"] as? String ?? ""
-            let name = general["displayName"] as? String ?? item["name"] as? String ?? ""
-            let managed = general["managed"] as? Bool ?? item["managed"] as? Bool
-            let supervised = general["supervised"] as? Bool ?? item["supervised"] as? Bool
-            let osVersion = general["osVersion"] as? String ?? item["type"] as? String ?? ""
-            let serial = item["serialNumber"] as? String
-                ?? general["serialNumber"] as? String ?? ""
-            let jamfId = item["mobileDeviceId"] as? String ?? item["id"] as? String ?? ""
-            let lastInventory = general["lastInventoryUpdateDate"] as? String ?? ""
-            let ownership = general["deviceOwnershipType"] as? String ?? ""
-
-            let userLocation = item["userAndLocation"] as? [String: Any] ?? [:]
-            let username = userLocation["username"] as? String ?? item["username"] as? String ?? ""
-            let email = userLocation["emailAddress"] as? String ?? item["email"] as? String ?? ""
-            let dept = userLocation["department"] as? String ?? item["department"] as? String ?? ""
-            let building = userLocation["building"] as? String ?? item["building"] as? String ?? ""
-
-            let activationLock = general["activationLockEnabled"] as? Bool
-            let passcodeCompliant = general["passcodeCompliant"] as? Bool
-            // GENERAL names the flag `sharedIpad`; a device without it is
-            // unknown (blank), not "No".
-            let sharedIPad = general["sharedIpad"] as? Bool
-            let dataProtection = general["dataProtectionEnabled"] as? Bool
-            let jailbreak = general["jailbreakDetected"] as? String ?? ""
-
-            let family = mobileDeviceFamily(model: model, name: name)
-            let daysSince = daysSinceDate(lastInventory)
-
-            return [
-                "Jamf Pro ID": jamfId,
-                "Device Name": name,
-                "Serial Number": serial,
-                "Device Family": family,
-                "Managed": yesNoUnknown(managed),
-                "Supervised": yesNoUnknown(supervised),
-                "Shared iPad": yesNoUnknown(sharedIPad),
-                "Model": model,
-                "OS Version": osVersion,
-                "Username": username,
-                "Email": email,
-                "Department": dept,
-                "Building": building,
-                "Last Inventory Update": lastInventory,
-                "Days Since Inventory": daysSince as Any,
-                "Activation Lock": yesNoUnknown(activationLock),
-                "Passcode Compliant": yesNoUnknown(passcodeCompliant),
-                "Data Protection": yesNoUnknown(dataProtection),
-                "Jailbreak Status": jailbreak,
-                "Ownership": ownership,
-            ]
+        let rich = loadLatestTyped(
+            names: ["mobile-device-inventory-details", "mobile_device_inventory_details"],
+            as: [MobileDeviceInventoryItem].self) ?? []
+        let light = loadLatestTyped(
+            names: ["mobile-devices-list", "mobile_devices_list"],
+            as: [MobileDeviceListRow].self) ?? []
+        guard !rich.isEmpty else {
+            return light.map { row in
+                let stub = MobileDeviceInventoryItem(
+                    mobileDeviceId: row.id, deviceType: row.deviceType ?? row.type)
+                return mobileInventoryRow(stub, listRow: row)
+            }
         }
+        let listByID = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: light, richDevices: rich,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        ).lightDevicesByID
+        return rich.map { device in
+            mobileInventoryRow(device, listRow: device.mobileDeviceId.flatMap { listByID[$0] })
+        }
+    }
+
+    private func mobileInventoryRow(
+        _ device: MobileDeviceInventoryItem, listRow: MobileDeviceListRow?
+    ) -> [String: Any] {
+        let general = device.general
+        let user = device.userAndLocation
+        let lastInventory = general?.lastInventoryUpdateDate ?? ""
+        let factor = MobileFleetService.formFactor(of: device, listRow: listRow)
+        return [
+            "Jamf Pro ID": device.mobileDeviceId ?? listRow?.id ?? "",
+            "Device Name": general?.displayName ?? listRow?.name ?? "",
+            "Serial Number": MobileFleetService.serialNumber(of: device, listRow: listRow) ?? "",
+            "Device Family": MobileFleetService.typeLabel(
+                for: factor, deviceType: device.deviceType),
+            "Managed": yesNoUnknown(general?.managed),
+            "Supervised": yesNoUnknown(general?.supervised),
+            "Shared iPad": yesNoUnknown(general?.sharedIpad),
+            "Model": MobileFleetService.model(of: device, listRow: listRow) ?? "",
+            "OS Version": general?.osVersion ?? "",
+            "Username": user?.username ?? listRow?.username ?? "",
+            "Email": user?.emailAddress ?? "",
+            "Department": user?.department ?? "",
+            "Building": user?.building ?? "",
+            "Last Inventory Update": lastInventory,
+            "Days Since Inventory": daysSinceDate(lastInventory) as Any,
+            "Activation Lock": yesNoUnknown(MobileFleetService.activationLockEnabled(of: device)),
+            "Passcode Compliant": yesNoUnknown(MobileFleetService.passcodeCompliant(of: device)),
+            "Data Protection": yesNoUnknown(MobileFleetService.dataProtected(of: device)),
+            "Jailbreak Status": MobileFleetService.jailbreakStatus(of: device) ?? "",
+            "Ownership": general?.deviceOwnershipType ?? "",
+        ]
     }
 
     private func normalizeMobileProfiles() -> [[String: Any]] {
@@ -1581,44 +1580,47 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    /// The counts are nil when no row answers the question: unmeasured, not zero.
     private struct MobileInventorySummary {
-        var total, managed, unmanaged, supervised, sharedIPad: Int
-        var assigned, activationLock, passcodeCompliant, stale: Int
-        var families, osVersions, models: [String: Int]
+        var total = 0, managementUnknown = 0, assigned = 0, stale = 0
+        var managed, unmanaged, supervised, sharedIPad, activationLock, passcodeCompliant: Int?
+        var families: [String: Int] = [:], osVersions: [String: Int] = [:]
+        var models: [String: Int] = [:]
+    }
+
+    /// A count cell: the number, or "Unknown" when nothing in the snapshot measured it.
+    private func countCell(_ count: Int?) -> Any {
+        if let count { return count }
+        return "Unknown"
     }
 
     private func summarizeMobileInventory(_ rows: [[String: Any]], staleDays: Int) -> MobileInventorySummary {
-        var s = MobileInventorySummary(
-            total: rows.count, managed: 0, unmanaged: 0, supervised: 0, sharedIPad: 0,
-            assigned: 0, activationLock: 0, passcodeCompliant: 0, stale: 0,
-            families: [:], osVersions: [:], models: [:]
-        )
+        var s = MobileInventorySummary(total: rows.count)
+        func cell(_ row: [String: Any], _ column: String) -> String {
+            row[column] as? String ?? ""
+        }
+        func count(_ column: String, _ value: String) -> Int? {
+            let answered = rows.filter { !cell($0, column).isEmpty }
+            guard !answered.isEmpty else { return nil }
+            return answered.filter { cell($0, column) == value }.count
+        }
+        s.managed = count("Managed", "Yes")
+        s.unmanaged = count("Managed", "No")
+        s.managementUnknown = rows.filter { cell($0, "Managed").isEmpty }.count
+        s.supervised = count("Supervised", "Yes")
+        s.sharedIPad = count("Shared iPad", "Yes")
+        s.activationLock = count("Activation Lock", "Yes")
+        s.passcodeCompliant = count("Passcode Compliant", "Yes")
         for row in rows {
-            if (row["Managed"] as? String) == "Yes" { s.managed += 1 } else { s.unmanaged += 1 }
-            if (row["Supervised"] as? String) == "Yes" { s.supervised += 1 }
-            if (row["Shared iPad"] as? String) == "Yes" { s.sharedIPad += 1 }
-            if let u = row["Username"] as? String, !u.isEmpty { s.assigned += 1 }
-            if (row["Activation Lock"] as? String) == "Yes" { s.activationLock += 1 }
-            if (row["Passcode Compliant"] as? String) == "Yes" { s.passcodeCompliant += 1 }
+            if !cell(row, "Username").isEmpty { s.assigned += 1 }
             if let days = row["Days Since Inventory"] as? Int, days > staleDays { s.stale += 1 }
-            let family = row["Device Family"] as? String ?? "Mobile"
-            s.families[family, default: 0] += 1
-            let os = row["OS Version"] as? String ?? ""
+            s.families[cell(row, "Device Family"), default: 0] += 1
+            let os = cell(row, "OS Version")
             if !os.isEmpty { s.osVersions[os, default: 0] += 1 }
-            let model = row["Model"] as? String ?? ""
+            let model = cell(row, "Model")
             if !model.isEmpty { s.models[model, default: 0] += 1 }
         }
         return s
-    }
-
-    private func mobileDeviceFamily(model: String, name: String) -> String {
-        let text = "\(model) \(name)".lowercased()
-        if text.contains("ipad") { return "iPad" }
-        if text.contains("iphone") { return "iPhone" }
-        if text.contains("ipod") { return "iPod" }
-        if text.contains("appletv") || text.contains("apple tv") { return "Apple TV" }
-        if text.contains("vision") { return "Vision" }
-        return "Mobile"
     }
 
     private func yesNoUnknown(_ value: Bool?) -> String {

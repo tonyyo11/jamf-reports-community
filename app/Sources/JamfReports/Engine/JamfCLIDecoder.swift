@@ -898,9 +898,10 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
     let general: MobileDeviceGeneral?
     let userAndLocation: MobileDeviceUserLocation?
     let applications: [MobileDeviceApplication]?
+    let security: MobileDeviceSecurity?
 
     private enum CodingKeys: String, CodingKey {
-        case mobileDeviceId, deviceType, hardware, general, userAndLocation, applications
+        case mobileDeviceId, deviceType, hardware, general, userAndLocation, applications, security
     }
 
     /// Explicit memberwise init with `hardware` defaulted, so demo/preview call
@@ -912,7 +913,8 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
         hardware: MobileDeviceHardware? = nil,
         general: MobileDeviceGeneral? = nil,
         userAndLocation: MobileDeviceUserLocation? = nil,
-        applications: [MobileDeviceApplication]? = nil
+        applications: [MobileDeviceApplication]? = nil,
+        security: MobileDeviceSecurity? = nil
     ) {
         self.mobileDeviceId = mobileDeviceId
         self.deviceType = deviceType
@@ -920,10 +922,11 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
         self.general = general
         self.userAndLocation = userAndLocation
         self.applications = applications
+        self.security = security
     }
 }
 
-/// Hardware section of a mobile device. Only the form-factor fields are decoded:
+/// Hardware section of a mobile device. Only the form-factor fields and serial are decoded:
 /// jamf-cli's `deviceType` is the OS family ("iOS"), so the iPad-vs-iPhone
 /// distinction lives here in `model` ("iPhone 5 (CDMA)") / `modelIdentifier`
 /// ("iPhone5,2"). Can arrive as `null` when the hardware section wasn't
@@ -931,6 +934,19 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
 struct MobileDeviceHardware: Decodable, Sendable {
     let model: String?
     let modelIdentifier: String?
+    /// `var` with a default keeps the memberwise initialiser source-compatible.
+    var serialNumber: String? = nil
+}
+
+/// SECURITY section (only requested with `--section SECURITY`). jamf-cli 1.29 returns the
+/// posture flags here, with the jailbreak flag spelled `jailBreakDetected`; older
+/// snapshots put `passcodeCompliant`, `activationLockEnabled` and a jailbreak status
+/// string under `general`.
+struct MobileDeviceSecurity: Decodable, Sendable {
+    let activationLockEnabled: Bool?
+    let passcodeCompliant: Bool?
+    let dataProtected: Bool?
+    let jailBreakDetected: Bool?
 }
 
 struct MobileDeviceGeneral: Decodable, Sendable {
@@ -946,6 +962,9 @@ struct MobileDeviceGeneral: Decodable, Sendable {
     let dataProtectionEnabled: Bool?
     let jailbreakDetected: String?
     let enrollmentMethodPrestage: MobileDevicePrestage?
+    /// GENERAL's flag for a Shared iPad. `var` with a default keeps the memberwise
+    /// initialiser source-compatible.
+    var sharedIpad: Bool? = nil
 }
 
 /// ADE prestage detail attached to mobile devices enrolled via Automated Device

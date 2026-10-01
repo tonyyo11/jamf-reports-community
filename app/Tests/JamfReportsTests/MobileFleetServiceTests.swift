@@ -984,6 +984,50 @@ final class MobileFleetServiceTests: XCTestCase {
         XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, 60)
     }
 
+    // MARK: - Posture flags: security section first, general as the older location
+
+    private func decodeDevice(_ json: String) throws -> MobileDeviceInventoryItem {
+        try JSONDecoder().decode(MobileDeviceInventoryItem.self, from: Data(json.utf8))
+    }
+
+    /// jamf-cli 1.29 returns the flags under `security`; older snapshots under `general`.
+    /// A device reporting neither is unknown and counts toward nothing.
+    func testPostureCountsReadSecurityThenGeneral() throws {
+        let fleet = [
+            try decodeDevice("""
+            {"mobileDeviceId": "1", "security": {"passcodeCompliant": true,
+             "activationLockEnabled": true, "jailBreakDetected": true}}
+            """),
+            try decodeDevice("""
+            {"mobileDeviceId": "2", "general": {"passcodeCompliant": true,
+             "activationLockEnabled": false, "jailbreakDetected": "None"}}
+            """),
+            try decodeDevice(#"{"mobileDeviceId": "3", "general": {"displayName": "C"}}"#),
+        ]
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: fleet,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.passcodeCompliantCount, 2)
+        XCTAssertEqual(snapshot.activationLockEnabledCount, 1)
+        XCTAssertEqual(snapshot.jailbreakDetectedCount, 1)
+    }
+
+    /// Only the security section: no device reports the old `general` fields at all.
+    func testPostureCountsAreMeasuredWhenOnlySecurityReportsThem() throws {
+        let device = try decodeDevice("""
+        {"mobileDeviceId": "1", "security": {"passcodeCompliant": false,
+         "activationLockEnabled": false, "jailBreakDetected": false}}
+        """)
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: [device],
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.passcodeCompliantCount, 0)
+        XCTAssertEqual(snapshot.activationLockEnabledCount, 0)
+        XCTAssertEqual(snapshot.jailbreakDetectedCount, 0)
+    }
+
     // MARK: - Table heights
 
     /// A short list sizes the table to its rows, so no blank striped rows

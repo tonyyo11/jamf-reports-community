@@ -154,6 +154,55 @@ struct MobileFleetService: Sendable {
         return formFactor(of: listRow)
     }
 
+    // MARK: - Per-device fields
+    //
+    // jamf-cli 1.29 puts serial and model under `hardware` and the posture flags under
+    // `security`; older snapshots put them under `general`. Each accessor reads the
+    // current section first and falls back to the old one. nil means the device does
+    // not report the field: unknown, never false or zero.
+
+    /// Serial number from `hardware`, `general`, then the list row with the same id.
+    static func serialNumber(
+        of device: MobileDeviceInventoryItem, listRow: MobileDeviceListRow?
+    ) -> String? {
+        firstNonBlank(
+            device.hardware?.serialNumber, device.general?.serialNumber, listRow?.serialNumber)
+    }
+
+    /// Marketing model from `hardware`, then the list row with the same id.
+    static func model(
+        of device: MobileDeviceInventoryItem, listRow: MobileDeviceListRow?
+    ) -> String? {
+        firstNonBlank(device.hardware?.model, listRow?.hardware?.model, listRow?.model)
+    }
+
+    static func passcodeCompliant(of device: MobileDeviceInventoryItem) -> Bool? {
+        device.security?.passcodeCompliant ?? device.general?.passcodeCompliant
+    }
+
+    static func activationLockEnabled(of device: MobileDeviceInventoryItem) -> Bool? {
+        device.security?.activationLockEnabled ?? device.general?.activationLockEnabled
+    }
+
+    static func dataProtected(of device: MobileDeviceInventoryItem) -> Bool? {
+        device.security?.dataProtected ?? device.general?.dataProtectionEnabled
+    }
+
+    /// Jailbreak status text: `security`'s flag as "Detected" or "None", else the status
+    /// string older snapshots keep under `general`. A blank status is not a report.
+    static func jailbreakStatus(of device: MobileDeviceInventoryItem) -> String? {
+        if let flag = device.security?.jailBreakDetected { return flag ? "Detected" : "None" }
+        return firstNonBlank(device.general?.jailbreakDetected)
+    }
+
+    private static func firstNonBlank(_ values: String?...) -> String? {
+        for value in values {
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+
     /// Text for the devices table's Type pill: the form factor when the model
     /// names one, otherwise the type jamf-cli reported, or "Unknown".
     static func typeLabel(for formFactor: FormFactor, deviceType: String?) -> String {
@@ -352,7 +401,7 @@ struct MobileFleetService: Sendable {
         /// Devices reporting `passcodeCompliant == true`, or nil when no device
         /// reports the field.
         var passcodeCompliantCount: Int? {
-            let reported = richDevices.compactMap { $0.general?.passcodeCompliant }
+            let reported = richDevices.compactMap(MobileFleetService.passcodeCompliant(of:))
             guard !reported.isEmpty else { return nil }
             return reported.filter { $0 }.count
         }
@@ -360,7 +409,7 @@ struct MobileFleetService: Sendable {
         /// Devices reporting `activationLockEnabled == true`, or nil when no
         /// device reports the field.
         var activationLockEnabledCount: Int? {
-            let reported = richDevices.compactMap { $0.general?.activationLockEnabled }
+            let reported = richDevices.compactMap(MobileFleetService.activationLockEnabled(of:))
             guard !reported.isEmpty else { return nil }
             return reported.filter { $0 }.count
         }
@@ -368,12 +417,7 @@ struct MobileFleetService: Sendable {
         /// Devices whose jailbreak status is anything but "none", or nil when no
         /// device reports a status. A blank status is not a report.
         var jailbreakDetectedCount: Int? {
-            let reported = richDevices.compactMap { device -> String? in
-                guard let status = device.general?.jailbreakDetected?
-                    .trimmingCharacters(in: .whitespacesAndNewlines), !status.isEmpty
-                else { return nil }
-                return status
-            }
+            let reported = richDevices.compactMap(MobileFleetService.jailbreakStatus(of:))
             guard !reported.isEmpty else { return nil }
             return reported.filter { !$0.localizedCaseInsensitiveContains("none") }.count
         }
