@@ -12,6 +12,7 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
     /// A live workspace whose `computers` snapshot is 8 days old, so the heavy-tier
     /// prompt is up; returns the store and the workspace's data dir.
     private func makeStaleWorkspace() async throws -> (WorkspaceStore, URL) {
+        pinSkipExpensiveCollectionsOff(self)
         let temp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("JRC-RefreshToast-\(UUID().uuidString)", isDirectory: true)
         setenv("JRC_TEST_WORKSPACES_ROOT", temp.path, 1)
@@ -82,12 +83,7 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
     }
 
     private nonisolated static func landFreshSnapshots(in dataDir: URL) throws {
-        for kind in ["computers", "update-device-failures"] {
-            let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            try "[]".write(to: dir.appendingPathComponent("\(kind)_fresh.json"),
-                           atomically: true, encoding: .utf8)
-        }
+        try landHeavyTierSnapshots(in: dataDir)
     }
 }
 

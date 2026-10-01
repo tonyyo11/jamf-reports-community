@@ -49,6 +49,8 @@ final class LaunchFreshnessTests: XCTestCase {
 
     // MARK: - Heavy-tier staleness
 
+    private let allKinds = WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: nil)
+
     func testStaleTiersDetectsWeekOldData() throws {
         let profile = "stalet\(Int.random(in: 10_000...99_999))"
         guard let root = WorkspacePathGuard.root(for: profile) else {
@@ -57,11 +59,10 @@ final class LaunchFreshnessTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
 
         let dataDir = root.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        // .inventory probe kind = "computers" (8 days old → stale). ea-results is
-        // now inventory-tier too, but inventory probes "computers", so the old
-        // 8-day computers file still makes inventory stale. .scan probes
-        // update-device-failures (absent here → never-collected, which #181
-        // also reports as stale on an existing workspace).
+        // Inventory expects computers (8 days old → stale) and ea-results (fresh):
+        // one stale kind makes the tier stale. Scan expects update-device-failures
+        // (absent here → never-collected, which #181 also reports as stale on an
+        // existing workspace).
         let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
         let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
@@ -76,7 +77,9 @@ final class LaunchFreshnessTests: XCTestCase {
         let freshFile = eaDir.appendingPathComponent("ea_fresh.json")
         try "[]".write(to: freshFile, atomically: true, encoding: .utf8)
 
-        let stale = WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400)
+        let stale = WorkspaceStore.staleTiers(
+            profile: profile, olderThan: 7 * 86_400,
+            expectedKinds: ["computers", "ea-results", "update-device-failures"])
 
         XCTAssertEqual(stale, [.inventory, .scan],
                        "computers (8d) makes inventory stale; never-collected scan is stale too (#181)")
@@ -97,7 +100,8 @@ final class LaunchFreshnessTests: XCTestCase {
             withIntermediateDirectories: true
         )
 
-        let stale = WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400)
+        let stale = WorkspaceStore.staleTiers(
+            profile: profile, olderThan: 7 * 86_400, expectedKinds: allKinds)
         XCTAssertEqual(stale, [.inventory, .scan],
                        "never-collected tiers must surface the prompt on an existing workspace")
     }
@@ -108,7 +112,8 @@ final class LaunchFreshnessTests: XCTestCase {
     func testStaleTiersEmptyWhenWorkspaceMissing() {
         let profile = "stalem\(Int.random(in: 10_000...99_999))"
         XCTAssertFalse(WorkspaceStore.workspaceExists(profile: profile))
-        XCTAssertTrue(WorkspaceStore.staleTiers(profile: profile, olderThan: 7 * 86_400).isEmpty)
+        XCTAssertTrue(WorkspaceStore.staleTiers(
+            profile: profile, olderThan: 7 * 86_400, expectedKinds: allKinds).isEmpty)
     }
 
     /// "Attempted but produced no data": a fresh snapshot in ANY kind proves a
@@ -125,20 +130,23 @@ final class LaunchFreshnessTests: XCTestCase {
         )
         try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
 
+        let expected = ["computers", "update-device-failures"]
         // No snapshots anywhere → no evidence of a collect → nothing classified.
-        XCTAssertTrue(
-            WorkspaceStore.tiersWithNoData(profile: profile, among: [.inventory, .scan]).isEmpty
-        )
+        XCTAssertTrue(WorkspaceStore.tiersWithNoData(
+            profile: profile, among: [.inventory, .scan], expectedKinds: expected,
+            olderThan: 7 * 86_400).isEmpty)
 
-        // A fresh computers snapshot → recent collect; the scan probe kind
+        // A fresh computers snapshot → recent collect; the scan kind
         // (update-device-failures) is absent → scan produced no data.
         try "[]".write(
             to: computersDir.appendingPathComponent("computers_now.json"),
             atomically: true, encoding: .utf8
         )
-        let noData = WorkspaceStore.tiersWithNoData(profile: profile, among: [.inventory, .scan])
+        let noData = WorkspaceStore.tiersWithNoData(
+            profile: profile, among: [.inventory, .scan], expectedKinds: expected,
+            olderThan: 7 * 86_400)
         XCTAssertEqual(noData, [.scan],
-                       "inventory's probe (computers) has data; scan's does not")
+                       "inventory's kind (computers) has data; scan's does not")
     }
 
     func testNewestSnapshotAgeNilForMissingKind() {

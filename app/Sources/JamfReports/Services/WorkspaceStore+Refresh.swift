@@ -89,8 +89,8 @@ extension WorkspaceStore {
     /// refresh prompt and audit data auto-refreshes on launch.
     nonisolated static let heavyTierStaleDays = 2
 
-    /// Populate `staleHeavyTiers` with the .inventory / .scan tiers whose
-    /// newest probe-kind snapshot is older than `heavyTierStaleDays`.
+    /// Populate `staleHeavyTiers` with the .inventory / .scan tiers holding an
+    /// expected kind whose newest snapshot is older than `heavyTierStaleDays`.
     ///
     /// Heavy tiers are never auto-collected — per-device queries can stall
     /// on-prem Jamf Pro for minutes. The Overview prompt's button is the only
@@ -101,10 +101,16 @@ extension WorkspaceStore {
             return
         }
         let activeProfile = profile
+        let jamfCLIVersion = self.jamfCLIVersion
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
         let (stale, noData) = await Task.detached(priority: .utility) {
-            let stale = Self.staleTiers(profile: activeProfile, olderThan: threshold)
-            return (stale, Self.tiersWithNoData(profile: activeProfile, among: stale))
+            let expected = Self.expectedKinds(
+                profile: activeProfile, jamfCLIVersion: jamfCLIVersion,
+                auth: ProfileAuthMethod.resolve(profile: activeProfile))
+            let stale = Self.staleTiers(profile: activeProfile, olderThan: threshold,
+                                        expectedKinds: expected)
+            return (stale, Self.tiersWithNoData(profile: activeProfile, among: stale,
+                                                expectedKinds: expected, olderThan: threshold))
         }.value
         // Profile may have switched while the probe ran off-actor.
         guard profile == activeProfile else { return }
@@ -341,37 +347,75 @@ extension WorkspaceStore {
         }
     }
 
-    /// Heavy tiers whose newest probe-kind snapshot is older than `threshold`.
-    /// A tier with no snapshots at all is NOT reported — that's the
-    /// not-yet-collected state, which the per-page empty states already cover.
+    /// Heavy tiers holding an expected kind whose newest snapshot is older than
+    /// `threshold`, or that never landed (#181: once the workspace directory
+    /// exists, the prompt is the only heavy-collect affordance a fresh workspace
+    /// has; a missing workspace is the Overview init banner's job). Only
+    /// `expectedKinds` count, so a kind the profile never collects cannot hold
+    /// the prompt up, and a tier with none is never stale.
     nonisolated static func staleTiers(
         profile: String,
-        olderThan threshold: TimeInterval
+        olderThan threshold: TimeInterval,
+        expectedKinds: [String]
     ) -> [CollectionTier] {
-        [CollectionTier.inventory, .scan].filter { tier in
-            guard let age = newestSnapshotAge(profile: profile, kind: tier.stalenessProbeKind) else {
-                // #181: never-collected counts as stale once the workspace
-                // directory exists — the prompt is the only heavy-collect
-                // affordance a fresh workspace has. A missing workspace is the
-                // Overview init banner's job, not this prompt's.
-                return workspaceExists(profile: profile)
-            }
-            return age >= threshold
+        let exists = workspaceExists(profile: profile)
+        return [CollectionTier.inventory, .scan].filter { tier in
+            let stale = staleKinds(profile: profile, tier: tier, expectedKinds: expectedKinds,
+                                   olderThan: threshold)
+            return !stale.aged.isEmpty || (exists && !stale.neverLanded.isEmpty)
         }
     }
 
-    /// Among `tiers`, those whose probe kind has no snapshot at all even
-    /// though the workspace collected recently — i.e. the last collect
+    /// Among `tiers`, those stale only through kinds with no snapshot at all
+    /// even though the workspace collected recently — i.e. the last collect
     /// attempted them and produced no data, as opposed to never-attempted or
     /// aged-out data. Lets the prompt say "couldn't be collected" instead of
     /// the contradictory "missing" right after a successful first collect.
     nonisolated static func tiersWithNoData(
-        profile: String, among tiers: [CollectionTier]
+        profile: String, among tiers: [CollectionTier],
+        expectedKinds: [String], olderThan threshold: TimeInterval
     ) -> Set<CollectionTier> {
         guard workspaceCollectedRecently(profile: profile) else { return [] }
-        return Set(tiers.filter {
-            newestSnapshotAge(profile: profile, kind: $0.stalenessProbeKind) == nil
+        return Set(tiers.filter { tier in
+            let stale = staleKinds(profile: profile, tier: tier, expectedKinds: expectedKinds,
+                                   olderThan: threshold)
+            return !stale.neverLanded.isEmpty && stale.aged.isEmpty
         })
+    }
+
+    /// `tier`'s expected kinds that are stale, split by why.
+    private nonisolated static func staleKinds(
+        profile: String, tier: CollectionTier, expectedKinds: [String],
+        olderThan threshold: TimeInterval
+    ) -> (neverLanded: [String], aged: [String]) {
+        var neverLanded: [String] = []
+        var aged: [String] = []
+        for kind in expectedKinds where CollectionTier.tier(forReport: kind) == tier {
+            if let age = newestSnapshotAge(profile: profile, kind: kind) {
+                if age >= threshold { aged.append(kind) }
+            } else {
+                neverLanded.append(kind)
+            }
+        }
+        return (neverLanded, aged)
+    }
+
+    /// The kinds `profile` is expected to collect, from the inputs the health
+    /// strip reads: the skip-expensive toggle, `jamf_cli.collect_skip`, the
+    /// profile's auth method and the jamf-cli version (for the dashboard).
+    nonisolated static func expectedKinds(
+        profile: String, jamfCLIVersion: String?, auth: ProfileAuthMethod.Resolved?
+    ) -> [String] {
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        return expectedKinds(
+            skipExpensive: UserDefaults.standard.bool(forKey: "skipExpensiveCollections"),
+            authMethod: auth?.authMethod,
+            tenantLevel: auth?.isTenantLevel == true,
+            collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion)
+        )
     }
 
     /// True when any snapshot kind has a file newer than `interval` —
@@ -401,8 +445,9 @@ extension WorkspaceStore {
             && isDirectory.boolValue
     }
 
-    /// Age in seconds of the newest .json snapshot under
-    /// `<workspace>/jamf-cli-data/<kind>/`, or nil when none exist.
+    /// Age in seconds of the newest snapshot under
+    /// `<workspace>/jamf-cli-data/<kind>/`, or nil when none exist. JSON, except
+    /// jamf-cli's dashboard, the one kind saved as a page.
     nonisolated static func newestSnapshotAge(profile: String, kind: String) -> TimeInterval? {
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return nil }
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
@@ -411,8 +456,9 @@ extension WorkspaceStore {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return nil }
+        let fileExtension = kind == ReportEngine.dashboardKind ? "html" : "json"
         let newest = entries
-            .filter { $0.pathExtension == "json" }
+            .filter { $0.pathExtension == fileExtension }
             .compactMap {
                 (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate

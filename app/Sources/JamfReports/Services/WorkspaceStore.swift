@@ -38,14 +38,14 @@ final class WorkspaceStore {
     /// opens its editor when it next appears and clears the flag — a
     /// notification would arrive before the Overview exists to hear it.
     var overviewCustomizeRequested = false
-    /// Heavy collection tiers (.inventory / .scan) whose newest snapshot is
-    /// older than `heavyTierStaleDays`. Drives the Overview "data is stale —
-    /// refresh now?" prompt. Heavy tiers are never collected automatically
-    /// (per-device queries can stall on-prem Jamf Pro); the prompt's button
-    /// is the only trigger.
+    /// Heavy collection tiers (.inventory / .scan) holding an expected kind
+    /// whose newest snapshot is older than `heavyTierStaleDays`. Drives the
+    /// Overview "data is stale — refresh now?" prompt. Heavy tiers are never
+    /// collected automatically (per-device queries can stall on-prem Jamf Pro);
+    /// the prompt's button is the only trigger.
     var staleHeavyTiers: [CollectionTier] = []
-    /// Subset of `staleHeavyTiers` whose probe kind has NO snapshot even
-    /// though the workspace collected recently — the last collect attempted
+    /// Subset of `staleHeavyTiers` stale only through kinds with NO snapshot
+    /// even though the workspace collected recently — the last collect attempted
     /// them and produced no data (e.g. a tenant with no update plans), as
     /// opposed to data that has simply aged out. Drives honest prompt copy.
     var heavyTiersWithNoData: Set<CollectionTier> = []
