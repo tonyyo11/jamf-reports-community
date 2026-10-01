@@ -1561,6 +1561,15 @@ struct ReportEngine: Sendable {
         return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
     }
 
+    /// Whether a dead run still runs the device scan before it fails (#207 G17): every call
+    /// that counts toward the verdict exited 0 or 7, so jamf-cli answered and only the reports
+    /// came back empty. The scan reads the cached `computers`, not those reports.
+    static func deadRunAllowsDeviceScan(_ outcomes: [CollectOutcome]) -> Bool {
+        outcomes.filter { $0.exitCode != CLIBridge.exitCodeUsage }.allSatisfy {
+            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
+        }
+    }
+
     /// What a dead run's failures say, for its message (spec §9.6).
     enum DeadRunCause: Equatable, Sendable {
         case outage
@@ -1949,7 +1958,7 @@ struct ReportEngine: Sendable {
             if result.saved { savedKinds.insert(kind) }
         }
 
-        try await Self.enforceCollectVerdicts(
+        let deadAfterScan = try await Self.enforceCollectVerdicts(
             outcomes: outcomes, savedKinds: savedKinds,
             skippedNotDueCount: skippedNotDueCount, profile: profile, bin: bin,
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
@@ -1960,8 +1969,8 @@ struct ReportEngine: Sendable {
         // DDM-enabled Mac, so its kinds cannot show that this run's own sources landed.
         let matrixLandedNothing = !outcomes.isEmpty && savedKinds.isEmpty
 
-        // 2.8.0: per-device scan phase. After the verdicts (so a dead run never
-        // starts a fleet-wide fan-out) and before finalize (so its kinds count
+        // 2.8.0: per-device scan phase. After the verdicts (so an auth-dead or outage
+        // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
         // as live in today's summary).
         let scanSaved = await Self.runDeviceScanPhase(
             profile: profile, bin: bin, specNames: specNames, dataDir: dataDir, tiers: tiers,
@@ -1970,6 +1979,7 @@ struct ReportEngine: Sendable {
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
         savedKinds.formUnion(scanSaved)
+        if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
             profile: profile, tiers: tiers, bin: bin, dataDir: dataDir,
@@ -1990,8 +2000,10 @@ struct ReportEngine: Sendable {
     /// The three post-loop honesty checks, in the order they have to run:
     /// dead credentials first (actionable: re-authenticate), then a total
     /// outage, then the `[partial]` marker for a run where only some kinds
-    /// landed. Both throws abort BEFORE any summary is written, so a run that
-    /// fetched nothing can never promote stale cache as fresh data.
+    /// landed. Both dead verdicts abort BEFORE any summary is written, so a run that
+    /// fetched nothing can never promote stale cache as fresh data. A dead run whose
+    /// reports only came back empty is returned instead of thrown, for the caller to
+    /// throw once the device scan has run (`deadRunAllowsDeviceScan`).
     private static func enforceCollectVerdicts(
         outcomes: [CollectOutcome],
         savedKinds: Set<String>,
@@ -2000,7 +2012,7 @@ struct ReportEngine: Sendable {
         bin: URL,
         authConfirmationProbe: AuthConfirmationProbe,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
-    ) async throws {
+    ) async throws -> ReportEngineError? {
         // Auth-dead guard: every live jamf-cli call failed and at least one returned
         // 401 (exit 3) → the profile's credentials are expired/revoked. Checked FIRST
         // so a total outage with 401s surfaces as an auth error (actionable: re-auth)
@@ -2051,10 +2063,8 @@ struct ReportEngine: Sendable {
             let error = ReportEngineError.collectDead(
                 profile: profile, failedCount: outcomes.count, cause: Self.deadRunCause(outcomes)
             )
-            let msg = "[error] " + (error.errorDescription ?? "collect failed")
-            AppLogger.collect.error("\(msg, privacy: .public)")
-            onLine(.init(timestamp: Date(), level: .fail, text: msg))
-            throw error
+            if Self.deadRunAllowsDeviceScan(outcomes) { return error }
+            throw Self.reportDeadCollect(error, onLine: onLine)
         }
 
         // Degraded-run summary. A run where some kinds fell back to cache is not
@@ -2072,6 +2082,17 @@ struct ReportEngine: Sendable {
             AppLogger.collect.warning("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
+        return nil
+    }
+
+    /// Logs a dead collect's `[error]` line and returns the error for the caller to throw.
+    private static func reportDeadCollect(
+        _ error: ReportEngineError, onLine: @Sendable (CLIBridge.LogLine) -> Void
+    ) -> ReportEngineError {
+        let msg = "[error] " + (error.errorDescription ?? "collect failed")
+        AppLogger.collect.error("\(msg, privacy: .public)")
+        onLine(.init(timestamp: Date(), level: .fail, text: msg))
+        return error
     }
 
     /// The post-collect work that turns saved snapshots into something the

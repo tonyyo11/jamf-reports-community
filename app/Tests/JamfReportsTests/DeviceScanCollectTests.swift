@@ -43,6 +43,8 @@ final class DeviceScanCollectTests: XCTestCase {
     ///     (exit = first line of answers/hist-<id>.exit if present)
     ///   … status-items <mgmt>               → answers/ddm-<mgmt>  (same exit rule; either
     ///                                          resource spelling — see statusItemsArguments)
+    ///   … --scan-failures (both matrix kinds) → answers/matrix, only when it or
+    ///                                          answers/matrix.exit exists
     /// Anything else → prints [] exit 0, so the argv matrix's kinds "succeed" harmlessly.
     private func makeStub() throws -> URL {
         let url = binDir.appendingPathComponent("stub-cli")
@@ -56,6 +58,8 @@ final class DeviceScanCollectTests: XCTestCase {
           *" classic-computer-history get "*) id=$(echo "$*" | sed -E 's/.*classic-computer-history get ([^ ]+).*/\\1/'); emit "hist-$id" ;;
           *" status-items "*) m=$(echo "$*" | sed -E 's/.*status-items ([^ ]+).*/\\1/'); \\
             emit "ddm-$m" ;;
+          *" --scan-failures "*) if [ -f "$A/matrix" ] || [ -f "$A/matrix.exit" ]; then \\
+            emit matrix; fi; printf '[]'; exit 0 ;;
           *) printf '[]'; exit 0 ;;
         esac
         """
@@ -590,6 +594,62 @@ final class DeviceScanCollectTests: XCTestCase {
         let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
         XCTAssertNil(store.lastRun(report: "patch-device-failures"))
         XCTAssertNil(store.failures(report: "patch-device-failures"))
+    }
+
+    // MARK: - A dead matrix verdict and the scan (#207 G17)
+
+    /// Both scan-tier reports exit 0 with nothing to save, as for an API role without patch
+    /// or software-update read. jamf-cli answered, so the scan, which reads the cached
+    /// `computers`, still runs; the run still fails on the reports.
+    func testReportsThatAnsweredEmptyStillLetTheScanRun() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        try answer("matrix", "")
+        do {
+            _ = try await runScan()
+            XCTFail("a run whose reports landed nothing must still fail")
+        } catch ReportEngineError.collectDead(_, let failedCount, _) {
+            XCTAssertEqual(failedCount, 2)
+        }
+        XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self),
+                        callsLog())
+        XCTAssertNotNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+    }
+
+    func testAMatrixOutageStillStopsBeforeTheScan() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        try answer("matrix", "", exit: Int(CLIBridge.exitCodeNotFound))
+        do {
+            _ = try await runScan()
+            XCTFail("an outage must fail the run")
+        } catch ReportEngineError.collectDead {}
+        XCTAssertEqual(historyCalls(for: "1"), 0, callsLog())
+    }
+
+    func testDeadCredentialsStillStopBeforeTheScan() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        try answer("matrix", "", exit: Int(CLIBridge.exitCodeUnauthorized))
+        do {
+            _ = try await runScan(probe: { _, _ in false })
+            XCTFail("dead credentials must fail the run")
+        } catch ReportEngineError.authExpired {}
+        XCTAssertEqual(historyCalls(for: "1"), 0, callsLog())
+    }
+
+    func testOnlyAnsweredButEmptyReportsLetADeadRunScan() {
+        func outcomes(_ codes: [Int32]) -> [ReportEngine.CollectOutcome] {
+            codes.map { ReportEngine.CollectOutcome(kind: "k\($0)", exitCode: $0) }
+        }
+        XCTAssertTrue(ReportEngine.deadRunAllowsDeviceScan(outcomes([0, 0])))
+        XCTAssertTrue(ReportEngine.deadRunAllowsDeviceScan(
+            outcomes([0, CLIBridge.exitCodePartialFailure])))
+        XCTAssertTrue(ReportEngine.deadRunAllowsDeviceScan(outcomes([0, CLIBridge.exitCodeUsage])),
+                      "a usage error says nothing about the server, as in isCollectDead")
+        XCTAssertFalse(ReportEngine.deadRunAllowsDeviceScan(outcomes([0, 1])))
+        XCTAssertFalse(ReportEngine.deadRunAllowsDeviceScan(
+            outcomes([0, ReportEngine.launchFailureExitCode])))
     }
 }
 
