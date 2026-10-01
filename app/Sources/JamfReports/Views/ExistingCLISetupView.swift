@@ -33,7 +33,8 @@ struct ExistingCLISetupView: View {
                 profilesCard
                 automationCard
                 runCard
-                skipFootnote
+                // The run card already offers Skip after a run that created no workspace.
+                if !flow.canRetry { skipFootnote }
             }
             .padding(EdgeInsets(top: 56, leading: 60, bottom: 40, trailing: 60))
             .frame(maxWidth: 920)
