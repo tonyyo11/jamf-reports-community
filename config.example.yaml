@@ -102,6 +102,36 @@ columns:
   # Used with custom_eas type: date to flag expiring/expired profiles.
   mdm_expiry: "MDM Profile Expiration Date"
 
+  # --- Extra inventory columns (optional) ---
+  #
+  # Each key you map adds one column to the Device Inventory and Stale Devices
+  # sheets, in the order listed here. A key left empty adds nothing. The Config
+  # screen does not list these; edit them here. It keeps them when it saves.
+
+  # The assigned user's full name.
+  full_name: ""
+
+  # The computer's asset tag.
+  asset_tag: ""
+
+  # The building the computer is assigned to.
+  building: ""
+
+  # The assigned user's position or job title.
+  position: ""
+
+  # The user who last logged in to the computer.
+  last_logged_in_user: ""
+
+  # Recovery Lock status.
+  recovery_lock: ""
+
+  # Battery health or condition.
+  battery_health: ""
+
+  # Microsoft Entra SSO registration status.
+  entra_sso_status: ""
+
 
 # =============================================================================
 # MOBILE CSV COLUMN MAPPING
@@ -272,6 +302,17 @@ sheets:
   # they would otherwise be created.
   skip: []
 
+  # Tab order. The tabs named here come first, in this order; every other tab
+  # follows in its default order. Names match the final tab label, case-
+  # insensitively, and a name that matches no tab is ignored. only and skip
+  # still apply, so a skipped tab stays out.
+  #
+  # Example:
+  #   order:
+  #     - "Fleet Overview"
+  #     - "Patch Compliance"
+  order: []
+
 
 # ---------------------------------------------------------------------------
 # Organisational branding (all fields optional)
@@ -297,7 +338,7 @@ branding:
 
 
 # =============================================================================
-# HTML REPORT HISTORY
+# HTML REPORT
 # =============================================================================
 # When track_history is true, every `html` run appends an OS-version snapshot
 # to the history file.  Once two or more snapshots exist for an instance URL, a
@@ -310,6 +351,16 @@ branding:
 html:
   track_history: false
   history_file: ""
+
+  # Display caps for the Jamf Protect sections of the HTML report. A value
+  # outside its range is clamped to it, with a warning in the log.
+  section_limits:
+    # Most alerts the Protect Alerts section lists, highest severity first.
+    # Range 1-200.
+    protect_alerts: 25
+    # Number of recent Protect insight snapshots the Insights Drift section
+    # compares, one column each. Range 1-12.
+    insights_drift_snapshots: 2
 
 
 # =============================================================================
@@ -520,6 +571,15 @@ platform:
 compliance:
   enabled: true
   baseline_label: "mSCP Compliance"
+  # The framework your compliance results are reported against. The Compliance
+  # Posture sheet shows it as typed ("Framework: ..."). The heading of the HTML
+  # report's Exception List writes a recognised name in this form, matched
+  # case-insensitively (short forms such as "stig" or "cis-l1" also match), and
+  # any other text as typed:
+  #   "NIST 800-53r5 Moderate", "NIST 800-53r5 High", "DISA STIG macOS",
+  #   "CIS Level 1", "CIS Level 2", "CMMC Level 2", "FedRAMP Moderate", "Custom"
+  # Empty names no framework.
+  framework: ""
   # EA column containing the integer count of failed rules.
   # Used as the single-baseline shorthand when `baselines` is absent.
   failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5"
@@ -558,6 +618,28 @@ compliance:
   #     failures_count_column: "Compliance - Failed mSCP Results Count - DISA STIG"
   #     failures_list_column: "Compliance - Failed mSCP Result List - DISA STIG"
   #     rule_count: 280
+
+
+# =============================================================================
+# COMPLIANCE EXCEPTIONS
+# =============================================================================
+# Documented waivers for the HTML report's Exception List section, headed with
+# compliance.framework above. Each entry needs id, description, signed_off_by and
+# signed_off_date, all shown as written; an entry missing one stops config.yaml
+# loading. expires_date and linked_finding are optional, and an expires_date in
+# yyyy-MM-dd form that has passed shows an "Expired" pill on its row.
+#
+# With no entries the Exception List falls back to a table of the custom_eas
+# below and a hint to add this block; with neither, it says none are configured.
+
+exceptions: []
+# exceptions:
+#   - id: "EXC-001"
+#     description: "Lab Macs stay on the previous macOS for a vendor tool"
+#     signed_off_by: "Security Officer"
+#     signed_off_date: "2026-01-15"
+#     expires_date: "2026-07-15"
+#     linked_finding: "os_version_current"
 
 
 # =============================================================================
