@@ -350,6 +350,24 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].id, "123-42", "attempt is not part of a failure's identity")
     }
 
+    /// A row with no policy or device id read as identity "-", so a SwiftUI Table
+    /// drew one row for all of them. Its other fields and position now tell them apart.
+    func testPatchFailureRowsWithoutIdsGetDistinctStableIdentities() throws {
+        let json = """
+        [{"policy":"Firefox 130.0","device":"MacBook-001","status_date":"2026-04-01"},
+         {"policy":"Firefox 130.0","device":"MacBook-001","status_date":"2026-04-01"},
+         {"policy":"Slack 4.40","device":"MacBook-002","status_date":"2026-04-02"},
+         {"policy_id":"42","device_id":"123","policy":"Firefox 130.0"}]
+        """
+        let rows = try JSONDecoder().decode([PatchFailureRow].self, from: Data(json.utf8))
+        XCTAssertEqual(Set(rows.map(\.id)).count, 4, "ids: \(rows.map(\.id))")
+        XCTAssertNotEqual(rows[0].id, "-")
+        XCTAssertEqual(rows[3].id, "123-42", "a row with ids keeps the id-based identity")
+
+        let again = try JSONDecoder().decode([PatchFailureRow].self, from: Data(json.utf8))
+        XCTAssertEqual(rows.map(\.id), again.map(\.id), "identity is stable across decodes")
+    }
+
     func testPatchFailureFixtureDecodesWithoutError() throws {
         // Locked in via PR-5 fixture synthesis: the file holds PatchFailureRow
         // entries with policy/policy_id/device/device_id/etc. Replaced the

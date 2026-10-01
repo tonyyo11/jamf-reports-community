@@ -176,11 +176,19 @@ struct PatchFailureRow: Decodable, Sendable, Identifiable, Equatable {
     let serial: String
     let osVersion: String
     let username: String
+    /// Index of the row in the array it was decoded from. A `var` with a default
+    /// keeps the memberwise initialiser source-compatible.
+    var position: Int = 0
 
     /// One row per failing device and patch policy. `attempt` stays out of the
     /// identity: it rises as Jamf retries, so the same failure would read as a
-    /// different row from one scan to the next.
-    var id: String { "\(deviceId)-\(policyId)" }
+    /// different row from one scan to the next. A row with neither id would all
+    /// read "-" and collapse in a SwiftUI table, so it is told apart by its
+    /// other fields and position.
+    var id: String {
+        guard deviceId.isEmpty, policyId.isEmpty else { return "\(deviceId)-\(policyId)" }
+        return "no-id-\(position)-\(device)-\(policy)-\(statusDate)-\(serial)"
+    }
 
     private enum CodingKeys: String, CodingKey {
         case policy
@@ -217,6 +225,7 @@ extension PatchFailureRow {
         serial = text(.serial)
         osVersion = text(.osVersion)
         username = text(.username)
+        position = decoder.codingPath.last?.intValue ?? 0
     }
 }
 
