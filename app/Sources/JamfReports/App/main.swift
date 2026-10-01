@@ -614,8 +614,8 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// `--scheduled-run` from an external cron, Run now). Records under the
 /// schedule's label; a multi schedule fans out over discovered profiles minus
 /// its exclusions and emits the consolidated fleet report for report modes,
-/// and succeeds only when every profile did with none incomplete. "Incomplete"
-/// leaves out sources whose failure a same-day retry would only repeat.
+/// and succeeds only when every profile did with none incomplete. The retry
+/// flag leaves out sources whose failure a same-day retry would only repeat.
 @Sendable
 func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
@@ -625,7 +625,8 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
             profile: schedule.profile, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty)
         return ScheduleRunOutcome(
-            exitCode: code, incomplete: honesty.retryCouldHelp(profile: schedule.profile))
+            exitCode: code, incomplete: honesty.incomplete,
+            retryCouldHelp: honesty.retryCouldHelp(profile: schedule.profile))
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
     let discovered = ProfileService.discoverLocal()
@@ -646,6 +647,7 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
     }
     var anyFailed = false
     var anyIncomplete = false
+    var anyRetryable = false
     for p in profiles {
         // One watcher per profile: a shared one would carry profile A's
         // stand-down into profile B's completion line.
@@ -654,12 +656,14 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
             profile: p.name, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty)
         if code != 0 { anyFailed = true }
-        if honesty.retryCouldHelp(profile: p.name) { anyIncomplete = true }
+        if honesty.incomplete { anyIncomplete = true }
+        if honesty.retryCouldHelp(profile: p.name) { anyRetryable = true }
     }
     if [.jamfCLIOnly, .jamfCLIFull, .csvAssisted].contains(schedule.mode) {
         emitConsolidatedReports()
     }
-    return ScheduleRunOutcome(exitCode: anyFailed ? 1 : 0, incomplete: anyIncomplete)
+    return ScheduleRunOutcome(
+        exitCode: anyFailed ? 1 : 0, incomplete: anyIncomplete, retryCouldHelp: anyRetryable)
 }
 
 // MARK: - check subcommand

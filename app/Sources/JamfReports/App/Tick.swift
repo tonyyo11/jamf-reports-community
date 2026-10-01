@@ -113,7 +113,7 @@ enum TickLoop {
             // run, never after: see `TickRunner.clearRunNowMarker`.
             if run.reason == .runNow { clearRunNowMarker(label) }
             let outcome = await perform(run)
-            if outcome.succeeded {
+            if outcome.endsRetries {
                 state.noteSucceeded(label, startedAt: startedAt)
                 do {
                     try save(state)
@@ -136,7 +136,7 @@ enum TickLoop {
 
 /// `[info] tick: <label>[ retry N] exit <code>[ (incomplete|failed)]` — the
 /// line the GUI's Run now streams back, so it names the attempt and the verdict.
-private func tickResultLine(
+func tickResultLine(
     label: String, reason: TickScheduler.Reason, outcome: ScheduleRunOutcome, retries: Int
 ) -> String {
     let attempt = reason == .retry ? " retry \(retries)" : ""

@@ -57,14 +57,28 @@ struct TickState: Codable, Sendable {
     }
 }
 
-/// A schedule run's exit code plus the one fact the tick needs beyond it:
-/// whether a collect came back incomplete, so a same-day retry can follow.
+/// A schedule run's exit code plus what the tick needs beyond it: whether a
+/// collect came back incomplete, and whether a same-day retry could fetch what
+/// is missing.
 struct ScheduleRunOutcome: Sendable {
     let exitCode: Int32
+    /// A source or the summary did not land; Run History shows the run as Partial.
     let incomplete: Bool
+    /// False when everything missing failed in a way a retry repeats. Defaults to
+    /// `incomplete`.
+    let retryCouldHelp: Bool
 
-    /// Exit 0 with nothing left on the table — the only outcome that ends retries.
+    init(exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool? = nil) {
+        self.exitCode = exitCode
+        self.incomplete = incomplete
+        self.retryCouldHelp = retryCouldHelp ?? incomplete
+    }
+
+    /// Exit 0 with nothing left on the table.
     var succeeded: Bool { exitCode == 0 && !incomplete }
+
+    /// Exit 0 with nothing a retry could fetch — the only outcome that ends retries.
+    var endsRetries: Bool { exitCode == 0 && !retryCouldHelp }
 }
 
 /// Pure "what is due" decision. Input order is preserved so the caller

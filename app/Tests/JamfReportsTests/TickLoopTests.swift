@@ -32,10 +32,11 @@ final class TickLoopTests: XCTestCase {
         return url
     }
 
-    /// Drives `TickLoop.runDue` from an empty state; every run exits 0 and complete.
-    /// With `markerDir`, run-now markers are real files there.
+    /// Drives `TickLoop.runDue` from an empty state; every run ends with `outcome`, by
+    /// default exit 0 and complete. With `markerDir`, run-now markers are real files there.
     private func runDue(
-        _ runs: [TickScheduler.DueRun], recorder: TickLoopRecorder, markerDir: URL? = nil
+        _ runs: [TickScheduler.DueRun], recorder: TickLoopRecorder, markerDir: URL? = nil,
+        outcome: ScheduleRunOutcome = ScheduleRunOutcome(exitCode: 0, incomplete: false)
     ) async -> Int32 {
         await TickLoop.runDue(
             runs, state: TickState(),
@@ -50,7 +51,7 @@ final class TickLoopTests: XCTestCase {
                     FileManager.default.fileExists(atPath: $0.appendingPathComponent(label).path)
                 } ?? false
                 recorder.ran(label, markerOnDisk: onDisk)
-                return ScheduleRunOutcome(exitCode: 0, incomplete: false)
+                return outcome
             },
             recordFailure: { recorder.failure($0.launchAgentLabel ?? "", $1) },
             notifyOverdue: { recorder.digest() })
@@ -144,6 +145,32 @@ final class TickLoopTests: XCTestCase {
         let recorder = TickLoopRecorder()
         _ = await runDue([due("first")], recorder: recorder)
         XCTAssertTrue(recorder.failures.isEmpty)
+    }
+
+    // MARK: - Incomplete, with nothing a retry could fetch (#207)
+
+    /// The retry flag alone ends the retries; `incomplete` still names the run.
+    func testAnIncompleteRunWithNothingToRetryEndsTheRetries() async {
+        let recorder = TickLoopRecorder()
+        _ = await runDue(
+            [due("first")], recorder: recorder,
+            outcome: ScheduleRunOutcome(exitCode: 0, incomplete: true, retryCouldHelp: false))
+        XCTAssertNotNil(recorder.saved.last?.lastSucceeded[label("first")])
+    }
+
+    func testAnIncompleteRunWithSomethingToRetryKeepsRetrying() async {
+        let recorder = TickLoopRecorder()
+        _ = await runDue(
+            [due("first")], recorder: recorder,
+            outcome: ScheduleRunOutcome(exitCode: 0, incomplete: true, retryCouldHelp: true))
+        XCTAssertNil(recorder.saved.last?.lastSucceeded[label("first")])
+    }
+
+    func testTheRunNowLineStillSaysIncomplete() {
+        let outcome = ScheduleRunOutcome(exitCode: 0, incomplete: true, retryCouldHelp: false)
+        XCTAssertEqual(
+            tickResultLine(label: "x", reason: .fire, outcome: outcome, retries: 0),
+            "[info] tick: x exit 0 (incomplete)")
     }
 
     // MARK: - Run-now markers
