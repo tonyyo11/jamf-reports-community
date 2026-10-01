@@ -614,7 +614,8 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// `--scheduled-run` from an external cron, Run now). Records under the
 /// schedule's label; a multi schedule fans out over discovered profiles minus
 /// its exclusions and emits the consolidated fleet report for report modes,
-/// and succeeds only when every profile did with none incomplete.
+/// and succeeds only when every profile did with none incomplete. "Incomplete"
+/// leaves out sources whose failure a same-day retry would only repeat.
 @Sendable
 func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
@@ -623,7 +624,8 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
         let code = await scheduledRunSingle(
             profile: schedule.profile, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty)
-        return ScheduleRunOutcome(exitCode: code, incomplete: honesty.incomplete)
+        return ScheduleRunOutcome(
+            exitCode: code, incomplete: honesty.retryCouldHelp(profile: schedule.profile))
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
     let discovered = ProfileService.discoverLocal()
@@ -652,7 +654,7 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
             profile: p.name, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty)
         if code != 0 { anyFailed = true }
-        if honesty.incomplete { anyIncomplete = true }
+        if honesty.retryCouldHelp(profile: p.name) { anyIncomplete = true }
     }
     if [.jamfCLIOnly, .jamfCLIFull, .csvAssisted].contains(schedule.mode) {
         emitConsolidatedReports()

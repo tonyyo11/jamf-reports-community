@@ -534,6 +534,19 @@ struct ReportEngine: Sendable {
         return "\(standDownMarker) \(body)"
     }
 
+    /// Ahead of the kinds in `unlandedSourcesLine`; `CollectHonestyWatcher` reads them back.
+    static let unlandedSourcesMarker = "source(s) did not land this run: "
+
+    /// Why no summary is written when every attempted source failed. The watcher reads that
+    /// line as a result of the sources named in `unlandedSourcesLine`, not a cause of its own.
+    static let noSourceLandedReason = "no source landed this run"
+
+    /// The `[partial]` line for a collect where some attempted sources did not land.
+    static func unlandedSourcesLine(_ kinds: [String], attempted: Int) -> String {
+        "[partial] \(kinds.count) of \(attempted) \(unlandedSourcesMarker)"
+            + "\(kinds.joined(separator: ", ")) — earlier snapshots are used where they exist"
+    }
+
     // MARK: - Private helpers
 
     private func buildSummaryFromCLI(
@@ -2076,9 +2089,7 @@ struct ReportEngine: Sendable {
         // Launch failures reach this list too, via `launchFailureExitCode`.
         let unsavedKinds = Self.degradedKinds(outcomes: outcomes, savedKinds: savedKinds)
         if !unsavedKinds.isEmpty {
-            let msg = "[partial] \(unsavedKinds.count) of \(outcomes.count) source(s) did not "
-                + "land this run: \(unsavedKinds.joined(separator: ", ")) — earlier snapshots "
-                + "are used where they exist"
+            let msg = Self.unlandedSourcesLine(unsavedKinds, attempted: outcomes.count)
             AppLogger.collect.warning("\(msg, privacy: .public)")
             onLine(.init(timestamp: Date(), level: .warn, text: msg))
         }
@@ -2163,7 +2174,7 @@ struct ReportEngine: Sendable {
         if nothingLanded, loadedConfig != nil {
             // Every attempted source failed: a summary now would stamp cached numbers
             // with today's date and chart them as a fresh trend point.
-            unwritten = "no source landed this run"
+            unwritten = Self.noSourceLandedReason
         } else if let config = loadedConfig,
            let summariesDir = try? workspacePaths.summariesDir(for: profile) {
             let prov = await Provenance.current(

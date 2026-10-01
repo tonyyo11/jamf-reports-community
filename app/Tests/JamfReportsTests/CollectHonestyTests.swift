@@ -334,6 +334,94 @@ final class CollectHonestyTests: XCTestCase {
         XCTAssertTrue(stopped.incomplete)
     }
 
+    // MARK: - Same-day retry and failures a retry repeats (#207)
+
+    private func noSourceLandedLine() -> String {
+        "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason) "
+            + "— Trends did not advance"
+    }
+
+    /// The field case: a freshness run attempted only update-status, which failed because
+    /// Managed Software Update Plans is off. A retry repeats that, so the run counts as
+    /// complete for the retry, and is still Partial everywhere else.
+    func testARunMissingOnlyPermanentlyFailingSourcesIsNotRetried() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let cause = FailureCause.classify(
+            exitCode: 0, stdout: Data(), sawSoftwareUpdatePlansOffOnStderr: true)
+        store.record(.failed(exitCode: 0), report: "update-status", at: Date(), cause: cause)
+
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["update-status"], attempted: 1))
+        watcher.observe(noSourceLandedLine())
+        XCTAssertTrue(watcher.incomplete, "Run History still reads the run as Partial")
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// Exit 2, 3 and 8 repeat on a retry too: the self-remediation rule.
+    func testUsageCredentialAndPolicyExitsAreNotRetried() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        let codes = [
+            CLIBridge.exitCodeUsage, CLIBridge.exitCodeUnauthorized,
+            CLIBridge.exitCodeRefusedByPolicy,
+        ]
+        for code in codes {
+            store.record(.failed(exitCode: code), report: "kind-\(code)", at: Date())
+        }
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(codes.map { "kind-\($0)" }, attempted: 5))
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile))
+    }
+
+    func testOneMissingSourceARetryCouldFetchStillRetries() throws {
+        let store = StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+        store.record(
+            .failed(exitCode: CLIBridge.exitCodeRefusedByPolicy), report: "ddm-status", at: Date())
+        store.record(.failed(exitCode: 1), report: "groups", at: Date())
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["ddm-status", "groups"], attempted: 9))
+        XCTAssertTrue(watcher.retryCouldHelp(profile: profile))
+    }
+
+    /// A summary that failed for a reason of its own is not explained by the missing sources.
+    func testASummaryFailureOfItsOwnStillRetries() {
+        let watcher = CollectHonestyWatcher()
+        watcher.observe(ReportEngine.unlandedSourcesLine(["update-status"], attempted: 3))
+        watcher.observe("\(ReportEngine.summaryNotWrittenMarker) the summaries directory "
+            + "could not be created — Trends did not advance")
+        XCTAssertTrue(watcher.retryCouldHelp { _ in true })
+    }
+
+    /// A device-scan kind that was not written is judged by its own last failure.
+    func testAStoppedDeviceScanKindIsJudgedByItsOwnFailure() {
+        let watcher = CollectHonestyWatcher()
+        watcher.observe("[partial] mdm-command-health: stopped after exit 8 — not written")
+        XCTAssertFalse(watcher.retryCouldHelp { $0 == "mdm-command-health" })
+        XCTAssertTrue(watcher.retryCouldHelp { _ in false })
+    }
+
+    func testACompleteRunNeverAsksForARetry() {
+        let watcher = CollectHonestyWatcher()
+        watcher.observe("[ok] security: 1024 bytes")
+        watcher.observe(partialRunMarker(sheetFailures: 1))
+        XCTAssertFalse(watcher.retryCouldHelp { _ in false })
+    }
+
+    /// The real lines of a collect whose sources all exited 2: the rule reads the kinds back
+    /// from them and finds nothing a retry could fetch.
+    func testAUsageOnlyCollectIsNotRetriedTheSameDay() async throws {
+        try writeConfig("jamf_cli:\n  profile: \"\(profile)\"\n")
+        let stub = try makeStub(exitCode: 2, stdout: "")
+        let collector = LogTextCollector()
+        try await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.scan],
+            force: true, locateJamfCLI: { stub }, onLine: collector.append)
+
+        let watcher = CollectHonestyWatcher()
+        collector.texts.forEach(watcher.observe)
+        XCTAssertTrue(watcher.incomplete, "\(collector.texts)")
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile), "\(collector.texts)")
+    }
+
     // MARK: - S2: a summary that never landed
 
     /// The write failure used to be a plain `[warn]`, so a run whose trend point

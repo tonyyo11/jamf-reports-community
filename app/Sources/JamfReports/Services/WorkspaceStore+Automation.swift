@@ -575,13 +575,7 @@ extension WorkspaceStore {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return issues }
         let store = StateFileStore(directory: stateDir)
-        let permanent = issues.filter {
-            let code = store.lastFailureExitCode(for: $0.snapshotKind)
-            return code == CLIBridge.exitCodeUsage
-                || code == CLIBridge.exitCodeUnauthorized
-                || code == CLIBridge.exitCodeRefusedByPolicy
-                || store.cause(for: $0.snapshotKind)?.isPermanent == true
-        }
+        let permanent = issues.filter { lastFailureRepeatsOnRetry($0.snapshotKind, in: store) }
         guard !permanent.isEmpty else { return issues }
         AppLogger.collect.notice(
             """
@@ -593,6 +587,18 @@ extension WorkspaceStore {
         )
         let skip = Set(permanent.map(\.snapshotKind))
         return issues.filter { !skip.contains($0.snapshotKind) }
+    }
+
+    /// The rule above for one kind: its last failure was exit 2, 3 or 8, or carries a
+    /// permanent cause. Shared with the background item's same-day retry.
+    nonisolated static func lastFailureRepeatsOnRetry(
+        _ kind: String, in store: StateFileStore
+    ) -> Bool {
+        let code = store.lastFailureExitCode(for: kind)
+        return code == CLIBridge.exitCodeUsage
+            || code == CLIBridge.exitCodeUnauthorized
+            || code == CLIBridge.exitCodeRefusedByPolicy
+            || store.cause(for: kind)?.isPermanent == true
     }
 
     /// Per-tier collect closure used by `remediateOne`. Matches a one-tier

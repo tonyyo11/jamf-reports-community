@@ -366,6 +366,25 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertNotNil(store.lastRun(report: "ddm-device-status"))
     }
 
+    /// The background item's same-day retry reads this phase's `[partial]` lines (#207): a
+    /// kind stopped by a policy refusal is one a retry would only repeat.
+    func testAPolicyStoppedScanIsNotRetriedTheSameDay() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", "", exit: Int(CLIBridge.exitCodeRefusedByPolicy))
+        // The day's freshness run has already written the summary, as before a weekly scan.
+        let summaries = try WorkspacePaths.summariesDir(for: profile)
+        try FileManager.default.createDirectory(at: summaries, withIntermediateDirectories: true)
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        try #"{"date":"\#(today)","totalDevices":1,"source":"jamf-cli"}"#.write(
+            to: summaries.appendingPathComponent("summary_\(today).json"),
+            atomically: true, encoding: .utf8)
+        let lines = try await runScan()
+        let watcher = CollectHonestyWatcher()
+        lines.forEach(watcher.observe)
+        XCTAssertTrue(watcher.incomplete, "\(lines)")
+        XCTAssertFalse(watcher.retryCouldHelp(profile: profile), "\(lines)")
+    }
+
     func testExit3StopsBothCallTypes() async throws {
         try writeComputers([("1", "A", "m1", true)])
         try answer("hist-1", "", exit: Int(CLIBridge.exitCodeUnauthorized))

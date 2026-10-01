@@ -367,6 +367,10 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     private var standDown = false
     private var summaryFailed = false
     private var partial = false
+    /// Sources the `[partial]` lines named as not landed.
+    private var unlanded: Set<String> = []
+    /// A `[partial]` line that names no source, so no failure record can explain it.
+    private var unexplainedPartial = false
 
     init() {}
 
@@ -380,10 +384,30 @@ final class CollectHonestyWatcher: @unchecked Sendable {
               !line.hasSuffix(sheetFailureMarkerSuffix),
               !line.hasSuffix(deviceScanGapsMarkerSuffix) else { return }
         let summary = line.hasPrefix(ReportEngine.summaryNotWrittenMarker)
+        let kinds = Self.unlandedKinds(in: line)
+        // Follows from the sources line before it, which names them.
+        let noSourceLanded = line.hasPrefix(
+            "\(ReportEngine.summaryNotWrittenMarker) \(ReportEngine.noSourceLandedReason)")
         lock.withLock {
             partial = true
             if summary { summaryFailed = true }
+            if let kinds { unlanded.formUnion(kinds) } else if !noSourceLanded {
+                unexplainedPartial = true
+            }
         }
+    }
+
+    /// The kinds a `[partial]` line says did not land: the collect's sources line, or a device
+    /// scan kind that was not written (`<kind>: … — not written`). Nil for any other line.
+    static func unlandedKinds(in line: String) -> [String]? {
+        if let marker = line.range(of: ReportEngine.unlandedSourcesMarker) {
+            let list = line[marker.upperBound...].components(separatedBy: " — ")[0]
+            return list.components(separatedBy: ", ").filter { !$0.isEmpty }
+        }
+        let prefix = "[partial] "
+        guard line.hasPrefix(prefix), line.hasSuffix(" — not written"),
+              let colon = line.firstIndex(of: ":") else { return nil }
+        return [String(line[line.index(line.startIndex, offsetBy: prefix.count)..<colon])]
     }
 
     /// The run deferred to another machine — no snapshot, no summary, nothing
@@ -393,10 +417,29 @@ final class CollectHonestyWatcher: @unchecked Sendable {
     /// The summary write failed, so the trend chart did not advance.
     var summaryWriteFailed: Bool { lock.withLock { summaryFailed } }
 
-    /// A source or the summary did not land, so a same-day retry is worth it. A stand-down,
-    /// a report's sheet failures and a device scan that landed with gaps are not missing data
-    /// a retry would fetch, and never set it.
+    /// A source or the summary did not land. A stand-down, a report's sheet failures and a
+    /// device scan that landed with gaps are not missing data a retry would fetch, and never
+    /// set it. Whether a same-day retry is worth it is `retryCouldHelp`.
     var incomplete: Bool { lock.withLock { partial } }
+
+    /// `incomplete` for the background item's same-day retry: false when the `[partial]`
+    /// lines only name sources whose last failure a retry would repeat. Run History still
+    /// reads such a run as Partial from its log.
+    func retryCouldHelp(lastFailureRepeats: (String) -> Bool) -> Bool {
+        let (partial, unexplained, kinds) = lock.withLock {
+            (self.partial, unexplainedPartial, unlanded)
+        }
+        guard partial else { return false }
+        return unexplained || kinds.isEmpty || !kinds.allSatisfy(lastFailureRepeats)
+    }
+
+    /// The rule self-remediation uses (`WorkspaceStore.lastFailureRepeatsOnRetry`), read from
+    /// `profile`'s state files.
+    func retryCouldHelp(profile: String) -> Bool {
+        guard let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return incomplete }
+        let store = StateFileStore(directory: stateDir)
+        return retryCouldHelp { WorkspaceStore.lastFailureRepeatsOnRetry($0, in: store) }
+    }
 
     /// Whether the run may claim it refreshed the fleet's data. False for
     /// either marker: both mean today's summary is not this run's work.
