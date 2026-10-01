@@ -204,7 +204,8 @@ wired() {
 wired build-app.sh jr_build_number jr_release_channel
 wired build-pkg.sh jr_is_valid_marketing_version jr_is_valid_build_number \
   jr_artifact_path jr_artifact_version
-wired scripts/package-dmg.sh jr_is_valid_build_number jr_artifact_path
+wired scripts/package-dmg.sh jr_is_valid_marketing_version jr_is_valid_build_number \
+  jr_artifact_path
 
 # --- Summary -------------------------------------------------------------------
 total=$((passed + failed))
