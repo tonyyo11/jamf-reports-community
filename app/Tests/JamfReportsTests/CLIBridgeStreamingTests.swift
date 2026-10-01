@@ -145,12 +145,24 @@ final class CLIBridgeStreamingTests: XCTestCase {
         )
 
         XCTAssertEqual(exit, CLIBridge.exitCodeTimedOut)
-        let pid = try XCTUnwrap(
-            Int32(try String(contentsOf: pidFile, encoding: .utf8)
+        assertProcessGone(try pid(in: pidFile), "the child must not outlive the call")
+    }
+
+    private func pid(in file: URL) throws -> Int32 {
+        try XCTUnwrap(
+            Int32(try String(contentsOf: file, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines))
         )
-        XCTAssertEqual(kill(pid, 0), -1)
-        XCTAssertEqual(errno, ESRCH, "the child must not outlive the call")
+    }
+
+    /// errno is read before any assertion runs: XCTest can overwrite it while evaluating one.
+    private func assertProcessGone(
+        _ pid: Int32, _ message: String, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let result = kill(pid, 0)
+        let error = errno
+        XCTAssertEqual(result, -1, message, file: file, line: line)
+        XCTAssertEqual(error, ESRCH, message, file: file, line: line)
     }
 
     func testACommandThatFinishesInsideTheTimeoutIsNotTimedOut() async throws {
