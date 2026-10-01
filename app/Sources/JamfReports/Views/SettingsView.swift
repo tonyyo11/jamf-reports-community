@@ -946,9 +946,14 @@ struct SettingsView: View {
 
     // MARK: - AI Insights (macOS 27+, opt-in)
 
+    nonisolated static let aiInsightsBlurb: String =
+        "Turn already-collected fleet data into a plain-language insight card "
+        + "on Overview, using Apple's on-device Foundation Model. Off by default. "
+        + "The model runs on this Mac and nothing leaves it."
+
     /// Turns already-collected fleet data into a plain-language insight card
-    /// on Overview. Off by default; requires macOS 27 for on-device or Private
-    /// Cloud Compute generation. Persists to this profile's `config.yaml`
+    /// on Overview. Off by default; requires macOS 27, where Apple's on-device
+    /// Foundation Model generates it. Persists to this profile's `config.yaml`
     /// (`ai:` block) via `AIConfigWriter`, scoped to just that key — the same
     /// pattern as `DebugLoggingService`'s own plist, not the Config-tab's
     /// managed-key round-trip.
@@ -956,12 +961,7 @@ struct SettingsView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "AI Insights")
-                Text(
-                    "Turn already-collected fleet data into a plain-language insight card "
-                    + "on Overview, using Apple's on-device Foundation Model (or Private Cloud "
-                    + "Compute, if you opt in). Off by default; nothing leaves this Mac unless "
-                    + "you choose Private Cloud Compute."
-                )
+                Text(Self.aiInsightsBlurb)
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
