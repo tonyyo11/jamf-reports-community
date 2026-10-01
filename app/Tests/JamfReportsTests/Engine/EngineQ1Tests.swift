@@ -7,7 +7,7 @@ import CryptoKit
 //
 // Tests for Lane Q1 engine improvements:
 //   #6 — deviceAnchorSlug helper for Protect → Audit deep-linking
-//   #8 — SHA-256 manifest and evidence-bundle alongside generated artifacts
+//   #8 — SHA-256 manifest alongside generated artifacts
 //   #10 — ComplianceFramework controlled vocabulary + ComplianceConfig.displayFramework
 
 final class EngineQ1Tests: XCTestCase {
@@ -144,46 +144,6 @@ final class EngineQ1Tests: XCTestCase {
         XCTAssertTrue(content.contains("generator: JamfReports"))
         XCTAssertTrue(content.contains("profile: testprofile"))
         XCTAssertTrue(content.contains("template: Compliance"))
-    }
-
-    func testEvidenceBundleListsAllArtifacts() throws {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("q1-bundle-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        let artifacts = ["report.xlsx", "report.html", "report.pdf"].map {
-            dir.appendingPathComponent($0)
-        }
-        // Write distinct one-byte payloads so hashes differ.
-        for (idx, url) in artifacts.enumerated() {
-            try Data([UInt8(idx + 1)]).write(to: url)
-        }
-
-        ReportEngine.writeEvidenceBundle(
-            artifacts: artifacts,
-            profile: "lena",
-            template: "Executive"
-        )
-
-        let stem = artifacts[0].deletingPathExtension().lastPathComponent
-        let bundleURL = dir.appendingPathComponent("\(stem).evidence-bundle.txt")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: bundleURL.path),
-                      "Evidence bundle should exist")
-        let content = try String(contentsOf: bundleURL, encoding: .utf8)
-
-        // Each artifact filename must appear in the bundle.
-        XCTAssertTrue(content.contains("report.xlsx"))
-        XCTAssertTrue(content.contains("report.html"))
-        XCTAssertTrue(content.contains("report.pdf"))
-
-        // Hashes must be distinct (different file contents).
-        let sha256Lines = content.components(separatedBy: "\n")
-            .filter { $0.hasPrefix("sha256:") }
-            .map { $0.replacingOccurrences(of: "sha256:", with: "").trimmingCharacters(in: .whitespaces) }
-        XCTAssertEqual(sha256Lines.count, 3, "Bundle should contain three sha256 lines")
-        let uniqueHashes = Set(sha256Lines)
-        XCTAssertEqual(uniqueHashes.count, 3, "Three distinct artifacts must have three distinct hashes")
     }
 
     // MARK: - Finding #10: ComplianceFramework

@@ -86,12 +86,6 @@ final class JamfCLIInstallerTests: XCTestCase {
                       "Expected ~/.local/bin/jamf-cli, got \(url.path)")
     }
 
-    func test_defaultDirectInstallDirIsOnPATH_returnsBool() {
-        // No-op smoke check — the value depends on the test runner's PATH; we
-        // only assert the function is callable and returns a bool.
-        _ = JamfCLIInstaller.defaultDirectInstallDirIsOnPATH()
-    }
-
     // MARK: - Minimum supported version
 
     func test_isBelowMinimumSupported_flagsOlderVersions() {

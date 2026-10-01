@@ -115,27 +115,6 @@ enum HtmlSectionFormatters {
         return "<div class=\"count-cards\">\n\(cardHTML)\n</div>"
     }
 
-    // MARK: - Percent bar
-
-    /// Render an inline CSS horizontal percent bar for a labeled metric.
-    ///
-    /// The bar uses `--accent` for fill. `fraction` is clamped to [0, 1].
-    nonisolated static func renderPercentBar(label: String, fraction: Double) -> String {
-        let clamped = min(max(fraction, 0), 1)
-        let pct = Int((clamped * 100).rounded())
-        let label64 = escapeHTML(label)
-        return """
-        <div class="pct-bar-row" role="meter" aria-label="\(label64): \(pct)%"
-             aria-valuenow="\(pct)" aria-valuemin="0" aria-valuemax="100">
-          <span class="pct-bar-label">\(label64)</span>
-          <div class="pct-bar-track">
-            <div class="pct-bar-fill" style="width:\(pct)%" aria-hidden="true"></div>
-          </div>
-          <span class="pct-bar-value">\(pct)%</span>
-        </div>
-        """
-    }
-
     // MARK: - Severity pill
 
     /// Map a severity string to a CSS class and render a `<span class="sev-pill …">`.
@@ -202,13 +181,6 @@ enum HtmlSectionFormatters {
     /// `additionalCSS` property.
     static let additionalCSS: String = """
     /* HtmlSectionFormatters additions */
-    .pct-bar-row { display: flex; align-items: center; gap: 0.6rem;
-                   margin: 0.35rem 0; font-size: 0.85rem; }
-    .pct-bar-label { min-width: 140px; color: var(--subtext); }
-    .pct-bar-track { flex: 1; height: 10px; background: var(--border);
-                     border-radius: 5px; overflow: hidden; }
-    .pct-bar-fill  { height: 100%; background: var(--accent); border-radius: 5px; }
-    .pct-bar-value { min-width: 3.5rem; text-align: right; }
     .sev-pill { display: inline-block; padding: 0.15em 0.55em; border-radius: 4px;
                 font-size: 0.75rem; font-weight: 600; letter-spacing: 0.03em; }
     .sev-critical { background: #8b0000; color: #fff; }

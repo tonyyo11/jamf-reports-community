@@ -8,26 +8,6 @@ import Foundation
 /// Proposals whose column already exists in `custom_eas` are skipped.
 enum ConfigEAAdopter {
 
-    /// Append `proposals` to a profile's `custom_eas`, skipping duplicate columns.
-    ///
-    /// - Parameters:
-    ///   - proposals: EA candidates the user selected to adopt.
-    ///   - profile: Profile slug whose `config.yaml` is updated.
-    ///   - workspaceRoot: Optional workspace root override (for tests).
-    /// - Returns: The number of EAs actually appended (excludes skipped duplicates).
-    /// - Throws: `ConfigService` load/save errors.
-    @discardableResult
-    static func adoptEAs(
-        _ proposals: [ScaffoldService.ProposedEA],
-        profile: String,
-        workspaceRoot: URL? = nil
-    ) throws -> Int {
-        try adopt(
-            eaProposals: proposals, agentProposals: [],
-            profile: profile, workspaceRoot: workspaceRoot
-        ).eas
-    }
-
     /// Append selected proposals to `custom_eas` and/or `security_agents` in one
     /// load/save. Duplicate columns (already present in the respective section)
     /// are skipped. A security agent's connected value comes from

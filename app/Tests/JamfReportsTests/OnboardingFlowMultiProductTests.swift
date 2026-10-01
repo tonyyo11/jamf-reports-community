@@ -305,32 +305,6 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         )
     }
 
-    // MARK: - Part 2: Profile name slug sanitization
-
-    func test_slugify_lowercasesAndReplacesSpaces() {
-        XCTAssertEqual(OnboardingFlow.slugify("Jamf Platform"), "jamf-platform")
-    }
-
-    func test_slugify_collapsesMultipleSpaces() {
-        XCTAssertEqual(OnboardingFlow.slugify("My  Tenant"), "my-tenant")
-    }
-
-    func test_slugify_stripsSpecialChars() {
-        XCTAssertEqual(OnboardingFlow.slugify("My Tenant!"), "my-tenant")
-    }
-
-    func test_slugify_validSlugPassesProfileService() {
-        let slug = OnboardingFlow.slugify("Jamf Platform")
-        XCTAssertTrue(
-            ProfileService.isValid(slug),
-            "slugified 'Jamf Platform' must pass ProfileService.isValid; got '\(slug)'"
-        )
-    }
-
-    func test_slugify_emptyInputReturnsProfile() {
-        XCTAssertFalse(OnboardingFlow.slugify("").isEmpty, "empty input must not produce empty slug")
-    }
-
     // MARK: - Part 2: Secret redaction in error output
 
     func test_secretNotLeakedInPlatformError() {

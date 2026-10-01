@@ -7,7 +7,7 @@ import XCTest
 /// top-level keys are preserved.
 final class CSVEAAdoptionTests: XCTestCase {
 
-    func test_adoptEAs_isAdditiveAndPreservesUnmanagedKeys() throws {
+    func test_adopt_isAdditiveAndPreservesUnmanagedKeys() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "ea-adopt-\(UUID().uuidString.lowercased())"
         try writeConfig(
@@ -43,7 +43,9 @@ final class CSVEAAdoptionTests: XCTestCase {
             ),
         ]
 
-        let added = try ConfigEAAdopter.adoptEAs(proposals, profile: profile, workspaceRoot: root)
+        let added = try ConfigEAAdopter.adopt(
+            eaProposals: proposals, agentProposals: [], profile: profile, workspaceRoot: root
+        ).eas
         XCTAssertEqual(added, 2)
 
         let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
@@ -71,7 +73,7 @@ final class CSVEAAdoptionTests: XCTestCase {
                       "unmanaged notify.url must survive EA adoption")
     }
 
-    func test_adoptEAs_skipsDuplicateColumns() throws {
+    func test_adopt_skipsDuplicateEAColumns() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "ea-adopt-dup-\(UUID().uuidString.lowercased())"
         try writeConfig(
@@ -103,7 +105,9 @@ final class CSVEAAdoptionTests: XCTestCase {
             ),
         ]
 
-        let added = try ConfigEAAdopter.adoptEAs(proposals, profile: profile, workspaceRoot: root)
+        let added = try ConfigEAAdopter.adopt(
+            eaProposals: proposals, agentProposals: [], profile: profile, workspaceRoot: root
+        ).eas
         XCTAssertEqual(added, 1, "duplicate column must be skipped")
 
         let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
@@ -111,7 +115,7 @@ final class CSVEAAdoptionTests: XCTestCase {
         XCTAssertTrue(reloaded.state.customEAs.map(\.column).contains("New EA"))
     }
 
-    func test_adoptEAs_emptyProposalsLeavesConfigUntouched() throws {
+    func test_adopt_emptyProposalsLeavesConfigUntouched() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "ea-adopt-empty-\(UUID().uuidString.lowercased())"
         try writeConfig(
@@ -120,7 +124,9 @@ final class CSVEAAdoptionTests: XCTestCase {
             root: root
         )
 
-        let added = try ConfigEAAdopter.adoptEAs([], profile: profile, workspaceRoot: root)
+        let added = try ConfigEAAdopter.adopt(
+            eaProposals: [], agentProposals: [], profile: profile, workspaceRoot: root
+        ).eas
         XCTAssertEqual(added, 0)
 
         let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)

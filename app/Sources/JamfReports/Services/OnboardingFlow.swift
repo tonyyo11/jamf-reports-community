@@ -812,31 +812,6 @@ final class OnboardingFlow {
         return data
     }
 
-    /// Sanitize a human-readable display name into a valid profile slug.
-    /// "Jamf Platform" → "jamf-platform", "My Tenant!" → "my-tenant"
-    static func slugify(_ name: String) -> String {
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
-        let lowered = name.lowercased()
-        let result = lowered.unicodeScalars.map { scalar -> Character in
-            if allowed.contains(scalar) {
-                return Character(scalar)
-            } else if scalar == "_" || scalar.value == 0x20 {
-                return "-"
-            } else {
-                return "-"
-            }
-        }
-        // Collapse consecutive hyphens and strip leading/trailing hyphens.
-        var slug = String(result).components(separatedBy: "-")
-            .filter { !$0.isEmpty }
-            .joined(separator: "-")
-        // Ensure first char is lowercase letter or digit.
-        if let first = slug.first, !first.isLowercase && !first.isNumber {
-            slug = "profile-" + slug
-        }
-        return slug.isEmpty ? "profile" : slug
-    }
-
     func validateRegisteredProfile() async {
         validationOutput.removeAll()
         validationExitCode = nil

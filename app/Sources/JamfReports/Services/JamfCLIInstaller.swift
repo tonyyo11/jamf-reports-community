@@ -424,15 +424,6 @@ final class JamfCLIInstaller {
             .appendingPathComponent("jamf-cli")
     }
 
-    /// Returns true when the parent directory of `defaultDirectInstallURL` is
-    /// on the current process's PATH. Used after install to surface a
-    /// remediation toast if the user's shell rc would not pick up the binary.
-    static func defaultDirectInstallDirIsOnPATH() -> Bool {
-        let dir = defaultDirectInstallURL.deletingLastPathComponent().path
-        let path = ProcessInfo.processInfo.environment["PATH"] ?? ""
-        return path.split(separator: ":").contains { String($0) == dir }
-    }
-
     /// First-time install via direct GitHub download. Verifies the asset
     /// checksum against the release's `*.checksums.txt` and refuses on
     /// mismatch or when the checksums asset is missing. Writes to

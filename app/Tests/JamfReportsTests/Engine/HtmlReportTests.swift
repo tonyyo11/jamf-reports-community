@@ -466,12 +466,16 @@ final class HtmlReportTests: XCTestCase {
                        "<html> element must not initialize with dark theme")
     }
 
-    func testPrintMediaQueryPresent() {
-        let report = makeReport()
-        // The CSS builder includes @media print — invoke it directly
-        let css = report.buildCSSPublic(accentColor: "#2D5EA2")
-        XCTAssertTrue(css.contains("@media print"), "Print media query must be present in CSS")
-        XCTAssertTrue(css.contains("background: #fff"), "Print CSS must force white background")
+    func testPrintMediaQueryPresent() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let outputURL = dir.appendingPathComponent("report.html")
+        try await makeReport(dataDir: dir).generate(outputURL: outputURL)
+        let html = try String(contentsOf: outputURL, encoding: .utf8)
+        let printRange = try XCTUnwrap(html.range(of: "@media print"),
+                                       "Print media query must be present in CSS")
+        XCTAssertTrue(html[printRange.upperBound...].contains("background: #fff"),
+                      "Print CSS must force white background")
     }
 
     func testLocalStorageThemePersistenceInScript() async throws {

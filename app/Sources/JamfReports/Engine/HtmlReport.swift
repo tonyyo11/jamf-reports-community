@@ -1438,9 +1438,6 @@ struct HtmlReport: Sendable {
 
     // MARK: - CSS
 
-    /// Testable wrapper — returns the raw `<style>` block for a given accent color.
-    func buildCSSPublic(accentColor: String) -> String { buildCSS(accentColor: accentColor) }
-
     private func buildCSS(accentColor: String) -> String {
         """
         <style>

@@ -3979,57 +3979,6 @@ struct ReportEngine: Sendable {
         }
     }
 
-    /// Write a single `<stem>.evidence-bundle.txt` that lists all artifact URLs with their
-    /// SHA-256 hashes when multiple artifacts are produced in one call.
-    ///
-    /// - Parameters:
-    ///   - artifacts: Ordered list of artifact file URLs.
-    ///   - profile: Profile slug for the manifest header.
-    ///   - template: Template identifier for the manifest header.
-    static func writeEvidenceBundle(
-        artifacts: [URL],
-        profile: String,
-        template: String = ""
-    ) {
-        guard !artifacts.isEmpty else { return }
-
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        let now = iso.string(from: Date())
-        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
-            as? String ?? "dev"
-
-        var blocks: [String] = []
-        for url in artifacts {
-            guard let data = try? Data(contentsOf: url) else { continue }
-            let digest = SHA256.hash(data: data)
-            let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
-            blocks.append([
-                "filename: \(url.lastPathComponent)",
-                "sha256:   \(hex)",
-                "generated_at: \(now)",
-                "generator: JamfReports \(appVersion)",
-                "profile: \(profile.isEmpty ? "(none)" : profile)",
-                "template: \(template.isEmpty ? "(default)" : template)",
-            ].joined(separator: "\n"))
-        }
-        guard !blocks.isEmpty else { return }
-
-        // Bundle filename: use the stem of the first artifact.
-        let stem = artifacts[0].deletingPathExtension().lastPathComponent
-        let bundleURL = artifacts[0]
-            .deletingLastPathComponent()
-            .appendingPathComponent("\(stem).evidence-bundle.txt")
-
-        let content = blocks.joined(separator: "\n\n") + "\n"
-        do {
-            try content.write(to: bundleURL, atomically: true, encoding: .utf8)
-        } catch {
-            fputs("[warn] evidence-bundle: could not write \(bundleURL.lastPathComponent): \(error)\n",
-                  stderr)
-        }
-    }
-
     // MARK: - PR-10 / threat-model T-11: strict-manifest pre-flight
 
     /// When `jamf_cli.require_manifest: true`, scan the workspace's snapshot
