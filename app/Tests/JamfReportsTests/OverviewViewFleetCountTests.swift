@@ -128,6 +128,15 @@ final class OverviewViewFleetCountTests: XCTestCase {
                        "Gap clause must be omitted when fleet is unknown: '\(label)'")
     }
 
+    /// The card printed "0 not installed" under an at-risk agent when its denominator was
+    /// unknown, which reads as a finding.
+    func testNotInstalledLineIsOmittedWithoutAGap() {
+        XCTAssertNil(agentNotInstalledLabel(installed: 47, fleetCount: 0))
+        XCTAssertNil(agentNotInstalledLabel(installed: 10, fleetCount: 10))
+        XCTAssertNil(agentNotInstalledLabel(installed: 12, fleetCount: 10))
+        XCTAssertEqual(agentNotInstalledLabel(installed: 47, fleetCount: 100), "53 not installed")
+    }
+
     func testFailingRulesSubtitleDropsAcrossClauseWhenFleetUnknown() {
         let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", fleetCount: 0)
         XCTAssertEqual(subtitle, "Compliance Benchmark",

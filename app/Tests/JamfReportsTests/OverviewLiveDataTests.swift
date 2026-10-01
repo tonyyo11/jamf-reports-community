@@ -78,9 +78,10 @@ final class OverviewLiveDataTests: XCTestCase {
         XCTAssertEqual(built.label, "CIS Level 1")
         XCTAssertEqual(built.rules.map(\.ruleID), ["Audit logging"])
         XCTAssertEqual(built.rules.map(\.fails), [7], "Never summed across benchmarks")
+        XCTAssertEqual(built.reportingMacs, 12, "the Macs the first benchmark evaluated")
     }
 
-    // MARK: - Security agents
+    // MARK: - Loading a workspace
 
     /// A workspace under a temporary root holding `config` and one ea-results snapshot.
     private func workspace(profile: String, config: String, eaResults: String) throws {
@@ -101,7 +102,7 @@ final class OverviewLiveDataTests: XCTestCase {
 
     /// The card's share is of the Macs reporting the agent's attribute, not the security
     /// report's device count, and two Macs that share a name are two Macs.
-    func testAgentShareIsOfTheMacsReportingTheAttribute() throws {
+    func testAgentShareIsOfTheMacsReportingTheAttribute() async throws {
         try workspace(profile: "acme", config: """
             security_agents:
               - name: "CrowdStrike Falcon"
@@ -119,11 +120,62 @@ final class OverviewLiveDataTests: XCTestCase {
             ]
             """)
 
-        let data = OverviewLiveDataLoader.load(profile: "acme", sections: [.securityAgents])
+        let data = try await OverviewLiveDataLoader.load(
+            profile: "acme", sections: [.securityAgents])
 
         XCTAssertEqual(data.agents.map(\.installed), [2])
         XCTAssertEqual(data.agents.map(\.pct), [66.7])
         XCTAssertEqual(data.agentReportingMacs, ["CrowdStrike Falcon": 3])
+    }
+
+    /// "Across N active devices" printed the security report's device count, not the Macs
+    /// whose failures list the card counted.
+    func testFailingRulesCarryTheMacsTheyCounted() async throws {
+        try workspace(profile: "acme", config: """
+            compliance:
+              failures_count_column: "mSCP Failed Count"
+              failures_list_column: "mSCP Failed Rules"
+              baseline_label: "CIS Level 1"
+            """, eaResults: """
+            [
+              {"definition_id": "9", "device": "mac-1", "ea_name": "mSCP Failed Rules",
+               "value": "rule_a|rule_b"},
+              {"definition_id": "9", "device": "mac-2", "ea_name": "mSCP Failed Rules",
+               "value": "rule_a"},
+              {"definition_id": "9", "device": "mac-3", "ea_name": "mSCP Failed Rules",
+               "value": ""},
+              {"definition_id": "3", "device": "mac-4", "ea_name": "Other", "value": "x"}
+            ]
+            """)
+
+        let data = try await OverviewLiveDataLoader.load(
+            profile: "acme", sections: [.topFailingRules])
+
+        XCTAssertEqual(data.failingRules.map(\.ruleID), ["rule_a", "rule_b"])
+        XCTAssertEqual(data.failingRulesReportingMacs, 3)
+    }
+
+    /// The Overview's `.task` is cancelled when the profile or the visible sections change;
+    /// a load it started must stop rather than paint the old selection's data.
+    func testACancelledLoadThrowsRatherThanReturningData() async throws {
+        try workspace(profile: "acme", config: """
+            security_agents:
+              - name: "CrowdStrike Falcon"
+                column: "Falcon - Status"
+            """, eaResults: """
+            [{"definition_id": "4", "device": "mac-1", "ea_name": "Falcon - Status",
+              "value": "Running"}]
+            """)
+        let load = Task { () async throws -> OverviewLiveData in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await OverviewLiveDataLoader.load(
+                profile: "acme", sections: [.securityAgents, .recentActivity])
+        }
+
+        do {
+            _ = try await load.value
+            XCTFail("a cancelled load returned data")
+        } catch is CancellationError {}
     }
 
     // MARK: - Recent activity

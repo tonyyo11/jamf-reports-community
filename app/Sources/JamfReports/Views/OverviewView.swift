@@ -876,16 +876,21 @@ struct OverviewView: View {
         return "\(workspace.profile)|\(workspace.demoMode)|\(sections)"
     }
 
-    /// Reads the data-driven sections off the main thread, like the trend scan.
+    /// Reads the data-driven sections off the main thread, in the calling task:
+    /// `.task(id:)` cancels a read whose profile or sections went out of date.
     private func loadLiveSectionsOffMain() async {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let sections = visibleLiveSections
-        let data = await Task.detached(priority: .userInitiated) {
-            OverviewLiveDataLoader.load(profile: profile, sections: sections)
-        }.value
+        let data: OverviewLiveData
+        do {
+            data = try await OverviewLiveDataLoader.load(profile: profile, sections: sections)
+        } catch {
+            // Only cancellation is thrown; the read that replaced this one paints.
+            return
+        }
         // A profile switch mid-read must not paint the previous tenant's data.
-        guard profile == workspace.profile, !workspace.demoMode else { return }
+        guard !Task.isCancelled, profile == workspace.profile, !workspace.demoMode else { return }
         live = data
         liveLoaded = true
     }
@@ -922,6 +927,12 @@ struct OverviewView: View {
     private var failingRulesLabel: String {
         if !workspace.demoMode, !live.failingRulesLabel.isEmpty { return live.failingRulesLabel }
         return workspace.complianceBenchmarkLabel ?? "Compliance Benchmark"
+    }
+
+    /// The Macs the failing-rules card counted: the demo fleet, or live, the
+    /// Macs whose results it read.
+    private var failingRulesMacCount: Int {
+        workspace.demoMode ? DemoData.totalDevices : live.failingRulesReportingMacs
     }
 
     private var agents: [SecurityAgent] {
@@ -1200,7 +1211,7 @@ struct OverviewView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             SectionHeader(title: "Top Failing Rules")
                             Text(failingRulesSubtitle(
-                                baseline: failingRulesLabel, fleetCount: overviewFleetCount))
+                                baseline: failingRulesLabel, fleetCount: failingRulesMacCount))
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
@@ -1991,7 +2002,8 @@ struct AgentCardView: View {
         let barColor: Color = pct > 90 ? Theme.Colors.ok :
                               pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
         let trackColor: Color = isAtRisk ? Theme.Colors.warn.opacity(0.15) : Color.white.opacity(0.05)
-        let gap = max(0, fleetCount - agent.installed)
+        let notInstalled = agentNotInstalledLabel(
+            installed: agent.installed, fleetCount: fleetCount)
 
         return VStack(alignment: .leading, spacing: 4) {
             Text(agent.name).font(.footnote.weight(.semibold))
@@ -2017,8 +2029,8 @@ struct AgentCardView: View {
             }
             .padding(.top, 4)
             .accessibilityHidden(true)
-            if isAtRisk {
-                Mono(text: "\(gap) not installed", size: 10, color: Theme.Text.tertiary(contrast))
+            if isAtRisk, let notInstalled {
+                Mono(text: notInstalled, size: 10, color: Theme.Text.tertiary(contrast))
                     .padding(.top, 2)
             }
         }
@@ -2072,9 +2084,19 @@ func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> Strin
         parts.append("\(agent.installed) installed")
     }
     if agent.trend == .up { parts.append("trending up") }
-    let gap = max(0, fleetCount - agent.installed)
-    if fleetCount > 0, gap > 0 { parts.append("\(gap) not installed") }
+    if let notInstalled = agentNotInstalledLabel(
+        installed: agent.installed, fleetCount: fleetCount) {
+        parts.append(notInstalled)
+    }
     return parts.joined(separator: ", ")
+}
+
+/// "<N> not installed" under an at-risk agent card; nil when the denominator is
+/// unknown or nothing is missing, where "0 not installed" read as a finding.
+func agentNotInstalledLabel(installed: Int, fleetCount: Int) -> String? {
+    let gap = fleetCount - installed
+    guard fleetCount > 0, gap > 0 else { return nil }
+    return "\(gap) not installed"
 }
 
 /// "Top Failing Rules" card subtitle — "<baseline> · across <N> active devices".
