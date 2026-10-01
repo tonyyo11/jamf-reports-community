@@ -208,6 +208,40 @@ expect "RELEASE=1 build packages as a release" JamfReports-2.8.0.pkg \
 expect "RELEASE unset build packages as a beta" JamfReports-2.8.0-beta812.dmg \
   "$(jr_artifact_name 2.8.0 812 "$(jr_release_channel 0)" dmg)"
 
+# --- Swift toolchain -----------------------------------------------------------
+# build-app.sh warns on a release build below Swift 6.4, the first toolchain that
+# compiles the FoundationModels (AI Insights) code. The text is `swift --version`.
+# swift_row <accept|reject> <swift --version text>
+swift_row() {
+  expect "jr_swift_at_least 6.4 '${2%%$'\n'*}'" "$1" "$(verdict jr_swift_at_least 6.4 "$2")"
+}
+# The two-line text Xcode 27's `swift --version` prints, driver prefix included.
+xcode27_text=$'swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1)\n'
+xcode27_text+=$'Target: arm64-apple-macosx27.0.0'
+swift_row accept "$xcode27_text"
+swift_row accept "Apple Swift version 6.4.1 (swiftlang-6.4.1.2)"
+swift_row accept "Apple Swift version 6.10 (swiftlang-6.10.0.1)"  # 10 > 4, not "1" < "4"
+swift_row accept "Apple Swift version 7.0 (swiftlang-7.0.0.1)"
+swift_row accept "Swift version 6.4-dev (LLVM abc, Swift def)"
+swift_row reject "Apple Swift version 6.3.1 (swiftlang-6.3.1.1.2)"
+swift_row reject "Apple Swift version 6.2 (swiftlang-6.2.0.17.14)"
+swift_row reject "Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2)"
+swift_row reject "Swift version 5.10 (swift-5.10-RELEASE)"
+# Text with no readable version is status 2, so the caller can tell it from "older".
+swift_status() { jr_swift_at_least "$@" >/dev/null 2>&1; echo $?; }
+expect "jr_swift_at_least: older is status 1" 1 "$(swift_status 6.4 "Apple Swift version 6.1.2")"
+expect "jr_swift_at_least: newer is status 0" 0 "$(swift_status 6.4 "Apple Swift version 6.4")"
+expect "jr_swift_at_least: no version text is status 2" 2 \
+  "$(swift_status 6.4 "swift: command not found")"
+expect "jr_swift_at_least: empty text is status 2" 2 "$(swift_status 6.4 "")"
+expect "jr_swift_at_least: 'Swift version' with no number is status 2" 2 \
+  "$(swift_status 6.4 "Apple Swift version unknown")"
+expect "jr_swift_at_least: a bare major is status 2" 2 \
+  "$(swift_status 6.4 "Apple Swift version 6 (x)")"
+expect "jr_swift_at_least: a malformed minimum is status 2" 2 \
+  "$(swift_status six "Apple Swift version 6.4")"
+expect "jr_swift_at_least: one argument is status 2" 2 "$(swift_status 6.4)"
+
 # --- Wiring --------------------------------------------------------------------
 # The checks above only matter while the scripts use the library, so each one
 # must source it, call the functions it needs, and keep no -beta naming of its own.
@@ -223,7 +257,7 @@ wired() {
   expect "$script has no inline -beta naming" no "$(
     grep -qF -e "-beta\${" "$file" && echo yes || echo no)"
 }
-wired build-app.sh jr_build_number jr_release_channel
+wired build-app.sh jr_build_number jr_release_channel jr_swift_at_least
 wired build-pkg.sh jr_is_valid_marketing_version jr_is_valid_build_number \
   jr_package_channel jr_artifact_path jr_artifact_version
 wired scripts/package-dmg.sh jr_is_valid_marketing_version jr_is_valid_build_number \

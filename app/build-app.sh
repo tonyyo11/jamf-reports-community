@@ -36,6 +36,29 @@ BUILD_NUMBER="$(jr_build_number)"
 RELEASE_CHANNEL="$(jr_release_channel "${RELEASE:-0}")"
 
 echo "→ version ${MARKETING_VERSION} build ${BUILD_NUMBER} (${RELEASE_CHANNEL})"
+
+# The toolchain decides what the build contains, so every build prints it. The
+# FoundationModels code (AI Insights on macOS 27) compiles in only with Swift 6.4,
+# which ships with Xcode 27; an older toolchain still builds, without it.
+SWIFT_VERSION_TEXT="$(swift --version 2>&1)" || {
+  echo "✗ swift --version failed: ${SWIFT_VERSION_TEXT}" >&2
+  exit 1
+}
+# zsh does not expand $'\n' in the replacement half of ${var//pat/repl}, hence NL.
+NL=$'\n'
+echo "→ swift --version"
+echo "    ${SWIFT_VERSION_TEXT//$NL/$NL    }"
+XCODE_VERSION_TEXT="$(xcodebuild -version 2>/dev/null)" ||
+  XCODE_VERSION_TEXT="none (no full Xcode selected)"
+XCODE_DIR="$(xcode-select -p 2>/dev/null || echo "no developer dir")"
+echo "→ Xcode: ${XCODE_VERSION_TEXT//$NL/, } (${XCODE_DIR})"
+# An unreadable version also warns: a release should not ship unconfirmed.
+if [[ "$RELEASE_CHANNEL" == "release" ]] && ! jr_swift_at_least 6.4 "$SWIFT_VERSION_TEXT"; then
+  echo "⚠ RELEASE=1 with a Swift toolchain that is not confirmed to be 6.4 or newer." >&2
+  echo "  This build will have no AI Insights on macOS 27. Select Xcode 27" >&2
+  echo "  (xcode-select -s, or DEVELOPER_DIR) to include them. Continuing." >&2
+fi
+
 echo "→ swift build (${CONFIG})"
 if [[ "$CONFIG" == "release" ]]; then
   swift build -c release

@@ -116,3 +116,25 @@ jr_artifact_path() {
   name="$(jr_artifact_name "$2" "$3" "$4" "$5")" || return
   printf '%s/%s\n' "${1%/}" "$name"
 }
+
+# jr_swift_at_least <major.minor> <swift --version text>
+# Succeeds when the "Swift version N.M" in the text is at least <major.minor>,
+# fails with status 1 when it is older, and with status 2 when the text has no
+# readable version or the arguments are wrong, so a caller can tell "old" from
+# "could not tell". Works on text, not on the `swift` binary, so it is testable.
+jr_swift_at_least() {
+  if (( $# != 2 )); then
+    printf 'jr_swift_at_least: want 2 args (major.minor text), got %d\n' "$#" >&2
+    return 2
+  fi
+  local want="$1" text="$2" rest ver major minor
+  [[ "$want" =~ ^[0-9]+[.][0-9]+$ ]] || return 2
+  rest="${text#*Swift version }"
+  [[ "$rest" != "$text" ]] || return 2
+  ver="${rest%%[!0-9.]*}"
+  [[ "$ver" =~ ^[0-9]+[.][0-9]+ ]] || return 2
+  major="${ver%%.*}"
+  minor="${ver#*.}"
+  minor="${minor%%.*}"
+  (( major > ${want%%.*} || (major == ${want%%.*} && minor >= ${want#*.}) ))
+}
