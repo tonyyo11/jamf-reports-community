@@ -368,6 +368,19 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows.map(\.id), again.map(\.id), "identity is stable across decodes")
     }
 
+    /// One id is not enough: rows that share a policy id but lack a device id (or the
+    /// reverse) would key on "-42" or "123-" and collapse into one table row.
+    func testPatchFailureRowsMissingOneIdAreStillDistinct() throws {
+        let json = """
+        [{"policy_id":"42","policy":"Firefox 130.0","device":"MacBook-001"},
+         {"policy_id":"42","policy":"Firefox 130.0","device":"MacBook-002"},
+         {"device_id":"123","policy":"Firefox 130.0","device":"MacBook-001"},
+         {"device_id":"123","policy":"Slack 4.40","device":"MacBook-001"}]
+        """
+        let rows = try JSONDecoder().decode([PatchFailureRow].self, from: Data(json.utf8))
+        XCTAssertEqual(Set(rows.map(\.id)).count, 4, "ids: \(rows.map(\.id))")
+    }
+
     func testPatchFailureFixtureDecodesWithoutError() throws {
         // Locked in via PR-5 fixture synthesis: the file holds PatchFailureRow
         // entries with policy/policy_id/device/device_id/etc. Replaced the

@@ -182,12 +182,14 @@ struct PatchFailureRow: Decodable, Sendable, Identifiable, Equatable {
 
     /// One row per failing device and patch policy. `attempt` stays out of the
     /// identity: it rises as Jamf retries, so the same failure would read as a
-    /// different row from one scan to the next. A row with neither id would all
-    /// read "-" and collapse in a SwiftUI table, so it is told apart by its
-    /// other fields and position.
+    /// different row from one scan to the next. A row missing either id would read
+    /// "-" or "-42" and collapse with its neighbours in a SwiftUI table, so it is
+    /// told apart by its other fields and position.
     var id: String {
-        guard deviceId.isEmpty, policyId.isEmpty else { return "\(deviceId)-\(policyId)" }
-        return "no-id-\(position)-\(device)-\(policy)-\(statusDate)-\(serial)"
+        guard !deviceId.isEmpty, !policyId.isEmpty else {
+            return "no-id-\(position)-\(device)-\(policy)-\(statusDate)-\(serial)"
+        }
+        return "\(deviceId)-\(policyId)"
     }
 
     private enum CodingKeys: String, CodingKey {
