@@ -309,11 +309,14 @@ final class CLIBridge {
     /// the collected stdout + the process exit code.
     ///
     /// - Parameter environment: see ``run(executable:arguments:cwd:environment:onLine:)``.
+    /// - Parameter timeout: seconds before the child is terminated and the call returns
+    ///   ``exitCodeTimedOut`` with the stdout read so far. `nil` waits as long as the child runs.
     nonisolated func runAndCapture(
         executable: URL,
         arguments: [String],
         cwd: URL? = nil,
         environment: [String: String] = CLIBridge.environmentForJamfCLI(),
+        timeout: TimeInterval? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (Int32, Data) {
         final class DataBox: @unchecked Sendable {
@@ -383,12 +386,34 @@ final class CLIBridge {
             }
         }
 
-        // Locked process box for task-cancellation — same pattern as run().
+        // Locked process box for task-cancellation — same pattern as run() — and the timeout.
         final class ProcessBox: @unchecked Sendable {
             private let lock = NSLock()
             private var process: Process?
+            private var timeoutItem: DispatchWorkItem?
+            private var timedOut = false
+            var didTimeOut: Bool { lock.lock(); defer { lock.unlock() }; return timedOut }
             func set(_ p: Process) { lock.lock(); process = p; lock.unlock() }
             func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
+
+            /// Terminates the child after `seconds` unless it has exited by then. Arm it once
+            /// the child is running, so a slow launch does not use up the allowance. The flag
+            /// is set before terminate(), and only for a live child, so a child that exited
+            /// on its own as the timer fired is not reported as timed out.
+            func armTimeout(_ seconds: TimeInterval) {
+                let item = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.lock.lock()
+                    guard let p = self.process, p.isRunning else { self.lock.unlock(); return }
+                    self.timedOut = true
+                    self.lock.unlock()
+                    p.terminate()
+                }
+                lock.lock(); timeoutItem = item; lock.unlock()
+                DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: item)
+            }
+
+            func disarmTimeout() { lock.lock(); let i = timeoutItem; lock.unlock(); i?.cancel() }
         }
         let processBox = ProcessBox()
 
@@ -439,12 +464,14 @@ final class CLIBridge {
                 }
 
                 process.terminationHandler = { proc in
+                    processBox.disarmTimeout()
                     completion.markTerminated(proc.terminationStatus)
                 }
 
                 do {
                     try process.run()
                     if Task.isCancelled { process.terminate() }
+                    if let timeout { processBox.armTimeout(timeout) }
                 } catch {
                     // C-11: mirror to OSLog — see `run()` above.
                     AppLogger.cli.error(
@@ -458,6 +485,14 @@ final class CLIBridge {
             }
         } onCancel: {
             processBox.terminate()
+        }
+        if processBox.didTimeOut, let timeout {
+            AppLogger.cli.warning(
+                "CLIBridge.runAndCapture: terminated after \(timeout, privacy: .public)s timeout"
+            )
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] timed out after \(Int(timeout.rounded(.up)))s — stopped"))
+            return (Self.exitCodeTimedOut, box.data)
         }
         return (code, box.data)
     }
@@ -762,6 +797,9 @@ final class CLIBridge {
     // Refused by policy (v1.28.0+): correctly invoked, but the resolved credentials
     // cannot reach the API that serves it. Never succeeds on retry.
     nonisolated static let exitCodeRefusedByPolicy: Int32 = 8
+    /// Returned by `runAndCapture(timeout:)` when it stopped the child. jamf-cli never exits
+    /// with it; a signal-terminated child would otherwise read as exit 15.
+    nonisolated static let exitCodeTimedOut: Int32 = -2
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"

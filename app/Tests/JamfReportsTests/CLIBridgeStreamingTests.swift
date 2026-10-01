@@ -106,6 +106,64 @@ final class CLIBridgeStreamingTests: XCTestCase {
             "stderr written after exit must reach onLine before runAndCapture returns"
         )
     }
+
+    // MARK: - timeout (#207 G22)
+
+    /// The shell execs sleep so SIGTERM reaches the process that holds the pipes; a child left
+    /// behind would keep stdout open and the call would wait for its EOF.
+    private func sleepingChild(_ preamble: String = "") -> [String] {
+        ["-c", "\(preamble)exec /bin/sleep 10"]
+    }
+
+    func testTimeoutTerminatesTheChildAndReturnsTheTimedOutCode() async throws {
+        let bridge = CLIBridge()
+        let started = Date()
+        let (exit, data) = try await bridge.runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: sleepingChild("printf 'PARTIAL'; "),
+            timeout: 0.5,
+            onLine: CLIBridge.noOpOnLine
+        )
+
+        XCTAssertEqual(exit, CLIBridge.exitCodeTimedOut)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "PARTIAL",
+                       "stdout read before the timeout is still returned")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 8,
+                          "returned at the timeout, not at the child's exit")
+    }
+
+    func testTimedOutChildIsGoneWhenTheCallReturns() async throws {
+        let pidFile = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Timeout-\(UUID().uuidString).pid")
+        defer { try? FileManager.default.removeItem(at: pidFile) }
+
+        let (exit, _) = try await CLIBridge().runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: sleepingChild("echo $$ > '\(pidFile.path)'; "),
+            timeout: 0.5,
+            onLine: CLIBridge.noOpOnLine
+        )
+
+        XCTAssertEqual(exit, CLIBridge.exitCodeTimedOut)
+        let pid = try XCTUnwrap(
+            Int32(try String(contentsOf: pidFile, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines))
+        )
+        XCTAssertEqual(kill(pid, 0), -1)
+        XCTAssertEqual(errno, ESRCH, "the child must not outlive the call")
+    }
+
+    func testACommandThatFinishesInsideTheTimeoutIsNotTimedOut() async throws {
+        let (exit, data) = try await CLIBridge().runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "printf 'DONE'; exit 3"],
+            timeout: 30,
+            onLine: CLIBridge.noOpOnLine
+        )
+
+        XCTAssertEqual(exit, 3, "the real exit code, not the timeout's")
+        XCTAssertEqual(String(data: data, encoding: .utf8), "DONE")
+    }
 }
 
 /// Thread-safe collector for onLine callbacks (the handler is called from a

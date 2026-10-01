@@ -121,6 +121,55 @@ final class ConnectionCheckTests: XCTestCase {
         XCTAssertEqual(oneStep.calls.count, 1)
     }
 
+    // MARK: - timeout (#207 G22)
+
+    /// A timed-out call is a check that could not tell, whatever partial output it left. Here
+    /// the partial output is a gateway refusal, which on its own is a rejected ID.
+    func testATimedOutCallIsUndecidedNeverARejectedID() {
+        let timedOut = CLIBridge.exitCodeTimedOut
+        let partial = (exitCode: timedOut, stdout: unknownEnvironment.stdout)
+
+        XCTAssertEqual(ConnectionCheck.verdict(version: partial, probe: nil),
+                       .undecided(exitCode: timedOut))
+        XCTAssertEqual(ConnectionCheck.verdict(version: bare404, probe: partial),
+                       .undecided(exitCode: timedOut), "the probe step timing out")
+        XCTAssertFalse(ConnectionCheck.verdict(version: partial, probe: nil).blocksContinue)
+        XCTAssertFalse(ConnectionCheck.needsProbe(partial), "no second call after a timeout")
+    }
+
+    func testTheTimedOutMessageSaysSoInsteadOfAnExitCode() {
+        let message = ConnectionCheck.Verdict
+            .undecided(exitCode: CLIBridge.exitCodeTimedOut).message
+        XCTAssertTrue(message.contains("60 seconds"), message)
+        XCTAssertFalse(message.contains("exit"), message)
+        XCTAssertTrue(message.contains("You can continue"), message)
+    }
+
+    func testEachCallGetsSixtySeconds() {
+        XCTAssertEqual(ConnectionCheck.timeout, 60)
+    }
+
+    /// A jamf-cli stand-in that prints a refusal and then never answers. Not named `jamf-cli`:
+    /// CLIBridge's codesign gate keys on exactly that filename.
+    func testTheRunnerStopsACallThatNeverAnswers() async throws {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-ConnCheck-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stub = dir.appendingPathComponent("stub-cli")
+        let refusal = String(data: unknownEnvironment.stdout, encoding: .utf8) ?? ""
+        try "#!/bin/sh\ncat <<'JRC_EOF'\n\(refusal)\nJRC_EOF\nexec /bin/sleep 10\n"
+            .write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+
+        let verdict = await ConnectionCheck.run(
+            profile: "p", specNames: true,
+            runner: ConnectionCheck.runner(binary: stub, timeout: 0.5)
+        )
+
+        XCTAssertEqual(verdict, .undecided(exitCode: CLIBridge.exitCodeTimedOut))
+    }
+
     func testArgumentsFollowTheInstalledJamfCLI() {
         XCTAssertEqual(ConnectionCheck.versionArguments(profile: "p", specNames: true),
                        ["-p", "p", "pro", "jamf-pro-version", "list", "--output", "json"])
