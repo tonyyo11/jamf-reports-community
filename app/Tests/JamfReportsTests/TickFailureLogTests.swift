@@ -54,7 +54,8 @@ final class TickFailureLogTests: XCTestCase {
         XCTAssertEqual(run.status, .fail)
         let text = try logText("alpha")
         XCTAssertTrue(
-            text.contains("[error] tick: skipped daily: its start could not be recorded"), "\(text)")
+            text.contains("[error] tick: skipped daily: its start could not be recorded"),
+            "\(text)")
         XCTAssertTrue(RunHistoryService.list(profile: "beta").isEmpty,
                       "a single-profile schedule's failure stays in its own workspace")
     }
