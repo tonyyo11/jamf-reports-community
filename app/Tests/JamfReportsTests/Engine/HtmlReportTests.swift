@@ -312,6 +312,38 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertNil(report.asInt(nil))
     }
 
+    /// A corrupt snapshot can carry a number no `Int` holds; `Int(d)` trapped on it.
+    func testAsIntRejectsDoublesOutsideIntRange() {
+        let report = makeReport()
+        let outOfRange: [Double] = [
+            1e300, -1e300, .nan, .infinity, -.infinity, 9.3e18, -9.3e18,
+        ]
+        for value in outOfRange {
+            XCTAssertNil(report.asInt(value), "\(value) must read as nil, not trap")
+        }
+    }
+
+    func testAsIntRoundsFractionalDoubles() {
+        let report = makeReport()
+        XCTAssertEqual(report.asInt(3.7), 4)
+        XCTAssertEqual(report.asInt(-2.4), -2)
+        XCTAssertEqual(report.asInt(12.0), 12)
+    }
+
+    /// The chart builder reads counts through asInt; a corrupt one must not take the report down.
+    func testChartsSectionSurvivesCorruptOSCount() {
+        let report = makeReport()
+        let html = report.buildChartsSection(
+            osVersions: [
+                ["os_version": "15.1", "count": 1e300],
+                ["os_version": "15.2", "count": 4],
+            ],
+            patchStatus: [],
+            accentColor: "#2D5EA2"
+        )
+        XCTAssertTrue(html.contains("[0,4]"), "corrupt count reads as 0, valid count survives")
+    }
+
     // MARK: - Task 1: Compliance tile
 
     func testComplianceTileRendersCorrectPercentage() {

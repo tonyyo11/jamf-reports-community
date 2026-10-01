@@ -3280,7 +3280,7 @@ struct CoreDashboard: Sendable {
     private func asInt(_ value: Any?) -> Int? {
         switch value {
         case let n as Int: return n
-        case let d as Double: return Int(d)
+        case let d as Double: return Int(exactly: d.rounded())
         case let s as String: return Int(s)
         case let n as NSNumber: return n.intValue
         default: return nil

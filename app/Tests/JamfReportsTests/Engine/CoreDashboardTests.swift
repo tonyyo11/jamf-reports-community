@@ -139,6 +139,32 @@ final class CoreDashboardTests: XCTestCase {
         }
     }
 
+    /// A corrupt count outside Int's range must not trap the Hardware Models sheet.
+    func testWriteHardwareModelsSurvivesOutOfRangeCount() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        createdTempDirs.append(tmp)
+        let kindDir = tmp.appendingPathComponent("inventory-summary")
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        let json = """
+        [{"model": "MacBookPro18,3", "os_version": "15.1", "count": 5},
+         {"model": "Corrupt", "os_version": "15.1", "count": 1e300}]
+        """
+        try json.write(
+            to: kindDir.appendingPathComponent("inventory-summary.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let dash = makeDashboard(dataDir: tmp)
+        try dash.writeHardwareModels()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Hardware Models"))
+        let counts = ws.dedupedCells.compactMap { cell -> Int? in
+            guard cell.col == 1, case .int(let n) = cell.value else { return nil }
+            return n
+        }
+        XCTAssertEqual(counts.sorted(), [0, 5])
+    }
+
     // MARK: - Mobile Inventory
 
     func testWriteMobileInventory() throws {
