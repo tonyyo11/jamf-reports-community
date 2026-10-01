@@ -24,6 +24,18 @@ final class ExistingCLISetupFlow {
         case failed(String)
     }
 
+    /// Where a selected profile's setup stopped. Decides which cause the completion
+    /// summary names, so a workspace that could not be created is not reported as a
+    /// sign-in problem.
+    enum FailureStage: Equatable, Sendable {
+        /// Workspace initialization failed; the profile has no workspace.
+        case workspace
+        /// The collect was refused for credentials (exit 3).
+        case credentials
+        /// The collect ran or launched and failed for another reason.
+        case collect
+    }
+
     /// Live tally of the collect stream, parsed from the engine's per-kind
     /// log lines so the user sees motion during a multi-minute first collect
     /// instead of an opaque spinner.
@@ -99,6 +111,8 @@ final class ExistingCLISetupFlow {
     var runTime: String
 
     private(set) var statuses: [String: ProfileStatus] = [:]
+    /// Why each failed profile failed, beside the row text in `statuses`.
+    private(set) var failureStages: [String: FailureStage] = [:]
     private(set) var isRunning = false
     private(set) var didComplete = false
     /// Progress of the profile currently collecting (sequential, so one at a time).
@@ -227,12 +241,15 @@ final class ExistingCLISetupFlow {
 
         for name in profileNames where selected.contains(name) && unusable[name] == nil {
             statuses[name] = .initializing
+            failureStages[name] = nil
+            var stage = FailureStage.workspace
             do {
                 let initExit = try await initialize(name)
                 guard initExit == 0 else {
-                    statuses[name] = .failed("workspace init exited \(initExit)")
+                    fail(name, "workspace init exited \(initExit)", at: stage)
                     continue
                 }
+                stage = .collect
                 statuses[name] = .collecting
                 progress = CollectProgress()
                 kindStatuses = []
@@ -245,14 +262,57 @@ final class ExistingCLISetupFlow {
                 // tasks and would otherwise be cut off the final summary.
                 await Task.yield()
                 kindSummaries[name] = progress
-                statuses[name] = collectExit == 0
-                    ? .done
-                    : .failed(Self.collectFailureReason(exit: collectExit))
+                if collectExit == 0 {
+                    statuses[name] = .done
+                } else {
+                    let unauthorized = collectExit == CLIBridge.exitCodeUnauthorized
+                    fail(name, Self.collectFailureReason(exit: collectExit),
+                         at: unauthorized ? .credentials : .collect)
+                }
             } catch {
-                statuses[name] = .failed(error.localizedDescription)
+                fail(name, error.localizedDescription, at: stage)
             }
         }
         didComplete = true
+    }
+
+    private func fail(_ name: String, _ reason: String, at stage: FailureStage) {
+        statuses[name] = .failed(reason)
+        failureStages[name] = stage
+    }
+
+    /// The text under the status rows once the run has finished.
+    var completionText: String {
+        Self.summaryText(
+            succeeded: selectionSummary.succeeded, failures: Array(failureStages.values)
+        )
+    }
+
+    /// Names the cause each failure had. Sign-in is blamed only for a collect that
+    /// failed on credentials; a profile with no workspace never got as far as signing in.
+    nonisolated static func summaryText(succeeded: Int, failures: [FailureStage]) -> String {
+        if failures.isEmpty {
+            return "All \(succeeded) profile" + (succeeded == 1 ? "" : "s")
+                + " collected — dashboards are populated and the first trend point is saved."
+        }
+        var parts = ["\(succeeded) succeeded, \(failures.count) failed."]
+        let noWorkspace = failures.filter { $0 == .workspace }.count
+        if noWorkspace == 1 {
+            parts.append("A workspace could not be created, so nothing was collected for that "
+                + "profile; its row above names the cause.")
+        } else if noWorkspace > 1 {
+            parts.append("\(noWorkspace) workspaces could not be created, so nothing was "
+                + "collected for those profiles; each row above names the cause.")
+        }
+        if failures.contains(.credentials) {
+            parts.append("A collect failed on jamf-cli sign-in. Once jamf-cli auth is fixed, "
+                + "re-collect from the Overview banner (Sources page shows connection status).")
+        }
+        if failures.contains(.collect) {
+            parts.append("A collect did not finish; Run History lists the failing commands, "
+                + "and the Overview banner can re-collect.")
+        }
+        return parts.joined(separator: " ")
     }
 
     /// Parse one engine log line into the live tally and per-kind list.

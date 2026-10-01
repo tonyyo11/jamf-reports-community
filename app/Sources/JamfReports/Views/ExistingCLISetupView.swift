@@ -318,19 +318,11 @@ struct ExistingCLISetupView: View {
     }
 
     private var completionSummary: some View {
-        let summary = flow.selectionSummary
-        let text: String
-        if summary.failed == 0 {
-            text = "All \(summary.succeeded) profile" + (summary.succeeded == 1 ? "" : "s")
-                + " collected — dashboards are populated and the first trend point is saved."
-        } else {
-            text = "\(summary.succeeded) succeeded, \(summary.failed) failed. Failed profiles "
-                + "can re-collect from the Overview banner once jamf-cli auth is fixed "
-                + "(Sources page shows connection status)."
-        }
-        return Text(text)
+        Text(flow.completionText)
             .font(.footnote)
-            .foregroundStyle(summary.failed == 0 ? Theme.Colors.ok : Theme.Colors.warnSoft)
+            .foregroundStyle(
+                flow.selectionSummary.failed == 0 ? Theme.Colors.ok : Theme.Colors.warnSoft
+            )
     }
 
     private var skipFootnote: some View {

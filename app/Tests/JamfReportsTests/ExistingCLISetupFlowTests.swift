@@ -142,6 +142,80 @@ final class ExistingCLISetupFlowTests: XCTestCase {
         XCTAssertTrue(flow.didComplete)
     }
 
+    // MARK: - Failure causes and completion
+
+    func testFailureStageRecordsWhereEachProfileStopped() async {
+        struct Boom: LocalizedError { var errorDescription: String? { "boom" } }
+        let flow = ExistingCLISetupFlow(profileNames: ["a", "b", "c", "d", "e"])
+
+        await flow.run(
+            initialize: { name in
+                if name == "b" { throw Boom() }
+                return name == "a" ? 1 : 0
+            },
+            collect: { name, _ in
+                switch name {
+                case "c": return CLIBridge.exitCodeUnauthorized
+                case "d": return 1
+                default: throw Boom()
+                }
+            }
+        )
+
+        XCTAssertEqual(flow.failureStages["a"], .workspace, "init exit != 0")
+        XCTAssertEqual(flow.failureStages["b"], .workspace, "init threw")
+        XCTAssertEqual(flow.failureStages["c"], .credentials, "collect exit 3")
+        XCTAssertEqual(flow.failureStages["d"], .collect, "collect exit 1")
+        XCTAssertEqual(flow.failureStages["e"], .collect, "collect threw")
+    }
+
+    func testSummaryBlamesSignInOnlyForCredentialFailures() {
+        let workspaceOnly = ExistingCLISetupFlow.summaryText(
+            succeeded: 0, failures: [.workspace, .workspace])
+        XCTAssertTrue(workspaceOnly.contains("0 succeeded, 2 failed"))
+        XCTAssertTrue(workspaceOnly.lowercased().contains("workspace"), workspaceOnly)
+        XCTAssertFalse(workspaceOnly.contains("auth"), workspaceOnly)
+        XCTAssertFalse(workspaceOnly.contains("sign-in"), workspaceOnly)
+        XCTAssertFalse(workspaceOnly.contains("Overview banner"),
+                       "there is no workspace to re-collect into: \(workspaceOnly)")
+
+        let credentials = ExistingCLISetupFlow.summaryText(succeeded: 1, failures: [.credentials])
+        XCTAssertTrue(credentials.contains("auth"), credentials)
+        XCTAssertTrue(credentials.contains("Overview banner"), credentials)
+        XCTAssertFalse(credentials.lowercased().contains("workspace could not"), credentials)
+
+        let plain = ExistingCLISetupFlow.summaryText(succeeded: 1, failures: [.collect])
+        XCTAssertTrue(plain.contains("Run History"), plain)
+        XCTAssertFalse(plain.contains("auth"), plain)
+    }
+
+    func testSummaryNamesEveryCauseThatOccurred() {
+        let mixed = ExistingCLISetupFlow.summaryText(
+            succeeded: 1, failures: [.workspace, .credentials])
+        XCTAssertTrue(mixed.contains("1 succeeded, 2 failed"), mixed)
+        XCTAssertTrue(mixed.lowercased().contains("workspace"), mixed)
+        XCTAssertTrue(mixed.contains("auth"), mixed)
+    }
+
+    func testSummaryKeepsTheAllSucceededWording() {
+        XCTAssertEqual(
+            ExistingCLISetupFlow.summaryText(succeeded: 1, failures: []),
+            "All 1 profile collected — dashboards are populated and the first trend point "
+                + "is saved."
+        )
+        XCTAssertTrue(ExistingCLISetupFlow.summaryText(succeeded: 2, failures: [])
+            .hasPrefix("All 2 profiles collected"))
+    }
+
+    func testCompletionTextIsWordedFromTheRunsFailures() async {
+        let flow = ExistingCLISetupFlow(profileNames: ["alpha", "beta"])
+
+        await flow.run(initialize: { _ in 1 }, collect: { _, _ in 0 })
+
+        XCTAssertFalse(flow.completionText.contains("auth"), flow.completionText)
+        XCTAssertTrue(flow.completionText.contains("0 succeeded, 2 failed"))
+    }
+
     // MARK: - Collect progress parsing
 
     func testIngestTracksKindLifecycle() {
