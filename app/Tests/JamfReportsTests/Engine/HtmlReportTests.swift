@@ -834,8 +834,22 @@ final class HtmlReportTests: XCTestCase {
             return XCTFail("Chart section must contain one script block")
         }
         let block = String(html[open.upperBound..<close.lowerBound])
-        for raw in ["<!--", "<script", "</script", "<", ">", "&"] {
+        // The sequences that change how the parser reads a script block are absent everywhere.
+        for raw in ["<!--", "<script", "</script"] {
             XCTAssertFalse(block.contains(raw), "script block must not contain raw \(raw)")
+        }
+        // The JSON the report writes holds no raw <, > or &. Scoped to the literals so a
+        // future `&&` or `<` in the chart JavaScript does not fail this test.
+        let literals = block.components(separatedBy: "\n")
+            .compactMap { line -> String? in
+                guard let range = line.range(of: "labels: ") else { return nil }
+                return String(line[range.upperBound...])
+            }
+        XCTAssertEqual(literals.count, 2, "one labels literal per chart: \(literals)")
+        for literal in literals {
+            for raw in ["<", ">", "&"] {
+                XCTAssertFalse(literal.contains(raw), "\(raw) must be escaped in \(literal)")
+            }
         }
         XCTAssertTrue(block.contains(#"\u003c!--"#), "the title must survive as an escape")
     }
