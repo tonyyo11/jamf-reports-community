@@ -498,40 +498,6 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertEqual(items[0].userAndLocation?.department, "IT")
     }
 
-    func testGroupRowDecoding() throws {
-        let json = """
-        [{"groupPlatformId":"abc-123","groupJamfProId":"67",
-          "groupName":"All Macs","groupType":"COMPUTER","membershipCount":42,"smart":true}]
-        """
-        let rows = try JSONDecoder().decode([GroupRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0].groupName, "All Macs")
-        XCTAssertEqual(rows[0].membershipCount, 42)
-        XCTAssertEqual(rows[0].smart, true)
-    }
-
-    func testPackageRowDecoding() throws {
-        let json = """
-        [{"id":"1","packageName":"Firefox.pkg","fileName":"Firefox.pkg","notes":"Test","size":10485760}]
-        """
-        let rows = try JSONDecoder().decode([PackageRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0].packageName, "Firefox.pkg")
-    }
-
-    func testEnvStatsReportDecoding() throws {
-        let json = """
-        {"policies":42,"config_profiles":18,"scripts":7,"packages":55,
-         "smart_groups_computer":30,"smart_groups_mobile":5,
-         "extension_attributes":12,"categories":8}
-        """
-        let report = try JSONDecoder().decode(EnvStatsReport.self, from: Data(json.utf8))
-        XCTAssertEqual(report.policies, 42)
-        XCTAssertEqual(report.configProfiles, 18)
-        XCTAssertEqual(report.smartGroupsComputer, 30)
-        XCTAssertEqual(report.extensionAttributes, 12)
-    }
-
     func testMobileConfigProfileRowDecoding() throws {
         let json = """
         [{"id":1,"name":"WiFi Profile","category":"Network","site":"Main","description":"Corp WiFi"}]
@@ -554,32 +520,6 @@ final class CoreDashboardTests: XCTestCase {
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         XCTAssertNoThrow(try JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data))
-    }
-
-    func testGroupsFixtureDecoding() throws {
-        let fixtureURL = fixturesDir.appendingPathComponent("jamf-cli-data/groups")
-        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
-            throw XCTSkip("Fixture not available")
-        }
-        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
-        guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
-        let data = try Data(contentsOf: first)
-        let rows = try JSONDecoder().decode([GroupRow].self, from: data)
-        XCTAssertFalse(rows.isEmpty)
-        XCTAssertNotNil(rows[0].groupName)
-    }
-
-    func testPackagesFixtureDecoding() throws {
-        let fixtureURL = fixturesDir.appendingPathComponent("jamf-cli-data/packages")
-        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
-            throw XCTSkip("Fixture not available")
-        }
-        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
-        guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
-        let data = try Data(contentsOf: first)
-        let rows = try JSONDecoder().decode([PackageRow].self, from: data)
-        XCTAssertFalse(rows.isEmpty)
-        XCTAssertNotNil(rows[0].packageName)
     }
 
     // MARK: - Platform compliance + DDM/Blueprint writers

@@ -588,34 +588,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[1].value?.boolValue, true)
     }
 
-    // MARK: - SoftwareInstallRow
-
-    func testSoftwareInstallRowDecoding() throws {
-        let json = """
-        [{"name":"Microsoft Word","version":"16.84","count":42},
-         {"name":"Chrome","count":15}]
-        """
-        let rows = try JSONDecoder().decode([SoftwareInstallRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].name, "Microsoft Word")
-        XCTAssertEqual(rows[0].version, "16.84")
-        XCTAssertEqual(rows[0].count, 42)
-        XCTAssertNil(rows[1].version)
-    }
-
-    // MARK: - AppStatusRow
-
-    func testAppStatusRowDecoding() throws {
-        let json = """
-        [{"name":"Slack","version":"4.36.0","installed":50,"managed":48,
-          "total":50,"errors":2}]
-        """
-        let rows = try JSONDecoder().decode([AppStatusRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].name, "Slack")
-        XCTAssertEqual(rows[0].installed, 50)
-        XCTAssertEqual(rows[0].managed, 48)
-        XCTAssertEqual(rows[0].errors, 2)
-    }
-
     // MARK: - SmartGroupRow
 
     func testSmartGroupRowDecodesIntAndStringIds() throws {
@@ -663,64 +635,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(failures[0].errors?.intValue, 10)
         XCTAssertEqual(failures[1].profileId?.stringValue, "3", "id arrives as Int or String")
         XCTAssertEqual(failures[1].deviceType, "Mobile Device")
-    }
-
-    // MARK: - CheckinStatusRow
-
-    func testCheckinStatusRowDecoding() throws {
-        let json = """
-        [{"name":"MacBook-001","serial":"ABC123",
-          "days_since_checkin":12,"status":"warning"}]
-        """
-        let rows = try JSONDecoder().decode([CheckinStatusRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].name, "MacBook-001")
-        XCTAssertEqual(rows[0].daysSinceCheckin, 12)
-        XCTAssertEqual(rows[0].status, "warning")
-    }
-
-    // MARK: - HardwareModelRow
-
-    func testHardwareModelRowDecoding() throws {
-        let json = """
-        [{"model":"MacBookPro18,3","count":42,"pct":"60%"},
-         {"model":"Mac15,12","count":28}]
-        """
-        let rows = try JSONDecoder().decode([HardwareModelRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].model, "MacBookPro18,3")
-        XCTAssertEqual(rows[0].count, 42)
-        XCTAssertEqual(rows[0].pct, "60%")
-        XCTAssertNil(rows[1].pct)
-    }
-
-    // MARK: - AuditItem
-
-    func testAuditItemDecoding() throws {
-        let json = """
-        [{"section":"Inventory","check":"Stale Devices","severity":"warning",
-          "status":"fail","detail":"5 stale devices found",
-          "recommendation":"Review and retire","resource":"computers","value":5}]
-        """
-        let rows = try JSONDecoder().decode([AuditItem].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].section, "Inventory")
-        XCTAssertEqual(rows[0].check, "Stale Devices")
-        XCTAssertEqual(rows[0].severity, "warning")
-        XCTAssertEqual(rows[0].recommendation, "Review and retire")
-        XCTAssertEqual(rows[0].value?.intValue, 5)
-    }
-
-    // MARK: - GroupAnalysisRow
-
-    func testGroupAnalysisRowDecoding() throws {
-        let json = """
-        [{"groupName":"All Macs","groupType":"COMPUTER",
-          "membershipCount":42,"smart":true,"unused":false}]
-        """
-        let rows = try JSONDecoder().decode([GroupAnalysisRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].groupName?.stringValue, "All Macs")
-        XCTAssertEqual(rows[0].groupType?.stringValue, "COMPUTER")
-        XCTAssertEqual(rows[0].membershipCount?.intValue, 42)
-        XCTAssertEqual(rows[0].smart, true)
-        XCTAssertEqual(rows[0].unused, false)
     }
 
     // MARK: - MobileDeviceListRow

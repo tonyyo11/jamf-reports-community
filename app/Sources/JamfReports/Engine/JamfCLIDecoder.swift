@@ -661,31 +661,6 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
     }
 }
 
-// MARK: - Software installs
-// `jamf-cli pro report software-installs --output json`
-
-struct SoftwareInstallRow: Decodable, Sendable {
-    let name: String
-    let version: String?
-    let count: Int
-
-    private enum CodingKeys: String, CodingKey {
-        case name, version, count
-    }
-}
-
-// MARK: - App status
-// `jamf-cli pro report app-status --output json`
-
-struct AppStatusRow: Decodable, Sendable {
-    let name: String
-    let version: String?
-    let installed: Int?
-    let managed: Int?
-    let total: Int?
-    let errors: Int?
-}
-
 // MARK: - Smart groups
 // `jamf-cli pro computer-groups-smart-groups list --output json`
 // (`smart-computer-groups` is a retained alias; snapshot key remains "smart-computer-groups")
@@ -755,31 +730,6 @@ struct ProfileFailureRow: Decodable, Sendable {
     }
 }
 
-// MARK: - Checkin health
-// `jamf-cli pro report checkin-status --output json`
-
-struct CheckinStatusRow: Decodable, Sendable {
-    let name: String?
-    let serial: String?
-    let daysSinceCheckin: Int?
-    let status: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case name, serial
-        case daysSinceCheckin = "days_since_checkin"
-        case status
-    }
-}
-
-// MARK: - Hardware models
-// `jamf-cli pro report hardware-models --output json`
-
-struct HardwareModelRow: Decodable, Sendable {
-    let model: String
-    let count: Int
-    let pct: String?
-}
-
 // MARK: - Duplicate serials
 // `jamf-cli pro report duplicate-serials --output json` (v1.23.0+)
 // Shape (bare array, flat, pre-grouped by serial + ordered by numeric id):
@@ -804,20 +754,6 @@ struct DuplicateSerialRow: Decodable, Sendable {
         case serial, id, name
         case lastContact = "last_contact"
     }
-}
-
-// MARK: - Audit
-// `jamf-cli pro audit --output json`
-
-struct AuditItem: Decodable, Sendable {
-    let section: String?
-    let check: String?
-    let severity: String?
-    let status: String?
-    let detail: String?
-    let recommendation: String?
-    let resource: String?
-    let value: AnyCodable?
 }
 
 // MARK: - Advanced mobile device searches
@@ -873,20 +809,6 @@ struct ClassicGroupRow: Decodable, Sendable {
         // Treat missing is_smart as false (static group) for forward-compat.
         isSmart = try container.decodeIfPresent(Bool.self, forKey: .isSmart) ?? false
         name = try container.decodeIfPresent(String.self, forKey: .name)
-    }
-}
-
-// MARK: - Group hygiene (group-tools analyze)
-
-struct GroupAnalysisRow: Decodable, Sendable {
-    let groupName: AnyCodable?
-    let groupType: AnyCodable?
-    let membershipCount: AnyCodable?
-    let smart: Bool?
-    let unused: Bool?
-
-    private enum CodingKeys: String, CodingKey {
-        case groupName, groupType, membershipCount, smart, unused
     }
 }
 
@@ -1019,53 +941,6 @@ struct MobileConfigProfileRow: Decodable, Sendable {
     let category: String?
     let site: String?
     let description: String?
-}
-
-// MARK: - Groups
-// `jamf-cli pro groups list --output json`
-
-struct GroupRow: Decodable, Sendable {
-    let groupPlatformId: String?
-    let groupJamfProId: String?
-    let groupName: String?
-    let groupType: String?
-    let membershipCount: Int?
-    let smart: Bool?
-}
-
-// MARK: - Packages
-// `jamf-cli pro packages list --output json`
-
-struct PackageRow: Decodable, Sendable {
-    let id: String?
-    let packageName: String?
-    let fileName: String?
-    let notes: String?
-    let size: AnyCodable?
-}
-
-// MARK: - Environment stats
-// `jamf-cli pro report env-stats --output json`
-
-struct EnvStatsReport: Decodable, Sendable {
-    let policies: Int?
-    let configProfiles: Int?
-    let scripts: Int?
-    let packages: Int?
-    let smartGroupsComputer: Int?
-    let smartGroupsMobile: Int?
-    let extensionAttributes: Int?
-    let categories: Int?
-
-    private enum CodingKeys: String, CodingKey {
-        case policies
-        case configProfiles = "config_profiles"
-        case scripts, packages
-        case smartGroupsComputer = "smart_groups_computer"
-        case smartGroupsMobile = "smart_groups_mobile"
-        case extensionAttributes = "extension_attributes"
-        case categories
-    }
 }
 
 // MARK: - Platform compliance devices
