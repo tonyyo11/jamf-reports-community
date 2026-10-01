@@ -3129,8 +3129,9 @@ struct ReportEngine: Sendable {
     /// Run all jamf-cli protect collect commands and save JSON snapshots.
     ///
     /// Mirrors the Python protect collection flow. Only runs when `protect.enabled`
-    /// is true in config. The Protect CLI uses a separate named profile (`protect.profile`)
-    /// and its own `data_dir` path so protect snapshots don't overwrite pro snapshots.
+    /// is true in config. The Protect CLI uses a separate named profile (`protect.profile`);
+    /// its snapshots land in their own `protect-*` kind directories under the same
+    /// `jamf_cli.data_dir` as Pro's.
     ///
     /// - Parameters:
     ///   - profile: jamf-cli protect profile slug.
