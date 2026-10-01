@@ -309,8 +309,9 @@ final class CLIBridge {
     /// the collected stdout + the process exit code.
     ///
     /// - Parameter environment: see ``run(executable:arguments:cwd:environment:onLine:)``.
-    /// - Parameter timeout: seconds before the child is terminated and the call returns
-    ///   ``exitCodeTimedOut`` with the stdout read so far. `nil` waits as long as the child runs.
+    /// - Parameter timeout: seconds before the child is terminated (SIGTERM, then SIGKILL after
+    ///   ``timeoutKillGrace``) and the call returns ``exitCodeTimedOut`` with the stdout read
+    ///   so far, without waiting for pipe EOF. `nil` waits as long as the child runs.
     nonisolated func runAndCapture(
         executable: URL,
         arguments: [String],
@@ -373,6 +374,18 @@ final class CLIBridge {
                 if shouldResume { continuation.resume(throwing: error) }
             }
 
+            /// Timeout path only: the child has exited but a grandchild may still hold the
+            /// pipes, so do not wait for their EOF. Shares the single-resume flag with
+            /// `finish`, so whichever arrives first is the only resume.
+            func forceResume(_ code: Int32) {
+                let shouldResume: Bool
+                lock.lock()
+                shouldResume = !resumed
+                if shouldResume { resumed = true }
+                lock.unlock()
+                if shouldResume { continuation.resume(returning: code) }
+            }
+
             private func finish(_ mutate: (CaptureCompletion) -> Void) {
                 var pending: Int32?
                 lock.lock()
@@ -390,16 +403,27 @@ final class CLIBridge {
         final class ProcessBox: @unchecked Sendable {
             private let lock = NSLock()
             private var process: Process?
+            private var readHandles: [FileHandle] = []
             private var timeoutItem: DispatchWorkItem?
             private var timedOut = false
             var didTimeOut: Bool { lock.lock(); defer { lock.unlock() }; return timedOut }
             func set(_ p: Process) { lock.lock(); process = p; lock.unlock() }
             func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
 
-            /// Terminates the child after `seconds` unless it has exited by then. Arm it once
-            /// the child is running, so a slow launch does not use up the allowance. The flag
-            /// is set before terminate(), and only for a live child, so a child that exited
-            /// on its own as the timer fired is not reported as timed out.
+            func setReadHandles(_ handles: [FileHandle]) {
+                lock.lock(); readHandles = handles; lock.unlock()
+            }
+
+            func clearReadHandlers() {
+                lock.lock(); let handles = readHandles; lock.unlock()
+                for handle in handles { handle.readabilityHandler = nil }
+            }
+
+            /// Terminates the child after `seconds` unless it has exited by then, and kills it
+            /// if it is still running `timeoutKillGrace` later. Arm it once the child is
+            /// running, so a slow launch does not use up the allowance. The flag is set before
+            /// terminate(), and only for a live child, so a child that exited on its own as the
+            /// timer fired is not reported as timed out.
             func armTimeout(_ seconds: TimeInterval) {
                 let item = DispatchWorkItem { [weak self] in
                     guard let self else { return }
@@ -408,12 +432,24 @@ final class CLIBridge {
                     self.timedOut = true
                     self.lock.unlock()
                     p.terminate()
+                    let killAt = DispatchTime.now() + CLIBridge.timeoutKillGrace
+                    DispatchQueue.global().asyncAfter(deadline: killAt) { [weak self] in
+                        self?.killIfStillRunning()
+                    }
                 }
                 lock.lock(); timeoutItem = item; lock.unlock()
                 DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: item)
             }
 
             func disarmTimeout() { lock.lock(); let i = timeoutItem; lock.unlock(); i?.cancel() }
+
+            /// Checked under the lock and only while Foundation still reports the child running,
+            /// so the pid of a child that has exited (and could be reused) is not signalled.
+            private func killIfStillRunning() {
+                lock.lock(); defer { lock.unlock() }
+                guard let p = process, p.isRunning else { return }
+                kill(p.processIdentifier, SIGKILL)
+            }
         }
         let processBox = ProcessBox()
 
@@ -463,9 +499,19 @@ final class CLIBridge {
                     }
                 }
 
+                processBox.setReadHandles(
+                    [stdout.fileHandleForReading, stderr.fileHandleForReading]
+                )
                 process.terminationHandler = { proc in
                     processBox.disarmTimeout()
-                    completion.markTerminated(proc.terminationStatus)
+                    if processBox.didTimeOut {
+                        // A timed-out call returns what it has; a grandchild holding a pipe
+                        // open must not keep it waiting for EOF.
+                        processBox.clearReadHandlers()
+                        completion.forceResume(proc.terminationStatus)
+                    } else {
+                        completion.markTerminated(proc.terminationStatus)
+                    }
                 }
 
                 do {
@@ -800,6 +846,8 @@ final class CLIBridge {
     /// Returned by `runAndCapture(timeout:)` when it stopped the child. jamf-cli never exits
     /// with it; a signal-terminated child would otherwise read as exit 15.
     nonisolated static let exitCodeTimedOut: Int32 = -2
+    /// Seconds a child gets to act on the timeout's SIGTERM before `runAndCapture` sends SIGKILL.
+    nonisolated static let timeoutKillGrace: TimeInterval = 3
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"

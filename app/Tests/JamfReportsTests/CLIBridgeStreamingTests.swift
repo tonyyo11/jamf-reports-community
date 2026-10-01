@@ -165,6 +165,56 @@ final class CLIBridgeStreamingTests: XCTestCase {
         XCTAssertEqual(error, ESRCH, message, file: file, line: line)
     }
 
+    /// Stubs for a child that outlives the timeout's SIGTERM. Neither execs: the shell is not
+    /// the process holding the pipes, a sleeper that ignores SIGTERM is, as a grandchild would.
+    /// The shell's pid goes to `pid`, the sleeper's to `sleeper`.
+    private func runUncooperativeChild(
+        shellIgnoresTerm: Bool, file: StaticString = #filePath, line: UInt = #line
+    ) async throws -> (elapsed: TimeInterval, pid: Int32) {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("JRC-Timeout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let pidFile = dir.appendingPathComponent("pid")
+        let sleeperFile = dir.appendingPathComponent("sleeper")
+        let script = (shellIgnoresTerm ? "trap '' TERM; " : "")
+            + "echo $$ > '\(pidFile.path)'; "
+            + "(trap '' TERM; exec /bin/sleep 10) & echo $! > '\(sleeperFile.path)'; wait"
+
+        let started = Date()
+        let (exit, _) = try await CLIBridge().runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", script],
+            timeout: 0.5,
+            onLine: CLIBridge.noOpOnLine
+        )
+        let elapsed = Date().timeIntervalSince(started)
+        // The sleeper outlives the shell by design; do not leave it for the next 10 seconds.
+        if let sleeper = try? pid(in: sleeperFile) { kill(sleeper, SIGKILL) }
+
+        XCTAssertEqual(exit, CLIBridge.exitCodeTimedOut, file: file, line: line)
+        return (elapsed, try pid(in: pidFile))
+    }
+
+    /// The bound is the timeout, the SIGTERM grace and a margin for a loaded machine, far under
+    /// the 10 seconds the stub would otherwise run.
+    private var uncooperativeBound: TimeInterval { 0.5 + CLIBridge.timeoutKillGrace + 3 }
+
+    func testTimeoutKillsAChildThatIgnoresSIGTERM() async throws {
+        let (elapsed, pid) = try await runUncooperativeChild(shellIgnoresTerm: true)
+
+        XCTAssertLessThan(elapsed, uncooperativeBound,
+                          "SIGKILL after the grace, not the child's exit")
+        assertProcessGone(pid, "SIGKILL must have removed the shell")
+    }
+
+    func testTimeoutReturnsWhileAGrandchildStillHoldsThePipes() async throws {
+        let (elapsed, pid) = try await runUncooperativeChild(shellIgnoresTerm: false)
+
+        XCTAssertLessThan(elapsed, uncooperativeBound, "no wait for EOF the grandchild holds open")
+        assertProcessGone(pid, "the shell dies on SIGTERM")
+    }
+
     func testACommandThatFinishesInsideTheTimeoutIsNotTimedOut() async throws {
         let (exit, data) = try await CLIBridge().runAndCapture(
             executable: URL(fileURLWithPath: "/bin/sh"),
