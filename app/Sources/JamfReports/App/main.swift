@@ -834,7 +834,7 @@ let cliArgs = CommandLine.arguments
 // Anchored to position (not a whole-array `contains`) so an option VALUE that
 // happens to equal "--scheduled-run" can't divert the process — mirrors
 // LaunchAgentWriter's plist parser (`args[1] == "--scheduled-run"`) and the
-// isKnownSubcommand check below (`cliArgs[1]`).
+// routesToCLI check below (`cliArgs[1]`).
 if cliArgs.count > 1, cliArgs[1] == "--tick" {
     let code = Task.detached { await runTick(arguments: cliArgs) }
     exit(await code.value)
@@ -843,10 +843,11 @@ if cliArgs.count > 1, cliArgs[1] == "--tick" {
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)
-} else if cliArgs.count > 1, JamfReportsCLI.isKnownSubcommand(cliArgs[1]) {
-    // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/).
+} else if cliArgs.count > 1, JamfReportsCLI.routesToCLI(cliArgs[1]) {
+    // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/). Any word
+    // lands here, so ArgumentParser rejects a removed or mistyped subcommand.
     await runIncludedCLI(Array(cliArgs.dropFirst()))
 } else {
-    // No recognized subcommand (incl. double-click launch) → the GUI.
+    // No arguments, or a launch argument starting with `-` (double-click) → the GUI.
     JamfReportsApp.main()
 }
