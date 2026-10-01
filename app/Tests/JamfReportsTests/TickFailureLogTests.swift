@@ -81,4 +81,37 @@ final class TickFailureLogTests: XCTestCase {
         TickFailureLog(profiles: []).finish()
         XCTAssertTrue(RunHistoryService.list(profile: "alpha").isEmpty)
     }
+
+    /// A tick-state file that stays unwritable adds a record every wake. The tick keeps only
+    /// its own newest five, so schedule runs stay inside the recorder's 50-log window. A
+    /// profile named "tick" has schedule labels that start with the tick's, and keeps its logs.
+    func testTickRecordsKeepToTheirOwnFiveNewestLogs() throws {
+        let logs = try WorkspacePaths.runHistoryDir(for: "alpha")
+        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        let tick = AutomationHealth.tickerLabel
+        let prefix = LaunchAgentWriter.labelPrefix
+        let names = (1...7).map { "\(tick).2026090\($0)-060000.log" } + [
+            "\(prefix).alpha.daily.20260901-060000.log",
+            "\(prefix).tick.daily.20260901-060000.log",
+        ]
+        for (index, name) in names.enumerated() {
+            let url = logs.appendingPathComponent(name)
+            try "[info] exit 0 after 1s\n".write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes(
+                [.modificationDate: Date(timeIntervalSinceNow: Double(index - 100) * 60)],
+                ofItemAtPath: url.path)
+        }
+
+        let log = TickFailureLog(profiles: [])
+        log.record(schedule(), "skipped daily")
+        log.finish()
+
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: logs.path))
+        let tickPattern = "^" + NSRegularExpression.escapedPattern(for: tick)
+            + #"\.\d{8}-\d{6}\.log$"#
+        let tickLogs = left.filter { $0.range(of: tickPattern, options: .regularExpression) != nil }
+        XCTAssertEqual(tickLogs.count, 5, "\(left.sorted())")
+        XCTAssertTrue(names[0...2].allSatisfy { !left.contains($0) }, "the oldest three go")
+        XCTAssertTrue(names[3...8].allSatisfy(left.contains), "\(left.sorted())")
+    }
 }

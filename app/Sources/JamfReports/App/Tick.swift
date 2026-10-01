@@ -147,6 +147,10 @@ private func tickResultLine(
 /// Run History for tick-level failures: one record per workspace per wake, under the
 /// background item's own label, in every workspace the affected schedule runs for.
 final class TickFailureLog {
+    /// Tick records a workspace keeps. A tick-state file that stays unwritable adds one
+    /// every wake; without a cap they would push schedule runs out of the recorder's window.
+    static let keptRecords = 5
+
     private let profiles: [JamfCLIProfile]
     private var recorders: [String: ScheduledRunRecorder] = [:]
 
@@ -173,6 +177,10 @@ final class TickFailureLog {
 
     private func recorder(for profile: String) -> ScheduledRunRecorder? {
         if let open = recorders[profile] { return open }
+        if let logs = try? WorkspacePaths.runHistoryDir(for: profile) {
+            ScheduledRunRecorder.pruneRunLogs(
+                in: logs, keep: Self.keptRecords - 1, label: AutomationHealth.tickerLabel)
+        }
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let recorder = ScheduledRunRecorder(
                   workspace: workspace, label: AutomationHealth.tickerLabel)
