@@ -84,11 +84,18 @@ struct ProtectView: View {
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .onChange(of: dataSource) { _, _ in
+            // The picked device belongs to the old source; a real host name must not outlive it.
+            selectedTimelineDevice = nil
+            reload()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
         }
     }
+
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
     private var subtitle: String? {
         guard snapshot.isDetected else { return nil }
@@ -631,11 +638,13 @@ struct ProtectView: View {
                 // Wide enough for INACTIVE and YES, the longest labels these pills show.
                 booleanPill(computer.webProtectionActive, trueLabel: "Active", falseLabel: "Inactive")
                     .frame(width: 92, alignment: .center)
-                    .accessibilityLabel("Web Protection \(computer.webProtectionActive == true ? "active" : "inactive")")
+                    .accessibilityLabel("Web Protection " + Self.spokenState(
+                        computer.webProtectionActive, trueWord: "active", falseWord: "inactive"))
 
                 booleanPill(computer.fullDiskAccess, trueLabel: "Yes", falseLabel: "No")
                     .frame(width: 56, alignment: .center)
-                    .accessibilityLabel("Full Disk Access \(computer.fullDiskAccess == true ? "granted" : "denied")")
+                    .accessibilityLabel("Full Disk Access " + Self.spokenState(
+                        computer.fullDiskAccess, trueWord: "granted", falseWord: "denied"))
 
                 connectionPill(computer.connectionStatus)
                     .frame(width: 88, alignment: .center)
@@ -657,12 +666,29 @@ struct ProtectView: View {
     }
 
     private func booleanPill(_ value: Bool?, trueLabel: String, falseLabel: String) -> some View {
-        let isTrue = value == true
-        return Pill(
-            text: isTrue ? trueLabel : falseLabel,
-            tone: isTrue ? .teal : .muted,
-            icon: isTrue ? "checkmark" : "xmark"
-        )
+        let state = Self.statePill(value, trueLabel: trueLabel, falseLabel: falseLabel)
+        return Pill(text: state.text, tone: state.tone, icon: state.icon)
+    }
+
+    /// Protect omits a field it has no value for, so nil is "not reported", not the negative label.
+    static func statePill(
+        _ value: Bool?, trueLabel: String, falseLabel: String
+    ) -> (text: String, tone: Pill.Tone, icon: String?) {
+        switch value {
+        case true?: return (trueLabel, .teal, "checkmark")
+        case false?: return (falseLabel, .muted, "xmark")
+        // No icon: the word alone is wider than the narrow Full Disk Access column.
+        case nil: return ("Unknown", .muted, nil)
+        }
+    }
+
+    /// VoiceOver wording for the same tri-state.
+    static func spokenState(_ value: Bool?, trueWord: String, falseWord: String) -> String {
+        switch value {
+        case true?: return trueWord
+        case false?: return falseWord
+        case nil: return "unknown"
+        }
     }
 
     private func connectionPill(_ status: String?) -> some View {

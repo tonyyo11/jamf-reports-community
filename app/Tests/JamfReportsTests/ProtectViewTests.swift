@@ -91,4 +91,32 @@ final class ProtectViewTests: XCTestCase {
         }
     }
 
+    /// Protect leaves a field out when it has no value for it (CLAUDE.md, "jamf-cli JSON Shapes"),
+    /// and `ProtectComputerRow` decodes an absent or unrecognised Full Disk Access status to nil.
+    func testStatePillShowsUnknownInTheNeutralToneWhenNotReported() {
+        let unknown = ProtectView.statePill(nil, trueLabel: "Yes", falseLabel: "No")
+        XCTAssertEqual(unknown.text, "Unknown")
+        XCTAssertEqual(unknown.tone, .muted)
+        XCTAssertNil(unknown.icon)
+    }
+
+    func testStatePillKeepsTheReportedLabels() {
+        let granted = ProtectView.statePill(true, trueLabel: "Yes", falseLabel: "No")
+        XCTAssertEqual(granted.text, "Yes")
+        XCTAssertEqual(granted.tone, .teal)
+        XCTAssertEqual(granted.icon, "checkmark")
+        let denied = ProtectView.statePill(false, trueLabel: "Yes", falseLabel: "No")
+        XCTAssertEqual(denied.text, "No")
+        XCTAssertEqual(denied.tone, .muted)
+        XCTAssertEqual(denied.icon, "xmark")
+    }
+
+    func testSpokenStateSaysUnknownNotDenied() {
+        XCTAssertEqual(
+            ProtectView.spokenState(nil, trueWord: "granted", falseWord: "denied"), "unknown")
+        XCTAssertEqual(
+            ProtectView.spokenState(true, trueWord: "granted", falseWord: "denied"), "granted")
+        XCTAssertEqual(
+            ProtectView.spokenState(false, trueWord: "granted", falseWord: "denied"), "denied")
+    }
 }
