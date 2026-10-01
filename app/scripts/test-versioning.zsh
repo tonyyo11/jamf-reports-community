@@ -228,6 +228,7 @@ wired build-pkg.sh jr_is_valid_marketing_version jr_is_valid_build_number \
   jr_package_channel jr_artifact_path jr_artifact_version
 wired scripts/package-dmg.sh jr_is_valid_marketing_version jr_is_valid_build_number \
   jr_artifact_path
+wired scripts/release.sh jr_artifact_path jr_release_channel
 
 # --- Summary -------------------------------------------------------------------
 total=$((passed + failed))
