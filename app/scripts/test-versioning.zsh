@@ -248,7 +248,7 @@ expect "jr_swift_at_least: one argument is status 2" 2 "$(swift_status 6.4)"
 # plist_value <key>: the line after <key> in the Info.plist build-app.sh writes.
 plist_value() {
   awk -v key="<key>$1</key>" \
-    'index($0, key) { getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit }' \
+    'index($0, key) { getline; gsub(/^[ \t]+|[ \t]+$/, ""); print; exit }' \
     "${APP_DIR}/build-app.sh"
 }
 expect "Info.plist NSSupportsAutomaticTermination" "<false/>" \
