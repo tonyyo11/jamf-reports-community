@@ -45,6 +45,7 @@ final class DeviceScanCollectTests: XCTestCase {
     ///                                          resource spelling — see statusItemsArguments)
     ///   … --scan-failures (both matrix kinds) → answers/matrix, only when it or
     ///                                          answers/matrix.exit exists
+    /// Any answers/<name>.err goes to stderr first.
     /// Anything else → prints [] exit 0, so the argv matrix's kinds "succeed" harmlessly.
     private func makeStub() throws -> URL {
         let url = binDir.appendingPathComponent("stub-cli")
@@ -53,7 +54,7 @@ final class DeviceScanCollectTests: XCTestCase {
         A="\(answers.path)"
         printf '%s\\n' "$*" >> "$A/calls.log"
         emit() { f="$A/$1"; if [ -f "$f.exit" ]; then code=$(cat "$f.exit"); else code=0; fi; \\
-                 [ -f "$f" ] && cat "$f"; exit "$code"; }
+                 [ -f "$f.err" ] && cat "$f.err" >&2; [ -f "$f" ] && cat "$f"; exit "$code"; }
         case "$*" in
           *" classic-computer-history get "*) id=$(echo "$*" | sed -E 's/.*classic-computer-history get ([^ ]+).*/\\1/'); emit "hist-$id" ;;
           *" status-items "*) m=$(echo "$*" | sed -E 's/.*status-items ([^ ]+).*/\\1/'); \\
@@ -617,22 +618,49 @@ final class DeviceScanCollectTests: XCTestCase {
 
     // MARK: - A dead matrix verdict and the scan (#207 G17)
 
-    /// Both scan-tier reports exit 0 with nothing to save, as for an API role without patch
-    /// or software-update read. jamf-cli answered, so the scan, which reads the cached
-    /// `computers`, still runs; the run still fails on the reports.
-    func testReportsThatAnsweredEmptyStillLetTheScanRun() async throws {
-        try writeComputers([("1", "A", "m1", false)])
-        try answer("hist-1", cleanHistory)
-        try answer("matrix", "")
+    /// Runs a scan-tier collect that must fail on its reports; returns the history calls made.
+    private func runDeadScan() async throws -> Int {
         do {
             _ = try await runScan()
             XCTFail("a run whose reports landed nothing must still fail")
         } catch ReportEngineError.collectDead(_, let failedCount, _) {
             XCTAssertEqual(failedCount, 2)
         }
-        XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self),
-                        callsLog())
+        return historyCalls(for: "1")
+    }
+
+    /// Both scan-tier reports exit 0 with nothing to save after jamf-cli printed a 403 on
+    /// stderr, as for an API role without patch or software-update read. Jamf answered, so
+    /// the scan, which reads the cached `computers`, still runs; the run still fails.
+    /// The stderr line is the swallowed-403 shape `CollectFailureCauseTests` uses.
+    func testReportsJamfRefusedStillLetTheScanRun() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        try answer("matrix", "")
+        try answer("matrix.err", "Error: fetching plans: permission denied (HTTP 403): forbidden\n")
+        let calls = try await runDeadScan()
+        XCTAssertEqual(calls, 1, callsLog())
+        XCTAssertNotNil(try latest("mdm-command-health", as: [MDMCommandHealthRecord].self))
         XCTAssertNotNil(try latest("ddm-device-status", as: [DDMDeviceStatusRecord].self))
+    }
+
+    /// A report that exits 5 is a missing permission too: Jamf answered.
+    func testReportsThatExit5StillLetTheScanRun() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        try answer("matrix", "", exit: Int(CLIBridge.exitCodePermissionDenied))
+        let calls = try await runDeadScan()
+        XCTAssertEqual(calls, 1, callsLog())
+    }
+
+    /// Exit 0 with nothing to save and nothing on stderr is what `update-status` prints
+    /// after its fetches fail (spec §13.2): an outage shape, so no fan-out.
+    func testReportsThatCameBackEmptyWithoutACauseDoNotScan() async throws {
+        try writeComputers([("1", "A", "m1", false)])
+        try answer("hist-1", cleanHistory)
+        try answer("matrix", "")
+        let calls = try await runDeadScan()
+        XCTAssertEqual(calls, 0, callsLog())
     }
 
     func testAMatrixOutageStillStopsBeforeTheScan() async throws {
@@ -657,18 +685,28 @@ final class DeviceScanCollectTests: XCTestCase {
         XCTAssertEqual(historyCalls(for: "1"), 0, callsLog())
     }
 
-    func testOnlyAnsweredButEmptyReportsLetADeadRunScan() {
-        func outcomes(_ codes: [Int32]) -> [ReportEngine.CollectOutcome] {
-            codes.map { ReportEngine.CollectOutcome(kind: "k\($0)", exitCode: $0) }
+    func testOnlyCausesThatShowJamfAnsweredLetADeadRunScan() {
+        typealias Outcome = ReportEngine.CollectOutcome
+        func allows(_ outcomes: [Outcome]) -> Bool {
+            ReportEngine.deadRunAllowsDeviceScan(outcomes)
         }
-        XCTAssertTrue(ReportEngine.deadRunAllowsDeviceScan(outcomes([0, 0])))
-        XCTAssertTrue(ReportEngine.deadRunAllowsDeviceScan(
-            outcomes([0, CLIBridge.exitCodePartialFailure])))
-        XCTAssertTrue(ReportEngine.deadRunAllowsDeviceScan(outcomes([0, CLIBridge.exitCodeUsage])),
+        let refused = Outcome(kind: "a", exitCode: 0, cause: .missingPermission)
+        let denied = Outcome(
+            kind: "b", exitCode: CLIBridge.exitCodePermissionDenied, cause: .missingPermission)
+        let plansOff = Outcome(kind: "c", exitCode: 0, cause: .softwareUpdatePlansOff)
+        let noBenchmark = Outcome(kind: "d", exitCode: 0, cause: .noConfiguredBenchmark)
+        let usage = Outcome(kind: "e", exitCode: CLIBridge.exitCodeUsage, cause: .other)
+        XCTAssertTrue(allows([refused, denied, plansOff, noBenchmark]))
+        XCTAssertTrue(allows([refused, usage]),
                       "a usage error says nothing about the server, as in isCollectDead")
-        XCTAssertFalse(ReportEngine.deadRunAllowsDeviceScan(outcomes([0, 1])))
-        XCTAssertFalse(ReportEngine.deadRunAllowsDeviceScan(
-            outcomes([0, ReportEngine.launchFailureExitCode])))
+        XCTAssertFalse(allows([refused, Outcome(kind: "f", exitCode: 0, cause: .other)]),
+                       "exit 0 with no cause is the shape of fetches that failed")
+        XCTAssertFalse(allows([refused, Outcome(kind: "g", exitCode: 0)]), "not JSON")
+        XCTAssertFalse(allows([refused, Outcome(kind: "h", exitCode: 1, cause: .other)]))
+        XCTAssertFalse(allows([refused, Outcome(
+            kind: "i", exitCode: ReportEngine.launchFailureExitCode)]))
+        XCTAssertFalse(allows([Outcome(kind: "j", exitCode: 4, cause: .scopeRejected)]),
+                       "a rejected scope answers for the scan's credential too")
     }
 }
 

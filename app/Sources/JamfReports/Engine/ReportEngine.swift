@@ -1574,12 +1574,20 @@ struct ReportEngine: Sendable {
         return outcomes.contains { $0.exitCode != CLIBridge.exitCodeUsage }
     }
 
+    /// Causes that show Jamf answered: a missing permission (a 403, exit 5, or a patch
+    /// `fetch_error` 403), Jamf Pro's own 503 for Managed Software Update Plans turned off,
+    /// and benchmark titles the tenant's listing does not contain. An exit code alone is not
+    /// enough: `update-status` exits 0 after its fetches fail (spec §13.2).
+    static let causesShowingJamfAnswered: Set<FailureCause.Kind> = [
+        .missingPermission, .softwareUpdatePlansOff, .noConfiguredBenchmark,
+    ]
+
     /// Whether a dead run still runs the device scan before it fails (#207 G17): every call
-    /// that counts toward the verdict exited 0 or 7, so jamf-cli answered and only the reports
-    /// came back empty. The scan reads the cached `computers`, not those reports.
+    /// that counts toward the verdict failed with a cause in `causesShowingJamfAnswered`. The
+    /// scan reads the cached `computers`, not those reports.
     static func deadRunAllowsDeviceScan(_ outcomes: [CollectOutcome]) -> Bool {
         outcomes.filter { $0.exitCode != CLIBridge.exitCodeUsage }.allSatisfy {
-            $0.exitCode == 0 || $0.exitCode == CLIBridge.exitCodePartialFailure
+            $0.cause.map(causesShowingJamfAnswered.contains) ?? false
         }
     }
 
@@ -2015,7 +2023,7 @@ struct ReportEngine: Sendable {
     /// outage, then the `[partial]` marker for a run where only some kinds
     /// landed. Both dead verdicts abort BEFORE any summary is written, so a run that
     /// fetched nothing can never promote stale cache as fresh data. A dead run whose
-    /// reports only came back empty is returned instead of thrown, for the caller to
+    /// failures all show Jamf answered is returned instead of thrown, for the caller to
     /// throw once the device scan has run (`deadRunAllowsDeviceScan`).
     private static func enforceCollectVerdicts(
         outcomes: [CollectOutcome],
