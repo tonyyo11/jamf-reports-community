@@ -86,6 +86,8 @@ struct SettingsView: View {
         // reloads the connections even when the profile name stays the same.
         .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             testResults = [:]
+            // A cancelled run leaves its flag set for this task to reset, never to clear.
+            loadingTokenProfiles = []
             guard !workspace.demoMode else {
                 // Demo mode runs no jamf-cli and reloads nothing: a reload here
                 // put a demo profile chosen in the sidebar back to meridian-prod.
@@ -598,10 +600,13 @@ struct SettingsView: View {
         let names = workspace.profiles.filter { $0.status != .error }.map(\.name)
         await Self.probeTokenStatuses(
             for: names,
-            probe: { name in
-                loadingTokenProfiles.insert(name)
-                defer { loadingTokenProfiles.remove(name) }
-                return await bridge.tokenStatus(for: name)
+            probe: { name in await bridge.tokenStatus(for: name) },
+            setChecking: { name, on in
+                if on {
+                    loadingTokenProfiles.insert(name)
+                } else {
+                    loadingTokenProfiles.remove(name)
+                }
             },
             onStatus: { name, status in tokenStatuses[name] = status }
         )
@@ -612,13 +617,17 @@ struct SettingsView: View {
     static func probeTokenStatuses(
         for names: [String],
         probe: (String) async -> TokenStatus?,
+        setChecking: (String, Bool) -> Void,
         onStatus: (String, TokenStatus) -> Void
     ) async {
         for name in names {
             if Task.isCancelled { return }
+            setChecking(name, true)
             let status = await probe(name)
             // A terminated jamf-cli reads as an invalid token, which is not what the profile has.
+            // The task that replaced this one reset the flags and owns them, so leave them be.
             if Task.isCancelled { return }
+            setChecking(name, false)
             if let status { onStatus(name, status) }
         }
     }
