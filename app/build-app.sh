@@ -184,10 +184,12 @@ cat > "$APP_OUT/Contents/Info.plist" <<PLIST
     </dict>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <!-- Both off: nothing holds an activity open during a GUI collect or
+         generate, so with either on macOS may end the app mid-run. -->
     <key>NSSupportsAutomaticTermination</key>
-    <true/>
+    <false/>
     <key>NSSupportsSuddenTermination</key>
-    <true/>
+    <false/>
 </dict>
 </plist>
 PLIST

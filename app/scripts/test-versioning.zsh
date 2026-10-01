@@ -242,6 +242,25 @@ expect "jr_swift_at_least: a malformed minimum is status 2" 2 \
   "$(swift_status six "Apple Swift version 6.4")"
 expect "jr_swift_at_least: one argument is status 2" 2 "$(swift_status 6.4)"
 
+# --- Info.plist termination keys -----------------------------------------------
+# With either key true, macOS may end the app mid-run when it looks idle, and
+# nothing wraps a GUI collect or generate in an activity that would prevent it.
+# plist_value <key>: the line after <key> in the Info.plist build-app.sh writes.
+plist_value() {
+  awk -v key="<key>$1</key>" \
+    'index($0, key) { getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit }' \
+    "${APP_DIR}/build-app.sh"
+}
+expect "Info.plist NSSupportsAutomaticTermination" "<false/>" \
+  "$(plist_value NSSupportsAutomaticTermination)"
+expect "Info.plist NSSupportsSuddenTermination" "<false/>" \
+  "$(plist_value NSSupportsSuddenTermination)"
+expect "plist_value reads a key that is present (LSUIElement)" "<false/>" \
+  "$(plist_value LSUIElement)"
+expect "plist_value reads a string key (JRReleaseChannel)" "<string>\${RELEASE_CHANNEL}</string>" \
+  "$(plist_value JRReleaseChannel)"
+expect "plist_value of an absent key is empty" "" "$(plist_value NoSuchKeyInThePlist)"
+
 # --- Wiring --------------------------------------------------------------------
 # The checks above only matter while the scripts use the library, so each one
 # must source it, call the functions it needs, and keep no -beta naming of its own.
