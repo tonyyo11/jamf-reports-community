@@ -175,3 +175,19 @@ and the workbook's average keeps zero-device titles, so three surfaces disagree.
    in basis, the same rule `complianceIsProxy` uses.
 4. Tests: the function on a three-title fixture where weighted and unweighted differ; the
    recompute; the alert skip.
+
+## Task 7: An empty `sheets.only` means no restriction
+
+Files: `Engine/ConfigDecoder.swift` (`SheetsConfig.applyTo`), `app/scripts/README.md`, tests.
+
+Found during the build-script work: `config.example.yaml` ships `sheets: only: []` with the
+comment "When non-empty, only the named workbook tabs are written", but `applyTo` builds a set
+from `only` whenever it is non-nil, so an empty list filters out every sheet.
+
+1. First establish whether it reaches users: write a test that decodes the shipped
+   `config.example.yaml`'s `sheets` block and applies it to a two-sheet plan. If the YAML
+   loader already turns `[]` into nil, or the default generate path never calls `applyTo` with
+   this value, say so, keep the test, and change nothing else.
+2. Otherwise: an empty `only` list is treated as absent. Test both an empty and a one-name list.
+3. `app/scripts/README.md` still says `package-dmg.sh`'s first argument is required; it is now
+   optional and checked against the built app's version. Correct that sentence.
