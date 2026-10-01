@@ -16,6 +16,7 @@ final class CLIParsingTests: XCTestCase {
         // (docs/wiki/07-Command-Line.md); before this it opened the app instead.
         XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("help"))
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("-NSDocumentRevisionsDebugMode"))
+        // Not a subcommand, but `routesToCLI` still sends it to the CLI (below).
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("/some/file.txt"))
     }
 
@@ -29,6 +30,8 @@ final class CLIParsingTests: XCTestCase {
         for arg in ["-psn_0_12345", "-NSDocumentRevisionsDebugMode", "-AppleLanguages"] {
             XCTAssertFalse(JamfReportsCLI.routesToCLI(arg), arg)
         }
+        // A bare path is a word too: the app declares no document types, so the CLI rejects it.
+        XCTAssertTrue(JamfReportsCLI.routesToCLI("/some/file.txt"))
     }
 
     /// What the routed word then gets: ArgumentParser's error and a non-zero exit.
