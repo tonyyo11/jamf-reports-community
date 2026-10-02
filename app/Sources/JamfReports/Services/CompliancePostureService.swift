@@ -265,24 +265,29 @@ extension FleetInsightInput {
 
     /// One control as a posture screen shows it.
     private struct PostureRow {
+        /// The share the screen shows: a Security KPI tile's Macs with the control on, or a
+        /// Control Coverage Gaps bar's Macs failing.
+        enum Share { case on(Double), failing(Double) }
+
         let control: SecurityControl
-        let failingPct: Double
+        let share: Share
         let failing: Int
         let warning: Int
         /// FileVault-off Macs the hardware rule leaves out at `ignore`; Security only.
         var notCounted = 0
     }
 
-    /// The fleet counts' own share and counts; nil `nonFailingPct` covers ignored, absent
-    /// and ungradable controls alike.
+    /// The KPI tiles' share, Macs with the control on of every Mac in the report; the policy
+    /// shows in the failing and warning counts. Ignored and absent controls send nothing.
     private static func securityRows(
         _ fleet: SecurityFleetCounts, policy: SecurityControlPolicy
     ) -> [PostureRow] {
         SecurityControl.allCases.compactMap { control in
-            guard let counts = fleet.controls[control],
-                  let share = fleet.nonFailingPct(control) else { return nil }
+            guard let counts = fleet.controls[control], counts.level != .ignore,
+                  fleet.totalDevices > 0 else { return nil }
+            let onPct = Double(counts.on) / Double(fleet.totalDevices) * 100
             let dropped = control == .fileVault && policy.fileVaultOffHardwareEncrypted == .ignore
-            return PostureRow(control: control, failingPct: 100 - share, failing: counts.fail,
+            return PostureRow(control: control, share: .on(onPct), failing: counts.fail,
                               warning: counts.warning,
                               notCounted: dropped ? fleet.fileVaultOffHardwareEncrypted : 0)
         }
@@ -296,19 +301,26 @@ extension FleetInsightInput {
             let label = CompliancePostureService.label(control)
             guard let gap = gaps.first(where: { $0.control == label }), gap.totalDevices > 0
             else { return nil }
-            return PostureRow(control: control, failingPct: gap.pct,
+            return PostureRow(control: control, share: .failing(gap.pct),
                               failing: gap.failingDevices, warning: gap.warningDevices)
         }
     }
 
-    /// The share failing and the Macs failing, then the Macs the policy counts apart.
+    /// The screen's share and the Macs failing, then the Macs the policy counts apart.
     private static func controlFacts(_ row: PostureRow, policy: SecurityControlPolicy) -> [Fact] {
         let name = CompliancePostureService.label(row.control)
         // "SIP" alone reads as the VoIP protocol to the on-device model.
         let first = row.control == .sip ? "System Integrity Protection (SIP)" : name
+        let share = switch row.share {
+        case .on(let pct):
+            Fact(label: "\(first) enabled", value: .percent(pct), prior: nil,
+                 polarity: .higherIsBetter, complement: "off")
+        case .failing(let pct):
+            Fact(label: "\(first) failing", value: .percent(pct), prior: nil,
+                 polarity: .lowerIsBetter, complement: "not failing")
+        }
         var facts = [
-            Fact(label: "\(first) failing", value: .percent(row.failingPct), prior: nil,
-                 polarity: .lowerIsBetter, complement: "not failing"),
+            share,
             Fact(label: "Macs failing \(name)", value: .count(row.failing), prior: nil,
                  polarity: .lowerIsBetter),
         ]
@@ -322,10 +334,8 @@ extension FleetInsightInput {
                               prior: nil, polarity: .lowerIsBetter))
         }
         if row.notCounted > 0 {
-            facts.append(Fact(
-                label: hardware + ", not counted by this workspace's policy (left out of "
-                    + "FileVault's share)",
-                value: .count(row.notCounted), prior: nil, polarity: .neutral))
+            facts.append(Fact(label: hardware + ", not counted by this workspace's policy",
+                              value: .count(row.notCounted), prior: nil, polarity: .neutral))
         }
         return facts
     }

@@ -76,13 +76,13 @@ final class PostureInsightInputTests: XCTestCase {
             "Focus: which control accounts for most of the gap, and what to do first.",
             "- Macs in the security report: 10",
             // Most Macs failing first, as the Control Coverage Gaps bars order them.
-            "- Gatekeeper failing on 40.0% of devices; not failing on 60.0%",
+            "- Gatekeeper enabled on 60.0% of devices; off on 40.0%",
             "- Macs failing Gatekeeper: 4",
-            "- Firewall failing on 30.0% of devices; not failing on 70.0%",
+            "- Firewall enabled on 70.0% of devices; off on 30.0%",
             "- Macs failing Firewall: 3",
-            "- FileVault failing on 20.0% of devices; not failing on 80.0%",
+            "- FileVault enabled on 80.0% of devices; off on 20.0%",
             "- Macs failing FileVault: 2",
-            "- System Integrity Protection (SIP) failing on 10.0% of devices; not failing on 90.0%",
+            "- System Integrity Protection (SIP) enabled on 90.0% of devices; off on 10.0%",
             "- Macs failing SIP: 1",
             "- P0 action items (FileVault, SIP and Firewall gaps): 6",
             "- P1 action items (Gatekeeper gaps): 4",
@@ -107,7 +107,7 @@ final class PostureInsightInputTests: XCTestCase {
             "Posture insight",
             "Focus: which control accounts for most of the gap, and what to do first.",
             "- Macs in the security report: 3",
-            "- FileVault failing on 33.3% of devices; not failing on 66.7%",
+            "- FileVault enabled on 33.3% of devices; off on 66.7%",
             "- Macs failing FileVault: 1",
             "- Macs with FileVault off, hardware-encrypted (a warning, not failing): 1",
         ])
@@ -118,7 +118,7 @@ final class PostureInsightInputTests: XCTestCase {
         XCTAssertFalse(text.contains("unencrypted") || text.contains("not encrypted"))
     }
 
-    func testSecurityHardwareIgnoreIsOneNeutralCountOutsideTheShare() throws {
+    func testSecurityHardwareIgnoreIsOneNeutralCount() throws {
         let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
         let security = try snapshots([
             summary(["total_devices": 4, "filevault_encrypted": 2, "sip_enabled": 4,
@@ -127,15 +127,30 @@ final class PostureInsightInputTests: XCTestCase {
             device("intel-mac", serial: "IN1", fileVault: "UNENCRYPTED"),
         ], policy: policy, hardware: HardwareEncryption.index(computers: computers())).security
         let context = lines(FleetInsightInput.posture(.security(security)))
-        // Three Macs are counted for FileVault, one of them failing.
+        // The share is the FileVault tile's 2 of 4; of the two Macs off, one fails and the
+        // policy does not count the other.
         XCTAssertEqual(Array(context[3...6]), [
-            "- FileVault failing on 33.3% of devices; not failing on 66.7%",
+            "- FileVault enabled on 50.0% of devices; off on 50.0%",
             "- Macs failing FileVault: 1",
             "- Macs with FileVault off, hardware-encrypted, not counted by this workspace's "
-                + "policy (left out of FileVault's share): 1",
-            "- System Integrity Protection (SIP) failing on 0.0% of devices; not failing on 100.0%",
+                + "policy: 1",
+            "- System Integrity Protection (SIP) enabled on 100.0% of devices; off on 0.0%",
         ])
         XCTAssertFalse(context.contains { $0.contains("a warning, not failing") })
+    }
+
+    /// The share is the tile's (Macs with the control on); the policy shows in the counts.
+    func testSecurityControlAtWarningKeepsTheTilesShare() throws {
+        let security = try snapshots([summary([
+            "total_devices": 10, "filevault_encrypted": 10, "sip_enabled": 7,
+            "firewall_enabled": 10, "gatekeeper_enabled": 10,
+        ])], policy: SecurityControlPolicy(sip: .warning)).security
+        let context = lines(FleetInsightInput.posture(.security(security)))
+        let sip = "- System Integrity Protection (SIP) enabled on 70.0% of devices; off on 30.0%"
+        let start = try XCTUnwrap(context.firstIndex(of: sip))
+        XCTAssertEqual(Array(context[start...(start + 2)]), [
+            sip, "- Macs failing SIP: 0", "- Macs with SIP off (a warning, not failing): 3",
+        ])
     }
 
     func testSecurityLeavesOutIgnoredControlsAndControlsWithoutACount() throws {
