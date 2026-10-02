@@ -39,6 +39,8 @@ struct FleetInsightInput: Sendable, Equatable {
         case text(String)
     }
 
+    /// Which way is good: a nonzero change is called "better" or "worse" from it.
+    /// A neutral fact prints its value only.
     enum Polarity: Sendable, Equatable {
         case higherIsBetter, lowerIsBetter, neutral
     }
@@ -58,7 +60,7 @@ struct FleetInsightInput: Sendable, Equatable {
 
     /// The title, the focus, one line per fact, then the notes. Changes are in
     /// percentage points for shares, signed integers for counts and one decimal
-    /// for numbers.
+    /// for numbers, each followed by "better" or "worse" when nonzero.
     ///
     /// `maxApproxTokens` bounds the size: tokens are approximated at 4 chars per
     /// token (the widely-used rough heuristic; the generator additionally caps
@@ -200,16 +202,23 @@ extension FleetInsightInput.Fact {
     }
 
     private var change: String? {
+        let delta: Double, shown: String
         switch (value, prior) {
         case (.percent(let now), .percent(let then)?):
-            return signed(tenths(now - then)) + " pp vs prior"
+            delta = tenths(now - then)
+            shown = signed(delta) + " pp"
         case (.number(let now), .number(let then)?):
-            return signed(tenths(now - then)) + " vs prior"
+            delta = tenths(now - then)
+            shown = signed(delta)
         case (.count(let now), .count(let then)?):
-            return "\(now >= then ? "+" : "")\(now - then) vs prior"
+            delta = Double(now - then)
+            shown = "\(now >= then ? "+" : "")\(now - then)"
         default:
             return nil
         }
+        guard delta != 0, polarity != .neutral else { return "\(shown) vs prior" }
+        let better = (delta > 0) == (polarity == .higherIsBetter)
+        return "\(shown) vs prior, \(better ? "better" : "worse")"
     }
 }
 

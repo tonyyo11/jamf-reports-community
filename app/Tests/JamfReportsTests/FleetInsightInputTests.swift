@@ -56,7 +56,7 @@ final class FleetInsightInputTests: XCTestCase {
         )
         XCTAssertEqual(Array(lines(input).dropFirst(3)), [
             "- System Integrity Protection (SIP) enabled on 1.0% of devices; "
-                + "not enabled on 99.0% (-2.0 pp vs prior)",
+                + "not enabled on 99.0% (-2.0 pp vs prior, worse)",
             "- Firewall enabled on 0.0% of devices; not enabled on 100.0% (+0.0 pp vs prior)",
             "Prior period for deltas: 2026-06-05.",
         ])
@@ -87,14 +87,31 @@ final class FleetInsightInputTests: XCTestCase {
                         polarity: .lowerIsBetter)
         let same = Fact(label: "P1 action items", value: .count(7), prior: .count(7),
                         polarity: .lowerIsBetter)
-        XCTAssertEqual(down.line, "- Stale devices: 12 (-8 vs prior)")
+        XCTAssertEqual(down.line, "- Stale devices: 12 (-8 vs prior, better)")
         XCTAssertEqual(same.line, "- P1 action items: 7 (+0 vs prior)")
     }
 
     func testNumbersChangeWithOneDecimal() {
         let fact = Fact(label: "Stability index", value: .number(72.44), prior: .number(70),
                         polarity: .higherIsBetter)
-        XCTAssertEqual(fact.line, "- Stability index: 72.4 (+2.4 vs prior)")
+        XCTAssertEqual(fact.line, "- Stability index: 72.4 (+2.4 vs prior, better)")
+    }
+
+    /// A nonzero change says whether it is good, from the fact's polarity, so the
+    /// model does not have to know that fewer stale devices is an improvement.
+    func testChangeNamesItsDirectionFromPolarity() {
+        func line(_ value: FleetInsightInput.Value, _ prior: FleetInsightInput.Value,
+                  _ polarity: FleetInsightInput.Polarity) -> String {
+            Fact(label: "X", value: value, prior: prior, polarity: polarity).line
+        }
+        XCTAssertEqual(line(.percent(90), .percent(95), .higherIsBetter),
+                       "- X: 90.0% (-5.0 pp vs prior, worse)")
+        XCTAssertEqual(line(.percent(4), .percent(6), .lowerIsBetter),
+                       "- X: 4.0% (-2.0 pp vs prior, better)")
+        XCTAssertEqual(line(.count(9), .count(7), .higherIsBetter), "- X: 9 (+2 vs prior, better)")
+        XCTAssertEqual(line(.count(9), .count(7), .lowerIsBetter), "- X: 9 (+2 vs prior, worse)")
+        XCTAssertEqual(line(.number(3), .number(4), .higherIsBetter),
+                       "- X: 3.0 (-1.0 vs prior, worse)")
     }
 
     func testPriorOfAnotherCasePrintsNoChange() {
@@ -182,7 +199,7 @@ final class FleetInsightInputTests: XCTestCase {
                  polarity: .lowerIsBetter),
         ])
         XCTAssertEqual(input.notes, ["Prior period for deltas: 2026-06-05."])
-        XCTAssertTrue(lines(input).contains("- Security score: 87.3 (+1.3 vs prior)"))
+        XCTAssertTrue(lines(input).contains("- Security score: 87.3 (+1.3 vs prior, better)"))
     }
 
     func testFleetFactoryLeavesAbsentMetricsOut() {
