@@ -238,8 +238,8 @@ final class PostureInsightInputTests: XCTestCase {
             "- Macs failing Gatekeeper: 1",
             "- All Macs: 3 of 4 Macs fail at least one control (Pass 1, Low 3)",
             // The screen lists macOS 15 first; the major with more Macs failing leads here.
-            "- macOS 14: 2 of 2 Macs fail at least one control (Low 2)",
-            "- macOS 15: 1 of 2 Macs fail at least one control (Pass 1, Low 1)",
+            "- macOS Sonoma 14: 2 of 2 Macs fail at least one control (Low 2)",
+            "- macOS Sequoia 15: 1 of 2 Macs fail at least one control (Pass 1, Low 1)",
             gapNote,
             bandNote,
         ])
@@ -268,8 +268,9 @@ final class PostureInsightInputTests: XCTestCase {
         let compliance = try snapshots(fourMacs).compliance
         let context = lines(FleetInsightInput.posture(.compliance(compliance, showsBands: false)))
         XCTAssertFalse(context.contains { $0.hasPrefix("- All Macs:") })
-        XCTAssertTrue(context.contains("- macOS 14: 2 of 2 Macs fail at least one control (Low 2)"),
-                      "the per-OS card shows under mSCP donuts too")
+        XCTAssertTrue(
+            context.contains("- macOS Sonoma 14: 2 of 2 Macs fail at least one control (Low 2)"),
+            "the per-OS card shows under mSCP donuts too")
     }
 
     func testComplianceWithNothingToSendIsNil() {

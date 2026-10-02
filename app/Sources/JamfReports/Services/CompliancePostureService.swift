@@ -235,7 +235,7 @@ extension FleetInsightInput {
             rows = complianceRows(snapshot.controlGaps)
             // The most Macs failing first: the on-device model leans on the first line it reads.
             let majors = snapshot.perOSMajor
-                .compactMap { bandFact("macOS \($0.osMajor)", $0.bands) }
+                .compactMap { bandFact(ComplianceBandingService.osLabel($0.osMajor), $0.bands) }
                 .sorted { $0.failing > $1.failing }.map { $0.fact }
             let fleet = showsBands ? bandFact("All Macs", snapshot.bands)?.fact : nil
             more = [fleet].compactMap { $0 } + majors

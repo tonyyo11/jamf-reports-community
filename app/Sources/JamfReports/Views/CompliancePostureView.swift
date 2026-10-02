@@ -542,7 +542,7 @@ struct CompliancePostureView: View {
         VStack(spacing: 8) {
             ForEach(snapshot.perOSMajor, id: \.osMajor) { row in
                 HStack(alignment: .center, spacing: 12) {
-                    Text(osLabel(row.osMajor))
+                    Text(ComplianceBandingService.osLabel(row.osMajor))
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .frame(width: 150, alignment: .leading)
@@ -574,20 +574,8 @@ struct CompliancePostureView: View {
         }
     }
 
-    private func osLabel(_ major: Int) -> String {
-        switch major {
-        case 12: return "macOS Monterey 12"
-        case 13: return "macOS Ventura 13"
-        case 14: return "macOS Sonoma 14"
-        case 15: return "macOS Sequoia 15"
-        case 26: return "macOS Tahoe 26"
-        case 27: return "macOS Golden Gate 27"
-        default: return "macOS \(major)"
-        }
-    }
-
     private func perOSAccessibilityLabel(for row: (osMajor: Int, bands: [ComplianceBand])) -> String {
-        let osName = osLabel(row.osMajor)
+        let osName = ComplianceBandingService.osLabel(row.osMajor)
         let totalDevices = row.bands.reduce(0) { $0 + $1.count }
         let majorBand = row.bands.max(by: { $0.count < $1.count })?.label ?? "Unknown"
         return "\(osName), \(totalDevices) devices, majority in \(majorBand) band"
