@@ -296,7 +296,7 @@ extension WorkspaceStore {
     /// issues to the shared health model, and (once per day) post an overdue
     /// webhook digest when `notify:` is usable. No-op in demo mode. Cheap enough
     /// to call on every reconcile / launch.
-    func refreshAutomationHealth() async {
+    func refreshAutomationHealth(now: Date = Date()) async {
         guard !demoMode else {
             AutomationHealthModel.shared.issues = []
             return
@@ -320,17 +320,18 @@ extension WorkspaceStore {
                 policy: AutomationPolicy.current(),
                 hasHandBuilt: !ScheduleStore().load().isEmpty)
             let inputs = LaunchAgentService.filterHealthInputs(
-                LaunchAgentService.healthInputs(schedules: schedules, statusProfile: profile),
+                LaunchAgentService.healthInputs(
+                    schedules: schedules, statusProfile: profile, now: now),
                 forProfile: profile)
             return (status: status,
                     issues: AutomationHealth.evaluate(
-                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker))
+                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now))
         }.value
         tickerStatus = evaluated.status
-        // While this process holds the tick lock a wake queues behind it, so a schedule
-        // that came due meanwhile is waiting, not missed: neither the banner nor the digest
-        // calls it overdue.
-        let issues = CLIBridge.tickLockHolds > 0
+        // While this process holds the tick lock, and until the wake it turned away has had
+        // its turn, a schedule that came due is waiting, not missed: neither the banner nor
+        // the digest calls it overdue.
+        let issues = CLIBridge.tickLockHeldRecently(now: now)
             ? evaluated.issues.filter { $0.kind != .overdue }
             : evaluated.issues
         AutomationHealthModel.shared.issues = issues

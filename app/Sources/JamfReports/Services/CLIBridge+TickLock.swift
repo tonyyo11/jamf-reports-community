@@ -12,9 +12,21 @@ extension CLIBridge {
     /// one out removes it.
     private(set) static var tickLockHolds = 0
 
+    /// When the last hold ended.
+    private(set) static var tickLockReleasedAt: Date?
+
     /// Whether another live process holds `tickLock`. False for this process's own holds.
     static func tickLockHeldElsewhere() -> Bool {
         tickLock().isHeldByAnotherLiveProcess()
+    }
+
+    /// True while this process holds the lock, and for one tick wake plus a minute after its
+    /// last hold ends: a wake the hold turned away runs only at the next interval, so the
+    /// schedules it was blocking are still waiting until then.
+    static func tickLockHeldRecently(now: Date = Date()) -> Bool {
+        if tickLockHolds > 0 { return true }
+        guard let released = tickLockReleasedAt else { return false }
+        return now.timeIntervalSince(released) < TickLock.wakeInterval + 60
     }
 
     /// Runs `body` holding the tick lock, touching it every `beatEvery` for up to the tick's
@@ -39,7 +51,10 @@ extension CLIBridge {
             defer {
                 beats.cancel()
                 tickLockHolds -= 1
-                if tickLockHolds == 0 { lock.release() }
+                if tickLockHolds == 0 {
+                    lock.release()
+                    tickLockReleasedAt = Date()
+                }
             }
             return try await body()
         }

@@ -177,6 +177,9 @@ struct TickLock: Sendable {
     /// No real run lasts this long; past it the lock is left to go stale.
     static let heartbeatLimit: Duration = .seconds(6 * 3600)
 
+    /// The bundled agent's `StartInterval`: a wake the lock turned away runs this long later.
+    static let wakeInterval: TimeInterval = 300
+
     let url: URL
 
     /// What `claim` found.

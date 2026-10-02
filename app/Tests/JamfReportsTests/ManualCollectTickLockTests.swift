@@ -358,8 +358,9 @@ final class ManualCollectTickLockTests: XCTestCase {
 
     // MARK: - The dead-man switch
 
-    /// A tick that finds the lock held waits for the next wake, so during a long GUI collect
-    /// a schedule that comes due is queued, not missed: it must not read as overdue.
+    /// A tick that finds the lock held waits for the next wake, so during a long GUI collect,
+    /// and until one wake after it, a schedule that came due is queued, not missed: it must
+    /// not read as overdue. Past that window it is reported as before.
     func testNoScheduleReadsOverdueWhileThisProcessHoldsTheLock() async throws {
         let (store, _) = try makeStore()
         defer { AutomationHealthModel.shared.issues = [] }
@@ -373,7 +374,9 @@ final class ManualCollectTickLockTests: XCTestCase {
             artifacts: [], enabled: true,
             launchAgentLabel: "\(LaunchAgentWriter.labelPrefix).\(profile).daily")]
 
-        await store.refreshAutomationHealth()
+        // Past any window an earlier test's hold left behind: the release time is per process.
+        let afterTheWindow = Date().addingTimeInterval(TickLock.wakeInterval + 61)
+        await store.refreshAutomationHealth(now: afterTheWindow)
         XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [.overdue],
                        "precondition: a fire two hours ago that never ran is overdue")
 
@@ -382,6 +385,15 @@ final class ManualCollectTickLockTests: XCTestCase {
             return true
         }
         XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [])
+
+        await store.refreshAutomationHealth()
+        XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [],
+                       "just after the hold ends, the wake it turned away has not run yet")
+
+        await store.refreshAutomationHealth(
+            now: Date().addingTimeInterval(TickLock.wakeInterval + 61))
+        XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [.overdue],
+                       "still overdue one wake after the hold ends is reported")
     }
 
     // MARK: - The tick's side
