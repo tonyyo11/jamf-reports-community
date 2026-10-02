@@ -332,6 +332,30 @@ final class ManualCollectTickLockTests: XCTestCase {
                      "other failures stay in the log, as before")
     }
 
+    // MARK: - Automatic collects hold it too
+
+    /// Self-remediation and catch-up claim the lock before routing, so a tick cannot start
+    /// beside them. The config makes routing stop at once (a case-variant profile, which
+    /// runs no jamf-cli): without the hold that error comes back, not the refusal.
+    func testTheAutomaticCollectorsClaimTheLockBeforeRouting() async throws {
+        let (_, lock) = try makeStore()
+        let config = try ConfigLoader.loadFromString("jamf_cli:\n  profile: ALPHA\n")
+        try await whileAnotherProcessHolds(lock) {
+            do {
+                try await WorkspaceStore.defaultRemediationCollector(profile, [.refresh], config)
+                XCTFail("remediation must be refused")
+            } catch {
+                XCTAssertEqual(error as? CLIBridgeError, .tickLockHeld)
+            }
+            do {
+                try await WorkspaceStore.defaultCatchUpCollector(profile, config)
+                XCTFail("catch-up must be refused")
+            } catch {
+                XCTAssertEqual(error as? CLIBridgeError, .tickLockHeld)
+            }
+        }
+    }
+
     // MARK: - The tick's side
 
     /// A wake that finds a GUI collect holding the lock queues exactly as it does behind
