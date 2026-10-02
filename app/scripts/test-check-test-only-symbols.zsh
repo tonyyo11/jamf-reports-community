@@ -203,6 +203,27 @@ put "${root}/app/scripts/test-only-symbols.allow" \
 run_check "${root}"
 expect "allow-listed orphans exit 0" 0 "${CODE}"
 has "allow-listed orphans are counted" "${OUT}" "(10 allow-listed)"
+expect "fully matched allow-list warns about nothing" "" "${ERR}"
+
+# --- An allow-list entry that matches nothing is a warning, not a failure ------
+put "${root}/app/scripts/test-only-symbols.allow" \
+  'SeamHelper      # tests build it directly' \
+  'GoneSymbol      # deleted since' \
+  'OrphanWidget    # pinned by a test' \
+  'orphanFunc      # pinned by a test' \
+  'InlineAttr      # pinned by a test' \
+  'PrivateOrphan   # pinned by a test' \
+  'classOrphan     # pinned by a test' \
+  'AvailableOrphan # pinned by a test' \
+  'MarkedOrphan    # pinned by a test' \
+  'DocOrphan       # pinned by a test' \
+  'TrailingOrphan  # pinned by a test'
+run_check "${root}"
+expect "a stale entry still exits 0" 0 "${CODE}"
+has "a stale entry is named with its line" "${ERR}" \
+  "app/scripts/test-only-symbols.allow:2: GoneSymbol is not referenced only from app/Tests; remove the entry"
+expect "only the stale entry warns" 1 "$(printf '%s\n' "${ERR}" | grep -c 'warning:')"
+has "the summary still prints" "${OUT}" "(10 allow-listed)"
 
 # --- A symbol with no test reference is not reported ---------------------------
 root="$(new_tree no-test-reference)"

@@ -59,7 +59,8 @@ cd "${repo_root}" || die "cannot enter repo root '${repo_root}'"
 [[ -d "${TESTS_DIR}" ]] || die "no ${TESTS_DIR} directory under '${repo_root}'"
 
 # Allow-list: `Name  # reason`, blank lines and whole-line comments ignored.
-typeset -A allowed
+typeset -A allowed allow_line matched
+allow_names=()
 if [[ -f "${ALLOW_FILE}" ]]; then
   lineno=0
   while IFS= read -r raw || [[ -n "${raw}" ]]; do
@@ -77,6 +78,8 @@ if [[ -f "${ALLOW_FILE}" ]]; then
     [[ "${entry}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
       die "${ALLOW_FILE}:${lineno}: '${entry}' is not a single identifier"
     allowed[${entry}]=1
+    allow_line[${entry}]="${lineno}"
+    allow_names+=("${entry}")
   done <"${ALLOW_FILE}"
 fi
 
@@ -168,11 +171,20 @@ while IFS=$'\t' read -r where name; do
   [[ -n "${where}" ]] || continue
   if [[ -n "${allowed[${name}]-}" ]]; then
     allow_hits=$((allow_hits + 1))
+    matched[${name}]=1
     continue
   fi
   printf '%s: %s is referenced only from %s\n' "${where}" "${name}" "${TESTS_DIR}" >&2
   reported=$((reported + 1))
 done <<<"${hits}"
+
+# A listed name that no longer matches (deleted, or now used by production code)
+# would silently excuse a future symbol with that name. Warn; do not fail.
+for entry in "${allow_names[@]}"; do
+  [[ -n "${matched[${entry}]-}" ]] && continue
+  printf 'check-test-only-symbols: warning: %s:%s: %s is not referenced only from %s; remove the entry\n' \
+    "${ALLOW_FILE}" "${allow_line[${entry}]}" "${entry}" "${TESTS_DIR}" >&2
+done
 
 if ((reported > 0)); then
   printf 'check-test-only-symbols: %d symbol(s) used only by tests. Delete them, or list a deliberate test seam with a reason in %s\n' \

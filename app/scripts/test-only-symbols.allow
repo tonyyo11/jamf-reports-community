@@ -1,6 +1,7 @@
 # Symbols in app/Sources that only app/Tests reference.
 # One name per line as `Name  # reason`; every entry needs a reason.
-# Read by app/scripts/check-test-only-symbols.zsh.
+# Read by app/scripts/check-test-only-symbols.zsh, which warns about an entry
+# that no longer matches anything.
 
 # --- Test seams and framework callbacks -------------------------------------
 # Deliberate: production code never calls these; tests need them, or the system
