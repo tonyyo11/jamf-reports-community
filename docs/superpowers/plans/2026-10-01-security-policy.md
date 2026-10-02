@@ -177,9 +177,10 @@ Behaviour:
 1. The writer follows `ChartsConfigWriter`: read-modify-write of `security_policy`; sets `controls.filevault|sip|firewall|gatekeeper` to raw values; sets `filevault_off_hardware_encrypted`, or removes that entry when nil; keeps every other key inside the block and every other top-level key; encodes with `replacingTopLevelKeys: ["security_policy"]`; atomic replace; errors `invalidProfile`, `invalidDocumentRoot`.
 2. `loadConfig()` sets `securityPolicy` from the loader (`.default` in demo mode and with no config). `saveSecurityPolicy`: in demo mode returns without writing; else writes, then assigns.
 3. A new Card above "Security Score Weights": `SectionHeader` `Security Policy`; caption `Decides what counts as a security gap on every screen, report and scheduled run for this workspace. Saved to config.yaml.`; one row per control (its `displayName` and a segmented Picker of the three level names); a row `FileVault off on a hardware-encrypted Mac` with options `Same as FileVault` (nil), `Fail`, `Warning`, `Not counted`, disabled while FileVault is `Not counted`, captioned `Apple silicon Macs and Intel Macs with the T2 chip always encrypt the internal disk; with FileVault off it unlocks without a password.`
+3a. Hand-typed values (consumes Task 10: `SecurityPolicyConfigLoader.issues(profile:)`, `SecurityPolicyIssue`): `WorkspaceStore.securityPolicyIssues: [SecurityPolicyIssue]` is loaded beside the policy. The card shows what the file says: each picker shows the level the app applied, and when the file has an issue for that key the row carries a caption in `Theme.Colors.warn`: `config.yaml says "\(value)", which is not fail, warning or ignore — using \(used).` Issues about unknown keys are listed once under the rows: `config.yaml has \(n) security_policy setting(s) the app does not read: \(key paths, comma-separated).` Changing a picker saves a valid value for that key, which clears that key's issue on reload; unknown keys are kept in the file (rule 1) and stay listed.
 4. Every change saves at once. A thrown error shows `"Couldn't save the security policy: \(error.localizedDescription)"` in the card in `Theme.Colors.danger`, and the pickers stay on the saved policy. Demo mode: controls disabled with `.help(DemoData.liveOnlyHelp)`.
 
-Tests: writer round trip in a temp workspace (save, then the loader returns an equal policy); `notify:`, `charts:` and an unknown key inside `security_policy` survive a save; a nil hardware level removes the key; an invalid profile throws; `saveSecurityPolicy` in demo mode writes nothing.
+Tests: `securityPolicyIssues` is populated from a config with one bad level and one unknown key, and saving a valid level for the bad key clears only that issue; writer round trip in a temp workspace (save, then the loader returns an equal policy); `notify:`, `charts:` and an unknown key inside `security_policy` survive a save; a nil hardware level removes the key; an invalid profile throws; `saveSecurityPolicy` in demo mode writes nothing.
 
 Layout: yes. The commit body carries `DRAFT — needs visual verification`; in the report, describe how you checked the card at `PageScaffold.minSupportedWidth` (640).
 
@@ -269,3 +270,54 @@ Summary `data`: `total_devices` 6, `filevault_encrypted` 2, `sip_enabled` 5, `fi
 | HTML Firewall tile class / label | bad / `Firewall` | bad / `Firewall` | none / `Firewall (not counted)` |
 
 Assert every cell; each column must agree across surfaces because they read the same files. Layout: none.
+
+## Task 10: Hand-typed policy values are understood, and what is not understood is shown
+
+Runs after Task 2 and before Task 6 (the card in Task 6 consumes it). Owner request, 2026-10-02: a
+`config.yaml` edited by hand must not fail silently. Today a level typed as `warn` decodes as `fail`
+and nothing says so.
+
+Files: `Models/SecurityPolicy.swift`, `Services/SecurityPolicyConfigStore.swift`,
+`Services/ConfigDoctorService.swift`, `config.example.yaml` (one comment line). Tests: extend
+`SecurityControlPolicyTests.swift`; extend the Config Doctor tests that cover the `alerts` rows.
+
+Consumes: Task 1 `SecurityControlPolicy` (its tolerant `init(from:)`), `SecurityControlLevel`,
+`SecurityControl`, `SecurityPolicyConfigLoader.load(profile:)`.
+
+Produces:
+- `SecurityControlLevel.parse(_ raw: String) -> SecurityControlLevel?` — the one place a typed
+  level is read. Trimmed, case-insensitive, `_` and `-` read as spaces. Accepted spellings:
+  `fail`, `failure`, `gap` → `.fail`; `warning`, `warn` → `.warning`;
+  `ignore`, `ignored`, `not counted`, `skip` → `.ignore`. Anything else → nil. The decoder uses it.
+- `struct SecurityPolicyIssue: Sendable, Equatable { let keyPath: String; let value: String; let used: String }`
+  (`keyPath` such as `security_policy.controls.sip`; `value` is what was typed, shown as written;
+  `used` is the level applied, or `the FileVault level` for the hardware key).
+- `SecurityPolicyConfigLoader.issues(profile: String) -> [SecurityPolicyIssue]` — reads the same
+  file as `load(profile:)` and reports, without throwing: an unrecognised level under a known key;
+  a key inside `controls` that is not one of the four controls; a key inside `security_policy`
+  that is not `controls`, `filevault_off_hardware_encrypted` or `score_weights`; a block or
+  sub-block of the wrong shape (a scalar or list where a mapping belongs). An accepted synonym is
+  not an issue. No file, no block, or an empty block gives `[]`.
+
+Behaviour:
+1. Decoding stays tolerant exactly as Task 1 built it (an unrecognised control level is `.fail`,
+   an unrecognised hardware level is nil, nothing throws). The only decode change is that the
+   synonyms above are now understood.
+2. `policy` and `issues` never disagree: for every issue about a level, `used` is what
+   `load(profile:)` actually applied. One test asserts this over a config with three bad values.
+3. Config Doctor gains rows under a "Security policy" heading, in the style of the existing
+   `alerts` rows: one `.warn` row per issue, titled with the key path, detail
+   `"\(value)" is not fail, warning or ignore — using \(used)` for a level, and
+   `Not a setting the app reads` for an unknown key (the value is not echoed for unknown keys).
+   No issues: no rows. These rows are `.warn`, never `.fail`, so a typo cannot turn a healthy
+   scheduled run red.
+4. Text taken from the file is shown capped at 40 characters with control characters removed.
+5. `config.example.yaml`: one comment line under the block naming the accepted spellings.
+
+Tests: `parse` over every accepted spelling in mixed case and with `_`/`-`, and over `on`, `off`,
+`true`, `yes`, an empty string and `wrn` (all nil); the decoder now reads `warn` as `.warning`
+(the Task 1 test that pinned `warn` → `.fail` is updated, and says why); `issues` for an unknown
+level, an unknown control name, an unknown top-level key in the block, a scalar block, and a clean
+block; the policy/issues agreement test; the Doctor rows for two issues and for none.
+
+Out of scope: the card (Task 6 shows the issues), any other config block. Layout: none.
