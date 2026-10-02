@@ -143,12 +143,12 @@ final class ConfigSchemaTests: XCTestCase {
           email: "Email"
         columns:
           fierwall: "Firewall"
-          os_version: "OS"
+          asset_number: "Asset"
         """)
         XCTAssertEqual(keys, [
             UnknownKey(keyPath: "Columns", suggestion: "columns"),
+            UnknownKey(keyPath: "columns.asset_number", suggestion: nil),
             UnknownKey(keyPath: "columns.fierwall", suggestion: "firewall"),
-            UnknownKey(keyPath: "columns.os_version", suggestion: nil),
             UnknownKey(keyPath: "jamf-cli", suggestion: "jamf_cli"),
         ], "keys are compared as written; a dash for an underscore is one edit")
     }
@@ -164,6 +164,82 @@ final class ConfigSchemaTests: XCTestCase {
             UnknownKey(keyPath: "sheets.ordr", suggestion: "order"),
             UnknownKey(keyPath: "sheets.skly", suggestion: nil),
         ])
+    }
+
+    // MARK: - Known misnames
+
+    /// The wrong names CLAUDE.md's "Actual key names" table lists, each with its right key.
+    func testEachKnownMisnameSuggestsTheKeyItMeans() throws {
+        let keys = try unknownKeys("""
+        columns:
+          os_version: "OS"
+          last_contact: "Last Contact"
+          assigned_user_email: "Email"
+        jamf_cli:
+          jamf_profile: "example"
+          live_overview: true
+        security_agents:
+          - name: "Agent"
+            column: "Agent Status"
+            installed_value: "Installed"
+        compliance:
+          failed_count_column: "Failures"
+          failed_list_column: "Failure List"
+        custom_eas:
+          - name: "Disk Use"
+            column: "Boot Drive Percentage Full"
+            type: percentage
+          - name: "Status"
+            column: "Agent Status"
+            type: text
+          - name: "Mixed"
+            column: "Mixed Column"
+            type: boolean
+            compliant_value: "Yes"
+            high_threshold: 90
+            min_version: "15.0"
+            warn_within_days: 30
+        thresholds:
+          inactive_device_days: 60
+        output:
+          directory: "Reports"
+          max_runs: 5
+        charts:
+          snapshot_dir: "snapshots"
+          auto_archive: true
+        """)
+        let suggested = Dictionary(uniqueKeysWithValues: keys.map { ($0.keyPath, $0.suggestion) })
+        XCTAssertEqual(keys.count, 17)
+        XCTAssertEqual(suggested["columns.os_version"], "operating_system")
+        XCTAssertEqual(suggested["columns.last_contact"], "last_checkin")
+        XCTAssertEqual(suggested["columns.assigned_user_email"], "email")
+        XCTAssertEqual(suggested["jamf_cli.jamf_profile"], "profile")
+        XCTAssertEqual(suggested["jamf_cli.live_overview"], "allow_live_overview")
+        XCTAssertEqual(suggested["security_agents[0].installed_value"], "connected_value")
+        XCTAssertEqual(suggested["compliance.failed_count_column"], "failures_count_column")
+        XCTAssertEqual(suggested["compliance.failed_list_column"], "failures_list_column")
+        XCTAssertEqual(suggested["custom_eas[2].compliant_value"], "true_value")
+        XCTAssertEqual(suggested["custom_eas[2].high_threshold"], "critical_threshold")
+        XCTAssertEqual(suggested["custom_eas[2].min_version"], "current_versions")
+        XCTAssertEqual(suggested["custom_eas[2].warn_within_days"], "warning_days")
+        XCTAssertEqual(suggested["thresholds.inactive_device_days"], "stale_device_days")
+        XCTAssertEqual(suggested["output.directory"], "output_dir")
+        XCTAssertEqual(suggested["output.max_runs"], "keep_latest_runs")
+        XCTAssertEqual(suggested["charts.snapshot_dir"], "historical_csv_dir")
+        XCTAssertEqual(suggested["charts.auto_archive"], "archive_current_csv")
+    }
+
+    /// A misname must point at a key the schema knows there, and must not itself be known.
+    func testEveryMisnameNamesAKeyTheSchemaKnowsAtItsPath() {
+        XCTAssertFalse(ConfigSchema.misnames.isEmpty)
+        for (path, pairs) in ConfigSchema.misnames {
+            let known = ConfigSchema.knownKeys(at: path) ?? []
+            let label = path.joined(separator: ".")
+            for (wrong, right) in pairs {
+                XCTAssertTrue(known.contains(right), "\(label): \(right) is not a known key")
+                XCTAssertFalse(known.contains(wrong), "\(label): \(wrong) is a known key")
+            }
+        }
     }
 
     // MARK: - Display

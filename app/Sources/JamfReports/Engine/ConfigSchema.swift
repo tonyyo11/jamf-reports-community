@@ -28,9 +28,32 @@ enum ConfigSchema {
     /// decoder already rejects by key path.
     static func unknownKeys(in root: [String: Any]) -> [UnknownKey] {
         var found: [UnknownKey] = []
-        collect(root, node: tree, path: "", into: &found)
+        collect(root, node: tree, at: [], path: "", into: &found)
         return found
     }
+
+    /// Names people write instead of a real key, copied from CLAUDE.md's "Actual key names"
+    /// table and keyed by the schema path of their mapping. Consulted before edit distance.
+    static let misnames: [[String]: [String: String]] = [
+        ["columns"]: [
+            "os_version": "operating_system", "last_contact": "last_checkin",
+            "assigned_user_email": "email",
+        ],
+        ["jamf_cli"]: ["jamf_profile": "profile", "live_overview": "allow_live_overview"],
+        ["security_agents"]: ["installed_value": "connected_value"],
+        ["compliance"]: [
+            "failed_count_column": "failures_count_column",
+            "failed_list_column": "failures_list_column",
+        ],
+        // The table offers warning_threshold too; a row names one key.
+        ["custom_eas"]: [
+            "compliant_value": "true_value", "high_threshold": "critical_threshold",
+            "min_version": "current_versions", "warn_within_days": "warning_days",
+        ],
+        ["thresholds"]: ["inactive_device_days": "stale_device_days"],
+        ["output"]: ["directory": "output_dir", "max_runs": "keep_latest_runs"],
+        ["charts"]: ["snapshot_dir": "historical_csv_dir", "auto_archive": "archive_current_csv"],
+    ]
 
     /// Text taken from config.yaml, safe to show: control and format characters (a pasted
     /// escape sequence, a right-to-left override) and line breaks removed, capped at 60.
@@ -43,24 +66,30 @@ enum ConfigSchema {
 
     // MARK: - The walk
 
+    /// `schemaPath` is the mapping's place in `tree` (no list indices); `path` is what is shown.
     private static func collect(
-        _ mapping: [String: Any], node: Node, path: String, into found: inout [UnknownKey]
+        _ mapping: [String: Any], node: Node, at schemaPath: [String], path: String,
+        into found: inout [UnknownKey]
     ) {
         for key in mapping.keys.sorted() {
             let keyPath = path.isEmpty ? displayText(key) : "\(path).\(displayText(key))"
             guard node.keys.contains(key) else {
                 found.append(UnknownKey(
-                    keyPath: keyPath, suggestion: suggestion(for: key, among: node.keys)))
+                    keyPath: keyPath,
+                    suggestion: misnames[schemaPath]?[key]
+                        ?? suggestion(for: key, among: node.keys)))
                 continue
             }
             guard let child = node.children[key] else { continue }
+            let childPath = schemaPath + [key]
             if child.isList, let items = mapping[key] as? [Any] {
                 for (index, item) in items.enumerated() {
                     guard let itemMapping = item as? [String: Any] else { continue }
-                    collect(itemMapping, node: child, path: "\(keyPath)[\(index)]", into: &found)
+                    collect(itemMapping, node: child, at: childPath,
+                            path: "\(keyPath)[\(index)]", into: &found)
                 }
             } else if !child.isList, let nested = mapping[key] as? [String: Any] {
-                collect(nested, node: child, path: keyPath, into: &found)
+                collect(nested, node: child, at: childPath, path: keyPath, into: &found)
             }
         }
     }
