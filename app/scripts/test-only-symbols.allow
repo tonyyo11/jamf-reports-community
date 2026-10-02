@@ -24,4 +24,3 @@ HTMLValidator                     # Engine/Validators/HTMLValidator.swift:14 out
 PDFValidator                      # Engine/Validators/PDFValidator.swift:13 output validator with no call site; its tests assert real checks
 PNGValidator                      # Engine/Validators/PNGValidator.swift:12 output validator with no call site; its tests assert real checks
 XLSXValidator                     # Engine/Validators/XLSXValidator.swift:16 output validator with no call site, left unwired on purpose (ReportEngineTests.swift:727)
-ButtonColors                      # Theme/ThemeSemanticTokens.swift:122 goldFG/dangerFG tokens no view uses; its tests only assert they are Colors

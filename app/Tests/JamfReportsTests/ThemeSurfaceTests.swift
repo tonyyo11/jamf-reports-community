@@ -57,16 +57,4 @@ struct ThemeSurfaceTests {
         let c: Color = Theme.Text.onAccent
         _ = c
     }
-
-    // MARK: Button color tokens
-
-    @Test func buttonGoldFGIsColor() {
-        let c: Color = Theme.ButtonColors.goldFG
-        _ = c
-    }
-
-    @Test func buttonDangerFGIsColor() {
-        let c: Color = Theme.ButtonColors.dangerFG
-        _ = c
-    }
 }
