@@ -211,6 +211,19 @@ final class YAMLParseNoteTests: XCTestCase {
         XCTAssertEqual(read.parseNotes, [])
     }
 
+    /// A save of a CRLF file used to write an empty line after every line it kept.
+    func testEncodingACRLFFileKeepsOneLineBreakPerLine() throws {
+        var document = try YAMLCodec.decode(
+            "output:\r\n  output_dir: Reports\r\nhtml:\r\n  track_history: false\r\n")
+        var root = try XCTUnwrap(document.root.mapping)
+        root.set("output", value: .mapping(.init(entries: [
+            .init(key: "output_dir", value: .scalar(.string("Edited"))),
+        ])))
+        document.root = .mapping(root)
+        XCTAssertEqual(try YAMLCodec.encode(document, replacingTopLevelKeys: ["output"]),
+                       "output:\n  output_dir: Edited\nhtml:\n  track_history: false\n")
+    }
+
     func testABareDashTakesTheMappingUnderIt() throws {
         let read = try YAMLCodec.decode("""
             security_agents:

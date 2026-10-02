@@ -117,8 +117,11 @@ enum YAMLCodec {
     }
 
     static func decode(_ text: String) throws -> YAMLDocument {
-        // A byte-order mark is not part of the first key.
-        let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
+        // A byte-order mark is not part of the first key, and a CRLF is one line break: a
+        // note's line number is then the one an editor shows, and `encode` does not write an
+        // empty line after every line it keeps.
+        let text = (text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text)
+            .replacingOccurrences(of: "\r\n", with: "\n")
         var parser = Parser(text: text)
         let root = parser.parseBlock(indent: 0)
         guard case .mapping = root else { throw CodecError.invalidTopLevel }
@@ -388,9 +391,7 @@ private struct Parser {
     private var valueLine = 0
 
     init(text: String) {
-        // A CRLF is one line break, so a note's line number is the one an editor shows.
-        self.lines = text.replacingOccurrences(of: "\r\n", with: "\n")
-            .components(separatedBy: .newlines)
+        self.lines = text.components(separatedBy: .newlines)
         for (offset, line) in lines.enumerated() {
             let lead = line.prefix { $0 == " " || $0 == "\t" }
             let content = line.dropFirst(lead.count)
