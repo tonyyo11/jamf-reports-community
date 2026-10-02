@@ -203,6 +203,14 @@ Files: `Services/NotifyConfigStore.swift`, `Intelligence/AIConfigWriter.swift`,
    make the timestamped backup (once per app launch, shared with item 6) and show one line in the
    banner: `Lines this screen could not read inside the blocks it edits are not kept. A copy of
    the file as it was is at <backup name>.` Test with a skipped line inside `columns:`.
+8. Added after Task 3's re-review. `YAMLCodec`'s `endOfTopLevelBlock` treats the blank lines and
+   unindented `#` comments that follow a block as part of it, so re-emitting an edited block
+   deletes them: in a file copied from `config.example.yaml` that is every section banner comment
+   below an edited block. The block a save rewrites ends at its last indented line; blank lines
+   and unindented comments between it and the next top-level key are kept verbatim. Verify first
+   with a save round trip on a copy of `config.example.yaml`: every unindented comment line and
+   blank line outside the managed blocks' own indented text survives. Item 6's backup and banner
+   then apply only to comments inside a block's indented text.
 
 ## Task 5: The Config screen shows what the file says
 
