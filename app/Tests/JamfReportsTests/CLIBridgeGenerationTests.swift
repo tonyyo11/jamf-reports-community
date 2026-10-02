@@ -92,6 +92,8 @@ final class CLIBridgeGenerationTests: XCTestCase {
         guard ExecutableLocator.locate("jamf-cli") != nil else {
             throw XCTSkip("jamf-cli not installed — auth probe not exercisable")
         }
+        // The collect holds the tick lock; keep it off the background item's real one.
+        _ = useTemporaryTickLock()
 
         let bridge = CLIBridge()
         let collector = LogLineCollector()
