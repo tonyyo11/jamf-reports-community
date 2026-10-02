@@ -30,6 +30,7 @@ final class YAMLParseNoteTests: XCTestCase {
             bands:
               - {label: "Pass", min_failures: 0, max_failures: 0, color: "#4472C4"}
         exceptions: []
+        \t# a comment indented with a tab
         """
         XCTAssertEqual(try notes(yaml), [])
     }
@@ -86,6 +87,8 @@ final class YAMLParseNoteTests: XCTestCase {
             Note(line: 7, kind: .duplicateKey("label", readLine: 7)),
             Note(line: 9, kind: .duplicateKey("name", readLine: 11)),
         ])
+        // A flow mapping that falls back to text takes its notes with it.
+        XCTAssertEqual(try notes("weird: {a: 1, a: 2, not a pair}\n"), [])
     }
 
     func testABlockValueIsOneNoteAndReadsAsItsIndicator() throws {
@@ -123,6 +126,14 @@ final class YAMLParseNoteTests: XCTestCase {
           stale_device_days: 60
         """
         XCTAssertEqual(try notes(yaml), [Note(line: 2, kind: .orphanItems)])
+
+        // A list item's first key is not where stray items attach, as before.
+        let item = "custom_eas:\n  - current_versions: []\n    - \"15.4\"\n    name: A\n"
+        XCTAssertEqual(try notes(item), [Note(line: 3, kind: .orphanItems)])
+        let ea = try YAMLCodec.decode(item).root.mapping?.value(for: "custom_eas")?.sequence?
+            .first?.mapping
+        XCTAssertEqual(ea?.value(for: "current_versions"), .sequence([]))
+        XCTAssertEqual(ea?.value(for: "name")?.stringValue, "A")
     }
 
     /// The repair of `key: []` followed by items is reported through `repairedKeys`, not twice.
