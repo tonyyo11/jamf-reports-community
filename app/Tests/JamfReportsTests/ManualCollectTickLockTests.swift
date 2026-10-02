@@ -316,6 +316,7 @@ final class ManualCollectTickLockTests: XCTestCase {
         XCTAssertEqual(flow.firstReportExitCode, -1)
     }
 
+    /// A refusal is not a run, so it must not leave a failed first collect in Run History.
     func testExistingSetupMarksTheProfileWithTheRefusal() async throws {
         let (_, lock) = try makeStore()
         let flow = ExistingCLISetupFlow(profileNames: [profile])
@@ -323,6 +324,9 @@ final class ManualCollectTickLockTests: XCTestCase {
             await flow.run(initialize: { _ in 0 })
         }
         XCTAssertEqual(flow.statuses[profile], .failed(busy))
+        let logs = try WorkspacePaths.runHistoryDir(for: profile)
+        let written = (try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []
+        XCTAssertEqual(written, [], "no Run History record for a refused collect")
     }
 
     func testDeviceLookupSaysWhyItsRefreshWasRefused() {
