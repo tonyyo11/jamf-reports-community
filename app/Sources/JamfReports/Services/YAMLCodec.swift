@@ -115,6 +115,8 @@ enum YAMLCodec {
     }
 
     static func decode(_ text: String) throws -> YAMLDocument {
+        // A byte-order mark is not part of the first key.
+        let text = text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
         var parser = Parser(text: text)
         let root = parser.parseBlock(indent: 0)
         guard case .mapping = root else { throw CodecError.invalidTopLevel }
