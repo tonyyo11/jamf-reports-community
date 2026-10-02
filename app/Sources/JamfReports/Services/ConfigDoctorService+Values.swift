@@ -118,10 +118,12 @@ extension ConfigDoctorService {
         let skipped = (config.jamfCli?.collectSkip ?? [])
             .filter { ReportEngine.collectSkipKinds([$0]).isEmpty }
         if !skipped.isEmpty {
+            let many = skipped.count > 1
             rows.append(valueRow(
                 "jamf_cli.collect_skip",
-                "\(listed(skipped)) cannot be skipped, so collect still runs "
-                    + "\(skipped.count == 1 ? "it" : "them") and the stall guard does not apply.",
+                "\(listed(skipped)) \(many ? "are not kinds" : "is not a kind") collect can skip, "
+                    + "so \(many ? "they skip" : "it skips") nothing and the stall guard does "
+                    + "not apply to \(many ? "them" : "it").",
                 "Kinds that can be skipped: "
                     + "\(ReportEngine.skippableKinds.sorted().joined(separator: ", "))."))
         }
@@ -186,7 +188,7 @@ extension ConfigDoctorService {
             return [valueRow(
                 "sheets", "sheets.only, skip and order do not apply to Jamf School workbooks. "
                     + "The app writes every School sheet.",
-                "Remove the sheets block, or use it on a Jamf Pro profile.")]
+                "Remove the sheets block.")]
         }
         let known = Set((SheetID.allCases.map(\.rawValue) + csvSheetNames
             + (config.customEas ?? []).map(\.name)).map { $0.lowercased() })

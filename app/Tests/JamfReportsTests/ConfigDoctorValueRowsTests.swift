@@ -173,8 +173,12 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let found = try rows("jamf_cli:\n  collect_skip: [update_status, computers, Foo]\n")
         XCTAssertEqual(
             detail(found, "jamf_cli.collect_skip"),
-            "\"computers\", \"Foo\" cannot be skipped, so collect still runs them and the "
-                + "stall guard does not apply.")
+            "\"computers\", \"Foo\" are not kinds collect can skip, so they skip nothing and "
+                + "the stall guard does not apply to them.")
+        XCTAssertEqual(
+            detail(try rows("jamf_cli:\n  collect_skip: [computers]\n"), "jamf_cli.collect_skip"),
+            "\"computers\" is not a kind collect can skip, so it skips nothing and the stall "
+                + "guard does not apply to it.")
         XCTAssertTrue(found.first?.hint?.contains("patch-device-failures") == true,
                       "the hint lists what can be skipped")
         XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [update_status, Profile-Status]\n"), [])
@@ -310,6 +314,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let school = "school_cli:\n  enabled: true\n"
         let found = try rows(school + "sheets:\n  skip: [Users]\n")
         XCTAssertEqual(titles(found), ["sheets"])
+        XCTAssertEqual(found.first?.hint, "Remove the sheets block.")
         XCTAssertEqual(detail(found, "sheets"),
                        "sheets.only, skip and order do not apply to Jamf School workbooks. "
                        + "The app writes every School sheet.")
