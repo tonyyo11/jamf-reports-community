@@ -53,7 +53,8 @@ struct CoreDashboard: Sendable {
     ///
     /// **All sheets in this plan are always included** — they gracefully skip (write a
     /// "no data" placeholder) when the underlying jamf-cli data is absent or malformed.
-    /// Config-gating via `sheets.only` / `sheets.skip` is applied externally in `writeAll`.
+    /// `sheets.only` / `skip` / `order` are applied by `SheetRegistry.writeSelected` and
+    /// `Workbook.arrange(by:)`.
     ///
     /// **Adding a new sheet:** append to the appropriate group comment, update the group
     /// range comment (e.g., "sheets 28–32"), and add a corresponding test in
@@ -118,45 +119,6 @@ struct CoreDashboard: Sendable {
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
         ]
-    }
-
-    /// Write all sheets; skip silently on missing/malformed data.
-    ///
-    /// Applies `sheets.only`, `sheets.skip`, and `sheets.order` from config before
-    /// iterating. `selectedNames` further narrows to a caller-specified subset (used by
-    /// the UI when the user wants a single sheet regenerated).
-    /// Returns list of sheet names successfully written and any unexpected failures.
-    @discardableResult
-    func writeAll(selectedNames: Set<String>? = nil) -> (written: [String], failures: [SheetFailure]) {
-        let effectivePlan = (config.sheets ?? SheetsConfig()).applyTo(sheetPlan)
-        var written: [String] = []
-        var failures: [SheetFailure] = []
-        for (name, fn) in effectivePlan {
-            if let sel = selectedNames,
-               !sel.contains(name.lowercased()) {
-                continue
-            }
-            do {
-                try fn()
-                written.append(name)
-            } catch let skippable as SheetSkippable {
-                // Cached data absent — expected for jamf-cli snapshots not yet collected.
-                print("  [skip] \(name): \(skippable)")
-            } catch {
-                let label = "\(type(of: error)): \(error)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
-            }
-        }
-        if let logoData = CSVDashboard.loadLogoData(from: config) {
-            for name in written {
-                if let ws = workbook.sheet(named: name) {
-                    ws.insertImage(row: 0, col: 0, data: logoData,
-                                   filename: "logo.png", xScale: 1.0, yScale: 1.0)
-                }
-            }
-        }
-        return (written, failures)
     }
 
     // MARK: - Sheet title helper

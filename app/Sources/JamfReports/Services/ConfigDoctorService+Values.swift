@@ -43,6 +43,13 @@ extension ConfigDoctorService {
         "EA Warnings",
     ]
 
+    /// The tabs `SchoolDashboard.sheetPlan` can write, the only tabs of a Jamf School workbook.
+    static let schoolSheetNames = [
+        "School Overview", "Device Groups", "Users", "Classes", "Apps", "Profiles", "Locations",
+        "DEP Devices", "iBeacons", "Device Inventory", "OS Versions", "Device Status",
+        "Stale Devices",
+    ]
+
     // MARK: - Settings the app replaced or clamped
 
     private static func notifyValueRows(_ notify: NotifyConfig?) -> [DoctorRow] {
@@ -183,15 +190,11 @@ extension ConfigDoctorService {
     private static func sheetValueRows(_ config: ReportConfig) -> [DoctorRow] {
         guard let sheets = config.sheets else { return [] }
         let lists = [("only", sheets.only), ("skip", sheets.skip), ("order", sheets.order)]
-        if ProfileProductType.detect(from: config).type == .jamfSchool {
-            guard lists.contains(where: { !($0.1 ?? []).isEmpty }) else { return [] }
-            return [valueRow(
-                "sheets", "sheets.only, skip and order do not apply to Jamf School workbooks. "
-                    + "The app writes every School sheet.",
-                "Remove the sheets block.")]
-        }
-        let known = Set((SheetID.allCases.map(\.rawValue) + csvSheetNames
-            + (config.customEas ?? []).map(\.name)).map { $0.lowercased() })
+        let tabs = ProfileProductType.detect(from: config).type == .jamfSchool
+            ? schoolSheetNames
+            : SheetID.allCases.map(\.rawValue) + csvSheetNames + [ReportEngine.chartsSheetName]
+                + (config.customEas ?? []).map(\.name)
+        let known = Set(tabs.map { $0.lowercased() })
         return lists.compactMap { key, names in
             let unmatched = (names ?? []).filter { !known.contains($0.lowercased()) }
             guard !unmatched.isEmpty else { return nil }

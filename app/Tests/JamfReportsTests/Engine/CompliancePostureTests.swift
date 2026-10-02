@@ -211,17 +211,4 @@ final class CompliancePostureTests: XCTestCase {
         let dash = makeDashboard(dataDir: tmp)
         XCTAssertNoThrow(try dash.writeCompliancePosture())
     }
-
-    // MARK: - Compliance Posture is written via writeAll
-
-    func testCompliancePostureWrittenByWriteAll() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("jrc-cp-all-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        let dash = makeDashboard(dataDir: tmp)
-        let (written, _) = dash.writeAll(selectedNames: ["compliance posture"])
-        XCTAssertEqual(written, ["Compliance Posture"])
-    }
 }

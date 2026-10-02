@@ -81,7 +81,8 @@ struct SheetRegistry: @unchecked Sendable {
 
     // MARK: - Dispatch
 
-    /// Write the sheets listed in `template.includedSheets`, in template order.
+    /// Write the sheets listed in `template.includedSheets`, in template order, less the ones
+    /// `sheets` (config.yaml) leaves out, so a skipped sheet never runs and cannot fail the run.
     ///
     /// For each `SheetID` in `template.includedSheets`:
     /// - If the registry contains a matching write action, it is called.
@@ -96,12 +97,13 @@ struct SheetRegistry: @unchecked Sendable {
     /// unexpectedly, and any `SheetID`s with no registered writer.
     @discardableResult
     func writeSelected(
-        template: any ReportTemplate
+        template: any ReportTemplate, sheets: SheetsConfig = SheetsConfig()
     ) -> (written: [String], failures: [SheetFailure], unimplemented: [SheetID]) {
         var written: [String] = []
         var failures: [SheetFailure] = []
         var unimplemented: [SheetID] = []
-        for sheetID in template.includedSheets {
+        let planned = template.includedSheets.map { (name: $0.rawValue, write: $0) }
+        for sheetID in sheets.applyTo(planned).map(\.write) {
             let name = sheetID.rawValue
             guard let action = actions[name] else {
                 print("[warn] SheetRegistry: no writer registered for SheetID '\(name)' " +

@@ -21,6 +21,9 @@ struct ReportEngine: Sendable {
     /// Directory containing cached jamf-cli JSON snapshots (`jamf_cli.data_dir`).
     let dataDir: URL
 
+    /// The trend-chart tab, the one tab no sheet plan writes.
+    static let chartsSheetName = "Charts"
+
     // MARK: - Public API: generate
 
     /// Generate an `.xlsx` report and write it atomically to `outputURL`.
@@ -77,7 +80,9 @@ struct ReportEngine: Sendable {
         for sheetID in template.includedSheets {
             AppLogger.report.debug("sheet \(sheetID.rawValue, privacy: .public)")
         }
-        let (writtenCore, coreFailures, unimplementedSheets) = registry.writeSelected(template: template)
+        let sheets = config.sheets ?? SheetsConfig()
+        let (writtenCore, coreFailures, unimplementedSheets) =
+            registry.writeSelected(template: template, sheets: sheets)
         for sheetID in unimplementedSheets {
             let msg = "[warn] template '\(template.identifier)': SheetID '\(sheetID.rawValue)' " +
                       "has no writer in CoreDashboard — skipped (engine follow-up required)"
@@ -126,7 +131,8 @@ struct ReportEngine: Sendable {
             )
         }
 
-        // Write the workbook atomically.
+        // The tabs of every writer above, the Charts tab included, as one list.
+        workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)
 
         // Write a SHA-256 manifest alongside the artifact for federal compliance.
@@ -1002,7 +1008,7 @@ struct ReportEngine: Sendable {
         // Only open the sheet when there's something to render.
         guard !summaries.isEmpty || hasMSCPData else { return }
 
-        let ws = workbook.addSheet("Charts")
+        let ws = workbook.addSheet(Self.chartsSheetName)
         ws.setColumnWidth(0, 0, 30)
         var embedRow = 0
 
@@ -3243,6 +3249,7 @@ struct ReportEngine: Sendable {
             _ = school?.writeAll()
         }
 
+        workbook.arrange(by: config.sheets ?? SheetsConfig())
         try workbook.write(to: outputURL)
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
         _ = writeSHA256Sidecar(for: outputURL)

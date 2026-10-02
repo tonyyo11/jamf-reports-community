@@ -300,6 +300,15 @@ final class Workbook: @unchecked Sendable {
         return sheets.first { $0.name == sanitized }
     }
 
+    /// Keeps and orders the tabs as `sheets` in config.yaml says. Typed names are cleaned the
+    /// way `addSheet` cleans a tab name, so a custom EA name past 31 characters still matches.
+    func arrange(by settings: SheetsConfig) {
+        func asWritten(_ names: [String]?) -> [String]? { names?.map(sanitizeSheetName) }
+        let typed = SheetsConfig(only: asWritten(settings.only), skip: asWritten(settings.skip),
+                                 order: asWritten(settings.order))
+        sheets = typed.applyTo(sheets.map { (name: $0.name, write: $0) }).map(\.write)
+    }
+
     /// Write the workbook to `url` atomically using a temp file + `replaceItem`.
     func write(to url: URL) throws {
         let tempDir = FileManager.default.temporaryDirectory

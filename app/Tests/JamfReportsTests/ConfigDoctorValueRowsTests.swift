@@ -312,18 +312,20 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
             let known = Set(ConfigDoctorService.csvSheetNames)
             XCTAssertTrue(planned.isSubset(of: known), "\(planned.subtracting(known))")
         }
+        let school = SchoolDashboard(
+            config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
+            workbook: Workbook())
+        XCTAssertEqual(school.sheetPlan.map(\.name), ConfigDoctorService.schoolSheetNames)
     }
 
-    func testSheetsSettingsOnAJamfSchoolWorkspaceAreStatedAsNotApplying() throws {
+    func testSheetNamesOnAJamfSchoolWorkspaceAreMatchedAgainstTheSchoolTabs() throws {
         let school = "school_cli:\n  enabled: true\n"
-        let found = try rows(school + "sheets:\n  skip: [Users]\n")
-        XCTAssertEqual(titles(found), ["sheets"])
-        XCTAssertEqual(found.first?.hint, "Remove the sheets block.")
-        XCTAssertEqual(detail(found, "sheets"),
-                       "sheets.only, skip and order do not apply to Jamf School workbooks. "
-                       + "The app writes every School sheet.")
-        XCTAssertEqual(try rows(school + "sheets:\n  skip: []\n"), [])
-        XCTAssertEqual(try rows("sheets:\n  skip: [Cover]\n"), [], "a Jamf Pro profile")
+        let found = try rows(school + "sheets:\n  skip: [users, Fleet Overview]\n")
+        XCTAssertEqual(titles(found), ["sheets.skip"])
+        XCTAssertEqual(detail(found, "sheets.skip"),
+                       "\"Fleet Overview\" matches no sheet, so the app ignores it.")
+        XCTAssertEqual(try rows(school + "sheets:\n  order: [iBeacons, Stale Devices]\n"), [])
+        XCTAssertEqual(try rows("sheets:\n  skip: [Cover, charts]\n"), [], "a Jamf Pro profile")
     }
 
     /// Pins the comment in config.example.yaml: skip is applied before only.
@@ -331,24 +333,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let sheets = SheetsConfig(only: ["A", "B"], skip: ["a"], order: nil)
         let plan: [(name: String, write: Int)] = [("A", 1), ("B", 2), ("C", 3)]
         XCTAssertEqual(sheets.applyTo(plan).map(\.name), ["B"])
-    }
-
-    /// Pins the Jamf School row: the School workbook builder never reads `config.sheets`.
-    func testTheJamfSchoolWorkbookIgnoresTheSheetsBlock() throws {
-        let source = TestFixtures.root.appendingPathComponent("jamf-cli-data")
-        let dataDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("jrc-school-sheets-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: dataDir) }
-        for kind in ["school-ibeacons", "school-dep-devices"] {
-            try TestFixtures.copyDir(source.appendingPathComponent(kind, isDirectory: true),
-                                     to: dataDir.appendingPathComponent(kind, isDirectory: true))
-        }
-        var config = ReportConfig()
-        config.sheets = SheetsConfig(only: ["DEP Devices"], skip: ["iBeacons"], order: nil)
-        let written = SchoolDashboard(config: config, dataDir: dataDir, workbook: Workbook())
-            .writeAll().written
-        XCTAssertTrue(written.contains("iBeacons"), "skip: [iBeacons] was ignored")
-        XCTAssertTrue(written.contains("DEP Devices"))
     }
 
     func testAnExpiresDateThatIsNotYYYYMMDDIsNamedBecauseTheReportNeverMarksItExpired() throws {

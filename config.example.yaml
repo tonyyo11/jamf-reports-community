@@ -282,6 +282,13 @@ jamf_cli:
 # Workbook sheet selection (optional)
 # ---------------------------------------------------------------------------
 sheets:
+  # only, skip and order apply to every workbook the app writes: the Jamf Pro
+  # tabs, the CSV tabs (custom EA tabs included), the Charts tab, and the tabs
+  # of a Jamf School workbook. The report template picks its sheets first;
+  # these lists work on what it picked, so only never adds a sheet the
+  # template left out. Names match the tab label, case-insensitively, and a
+  # name that matches no tab is ignored.
+
   # When non-empty, only the named workbook tabs are written. A tab named in
   # both only and skip is not written: skip is applied first.
   #
@@ -291,25 +298,18 @@ sheets:
   #     - "Patch Failures"
   only: []
 
-  # Skip named workbook tabs during generate.
-  # Matching is case-insensitive against the final tab label.
+  # Tabs left out of the workbook.
   #
   # Example:
   #   skip:
   #     - "Update Status"
   #     - "Update Failures"
-  #     - "Report Sources"
-  #
-  # This applies to Jamf Pro sheets, CSV-backed sheets, custom EA tabs, and the
-  # auxiliary "Report Sources" / "Charts" tabs when they would otherwise be
-  # created. It does not apply to Jamf School workbooks: school-generate
-  # writes every School sheet, and only, skip and order are ignored there.
   skip: []
 
-  # Tab order. The tabs named here come first, in this order; every other tab
-  # follows in its default order. Names match the final tab label, case-
-  # insensitively, and a name that matches no tab is ignored. only and skip
-  # still apply, so a skipped tab stays out.
+  # Tab order. The tabs named here come first, in this order, wherever they
+  # come from (a CSV tab can go ahead of the Jamf Pro tabs); every other tab
+  # follows in its default order. only and skip still apply, so a skipped
+  # tab stays out.
   #
   # Example:
   #   order:

@@ -136,27 +136,6 @@ final class SheetRegistryFailureTests: XCTestCase {
     }
 }
 
-// MARK: - CoreDashboardWriteAllFailureTests
-
-final class CoreDashboardWriteAllFailureTests: XCTestCase {
-
-    // An empty dataDir means all write* methods throw CoreDashboardError.noCachedData.
-    // Those are SheetSkippable — so failures should be empty even though nothing wrote.
-    func testEmptyDataDirProducesNoFailures() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("jrc-core-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        let workbook = Workbook()
-        let dash = CoreDashboard(config: ReportConfig(), dataDir: tmp, workbook: workbook)
-        let (_, failures) = dash.writeAll()
-
-        XCTAssertTrue(failures.isEmpty,
-                      "All noCachedData throws must be treated as skips, not failures")
-    }
-}
-
 // MARK: - SchoolDashboardWriteAllFailureTests
 
 final class SchoolDashboardWriteAllFailureTests: XCTestCase {
