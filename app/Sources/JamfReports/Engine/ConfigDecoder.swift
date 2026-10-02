@@ -756,7 +756,7 @@ struct NotifyConfig: Decodable, Sendable {
     /// and schedule names; `minimal` sends event facts only (counts and statuses,
     /// no values or free text) — for headless deployments that want the webhook
     /// as a doorbell, not a data channel.
-    enum Detail: String, Decodable, Sendable { case full, minimal }
+    enum Detail: String, Decodable, Sendable, CaseIterable { case full, minimal }
 
     var enabled: Bool?
     var provider: String?

@@ -86,6 +86,7 @@ enum ConfigDoctorService {
         )
         rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
         if let config, parseError == nil {
+            rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
             rows += securityPolicyRows(profile: profile, config: config)
         }
