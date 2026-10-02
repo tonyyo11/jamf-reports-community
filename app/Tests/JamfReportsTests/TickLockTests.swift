@@ -150,6 +150,29 @@ final class TickLockTests: XCTestCase {
         XCTAssertLessThan(abs(modified.timeIntervalSince(old)), 1)
     }
 
+    /// A manual GUI collect cannot hand its body to `keepingAlive`, so it runs the beats
+    /// itself and cancels them when the collect ends.
+    func testHeartbeatTouchesTheLockUntilCancelled() async throws {
+        let lock = TickLock(url: lockURL())
+        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        let old = Date().addingTimeInterval(-2 * 60 * 60)
+        try FileManager.default.setAttributes(
+            [.modificationDate: old], ofItemAtPath: lock.url.path)
+        let beats = lock.heartbeat(every: .milliseconds(20))
+        try await Task.sleep(for: .milliseconds(200))
+        let touched = try modificationDate(of: lock.url)
+        XCTAssertLessThan(abs(touched.timeIntervalSinceNow), 5)
+
+        beats.cancel()
+        await beats.value
+        try FileManager.default.setAttributes(
+            [.modificationDate: old], ofItemAtPath: lock.url.path)
+        try await Task.sleep(for: .milliseconds(200))
+        let after = try modificationDate(of: lock.url)
+        XCTAssertLessThan(abs(after.timeIntervalSince(old)), 1,
+                          "a cancelled heartbeat must not touch the lock again")
+    }
+
     func testKeepingAliveStopsBeatingAfterItsLimit() async throws {
         let lock = TickLock(url: lockURL())
         XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))

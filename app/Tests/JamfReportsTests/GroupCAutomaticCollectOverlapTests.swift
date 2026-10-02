@@ -30,8 +30,25 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         }
         let store = WorkspaceStore(demoMode: false, tickerRegistrar: StubTickerRegistrar())
         store.profile = profile
-        store.tickLockHeldElsewhere = { false }
+        let lock = TickLock(url: root.appendingPathComponent("test-tick.lock"))
+        store.tickLock = { lock }
         return (store, workspace)
+    }
+
+    /// Runs `body` while a live process that is not this one — a tick, as far as the
+    /// store can tell — holds the store's tick lock, then frees the lock.
+    private func whileAnotherProcessHoldsTheLock(
+        _ store: WorkspaceStore, _ body: () async throws -> Void
+    ) async throws {
+        let tick = try spawnLiveForeignProcess()
+        defer {
+            tick.terminate()
+            tick.waitUntilExit()
+        }
+        let lock = store.tickLock()
+        XCTAssertTrue(lock.acquire(pid: tick.processIdentifier))
+        try await body()
+        lock.release(pid: tick.processIdentifier)
     }
 
     private var remediationMarker: DayMarker { DayMarker(name: "freshness-remediation") }
@@ -72,13 +89,13 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         defer { AutomationHealthModel.shared.freshnessIssues = [] }
         let spy = CollectSpy()
 
-        store.tickLockHeldElsewhere = { true }
-        let deferred = await store.remediateStaleDataIfNeeded(collect: spy.remediation)
-        XCTAssertFalse(deferred)
-        XCTAssertTrue(spy.profiles.isEmpty)
-        XCTAssertNil(remediationMarker.lastStampedDay(in: workspace))
+        try await whileAnotherProcessHoldsTheLock(store) {
+            let deferred = await store.remediateStaleDataIfNeeded(collect: spy.remediation)
+            XCTAssertFalse(deferred)
+            XCTAssertTrue(spy.profiles.isEmpty)
+            XCTAssertNil(remediationMarker.lastStampedDay(in: workspace))
+        }
 
-        store.tickLockHeldElsewhere = { false }
         let attempted = await store.remediateStaleDataIfNeeded(collect: spy.remediation)
         XCTAssertTrue(attempted)
         XCTAssertEqual(spy.profiles, [profile])
@@ -147,13 +164,13 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         let spy = CollectSpy()
         let now = day(2)
 
-        store.tickLockHeldElsewhere = { true }
-        let deferred = await store.catchUpCollectIfNeeded(
-            policy: managedFreshness, now: now, collect: spy.catchUp)
-        XCTAssertFalse(deferred)
-        XCTAssertTrue(spy.profiles.isEmpty)
+        try await whileAnotherProcessHoldsTheLock(store) {
+            let deferred = await store.catchUpCollectIfNeeded(
+                policy: managedFreshness, now: now, collect: spy.catchUp)
+            XCTAssertFalse(deferred)
+            XCTAssertTrue(spy.profiles.isEmpty)
+        }
 
-        store.tickLockHeldElsewhere = { false }
         let attempted = await store.catchUpCollectIfNeeded(
             policy: managedFreshness, now: now, collect: spy.catchUp)
         XCTAssertTrue(attempted)

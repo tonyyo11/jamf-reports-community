@@ -154,7 +154,8 @@ enum TickScheduler {
 
 /// One tick at a time. A pid file: a live holder blocks, a dead or garbage
 /// holder is taken over — the 300-second wake must never pile a second run
-/// on top of a 20-minute collect.
+/// on top of a 20-minute collect. The GUI holds it for a manual collect too
+/// (`WorkspaceStore.takeTickLockForManualCollect`), so a wake during one queues.
 struct TickLock: Sendable {
     static var defaultURL: URL { AppSupport.directory().appendingPathComponent(".tick.lock") }
 
@@ -231,7 +232,20 @@ struct TickLock: Sendable {
         limit: Duration = TickLock.heartbeatLimit,
         _ body: () async -> T
     ) async -> T {
-        let heartbeat = Task.detached(priority: .utility) { [self] in
+        let beats = heartbeat(every: interval, limit: limit)
+        let result = await body()
+        beats.cancel()
+        await beats.value
+        return result
+    }
+
+    /// `keepingAlive`'s beats, for a holder whose body runs on the main actor and so
+    /// cannot be handed over: touches the lock every `interval` until cancelled or `limit`.
+    func heartbeat(
+        every interval: Duration = TickLock.heartbeatInterval,
+        limit: Duration = TickLock.heartbeatLimit
+    ) -> Task<Void, Never> {
+        Task.detached(priority: .utility) { [self] in
             let clock = ContinuousClock()
             let deadline = clock.now.advanced(by: limit)
             while true {
@@ -240,10 +254,6 @@ struct TickLock: Sendable {
                 touch()
             }
         }
-        let result = await body()
-        heartbeat.cancel()
-        await heartbeat.value
-        return result
     }
 
     /// Unreadable attributes fail toward "not stale" — keep blocking rather

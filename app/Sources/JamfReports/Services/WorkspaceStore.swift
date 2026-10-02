@@ -88,11 +88,12 @@ final class WorkspaceStore {
     /// Initialize, Refresh, or an automatic one. A count, not a flag: two
     /// overlapping manual actions must not clear each other's mark on exit.
     private var collectsInFlight: [String: Int] = [:]
-    /// Whether another process (the bundled `--tick` agent) holds the tick
-    /// lock. Injectable so tests never read the real lock file.
-    var tickLockHeldElsewhere: () -> Bool = {
-        TickLock(url: TickLock.defaultURL).isHeldByAnotherLiveProcess()
-    }
+    /// The tick lock: automatic collects stand down while another process holds
+    /// it, manual collects take it. Injectable so tests never touch the real file.
+    var tickLock: () -> TickLock = { TickLock(url: TickLock.defaultURL) }
+    /// Manual collects in THIS process holding `tickLock`. A count: the first of
+    /// two overlapping ones to finish must not remove the file under the other.
+    var manualCollectLockHolds = 0
     private var didAutoUpdateJamfCLI = false
     /// Dedup guard for `autoRefreshAuditIfStale()` — rapid profile switches or
     /// repeated launch-task firings must not stack concurrent audit runs

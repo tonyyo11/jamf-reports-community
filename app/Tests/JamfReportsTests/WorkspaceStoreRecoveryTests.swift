@@ -6,10 +6,16 @@ import XCTest
 @MainActor
 final class WorkspaceStoreRecoveryTests: XCTestCase {
 
+    /// The store's tick lock is a temporary file: these tests run against the real
+    /// workspaces root, and the real lock is the background item's.
     private func makeStore(slug: String) -> WorkspaceStore {
         let store = WorkspaceStore()
         store.demoMode = false
         store.profile = slug
+        let lock = TickLock(url: FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-recovery-\(UUID().uuidString).lock"))
+        addTeardownBlock { try? FileManager.default.removeItem(at: lock.url) }
+        store.tickLock = { lock }
         return store
     }
 
