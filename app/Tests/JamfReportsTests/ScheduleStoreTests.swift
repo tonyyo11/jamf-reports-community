@@ -39,6 +39,20 @@ final class ScheduleStoreTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.path))
     }
 
+    /// A test that sets no root still never reaches the developer's store or the background
+    /// item's lock: under XCTest the real home resolves to this process's temporary directory.
+    func testATestWithoutARootStaysOutOfTheRealDirectory() {
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        unsetenv("JRC_TEST_WORKSPACES_ROOT")
+        defer { if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) } }
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let dir = AppSupport.resolved(home: home)
+        XCTAssertFalse(dir.path.hasPrefix(home.appendingPathComponent("Library").path),
+                       "resolved to \(dir.path)")
+        XCTAssertTrue(dir.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+        XCTAssertEqual(AppSupport.resolved(home: home), dir, "one directory per test process")
+    }
+
     func testRecordRoundTripsThroughSchedule() throws {
         let record = try XCTUnwrap(ScheduleRecord(schedule: sample()))
         XCTAssertEqual(record.label, "com.github.tonyyo11.jamf-reports-community.alpha.nightly")
