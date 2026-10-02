@@ -640,6 +640,14 @@ struct OverviewView: View {
                 }
             }
 
+            // F3: GUI-only AI executive narrative, time-boxed (nil = section omitted). Both
+            // branches ask the same way; the collect branch asks after its collect, so the
+            // paragraph describes the snapshots the report is built from.
+            let makeNarrative: () async -> String? = {
+                if workspace.demoMode { return nil }
+                return await ReportNarrative.makeForGUIGenerate(profile: profile)
+            }
+
             let exit: Int32
             if shouldSkipCollect {
                 // Emit a durable-intent message through the live log channel so the
@@ -656,8 +664,7 @@ struct OverviewView: View {
                 await MainActor.run { workspace.globalStatus = skipMessage }
                 AppLogger.cli.info("\(skipMessage, privacy: .public)")
 
-                // F3: GUI-only AI executive narrative, time-boxed (nil = section omitted).
-                let narrative = workspace.demoMode ? nil : await ReportNarrative.makeForGUIGenerate(profile: profile)
+                let narrative = await makeNarrative()
                 exit = try await bridge.generate(profile: profile, csvPath: nil, aiNarrative: narrative) { [weak workspace] line in
                     Task { @MainActor in
                         guard let workspace, self.isRunning else { return }
@@ -668,7 +675,9 @@ struct OverviewView: View {
                     }
                 }
             } else {
-                exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
+                exit = try await bridge.collectThenGenerate(
+                    profile: profile, csvPath: nil, narrative: makeNarrative
+                ) { [weak workspace] line in
                     Task { @MainActor in
                         guard let workspace, self.isRunning else { return }
                         // PR-15: capture T-13 SHA-256 fingerprints from the live log

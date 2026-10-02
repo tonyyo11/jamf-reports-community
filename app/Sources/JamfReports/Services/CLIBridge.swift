@@ -820,23 +820,43 @@ final class CLIBridge {
         }
     }
 
+    /// `narrative` (F3, GUI-only) is asked for between the collect and the generate, only
+    /// when the collect worked: it reads the snapshots the collect just wrote, so a narrative
+    /// asked for before it would describe the stale ones the report is not built from.
     func collectThenGenerate(
         profile: String,
         csvPath: String?,
-        aiNarrative: String? = nil,
+        narrative: (() async -> String?)? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // Auth is checked inside collect(); skipping a separate probe here avoids calling
         // jamf-cli pro auth token twice for the combined collect+generate flow.
         onLine(.init(timestamp: Date(), level: .info, text: "[info] collecting jamf-cli snapshots for \(profile)"))
-        // force: true — collectThenGenerate is always a GUI "Run now" action; the
-        // once-per-day guard must not silently skip a user-triggered collect+generate.
-        let collectExit = try await collect(profile: profile, force: true, onLine: onLine)
-        guard collectExit == 0 else { return collectExit }
+        return try await Self.runCollectThenGenerate(
+            // force: true — collectThenGenerate is always a GUI "Run now" action; the
+            // once-per-day guard must not silently skip a user-triggered collect+generate.
+            collect: { try await self.collect(profile: profile, force: true, onLine: onLine) },
+            narrative: narrative,
+            generate: { aiNarrative in
+                onLine(.init(timestamp: Date(), level: .info,
+                             text: "[info] generating report from cached snapshots"))
+                return try await self.generate(profile: profile, csvPath: csvPath,
+                                               aiNarrative: aiNarrative, onLine: onLine)
+            }
+        )
+    }
 
-        onLine(.init(timestamp: Date(), level: .info, text: "[info] generating report from cached snapshots"))
-        return try await generate(profile: profile, csvPath: csvPath,
-                                  aiNarrative: aiNarrative, onLine: onLine)
+    /// Orchestration core of `collectThenGenerate`, with the three steps injected so tests
+    /// can order them without a live jamf-cli (the same seam as `runGenerateAll`). A failed
+    /// collect returns its exit code before the narrative is asked for.
+    static func runCollectThenGenerate(
+        collect: () async throws -> Int32,
+        narrative: (() async -> String?)?,
+        generate: (String?) async throws -> Int32
+    ) async throws -> Int32 {
+        let collectExit = try await collect()
+        guard collectExit == 0 else { return collectExit }
+        return try await generate(await narrative?())
     }
 
     // MARK: - jamf-cli exit codes (jamf-cli Error Handling & Exit Codes spec)
