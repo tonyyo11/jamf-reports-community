@@ -66,6 +66,8 @@ enum YAMLCodec {
             case blockScalar(key: String, indicator: String)
             /// List items with no key above them to belong to; not read.
             case orphanItems
+            /// A `[` or `{` not closed on its line; the value reads as the line's text.
+            case unclosedFlow
         }
 
         let line: Int
@@ -95,6 +97,8 @@ enum YAMLCodec {
                     + "are not read"
             case .orphanItems:
                 "a list item with no key above it, so it was not read"
+            case .unclosedFlow:
+                "a [ or { list not closed on this line, so the value reads as this line's text"
             }
         }
 
@@ -611,6 +615,10 @@ private struct Parser {
         if value.hasPrefix("["), value.hasSuffix("]"), value.count >= 2,
            let sequence = parseFlowSequence(value) {
             return sequence
+        }
+        if value.first == "[" || value.first == "{",
+           value.filter({ "[{".contains($0) }).count > value.filter({ "]}".contains($0) }).count {
+            note(valueLine, .unclosedFlow)
         }
         if value == "null" || value == "~" { return .scalar(.null) }
         if value.lowercased() == "true" { return .scalar(.bool(true)) }

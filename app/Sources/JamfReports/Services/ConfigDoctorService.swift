@@ -660,6 +660,7 @@ enum ConfigDoctorService {
         case .duplicateKey: "Remove one of the two lines."
         case .blockScalar: "Put the value on the same line, in quotes."
         case .orphanItems: "Put the list under the key it belongs to, or remove it."
+        case .unclosedFlow: "Close it on the same line, or put one item per line under the key."
         }
     }
 

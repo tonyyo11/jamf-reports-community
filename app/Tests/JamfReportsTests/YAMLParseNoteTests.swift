@@ -305,6 +305,17 @@ final class YAMLParseNoteTests: XCTestCase {
         XCTAssertEqual(root?.value(for: "band")?.mapping?.value(for: "it's")?.stringValue, "a'b")
     }
 
+    /// A `[` or `{` not closed on its line reads as text; its first line says so.
+    func testAFlowListNotClosedOnItsLineIsNotedOnItsFirstLine() throws {
+        let yaml = "sheets:\n  skip: [Sheet One,\n    Sheet Two]\ntitle: [Draft] Report\n"
+        XCTAssertEqual(try notes(yaml), [
+            Note(line: 2, kind: .unclosedFlow),
+            Note(line: 3, kind: .indentation(found: 4, expected: 2)),
+        ])
+        XCTAssertEqual(try YAMLCodec.decode(yaml).root.mapping?.value(for: "title")?.stringValue,
+                       "[Draft] Report")
+    }
+
     /// `---` opening the file marks the start of the document; elsewhere it is still noted.
     func testADocumentStartMarkerAtTheTopIsNotNoted() throws {
         for yaml in ["---\nthresholds:\n  stale_device_days: 45\n",
