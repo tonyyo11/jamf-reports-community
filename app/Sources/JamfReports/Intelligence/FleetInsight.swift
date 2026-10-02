@@ -129,7 +129,8 @@ extension FleetInsightInput {
                   + "macOS version, or version not listed"),
             // An unweighted mean of per-title compliance, not a device share.
             share("Patch compliance (avg per title)", \.patchPct),
-            share("SIP enabled", \.sipPct, "not enabled"),
+            // "SIP" alone reads as the VoIP protocol to the on-device model.
+            share("System Integrity Protection (SIP) enabled", \.sipPct, "not enabled"),
             share("Firewall enabled", \.firewallPct, "not enabled"),
             share("Gatekeeper enabled", \.gatekeeperPct, "not enabled"),
             share("Compliance" + proxy, \.compliancePct),

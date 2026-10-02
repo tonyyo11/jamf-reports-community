@@ -55,7 +55,8 @@ final class FleetInsightInputTests: XCTestCase {
             previous: summary(date: "2026-06-05", sip: 3, firewall: 0)
         )
         XCTAssertEqual(Array(lines(input).dropFirst(3)), [
-            "- SIP enabled on 1.0% of devices; not enabled on 99.0% (-2.0 pp vs prior)",
+            "- System Integrity Protection (SIP) enabled on 1.0% of devices; "
+                + "not enabled on 99.0% (-2.0 pp vs prior)",
             "- Firewall enabled on 0.0% of devices; not enabled on 100.0% (+0.0 pp vs prior)",
             "Prior period for deltas: 2026-06-05.",
         ])
@@ -161,8 +162,8 @@ final class FleetInsightInputTests: XCTestCase {
                     + "macOS version, or version not listed"),
             Fact(label: "Patch compliance (avg per title)", value: .percent(90.4),
                  prior: .percent(89), polarity: .higherIsBetter),
-            Fact(label: "SIP enabled", value: .percent(99.8), prior: .percent(99.8),
-                 polarity: .higherIsBetter, complement: notEnabled),
+            Fact(label: "System Integrity Protection (SIP) enabled", value: .percent(99.8),
+                 prior: .percent(99.8), polarity: .higherIsBetter, complement: notEnabled),
             Fact(label: "Firewall enabled", value: .percent(92.1), prior: .percent(93),
                  polarity: .higherIsBetter, complement: notEnabled),
             Fact(label: "Gatekeeper enabled", value: .percent(100), prior: .percent(100),
