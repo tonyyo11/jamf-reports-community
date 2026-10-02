@@ -86,6 +86,7 @@ enum ConfigDoctorService {
         )
         if let config, parseError == nil {
             rows += accuracyRows(config: config, profile: profile)
+            rows += securityPolicyRows(profile: profile, config: config)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
@@ -568,6 +569,61 @@ enum ConfigDoctorService {
             return "threshold \(threshold) is not a valid non-negative number"
         }
         return nil
+    }
+
+    // MARK: - Security policy (hand-typed values)
+
+    /// Reads what the workspace's `security_policy:` block says that the app did not use as
+    /// written. Warnings only: a typo must not turn a healthy scheduled run red.
+    static func securityPolicyRows(profile: String, config: ReportConfig) -> [DoctorRow] {
+        let policy = config.resolvedSecurityPolicy
+        let hardware = (try? WorkspacePaths.dataDir(for: profile))
+            .map { HardwareEncryption.index(dataDir: $0, for: policy) } ?? [:]
+        return securityPolicyRows(
+            issues: SecurityPolicyConfigLoader.issues(profile: profile),
+            policy: policy, hardware: hardware)
+    }
+
+    /// One warning per issue, titled with its key path, plus one when the hardware rule is
+    /// set but no Mac has hardware facts yet (the value is valid, so it is no issue).
+    static func securityPolicyRows(
+        issues: [SecurityPolicyIssue], policy: SecurityControlPolicy, hardware: [String: Bool]
+    ) -> [DoctorRow] {
+        var rows = issues.enumerated().map { index, issue in
+            DoctorRow(
+                id: "security_policy.issue.\(index)", severity: .warn, title: issue.keyPath,
+                detail: securityPolicyDetail(issue), hint: securityPolicyHint(issue)
+            )
+        }
+        if policy.usesHardwareRule, hardware.isEmpty {
+            rows.append(DoctorRow(
+                id: "security_policy.hardware_facts", severity: .warn,
+                title: "security_policy.filevault_off_hardware_encrypted",
+                detail: "No hardware information yet — the rule applies after an inventory "
+                    + "collect. Until then FileVault off counts at the FileVault level.",
+                hint: "Run a collect for this profile."
+            ))
+        }
+        return rows
+    }
+
+    /// An empty `used` marks a key the app does not read, and its value is never echoed.
+    private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
+        if issue.used.isEmpty { return "Not a setting the app reads" }
+        if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
+            return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
+        }
+        return "\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)"
+    }
+
+    private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
+        if issue.used.isEmpty {
+            return "Remove it from config.yaml, or check its spelling: keys are case-sensitive."
+        }
+        if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
+            return "Write it as indented key: value lines in config.yaml, or remove it."
+        }
+        return "Set it to fail, warning or ignore in config.yaml, or remove the line."
     }
 
     // MARK: - Column-mapping helpers

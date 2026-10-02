@@ -9,10 +9,35 @@ enum SecurityControl: String, CaseIterable, Sendable {
 /// or not evaluated at all (`ignore`).
 enum SecurityControlLevel: String, CaseIterable, Sendable {
     case fail, warning, ignore
+
+    /// The one place a typed level is read: trimmed, case-insensitive, `_` and `-` read as
+    /// spaces. Nil for anything that is not one of these spellings.
+    static func parse(_ raw: String) -> SecurityControlLevel? {
+        let text = raw.replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        switch text {
+        case "fail", "failure", "gap": return .fail
+        case "warning", "warn": return .warning
+        case "ignore", "ignored", "not counted", "skip": return .ignore
+        default: return nil
+        }
+    }
 }
 
 enum SecurityVerdict: Sendable, Equatable {
     case pass, fail, warning, ignored, unknown
+}
+
+/// Something in a hand-edited `security_policy:` block the app did not use as written.
+/// `value` is what was typed (empty for an empty value, and for a key the app does not
+/// read); `used` is what the app applied instead: a level, `the FileVault level`, or the
+/// default for a block of the wrong shape. An empty `used` means the key is not read.
+struct SecurityPolicyIssue: Sendable, Equatable {
+    let keyPath: String
+    let value: String
+    let used: String
 }
 
 /// The workspace's `security_policy:` block. Absent, every control fails as it always
@@ -79,8 +104,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         guard let raw = try? container.decodeIfPresent(String.self, forKey: key) else {
             return nil
         }
-        return SecurityControlLevel(
-            rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        return SecurityControlLevel.parse(raw)
     }
 
     func level(for control: SecurityControl) -> SecurityControlLevel {

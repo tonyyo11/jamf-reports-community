@@ -459,6 +459,7 @@ security_policy:
     sip: fail
     firewall: fail
     gatekeeper: fail
+  # Also read: failure/gap = fail, warn = warning, ignored/skip/not counted = ignore.
   # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
   # silicon, or Intel with the T2 chip). Omit to use the filevault level.
   # filevault_off_hardware_encrypted: warning

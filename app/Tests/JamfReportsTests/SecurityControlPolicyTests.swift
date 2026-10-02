@@ -101,17 +101,60 @@ final class SecurityControlPolicyTests: XCTestCase {
             fileVault: .warning, sip: .ignore, fileVaultOffHardwareEncrypted: .warning))
     }
 
-    /// `warn` is not a level: the control keeps its strict default, and an unknown
-    /// hardware level leaves the hardware rule off.
+    /// A level the app does not know keeps the control's strict default, and an unknown
+    /// hardware level leaves the hardware rule off. `warn` used to be in this list and
+    /// read as `fail` with no message; it is now an accepted spelling of `warning`
+    /// (`testSynonymsDecode`), so the unrecognised examples are `wrn` and a typed `true`.
     func testUnrecognisedLevelsFallBack() throws {
         let config = try ConfigLoader.loadFromString("""
         security_policy:
           controls:
-            filevault: warn
+            filevault: wrn
             firewall: true
-          filevault_off_hardware_encrypted: warn
+          filevault_off_hardware_encrypted: wrn
         """)
         XCTAssertEqual(config.securityPolicy, .default)
+    }
+
+    func testSynonymsDecode() throws {
+        let config = try ConfigLoader.loadFromString("""
+        security_policy:
+          controls:
+            filevault: warn
+            sip: Not_Counted
+            firewall: GAP
+            gatekeeper: skip
+          filevault_off_hardware_encrypted: warn
+        """)
+        XCTAssertEqual(config.securityPolicy, SecurityControlPolicy(
+            fileVault: .warning, sip: .ignore, firewall: .fail, gatekeeper: .ignore,
+            fileVaultOffHardwareEncrypted: .warning))
+    }
+
+    // MARK: - Hand-typed levels
+
+    func testParseAcceptsEverySpellingInAnyCase() {
+        let spellings: [SecurityControlLevel: [String]] = [
+            .fail: ["fail", "FAIL", "Failure", "gap", "Gap", " fail "],
+            .warning: ["warning", "Warning", "WARN", "warn", "wArN"],
+            .ignore: ["ignore", "Ignored", "IGNORED", "skip", "not counted", "Not Counted",
+                      "not_counted", "NOT-COUNTED", "  not counted  "],
+        ]
+        for (level, texts) in spellings {
+            for text in texts {
+                XCTAssertEqual(SecurityControlLevel.parse(text), level, text)
+            }
+        }
+        for level in SecurityControlLevel.allCases {
+            XCTAssertEqual(SecurityControlLevel.parse(level.rawValue), level)
+        }
+    }
+
+    func testParseRejectsWhatIsNotALevel() {
+        for text in ["on", "off", "true", "yes", "no", "", "  ", "wrn", "1", "notcounted",
+                     "not counted!", "failed"] {
+            XCTAssertNil(SecurityControlLevel.parse(text), "\"\(text)\"")
+        }
     }
 
     func testWrongShapesKeepTheRestOfTheConfig() throws {
@@ -373,6 +416,195 @@ final class SecurityControlPolicyTests: XCTestCase {
             custom_eas: "not a list"
             """, profile: "policy-broken")
             XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: "policy-broken"), .default)
+        }
+    }
+
+    // MARK: - Issues in a hand-typed block
+
+    private func issues(_ yaml: String?) throws -> [SecurityPolicyIssue] {
+        var found: [SecurityPolicyIssue] = []
+        try withWorkspacesRoot { _ in
+            if let yaml { try writeConfig(yaml, profile: "policy-issues") }
+            found = SecurityPolicyConfigLoader.issues(profile: "policy-issues")
+        }
+        return found
+    }
+
+    private func issue(_ keyPath: String, _ value: String, _ used: String) -> SecurityPolicyIssue {
+        SecurityPolicyIssue(keyPath: keyPath, value: value, used: used)
+    }
+
+    func testIssuesNameAnUnrecognisedLevel() throws {
+        let found = try issues("""
+        security_policy:
+          controls:
+            filevault: warning
+            sip: wrn
+          filevault_off_hardware_encrypted: maybe
+        """)
+        XCTAssertEqual(found, [
+            issue("security_policy.controls.sip", "wrn", "fail"),
+            issue("security_policy.filevault_off_hardware_encrypted", "maybe",
+                  "the FileVault level"),
+        ])
+    }
+
+    /// `true` arrives as a Bool, `1` as a number and an empty value as null. Each is shown
+    /// the way it was typed: the null as an empty string, never as "null" or a type name.
+    func testIssuesShowTypedBoolNumberNullAndStringValuesAsWritten() throws {
+        let found = try issues("""
+        security_policy:
+          controls:
+            filevault: no
+            sip: true
+            firewall: 1
+            gatekeeper:
+          filevault_off_hardware_encrypted: false
+        """)
+        XCTAssertEqual(found, [
+            issue("security_policy.controls.filevault", "no", "fail"),
+            issue("security_policy.controls.sip", "true", "fail"),
+            issue("security_policy.controls.firewall", "1", "fail"),
+            issue("security_policy.controls.gatekeeper", "", "fail"),
+            issue("security_policy.filevault_off_hardware_encrypted", "false",
+                  "the FileVault level"),
+        ])
+    }
+
+    func testIssuesNameAnUnknownControlWithoutItsValue() throws {
+        let found = try issues("""
+        security_policy:
+          controls:
+            antivirus: warning
+            sip: warning
+        """)
+        XCTAssertEqual(found, [issue("security_policy.controls.antivirus", "", "")])
+    }
+
+    func testIssuesNameAnUnknownKeyInTheBlock() throws {
+        let found = try issues("""
+        security_policy:
+          mode: strict
+          Controls:
+            sip: warning
+          score_weights:
+            sip: 5
+          filevault_off_hardware_encrypted: warning
+        """)
+        XCTAssertEqual(found, [
+            issue("security_policy.mode", "", ""),
+            issue("security_policy.Controls", "", ""),
+        ], "keys are case-sensitive, as the decoder reads them")
+    }
+
+    func testIssuesNameABlockOfTheWrongShape() throws {
+        XCTAssertEqual(try issues("security_policy: strict\n"),
+                       [issue("security_policy", "strict", "the default policy")])
+        XCTAssertEqual(try issues("security_policy: [a, b]\n"),
+                       [issue("security_policy", "[a, b]", "the default policy")])
+        XCTAssertEqual(try issues("""
+            security_policy:
+              controls: strict
+              score_weights: [5]
+              filevault_off_hardware_encrypted: {level: warning}
+            """), [
+            issue("security_policy.controls", "strict", "fail for every control"),
+            issue("security_policy.score_weights", "[5]", "the default weights"),
+            issue("security_policy.filevault_off_hardware_encrypted", "{…}",
+                  "the FileVault level"),
+        ])
+    }
+
+    func testCleanAbsentAndEmptyBlocksHaveNoIssues() throws {
+        XCTAssertEqual(try issues(nil), [], "no config.yaml")
+        XCTAssertEqual(try issues("thresholds:\n  stale_device_days: 45\n"), [], "no block")
+        XCTAssertEqual(try issues("security_policy:\n"), [], "an empty block")
+        XCTAssertEqual(try issues("security_policy: {}\n"), [])
+        XCTAssertEqual(try issues("security_policy:\n  controls:\n"), [], "an empty controls")
+        XCTAssertEqual(try issues("""
+            security_policy:
+              controls:
+                filevault: Warn
+                sip: not_counted
+                firewall: GAP
+                gatekeeper: ignore
+              filevault_off_hardware_encrypted: skip
+              score_weights:
+                sip: 5
+            """), [], "accepted synonyms are not issues")
+    }
+
+    /// The decoder keeps the last of a repeated key, so the issue follows the last one.
+    func testIssuesFollowTheLastOfARepeatedKey() throws {
+        XCTAssertEqual(try issues("""
+            security_policy:
+              controls:
+                sip: wrn
+                sip: warning
+            """), [])
+        XCTAssertEqual(try issues("""
+            security_policy:
+              controls:
+                sip: warning
+                sip: wrn
+                sip: wrn
+            """), [issue("security_policy.controls.sip", "wrn", "fail")],
+                       "one issue for a key, not one per line")
+    }
+
+    func testDisplayTextStripsControlCharactersAndCapsAtFortyCharacters() {
+        XCTAssertEqual(SecurityPolicyConfigLoader.displayText("a\u{7}b\nc\t\u{202E}d\u{2028}e"),
+                       "abcde")
+        let forty = String(repeating: "x", count: 40)
+        XCTAssertEqual(SecurityPolicyConfigLoader.displayText(forty), forty)
+        XCTAssertEqual(SecurityPolicyConfigLoader.displayText(forty + "y"),
+                       String(repeating: "x", count: 39) + "…")
+        XCTAssertEqual(SecurityPolicyConfigLoader.displayText(""), "")
+    }
+
+    /// Text from the file reaches the Doctor and the card through the issue, so the issue
+    /// is where it is cleaned: a typed value and a key name alike.
+    func testIssuesCleanTheTextTheyTakeFromTheFile() throws {
+        let long = String(repeating: "z", count: 60)
+        let found = try issues("""
+        security_policy:
+          controls:
+            sip: w\u{7}r\u{202E}n\u{1B}[31m
+            firewall: \(long)
+            \(long): warning
+        """)
+        let capped = String(repeating: "z", count: 39) + "…"
+        XCTAssertEqual(found.map(\.value), ["wrn[31m", capped, ""])
+        XCTAssertEqual(found.last?.keyPath, "security_policy.controls." + capped)
+        XCTAssertTrue(found.allSatisfy { $0.keyPath.count <= 80 && $0.value.count <= 40 })
+    }
+
+    /// Three bad values: for each, `used` is what `load(profile:)` really applied, and the
+    /// synonyms in the same file are understood by the loader and absent from the issues.
+    func testIssuesAndTheLoadedPolicyAgree() throws {
+        try withWorkspacesRoot { _ in
+            try writeConfig("""
+            security_policy:
+              controls:
+                filevault: warn
+                sip: wrn
+                firewall: true
+                gatekeeper: skip
+              filevault_off_hardware_encrypted: maybe
+            """, profile: "policy-agree")
+            let policy = SecurityPolicyConfigLoader.load(profile: "policy-agree")
+            let found = SecurityPolicyConfigLoader.issues(profile: "policy-agree")
+
+            XCTAssertEqual(policy.fileVault, .warning)
+            XCTAssertEqual(policy.gatekeeper, .ignore)
+            XCTAssertEqual(found.map(\.keyPath), [
+                "security_policy.controls.sip", "security_policy.controls.firewall",
+                "security_policy.filevault_off_hardware_encrypted",
+            ])
+            XCTAssertEqual(found[0].used, policy.level(for: .sip).rawValue)
+            XCTAssertEqual(found[1].used, policy.level(for: .firewall).rawValue)
+            XCTAssertNil(policy.fileVaultOffHardwareEncrypted)
+            XCTAssertEqual(found[2].used, "the FileVault level")
         }
     }
 }
