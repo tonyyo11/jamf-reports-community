@@ -45,6 +45,37 @@ final class PostureViewsRenderTests: XCTestCase {
                        label + ", 2 warnings")
     }
 
+    /// A Security Posture KPI tile keeps its value; its sub-line says how the workspace's
+    /// policy counts the Macs where the control is off.
+    func testSecurityKPITileSubFollowsThePolicy() {
+        let policy = SecurityControlPolicy(sip: .warning, firewall: .ignore, gatekeeper: .warning)
+        let fleet = SecurityFleetCounts.build(
+            totalDevices: 10,
+            onCounts: [.fileVault: 8, .sip: 7, .firewall: 4, .gatekeeper: 9],
+            devices: [], hardware: [:], policy: policy)
+        func sub(_ control: SecurityControl, _ on: Int, _ fleet: SecurityFleetCounts) -> String {
+            SecurityPostureView.kpiTileSub(control, on: on, total: 10, fleet: fleet)
+        }
+        XCTAssertEqual(sub(.fileVault, 8, fleet), "8 of 10")
+        XCTAssertEqual(sub(.sip, 7, fleet), "7 of 10 · 3 warnings")
+        XCTAssertEqual(sub(.gatekeeper, 9, fleet), "9 of 10 · 1 warning")
+        XCTAssertEqual(sub(.firewall, 4, fleet), "Not counted by this workspace's policy")
+
+        typealias Control = SecurityFleetCounts.Control
+        let lowered = SecurityFleetCounts(
+            totalDevices: 10,
+            controls: [.fileVault: Control(level: .fail, on: 8, fail: 0, warning: 2)],
+            fileVaultOffHardwareEncrypted: 2)
+        XCTAssertEqual(sub(.fileVault, 8, lowered),
+                       "8 of 10 · 2 more hardware-encrypted, FileVault off")
+        let stricter = SecurityFleetCounts(
+            totalDevices: 10,
+            controls: [.fileVault: Control(level: .warning, on: 8, fail: 2, warning: 0)],
+            fileVaultOffHardwareEncrypted: 0)
+        XCTAssertEqual(sub(.fileVault, 8, stricter), "8 of 10",
+                       "at hardware level fail those Macs are plain failures")
+    }
+
     // MARK: - Reading off the main actor
 
     /// Both posture screens read in a detached task, so the readers must not need the main
@@ -191,20 +222,26 @@ final class PostureViewsRenderTests: XCTestCase {
         try Data(json.utf8).write(to: tmp)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let snapshot = try SecurityPostureService.load(from: tmp)
+        let snapshot = try SecurityPostureService.load(from: tmp, policy: .default, hardware: [:])
 
         XCTAssertEqual(snapshot.totalDevices, 100)
         XCTAssertEqual(snapshot.fileVaultEncrypted, 95)
         XCTAssertEqual(snapshot.sipEnabled, 100)
         XCTAssertEqual(snapshot.firewallEnabled, 80)
         XCTAssertEqual(snapshot.osVersions.count, 2)
+        // P0 = (100 - 95) + 0 + (100 - 80); P1 = 100 - 90.
+        XCTAssertEqual(snapshot.fleetCounts.p0, 25)
+        XCTAssertEqual(snapshot.fleetCounts.p1, 10)
 
         // SecurityScoreCalculator should still produce a useful score from
         // the limited counts even though several score-bearing metrics are
         // absent from this snapshot (mSCP, CrowdStrike, etc.).
         let score = SecurityScoreCalculator.score(
-            input: SecurityScoreCalculator.input(from: snapshot)
+            input: snapshot.fleetCounts.scoreInput(),
+            weights: snapshot.policy.effectiveScoreWeights(.defaultWeights)
         )
+        // (95 + 100 + 80) / 3
+        XCTAssertEqual(score.value, 91.7, accuracy: 0.001)
         XCTAssertFalse(score.available.isEmpty)
         XCTAssertTrue(score.missing.contains(.mscp))
         XCTAssertTrue(score.missing.contains(.edrAgent))

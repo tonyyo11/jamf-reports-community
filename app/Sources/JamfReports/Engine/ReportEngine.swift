@@ -596,10 +596,15 @@ struct ReportEngine: Sendable {
         var fileVaultPct: Double? = nil
         // v3.5 fleet-health expansion (all optional — populated only when
         // the security summary section carries the source counts).
-        var fileVaultCount: Int?
         var sipCount: Int?
         var firewallCount: Int?
         var gatekeeperCount: Int?
+        // P0/P1 and the score: the summary's counts under the workspace's policy, with the
+        // one hardware index the compliance proxy also reads.
+        let securityPolicy = config.resolvedSecurityPolicy
+        var hardware: [String: Bool] = [:]
+        var securityOnCounts: [SecurityControl: Int] = [:]
+        var securityDevices: [SecurityDevice] = []
         // Compliance proxy (control-gap derivation, same rules as
         // CompliancePostureService): % of devices failing zero of the four
         // baseline controls. Gives the Compliance Benchmark trend and the
@@ -613,13 +618,12 @@ struct ReportEngine: Sendable {
         if let secData = cachedData(kind: "security"),
            let items = try? JSONDecoder().decode([SecurityReportItem].self, from: secData) {
             var deviceGapCounts: [Int] = []
-            let securityPolicy = config.resolvedSecurityPolicy
-            let hardware = HardwareEncryption.index(dataDir: dataDir, for: securityPolicy)
+            hardware = HardwareEncryption.index(dataDir: dataDir, for: securityPolicy)
             for item in items {
                 switch item {
                 case .summary(let s):
                     totalDevices = s.data.totalDevices ?? 0
-                    fileVaultCount = s.data.fileVaultEncrypted
+                    securityOnCounts = SecurityFleetCounts.onCounts(s.data)
                     sipCount = s.data.sipEnabled
                     firewallCount = s.data.firewallEnabled
                     gatekeeperCount = s.data.gatekeeperEnabled
@@ -631,6 +635,7 @@ struct ReportEngine: Sendable {
                     }
                     // If neither source is available fileVaultPct remains nil.
                 case .device(let device):
+                    securityDevices.append(device)
                     let encrypted = HardwareEncryption.lookup(
                         serial: device.serial, name: device.name, in: hardware)
                     if let gaps = CompliancePostureService.deviceGapCount(
@@ -792,23 +797,18 @@ struct ReportEngine: Sendable {
         let firewallPct = pct(of: firewallCount, total: totalDevices)
         let gatekeeperPct = pct(of: gatekeeperCount, total: totalDevices)
 
-        var compliantCounts: [SecurityScore.Metric: Int] = [:]
-        if let n = fileVaultCount { compliantCounts[.fileVault] = n }
-        if let n = sipCount { compliantCounts[.sip] = n }
-        if let n = firewallCount { compliantCounts[.firewall] = n }
+        // P0 = FileVault, SIP or Firewall failures, P1 = Gatekeeper failures, and the score,
+        // all as the Security Posture screen counts them. `totalDevices` here may come from
+        // inventory-summary when the security summary carries none.
+        let fleet = SecurityFleetCounts.build(
+            totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
+            hardware: hardware, policy: securityPolicy)
         let score = SecurityScoreCalculator.score(
-            input: .init(totalDevices: totalDevices, compliantCounts: compliantCounts)
+            input: fleet.scoreInput(),
+            weights: securityPolicy.effectiveScoreWeights(.defaultWeights)
         )
         // Score is only meaningful when at least one metric contributed.
         let securityScore: Double? = score.available.isEmpty ? nil : score.value
-
-        // P0 = devices missing FileVault, SIP, or Firewall. P1 = Gatekeeper
-        // gaps. Mirrors v3.5 SecurityPostureView action-items taxonomy.
-        let p0 = [fileVaultCount, sipCount, firewallCount]
-            .compactMap { $0 }
-            .map { totalDevices - $0 }
-            .reduce(0, +)
-        let p1 = gatekeeperCount.map { totalDevices - $0 } ?? 0
 
         // complianceIsProxy:
         //   nil   — no compliance data at all (neither proxy nor real)
@@ -837,8 +837,8 @@ struct ReportEngine: Sendable {
             firewallPct: firewallPct.map(round1),
             gatekeeperPct: gatekeeperPct.map(round1),
             securityScore: securityScore.map(round1),
-            actionItemsP0: fileVaultCount != nil ? p0 : nil,
-            actionItemsP1: gatekeeperCount.map { _ in p1 },
+            actionItemsP0: fleet.p0,
+            actionItemsP1: fleet.p1,
             complianceIsProxy: complianceIsProxy,
             mscpBands: mscpBandsSnapshot,
             mscpBandColumns: mscpBandColumnsSnapshot,

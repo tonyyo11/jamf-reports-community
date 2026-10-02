@@ -111,25 +111,33 @@ struct SecurityPostureView: View {
             ? SecurityScoreWeights.defaultWeights
             : ScoringConfig.parse(scoringRaw).weights
         return SecurityScoreCalculator.score(
-            input: SecurityScoreCalculator.input(from: snapshot),
-            weights: weights
+            input: snapshot.fleetCounts.scoreInput(),
+            weights: snapshot.policy.effectiveScoreWeights(weights)
         )
     }
 
     private var actionItems: (p0: Int, p1: Int, p2: Int) {
-        // P0 = devices missing FileVault, SIP, or Firewall. P1 = devices
-        // missing Gatekeeper. P2 reserved. Matches v3.5 surface taxonomy.
-        let total = snapshot.totalDevices
-        let p0 = [
-            snapshot.fileVaultEncrypted,
-            snapshot.sipEnabled,
-            snapshot.firewallEnabled
-        ]
-            .compactMap { $0 }
-            .map { total - $0 }
-            .reduce(0, +)
-        let p1 = (snapshot.gatekeeperEnabled.map { total - $0 }) ?? 0
-        return (p0, p1, 0)
+        // P0 = FileVault, SIP or Firewall failures under the workspace's policy. P1 =
+        // Gatekeeper failures. P2 reserved. Matches v3.5 surface taxonomy.
+        (snapshot.fleetCounts.p0 ?? 0, snapshot.fleetCounts.p1 ?? 0, 0)
+    }
+
+    /// A KPI tile's sub-line. The tile's value stays the fact; this says how the
+    /// workspace's policy counts the Macs where the control is off.
+    static func kpiTileSub(
+        _ control: SecurityControl, on: Int, total: Int, fleet: SecurityFleetCounts
+    ) -> String {
+        let counts = fleet.controls[control]
+        if counts?.level == .ignore { return "Not counted by this workspace's policy" }
+        let base = "\(on) of \(total)"
+        let lowered = fleet.fileVaultOffHardwareEncrypted
+        if control == .fileVault, lowered > 0 {
+            return base + " · \(lowered) more hardware-encrypted, FileVault off"
+        }
+        if let warnings = counts?.warning, warnings > 0 {
+            return base + " · \(warnings) warning\(warnings == 1 ? "" : "s")"
+        }
+        return base
     }
 
     // MARK: - Sections
@@ -203,10 +211,10 @@ struct SecurityPostureView: View {
     private var kpiGrid: some View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
-            kpiTile(label: "FileVault", count: snapshot.fileVaultEncrypted)
-            kpiTile(label: "SIP", count: snapshot.sipEnabled)
-            kpiTile(label: "Firewall", count: snapshot.firewallEnabled)
-            kpiTile(label: "Gatekeeper", count: snapshot.gatekeeperEnabled)
+            kpiTile(label: "FileVault", control: .fileVault, count: snapshot.fileVaultEncrypted)
+            kpiTile(label: "SIP", control: .sip, count: snapshot.sipEnabled)
+            kpiTile(label: "Firewall", control: .firewall, count: snapshot.firewallEnabled)
+            kpiTile(label: "Gatekeeper", control: .gatekeeper, count: snapshot.gatekeeperEnabled)
             StatTile(
                 label: "Total Devices",
                 value: "\(snapshot.totalDevices)",
@@ -216,14 +224,15 @@ struct SecurityPostureView: View {
     }
 
     @ViewBuilder
-    private func kpiTile(label: String, count: Int?) -> some View {
+    private func kpiTile(label: String, control: SecurityControl, count: Int?) -> some View {
         let total = snapshot.totalDevices
         if let count, total > 0 {
             let pct = (Double(count) / Double(total)) * 100
             StatTile(
                 label: label,
                 value: String(format: "%.1f%%", pct),
-                sub: "\(count) of \(total)"
+                sub: Self.kpiTileSub(
+                    control, on: count, total: total, fleet: snapshot.fleetCounts)
             )
         } else {
             StatTile(

@@ -639,7 +639,8 @@ extension DemoData {
     // MARK: - Security Posture
 
     /// The Security Posture screen's `pro report security` snapshot: the four
-    /// controls out of the 524-Mac fleet and the Overview's macOS distribution.
+    /// controls out of the 524-Mac fleet and the Overview's macOS distribution,
+    /// counted under the default policy.
     static let securityPostureSnapshot = SecurityPostureService.Snapshot(
         totalDevices: securityControls.total,
         fileVaultEncrypted: securityControls.fileVault,
@@ -651,7 +652,14 @@ extension DemoData {
                 osVersion: osVersionNumber(entry.version), count: entry.count, pct: entry.pct)
         },
         sourceFile: nil,
-        snapshotDate: referenceDate
+        snapshotDate: referenceDate,
+        fleetCounts: SecurityFleetCounts.build(
+            totalDevices: securityControls.total,
+            onCounts: [
+                .fileVault: securityControls.fileVault, .sip: securityControls.sip,
+                .firewall: securityControls.firewall, .gatekeeper: securityControls.gatekeeper,
+            ],
+            devices: [], hardware: [:], policy: .default)
     )
 
     // MARK: - Compliance Posture

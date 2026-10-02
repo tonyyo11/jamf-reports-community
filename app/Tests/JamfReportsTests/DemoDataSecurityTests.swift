@@ -331,14 +331,20 @@ final class DemoDataSecurityTests: XCTestCase {
             + (controls.total - controls.firewall)
         XCTAssertEqual(p0, 53)
         XCTAssertEqual(controls.total - controls.gatekeeper, 12)
+        let fleet = DemoData.securityPostureSnapshot.fleetCounts
+        XCTAssertEqual(fleet.p0, p0)
+        XCTAssertEqual(fleet.p1, 12)
+        XCTAssertEqual(fleet.totalDevices, DemoData.totalDevices)
+        XCTAssertEqual(DemoData.securityPostureSnapshot.policy, .default)
     }
 
     /// The ring's value with the default weights. The Overview's Security Score
     /// card ends on `DemoData.trends[.securityScore]`, which should match it.
     func testSecurityScoreRingWithDefaultWeights() throws {
+        let snapshot = DemoData.securityPostureSnapshot
         let score = SecurityScoreCalculator.score(
-            input: SecurityScoreCalculator.input(from: DemoData.securityPostureSnapshot),
-            weights: .defaultWeights)
+            input: snapshot.fleetCounts.scoreInput(),
+            weights: snapshot.policy.effectiveScoreWeights(.defaultWeights))
         XCTAssertEqual(score.value, 96.6, accuracy: 0.001)
         XCTAssertEqual(score.grade, .aPlus)
         XCTAssertEqual(score.available, [.fileVault, .sip, .firewall])

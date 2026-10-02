@@ -248,6 +248,16 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
             verdict(for: $0.0, reading: $0.1, hardwareEncrypted: hardwareEncrypted) == .fail
         }.count
     }
+
+    /// The score's weights with FileVault, SIP or Firewall at zero when set to `ignore`, so
+    /// the calculator leaves that control out without listing it as missing data.
+    func effectiveScoreWeights(_ base: SecurityScoreWeights) -> SecurityScoreWeights {
+        var weights = base
+        if fileVault == .ignore { weights.fileVault = 0 }
+        if sip == .ignore { weights.sip = 0 }
+        if firewall == .ignore { weights.firewall = 0 }
+        return weights
+    }
 }
 
 extension ReportConfig {
