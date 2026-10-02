@@ -36,12 +36,30 @@ final class SecurityControlPolicyTests: XCTestCase {
         XCTAssertEqual(SecurityControlPolicy.reading("All Partitions Encrypted"), true)
         XCTAssertEqual(SecurityControlPolicy.reading("No Partitions Encrypted"), false)
         XCTAssertNil(SecurityControlPolicy.reading("Not collected"))
+        XCTAssertNil(SecurityControlPolicy.reading("Some Partitions Encrypted"),
+                     "does not say whether the boot volume is encrypted")
     }
 
     /// Commit 088ccd25: a Mac mid-encryption or unable to report FileVault is unmeasured.
     func testFileVaultTransitionStatesReadUnknown() {
         for value in ["ENCRYPTING", "INELIGIBLE", "RESTART_NEEDED"] {
             XCTAssertNil(SecurityControlPolicy.reading(value), value)
+        }
+    }
+
+    /// Every state Jamf reports for FileVault, SIP and Gatekeeper. A paused encryption
+    /// stays paused until someone resumes it, so unlike ENCRYPTING it reads off.
+    func testJamfStates() {
+        let states: [(String, Bool?)] = [
+            ("UNKNOWN", nil), ("UNENCRYPTED", false), ("INELIGIBLE", nil), ("DECRYPTED", false),
+            ("DECRYPTING", false), ("ENCRYPTED", true), ("ENCRYPTING", nil),
+            ("RESTART_NEEDED", nil), ("OPTIMIZING", nil), ("DECRYPTING_PAUSED", false),
+            ("ENCRYPTING_PAUSED", false),
+            ("NOT_COLLECTED", nil), ("NOT_AVAILABLE", nil), ("ENABLED", true), ("DISABLED", false),
+            ("APP_STORE", true), ("APP_STORE_AND_IDENTIFIED_DEVELOPERS", true),
+        ]
+        for (value, expected) in states {
+            XCTAssertEqual(SecurityControlPolicy.reading(value), expected, value)
         }
     }
 

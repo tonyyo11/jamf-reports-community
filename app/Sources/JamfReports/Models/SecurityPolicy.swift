@@ -102,14 +102,18 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
 
     // MARK: - Reading a value
 
-    /// Jamf did not collect the value, or the Mac cannot report it.
+    /// Jamf did not collect the value, the Mac cannot report it, or the value does not
+    /// say whether the boot volume is encrypted ("Some Partitions Encrypted").
     private static let unknownMarkers = [
         "not collected", "not available", "not supported", "unknown", "pending",
+        "some partitions",
     ]
     /// Checked before the true forms, because most negatives contain their positive
-    /// word: "UNENCRYPTED", "NOT_ENCRYPTED", "Not Enabled", "inactive".
+    /// word: "UNENCRYPTED", "NOT_ENCRYPTED", "Not Enabled", "inactive". A paused
+    /// encryption stays paused until someone resumes it, so unlike ENCRYPTING it is off.
     private static let falseMarkers = [
         "not ", "no partitions", "disabled", "unencrypted", "inactive", "decrypt", "missing",
+        "encrypting paused",
     ]
     private static let falseValues: Set<String> = ["false", "no", "0", "off", "none"]
     /// Gatekeeper reports its setting ("APP_STORE_AND_IDENTIFIED_DEVELOPERS"), not a yes or no.
@@ -120,8 +124,8 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     private static let trueValues: Set<String> = ["true", "yes", "1", "on"]
 
     /// Whether a security value reads as on (true), off (false) or unmeasured (nil).
-    /// FileVault mid-transition (ENCRYPTING) or unable to report (INELIGIBLE,
-    /// RESTART_NEEDED) reads nil.
+    /// FileVault mid-transition (ENCRYPTING, OPTIMIZING) or unable to report
+    /// (INELIGIBLE, RESTART_NEEDED) reads nil.
     static func reading(_ raw: String?) -> Bool? {
         let text = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()

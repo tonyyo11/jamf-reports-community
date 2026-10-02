@@ -184,11 +184,20 @@ final class CompliancePostureServiceTests: XCTestCase {
     /// A device row in the `pro report security` shape, passing every control
     /// unless told otherwise.
     private func deviceRow(
-        _ name: String, fileVault: String = "ENCRYPTED", firewall: Bool = true
+        _ name: String, fileVault: String = "ENCRYPTED", sip: String = "ENABLED",
+        firewall: Bool = true
     ) -> [String: Any] {
         ["section": "device", "name": name, "serial": "", "os_version": "15.4.1",
-         "filevault": fileVault, "sip": "ENABLED", "firewall": firewall,
+         "filevault": fileVault, "sip": sip, "firewall": firewall,
          "gatekeeper": "APP_STORE_AND_IDENTIFIED_DEVELOPERS"]
+    }
+
+    /// The default policy's gap count for one row.
+    private func defaultGapCount(_ row: [String: Any]) throws -> Int? {
+        let data = try JSONSerialization.data(withJSONObject: row)
+        let device = try JSONDecoder().decode(SecurityDevice.self, from: data)
+        return CompliancePostureService.deviceGapCount(
+            device, policy: .default, hardwareEncrypted: nil)
     }
 
     /// Runs the summary writer over one security snapshot and returns its proxy.
@@ -224,16 +233,38 @@ final class CompliancePostureServiceTests: XCTestCase {
     func testFileVaultTransitionStatesAreNoLongerGaps() throws {
         let states = ["ENCRYPTING", "INELIGIBLE", "RESTART_NEEDED"]
         for state in states {
-            let data = try JSONSerialization.data(withJSONObject: deviceRow("m", fileVault: state))
-            let device = try JSONDecoder().decode(SecurityDevice.self, from: data)
-            XCTAssertEqual(
-                CompliancePostureService.deviceGapCount(
-                    device, policy: .default, hardwareEncrypted: nil),
-                0, state)
+            XCTAssertEqual(try defaultGapCount(deviceRow("m", fileVault: state)), 0, state)
         }
         let rows = states.map { deviceRow($0, fileVault: $0) }
         let pct = try summaryProxyPct(config: ReportConfig(), rows: rows)
         XCTAssertEqual(try XCTUnwrap(pct), 100, accuracy: 0.01)
+    }
+
+    /// Intended change at the default policy: FileVault OPTIMIZING reads unknown, so it
+    /// is no longer a FileVault gap (it was one before).
+    func testFileVaultOptimizingIsNoLongerAGap() throws {
+        let row = deviceRow("m", fileVault: "OPTIMIZING")
+        XCTAssertEqual(try defaultGapCount(row), 0)
+        let pct = try summaryProxyPct(config: ReportConfig(), rows: [row])
+        XCTAssertEqual(try XCTUnwrap(pct), 100, accuracy: 0.01)
+    }
+
+    /// Intended change at the default policy: SIP NOT_AVAILABLE is unmeasured, like
+    /// NOT_COLLECTED, so it is no longer a SIP gap (it was one before).
+    func testSIPNotAvailableIsNoLongerAGap() throws {
+        let row = deviceRow("m", sip: "NOT_AVAILABLE")
+        XCTAssertEqual(try defaultGapCount(row), 0)
+        let pct = try summaryProxyPct(config: ReportConfig(), rows: [row])
+        XCTAssertEqual(try XCTUnwrap(pct), 100, accuracy: 0.01)
+    }
+
+    /// Unchanged at the default policy: a paused encryption stays paused until someone
+    /// resumes it, so unlike ENCRYPTING it is still a FileVault gap.
+    func testFileVaultEncryptingPausedIsStillAGap() throws {
+        let row = deviceRow("m", fileVault: "ENCRYPTING_PAUSED")
+        XCTAssertEqual(try defaultGapCount(row), 1)
+        let pct = try summaryProxyPct(config: ReportConfig(), rows: [row])
+        XCTAssertEqual(try XCTUnwrap(pct), 0, accuracy: 0.01)
     }
 
     /// The summary writer reads the workspace's policy from config.yaml.
