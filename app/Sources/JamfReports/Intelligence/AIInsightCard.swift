@@ -22,28 +22,21 @@ struct AIInsightCard: View {
         platformSupported && !demoMode
     }
 
+    /// Decided synchronously, so an absent card adds nothing to its stack, not even spacing.
     var body: some View {
-        switch model.presence(profile: workspace.profile, demoMode: workspace.demoMode) {
-        case .hidden:
-            EmptyView()
-        case .loading:
-            // A zero-size host: an empty view never runs its task.
-            Color.clear.frame(width: 0, height: 0)
-                .task(id: workspace.profile) { bind(workspace.profile) }
-        case .shown:
+        if model.isPresent(profile: workspace.profile, demoMode: workspace.demoMode) {
             card
                 .onChange(of: input, initial: true) { _, new in model.setInput(new) }
                 // The generator keeps its prewarmed session for the first request.
-                .task(id: workspace.profile) { await model.prepare() }
+                .task(id: workspace.profile) {
+                    model.select(workspace.profile)
+                    await model.prepare()
+                }
         }
     }
 
-    private func bind(_ profile: String) {
-        let config = AIConfigLoader.load(profile: profile)
-        let availability = ModelAvailability.current(for: config)
-        model.bind(profile: profile, config: config, availability: availability,
-                   generator: makeInsightGenerator(config: config, availability: availability))
-    }
+    /// True until the task has selected the current profile: nothing shown belongs to it yet.
+    private var isStale: Bool { model.profile != workspace.profile }
 
     private var card: some View {
         Card(padding: 18) {
@@ -62,8 +55,11 @@ struct AIInsightCard: View {
 
     @ViewBuilder
     private var content: some View {
-        if !model.availability.isReady {
-            statusText(model.availability.message)
+        let availability = model.setup(for: workspace.profile).availability
+        if !availability.isReady {
+            statusText(availability.message)
+        } else if isStale {
+            idle
         } else if let insight = model.insight {
             // Before isGenerating so streamed partials render as they arrive;
             // the spinner covers only the wait for the first snapshot.
@@ -84,13 +80,17 @@ struct AIInsightCard: View {
                 generateButton("Try again")
             }
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(idleText)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                    .fixedSize(horizontal: false, vertical: true)
-                generateButton("Generate insight")
-            }
+            idle
+        }
+    }
+
+    private var idle: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(idleText)
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+            generateButton("Generate insight")
         }
     }
 
@@ -133,7 +133,7 @@ struct AIInsightCard: View {
         PNPButton(title: label, icon: "sparkles", size: .sm) {
             Task { await model.generate() }
         }
-        .disabled(model.input == nil)
+        .disabled(model.input == nil || isStale)
     }
 
     private func severityColor(_ severity: InsightBullet.Severity) -> Color {
@@ -148,37 +148,58 @@ struct AIInsightCard: View {
 /// What `AIInsightCard` shows, kept out of the view so a test can drive it.
 @MainActor @Observable
 final class AIInsightCardModel {
-    enum Presence: Equatable { case hidden, loading, shown }
+    /// A profile's config, model availability and generator, read once per profile.
+    struct Setup {
+        let config: AIConfig
+        let availability: ModelAvailability
+        let generator: any FleetInsightGenerator
+    }
 
-    private(set) var availability: ModelAvailability = .requiresMacOS27
+    /// The profile that the input, insight, spinner and error belong to.
+    private(set) var profile: String?
     private(set) var input: FleetInsightInput?
     private(set) var insight: FleetInsight?
     private(set) var isGenerating = false
     private(set) var errorMessage: String?
-    private var profile: String?
-    private var config = AIConfig()
-    @ObservationIgnored private var generator: (any FleetInsightGenerator)?
+    /// Filled while the view body runs, so it must not be observed.
+    @ObservationIgnored private var setups: [String: Setup] = [:]
+    @ObservationIgnored private let makeSetup: @MainActor (String) -> Setup
     /// Bumped by every reset, so a stream started before one stops writing.
     @ObservationIgnored private var generation = 0
 
-    /// Hidden where `AIInsightCard.isOffered` is false and while `ai.enabled`
-    /// is off; loading until `profile`'s config has been read.
-    func presence(
-        profile: String, demoMode: Bool,
-        platformSupported: Bool = ModelAvailability.platformSupported
-    ) -> Presence {
-        guard AIInsightCard.isOffered(demoMode: demoMode, platformSupported: platformSupported)
-        else { return .hidden }
-        guard self.profile == profile else { return .loading }
-        return config.isUsable ? .shown : .hidden
+    init(makeSetup: @escaping @MainActor (String) -> Setup = AIInsightCardModel.liveSetup) {
+        self.makeSetup = makeSetup
     }
 
-    func bind(profile: String, config: AIConfig, availability: ModelAvailability,
-              generator: any FleetInsightGenerator) {
+    /// A synchronous read of the profile's `ai:` block.
+    static func liveSetup(_ profile: String) -> Setup {
+        let config = AIConfigLoader.load(profile: profile)
+        let availability = ModelAvailability.current(for: config)
+        return Setup(config: config, availability: availability,
+                     generator: makeInsightGenerator(config: config, availability: availability))
+    }
+
+    func setup(for profile: String) -> Setup {
+        if let setup = setups[profile] { return setup }
+        let setup = makeSetup(profile)
+        setups[profile] = setup
+        return setup
+    }
+
+    /// False where `AIInsightCard.isOffered` is, without reading a config, and
+    /// while the profile's `ai.enabled` is off.
+    func isPresent(
+        profile: String, demoMode: Bool,
+        platformSupported: Bool = ModelAvailability.platformSupported
+    ) -> Bool {
+        AIInsightCard.isOffered(demoMode: demoMode, platformSupported: platformSupported)
+            && setup(for: profile).config.isUsable
+    }
+
+    /// Switches to `profile`, clearing what was shown for another one.
+    func select(_ profile: String) {
+        guard profile != self.profile else { return }
         self.profile = profile
-        self.config = config
-        self.availability = availability
-        self.generator = generator
         reset()
     }
 
@@ -190,11 +211,13 @@ final class AIInsightCardModel {
     }
 
     func prepare() async {
-        await generator?.prepare()
+        guard let profile else { return }
+        await setup(for: profile).generator.prepare()
     }
 
     func generate() async {
-        guard let input, let generator, !isGenerating else { return }
+        guard let profile, let input, !isGenerating else { return }
+        let generator = setup(for: profile).generator
         reset()
         isGenerating = true
         let request = generation

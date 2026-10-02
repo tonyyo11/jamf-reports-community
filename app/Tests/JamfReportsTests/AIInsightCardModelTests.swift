@@ -39,46 +39,58 @@ final class AIInsightCardModelTests: XCTestCase {
         FleetInsightInput(title: title, focus: "health", facts: [], notes: [])
     }
 
-    private func boundModel(
+    /// A model for profile "p" whose config is never read from disk.
+    private func selectedModel(
         enabled: Bool = true, generator: any FleetInsightGenerator
     ) -> AIInsightCardModel {
-        let model = AIInsightCardModel()
-        model.bind(profile: "p", config: AIConfig(enabled: enabled),
-                   availability: .available, generator: generator)
+        let model = AIInsightCardModel { _ in
+            .init(config: AIConfig(enabled: enabled), availability: .available,
+                  generator: generator)
+        }
+        model.select("p")
         return model
     }
 
     // MARK: - Presence
 
-    func testHiddenOffMacOS27AndInDemoMode() {
-        let model = boundModel(generator: FixedGenerator(result: .success(shown)))
-        XCTAssertEqual(model.presence(profile: "p", demoMode: false, platformSupported: true),
-                       .shown)
-        XCTAssertEqual(model.presence(profile: "p", demoMode: true, platformSupported: true),
-                       .hidden)
-        XCTAssertEqual(model.presence(profile: "p", demoMode: false, platformSupported: false),
-                       .hidden)
+    /// Decided while the view body runs, before any task: a card that is not
+    /// present contributes nothing to its stack, not even spacing.
+    func testPresenceIsKnownBeforeAnyTask() {
+        let on = AIInsightCardModel { _ in
+            .init(config: AIConfig(enabled: true), availability: .available,
+                  generator: StubInsightGenerator())
+        }
+        let off = AIInsightCardModel { _ in
+            .init(config: AIConfig(enabled: false), availability: .available,
+                  generator: StubInsightGenerator())
+        }
+        XCTAssertTrue(on.isPresent(profile: "p", demoMode: false, platformSupported: true))
+        XCTAssertFalse(off.isPresent(profile: "p", demoMode: false, platformSupported: true),
+                       "ai.enabled off hides the card")
+        XCTAssertFalse(on.isPresent(profile: "p", demoMode: true, platformSupported: true))
+        XCTAssertFalse(on.isPresent(profile: "p", demoMode: false, platformSupported: false))
     }
 
-    func testHiddenWhenAIIsOff() {
-        let model = boundModel(enabled: false, generator: StubInsightGenerator())
-        XCTAssertEqual(model.presence(profile: "p", demoMode: false, platformSupported: true),
-                       .hidden)
-    }
-
-    func testLoadingUntilThisProfilesConfigIsRead() {
-        XCTAssertEqual(
-            AIInsightCardModel().presence(profile: "p", demoMode: false, platformSupported: true),
-            .loading)
-        let model = boundModel(generator: StubInsightGenerator())
-        XCTAssertEqual(model.presence(profile: "q", demoMode: false, platformSupported: true),
-                       .loading, "a config read for another profile does not count")
+    func testConfigIsReadOncePerProfile() {
+        var reads: [String] = []
+        let model = AIInsightCardModel { profile in
+            reads.append(profile)
+            return .init(config: AIConfig(enabled: true), availability: .available,
+                         generator: StubInsightGenerator())
+        }
+        _ = model.isPresent(profile: "p", demoMode: true, platformSupported: true)
+        XCTAssertEqual(reads, [], "demo mode never reads a workspace")
+        _ = model.isPresent(profile: "p", demoMode: false, platformSupported: true)
+        _ = model.isPresent(profile: "p", demoMode: false, platformSupported: true)
+        _ = model.setup(for: "p")
+        _ = model.isPresent(profile: "q", demoMode: false, platformSupported: true)
+        XCTAssertEqual(reads, ["p", "q"])
     }
 
     // MARK: - Invalidation
 
     func testNewInputClearsAShownInsight() async {
-        let model = boundModel(generator: FixedGenerator(result: .success(shown)))
+        let model = selectedModel(generator: FixedGenerator(result: .success(shown)))
         model.setInput(input("Monday"))
         await model.generate()
         XCTAssertEqual(model.insight, shown)
@@ -92,7 +104,7 @@ final class AIInsightCardModelTests: XCTestCase {
     }
 
     func testNewInputClearsAnError() async {
-        let model = boundModel(
+        let model = selectedModel(
             generator: FixedGenerator(result: .failure(.generationFailed("boom"))))
         model.setInput(input("Monday"))
         await model.generate()
@@ -104,7 +116,7 @@ final class AIInsightCardModelTests: XCTestCase {
 
     func testStreamStartedBeforeAnInputChangeStopsWriting() async {
         let generator = ControlledGenerator()
-        let model = boundModel(generator: generator)
+        let model = selectedModel(generator: generator)
         model.setInput(input("Monday"))
         let run = Task { await model.generate() }
 
@@ -121,18 +133,20 @@ final class AIInsightCardModelTests: XCTestCase {
         XCTAssertFalse(model.isGenerating)
     }
 
-    func testRebindingClearsTheInsight() async {
-        let model = boundModel(generator: FixedGenerator(result: .success(shown)))
+    func testSelectingAnotherProfileClearsTheInsight() async {
+        let model = selectedModel(generator: FixedGenerator(result: .success(shown)))
         model.setInput(input("Monday"))
         await model.generate()
 
-        model.bind(profile: "q", config: AIConfig(enabled: true), availability: .available,
-                   generator: StubInsightGenerator())
+        model.select("p")
+        XCTAssertEqual(model.insight, shown, "selecting the same profile keeps it")
+        model.select("q")
         XCTAssertNil(model.insight)
+        XCTAssertEqual(model.profile, "q")
     }
 
     func testGenerateWithoutInputDoesNothing() async {
-        let model = boundModel(generator: FixedGenerator(result: .success(shown)))
+        let model = selectedModel(generator: FixedGenerator(result: .success(shown)))
         await model.generate()
         XCTAssertNil(model.insight)
         XCTAssertFalse(model.isGenerating)
