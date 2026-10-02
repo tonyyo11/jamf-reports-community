@@ -20,7 +20,8 @@ final class MetricAlertEvaluatorTests: XCTestCase {
         patchPct: Double? = nil,
         securityScore: Double? = nil,
         actionItemsP0: Int? = nil,
-        complianceIsProxy: Bool? = nil
+        complianceIsProxy: Bool? = nil,
+        patchPctBasis: String? = nil
     ) -> DailySummary {
         DailySummary(
             date: date,
@@ -34,7 +35,8 @@ final class MetricAlertEvaluatorTests: XCTestCase {
             source: "test",
             securityScore: securityScore,
             actionItemsP0: actionItemsP0,
-            complianceIsProxy: complianceIsProxy
+            complianceIsProxy: complianceIsProxy,
+            patchPctBasis: patchPctBasis
         )
     }
 
@@ -175,6 +177,55 @@ final class MetricAlertEvaluatorTests: XCTestCase {
             current: current, prior: prior
         )
         XCTAssertEqual(hits.count, 1, "absent basis on both sides is unchanged — still fires")
+    }
+
+    // MARK: - patch_pct definition guard (epic #207 C1)
+
+    func testPatchPctDropDoesNotFireAcrossADefinitionChange() {
+        // The per-title mean read 80; the device-weighted figure for the same fleet reads
+        // 60. A 20pp "drop" from the first Mac to be collected after the upgrade is the
+        // new definition, not a regression.
+        let current = summary(date: "2026-07-06", patchPct: 60, patchPctBasis: "device")
+        let prior = summary(date: "2026-06-29", patchPct: 80)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "drops_more_than", 5, lookback: 7)],
+            current: current, prior: prior
+        )
+        XCTAssertTrue(hits.isEmpty, "per-title → device-weighted is not a comparable drop")
+    }
+
+    func testPatchPctDropFiresWhenBothAreDeviceWeighted() {
+        let current = summary(date: "2026-07-06", patchPct: 60, patchPctBasis: "device")
+        let prior = summary(date: "2026-06-29", patchPct: 80, patchPctBasis: "device")
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.count, 1, "a real drop on one definition still fires")
+    }
+
+    func testPatchPctDropFiresWhenNeitherRecordsABasis() {
+        let current = summary(date: "2026-07-06", patchPct: 60)
+        let prior = summary(date: "2026-06-29", patchPct: 80)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.count, 1, "absent basis on both sides is unchanged — still fires")
+    }
+
+    /// A threshold rule reads one summary, so a definition change cannot mislead it, and
+    /// another metric's drop is not held back by the patch definition.
+    func testDefinitionChangeOnlyHoldsBackThePatchDropRule() {
+        let current = summary(
+            date: "2026-07-06", fileVaultPct: 70, patchPct: 60, patchPctBasis: "device")
+        let prior = summary(date: "2026-06-29", fileVaultPct: 90, patchPct: 80)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "below", 70),
+                    rule("filevault_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.map(\.metricLabel), ["Patch", "FileVault"])
     }
 
     // MARK: - dedup key stability
