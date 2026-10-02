@@ -382,7 +382,7 @@ final class YAMLParseNoteTests: XCTestCase {
                        "[Draft] Report")
     }
 
-    /// `---` opening the file marks the start of the document; elsewhere it is still noted.
+    /// `---` opening the file marks the start of the document; a later one has its own note.
     func testADocumentStartMarkerAtTheTopIsNotNoted() throws {
         for yaml in ["---\nthresholds:\n  stale_device_days: 45\n",
                      "# config\n--- # start\nthresholds:\n  stale_device_days: 45\n"] {
@@ -391,7 +391,12 @@ final class YAMLParseNoteTests: XCTestCase {
             XCTAssertEqual(document.root.mapping?.value(for: "thresholds")?.mapping?
                 .value(for: "stale_device_days")?.intValue, 45)
         }
-        XCTAssertEqual(try notes("a: 1\n---\nb: 2\n"), [Note(line: 2, kind: .noKey)])
+        // A later --- starts a second document; the app reads the keys after it as one file.
+        let second = try YAMLCodec.decode("a: 1\n--- # second\nb: 2\n")
+        XCTAssertEqual(second.parseNotes, [Note(line: 2, kind: .secondDocument)])
+        XCTAssertEqual(second.root.mapping?.value(for: "b")?.intValue, 2)
+        XCTAssertEqual(second.parseNotes.first?.display, "Line 2: a --- starts a second document, "
+            + "but the app reads one: everything after this line is read as part of the same file")
     }
 
     func testNotesReadAsLinesWithoutTheTypedValues() {

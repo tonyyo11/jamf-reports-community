@@ -68,6 +68,8 @@ enum YAMLCodec {
             case orphanItems
             /// A `[` or `{` not closed on its line; the value reads as the line's text.
             case unclosedFlow
+            /// A `---` after the first content line; what follows reads as the same document.
+            case secondDocument
         }
 
         let line: Int
@@ -99,6 +101,9 @@ enum YAMLCodec {
                 "a list item with no key above it, so it was not read"
             case .unclosedFlow:
                 "a [ or { list not closed on this line, so the value reads as this line's text"
+            case .secondDocument:
+                "a --- starts a second document, but the app reads one: everything after this "
+                    + "line is read as part of the same file"
             }
         }
 
@@ -486,7 +491,7 @@ private struct Parser {
                 continue
             }
             guard let parsed = YAMLCodec.parseKeyValue(stripInlineComment(trimmed)) else {
-                note(index + 1, .noKey)
+                note(index + 1, stripInlineComment(trimmed) == "---" ? .secondDocument : .noKey)
                 index += 1
                 continue
             }

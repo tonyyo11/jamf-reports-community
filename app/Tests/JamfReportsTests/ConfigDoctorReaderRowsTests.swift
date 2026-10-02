@@ -94,7 +94,7 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
         let kinds: [YAMLCodec.ParseNote.Kind] = [
             .indentation(found: 1, expected: 0), .noKey, .tab(spaces: 0),
             .duplicateKey("a", readLine: 2), .blockScalar(key: "a", indicator: "|"), .orphanItems,
-            .unclosedFlow,
+            .unclosedFlow, .secondDocument,
         ]
         let hints = ConfigDoctorService.parseNoteRows(kinds.map { .init(line: 1, kind: $0) })
             .compactMap(\.hint)
