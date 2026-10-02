@@ -303,6 +303,23 @@ final class CompliancePostureServiceTests: XCTestCase {
         XCTAssertEqual(passCount(shared), 0, "a name two computers share is not guessed")
     }
 
+    /// Two records share a serial and disagree: the Mac is not treated as hardware-encrypted.
+    func testAConflictingDuplicateSerialKeepsFileVaultOffAsAGap() throws {
+        let computers: [[String: Any]] = [
+            ["general": ["name": "old-board"],
+             "hardware": ["serialNumber": "DUP1", "appleSilicon": true]],
+            ["general": ["name": "new-board"],
+             "hardware": ["serialNumber": "DUP1", "appleSilicon": false,
+                          "modelIdentifier": "MacBookPro14,1"]],
+        ]
+        let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+        let snapshot = try loadRows(
+            [fileVaultOffRow("new-board", serial: "DUP1")], policy: policy,
+            hardware: HardwareEncryption.index(computers: computers))
+        XCTAssertEqual(passCount(snapshot), 0)
+        XCTAssertEqual(failing(snapshot)["FileVault"], 1)
+    }
+
     /// `load(profile:)` reads the newest `computers` snapshot only when the policy needs it.
     func testLoadForAProfileReadsTheComputersSnapshotForTheHardwareRule() throws {
         let root = FileManager.default.temporaryDirectory

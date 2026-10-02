@@ -62,6 +62,19 @@ final class HardwareEncryptionTests: XCTestCase {
                        "first match wins")
     }
 
+    /// A guest's disk is a file on the host, not a volume the Secure Enclave encrypts, yet
+    /// an Apple-silicon guest reports `appleSilicon: true`.
+    func testAVirtualMachineIsNeverHardwareEncrypted() {
+        XCTAssertNil(check(appleSilicon: true, model: "VirtualMac2,1"))
+        XCTAssertNil(check(appleSilicon: true, model: " virtualmac2,1 "))
+        XCTAssertNil(check(model: "VirtualMac2,1", architecture: "arm64"))
+        XCTAssertNil(check(model: "VMware7,1", architecture: "x86_64"))
+        XCTAssertNil(check(appleSilicon: true, model: "Parallels-ARM", architecture: "Apple M1"))
+        XCTAssertNil(check(model: "PARALLELS20,1"))
+        XCTAssertEqual(check(appleSilicon: true, model: "Mac14,2"), true,
+                       "a real Apple-silicon Mac still is")
+    }
+
     func testIntelWithoutAModelIsUnknown() {
         XCTAssertNil(check(appleSilicon: false))
         XCTAssertNil(check(appleSilicon: false, model: ""))
@@ -92,6 +105,12 @@ final class HardwareEncryptionTests: XCTestCase {
         XCTAssertEqual(HardwareEncryption.isHardwareEncrypted(computer: computer(" False ")), false)
         XCTAssertNil(HardwareEncryption.isHardwareEncrypted(computer: computer("maybe")),
                      "an unreadable flag is no flag, and MacBookPro14,1 alone does not say Intel")
+    }
+
+    func testAVirtualMachineComputerIsNotIndexed() {
+        let vm = computer(name: "vm-1", serial: "VM1", appleSilicon: true, model: "VirtualMac2,1")
+        XCTAssertNil(HardwareEncryption.isHardwareEncrypted(computer: vm))
+        XCTAssertTrue(HardwareEncryption.index(computers: [vm]).isEmpty)
     }
 
     func testComputerFallsBackToTheModelIdentifier() {
@@ -166,12 +185,43 @@ final class HardwareEncryptionTests: XCTestCase {
         XCTAssertNil(index["n:c"])
     }
 
-    func testIndexKeepsTheFirstRowForADuplicateSerial() {
+    /// A logic-board swap leaves two records with one serial. When they disagree the
+    /// index must not pick one: a wrong `true` would hide a real FileVault gap.
+    func testADuplicateSerialWithConflictingAnswersIsNotStored() {
+        let silicon = computer(name: "a", serial: "dup1", appleSilicon: true)
+        let intel = computer(name: "b", serial: " DUP1 ", appleSilicon: false, model: "iMac19,1")
+        for order in [[silicon, intel], [intel, silicon]] {
+            let index = HardwareEncryption.index(computers: order)
+            XCTAssertNil(index["s:DUP1"])
+            XCTAssertNil(HardwareEncryption.lookup(serial: "DUP1", name: "a", in: index),
+                         "a row with a serial is never matched by name")
+        }
+    }
+
+    /// A computer with no answer that shares the serial makes it ambiguous, as a shared
+    /// name does.
+    func testADuplicateSerialWithAComputerThatHasNoAnswerIsNotStored() {
         let index = HardwareEncryption.index(computers: [
             computer(name: "a", serial: "dup1", appleSilicon: true),
-            computer(name: "b", serial: " DUP1 ", appleSilicon: false, model: "iMac19,1"),
+            computer(name: "b", serial: "dup1"),
+        ])
+        XCTAssertNil(index["s:DUP1"])
+        let reversed = HardwareEncryption.index(computers: [
+            computer(name: "b", serial: "dup1"),
+            computer(name: "a", serial: "dup1", appleSilicon: true),
+        ])
+        XCTAssertNil(reversed["s:DUP1"])
+    }
+
+    func testADuplicateSerialWithTheSameAnswerIsStored() {
+        let index = HardwareEncryption.index(computers: [
+            computer(name: "a", serial: "dup1", appleSilicon: true),
+            computer(name: "b", serial: " DUP1 ", appleSilicon: true),
+            computer(name: "c", serial: "dup2", appleSilicon: false, model: "iMac19,1"),
+            computer(name: "d", serial: "dup2", appleSilicon: false, model: "iMac19,1"),
         ])
         XCTAssertEqual(index["s:DUP1"], true)
+        XCTAssertEqual(index["s:DUP2"], false)
     }
 
     func testLookupBySerialIsCaseAndWhitespaceInsensitive() {

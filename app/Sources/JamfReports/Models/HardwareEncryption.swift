@@ -14,12 +14,19 @@ enum HardwareEncryption {
         "MacBookPro15,4", "MacBookPro16,1", "MacBookPro16,2", "MacBookPro16,3", "MacBookPro16,4",
     ]
 
-    /// First match wins: Apple silicon, then a T2 model, then a known Intel Mac (false).
-    /// An Intel Mac without a model identifier stays nil, since it could still be a T2.
+    /// A virtual machine's disk is a file on the host, not a volume the Secure Enclave
+    /// encrypts, although an Apple-silicon guest reports `appleSilicon: true`.
+    private static let virtualModelPrefixes = ["virtualmac", "vmware", "parallels"]
+
+    /// A virtual machine is nil. Otherwise the first match wins: Apple silicon, then a T2
+    /// model, then a known Intel Mac (false). An Intel Mac without a model identifier stays
+    /// nil, since it could still be a T2.
     static func isHardwareEncrypted(
         appleSilicon: Bool?, modelIdentifier: String?, architecture: String?
     ) -> Bool? {
         let model = trimmed(modelIdentifier)
+        let lowercasedModel = model.lowercased()
+        if virtualModelPrefixes.contains(where: { lowercasedModel.hasPrefix($0) }) { return nil }
         let arch = trimmed(architecture).lowercased()
         if appleSilicon == true || arch == "arm64" || arch.hasPrefix("apple m") { return true }
         if t2ModelIdentifiers.contains(model) { return true }
@@ -44,23 +51,32 @@ enum HardwareEncryption {
         return key.isEmpty ? nil : key
     }
 
-    /// Answers for the `computers` snapshot, under `s:<serial>` and, when exactly one
-    /// computer has the name, `n:<name>`: security rows on some tenants carry no serial.
-    /// A Mac with no answer is not stored; a duplicate serial keeps its first answer.
+    /// Answers for the `computers` snapshot, under `s:<serial>` and `n:<name>` (security rows
+    /// on some tenants carry no serial). A key is stored only when it is unambiguous: a name
+    /// that exactly one computer has, a serial whose computers all give the same answer. Two
+    /// records can share a serial after a logic-board swap, and a guess between them could
+    /// hide a real FileVault gap. A computer with no answer still makes a shared key ambiguous.
     static func index(computers items: [[String: Any]]) -> [String: Bool] {
+        let answers = items.map { isHardwareEncrypted(computer: $0) }
         let names = items.map { nameKey(($0["general"] as? [String: Any])?["name"] as? String) }
-        var nameCounts: [String: Int] = [:]
-        for case let name? in names { nameCounts[name, default: 0] += 1 }
+        let serials = items.map {
+            serialKey(($0["hardware"] as? [String: Any])?["serialNumber"] as? String)
+        }
 
         var index: [String: Bool] = [:]
-        for (item, name) in zip(items, names) {
-            guard let encrypted = isHardwareEncrypted(computer: item) else { continue }
-            let hardware = item["hardware"] as? [String: Any]
-            if let serial = serialKey(hardware?["serialNumber"] as? String),
-               index["s:" + serial] == nil {
-                index["s:" + serial] = encrypted
+        var serialAnswers: [String: [Bool?]] = [:]
+        for case (let serial?, let answer) in zip(serials, answers) {
+            serialAnswers[serial, default: []].append(answer)
+        }
+        for (serial, shared) in serialAnswers {
+            if let first = shared.first, let answer = first, shared.allSatisfy({ $0 == answer }) {
+                index["s:" + serial] = answer
             }
-            if let name, nameCounts[name] == 1 { index["n:" + name] = encrypted }
+        }
+        var nameCounts: [String: Int] = [:]
+        for case let name? in names { nameCounts[name, default: 0] += 1 }
+        for case (let name?, let answer?) in zip(names, answers) where nameCounts[name] == 1 {
+            index["n:" + name] = answer
         }
         return index
     }
