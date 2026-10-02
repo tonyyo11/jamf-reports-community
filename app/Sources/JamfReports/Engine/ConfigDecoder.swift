@@ -1235,11 +1235,7 @@ enum ConfigLoader {
     /// Decode a `ReportConfig` directly from a YAML string (convenience for tests).
     static func loadFromString(_ yaml: String) throws -> ReportConfig {
         do {
-            let document = try YAMLCodec.decode(yaml)
-            let jsonData = try yamlDocumentToJSONData(document)
-            let decoder = JSONDecoder()
-            let config = try decoder.decode(ReportConfig.self, from: jsonData)
-            return config.withDefaults()
+            return try decodeConfig(try YAMLCodec.decode(yaml))
         } catch {
             throw LoadError.decodeError("<string>", error)
         }
@@ -1256,11 +1252,7 @@ enum ConfigLoader {
         // Convert YAML → JSON via YAMLCodec, then decode with JSONDecoder.
         // This avoids pulling in a full YAML library and re-uses the existing codec.
         do {
-            let document = try YAMLCodec.decode(text)
-            let jsonData = try yamlDocumentToJSONData(document)
-            let decoder = JSONDecoder()
-            let config = try decoder.decode(ReportConfig.self, from: jsonData)
-            return config.withDefaults()
+            return try decodeConfig(try YAMLCodec.decode(text))
         } catch let e as LoadError {
             throw e
         } catch {
@@ -1288,13 +1280,55 @@ enum ConfigLoader {
 
     // MARK: - YAML → JSON conversion
 
-    private static func yamlDocumentToJSONData(_ document: YAMLCodec.YAMLDocument) throws -> Data {
-        let jsonObject = nodeToJSONObject(document.root)
-        return try JSONSerialization.data(withJSONObject: jsonObject, options: [])
+    /// A quoted `"true"`, `"false"` or `"null"` reads as a boolean or null, so a hand-quoted
+    /// `enabled: "true"` works. Where the decoder wants text instead (`true_value: "true"`, which
+    /// the Config screen writes), that value is read again as the text it was and the decode
+    /// retried, once per such value. A file that decodes on the first pass is unaffected.
+    private static func decodeConfig(_ document: YAMLCodec.YAMLDocument) throws -> ReportConfig {
+        var asText: Set<[String]> = []
+        while true {
+            let object = nodeToJSONObject(document.root, keepingText: asText)
+            let data = try JSONSerialization.data(withJSONObject: object, options: [])
+            do {
+                return try JSONDecoder().decode(ReportConfig.self, from: data).withDefaults()
+            } catch let error as DecodingError {
+                guard case .typeMismatch(let type, let context) = error, type == String.self
+                else { throw error }
+                let path = context.codingPath.map { key in
+                    key.intValue.map { "[\($0)]" } ?? key.stringValue
+                }
+                guard case .scalar(.string)? = node(at: path, in: document.root),
+                      asText.insert(path).inserted
+                else { throw error }
+            }
+        }
     }
 
-    private static func nodeToJSONObject(_ node: YAMLCodec.YAMLValue) -> Any {
+    /// The YAML node a decoding path names; a repeated key gives its last value, as here.
+    private static func node(
+        at path: [String], in root: YAMLCodec.YAMLValue
+    ) -> YAMLCodec.YAMLValue? {
+        var node = root
+        for step in path {
+            if let items = node.sequence, let index = Int(step.dropFirst().dropLast()),
+               step.hasPrefix("["), items.indices.contains(index) {
+                node = items[index]
+            } else if let next = node.mapping?.value(for: step) {
+                node = next
+            } else {
+                return nil
+            }
+        }
+        return node
+    }
+
+    /// `asText` holds the paths (a key, or `[n]` for a list item) of strings kept as text.
+    private static func nodeToJSONObject(
+        _ node: YAMLCodec.YAMLValue, keepingText asText: Set<[String]> = [], at path: [String] = []
+    ) -> Any {
         switch node {
+        case .scalar(.string(let text)) where asText.contains(path):
+            return text
         case .scalar(let scalar):
             return scalarToJSON(scalar)
         case .mapping(let mapping):
@@ -1305,12 +1339,15 @@ enum ConfigLoader {
                 if entry.key == "profile", case .scalar(.string(let name)) = entry.value {
                     dict[entry.key] = name
                 } else {
-                    dict[entry.key] = nodeToJSONObject(entry.value)
+                    dict[entry.key] = nodeToJSONObject(
+                        entry.value, keepingText: asText, at: path + [entry.key])
                 }
             }
             return dict
         case .sequence(let items):
-            return items.map { nodeToJSONObject($0) }
+            return items.enumerated().map { index, item in
+                nodeToJSONObject(item, keepingText: asText, at: path + ["[\(index)]"])
+            }
         }
     }
 

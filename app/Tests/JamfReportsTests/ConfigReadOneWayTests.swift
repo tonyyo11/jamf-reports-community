@@ -146,6 +146,55 @@ final class ConfigReadOneWayTests: XCTestCase {
         }
     }
 
+    // MARK: - A quoted true, false or null
+
+    /// A text key whose value is the word true stays text, instead of failing the whole file.
+    func testAQuotedBooleanWordStaysTextForATextKey() throws {
+        let config = try ConfigLoader.loadFromString("""
+            custom_eas:
+              - name: Example Flag
+                column: Example - Flag
+                type: boolean
+                true_value: "true"
+            security_agents:
+              - name: First Agent
+                column: First Agent - Status
+                connected_value: Running
+              - name: Second Agent
+                column: Second Agent - Running
+                connected_value: 'False'
+            """)
+        XCTAssertEqual(config.customEas?.first?.trueValue, "true")
+        XCTAssertEqual(config.securityAgents?.last?.connectedValue, "False")
+    }
+
+    /// A boolean key still takes a quoted boolean; an unquoted one in a text key still fails.
+    func testBooleanKeysStillTakeAQuotedBoolean() throws {
+        let config = try ConfigLoader.loadFromString(
+            "compliance:\n  enabled: \"true\"\noutput:\n  archive_enabled: 'FALSE'\n")
+        XCTAssertEqual(config.compliance?.enabled, true)
+        XCTAssertEqual(config.output?.archiveEnabled, false)
+        XCTAssertThrowsError(try ConfigLoader.loadFromString(
+            "custom_eas:\n  - name: A\n    column: B\n    type: boolean\n    true_value: true\n"))
+    }
+
+    /// The Config screen writes `true_value: "true"` for a boolean EA expecting the word true.
+    func testABooleanEASavedFromTheConfigScreenStillLoads() throws {
+        try withWorkspace(config: "output:\n  output_dir: Reports\n") { root, profile in
+            var state = try ConfigService.load(profile: profile, workspaceRoot: root).state
+            state.customEAs = [ConfigCustomEA(
+                name: "Example Flag", column: "Example - Flag", type: "boolean",
+                trueValue: "true", warningThreshold: "", criticalThreshold: "",
+                currentVersions: [], warningDays: "")]
+            _ = try ConfigService.save(
+                profile: profile, state: state, existingDocument: nil, workspaceRoot: root)
+            let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
+            XCTAssertTrue(try String(contentsOf: url, encoding: .utf8)
+                .contains("true_value: \"true\""))
+            XCTAssertEqual(try ConfigLoader.load(from: url).customEas?.first?.trueValue, "true")
+        }
+    }
+
     // MARK: - Helpers
 
     /// Builds the history section from a workspace whose config.yaml is `yaml`; returns the
