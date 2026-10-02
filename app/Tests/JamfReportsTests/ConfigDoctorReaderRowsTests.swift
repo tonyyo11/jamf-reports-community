@@ -86,7 +86,7 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
             DoctorRow(
                 id: "config.parse_note.1", severity: .warn, title: "config.yaml line 6",
                 detail: "Indented 5 spaces where 2 spaces were expected, so it was not read.",
-                hint: "Line it up with the other keys of its block: two spaces per level."),
+                hint: "Line it up with the other keys of its block."),
         ])
     }
 

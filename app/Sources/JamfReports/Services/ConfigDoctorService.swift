@@ -654,7 +654,7 @@ enum ConfigDoctorService {
 
     private static func parseNoteHint(_ kind: YAMLCodec.ParseNote.Kind) -> String {
         switch kind {
-        case .indentation: "Line it up with the other keys of its block: two spaces per level."
+        case .indentation: "Line it up with the other keys of its block."
         case .noKey: "Write it as key: value, or remove it."
         case .tab: "Replace the tab with spaces."
         case .duplicateKey: "Remove one of the two lines."
