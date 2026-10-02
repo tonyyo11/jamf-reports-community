@@ -356,6 +356,34 @@ final class ManualCollectTickLockTests: XCTestCase {
         }
     }
 
+    // MARK: - The dead-man switch
+
+    /// A tick that finds the lock held waits for the next wake, so during a long GUI collect
+    /// a schedule that comes due is queued, not missed: it must not read as overdue.
+    func testNoScheduleReadsOverdueWhileThisProcessHoldsTheLock() async throws {
+        let (store, _) = try makeStore()
+        defer { AutomationHealthModel.shared.issues = [] }
+        let twoHoursAgo = Calendar.current.dateComponents(
+            [.hour, .minute], from: Date().addingTimeInterval(-2 * 3600))
+        store.schedules = [Schedule(
+            name: "Daily", profile: profile,
+            schedule: String(format: "Daily %02d:%02d",
+                             twoHoursAgo.hour ?? 0, twoHoursAgo.minute ?? 0),
+            cadence: "custom", mode: .snapshotOnly, next: "—", last: "—", lastStatus: .ok,
+            artifacts: [], enabled: true,
+            launchAgentLabel: "\(LaunchAgentWriter.labelPrefix).\(profile).daily")]
+
+        await store.refreshAutomationHealth()
+        XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [.overdue],
+                       "precondition: a fire two hours ago that never ran is overdue")
+
+        _ = try await CLIBridge.holdingTickLock { () -> Bool in
+            await store.refreshAutomationHealth()
+            return true
+        }
+        XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [])
+    }
+
     // MARK: - The tick's side
 
     /// A wake that finds a GUI collect holding the lock queues exactly as it does behind

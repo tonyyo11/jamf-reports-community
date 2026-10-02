@@ -327,7 +327,12 @@ extension WorkspaceStore {
                         inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker))
         }.value
         tickerStatus = evaluated.status
-        let issues = evaluated.issues
+        // While this process holds the tick lock a wake queues behind it, so a schedule
+        // that came due meanwhile is waiting, not missed: neither the banner nor the digest
+        // calls it overdue.
+        let issues = CLIBridge.tickLockHolds > 0
+            ? evaluated.issues.filter { $0.kind != .overdue }
+            : evaluated.issues
         AutomationHealthModel.shared.issues = issues
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
