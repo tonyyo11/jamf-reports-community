@@ -154,8 +154,8 @@ enum TickScheduler {
 
 /// One tick at a time. A pid file: a live holder blocks, a dead or garbage
 /// holder is taken over — the 300-second wake must never pile a second run
-/// on top of a 20-minute collect. The GUI holds it for a manual collect too
-/// (`WorkspaceStore.takeTickLockForManualCollect`), so a wake during one queues.
+/// on top of a 20-minute collect. The GUI holds it for every collect too
+/// (`CLIBridge.holdingTickLock`), so a wake during one queues.
 struct TickLock: Sendable {
     static var defaultURL: URL { AppSupport.directory().appendingPathComponent(".tick.lock") }
 

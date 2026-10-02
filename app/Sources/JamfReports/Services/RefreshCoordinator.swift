@@ -127,6 +127,7 @@ final class RefreshCoordinator {
         // while this one was waiting on the actor.
         guard await isDataStale(profile: profile, tier: tier) else { return }
 
+        let previousAttempt = lastAttempts[key]
         lastAttempts[key] = Date()
 
         // Backfill only the requested tier — a profile-switch refresh should
@@ -140,6 +141,12 @@ final class RefreshCoordinator {
             exitCode = try await bridge.collect(
                 profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine
             )
+        } catch CLIBridgeError.tickLockHeld {
+            // A tick is collecting. Nothing was attempted, so nothing counts toward backoff.
+            lastAttempts[key] = previousAttempt
+            AppLogger.event(.collect, .info,
+                            "Background refresh deferred: a scheduled run is in progress")
+            return
         } catch {
             failureCounts[key, default: 0] += 1
             AppLogger.cli.warning(

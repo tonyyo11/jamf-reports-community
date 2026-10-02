@@ -768,10 +768,25 @@ final class CLIBridge {
     /// the per-kind cadence filter, so ad-hoc Refresh calls still always
     /// fetch fresh data. Scheduled collects (via `main.swift --scheduled-run`)
     /// pass `force: false` (the default).
+    ///
+    /// Holds the tick lock throughout (`holdingTickLock`), and throws
+    /// `CLIBridgeError.tickLockHeld` before the auth probe when a tick holds it.
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         force: Bool = false,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async throws -> Int32 {
+        try await Self.holdingTickLock {
+            try await self.collectHoldingTickLock(
+                profile: profile, tiers: tiers, force: force, onLine: onLine)
+        }
+    }
+
+    private func collectHoldingTickLock(
+        profile: String,
+        tiers: Set<CollectionTier>,
+        force: Bool,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -941,6 +956,10 @@ final class CLIBridge {
     /// verdicts map to their canonical code (auth-dead → 401, all-kinds-dead → 1);
     /// anything else falls back to the localized description.
     nonisolated static func explainOperationError(_ error: Error, operation: String) -> String {
+        // A refusal, not a failure: the operation never started.
+        if let refused = error as? CLIBridgeError, refused == .tickLockHeld {
+            return refused.localizedDescription
+        }
         if case let ReportEngineError.collectFailed(_, exitCode) = error {
             return explainExit(exitCode, operation: operation)
         }

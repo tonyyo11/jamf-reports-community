@@ -552,7 +552,7 @@ extension WorkspaceStore {
             )
             return true
         }
-        if tickLockHeldElsewhere() {
+        if CLIBridge.tickLockHeldElsewhere() {
             AppLogger.collect.info("Automatic collect deferred: the background tick holds the lock")
             return true
         }

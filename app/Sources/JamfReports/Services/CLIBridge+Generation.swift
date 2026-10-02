@@ -34,6 +34,9 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// A required directory could not be created or a file move failed.
     /// `path` is for private logging only — never interpolated into user-visible strings.
     case directoryOperationFailed(path: String)
+    /// Another live process — the bundled `--tick` agent — holds the tick lock, so the
+    /// collect did not start. Nothing is queued.
+    case tickLockHeld
 
     var errorDescription: String? {
         switch self {
@@ -70,6 +73,8 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
         case .directoryOperationFailed:
             // Path omitted: may contain the home directory or workspace layout.
             return "A required directory could not be created or moved — check available disk space and folder permissions."
+        case .tickLockHeld:
+            return "A scheduled run is in progress — try again when it finishes"
         }
     }
 }

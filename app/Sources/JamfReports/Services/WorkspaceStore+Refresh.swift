@@ -133,8 +133,7 @@ extension WorkspaceStore {
     ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard let lockHold = takeTickLockForManualCollect() else { return }
-        defer { releaseTickLock(lockHold) }
+        guard !manualCollectMustWait() else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
         globalStatus = "refreshing \(labels) data · profile=\(activeProfile)"
@@ -159,10 +158,7 @@ extension WorkspaceStore {
                 )
             }
         } catch {
-            outcome = Toast(
-                message: CLIBridge.explainOperationError(error, operation: "Refresh"),
-                style: .danger
-            )
+            outcome = Self.collectFailureToast(error, operation: "Refresh")
         }
         // Re-probe rather than clear: exit 0 means the run finished, not that each
         // tier's probe kind landed, so clearing on exit 0 hid the prompt for a tier
@@ -191,8 +187,7 @@ extension WorkspaceStore {
         }
     ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
-        guard let lockHold = takeTickLockForManualCollect() else { return }
-        defer { releaseTickLock(lockHold) }
+        guard !manualCollectMustWait() else { return }
         let activeProfile = profile
         globalStatus = "refreshing data · profile=\(activeProfile)"
         defer { globalStatus = nil }
@@ -216,10 +211,7 @@ extension WorkspaceStore {
                 )
             }
         } catch {
-            outcome = Toast(
-                message: CLIBridge.explainOperationError(error, operation: "Refresh"),
-                style: .danger
-            )
+            outcome = Self.collectFailureToast(error, operation: "Refresh")
         }
         // The Overview scan prompt reads `staleHeavyTiers`, which only the prompt's
         // own button cleared — so a toolbar refresh that collected every tier left
@@ -252,8 +244,7 @@ extension WorkspaceStore {
             toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
             return
         }
-        guard let lockHold = takeTickLockForManualCollect() else { return }
-        defer { releaseTickLock(lockHold) }
+        guard !manualCollectMustWait() else { return }
         let activeProfile = profile
         globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
         defer { globalStatus = nil }
@@ -283,9 +274,7 @@ extension WorkspaceStore {
         } catch {
             recorder?.record("[error] \(error.localizedDescription)")
             recorder?.finish(exitCode: 1)
-            outcome = Toast(
-                message: CLIBridge.explainOperationError(error, operation: "Collect"), style: .danger
-            )
+            outcome = Self.collectFailureToast(error, operation: "Collect")
         }
         await checkHeavyTierStaleness()
         await refreshDataFreshness()
@@ -295,49 +284,22 @@ extension WorkspaceStore {
 
     // MARK: Tick lock for manual collects
 
-    /// A manual collect's share of the tick lock, from `takeTickLockForManualCollect`.
-    struct TickLockHold {
-        let lock: TickLock
-        /// Touches the lock while the collect runs. Nil when the lock file could not be
-        /// written: the collect runs without it and has no share to give back.
-        let heartbeat: Task<Void, Never>?
+    /// True, after posting the toast, when another live process — the bundled `--tick`
+    /// agent — holds the tick lock (#226 5c). `CLIBridge.collect` would refuse the collect
+    /// anyway; asking first keeps a refused button from touching any state.
+    func manualCollectMustWait() -> Bool {
+        guard CLIBridge.tickLockHeldElsewhere() else { return false }
+        AppLogger.collect.notice("Manual collect refused: a scheduled run holds the tick lock")
+        toast = Self.collectFailureToast(CLIBridgeError.tickLockHeld, operation: "Refresh")
+        return true
     }
 
-    /// Takes the tick lock for a manual collect, so a `--tick` wake during it exits queued
-    /// instead of starting a second fan-out against the profile (#226 5c). Nil when another
-    /// live process holds it: the toast is posted here, nothing is queued, and the caller
-    /// must not collect. Every hold goes back through `releaseTickLock`.
-    func takeTickLockForManualCollect() -> TickLockHold? {
-        let lock = tickLock()
-        guard lock.acquire() else {
-            if lock.isHeldByAnotherLiveProcess() {
-                AppLogger.collect.notice("Manual collect refused: a scheduled run holds the lock")
-                toast = Toast(
-                    message: "A scheduled run is in progress — try again when it finishes",
-                    style: .info)
-                return nil
-            }
-            // `acquire` logged the write error. A tick needs the same file, so none can
-            // start beside this collect.
-            return TickLockHold(lock: lock, heartbeat: nil)
-        }
-        manualCollectLockHolds += 1
-        return TickLockHold(lock: lock, heartbeat: lock.heartbeat())
-    }
-
-    /// Stops the hold's heartbeat; the last hold out removes the lock file.
-    func releaseTickLock(_ hold: TickLockHold) {
-        guard let heartbeat = hold.heartbeat else { return }
-        heartbeat.cancel()
-        manualCollectLockHolds = max(0, manualCollectLockHolds - 1)
-        if manualCollectLockHolds == 0 { hold.lock.release() }
-    }
-
-    /// Whether another live process — the bundled `--tick` agent — holds the tick lock.
-    /// False for this process's own manual collects: `isCollectInFlight` is what stands the
-    /// automatic collects down for those.
-    func tickLockHeldElsewhere() -> Bool {
-        tickLock().isHeldByAnotherLiveProcess()
+    /// The toast for a GUI collect that threw. A tick-lock refusal is not a failure, so it
+    /// is not shown as one.
+    nonisolated static func collectFailureToast(_ error: Error, operation: String) -> Toast {
+        let refused = (error as? CLIBridgeError) == .tickLockHeld
+        return Toast(message: CLIBridge.explainOperationError(error, operation: operation),
+                     style: refused ? .info : .danger)
     }
 
     /// Where a GUI collect's warning lines can be read: Run History only for a run a
