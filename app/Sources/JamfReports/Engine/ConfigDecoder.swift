@@ -635,6 +635,10 @@ struct OSAdoptionConfig: Decodable, Sendable {
     var enabled: Bool?
     var perMajorCharts: Bool?
 
+    /// What config.example.yaml documents; nothing reads `enabled`, so this only tells the
+    /// Config Doctor which value is the default.
+    var isEnabled: Bool { enabled ?? true }
+
     enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case perMajorCharts = "per_major_charts"
@@ -644,6 +648,9 @@ struct OSAdoptionConfig: Decodable, Sendable {
 struct ComplianceTrendConfig: Decodable, Sendable {
     var enabled: Bool?
     var bands: [ComplianceBandConfig]?
+
+    /// As `OSAdoptionConfig.isEnabled`: the documented default, read by nothing else.
+    var isEnabled: Bool { enabled ?? true }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, bands

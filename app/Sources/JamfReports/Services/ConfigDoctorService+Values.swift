@@ -304,24 +304,36 @@ extension ConfigDoctorService {
     }
 
     /// Keys the decoder reads that nothing else does (`ConfigService` and the Config screen only
-    /// edit them). A key at its default says nothing: the app writes those itself.
+    /// edit them). A key at its default says nothing: the app writes those itself, and the
+    /// defaults are the decoder's own.
     private static func noEffectValueRows(_ config: ReportConfig) -> [DoctorRow] {
-        func text<Value>(_ value: Value?) -> String? { value.map { "\($0)" } }
-        let keys: [(key: String, typed: String?, fallback: String)] = [
-            ("jamf_cli.enabled", text(config.jamfCli?.enabled), "true"),
-            ("jamf_cli.allow_live_overview", text(config.jamfCli?.allowLiveOverview), "true"),
-            ("platform.enabled", text(config.platform?.enabled), "false"),
-            ("thresholds.checkin_overdue_days", text(config.thresholds?.checkinOverdueDays), "7"),
+        func differs<Value: Equatable>(_ typed: Value?, from fallback: Value) -> Bool {
+            typed.map { $0 != fallback } ?? false
+        }
+        let cli = JamfCLIConfig(), limits = ThresholdsConfig()
+        let keys: [(key: String, differs: Bool, note: String?)] = [
+            ("jamf_cli.enabled", differs(config.jamfCli?.enabled, from: cli.isEnabled),
+             " Collect still runs jamf-cli and generate still reads its data."),
+            ("jamf_cli.allow_live_overview",
+             differs(config.jamfCli?.allowLiveOverview, from: cli.isLiveOverviewAllowed), nil),
+            ("platform.enabled",
+             differs(config.platform?.enabled, from: PlatformConfig().isEnabled), nil),
+            ("thresholds.checkin_overdue_days",
+             differs(config.thresholds?.checkinOverdueDays,
+                     from: limits.resolvedCheckinOverdueDays), nil),
             ("thresholds.profile_error_critical",
-             text(config.thresholds?.profileErrorCritical), "50"),
-            ("charts.os_adoption.enabled", text(config.charts?.osAdoption?.enabled), "true"),
+             differs(config.thresholds?.profileErrorCritical,
+                     from: limits.resolvedProfileErrorCritical), nil),
+            ("charts.os_adoption.enabled",
+             differs(config.charts?.osAdoption?.enabled, from: OSAdoptionConfig().isEnabled), nil),
             ("charts.compliance_trend.enabled",
-             text(config.charts?.complianceTrend?.enabled), "true"),
+             differs(config.charts?.complianceTrend?.enabled,
+                     from: ComplianceTrendConfig().isEnabled), nil),
         ]
-        return keys.compactMap { key, typed, fallback in
-            guard let typed, typed != fallback else { return nil }
-            return valueRow(key, "This key currently has no effect.",
-                            "Nothing reads it, so changing it changes nothing.", severity: .suggest)
+        return keys.filter(\.differs).map { key, _, note in
+            valueRow(key, "This key currently has no effect." + (note ?? ""),
+                     "Nothing reads it, so changing it changes nothing.",
+                     severity: note == nil ? .suggest : .warn)
         }
     }
 

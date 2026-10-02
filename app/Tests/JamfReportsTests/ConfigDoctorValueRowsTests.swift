@@ -427,7 +427,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
 
     func testKeysNothingReadsAreSuggestionsWhenTheyDifferFromTheirDefaults() throws {
         let found = try rows("""
-        jamf_cli: {enabled: false, allow_live_overview: false}
+        jamf_cli: {allow_live_overview: false}
         platform: {enabled: true}
         thresholds: {checkin_overdue_days: 14, profile_error_critical: 80}
         charts:
@@ -435,20 +435,55 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
           compliance_trend: {enabled: false}
         """)
         XCTAssertEqual(Set(titles(found)), [
-            "jamf_cli.enabled", "jamf_cli.allow_live_overview", "platform.enabled",
+            "jamf_cli.allow_live_overview", "platform.enabled",
             "thresholds.checkin_overdue_days", "thresholds.profile_error_critical",
             "charts.os_adoption.enabled", "charts.compliance_trend.enabled",
         ])
         XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
         XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
-        XCTAssertEqual(try rows("""
-        jamf_cli: {enabled: true, allow_live_overview: true}
-        platform: {enabled: false}
-        thresholds: {checkin_overdue_days: 7, profile_error_critical: 50}
-        charts:
-          os_adoption: {enabled: true}
-          compliance_trend: {enabled: true}
-        """), [], "what the app writes itself, at the default, says nothing")
+    }
+
+    func testJamfCLIEnabledFalseIsAWarningBecauseJamfCLIIsStillUsed() throws {
+        let found = try rows("jamf_cli: {enabled: false}\n")
+        XCTAssertEqual(titles(found), ["jamf_cli.enabled"])
+        XCTAssertEqual(found.first?.severity, .warn, "someone who typed false expects it off")
+        XCTAssertEqual(found.first?.detail,
+                       "This key currently has no effect. Collect still runs jamf-cli and "
+                       + "generate still reads its data.")
+        XCTAssertEqual(try rows("jamf_cli: {enabled: true}\n"), [])
+    }
+
+    /// The app writes these keys itself, so a file it wrote must say nothing about them.
+    func testTheConfigScreensOwnSaveOfTheDefaultStateStatesNothing() throws {
+        try withWorkspacesRoot { root, _ in
+            _ = try ConfigService.save(
+                profile: "values", state: ConfigState.defaultState, existingDocument: nil,
+                workspaceRoot: root)
+            let url = try ConfigService.configURL(for: "values", workspaceRoot: root)
+            let config = try ConfigLoader.load(from: url)
+            XCTAssertEqual(
+                ConfigDoctorService.valueRows(profile: "values", config: config,
+                                              workspaceRoot: root), [])
+        }
+    }
+
+    func testEveryFileScaffoldWritesStatesNothing() throws {
+        let result = ScaffoldService.ScaffoldResult(
+            family: .computers, columns: ["computer_name": "Computer Name"],
+            complianceColumns: [:], mobileColumns: [:])
+        try withWorkspacesRoot { root, workspace in
+            let url = workspace.appendingPathComponent("config.yaml")
+            for write in [
+                { try ScaffoldService.writeConfig(to: url, result: result, profile: "values") },
+                { try ScaffoldService.writeMinimalConfig(to: url, profile: "values") },
+            ] {
+                try write()
+                let config = try ConfigLoader.load(from: url)
+                XCTAssertEqual(
+                    ConfigDoctorService.valueRows(profile: "values", config: config,
+                                                  workspaceRoot: root), [])
+            }
+        }
     }
 
     func testSchoolAndProtectBothEnabledStateWhichOneTheCollectUses() throws {
