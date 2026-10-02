@@ -523,6 +523,35 @@ final class DataFreshnessHealthTests: XCTestCase {
         XCTAssertEqual(DataFreshnessHealth.tiersToRemediate(issues), [issue.tier])
     }
 
+    /// A workspace that collected before the single mobile fetch has `.last` and `.fail` state
+    /// for the retired `mobile-device-inventory-details` kind. Nothing reads it any more: the
+    /// kind is not expected, and a state for it that reaches the evaluator has no tier.
+    func testLeftoverStateForTheRetiredMobileKindRaisesNoIssue() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-freshness-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = StateFileStore(directory: dir)
+        let retired = MobileFleetService.legacyInventoryKind
+        try store.recordRun(report: retired, at: now.addingTimeInterval(-90 * 86_400))
+        for _ in 0..<3 {
+            try store.recordFailure(report: retired, at: now.addingTimeInterval(-3600), exitCode: 1)
+        }
+        XCTAssertEqual(store.failures(report: retired)?.count, 3, "the leftover failure is on disk")
+        let expected = WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: nil)
+        for kind in expected {
+            try store.recordRun(report: kind, at: now.addingTimeInterval(-600))
+        }
+
+        XCTAssertFalse(expected.contains(retired))
+        let fromExpected = DataFreshnessHealth.evaluate(
+            states: store.collectionStates(for: expected), hasCollectedBefore: true, now: now)
+        XCTAssertTrue(fromExpected.isEmpty, "\(fromExpected.map(\.snapshotKind))")
+        let withRetired = DataFreshnessHealth.evaluate(
+            states: store.collectionStates(for: expected + [retired]),
+            hasCollectedBefore: true, now: now)
+        XCTAssertTrue(withRetired.isEmpty, "\(withRetired.map(\.snapshotKind))")
+    }
+
     func testAnIssueCarriesItsKindsRecordedCause() {
         let cause = FailureCause(kind: .unknownEnvironment, names: [], hint: nil, exitCode: 4)
         let issues = DataFreshnessHealth.evaluate(

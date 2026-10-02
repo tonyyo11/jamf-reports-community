@@ -78,6 +78,27 @@ final class MobileSingleSnapshotTests: XCTestCase {
         XCTAssertEqual(first.userAndLocation?.building, "HQ")
     }
 
+    /// A tenant with no mobile devices collects `[]`. That is a readable snapshot with zero
+    /// devices, not "no data".
+    func testEmptyListSnapshotReadsAsDetectedWithZeroDevices() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-mobile-single-\(UUID().uuidString)")
+        let kindDir = dir.appendingPathComponent("mobile-devices-list", isDirectory: true)
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try "[]".write(
+            to: kindDir.appendingPathComponent("mobile-devices-list_\(sections).json"),
+            atomically: true, encoding: .utf8)
+
+        let snapshot = MobileFleetService.load(dataDir: dir)
+
+        XCTAssertTrue(snapshot.isDetected)
+        XCTAssertEqual(snapshot.totalDevices, 0)
+        XCTAssertTrue(snapshot.richDevices.isEmpty)
+        XCTAssertTrue(snapshot.lightDevices.isEmpty)
+        XCTAssertNotNil(snapshot.sourceDates["mobile-devices-list"])
+    }
+
     // MARK: - An older collect's inventory-details snapshot
 
     func testLegacyInventoryAloneStaysReadable() throws {

@@ -401,10 +401,10 @@ struct MobileFleetService: Sendable {
         }
 
         // The three posture counts below are nil when no device in the snapshot
-        // carries the field at all. The collected inventory holds only the
-        // GENERAL section, which has none of them, so "absent everywhere" means
-        // not collected; counting it as 0 compliant or "Clean" states a fact
-        // the data does not hold.
+        // carries the field at all. A snapshot collected without the SECURITY
+        // section (an older collect, or a hand-run command) has none of them,
+        // so "absent everywhere" means not collected; counting it as 0 compliant
+        // or "Clean" states a fact the data does not hold.
 
         /// Devices reporting `passcodeCompliant == true`, or nil when no device
         /// reports the field.
