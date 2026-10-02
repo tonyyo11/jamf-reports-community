@@ -7,9 +7,9 @@ final class CollectionTierLookupTests: XCTestCase {
 
     // MARK: - jamf-cli 1.29 resource names
 
-    /// Matrix rows switch spelling with the installed version; their on-disk
-    /// kinds never do. The 1.29 names exit 2 on older binaries and the old names
-    /// stop working after 2027-03-09, so both spellings must be reachable.
+    /// The device-enrollments row switches spelling with the installed version; its on-disk
+    /// kind never does. The 1.29 name exits 2 on older binaries and the old name
+    /// stops working after 2027-03-09, so both spellings must be reachable.
     func testMatrixUsesSpecDerivedNamesOnlyWhenSupported() {
         func argv(_ kind: String, specNames: Bool) -> [String]? {
             ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
@@ -26,8 +26,10 @@ final class CollectionTierLookupTests: XCTestCase {
         XCTAssertEqual(kinds(true), kinds(false), "the flag changes argv, never a kind name")
     }
 
-    /// Both mobile commands hit the same endpoint on 1.29, so mobile devices are fetched
-    /// once, with the sections the readers use. APPLICATIONS is not requested.
+    /// Mobile devices are fetched once, with the sections the readers use, by the one
+    /// spelling every supported jamf-cli has (`pro mobile-devices list --section ...` was
+    /// verified on 1.18 through 1.29), so the row is not gated on the version.
+    /// APPLICATIONS is not requested.
     func testMobileDevicesAreFetchedOnceWithTheSectionsTheReadersUse() {
         let sections = ["--section", "GENERAL", "--section", "HARDWARE",
                         "--section", "SECURITY", "--section", "USER_AND_LOCATION"]
@@ -35,12 +37,10 @@ final class CollectionTierLookupTests: XCTestCase {
             ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
                 .first { $0.kind == "mobile-devices-list" }?.args
         }
-        XCTAssertEqual(argv(true),
-                       ["-p", "p", "pro", "mobile-devices", "list"] + sections
-                       + ["--output", "json"])
-        XCTAssertEqual(argv(false),
-                       ["-p", "p", "pro", "mobile-device-inventory-details", "list"] + sections
-                       + ["--output", "json"])
+        let expected = ["-p", "p", "pro", "mobile-devices", "list"] + sections
+            + ["--output", "json"]
+        XCTAssertEqual(argv(true), expected)
+        XCTAssertEqual(argv(false), expected, "no spelling gate: `specNames` never matters here")
         XCTAssertEqual(ReportEngine.mobileInventorySections,
                        ["GENERAL", "HARDWARE", "SECURITY", "USER_AND_LOCATION"])
         for specNames in [true, false] {
@@ -56,7 +56,6 @@ final class CollectionTierLookupTests: XCTestCase {
     /// freshness strip; snapshots an older collect left on disk are still read.
     func testRetiredMobileInventoryKindIsNotCollectedOrExpected() {
         let retired = MobileFleetService.legacyInventoryKind
-        XCTAssertEqual(retired, "mobile-device-inventory-details")
         XCTAssertFalse(ReportEngine.knownCollectKinds.contains(retired))
         XCTAssertNil(CollectionTier.tier(forReport: retired))
         XCTAssertFalse(WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: nil)

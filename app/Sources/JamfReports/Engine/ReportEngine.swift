@@ -2233,8 +2233,9 @@ struct ReportEngine: Sendable {
     ].joined(separator: ",")
 
     /// Sections `collect` asks `pro mobile-devices list` for, each as its own `--section`.
-    /// Without the flag jamf-cli returns GENERAL only, so the security flags, serial, model
-    /// and assigned user the Mobile Fleet screen and the workbook read stayed empty.
+    /// Without the flag jamf-cli returns GENERAL (plus HARDWARE from 1.29), so the security
+    /// flags and assigned user the Mobile Fleet screen and the workbook read stayed empty,
+    /// and so did serial and model before 1.29.
     /// APPLICATIONS is left out: about 20 KB per device for a managed-apps count nothing
     /// shows. The flag is on 1.18 through 1.29; the layout on 1.18 was not verified.
     static let mobileInventorySections = [
@@ -2248,10 +2249,10 @@ struct ReportEngine: Sendable {
     static func collectCommandMatrix(
         profile: String, specNames: Bool
     ) -> [(args: [String], kind: String)] {
-        // jamf-cli 1.29.0 named these two resources after their OpenAPI tags. The old
-        // names warn on stderr until 2027-03-09; the new ones exit 2 before 1.29.
+        // jamf-cli 1.29.0 named this resource after its OpenAPI tag. The old name warns
+        // on stderr until 2027-03-09; the new one exits 2 before 1.29. `mobile-devices`
+        // has the same name on every supported version, so it is not gated.
         let enrollments = specNames ? "device-enrollments" : "device-enrollment-instances"
-        let mobileDevices = specNames ? "mobile-devices" : "mobile-device-inventory-details"
         let mobileSections = mobileInventorySections.flatMap { ["--section", $0] }
         return [
             (["-p", profile, "pro", "overview", "--output", "json"], "overview"),
@@ -2282,8 +2283,8 @@ struct ReportEngine: Sendable {
              "ea-results"),
             (["-p", profile, "pro", "report", "profile-status", "--output", "json"],
              "profile-status"),
-            // One fetch feeds every mobile reader; both spellings are the same endpoint on 1.29.
-            (["-p", profile, "pro", mobileDevices, "list"] + mobileSections
+            // One fetch feeds every mobile reader.
+            (["-p", profile, "pro", "mobile-devices", "list"] + mobileSections
              + ["--output", "json"], "mobile-devices-list"),
             (["-p", profile, "pro", "report", "compliance-devices", "--output", "json"],
              "compliance-devices"),
