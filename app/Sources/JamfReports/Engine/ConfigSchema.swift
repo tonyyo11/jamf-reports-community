@@ -188,9 +188,7 @@ enum ConfigSchema {
         ]),
         "retention": Node(RetentionConfig.CodingKeys.self),
         "shared_workspace": Node(SharedWorkspaceConfig.CodingKeys.self),
-        "ai": Node(AIConfig.CodingKeys.self, [
-            "external": Node(AIExternalConfig.CodingKeys.self),
-        ]),
+        "ai": Node(AIConfig.CodingKeys.self),
         // `HtmlReport` reads `track_history` and `history_file` from the file.
         "html": Node(HTMLReportConfig.CodingKeys.self, also: ["track_history", "history_file"], [
             "section_limits": Node(HTMLSectionLimits.CodingKeys.self),

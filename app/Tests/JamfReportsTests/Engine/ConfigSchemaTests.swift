@@ -61,9 +61,6 @@ final class ConfigSchemaTests: XCTestCase {
             xprotect: 5
             cve: 15
             secure_boot: 5
-        ai:
-          external:
-            provider: ""
         """)
         XCTAssertEqual(keys, [])
     }
@@ -338,7 +335,6 @@ final class ConfigSchemaTests: XCTestCase {
             (["retention"], keys(RetentionConfig.CodingKeys.self)),
             (["shared_workspace"], keys(SharedWorkspaceConfig.CodingKeys.self)),
             (["ai"], keys(AIConfig.CodingKeys.self)),
-            (["ai", "external"], keys(AIExternalConfig.CodingKeys.self)),
             (["html"], keys(HTMLReportConfig.CodingKeys.self)),
             (["html", "section_limits"], keys(HTMLSectionLimits.CodingKeys.self)),
             (["security_policy"], keys(SecurityControlPolicy.CodingKeys.self)),

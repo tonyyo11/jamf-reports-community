@@ -210,10 +210,14 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
     func testAnUnknownAITierOrReasoningLevelNamesWhatTheAppUses() throws {
         let found = try rows("ai:\n  tier: pcc\n  reasoning_level: extreme\n")
         XCTAssertEqual(detail(found, "ai.tier"),
-                       "\"pcc\" is not one of on_device, external. The app uses on_device.")
+                       "\"pcc\" is not one of on_device. The app uses on_device.")
         XCTAssertEqual(detail(found, "ai.reasoning_level"),
                        "\"extreme\" is not one of light, moderate, deep. The app uses light.")
-        XCTAssertEqual(try rows("ai:\n  tier: External\n  reasoning_level: Deep\n"), [])
+        // The external tier was removed before this track landed; a file still naming it
+        // gets the same row as any other unknown tier.
+        XCTAssertEqual(detail(try rows("ai:\n  tier: external\n"), "ai.tier"),
+                       "\"external\" is not one of on_device. The app uses on_device.")
+        XCTAssertEqual(try rows("ai:\n  tier: On_Device\n  reasoning_level: Deep\n"), [])
     }
 
     func testAColourThatIsNotHexIsStatedWithTheColourTheAppUses() throws {
