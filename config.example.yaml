@@ -237,8 +237,8 @@ security_agents:
 # Relative paths here resolve from the folder containing config.yaml.
 
 jamf_cli:
-  # Master switch for jamf-cli integration. Set false for a strict CSV-only
-  # run that ignores both live jamf-cli commands and cached jamf-cli JSON.
+  # Currently has no effect: collect and generate always use jamf-cli, and
+  # false does not make a CSV-only run.
   enabled: true
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
@@ -257,8 +257,7 @@ jamf_cli:
   # ancient cache surfaces as "no data" instead of rendering stale-forever.
   # Set 0 (or any value <= 0) to keep cache forever (legacy behavior).
   max_cache_age_hours: 168
-  # Fetch Fleet Overview live by default. Set false if you want overview to use
-  # cached JSON only for a specific tenant or troubleshooting scenario.
+  # Currently has no effect: nothing reads this key.
   allow_live_overview: true
   # Hard-fail on snapshot integrity violations (SHA-256 mismatch or corrupt
   # manifest). When true, every collected snapshot is also recorded in a
@@ -775,9 +774,8 @@ thresholds:
   # report over a longer window.
   stale_device_days: 30
 
-  # Devices not checked in within this many days are flagged overdue on the
-  # Check-in Health sheet. Separate from stale_device_days — this is a shorter
-  # operational threshold (default 7 days) vs the longer stale window.
+  # Currently has no effect: nothing reads this key. The Check-in Health sheet
+  # uses stale_device_days.
   checkin_overdue_days: 7
 
   # Default disk usage thresholds used when not set per-EA.
@@ -787,9 +785,9 @@ thresholds:
   # Default certificate/date expiry warning window (days).
   cert_warning_days: 90
 
-  # Error count thresholds for jamf-cli Profile Status and App Status sheets.
-  # Rows with error counts at or above profile_error_critical are highlighted red;
-  # at or above profile_error_warning, yellow.
+  # Error count thresholds for the jamf-cli Profile Status sheet. Rows with
+  # error counts at or above profile_error_warning are highlighted yellow.
+  # profile_error_critical currently has no effect: nothing reads it.
   profile_error_critical: 50
   profile_error_warning: 10
 
@@ -885,6 +883,7 @@ charts:
   # Uses CSV snapshots when available and falls back to jamf-cli
   # inventory-summary snapshot history for jamf-cli-only workflows.
   os_adoption:
+    # Currently has no effect: nothing reads this key.
     enabled: true
     # Also generate one chart per major macOS version (drilldown to minor/patch).
     per_major_charts: true
@@ -892,6 +891,7 @@ charts:
   # Compliance trend: stacked area chart bucketing devices by failure count.
   # Requires compliance.failures_count_column to be configured.
   compliance_trend:
+    # Currently has no effect: nothing reads this key. Only the bands below are read.
     enabled: true
     # Failure count bands — labels, thresholds, and colors.
     bands:
