@@ -769,8 +769,10 @@ struct NotifyConfig: Decodable, Sendable {
     var resolvedProvider: Provider {
         Provider(rawValue: (provider ?? "teams").lowercased()) ?? .teams
     }
+    /// Absent means `full`. A value that is neither `full` nor `minimal` means `minimal`: a
+    /// privacy setting nobody could read must fail toward sending less.
     var resolvedDetail: Detail {
-        Detail(rawValue: (detail ?? "full").lowercased()) ?? .full
+        Detail(rawValue: (detail ?? "full").lowercased()) ?? .minimal
     }
     var resolvedURL: String { url?.trimmingCharacters(in: .whitespaces) ?? "" }
     /// Usable only when enabled AND a usable https URL is present — the gate
