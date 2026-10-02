@@ -228,6 +228,21 @@ final class GenerateSheetStateTests: XCTestCase {
         }
     }
 
+    /// The engine writes a template's sheets in its order, so Custom must not take a Set's
+    /// hash order, which changes from run to run.
+    func testCustomTemplateListsTheSelectionInStoredOrder() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        let picked: [SheetID] = [
+            .patchVelocity, .executiveSummary, .osCurrency, .activeDevices,
+            .securityPosture, .cover, .mdmCommandHealth, .hardwareModels,
+        ]
+        state.customSelectedSheets = Set(picked)
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+        XCTAssertEqual(state.resolvedTemplate.includedSheets,
+                       picked.sorted { $0.rawValue < $1.rawValue })
+    }
+
     func testResolvedTemplateWithCustomTemplateAndEmptySheetsFallsBackToExecutive() {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"

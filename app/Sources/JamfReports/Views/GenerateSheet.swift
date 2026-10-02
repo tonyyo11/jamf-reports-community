@@ -36,7 +36,7 @@ final class GenerateSheetState {
     var generatedHashes: [String: String] = [:]
 
     /// Identifier of the currently selected report template.
-    /// Persisted for the sheet's lifetime; falls back to Executive on next open.
+    /// Kept for the sheet's lifetime; each open starts on Full Instance.
     var selectedTemplateID: String = FullInstanceTemplate().identifier
 
     /// Custom sheet selection for the "custom" template.
@@ -57,10 +57,12 @@ final class GenerateSheetState {
     nonisolated static let customSheetsKey = "generateSheetCustomSelection"
 
     /// The resolved template for the current selection. Always a known template —
-    /// unknown identifiers fall back to Executive via `TemplateResolver`.
+    /// unknown identifiers fall back to Executive via `TemplateResolver`. Custom lists its
+    /// sheets in the stored rawValue order: the engine writes them in template order.
     var resolvedTemplate: any ReportTemplate {
         if selectedTemplateID == "custom" {
-            return TemplateResolver.resolveCustom(sheets: Array(customSelectedSheets))
+            return TemplateResolver.resolveCustom(
+                sheets: customSelectedSheets.sorted { $0.rawValue < $1.rawValue })
         }
         return TemplateResolver.resolve(identifier: selectedTemplateID)
     }
