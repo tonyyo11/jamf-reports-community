@@ -446,6 +446,35 @@ final class ScaffoldServiceTests: XCTestCase {
         XCTAssertEqual(columns.entraSSOStatus, "Entra SSO")
     }
 
+    func test_writeConfig_leavesUnmatchedOptionalColumnsOut() throws {
+        let url = try csvURL(headers: ["Computer Name", "Building"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        let dest = tempURL(name: "optional-omitted")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        try ScaffoldService.writeConfig(to: dest, result: result, profile: "test")
+        let written = try String(contentsOf: dest, encoding: .utf8)
+
+        XCTAssertTrue(written.contains("building: \"Building\""))
+        for key in ConfigState.optionalColumnKeys where key != "building" {
+            XCTAssertFalse(written.contains("\(key):"), "\(key) matched nothing: omit it")
+        }
+        // The original columns keep their `key: ""` placeholders.
+        XCTAssertTrue(written.contains("department: \"\""))
+    }
+
+    func test_writeMinimalConfig_writesNoOptionalColumns() throws {
+        let dest = tempURL(name: "minimal-optional")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        try ScaffoldService.writeMinimalConfig(to: dest, profile: "test")
+        let written = try String(contentsOf: dest, encoding: .utf8)
+
+        for key in ConfigState.optionalColumnKeys {
+            XCTAssertFalse(written.contains("\(key):"), "\(key) must not be written empty")
+        }
+        XCTAssertTrue(written.contains("computer_name: \"\""))
+    }
+
     func test_mergeColumns_keepsUserMappingForExtraInventoryColumn() {
         let (merged, report) = ScaffoldService.mergeColumns(
             existing: ["building": "Site Code"],

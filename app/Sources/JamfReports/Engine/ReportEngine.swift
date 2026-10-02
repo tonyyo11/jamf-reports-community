@@ -3789,9 +3789,7 @@ struct ReportEngine: Sendable {
         let orderedKeys = [
             "computer_name", "serial_number", "operating_system", "last_checkin",
             "department", "email", "filevault", "sip", "firewall", "gatekeeper",
-            "secure_boot", "bootstrap_token", "disk_percent_full", "model",
-            "architecture", "full_name", "asset_tag", "building", "position",
-            "last_logged_in_user", "recovery_lock", "battery_health", "entra_sso_status",
+            "secure_boot", "bootstrap_token", "disk_percent_full", "model", "architecture",
         ]
         for key in orderedKeys {
             lines.append("  \(key): \"\"")

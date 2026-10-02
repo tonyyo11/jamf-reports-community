@@ -515,8 +515,6 @@ enum ScaffoldService {
         "department", "manager", "email",
         "filevault", "sip", "firewall", "gatekeeper", "secure_boot", "bootstrap_token",
         "disk_percent_full", "architecture", "model", "last_enrollment", "mdm_expiry",
-        "full_name", "asset_tag", "building", "position", "last_logged_in_user",
-        "recovery_lock", "battery_health", "entra_sso_status",
     ]
 
     // Mobile column key order matches Python DEFAULT_CONFIG["mobile_columns"].
@@ -544,6 +542,11 @@ enum ScaffoldService {
         for key in orderedColumnKeys {
             let value = isMobile ? "" : yamlEscape(result.columns[key] ?? "")
             lines.append("  \(key): \"\(value)\"")
+        }
+        // Optional columns are written only when the CSV matched one, as ConfigService does.
+        for key in ConfigState.optionalColumnKeys {
+            guard !isMobile, let header = result.columns[key], !header.isEmpty else { continue }
+            lines.append("  \(key): \"\(yamlEscape(header))\"")
         }
 
         lines += [

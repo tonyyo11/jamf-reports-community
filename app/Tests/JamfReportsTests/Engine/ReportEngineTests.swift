@@ -862,4 +862,24 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertEqual(sources["patch-status"], "absent",
                        "patch-status has no snapshot → must be 'absent'")
     }
+
+    // MARK: - initializeWorkspace default config
+
+    func testInitializeWorkspaceDefaultConfigLeavesOptionalColumnsOut() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReportEngineTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try ReportEngine.initializeWorkspace(
+            profile: "init-default", workspacesRoot: root, seedConfigURL: nil, onLine: { _ in })
+
+        let configURL = root.appendingPathComponent("init-default/config.yaml")
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("computer_name: \"\""))
+        for key in ConfigState.optionalColumnKeys {
+            XCTAssertFalse(text.contains("\(key):"), "\(key) must not be written empty")
+        }
+        XCTAssertNoThrow(try ConfigLoader.load(from: configURL))
+    }
 }
