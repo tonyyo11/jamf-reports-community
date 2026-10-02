@@ -106,7 +106,7 @@ columns:
   #
   # Each key you map adds one column to the Device Inventory and Stale Devices
   # sheets, in the order listed here. A key left empty adds nothing. The Config
-  # screen does not list these; edit them here. It keeps them when it saves.
+  # screen lists these after the columns above; clearing one there removes its key.
 
   # The assigned user's full name.
   full_name: ""

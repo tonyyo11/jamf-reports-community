@@ -225,6 +225,15 @@ final class WorkspaceStore {
         "model":             "Model",
         "last_enrollment":   "Last Enrollment",
         "mdm_expiry":        "MDM Profile Expiry",
+        "full_name":           "Full Name",
+        "asset_tag":           "Asset Tag",
+        "building":            "Building",
+        "position":            "Position",
+        "last_logged_in_user": "Last Logged-in User",
+        "recovery_lock":       "Recovery Lock",
+        "battery_health":      "Battery Health",
+        "entra_sso_status":    "Entra SSO Status",
+        "purchase_date":       "Purchase Date",
     ]
 
     private static let requiredColumnKeys: Set<String> = [

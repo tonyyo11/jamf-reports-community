@@ -125,38 +125,57 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("device_name: Mobile Display Name"))
     }
 
-    /// The Config screen lists `ConfigState.columnKeys` only; the eight extra inventory
-    /// fields (`ColumnField.fullName` ... `.entraSSOStatus`) are edited in config.yaml, and
-    /// a Config-screen save must leave their mappings in place.
-    func testSaveKeepsInventoryColumnsTheConfigScreenDoesNotList() throws {
+    // MARK: - Extra column keys (listed on the Config screen after the original 18)
+
+    private static let extraColumnMappings: [(key: String, header: String)] = [
+        ("full_name", "Full Name"), ("asset_tag", "Asset Tag"), ("building", "Building"),
+        ("position", "Job Title"), ("last_logged_in_user", "Last Logged In"),
+        ("recovery_lock", "Recovery Lock"), ("battery_health", "Battery Health"),
+        ("entra_sso_status", "Entra SSO"), ("purchase_date", "Purchase Date"),
+    ]
+
+    private func extraColumnsConfig(only keys: Set<String>? = nil) -> String {
+        let lines = Self.extraColumnMappings
+            .filter { keys?.contains($0.key) ?? true }
+            .map { "  \($0.key): \"\($0.header)\"" }
+        return (["columns:", "  computer_name: Computer Name"] + lines).joined(separator: "\n")
+    }
+
+    private func savedText(profile: String, root: URL) throws -> String {
+        try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8
+        )
+    }
+
+    func testExtraColumnKeysAreListedAfterTheOriginalEighteen() {
+        let extras = Self.extraColumnMappings.map(\.key)
+        XCTAssertEqual(ConfigState.columnKeys.count, 18 + extras.count)
+        XCTAssertEqual(Array(ConfigState.columnKeys.suffix(extras.count)), extras)
+        // Every column the engine decodes has a row: writing each listed key reaches every field.
+        let keyLines = ConfigState.columnKeys.map { "  \($0): X" }
+        let yaml = (["columns:"] + keyLines).joined(separator: "\n")
+        let columns = try? XCTUnwrap(ConfigLoader.loadFromString(yaml).columns)
+        XCTAssertEqual(ConfigState.columnKeys.count, ColumnField.allCases.count)
+        for field in ColumnField.allCases {
+            XCTAssertNotNil(columns?.columnName(for: field), "\(field) has no key in columnKeys")
+        }
+    }
+
+    func testExtraColumnMappingsLoadAndSurviveSaveUnchanged() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "extra-cols-\(UUID().uuidString.lowercased())"
-        try writeConfig(
-            """
-            columns:
-              computer_name: Computer Name
-              full_name: "Full Name"
-              asset_tag: "Asset Tag"
-              building: "Building"
-              position: "Job Title"
-              last_logged_in_user: "Last Logged In"
-              recovery_lock: "Recovery Lock"
-              battery_health: "Battery Health"
-              entra_sso_status: "Entra SSO"
-            """,
-            profile: profile,
-            root: root
-        )
+        try writeConfig(extraColumnsConfig(), profile: profile, root: root)
 
         let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        for (key, header) in Self.extraColumnMappings {
+            XCTAssertEqual(loaded.state.columns[key], header, "\(key) must load into the state")
+        }
+
         var state = loaded.state
         state.columns["computer_name"] = "Device Name"
         _ = try ConfigService.save(
-            profile: profile,
-            state: state,
-            existingDocument: loaded.document,
-            workspaceRoot: root
-        )
+            profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
 
         let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
         let columns = try XCTUnwrap(ConfigLoader.load(from: url).columns)
@@ -169,6 +188,66 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertEqual(columns.recoveryLock, "Recovery Lock")
         XCTAssertEqual(columns.batteryHealth, "Battery Health")
         XCTAssertEqual(columns.entraSSOStatus, "Entra SSO")
+        XCTAssertEqual(columns.purchaseDate, "Purchase Date")
+    }
+
+    func testClearingAnExtraColumnRemovesItsKeyFromTheFile() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "clear-extra-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            extraColumnsConfig(only: ["building", "position", "asset_tag"]),
+            profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        var state = loaded.state
+        state.columns["building"] = ""
+        state.columns["asset_tag"] = "   "
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
+
+        let text = try savedText(profile: profile, root: root)
+        XCTAssertFalse(text.contains("building:"), "a cleared mapping leaves the file")
+        XCTAssertFalse(text.contains("asset_tag:"), "a blank mapping leaves the file")
+        XCTAssertTrue(text.contains("position: Job Title"))
+    }
+
+    func testExtraColumnsNeverTypedStayOutOfTheFile() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "untyped-extra-\(UUID().uuidString.lowercased())"
+        // full_name is a `key: ""` placeholder, as an older scaffold or the example wrote it.
+        try writeConfig(
+            "columns:\n  computer_name: Computer Name\n  full_name: \"\"\n",
+            profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        var state = loaded.state
+        state.columns["manager"] = ""
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
+
+        let text = try savedText(profile: profile, root: root)
+        for (key, _) in Self.extraColumnMappings {
+            XCTAssertFalse(text.contains("\(key):"), "\(key) was never typed and must stay absent")
+        }
+        // The original 18 keep their `key: ""` form.
+        XCTAssertTrue(text.contains("manager: \"\""))
+        XCTAssertTrue(text.contains("department: \"\""))
+    }
+
+    func testTypingAnExtraColumnWritesIt() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "type-extra-\(UUID().uuidString.lowercased())"
+        try writeConfig("columns:\n  computer_name: Computer Name\n", profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        var state = loaded.state
+        state.columns["purchase_date"] = "Purchase Date"
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
+
+        let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
+        XCTAssertEqual(try ConfigLoader.load(from: url).columns?.purchaseDate, "Purchase Date")
+        XCTAssertFalse(try savedText(profile: profile, root: root).contains("building:"))
     }
 
     func testDefaultStateFileVaultColumnAndEmptyMobileColumns() {

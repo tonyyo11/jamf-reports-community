@@ -49,12 +49,24 @@ struct ConfigState: Equatable, Sendable {
     var accentColor: String
     var accentDark: String
 
-    static let columnKeys = [
+    /// The columns the Config screen has always listed. Each is written to config.yaml on
+    /// every save, an empty one as `key: ""`.
+    static let baseColumnKeys = [
         "computer_name", "serial_number", "operating_system", "last_checkin", "department",
         "manager", "email", "filevault", "sip", "firewall", "gatekeeper", "secure_boot",
         "bootstrap_token", "disk_percent_full", "architecture", "model", "last_enrollment",
         "mdm_expiry",
     ]
+
+    /// The rest of the `columns` keys the report engine reads (`ColumnConfig`). Written only
+    /// when set: a cleared or never-typed one is left out of config.yaml, not written as `key: ""`.
+    static let optionalColumnKeys = [
+        "full_name", "asset_tag", "building", "position", "last_logged_in_user",
+        "recovery_lock", "battery_health", "entra_sso_status", "purchase_date",
+    ]
+
+    /// Every key the Config screen's column list shows, in order.
+    static let columnKeys = baseColumnKeys + optionalColumnKeys
 
     static let mobileColumnKeys = [
         "device_name", "serial_number", "operating_system", "last_checkin", "email",
@@ -83,6 +95,15 @@ struct ConfigState: Equatable, Sendable {
             "model": "Model",
             "last_enrollment": "Last Enrollment",
             "mdm_expiry": "MDM Profile Expiration Date",
+            "full_name": "",
+            "asset_tag": "",
+            "building": "",
+            "position": "",
+            "last_logged_in_user": "",
+            "recovery_lock": "",
+            "battery_health": "",
+            "entra_sso_status": "",
+            "purchase_date": "",
         ],
         // Mobile is opt-in — seed empty so a Mac-only fleet doesn't trip the
         // config doctor with mappings it will never use (matches Python
@@ -366,8 +387,16 @@ enum ConfigService {
         var root = document.root.mapping ?? .init(entries: [])
 
         var columns = root.value(for: "columns")?.mapping ?? .init(entries: [])
-        for key in ConfigState.columnKeys {
+        for key in ConfigState.baseColumnKeys {
             columns.set(key, value: scalar(state.columns[key] ?? ""))
+        }
+        for key in ConfigState.optionalColumnKeys {
+            let value = state.columns[key] ?? ""
+            if value.trimmingCharacters(in: .whitespaces).isEmpty {
+                columns.entries.removeAll { $0.key == key }
+            } else {
+                columns.set(key, value: scalar(value))
+            }
         }
         root.set("columns", value: .mapping(columns))
 
