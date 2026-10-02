@@ -57,6 +57,7 @@ struct CompliancePostureView: View {
                 } else {
                     bandsHeroCard
                 }
+                aiInsightCard
                 controlCoverageCard
                 perOSBreakdownCard
             }
@@ -404,6 +405,24 @@ struct CompliancePostureView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(band.label), \(band.count) devices, \(Int(band.pct.rounded())) percent")
             }
+        }
+    }
+
+    /// macOS 27, opt-in: which control and macOS version to work first, from the control-gap
+    /// counts. The card hides itself while `ai.enabled` is off, and with no security snapshot.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspace.demoMode),
+           let input = FleetInsightInput.posture(
+               .compliance(snapshot, showsBands: mscpResults.isEmpty)) {
+            AIInsightCard(
+                title: "AI Posture Insight",
+                idleText: "Suggest which control and macOS version to work first using "
+                    + "on-device intelligence.",
+                provenanceText: "AI-generated from the control-gap counts on this screen — "
+                    + "verify against the bars below.",
+                input: input
+            )
         }
     }
 

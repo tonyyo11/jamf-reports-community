@@ -24,6 +24,8 @@ struct CompliancePostureService: Sendable {
         /// Non-nil only when a snapshot file existed but could not be read/decoded —
         /// a true failure, distinct from `.empty` (no data collected yet).
         var loadError: String? = nil
+        /// The policy the gaps were counted under; the posture insight words warnings by it.
+        var policy: SecurityControlPolicy = .default
 
         struct ControlGap: Sendable, Equatable, Identifiable {
             let control: String
@@ -53,6 +55,7 @@ struct CompliancePostureService: Sendable {
                 && lhs.snapshotDate == rhs.snapshotDate
                 && lhs.perOSMajor.map(\.osMajor) == rhs.perOSMajor.map(\.osMajor)
                 && lhs.loadError == rhs.loadError
+                && lhs.policy == rhs.policy
         }
 
         static let empty = Snapshot(
@@ -142,7 +145,8 @@ struct CompliancePostureService: Sendable {
             perOSMajor: perOSMajor,
             controlGaps: controlGaps(devices, hardwareEncrypted: encrypted, policy: policy),
             sourceFile: url,
-            snapshotDate: mtime
+            snapshotDate: mtime,
+            policy: policy
         )
     }
 
@@ -193,12 +197,160 @@ struct CompliancePostureService: Sendable {
         }
     }
 
-    private static func label(_ control: SecurityControl) -> String {
+    fileprivate static func label(_ control: SecurityControl) -> String {
         switch control {
         case .fileVault: "FileVault"
         case .sip: "SIP"
         case .firewall: "Firewall"
         case .gatekeeper: "Gatekeeper"
         }
+    }
+}
+
+// MARK: - AI insight input
+
+extension FleetInsightInput {
+    /// The posture screen asking, with the snapshot it shows.
+    enum PostureScreen {
+        case security(SecurityPostureService.Snapshot)
+        /// `showsBands` is false while mSCP baseline donuts take the control-gap bands' place.
+        case compliance(CompliancePostureService.Snapshot, showsBands: Bool)
+    }
+
+    /// The Security Posture and Compliance Posture insight. Every count is one the asking
+    /// screen shows, so the card cannot disagree with it: Security sends its fleet counts and
+    /// P0/P1, Compliance its control-gap bars, bands and per-macOS-major rows. A control the
+    /// policy ignores, or the report has no count for, sends nothing. Nil when nothing is left.
+    static func posture(_ screen: PostureScreen) -> FleetInsightInput? {
+        let macs: Int, rows: [PostureRow], policy: SecurityControlPolicy
+        var more: [Fact] = [], notes = [postureGapNote], byMajor = false
+        switch screen {
+        case .security(let snapshot):
+            (macs, policy) = (snapshot.totalDevices, snapshot.policy)
+            rows = securityRows(snapshot.fleetCounts, policy: policy)
+            more = actionItemFacts(snapshot.fleetCounts)
+            if !more.isEmpty { notes.append(postureActionNote) }
+        case .compliance(let snapshot, let showsBands):
+            (macs, policy) = (snapshot.totalDevices, snapshot.policy)
+            rows = complianceRows(snapshot.controlGaps)
+            let majors = snapshot.perOSMajor.compactMap {
+                bandFact("macOS \($0.osMajor) Macs", $0.bands)
+            }
+            let fleet = showsBands ? bandFact("All Macs", snapshot.bands) : nil
+            more = [fleet].compactMap { $0 } + majors
+            byMajor = !majors.isEmpty
+            if !more.isEmpty { notes.append(postureBandNote) }
+        }
+        let facts = rows.flatMap { controlFacts($0, policy: policy) } + more
+        guard !facts.isEmpty else { return nil }
+        let total = Fact(label: "Macs in the security report", value: .count(macs), prior: nil,
+                         polarity: .neutral)
+        let subject = byMajor
+            ? "which control and which macOS major account" : "which control accounts"
+        return FleetInsightInput(
+            title: "Posture insight",
+            focus: subject + " for most of the gap, and what to do first.",
+            facts: [total] + facts, notes: notes)
+    }
+
+    private static let postureGapNote = "Failing is a gap under this workspace's security policy. "
+        + "A warning is a Mac with the control off that the policy does not count as a gap."
+    private static let postureActionNote = "P0 and P1 add up each control's gaps, so a Mac "
+        + "failing two of their controls counts twice."
+    private static let postureBandNote = "A control-gap band counts the controls a Mac fails: "
+        + "Pass is none, Low and above one or more, No Data none measured."
+
+    /// One control as a posture screen shows it.
+    private struct PostureRow {
+        let control: SecurityControl
+        let failingPct: Double
+        let failing: Int
+        let warning: Int
+        /// FileVault-off Macs the hardware rule leaves out at `ignore`; Security only.
+        var notCounted = 0
+    }
+
+    /// The fleet counts' own share and counts; nil `nonFailingPct` covers ignored, absent
+    /// and ungradable controls alike.
+    private static func securityRows(
+        _ fleet: SecurityFleetCounts, policy: SecurityControlPolicy
+    ) -> [PostureRow] {
+        SecurityControl.allCases.compactMap { control in
+            guard let counts = fleet.controls[control],
+                  let share = fleet.nonFailingPct(control) else { return nil }
+            let dropped = control == .fileVault && policy.fileVaultOffHardwareEncrypted == .ignore
+            return PostureRow(control: control, failingPct: 100 - share, failing: counts.fail,
+                              warning: counts.warning,
+                              notCounted: dropped ? fleet.fileVaultOffHardwareEncrypted : 0)
+        }
+    }
+
+    /// The Control Coverage Gaps bars, which already leave ignored controls out.
+    private static func complianceRows(
+        _ gaps: [CompliancePostureService.Snapshot.ControlGap]
+    ) -> [PostureRow] {
+        SecurityControl.allCases.compactMap { control in
+            let label = CompliancePostureService.label(control)
+            guard let gap = gaps.first(where: { $0.control == label }), gap.totalDevices > 0
+            else { return nil }
+            return PostureRow(control: control, failingPct: gap.pct,
+                              failing: gap.failingDevices, warning: gap.warningDevices)
+        }
+    }
+
+    /// The share failing and the Macs failing, then the Macs the policy counts apart.
+    private static func controlFacts(_ row: PostureRow, policy: SecurityControlPolicy) -> [Fact] {
+        let name = CompliancePostureService.label(row.control)
+        // "SIP" alone reads as the VoIP protocol to the on-device model.
+        let first = row.control == .sip ? "System Integrity Protection (SIP)" : name
+        var facts = [
+            Fact(label: "\(first) failing", value: .percent(row.failingPct), prior: nil,
+                 polarity: .lowerIsBetter, complement: "not failing"),
+            Fact(label: "Macs failing \(name)", value: .count(row.failing), prior: nil,
+                 polarity: .lowerIsBetter),
+        ]
+        let hardware = "Macs with " + SecurityFleetCounts.hardwareEncryptedRowLabel
+        if row.warning > 0 {
+            // Only with FileVault at `fail` is every FileVault warning a hardware-encrypted Mac.
+            let isHardware = row.control == .fileVault && policy.usesHardwareRule
+                && policy.fileVaultOffHardwareEncrypted == .warning
+            let off = isHardware ? hardware : "Macs with \(name) off"
+            facts.append(Fact(label: off + " (a warning, not a gap)", value: .count(row.warning),
+                              prior: nil, polarity: .lowerIsBetter))
+        }
+        if row.notCounted > 0 {
+            facts.append(Fact(
+                label: hardware + ", not counted by this workspace's policy (left out of "
+                    + "FileVault's share)",
+                value: .count(row.notCounted), prior: nil, polarity: .neutral))
+        }
+        return facts
+    }
+
+    /// The Action Items tiles' P0 and P1, left out when every control they add up is ignored.
+    private static func actionItemFacts(_ fleet: SecurityFleetCounts) -> [Fact] {
+        func counted(_ controls: [SecurityControl]) -> Bool {
+            controls.contains { fleet.controls[$0].map { $0.level != .ignore } ?? false }
+        }
+        var facts: [Fact] = []
+        if let p0 = fleet.p0, counted([.fileVault, .sip, .firewall]) {
+            facts.append(Fact(label: "P0 action items (FileVault, SIP and Firewall gaps)",
+                              value: .count(p0), prior: nil, polarity: .lowerIsBetter))
+        }
+        if let p1 = fleet.p1, counted([.gatekeeper]) {
+            facts.append(Fact(label: "P1 action items (Gatekeeper gaps)", value: .count(p1),
+                              prior: nil, polarity: .lowerIsBetter))
+        }
+        return facts
+    }
+
+    /// One bands row as the screen's legend reads it: the bands holding Macs, then the total.
+    private static func bandFact(_ macs: String, _ bands: [ComplianceBand]) -> Fact? {
+        let total = bands.reduce(0) { $0 + $1.count }
+        guard total > 0 else { return nil }
+        let counts = bands.filter { $0.count > 0 }.map { "\($0.label) \($0.count)" }
+        return Fact(label: "\(macs) per control-gap band",
+                    value: .text(counts.joined(separator: ", ") + " (\(total) Macs)"),
+                    prior: nil, polarity: .neutral)
     }
 }

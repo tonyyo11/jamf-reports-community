@@ -59,6 +59,7 @@ struct SecurityPostureView: View {
             } else {
                 heroScoreCard
                 kpiGrid
+                aiInsightCard
                 actionItemsCard
                 osDistributionCard
             }
@@ -262,6 +263,23 @@ struct SecurityPostureView: View {
                 label: label,
                 value: "—",
                 sub: "Not in snapshot"
+            )
+        }
+    }
+
+    /// macOS 27, opt-in: which control to work first. The card hides itself while
+    /// `ai.enabled` is off; the input is built only where it can show.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspace.demoMode),
+           let input = FleetInsightInput.posture(.security(snapshot)) {
+            AIInsightCard(
+                title: "AI Posture Insight",
+                idleText: "Suggest which security control to work first using on-device "
+                    + "intelligence.",
+                provenanceText: "AI-generated from the counts on this screen — verify against "
+                    + "the tiles above.",
+                input: input
             )
         }
     }
