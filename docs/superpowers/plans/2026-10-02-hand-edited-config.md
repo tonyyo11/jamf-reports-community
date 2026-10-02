@@ -226,3 +226,41 @@ visible in the app:
 
 Tests: the pure function that builds the three sections from a fixture file (file-only keys,
 unknown keys, parse notes; a screen-edited key excluded; a secret-like key masked).
+
+## Task 6: `sheets` settings reach every workbook, and three reads found on the way
+
+Found while building Tasks 1 and 2. Each item is "verify first".
+
+Files: `Engine/SheetRegistry.swift` (or wherever `writeSelected` lives), `Engine/CoreDashboard.swift`,
+`Engine/SchoolDashboard.swift`, `Engine/OOXMLWriter.swift`, `Services/SnapshotRetentionService.swift`,
+`Services/ConfigDoctorService.swift`, `config.example.yaml`, tests.
+
+1. `sheets.only` / `skip` / `order` are documented as controlling the workbook's tabs, but the
+   generate path for jamf-cli sheets goes through `SheetRegistry.writeSelected`, which is reported
+   to ignore `config.sheets`; only the CSV sheets honour it (`CSVDashboard`), and
+   `CoreDashboard.writeAll`, which did honour it, is reported to have no production caller. Verify
+   with a test that generates a workbook from fixture snapshots with `sheets.skip: ["<a jamf-cli
+   sheet name>"]` and looks for that tab. If confirmed: the workspace's `sheets` settings apply to
+   the final tab list of every workbook the app writes — jamf-cli sheets, CSV sheets and Jamf
+   School sheets — after the report template has chosen its sheets: `skip` removes, a non-empty
+   `only` restricts (within what the template includes), `order` reorders, names matched
+   case-insensitively as `SheetsConfig.applyTo` does. A name that matches nothing is ignored (the
+   Doctor row from Task 2 already says so). The Custom template's own sheet selection and
+   `sheets.only` both apply (intersection). If `CoreDashboard.writeAll` is confirmed dead, delete it
+   and its tests in the same change and say so. Correct the `config.example.yaml` comment (and the
+   Task 2 Doctor row about Jamf School) to describe the behaviour as built.
+2. `branding.accent_color` is written into the workbook's `styles.xml` without validation
+   (`OOXMLWriter`), while the HTML report falls back for an invalid colour and a `sanitizedAccent…`
+   helper exists that nothing calls. Verify with a workbook built with `accent_color: "red\"/><x"`:
+   the styles part must stay well-formed XML. Fix: one validated hex value used by both reports,
+   falling back to the default colour when the typed value is not a 3- or 6-digit hex colour (the
+   Task 2 Doctor row already reports it). Delete the unused helper if the fix does not use it.
+3. `retention.archive_dir` given as a relative path containing `..` is reported to be able to
+   resolve outside the workspace. Verify with a test (`archive_dir: "../outside"` in a temp
+   workspaces root). If confirmed, resolve it the way `output.archive_dir` is resolved and
+   refuse a path that leaves the workspace unless `output.allow_absolute_paths` is true, falling
+   back to the default `_archive` with the Task 2 Doctor row.
+4. Config Doctor builds a column's key name with `snakeCased`, which turns `entraSSOStatus` into
+   `entra_s_s_o_status`, so it can never suggest a header for `entra_sso_status` and its row title
+   is wrong. Use the column's real config key (the decoder's `CodingKeys` raw value) instead of
+   deriving it; test every column field's key against the decoder's.
