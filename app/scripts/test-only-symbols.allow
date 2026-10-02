@@ -6,7 +6,6 @@
 # --- Test seams and framework callbacks -------------------------------------
 # Deliberate: production code never calls these; tests need them, or the system
 # calls them at runtime.
-loadFromString                    # ConfigDecoder: decodes YAML text; production reads files through load(url)
 testableCSVEscape                 # ReportEngine: tests reach the private csvEscape
 clearVerificationCacheForTesting  # JamfCLIIdentity: resets the codesign verification cache between tests
 StubTickerRegistrar               # TickerRegistrar test double; tests run the tick loop against it
