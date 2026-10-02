@@ -209,17 +209,12 @@ final class GenerateSheetState {
 
 // MARK: - Sheet view
 
-/// Unified report-generation modal. Present as a `.sheet` from any view.
-///
-/// Usage:
-/// ```swift
-/// .sheet(isPresented: $showGenerate) {
-///     GenerateSheet(profile: workspace.profile, bridge: bridge)
-/// }
-/// ```
+/// Report-generation modal: template or custom sheets, formats, collect first, audit.
+/// Presented by the Reports screen; `onGenerated` runs after a run that wrote a file.
 struct GenerateSheet: View {
     let profile: String
     let bridge: CLIBridge
+    let onGenerated: @MainActor () -> Void
 
     @State private var state = GenerateSheetState()
 
@@ -857,6 +852,7 @@ struct GenerateSheet: View {
         )
         state.completedCount = outcome.count
         state.errorMessage = outcome.message
+        if outcome.count > 0 { onGenerated() }
     }
 }
 
