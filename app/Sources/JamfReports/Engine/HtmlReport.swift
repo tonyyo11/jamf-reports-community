@@ -295,7 +295,8 @@ struct HtmlReport: Sendable {
             fileVaultPct: fileVaultPct,
             sipPct: sipPct,
             firewallPct: firewallPct,
-            gatekeeperPct: gatekeeperPct
+            gatekeeperPct: gatekeeperPct,
+            fleet: securityFleet()
         )
         let chartsHTML = buildChartsSection(
             osVersions: osVersions,
@@ -431,7 +432,8 @@ struct HtmlReport: Sendable {
             fileVaultPct: fileVaultPct,
             sipPct: sipPct,
             firewallPct: firewallPct,
-            gatekeeperPct: gatekeeperPct
+            gatekeeperPct: gatekeeperPct,
+            fleet: securityFleet()
         )
         let chartsHTML = buildChartsSection(
             osVersions: osVersions,
@@ -550,27 +552,48 @@ struct HtmlReport: Sendable {
         fileVaultPct: Double,
         sipPct: Double,
         firewallPct: Double,
-        gatekeeperPct: Double
+        gatekeeperPct: Double,
+        fleet: SecurityFleetCounts?
     ) -> String {
-        let tiles: [(String, String, Double?)] = [
-            ("Total Devices", "\(total)", nil),
-            ("FileVault", String(format: "%.1f%%", fileVaultPct), fileVaultPct),
-            ("SIP", String(format: "%.1f%%", sipPct), sipPct),
-            ("Firewall", String(format: "%.1f%%", firewallPct), firewallPct),
-            ("Gatekeeper", String(format: "%.1f%%", gatekeeperPct), gatekeeperPct),
+        let tiles: [(String, String, Double?, SecurityControl?)] = [
+            ("Total Devices", "\(total)", nil, nil),
+            ("FileVault", String(format: "%.1f%%", fileVaultPct), fileVaultPct, .fileVault),
+            ("SIP", String(format: "%.1f%%", sipPct), sipPct, .sip),
+            ("Firewall", String(format: "%.1f%%", firewallPct), firewallPct, .firewall),
+            ("Gatekeeper", String(format: "%.1f%%", gatekeeperPct), gatekeeperPct, .gatekeeper),
         ]
-        let tileHTML = tiles.map { label, value, pct -> String in
-            let statusClass = pct.map { colorClass($0) } ?? ""
+        let tileHTML = tiles.map { label, value, pct, control -> String in
+            let ignored = control.map { config.resolvedSecurityPolicy.level(for: $0) == .ignore }
+                ?? false
+            let statusClass = ignored ? ""
+                : control.map { securityTileClass($0, pct: pct ?? 0, fleet: fleet) } ?? ""
+            let label = ignored ? label + " (not counted)" : label
+            let hardwareMacs = control == .fileVault ? fleet?.fileVaultOffHardwareEncrypted ?? 0 : 0
+            let note = hardwareMacs > 0
+                ? "\n  <div class=\"tile-label\">" + HtmlSectionFormatters.escapeHTML(
+                    "\(hardwareMacs) more hardware-encrypted, FileVault off") + "</div>"
+                : ""
             return """
             <div class="tile \(statusClass)">
               <div class="tile-value">\(HtmlSectionFormatters.escapeHTML(value))</div>
-              <div class="tile-label">\(HtmlSectionFormatters.escapeHTML(label))</div>
+              <div class="tile-label">\(HtmlSectionFormatters.escapeHTML(label))</div>\(note)
             </div>
             """
         }.joined(separator: "\n")
         return """
         <section class="tiles-row">\n\(tileHTML)\n</section>
         """
+    }
+
+    /// A security tile's colour under the workspace's policy: the share of Macs not failing
+    /// the control (the tile's own share without fleet counts), amber instead of green while
+    /// some Macs only warn.
+    private func securityTileClass(
+        _ control: SecurityControl, pct: Double, fleet: SecurityFleetCounts?
+    ) -> String {
+        let statusClass = colorClass(fleet?.nonFailingPct(control) ?? pct)
+        let warnings = fleet?.controls[control]?.warning ?? 0
+        return statusClass == "ok" && warnings > 0 ? "warn" : statusClass
     }
 
     // MARK: - Task 1: Compliance posture hero tile
@@ -1654,6 +1677,11 @@ struct HtmlReport: Sendable {
     }
 
     private func loadJSON(kind: String) -> Any? {
+        guard let data = loadJSONData(kind: kind) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    private func loadJSONData(kind: String) -> Data? {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
@@ -1677,9 +1705,20 @@ struct HtmlReport: Sendable {
         }
         // Shared rule — an HTML report and the workbook generated from the same
         // workspace must not read different days.
-        guard let newest = FileManager.newestSnapshot(among: candidates),
-              let data = try? Data(contentsOf: newest) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data)
+        guard let newest = FileManager.newestSnapshot(among: candidates) else { return nil }
+        return try? Data(contentsOf: newest)
+    }
+
+    /// The `security` snapshot's counts under the workspace's policy: the same fleet the
+    /// workbook and summary.json grade by. Nil without a decodable summary section.
+    private func securityFleet() -> SecurityFleetCounts? {
+        guard let data = loadJSONData(kind: "security"),
+              let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data)
+        else { return nil }
+        let policy = config.resolvedSecurityPolicy
+        return SecurityFleetCounts.build(
+            items: items, hardware: HardwareEncryption.index(dataDir: dataDir, for: policy),
+            policy: policy)
     }
 
     func overviewDeviceCount(_ overview: [[String: Any]]) -> Int {

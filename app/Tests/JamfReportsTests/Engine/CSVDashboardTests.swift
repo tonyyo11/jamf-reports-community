@@ -304,4 +304,255 @@ final class CSVDashboardTests: XCTestCase {
         XCTAssertEqual(names, ["Mac-Most", "Mac-Mid", "Mac-Least"],
                        "Stale devices must remain sorted most-stale-first")
     }
+
+    // MARK: - Security Controls sheet
+
+    private struct ControlRow: Equatable {
+        let compliant: String
+        let nonCompliant: String
+        let unknown: String
+        let percent: String
+        let percentFormat: CellFormat?
+        var warning: String? = nil
+    }
+
+    /// The columns of the real-shape built-in export (`jamf1128_computers_builtin.csv`), mapped
+    /// as `config.example.yaml` does except where `filevault` or the hardware columns are given.
+    private func securityColumns(
+        fileVault: String = "FileVault 2 Status", model: String? = nil, architecture: String? = nil
+    ) -> ColumnConfig {
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        cols.lastCheckin = "Last Check-in"
+        cols.filevault = fileVault
+        cols.sip = "System Integrity Protection"
+        cols.firewall = "Firewall Enabled"
+        cols.gatekeeper = "Gatekeeper"
+        cols.secureBoot = "Secure Boot Level"
+        cols.bootstrapToken = "Bootstrap Token Escrowed"
+        cols.model = model
+        cols.architecture = architecture
+        return cols
+    }
+
+    private func builtinCSV() throws -> Data {
+        try Data(contentsOf: TestFixtures.root.appendingPathComponent(
+            "csv/jamf1128_computers_builtin.csv"))
+    }
+
+    /// Writes the Security Controls sheet and returns its rows by label, plus the header.
+    private func securityControls(
+        csv: Data, columns: ColumnConfig, policy: SecurityControlPolicy? = nil
+    ) throws -> (header: [String], rows: [String: ControlRow]) {
+        var config = ReportConfig()
+        config.columns = columns
+        config.securityPolicy = policy
+        // The fixture's check-in dates are fixed, so keep every row active.
+        var thresholds = ThresholdsConfig()
+        thresholds.staleDeviceDays = 36500
+        config.thresholds = thresholds
+        let wb = Workbook()
+        let dashboard = try XCTUnwrap(CSVDashboard(config: config, csvData: csv, workbook: wb))
+        dashboard.writeSecurityControls()
+        let cells = try XCTUnwrap(wb.sheet(named: "Security Controls")).dedupedCells
+        func text(_ cell: (row: Int, col: Int, value: CellValue, format: CellFormat?)?) -> String {
+            guard let cell else { return "" }
+            switch cell.value {
+            case .string(let s): return s
+            case .int(let i): return "\(i)"
+            case .double(let d): return "\(d)"
+            default: return ""
+            }
+        }
+        let headerCells = cells.filter { $0.format == .header }.sorted { $0.col < $1.col }
+        var rows: [String: ControlRow] = [:]
+        for label in cells where label.col == 0 && label.format == .cell {
+            func at(_ col: Int) -> (row: Int, col: Int, value: CellValue, format: CellFormat?)? {
+                cells.first { $0.row == label.row && $0.col == col }
+            }
+            rows[text(label)] = ControlRow(
+                compliant: text(at(1)), nonCompliant: text(at(2)), unknown: text(at(3)),
+                percent: text(at(4)), percentFormat: at(4)?.format,
+                warning: at(5).map { text($0) })
+        }
+        return (headerCells.map { text($0) }, rows)
+    }
+
+    /// Fixture `jamf1128_computers_builtin.csv`: four Macs; one has FileVault, SIP, Firewall and
+    /// Gatekeeper off. Both FileVault columns the fixture carries (the status text and the
+    /// partition counts) read the same.
+    func testSecurityControlCountsOnTheBuiltinExport() throws {
+        for fileVault in ["FileVault 2 Status", "FileVault Status"] {
+            let sheet = try securityControls(
+                csv: builtinCSV(), columns: securityColumns(fileVault: fileVault))
+            XCTAssertEqual(
+                sheet.header, ["Control", "Compliant", "Non-Compliant", "Unknown", "% Compliant"])
+            for label in ["FileVault", "SIP", "Firewall", "Gatekeeper"] {
+                XCTAssertEqual(
+                    sheet.rows[label],
+                    ControlRow(compliant: "3", nonCompliant: "1", unknown: "0", percent: "0.75",
+                               percentFormat: .pctRed),
+                    "\(label) via \(fileVault)")
+            }
+            for label in ["Secure Boot", "Bootstrap Token"] {
+                XCTAssertEqual(
+                    sheet.rows[label],
+                    ControlRow(compliant: "4", nonCompliant: "0", unknown: "0", percent: "1.0",
+                               percentFormat: .pctGreen),
+                    label)
+            }
+        }
+    }
+
+    /// A small export: `rows` hold FV, SIP, FW, GK, SB, BT, Model Identifier and Architecture.
+    private func inlineCSV(_ rows: [[String]]) -> Data {
+        let header = "Computer Name,Last Check-in,FV,SIP,FW,GK,SB,BT,Model Identifier,Architecture"
+        let lines = rows.enumerated().map { index, values in
+            (["Mac\(index)", "2026-05-01 09:00:00"] + values).joined(separator: ",")
+        }
+        return Data(([header] + lines).joined(separator: "\n").utf8)
+    }
+
+    private func inlineColumns(hardware: Bool = false) -> ColumnConfig {
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        cols.lastCheckin = "Last Check-in"
+        cols.filevault = "FV"
+        cols.sip = "SIP"
+        cols.firewall = "FW"
+        cols.gatekeeper = "GK"
+        cols.secureBoot = "SB"
+        cols.bootstrapToken = "BT"
+        if hardware {
+            cols.model = "Model Identifier"
+            cols.architecture = "Architecture"
+        }
+        return cols
+    }
+
+    private func counts(_ row: ControlRow?) -> [String] {
+        guard let row else { return [] }
+        return [row.compliant, row.nonCompliant, row.unknown] + (row.warning.map { [$0] } ?? [])
+    }
+
+    /// Intended change: a value Jamf did not collect (or a Mac cannot report) was
+    /// non-compliant. It says nothing about the control, so it counts as unknown.
+    func testNotCollectedAndUnsupportedValuesAreUnknown() throws {
+        let csv = inlineCSV([
+            ["Encrypted", "Enabled", "Enabled", "Enabled", "Full Security", "Yes", "", ""],
+            ["Not collected", "Not collected", "Not collected", "Not collected", "",
+             "Not Supported", "", ""],
+            ["Not Encrypted", "Disabled", "Not Enabled", "Off", "", "No", "", ""],
+        ])
+        let sheet = try securityControls(csv: csv, columns: inlineColumns())
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["1", "1", "1"])
+        XCTAssertEqual(counts(sheet.rows["SIP"]), ["1", "1", "1"])
+        XCTAssertEqual(counts(sheet.rows["Firewall"]), ["1", "1", "1"])
+        XCTAssertEqual(counts(sheet.rows["Gatekeeper"]), ["1", "1", "1"])
+        XCTAssertEqual(counts(sheet.rows["Bootstrap Token"]), ["1", "1", "1"])
+    }
+
+    /// Secure Boot keeps its own rule: Full and Medium Security are compliant, any other value
+    /// is not, and a blank is unknown.
+    func testSecureBootKeepsItsRule() throws {
+        let csv = inlineCSV([
+            ["", "", "", "", "Full Security", "", "", ""],
+            ["", "", "", "", "Medium Security", "", "", ""],
+            ["", "", "", "", "No Security", "", "", ""],
+            ["", "", "", "", "Unsupported OS Version", "", "", ""],
+            ["", "", "", "", "", "", "", ""],
+        ])
+        let sheet = try securityControls(csv: csv, columns: inlineColumns())
+        XCTAssertEqual(counts(sheet.rows["Secure Boot"]), ["2", "2", "1"])
+    }
+
+    func testBootstrapTokenReadsLikeTheOtherControls() throws {
+        let csv = inlineCSV([
+            ["", "", "", "", "", "Yes", "", ""], ["", "", "", "", "", "Escrowed", "", ""],
+            ["", "", "", "", "", "No", "", ""], ["", "", "", "", "", "Not Escrowed", "", ""],
+            ["", "", "", "", "", "Unknown", "", ""],
+        ])
+        let sheet = try securityControls(csv: csv, columns: inlineColumns())
+        XCTAssertEqual(counts(sheet.rows["Bootstrap Token"]), ["2", "2", "1"])
+    }
+
+    // MARK: - Security Controls sheet: the policy
+
+    private func hardwareColumns() -> ColumnConfig {
+        securityColumns(architecture: "Architecture Type")
+    }
+
+    /// The built-in export's four Macs are Apple silicon; the one with FileVault off (0/1)
+    /// is hardware-encrypted, so the rule moves it out of Non-Compliant.
+    func testHardwareRuleAtWarningCountsTheEncryptedMacAsAWarning() throws {
+        let sheet = try securityControls(
+            csv: builtinCSV(), columns: hardwareColumns(),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning))
+        XCTAssertEqual(sheet.header, [
+            "Control", "Compliant", "Non-Compliant", "Unknown", "% Compliant", "Warning",
+        ])
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "0", "0", "1"])
+        XCTAssertEqual(sheet.rows["FileVault"]?.percent, "0.75")
+        XCTAssertEqual(counts(sheet.rows["SIP"]), ["3", "1", "0", "0"])
+        XCTAssertEqual(counts(sheet.rows["Secure Boot"]), ["4", "0", "0", "0"])
+    }
+
+    /// At `ignore` the Mac is not counted at all, so it leaves the share: three of the three
+    /// Macs left are compliant.
+    func testHardwareRuleAtIgnoreLeavesTheEncryptedMacOutOfTheShare() throws {
+        let sheet = try securityControls(
+            csv: builtinCSV(), columns: hardwareColumns(),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore))
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "0", "0", "0"])
+        XCTAssertEqual(sheet.rows["FileVault"]?.percent, "1.0")
+        XCTAssertEqual(sheet.rows["FileVault"]?.percentFormat, .pctGreen)
+    }
+
+    /// Hardware columns are often unmapped; then hardware is unknown and FileVault's own
+    /// level applies. The Warning column is still there, because the rule is set.
+    func testHardwareRuleWithoutHardwareColumnsKeepsFileVaultsOwnLevel() throws {
+        let sheet = try securityControls(
+            csv: builtinCSV(), columns: securityColumns(),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning))
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "1", "0", "0"])
+        XCTAssertEqual(sheet.header.last, "Warning")
+    }
+
+    /// The model identifier finds a T2 Mac when the architecture says Intel; an Intel Mac
+    /// without T2 stays a failure.
+    func testHardwareRuleReadsTheModelAndArchitectureColumns() throws {
+        let csv = inlineCSV([
+            ["Not Encrypted", "", "", "", "", "", "\"MacBookPro16,2\"", "x86_64"],
+            ["Not Encrypted", "", "", "", "", "", "\"MacBookPro14,1\"", "x86_64"],
+            ["Encrypted", "", "", "", "", "", "\"MacBookPro14,1\"", "x86_64"],
+        ])
+        let sheet = try securityControls(
+            csv: csv, columns: inlineColumns(hardware: true),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning))
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["1", "1", "0", "1"])
+    }
+
+    func testControlAtWarningIsCountedInTheWarningColumn() throws {
+        let sheet = try securityControls(
+            csv: builtinCSV(), columns: securityColumns(),
+            policy: SecurityControlPolicy(sip: .warning))
+        XCTAssertEqual(counts(sheet.rows["SIP"]), ["3", "0", "0", "1"])
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "1", "0", "0"])
+    }
+
+    /// An ignored control says so in its label and shows no Non-Compliant count; its other
+    /// counts stay the facts, and nothing grades the share.
+    func testIgnoredControlIsNotCounted() throws {
+        let sheet = try securityControls(
+            csv: builtinCSV(), columns: securityColumns(),
+            policy: SecurityControlPolicy(firewall: .ignore))
+        XCTAssertNil(sheet.rows["Firewall"])
+        let firewall = try XCTUnwrap(sheet.rows["Firewall (not counted)"])
+        XCTAssertEqual(firewall.nonCompliant, "\u{2014}")
+        XCTAssertEqual(firewall.compliant, "3")
+        XCTAssertEqual(firewall.unknown, "0")
+        XCTAssertEqual(firewall.percentFormat, .pct)
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "1", "0", "0"])
+        XCTAssertEqual(sheet.header.last, "Warning")
+    }
 }

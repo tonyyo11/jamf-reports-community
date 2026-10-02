@@ -33,6 +33,16 @@ struct SecurityFleetCounts: Sendable, Equatable {
     /// Gatekeeper failures; nil without a Gatekeeper count.
     var p1: Int? { controls[.gatekeeper]?.fail }
 
+    /// The share of Macs not failing `control`, for reports that grade it red, amber or
+    /// green. Warnings and Macs the hardware rule moved count as not failing. Nil without a
+    /// count for the control, when it is not counted (`ignore`), or without Macs.
+    func nonFailingPct(_ control: SecurityControl) -> Double? {
+        guard let counts = controls[control], counts.level != .ignore, totalDevices > 0 else {
+            return nil
+        }
+        return Double(totalDevices - counts.fail) / Double(totalDevices) * 100
+    }
+
     /// A warning is not a gap, so it scores as compliant. An ignored control keeps its count,
     /// so `effectiveScoreWeights` can drop it without the score calling it missing. Macs the
     /// hardware rule does not count are left out of FileVault's share; when that is every

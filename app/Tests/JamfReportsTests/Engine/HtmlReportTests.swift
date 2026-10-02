@@ -921,4 +921,159 @@ final class HtmlReportTests: XCTestCase {
             "Report must contain at least one empty-section placeholder when no snapshots exist"
         )
     }
+
+    // MARK: - Summary tiles under the security policy
+
+    private struct RenderedTile {
+        let cssClass: String
+        let value: String
+        let label: String
+        let block: String
+    }
+
+    /// A temp data dir holding the real-shape `security` fixture (101 Macs; FileVault 100,
+    /// SIP 1, Firewall 0, Gatekeeper 100) or `security` JSON given inline.
+    private func securityDataDir(
+        json: Data? = nil, computers: [[String: Any]]? = nil
+    ) throws -> URL {
+        let dir = try makeTempDir()
+        let securityDir = dir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: securityDir, withIntermediateDirectories: true)
+        let data = try json ?? Data(contentsOf: TestFixtures.root
+            .appendingPathComponent("jamf-cli-data/security/security.json"))
+        try data.write(to: securityDir.appendingPathComponent("security.json"))
+        if let computers {
+            let computersDir = dir.appendingPathComponent("computers", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: computersDir, withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: computers)
+                .write(to: computersDir.appendingPathComponent("computers.json"))
+        }
+        return dir
+    }
+
+    /// Both callers of `buildSummaryTiles`: the full legacy layout (`sections: nil`) and a
+    /// templated one that renders the tiles block.
+    private func renderedTiles(
+        yaml: String = "", dataDir: URL, templated: Bool
+    ) async throws -> [RenderedTile] {
+        let config = try ConfigLoader.loadFromString(yaml).withDefaults()
+        let outputURL = dataDir.appendingPathComponent("report-\(UUID().uuidString).html")
+        try await HtmlReport(config: config, dataDir: dataDir).generate(
+            outputURL: outputURL, sections: templated ? [.kpiTiles] : nil)
+        let html = try String(contentsOf: outputURL, encoding: .utf8)
+        let start = try XCTUnwrap(html.range(of: "<section class=\"tiles-row\">"))
+        let end = try XCTUnwrap(html.range(
+            of: "</section>", range: start.upperBound..<html.endIndex))
+        func inner(_ block: String, _ marker: String) -> String {
+            guard let open = block.range(of: marker),
+                  let close = block.range(of: "</div>", range: open.upperBound..<block.endIndex)
+            else { return "" }
+            return String(block[open.upperBound..<close.lowerBound])
+        }
+        return String(html[start.upperBound..<end.lowerBound])
+            .components(separatedBy: "<div class=\"tile ").dropFirst().map { block in
+                RenderedTile(
+                    cssClass: String(block.prefix { $0 != "\"" }),
+                    value: inner(block, "<div class=\"tile-value\">"),
+                    label: inner(block, "<div class=\"tile-label\">"), block: block)
+            }
+    }
+
+    func testSummaryTileClassesOnTheSecurityFixture() async throws {
+        let dir = try securityDataDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for templated in [false, true] {
+            let tiles = try await renderedTiles(dataDir: dir, templated: templated)
+            XCTAssertEqual(tiles.map(\.label),
+                           ["Total Devices", "FileVault", "SIP", "Firewall", "Gatekeeper"])
+            XCTAssertEqual(tiles.map(\.value), ["101", "99.0%", "1.0%", "0.0%", "99.0%"])
+            XCTAssertEqual(tiles.map(\.cssClass), ["", "ok", "bad", "bad", "ok"],
+                           "templated: \(templated)")
+        }
+    }
+
+    /// Every control but FileVault on everywhere; a warning is amber, an ignored control gets
+    /// no colour and says so. The tile values stay the facts.
+    func testSummaryTilesFollowThePolicy() async throws {
+        let dir = try securityDataDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for templated in [false, true] {
+            let tiles = try await renderedTiles(yaml: """
+            security_policy:
+              controls:
+                sip: warning
+                firewall: ignore
+            """, dataDir: dir, templated: templated)
+            XCTAssertEqual(tiles.map(\.label), [
+                "Total Devices", "FileVault", "SIP", "Firewall (not counted)", "Gatekeeper",
+            ])
+            XCTAssertEqual(tiles.map(\.value), ["101", "99.0%", "1.0%", "0.0%", "99.0%"])
+            // SIP: no Mac fails it, but 100 only warn.
+            XCTAssertEqual(tiles.map(\.cssClass), ["", "ok", "warn", "", "ok"],
+                           "templated: \(templated)")
+        }
+    }
+
+    /// Ten Macs, FileVault on for seven; the three off are Apple silicon.
+    private func hardwareTilesDir() throws -> URL {
+        func device(_ name: String, _ serial: String, _ fileVault: String) -> [String: Any] {
+            ["section": "device", "name": name, "serial": serial, "os_version": "15.4.1",
+             "filevault": fileVault, "sip": "ENABLED", "firewall": true,
+             "gatekeeper": "APP_STORE"]
+        }
+        var items: [[String: Any]] = [["section": "summary", "data": [
+            "total_devices": 10, "filevault_encrypted": 7, "sip_enabled": 10,
+            "firewall_enabled": 10, "gatekeeper_enabled": 10,
+        ]]]
+        for n in 1...7 { items.append(device("on\(n)", "ON\(n)", "ENCRYPTED")) }
+        for n in 1...3 { items.append(device("as\(n)", "AS\(n)", "UNENCRYPTED")) }
+        let computers: [[String: Any]] = (1...3).map { n in
+            ["general": ["name": "as\(n)"],
+             "hardware": ["serialNumber": "AS\(n)", "appleSilicon": true]]
+        }
+        return try securityDataDir(
+            json: JSONSerialization.data(withJSONObject: items), computers: computers)
+    }
+
+    func testFileVaultTileNamesHardwareEncryptedMacsWithFileVaultOff() async throws {
+        let dir = try hardwareTilesDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let extra = "<div class=\"tile-label\">3 more hardware-encrypted, FileVault off</div>"
+        for templated in [false, true] {
+            let none = try await renderedTiles(dataDir: dir, templated: templated)
+            XCTAssertEqual(none[1].cssClass, "bad")
+            XCTAssertFalse(none[1].block.contains("hardware-encrypted"))
+
+            let warning = try await renderedTiles(
+                yaml: "security_policy:\n  filevault_off_hardware_encrypted: warning\n",
+                dataDir: dir, templated: templated)
+            XCTAssertEqual(warning[1].value, "70.0%", "the fact")
+            XCTAssertEqual(warning[1].cssClass, "warn", "no Mac fails it, but three only warn")
+            XCTAssertTrue(warning[1].block.contains(extra), "templated: \(templated)")
+
+            let ignore = try await renderedTiles(
+                yaml: "security_policy:\n  filevault_off_hardware_encrypted: ignore\n",
+                dataDir: dir, templated: templated)
+            XCTAssertEqual(ignore[1].cssClass, "ok")
+            XCTAssertTrue(ignore[1].block.contains(extra))
+            XCTAssertFalse(ignore[2].block.contains("hardware-encrypted"),
+                           "only the FileVault tile")
+        }
+    }
+
+    /// A hardware level stricter than FileVault's makes those Macs plain failures, so no
+    /// tile names them apart.
+    func testFileVaultTileDoesNotNameMacsTheRuleMakesFailures() async throws {
+        let dir = try hardwareTilesDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tiles = try await renderedTiles(yaml: """
+        security_policy:
+          controls:
+            filevault: warning
+          filevault_off_hardware_encrypted: fail
+        """, dataDir: dir, templated: false)
+        XCTAssertEqual(tiles[1].cssClass, "bad")
+        XCTAssertFalse(tiles[1].block.contains("hardware-encrypted"))
+    }
 }

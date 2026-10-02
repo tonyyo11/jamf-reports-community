@@ -255,13 +255,16 @@ struct CoreDashboard: Sendable {
         // Summary block
         if let s = summaryData {
             let total = s.totalDevices ?? 0
-            let fields: [(String, String)] = [
+            var fields: [(String, String)] = [
                 ("Total Devices", "\(total)"),
                 ("FileVault Encrypted", percentLabel(s.fileVaultEncrypted, total: total)),
                 ("Gatekeeper Enabled", percentLabel(s.gatekeeperEnabled, total: total)),
                 ("SIP Enabled", percentLabel(s.sipEnabled, total: total)),
                 ("Firewall Enabled", percentLabel(s.firewallEnabled, total: total)),
             ]
+            if let n = securityFleet(items: items)?.fileVaultOffHardwareEncrypted, n > 0 {
+                fields.insert(("FileVault off, hardware-encrypted", "\(n)"), at: 2)
+            }
             ws.write("Summary", row: row, col: 0, format: .header)
             ws.write("Count / %", row: row, col: 1, format: .header)
             row += 1
@@ -2316,6 +2319,7 @@ struct CoreDashboard: Sendable {
             let firewall: String
             let gatekeeper: String
             let bootstrapToken: String
+            let hardwareEncrypted: Bool?
         }
 
         let rows: [DeviceSecurityRow] = items.compactMap { item in
@@ -2343,17 +2347,16 @@ struct CoreDashboard: Sendable {
             if let b = asBool(firewallRaw) { firewallStr = b ? "ENABLED" : "DISABLED" }
             else { firewallStr = "" }
             let gatekeeperStr = security?["gatekeeperStatus"] as? String ?? ""
-            let btRaw = security?["bootstrapTokenEscrowed"]
-            let bootstrapStr: String
-            if let b = asBool(btRaw) { bootstrapStr = b ? "ESCROWED" : "NOT ESCROWED" }
-            else { bootstrapStr = "" }
+            let bootstrapStr = bootstrapEscrowText(security)
 
             let hasAny = !fileVaultStr.isEmpty || !sipStr.isEmpty || !firewallStr.isEmpty
                 || !gatekeeperStr.isEmpty || !bootstrapStr.isEmpty
             guard hasAny else { return nil }
             return DeviceSecurityRow(name: name, serial: serial, fileVault: fileVaultStr,
                                      sip: sipStr, firewall: firewallStr, gatekeeper: gatekeeperStr,
-                                     bootstrapToken: bootstrapStr)
+                                     bootstrapToken: bootstrapStr,
+                                     hardwareEncrypted: HardwareEncryption.isHardwareEncrypted(
+                                        computer: item))
         }
 
         guard !rows.isEmpty else {
@@ -2376,43 +2379,53 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
+        let policy = config.resolvedSecurityPolicy
         let sorted = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
         for r in sorted {
             ws.write(r.name, row: row, col: 0, format: .cell)
             ws.write(r.serial, row: row, col: 1, format: .cell)
-            ws.write(r.fileVault, row: row, col: 2, format: securityControlFormat("filevault", r.fileVault))
-            ws.write(r.sip, row: row, col: 3, format: securityControlFormat("sip", r.sip))
-            ws.write(r.firewall, row: row, col: 4, format: securityControlFormat("firewall", r.firewall))
+            ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
+                     row: row, col: 2, format: securityVerdictFormat(
+                        .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))
+            ws.write(r.sip, row: row, col: 3,
+                     format: securityVerdictFormat(.sip, r.sip, hardwareEncrypted: nil))
+            ws.write(r.firewall, row: row, col: 4,
+                     format: securityVerdictFormat(.firewall, r.firewall, hardwareEncrypted: nil))
             ws.write(r.gatekeeper, row: row, col: 5,
-                     format: securityControlFormat("gatekeeper", r.gatekeeper))
+                     format: securityVerdictFormat(
+                        .gatekeeper, r.gatekeeper, hardwareEncrypted: nil))
+            let escrowed = SecurityControlPolicy.reading(r.bootstrapToken)
             ws.write(r.bootstrapToken, row: row, col: 6,
-                     format: securityControlFormat("bootstrap_token", r.bootstrapToken))
+                     format: escrowed.map { $0 ? CellFormat.green : .red } ?? .cell)
             row += 1
         }
     }
 
-    /// Returns green/red/neutral based on whether a security control value is compliant.
-    /// Mirrors Python `_security_control_is_compliant` logic.
-    private func securityControlFormat(_ control: String, _ value: String) -> CellFormat {
-        guard !value.isEmpty else { return .cell }
-        let v = value.uppercased()
-        let compliant: Bool
-        switch control {
-        case "filevault":
-            compliant = v == "ENCRYPTED" || v.contains("ENCRYPT")
-        case "sip":
-            compliant = v == "ENABLED" || v.contains("ENABLE") || v == "ACTIVE"
-        case "firewall":
-            compliant = v == "ENABLED" || v == "TRUE" || v == "YES"
-        case "gatekeeper":
-            // APP_STORE or APP_STORE_AND_IDENTIFIED_DEVELOPERS are compliant
-            compliant = v.contains("APP_STORE") || v == "ENABLED" || v == "ACTIVE"
-        case "bootstrap_token":
-            compliant = v == "ESCROWED"
-        default:
-            return .cell
+    /// Bootstrap token escrow as the sheet shows it. Jamf Pro reports it as
+    /// `bootstrapTokenEscrowedStatus` (ESCROWED, NOT_ESCROWED, NOT_SUPPORTED); a snapshot with
+    /// the older Bool key still reads. `bootstrapTokenAllowed` says whether escrow is
+    /// permitted, not whether the token is escrowed, so it never stands in.
+    private func bootstrapEscrowText(_ security: [String: Any]?) -> String {
+        let status = (security?["bootstrapTokenEscrowedStatus"] as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        if !status.isEmpty { return status }
+        guard let escrowed = asBool(security?["bootstrapTokenEscrowed"]) else { return "" }
+        return escrowed ? "ESCROWED" : "NOT ESCROWED"
+    }
+
+    /// Green when the control passes under the workspace's policy, red when it fails, amber
+    /// for a warning; neutral when the value says nothing or the policy does not count it.
+    private func securityVerdictFormat(
+        _ control: SecurityControl, _ value: String, hardwareEncrypted: Bool?
+    ) -> CellFormat {
+        let verdict = config.resolvedSecurityPolicy.verdict(
+            for: control, value: value, hardwareEncrypted: hardwareEncrypted)
+        switch verdict {
+        case .pass: return .green
+        case .fail: return .red
+        case .warning: return .yellow
+        case .ignored, .unknown: return .cell
         }
-        return compliant ? .green : .red
     }
 
     // MARK: - Mobile Supervision Status
@@ -2626,6 +2639,8 @@ struct CoreDashboard: Sendable {
         var dormantCount: Int?
         var actionItemsP0: Int?
         var actionItemsP1: Int?
+        /// FileVault-off Macs the hardware rule counts apart (warning or not counted).
+        var fileVaultOffHardwareEncrypted: Int?
     }
 
     /// Assemble `ExecutiveSummaryMetrics` from the cached jamf-cli snapshots in `dataDir`.
@@ -2655,9 +2670,20 @@ struct CoreDashboard: Sendable {
             let total = s.data.totalDevices ?? 0
             m.totalDevices = total
             applySecurityControlPcts(to: &m, data: s.data, total: total)
-            applySecurityScoreAndActions(to: &m, data: s.data, total: total)
+            if let fleet = securityFleet(items: items) {
+                applySecurityScoreAndActions(to: &m, fleet: fleet)
+            }
             break
         }
+    }
+
+    /// The security snapshot's counts under the workspace's policy: what summary.json and the
+    /// Security Posture screen take P0, P1 and the score from. Nil without a summary section.
+    private func securityFleet(items: [SecurityReportItem]) -> SecurityFleetCounts? {
+        let policy = config.resolvedSecurityPolicy
+        return SecurityFleetCounts.build(
+            items: items, hardware: HardwareEncryption.index(dataDir: dataDir, for: policy),
+            policy: policy)
     }
 
     /// Populate per-control coverage percentages from a security summary.
@@ -2675,24 +2701,19 @@ struct CoreDashboard: Sendable {
     /// Compute the weighted security score, grade, and P0/P1 action item counts.
     private func applySecurityScoreAndActions(
         to m: inout ExecutiveSummaryMetrics,
-        data: SecuritySummaryData,
-        total: Int
+        fleet: SecurityFleetCounts
     ) {
-        var counts: [SecurityScore.Metric: Int] = [:]
-        if let n = data.fileVaultEncrypted { counts[.fileVault] = n }
-        if let n = data.sipEnabled { counts[.sip] = n }
-        if let n = data.firewallEnabled { counts[.firewall] = n }
-        if !counts.isEmpty && total > 0 {
-            let score = SecurityScoreCalculator.score(
-                input: .init(totalDevices: total, compliantCounts: counts)
-            )
-            if !score.available.isEmpty {
-                m.securityScore = score.value
-                m.securityGrade = score.grade
-            }
+        let score = SecurityScoreCalculator.score(
+            input: fleet.scoreInput(),
+            weights: config.resolvedSecurityPolicy.effectiveScoreWeights(.defaultWeights)
+        )
+        if !score.available.isEmpty {
+            m.securityScore = score.value
+            m.securityGrade = score.grade
         }
-        if let n = data.fileVaultEncrypted { m.actionItemsP0 = total - n }
-        if let n = data.gatekeeperEnabled { m.actionItemsP1 = total - n }
+        m.actionItemsP0 = fleet.p0
+        m.actionItemsP1 = fleet.p1
+        m.fileVaultOffHardwareEncrypted = fleet.fileVaultOffHardwareEncrypted
     }
 
     /// Populate patch compliance % from the cached `patch-status` snapshot.
@@ -2763,7 +2784,7 @@ struct CoreDashboard: Sendable {
             return "\(n)"
         }
 
-        let metricRows: [(String, String)] = [
+        var metricRows: [(String, String)] = [
             ("Security Score", scoreLabel),
             ("Total Devices", fmtInt(m.totalDevices)),
             ("Managed Devices", fmtInt(m.managedCount)),
@@ -2779,6 +2800,10 @@ struct CoreDashboard: Sendable {
             ("P0 Action Items (FV/SIP/FW gaps)", fmtInt(m.actionItemsP0)),
             ("P1 Action Items (Gatekeeper gaps)", fmtInt(m.actionItemsP1)),
         ]
+        if let n = m.fileVaultOffHardwareEncrypted, n > 0,
+           let at = metricRows.firstIndex(where: { $0.0 == "FileVault Coverage" }) {
+            metricRows.insert(("FileVault off, hardware-encrypted", "\(n)"), at: at + 1)
+        }
 
         ws.write("Metric", row: row, col: 0, format: .header)
         ws.write("Value", row: row, col: 1, format: .header)
@@ -3004,6 +3029,8 @@ struct CoreDashboard: Sendable {
             .first(where: { ($0["section"] as? String) == "summary" })?["data"]
             as? [String: Any] ?? [:]
         let totalDevices = asInt(secSummary["total_devices"]) ?? 0
+        let fleet = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
+            .flatMap { securityFleet(items: $0) }
 
         // Device compliance snapshot
         let deviceCompItems = ((try? loadLatestJSON(
@@ -3021,29 +3048,29 @@ struct CoreDashboard: Sendable {
         )) as? [[String: Any]]) ?? []
         let patchPct = averagePatchCompliancePct(patchItems)
 
-        // Metric rows: (label, rawValue, pctValue for RAG)
-        let metrics: [(label: String, value: String, pct: Double?)] = [
+        // Metric rows: (label, rawValue, pctValue for RAG, security control the policy grades)
+        let metrics: [(label: String, value: String, pct: Double?, control: SecurityControl?)] = [
             ("Device Compliance (managed %)",
              deviceTotal > 0 ? String(format: "%.0f%%", compliancePct) : "\u{2014}",
-             deviceTotal > 0 ? compliancePct : nil),
+             deviceTotal > 0 ? compliancePct : nil, nil),
             ("FileVault Encrypted",
              percentLabel(asInt(secSummary["filevault_encrypted"]), total: totalDevices),
-             pctFromSummary(secSummary["filevault_encrypted"], total: totalDevices)),
+             nil, .fileVault),
             ("SIP Enabled",
              percentLabel(asInt(secSummary["sip_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["sip_enabled"], total: totalDevices)),
+             nil, .sip),
             ("Firewall Enabled",
              percentLabel(asInt(secSummary["firewall_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["firewall_enabled"], total: totalDevices)),
+             nil, .firewall),
             ("Gatekeeper Enabled",
              percentLabel(asInt(secSummary["gatekeeper_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["gatekeeper_enabled"], total: totalDevices)),
+             nil, .gatekeeper),
             ("Patch Compliance (avg across titles)",
              patchItems.isEmpty ? "\u{2014}" : String(format: "%.0f%%", patchPct),
-             patchItems.isEmpty ? nil : patchPct),
+             patchItems.isEmpty ? nil : patchPct, nil),
             ("Stale Devices (>\(config.thresholds?.resolvedStaleDays ?? 30) days)",
              "\(staleCount)",
-             nil),
+             nil, nil),
         ]
 
         ws.write("Metric", row: row, col: 0, format: .header)
@@ -3052,7 +3079,9 @@ struct CoreDashboard: Sendable {
         row += 1
 
         for metric in metrics {
-            let (statusLabel, statusFmt) = ragStatus(pct: metric.pct)
+            let (statusLabel, statusFmt) = metric.control.map {
+                securityRagStatus($0, fleet: fleet)
+            } ?? ragStatus(pct: metric.pct)
             ws.write(metric.label, row: row, col: 0, format: .cell)
             ws.write(metric.value, row: row, col: 1, format: .cell)
             ws.write(statusLabel, row: row, col: 2, format: statusFmt)
@@ -3122,10 +3151,20 @@ struct CoreDashboard: Sendable {
         return pcts.reduce(0, +) / Double(pcts.count)
     }
 
-    /// Convert a count/total pair into a percentage Double for RAG banding.
-    private func pctFromSummary(_ value: Any?, total: Int) -> Double? {
-        guard let n = asInt(value), total > 0 else { return nil }
-        return Double(n) / Double(total) * 100
+    /// A security row's status under the workspace's policy: not counted at `ignore`, else
+    /// graded on the share of Macs not failing the control, amber instead of green when some
+    /// Macs only warn.
+    private func securityRagStatus(
+        _ control: SecurityControl, fleet: SecurityFleetCounts?
+    ) -> (String, CellFormat) {
+        if config.resolvedSecurityPolicy.level(for: control) == .ignore {
+            return ("Not counted", .cell)
+        }
+        let status = ragStatus(pct: fleet?.nonFailingPct(control))
+        guard status.0 == "GREEN", (fleet?.controls[control]?.warning ?? 0) > 0 else {
+            return status
+        }
+        return ("AMBER", .yellow)
     }
 
     /// Return RAG (RED/AMBER/GREEN) label and cell format for a percentage.
