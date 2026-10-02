@@ -14,7 +14,7 @@ final class SecurityFleetCountsTests: XCTestCase {
     /// Runs the summary writer over one security snapshot and returns what it wrote.
     private func writtenSummary(
         config: ReportConfig = ReportConfig(), security: Data? = nil,
-        computers: [[String: Any]]? = nil
+        computers: [[String: Any]]? = nil, inventorySummary: URL? = nil
     ) throws -> DailySummary {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-fleet-\(UUID().uuidString)", isDirectory: true)
@@ -34,6 +34,13 @@ final class SecurityFleetCountsTests: XCTestCase {
             try JSONSerialization.data(withJSONObject: computers)
                 .write(to: dir.appendingPathComponent("computers_\(name).json"))
         }
+        if let inventorySummary {
+            let dir = dataDir.appendingPathComponent("inventory-summary", isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(
+                at: inventorySummary,
+                to: dir.appendingPathComponent("inventory-summary_\(name).json"))
+        }
         let summaries = root.appendingPathComponent("summaries", isDirectory: true)
         ReportEngine(config: config, dataDir: dataDir).emitSummaryJSON(summariesDir: summaries)
         return try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first)
@@ -46,6 +53,41 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(summary.actionItemsP0, 202)
         XCTAssertEqual(summary.actionItemsP1, 1)
         XCTAssertEqual(try XCTUnwrap(summary.securityScore), 33.3, accuracy: 0.001)
+    }
+
+    /// A security summary with the counts only, in the `pro report security` shape.
+    private func summaryOnly(_ counts: [String: Int]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [["section": "summary", "data": counts]])
+    }
+
+    /// No `total_devices`: the writer takes the total from inventory-summary (the real
+    /// fixture, 101 Macs) and counts the gaps against it, as before.
+    /// P0 = 11 + 0 + 30; P1 = 1; score = (89.11 + 100 + 70.30) / 3.
+    func testSummaryWithoutATotalUsesTheInventoryTotal() throws {
+        let summary = try writtenSummary(
+            security: summaryOnly([
+                "filevault_encrypted": 90, "sip_enabled": 101, "firewall_enabled": 71,
+                "gatekeeper_enabled": 100,
+            ]),
+            inventorySummary: TestFixtures.root.appendingPathComponent(
+                "jamf-cli-data/inventory-summary/inventory-summary.json"))
+        XCTAssertEqual(summary.totalDevices, 101)
+        XCTAssertEqual(summary.actionItemsP0, 41)
+        XCTAssertEqual(summary.actionItemsP1, 1)
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 86.5, accuracy: 0.001)
+    }
+
+    /// No `firewall_enabled`: P0 counts FileVault and SIP only and the score leaves the
+    /// firewall out, as before. P0 = 11 + 0; score = (89.11 + 100) / 2.
+    func testSummaryWithoutAFirewallCountLeavesItOut() throws {
+        let summary = try writtenSummary(security: summaryOnly([
+            "total_devices": 101, "filevault_encrypted": 90, "sip_enabled": 101,
+            "gatekeeper_enabled": 100,
+        ]))
+        XCTAssertEqual(summary.actionItemsP0, 11)
+        XCTAssertEqual(summary.actionItemsP1, 1)
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 94.6, accuracy: 0.001)
+        XCTAssertNil(summary.firewallPct)
     }
 
     // MARK: - Fixtures
