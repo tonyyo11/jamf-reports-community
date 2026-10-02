@@ -1367,7 +1367,8 @@ extension FleetInsightInput {
     /// which is not the same as nothing having changed. Only counts, check names, categories
     /// and the severity buckets go out: a finding's recommendation, and any `detail` or
     /// `resource` text beside it, can name policies, computers or users and stays behind.
-    /// Nil when there are no findings.
+    /// Resolved findings are counted, not named: next to the open ones the on-device model
+    /// read a named one as still open. Nil when there are no findings.
     static func audit(
         findings: [AuditFinding],
         drift: (newKeys: Set<String>, resolved: [AuditFinding])?
@@ -1386,7 +1387,7 @@ extension FleetInsightInput {
                               value: .count(resolved.count), prior: nil,
                               polarity: .higherIsBetter))
         }
-        facts += auditCategoryFacts(open)
+        if let categories = auditCategoryFact(open) { facts.append(categories) }
         let listed = Array(open.sorted(by: auditIsMoreUrgent).prefix(maxListedAuditFindings))
         facts += listed.map { auditFindingFact($0, isNew: isNew($0)) }
         var notes = ["A finding's count is the objects it affects, as its check name says "
@@ -1397,10 +1398,6 @@ extension FleetInsightInput {
         if drift == nil {
             notes.append("No previous audit was available, so what changed is unknown.")
         }
-        notes += resolved.prefix(maxListedResolvedAuditFindings).map {
-            "Resolved since the previous audit (no longer reported): \($0.name) "
-                + "(\($0.insightCategory), \(AuditSeverity($0.severity).word))."
-        }
         return FleetInsightInput(
             title: "Audit insight",
             focus: "which categories to work first, and what changed since the previous audit.",
@@ -1408,7 +1405,7 @@ extension FleetInsightInput {
     }
 
     private static let maxListedAuditFindings = 10
-    private static let maxListedResolvedAuditFindings = 5
+    private static let maxAuditCategories = 5
 
     private static func auditSeverityFacts(_ findings: [AuditFinding]) -> [Fact] {
         let counts = Dictionary(grouping: findings) { AuditSeverity($0.severity) }
@@ -1428,9 +1425,10 @@ extension FleetInsightInput {
         return facts
     }
 
-    /// One line per category with an open finding, the one with the most critical findings
-    /// first, then the most warnings.
-    private static func auditCategoryFacts(_ open: [AuditFinding]) -> [Fact] {
+    /// One line ranking the categories with an open finding: the one with the most critical
+    /// findings first, then the most warnings. A line of its own per category made the
+    /// on-device model restate each as a finding.
+    private static func auditCategoryFact(_ open: [AuditFinding]) -> Fact? {
         let groups = Dictionary(grouping: open) { $0.insightCategory.lowercased() }.values
         let tallies = groups.map { rows -> (name: String, counts: [Int]) in
             let bySeverity = Dictionary(grouping: rows) { AuditSeverity($0.severity) }
@@ -1439,24 +1437,26 @@ extension FleetInsightInput {
                         bySeverity[$0]?.count ?? 0
                     })
         }
-        return tallies.sorted {
+        let ranked = tallies.sorted {
             $0.counts != $1.counts ? $0.counts.lexicographicallyPrecedes($1.counts, by: >)
                 : $0.name < $1.name
-        }.map { tally in
-            let parts = zip(tally.counts, [("critical", "critical"), ("warning", "warnings"),
-                                           ("informational", "informational")])
-                .filter { $0.0 > 0 }
+        }.prefix(maxAuditCategories)
+        guard !ranked.isEmpty else { return nil }
+        let words = [("critical", "critical"), ("warning", "warnings"),
+                     ("informational", "informational")]
+        let text = ranked.map { tally in
+            let parts = zip(tally.counts, words).filter { $0.0 > 0 }
                 .map { "\($0.0) \($0.0 == 1 ? $0.1.0 : $0.1.1)" }
-            return Fact(label: "Category \(tally.name)",
-                        value: .text(parts.joined(separator: ", ")),
-                        prior: nil, polarity: .neutral)
-        }
+            return "\(tally.name) (\(parts.joined(separator: ", ")))"
+        }.joined(separator: "; ")
+        return Fact(label: "Categories to work first, in order", value: .text(text),
+                    prior: nil, polarity: .neutral)
     }
 
     /// `pro audit` reports 0 affected when it has no per-device breakdown, so for a finding
     /// that is not passing a 0 is "not reported", never "nothing affected".
     private static func auditFindingFact(_ finding: AuditFinding, isNew: Bool) -> Fact {
-        let marker = isNew ? ", new since the previous audit" : ""
+        let marker = isNew ? ", this finding is new since the previous audit" : ""
         let label = "\(finding.name) (\(finding.insightCategory), "
             + "\(AuditSeverity(finding.severity).word)\(marker))"
         return Fact(label: label,

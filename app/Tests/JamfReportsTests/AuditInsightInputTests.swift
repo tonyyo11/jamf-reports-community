@@ -50,17 +50,15 @@ final class AuditInsightInputTests: XCTestCase {
             "- Checks passing: 1",
             "- Findings new since the previous audit: 1",
             "- Findings resolved since the previous audit: 1",
-            "- Category security: 1 critical, 1 warning",
-            "- Category compliance: 1 warning",
-            "- Category hygiene: 1 warning",
+            "- Categories to work first, in order: security (1 critical, 1 warning); "
+                + "compliance (1 warning); hygiene (1 warning)",
             "- Unencrypted devices (security, critical): 12",
             "- Stale check-in (>14 days) (compliance, warning): 101",
-            "- Policies with no scope (hygiene, warning, new since the previous audit): 6",
+            "- Policies with no scope (hygiene, warning, this finding is new since the "
+                + "previous audit): 6",
             "- Gatekeeper disabled (security, warning): count not reported",
             "A finding's count is the objects it affects, as its check name says (devices, "
                 + "policies, ...). Counts of different checks do not add up.",
-            "Resolved since the previous audit (no longer reported): Firewall disabled "
-                + "(security, warning).",
         ])
     }
 
@@ -71,7 +69,7 @@ final class AuditInsightInputTests: XCTestCase {
         XCTAssertFalse(context.contains("resolved since"))
         XCTAssertTrue(context.contains(
             "No previous audit was available, so what changed is unknown."))
-        XCTAssertEqual(input?.facts.count, 6)
+        XCTAssertEqual(input?.facts.count, 5)
     }
 
     func testAnUnchangedAuditReportsZeroNewAndResolved() {
@@ -116,8 +114,8 @@ final class AuditInsightInputTests: XCTestCase {
         XCTAssertTrue(context.contains("- Critical findings: 1"))
         XCTAssertTrue(context.contains("- Warning findings: 1"))
         XCTAssertTrue(context.contains("- Informational findings: 2"))
-        XCTAssertTrue(
-            context.contains("- Category platform: 1 critical, 1 warning, 2 informational"))
+        XCTAssertTrue(context.contains(
+            "in order: platform (1 critical, 1 warning, 2 informational)"))
     }
 
     func testCategoriesGroupCaseInsensitivelyAndBlankIsUncategorized() {
@@ -126,8 +124,9 @@ final class AuditInsightInputTests: XCTestCase {
             finding("B", "security ", "WARNING", affected: 1),
             finding("C", "  ", "WARNING", affected: 1),
         ], drift: nil)
-        let categories = (input?.facts ?? []).map(\.label).filter { $0.hasPrefix("Category ") }
-        XCTAssertEqual(categories, ["Category Security", "Category uncategorized"])
+        XCTAssertTrue(input?.promptContext().contains(
+            "- Categories to work first, in order: Security (2 warnings); "
+                + "uncategorized (1 warning)") == true)
     }
 
     func testNoFindingsGivesNoInput() {
@@ -140,7 +139,7 @@ final class AuditInsightInputTests: XCTestCase {
             .promptContext() ?? ""
         XCTAssertTrue(context.contains("- Critical findings: 0"))
         XCTAssertTrue(context.contains("- Checks passing: 1"))
-        XCTAssertFalse(context.contains("- Category"))
+        XCTAssertFalse(context.contains("Categories to work first"))
     }
 
     // MARK: - Bounds
@@ -160,17 +159,30 @@ final class AuditInsightInputTests: XCTestCase {
         XCTAssertEqual(listed.last?.label, "Check 5 (hygiene, warning)")
         XCTAssertTrue((input?.notes ?? []).contains("4 lower-priority findings are not listed."))
         // The roll-up counts every finding, listed or not.
-        XCTAssertTrue(input?.promptContext().contains("- Category hygiene: 13 warnings") == true)
+        XCTAssertTrue(input?.promptContext().contains(
+            "- Categories to work first, in order: security (1 critical); "
+                + "hygiene (13 warnings)") == true)
     }
 
-    func testResolvedFindingsListAtMostFiveByName() {
+    /// Beside the open findings the on-device model read a named resolved one as still open.
+    func testResolvedFindingsAreCountedNotNamed() {
         let resolved = (1...7).map { finding("Gone \($0)", "hygiene", "WARNING", affected: 1) }
-        let input = FleetInsightInput.audit(
-            findings: [unencrypted], drift: (newKeys: [], resolved: resolved))
-        let notes = (input?.notes ?? []).filter { $0.hasPrefix("Resolved since") }
-        XCTAssertEqual(notes.count, 5)
-        XCTAssertTrue(input?.promptContext()
-            .contains("- Findings resolved since the previous audit: 7") == true)
+        let context = FleetInsightInput.audit(
+            findings: [unencrypted], drift: (newKeys: [], resolved: resolved))?
+            .promptContext() ?? ""
+        XCTAssertTrue(context.contains("- Findings resolved since the previous audit: 7"))
+        XCTAssertFalse(context.contains("Gone"))
+    }
+
+    func testOnlyTheFiveMostUrgentCategoriesAreRanked() {
+        let findings = (1...6).map {
+            finding("Check \($0)", "cat\($0)", "WARNING", affected: 1)
+        } + [finding("Urgent", "zeta", "CRITICAL", affected: 1)]
+        let context = FleetInsightInput.audit(findings: findings, drift: nil)?
+            .promptContext() ?? ""
+        XCTAssertTrue(context.contains(
+            "- Categories to work first, in order: zeta (1 critical); cat1 (1 warning); "
+                + "cat2 (1 warning); cat3 (1 warning); cat4 (1 warning)\n"))
     }
 
     // MARK: - Privacy
@@ -210,10 +222,10 @@ final class AuditInsightInputTests: XCTestCase {
             XCTAssertFalse(context.contains(secret), "\(secret) reached the prompt")
         }
         // The check names, categories and counts are what is sent.
-        XCTAssertTrue(context.contains("Policies with no scope (hygiene, warning, new since the "
-            + "previous audit): 2"))
+        XCTAssertTrue(context.contains("Policies with no scope (hygiene, warning, this finding "
+            + "is new since the previous audit): 2"))
         XCTAssertTrue(context.contains("Unencrypted devices (security, critical): 1"))
-        XCTAssertTrue(context.contains("Gatekeeper disabled (security, warning)"))
+        XCTAssertTrue(context.contains("- Findings resolved since the previous audit: 1"))
     }
 
     /// Severity is free text in the snapshot; only the buckets' own words are sent.
