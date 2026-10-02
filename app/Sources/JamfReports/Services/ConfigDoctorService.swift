@@ -615,14 +615,52 @@ enum ConfigDoctorService {
 
     // MARK: - What the reader did not take as written
 
-    /// Reads the profile's config.yaml whether or not it decodes. Nothing for a file that is
-    /// missing or is not YAML.
+    /// Reads the profile's config.yaml whether or not it decodes: a skipped line can be why it
+    /// does not. Nothing for a file that is missing or is not YAML.
     static func readerRows(profile: String, workspaceRoot: URL? = nil) -> [DoctorRow] {
         guard let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot),
               let text = try? String(contentsOf: url, encoding: .utf8),
+              let document = try? YAMLCodec.decode(text),
               let root = try? ConfigLoader.rawMapping(fromYAML: text)
         else { return [] }
-        return fileReadBooleanRows(root)
+        return parseNoteRows(document.parseNotes) + fileReadBooleanRows(root)
+    }
+
+    private static let parseNoteCap = 20
+
+    /// One warning per line the reader did not take as written, titled with its line number.
+    static func parseNoteRows(_ notes: [YAMLCodec.ParseNote]) -> [DoctorRow] {
+        var rows = notes.prefix(parseNoteCap).enumerated().map { index, note in
+            DoctorRow(
+                id: "config.parse_note.\(index)", severity: .warn,
+                title: "config.yaml line \(note.line)",
+                detail: note.detail.prefix(1).uppercased() + note.detail.dropFirst() + ".",
+                hint: parseNoteHint(note.kind)
+            )
+        }
+        if notes.count > parseNoteCap {
+            let more = notes.count - parseNoteCap
+            rows.append(DoctorRow(
+                id: "config.parse_note.more", severity: .warn,
+                title: "More lines the app did not read as written",
+                detail: more == 1
+                    ? "1 more line in config.yaml was not read as written."
+                    : "\(more) more lines in config.yaml were not read as written.",
+                hint: "Fix the lines above, then run the check again to see the rest."
+            ))
+        }
+        return rows
+    }
+
+    private static func parseNoteHint(_ kind: YAMLCodec.ParseNote.Kind) -> String {
+        switch kind {
+        case .indentation: "Line it up with the other keys of its block: two spaces per level."
+        case .noKey: "Write it as key: value, or remove it."
+        case .tab: "Replace the tab with spaces."
+        case .duplicateKey: "Remove one of the two lines."
+        case .blockScalar: "Put the value on the same line, in quotes."
+        case .orphanItems: "Put the list under the key it belongs to, or remove it."
+        }
     }
 
     /// true/false keys the decoder does not model, read by `WorkspacePaths` and `HtmlReport`.

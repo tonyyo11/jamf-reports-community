@@ -82,6 +82,8 @@ struct ConfigView: View {
     /// Key-path detail from the report engine's strict parse, when it fails
     /// on a file the lenient GUI editor tolerates (#181 recovery card).
     @State private var engineParseDetail: String?
+    /// `Line N: …` for each line the YAML reader did not take as written.
+    @State private var parseNotes: [String] = []
     @State private var showRestoreConfirm = false
 
     var body: some View {
@@ -91,8 +93,8 @@ struct ConfigView: View {
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
-            if !workspace.configRepairedKeys.isEmpty {
-                configHealedKeysCard(workspace.configRepairedKeys)
+            if !workspace.configRepairedKeys.isEmpty || !parseNotes.isEmpty {
+                configHealedKeysCard(workspace.configRepairedKeys, notes: parseNotes)
             }
             tabContent
         }
@@ -139,15 +141,19 @@ struct ConfigView: View {
 
     /// Re-run the engine's strict parse and keep its key-path detail for the
     /// recovery card. The GUI's lenient YAMLCodec can tolerate a file that
-    /// still breaks report generation, so both checks matter.
+    /// still breaks report generation, so both checks matter. Also lists the
+    /// lines the reader did not take as written, for the healed-keys card.
     private func refreshEngineParseStatus() {
         guard !workspace.demoMode,
               let url = ProfileService.workspaceURL(for: workspace.profile)?
                   .appendingPathComponent("config.yaml"),
               FileManager.default.fileExists(atPath: url.path) else {
             engineParseDetail = nil
+            parseNotes = []
             return
         }
+        parseNotes = ((try? String(contentsOf: url, encoding: .utf8))
+            .flatMap { try? YAMLCodec.decode($0) }?.parseNotes ?? []).map(\.display)
         do {
             _ = try ConfigLoader.load(from: url)
             engineParseDetail = nil
@@ -190,34 +196,65 @@ struct ConfigView: View {
     }
 
     /// Informational card shown when the YAML parser auto-healed orphaned
-    /// sequence items on load. Not a parse failure — the file is still readable
-    /// — but the on-disk YAML is malformed until the user saves from this screen.
-    private func configHealedKeysCard(_ keys: [String]) -> some View {
-        Card(padding: 16) {
+    /// sequence items on load, or read some lines other than as written. Not a
+    /// parse failure — the file is still readable. Saving heals the repaired
+    /// keys only, so the Save button shows only for them.
+    private func configHealedKeysCard(_ keys: [String], notes: [String]) -> some View {
+        let text = Self.readerCardText(keys: keys, notes: notes)
+        return Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "wand.and.sparkles")
                         .foregroundStyle(Theme.Colors.warn)
                         .accessibilityHidden(true)
-                    Text("Config auto-healed on load")
+                    Text(text.title)
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
-                    Pill(text: "\(keys.count) key\(keys.count == 1 ? "" : "s")", tone: .warn)
+                    Pill(text: text.pill, tone: .warn)
                 }
-                Text("The following YAML keys had malformed sequence items that were "
-                    + "auto-reattached. The file reads correctly but is still malformed "
-                    + "on disk. Save from this screen to persist the cleanup.")
+                Text(text.summary)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Mono(text: keys.joined(separator: ", "), size: 11.5, color: Theme.Colors.warnSoft)
+                Mono(text: text.detail, size: 11.5, color: Theme.Colors.warnSoft)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Healed keys: \(keys.joined(separator: ", "))")
-                PNPButton(title: "Save now", icon: "checkmark", style: .gold, size: .sm) {
-                    save()
+                    .accessibilityLabel(text.detail)
+                if !keys.isEmpty {
+                    PNPButton(title: "Save now", icon: "checkmark", style: .gold, size: .sm) {
+                        save()
+                    }
                 }
             }
         }
+    }
+
+    /// The healed-keys card's text, for repaired keys, `Line N: …` parse notes, or both. Notes
+    /// past 20 are counted rather than listed.
+    static func readerCardText(
+        keys: [String], notes: [String]
+    ) -> (title: String, pill: String, summary: String, detail: String) {
+        func count(_ n: Int, _ noun: String) -> String? {
+            n == 0 ? nil : "\(n) \(noun)\(n == 1 ? "" : "s")"
+        }
+        let shown = notes.prefix(20) + (notes.count > 20 ? ["…and \(notes.count - 20) more"] : [])
+        let summary = [
+            keys.isEmpty ? nil : "The following YAML keys had malformed sequence items that were "
+                + "auto-reattached. The file reads correctly but is still malformed on disk. "
+                + "Save from this screen to persist the cleanup.",
+            notes.isEmpty ? nil : "The app did not read the lines below as written. "
+                + "Correct them in config.yaml.",
+        ]
+        return (
+            title: keys.isEmpty
+                ? "Some lines in config.yaml were not read as written"
+                : "Config auto-healed on load",
+            pill: [count(keys.count, "key"), count(notes.count, "line")].compactMap { $0 }
+                .joined(separator: " · "),
+            summary: summary.compactMap { $0 }.joined(separator: " "),
+            detail: [keys.isEmpty ? nil : keys.joined(separator: ", "),
+                     shown.isEmpty ? nil : shown.joined(separator: "\n")]
+                .compactMap { $0 }.joined(separator: "\n")
+        )
     }
 
     // MARK: Tab strip
@@ -353,6 +390,8 @@ struct ConfigView: View {
         saveTask = Task { @MainActor in
             do {
                 try await workspace.saveConfig()
+                // A save rewrites the blocks this screen edits; re-read what the card lists.
+                refreshEngineParseStatus()
                 withAnimation { saveStatus = .saved }
             } catch {
                 let message = (error as? LocalizedError)?.errorDescription
