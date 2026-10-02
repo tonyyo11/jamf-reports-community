@@ -849,7 +849,7 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Security State")
             VStack(spacing: 0) {
-                securityRow("FileVault", value: fileVaultText(device),
+                securityRow("FileVault", value: fileVaultText(device, short: true),
                             tone: securityTone(.fileVault, of: device))
                 securityRow("SIP", value: device.sip, tone: securityTone(.sip, of: device))
                 securityRow("Firewall", value: device.firewall,
@@ -1067,9 +1067,10 @@ struct DevicesView: View {
         }
     }
 
-    private func fileVaultText(_ device: DeviceInventoryRecord) -> String {
+    /// `short` for the detail pill, which already sits under a "FileVault" label.
+    private func fileVaultText(_ device: DeviceInventoryRecord, short: Bool = false) -> String {
         activeSnapshot.securityPolicy.fileVaultLabel(
-            device.fileVault, hardwareEncrypted: device.hardwareEncrypted)
+            device.fileVault, hardwareEncrypted: device.hardwareEncrypted, short: short)
     }
 
     // Per-control glyph row for the inventory table. Five tight icons:

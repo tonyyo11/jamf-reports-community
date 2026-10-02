@@ -320,6 +320,22 @@ final class DeviceSecurityStateTests: XCTestCase {
                        SecurityControlPolicy.hardwareEncryptedFileVaultOffLabel)
     }
 
+    /// A pill already under a "FileVault" label takes the short form; everywhere else the long.
+    func testFileVaultShortLabelForAPillUnderAFileVaultLabel() {
+        XCTAssertEqual(SecurityControlPolicy.hardwareEncryptedFileVaultOffShortLabel,
+                       "Off (hardware-encrypted)")
+        XCTAssertEqual(
+            hardwareWarning.fileVaultLabel("UNENCRYPTED", hardwareEncrypted: true, short: true),
+            "Off (hardware-encrypted)")
+        XCTAssertEqual(hardwareWarning.fileVaultLabel("UNENCRYPTED", hardwareEncrypted: true),
+                       "FileVault off (hardware-encrypted)", "the long form is the default")
+        XCTAssertEqual(
+            hardwareWarning.fileVaultLabel("ENCRYPTED", hardwareEncrypted: true, short: true),
+            "ENCRYPTED")
+        XCTAssertEqual(SecurityControlPolicy.default.fileVaultLabel(
+            "UNENCRYPTED", hardwareEncrypted: true, short: true), "UNENCRYPTED")
+    }
+
     /// The tile counts the Macs the rule took out of the gaps; FileVault stays off for the share.
     func testSnapshotCountsHardwareEncryptedFileVaultOffApart() {
         let macs = [
