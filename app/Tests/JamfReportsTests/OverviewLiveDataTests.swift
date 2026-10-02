@@ -100,9 +100,9 @@ final class OverviewLiveDataTests: XCTestCase {
         }
     }
 
-    /// The card's share is of the Macs reporting the agent's attribute, not the security
-    /// report's device count, and two Macs that share a name are two Macs.
-    func testAgentShareIsOfTheMacsReportingTheAttribute() async throws {
+    /// Two Macs that share a name are two Macs, and the card's share is of the whole
+    /// fleet, as the daily summary's EDR figure is: a Mac with no value is not connected.
+    func testAgentCardsCountRepeatedNamesAndShareTheFleet() async throws {
         try workspace(profile: "acme", config: """
             security_agents:
               - name: "CrowdStrike Falcon"
@@ -124,8 +124,9 @@ final class OverviewLiveDataTests: XCTestCase {
             profile: "acme", sections: [.securityAgents])
 
         XCTAssertEqual(data.agents.map(\.installed), [2])
-        XCTAssertEqual(data.agents.map(\.pct), [66.7])
-        XCTAssertEqual(data.agentReportingMacs, ["CrowdStrike Falcon": 3])
+        XCTAssertEqual(OverviewLiveDataLoader.agents(data.agents, overFleet: 4).map(\.pct), [50])
+        XCTAssertEqual(OverviewLiveDataLoader.agents(data.agents, overFleet: 0).map(\.pct),
+                       data.agents.map(\.pct), "an unknown fleet leaves the loader's share")
     }
 
     /// "Across N active devices" printed the security report's device count, not the Macs

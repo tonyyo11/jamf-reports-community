@@ -323,6 +323,66 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
     }
 
+    /// jamf-cli's ea-results rows carry the computer name and no id. Keyed by name, two
+    /// Macs called "MacBook Pro" counted once and the figure read 40%.
+    func testEmitCountsMacsThatShareAComputerNameSeparately() throws {
+        let column = "CrowdStrike Falcon - Status"
+        var cfg = ReportConfig()
+        cfg.securityAgents = [
+            SecurityAgentConfig(name: "CrowdStrike Falcon", column: column,
+                                connectedValue: "Running")
+        ]
+        let dataDir = tmpDir.appendingPathComponent("edr-names-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeAgentEAResults(
+            to: dataDir, column: column, values: ["Running", "Running", "Running", "Stopped"],
+            devices: ["MacBook Pro", "MacBook Pro", "mac-2", "mac-3"])
+
+        let localSummaries = tmpDir.appendingPathComponent("edr-names-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
+        XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
+    }
+
+    /// The Overview's Security Agents card and the daily summary's EDR figure are one
+    /// definition: on the same snapshots they print the same number.
+    func testTheOverviewAgentCardShowsTheSummarysEDRFigure() async throws {
+        let column = "CrowdStrike Falcon - Status"
+        let root = tmpDir.appendingPathComponent("workspaces", isDirectory: true)
+        let workspace = root.appendingPathComponent("acme", isDirectory: true)
+        let dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try Data("""
+            security_agents:
+              - name: "CrowdStrike Falcon"
+                column: "\(column)"
+                connected_value: "Running"
+            """.utf8).write(to: workspace.appendingPathComponent("config.yaml"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        var cfg = ReportConfig()
+        cfg.securityAgents = [
+            SecurityAgentConfig(name: "CrowdStrike Falcon", column: column,
+                                connectedValue: "Running")
+        ]
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeAgentEAResults(
+            to: dataDir, column: column, values: ["Running", "Running", "Running", "Stopped"],
+            devices: ["MacBook Pro", "MacBook Pro", "mac-2", "mac-3"])
+        let localSummaries = tmpDir.appendingPathComponent("card-summaries", isDirectory: true)
+        ReportEngine(config: cfg, dataDir: dataDir).emitSummaryJSON(summariesDir: localSummaries)
+        let summary = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
+
+        let live = try await OverviewLiveDataLoader.load(
+            profile: "acme", sections: [.securityAgents])
+        let card = OverviewLiveDataLoader.agents(live.agents, overFleet: summary.totalDevices)
+
+        XCTAssertEqual(card.map(\.installed), [3])
+        XCTAssertEqual(card.first?.pct, summary.crowdstrikePct)
+    }
+
     func testEmitLeavesEDRCoverageUnknownWhenNoMacReportsTheAgent() throws {
         var cfg = ReportConfig()
         cfg.securityAgents = [
@@ -806,11 +866,15 @@ final class SummaryJSONEmitTests: XCTestCase {
     }
 
     /// ea-results rows for one security-agent column, one Mac per value.
-    private func writeAgentEAResults(to dataDir: URL, column: String, values: [String]) throws {
+    /// Rows in jamf-cli 1.31's shape: the computer name in `device`, no id.
+    private func writeAgentEAResults(
+        to dataDir: URL, column: String, values: [String], devices: [String]? = nil
+    ) throws {
         let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
         let rows: [[String: Any]] = values.enumerated().map { index, value in
-            ["device": "mac-agent-\(index)", "ea_name": column, "value": value]
+            ["device": devices?[index] ?? "mac-agent-\(index)", "ea_name": column,
+             "value": value]
         }
         let data = try JSONSerialization.data(withJSONObject: rows)
         let file = eaDir.appendingPathComponent("ea-results_\(recentStamp).json")

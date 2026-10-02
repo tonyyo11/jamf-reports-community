@@ -936,13 +936,8 @@ struct OverviewView: View {
     }
 
     private var agents: [SecurityAgent] {
-        workspace.demoMode ? DemoData.securityAgents : live.agents
-    }
-
-    /// The Macs an agent's share is of: the demo fleet, or live, the Macs that
-    /// report its extension attribute.
-    private func agentDenominator(_ agent: SecurityAgent) -> Int {
-        workspace.demoMode ? DemoData.totalDevices : live.agentReportingMacs[agent.name] ?? 0
+        guard !workspace.demoMode else { return DemoData.securityAgents }
+        return OverviewLiveDataLoader.agents(live.agents, overFleet: overviewFleetCount)
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -1340,7 +1335,7 @@ struct OverviewView: View {
     }
 
     private func agentCard(_ a: SecurityAgent) -> some View {
-        AgentCardView(agent: a, fleetCount: agentDenominator(a))
+        AgentCardView(agent: a, fleetCount: overviewFleetCount)
     }
 
     // MARK: Recent activity table
@@ -1623,7 +1618,7 @@ struct OverviewView: View {
     }
 
     private func securityAgentDetail(_ agent: SecurityAgent) -> some View {
-        let denominator = agentDenominator(agent)
+        let fleet = overviewFleetCount
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: agent.name,
@@ -1634,8 +1629,7 @@ struct OverviewView: View {
             HStack(spacing: 12) {
                 StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
                 StatTile(label: "Installed", value: "\(agent.installed)",
-                         sub: denominator > 0
-                            ? "of \(denominator) tracked devices" : "tracked devices")
+                         sub: fleet > 0 ? "of \(fleet) tracked devices" : "tracked devices")
                 StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
             }
             Card(padding: 18) {
@@ -2063,13 +2057,14 @@ struct AgentCardView: View {
 // take the fleet count as an explicit parameter — a future hardcode
 // would fail `OverviewViewFleetCountTests`.
 
-/// Inline label rendered as "<installed> / <fleetCount>" beside an
-/// agent's coverage percentage. `fleetCount <= 0` signals "fleet total
-/// unknown" (e.g. live mode before any trend snapshot lands) — render
-/// the count alone rather than nonsensical "47 / 0".
+/// Inline label rendered as "<installed> of <fleetCount> Macs" beside an
+/// agent's coverage percentage, so the card says what the share is of: every
+/// Mac, as the daily summary counts it. `fleetCount <= 0` signals "fleet total
+/// unknown" (e.g. live mode before any trend snapshot lands) — render the
+/// count alone rather than nonsensical "47 of 0 Macs".
 func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return "\(installed)" }
-    return "\(installed) / \(fleetCount)"
+    guard fleetCount > 0 else { return "\(installed) Macs" }
+    return "\(installed) of \(fleetCount) Macs"
 }
 
 /// Composite accessibility label announcing coverage and gap.

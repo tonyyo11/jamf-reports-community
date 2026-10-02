@@ -78,10 +78,7 @@ struct OverviewLiveData: Sendable {
     /// Macs whose results the rule counts come from; 0 when unknown.
     var failingRulesReportingMacs = 0
 
-    /// Each agent's share is of the Macs reporting its attribute.
     var agents: [SecurityAgent] = []
-    /// Those Macs, by agent name: the denominator each card prints.
-    var agentReportingMacs: [String: Int] = [:]
     /// Configured agents no Mac reports a value for — usually a column name
     /// that does not match the extension attribute.
     var agentsWithoutValues: [String] = []
@@ -239,9 +236,7 @@ enum OverviewLiveDataLoader {
                 remedy: .sources)
             return
         }
-        // jamf-cli's rows carry the computer name and no id, and names repeat.
-        let coverage = SecurityAgentCoverage.compute(
-            rows: eaRows, agents: agents, countsRowsWithoutID: true)
+        let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: agents)
         let reported = coverage.filter { $0.reporting > 0 }
         guard !reported.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
@@ -250,17 +245,15 @@ enum OverviewLiveDataLoader {
                 remedy: .config)
             return
         }
-        // Of the Macs reporting, not the security report's device count: the two
-        // snapshots land on different cadences, and a Mac with no value is unknown.
+        // Until the view re-expresses them against the summary's device count
+        // (`agents(_:overFleet:)`), the share is of the Macs ea-results knows about.
+        let known = MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
         data.agents = reported.map {
             SecurityAgent(
                 name: $0.name, installed: $0.installed,
-                pct: SecurityAgentCoverage.percent(
-                    installed: $0.installed, fleet: $0.reporting) ?? 0,
+                pct: SecurityAgentCoverage.percent(installed: $0.installed, fleet: known) ?? 0,
                 column: $0.column, trend: .flat)
         }
-        data.agentReportingMacs = Dictionary(
-            reported.map { ($0.name, $0.reporting) }, uniquingKeysWith: { first, _ in first })
         data.agentsWithoutValues = coverage.filter { $0.reporting == 0 }.map(\.name)
     }
 
@@ -287,6 +280,20 @@ enum OverviewLiveDataLoader {
     }
 
     // MARK: Pure builders (tested)
+
+    /// Agent cards as a share of `fleet`, the latest summary's device count —
+    /// the denominator the daily summary's EDR figure uses, so a Mac with no
+    /// value counts as not connected. Unchanged while the fleet is unknown.
+    static func agents(_ agents: [SecurityAgent], overFleet fleet: Int) -> [SecurityAgent] {
+        guard fleet > 0 else { return agents }
+        return agents.map { agent in
+            SecurityAgent(
+                name: agent.name, installed: agent.installed,
+                pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
+                    ?? agent.pct,
+                column: agent.column, trend: agent.trend)
+        }
+    }
 
     /// Versions by device count, the rest rolled into "Other" past `limit`.
     /// `currentShare` is nil without a SOFA feed.
