@@ -102,7 +102,9 @@ Submits the app to Apple's notarization service and staples the ticket.
 
 Packages the notarized app into a distributable DMG.
 
-**Arguments:** `$1` = Version string
+**Arguments:** `$1` = Version string (optional). The DMG is named from the built app's
+`Info.plist`; a version given here is only checked against the app's
+`CFBundleShortVersionString`.
 
 **Process:**
 1. Remove old DMG if present (idempotent)
@@ -113,7 +115,8 @@ Packages the notarized app into a distributable DMG.
 
 **Exit codes:**
 - 0 = DMG created successfully
-- 1 = App not found, the app's build number is not an integer, or DMG creation failed
+- 1 = App not found, the app's build number is not an integer, the version argument does not
+  match the app's version, or DMG creation failed
 
 **Idempotent:** Removes old DMG first, so re-running is safe.
 
