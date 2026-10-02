@@ -361,6 +361,8 @@ final class SummaryJSONEmitTests: XCTestCase {
         """)
         XCTAssertEqual(try XCTUnwrap(s.compliancePct), 50, accuracy: 0.01)
         XCTAssertEqual(s.complianceIsProxy, true)
+        XCTAssertEqual(s.collectionSources?["security"], "live",
+                       "sources are recorded, so the nil check below is not vacuous")
         XCTAssertNil(s.collectionSources?["computers"],
                      "the hardware index is read straight from disk, not through cachedData")
     }

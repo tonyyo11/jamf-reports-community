@@ -82,11 +82,17 @@ enum HardwareEncryption {
     }
 
     /// Empty unless the policy uses the rule, so a workspace without one never reads
-    /// `computers`. A snapshot that cannot be read as a list of computers is logged.
+    /// `computers`. A missing snapshot is logged at info, an unreadable one as a warning.
     static func index(dataDir: URL, for policy: SecurityControlPolicy) -> [String: Bool] {
         guard policy.usesHardwareRule else { return [:] }
         let dir = dataDir.appendingPathComponent("computers", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: dir) else { return [:] }
+        guard let url = FileManager.newestJSONFile(in: dir) else {
+            AppLogger.report.info("""
+                Hardware encryption: no computers snapshot to read, so the FileVault hardware \
+                rule is not applied until an inventory collect lands one
+                """)
+            return [:]
+        }
         guard let data = try? Data(contentsOf: url),
               let items = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
         else {
