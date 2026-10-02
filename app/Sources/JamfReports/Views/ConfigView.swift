@@ -645,47 +645,9 @@ private struct ColumnsTab: View {
                 // File reads + config load/save; keep off the main actor so a
                 // large CSV export never blocks the UI.
                 let (report, familyLabel, merged) = try await Task.detached {
-                    () throws -> (ScaffoldService.ColumnMergeReport, String, ConfigState) in
-                    let sample = try ScaffoldService.readSample(from: csvURL)
-                    let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
-                    var loaded = try ConfigService.load(profile: profile)
-                    let isMobile = result.family == .mobile
-                    // Merge only the keys ConfigService writes back. The extra inventory
-                    // columns (full_name, asset_tag, ...) are scaffolded once into config.yaml;
-                    // merging one here would report it added while save drops it.
-                    let detected = isMobile
-                        ? result.mobileColumns
-                        : result.columns.filter { ConfigState.columnKeys.contains($0.key) }
-                    let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
-                    let merge = ScaffoldService.mergeColumns(
-                        existing: existing, detected: detected, csvHeaders: sample.headers)
-                    var report = merge.report
-                    if isMobile { loaded.state.mobileColumns = merge.merged }
-                    else { loaded.state.columns = merge.merged }
-
-                    // Compliance columns (computer family only) merge the same way —
-                    // they live in two scalar fields, not the columns dict.
-                    if !isMobile {
-                        let existingCompliance = [
-                            "failures_count_column": loaded.state.failuresCountColumn,
-                            "failures_list_column": loaded.state.failuresListColumn,
-                        ]
-                        let cMerge = ScaffoldService.mergeColumns(
-                            existing: existingCompliance, detected: result.complianceColumns,
-                            csvHeaders: sample.headers)
-                        loaded.state.failuresCountColumn =
-                            cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
-                        loaded.state.failuresListColumn =
-                            cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
-                        report.added += cMerge.report.added
-                        report.repaired += cMerge.report.repaired
-                        report.keptCount += cMerge.report.keptCount
-                        report.staleUnresolved += cMerge.report.staleUnresolved
-                    }
-                    _ = try ConfigService.save(
-                        profile: profile, state: loaded.state, existingDocument: loaded.document)
-                    let familyLabel = isMobile ? "mobile device export" : "computer export"
-                    return (report, familyLabel, loaded.state)
+                    let outcome = try ScaffoldService.mergeIntoConfig(
+                        csvURL: csvURL, profile: profile)
+                    return (outcome.report, outcome.familyLabel, outcome.state)
                 }.value
                 await MainActor.run {
                     workspace.toast = Toast(

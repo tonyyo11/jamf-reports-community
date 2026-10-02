@@ -362,6 +362,52 @@ enum ScaffoldService {
         )
     }
 
+    /// Re-scaffold: detect column mappings from `csvURL` and merge them into profile's existing
+    /// config.yaml through `mergeColumns`, then save. Agents, custom EAs and thresholds are not
+    /// touched. The report counts what reached the file; `state` is what was saved.
+    ///
+    /// - Throws: If the CSV cannot be read or the config cannot be loaded or saved.
+    static func mergeIntoConfig(
+        csvURL: URL,
+        profile: String,
+        workspaceRoot: URL? = nil
+    ) throws -> (report: ColumnMergeReport, familyLabel: String, state: ConfigState) {
+        let sample = try readSample(from: csvURL)
+        let result = try matchColumns(from: csvURL, profile: profile)
+        var loaded = try ConfigService.load(profile: profile, workspaceRoot: workspaceRoot)
+        let isMobile = result.family == .mobile
+        let detected = isMobile ? result.mobileColumns : result.columns
+        let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
+        let merge = mergeColumns(existing: existing, detected: detected, csvHeaders: sample.headers)
+        var report = merge.report
+        if isMobile { loaded.state.mobileColumns = merge.merged }
+        else { loaded.state.columns = merge.merged }
+
+        // Compliance columns (computer family only) merge the same way — they live in two
+        // scalar fields, not the columns dict.
+        if !isMobile {
+            let existingCompliance = [
+                "failures_count_column": loaded.state.failuresCountColumn,
+                "failures_list_column": loaded.state.failuresListColumn,
+            ]
+            let cMerge = mergeColumns(
+                existing: existingCompliance, detected: result.complianceColumns,
+                csvHeaders: sample.headers)
+            loaded.state.failuresCountColumn =
+                cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
+            loaded.state.failuresListColumn =
+                cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
+            report.added += cMerge.report.added
+            report.repaired += cMerge.report.repaired
+            report.keptCount += cMerge.report.keptCount
+            report.staleUnresolved += cMerge.report.staleUnresolved
+        }
+        _ = try ConfigService.save(
+            profile: profile, state: loaded.state, existingDocument: loaded.document,
+            workspaceRoot: workspaceRoot)
+        return (report, isMobile ? "mobile device export" : "computer export", loaded.state)
+    }
+
     // MARK: - Private helpers
 
     /// Escape a string for embedding inside a YAML double-quoted scalar.
