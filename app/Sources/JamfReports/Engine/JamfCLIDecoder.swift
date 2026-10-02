@@ -794,8 +794,10 @@ struct ClassicGroupRow: Decodable, Sendable {
     }
 }
 
-// MARK: - Mobile device (inventory-details)
-// `jamf-cli pro mobile-device-inventory-details list --output json`
+// MARK: - Mobile device inventory
+// `jamf-cli pro mobile-devices list --section GENERAL --section HARDWARE --section SECURITY
+// --section USER_AND_LOCATION --output json` (kind `mobile-devices-list`). A snapshot an older
+// collect wrote as `mobile-device-inventory-details` has the same row shape.
 
 struct MobileDeviceInventoryItem: Decodable, Sendable {
     let mobileDeviceId: String?
@@ -844,8 +846,9 @@ struct MobileDeviceHardware: Decodable, Sendable {
     var serialNumber: String? = nil
 }
 
-/// SECURITY section (only returned when requested with `--section SECURITY`). The Jamf Pro
-/// API carries the posture flags here, with the jailbreak flag spelled `jailBreakDetected`.
+/// SECURITY section (collect requests it with `--section SECURITY`; a snapshot from an older
+/// collect has none). The Jamf Pro API carries the posture flags here, with the jailbreak
+/// flag spelled `jailBreakDetected`.
 /// Earlier decoders read `passcodeCompliant`, `activationLockEnabled` and a jailbreak
 /// status string under `general`, which `MobileFleetService` keeps as the fallback.
 struct MobileDeviceSecurity: Decodable, Sendable {
@@ -880,10 +883,10 @@ struct MobileDevicePrestage: Decodable, Sendable {
     let profileName: String?
 }
 
-/// Single application entry from `mobile-device-inventory-details`. Only the
-/// fields the UI surfaces (count + display name) are decoded; the upstream
-/// schema carries more (version, managementStatus, size) but they're not
-/// needed yet.
+/// Single application entry from the APPLICATIONS section, which collect does not request
+/// (a snapshot from an older collect or a hand-run command may carry it). Only the fields
+/// the UI surfaces (count + display name) are decoded; the upstream schema carries more
+/// (version, managementStatus, size) but they're not needed yet.
 struct MobileDeviceApplication: Decodable, Sendable {
     let identifier: String?
     let name: String?

@@ -7,7 +7,7 @@ final class CollectionTierLookupTests: XCTestCase {
 
     // MARK: - jamf-cli 1.29 resource names
 
-    /// Two matrix rows switch spelling with the installed version; their on-disk
+    /// Matrix rows switch spelling with the installed version; their on-disk
     /// kinds never do. The 1.29 names exit 2 on older binaries and the old names
     /// stop working after 2027-03-09, so both spellings must be reachable.
     func testMatrixUsesSpecDerivedNamesOnlyWhenSupported() {
@@ -20,15 +20,49 @@ final class CollectionTierLookupTests: XCTestCase {
         XCTAssertEqual(argv("device-enrollment-instances", specNames: false),
                        ["-p", "p", "pro", "device-enrollment-instances", "list",
                         "--output", "json"])
-        XCTAssertEqual(argv("mobile-device-inventory-details", specNames: true),
-                       ["-p", "p", "pro", "mobile-devices", "list", "--output", "json"])
-        XCTAssertEqual(argv("mobile-device-inventory-details", specNames: false),
-                       ["-p", "p", "pro", "mobile-device-inventory-details", "list",
-                        "--output", "json"])
         let kinds = { (specNames: Bool) in
             ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames).map(\.kind)
         }
         XCTAssertEqual(kinds(true), kinds(false), "the flag changes argv, never a kind name")
+    }
+
+    /// Both mobile commands hit the same endpoint on 1.29, so mobile devices are fetched
+    /// once, with the sections the readers use. APPLICATIONS is not requested.
+    func testMobileDevicesAreFetchedOnceWithTheSectionsTheReadersUse() {
+        let sections = ["--section", "GENERAL", "--section", "HARDWARE",
+                        "--section", "SECURITY", "--section", "USER_AND_LOCATION"]
+        let argv = { (specNames: Bool) -> [String]? in
+            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
+                .first { $0.kind == "mobile-devices-list" }?.args
+        }
+        XCTAssertEqual(argv(true),
+                       ["-p", "p", "pro", "mobile-devices", "list"] + sections
+                       + ["--output", "json"])
+        XCTAssertEqual(argv(false),
+                       ["-p", "p", "pro", "mobile-device-inventory-details", "list"] + sections
+                       + ["--output", "json"])
+        XCTAssertEqual(ReportEngine.mobileInventorySections,
+                       ["GENERAL", "HARDWARE", "SECURITY", "USER_AND_LOCATION"])
+        for specNames in [true, false] {
+            let mobileRows = ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
+                .filter { $0.args.contains("mobile-devices")
+                    || $0.args.contains("mobile-device-inventory-details") }
+            XCTAssertEqual(mobileRows.map(\.kind), ["mobile-devices-list"],
+                           "one mobile fetch, specNames \(specNames)")
+        }
+    }
+
+    /// The `mobile-device-inventory-details` kind is gone from collect, the tier map and the
+    /// freshness strip; snapshots an older collect left on disk are still read.
+    func testRetiredMobileInventoryKindIsNotCollectedOrExpected() {
+        let retired = MobileFleetService.legacyInventoryKind
+        XCTAssertEqual(retired, "mobile-device-inventory-details")
+        XCTAssertFalse(ReportEngine.knownCollectKinds.contains(retired))
+        XCTAssertNil(CollectionTier.tier(forReport: retired))
+        XCTAssertFalse(WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: nil)
+            .contains(retired))
+        XCTAssertTrue(WorkspaceStore.expectedKinds(skipExpensive: false, authMethod: nil)
+            .contains("mobile-devices-list"))
     }
 
     func testComputersListAsksForTheSectionsTheDevicesScreenReads() {

@@ -130,7 +130,6 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "categories":                         .inventory,
         "classic-ios-profiles":               .inventory,
         "device-enrollment-instances":        .inventory,
-        "mobile-device-inventory-details":    .inventory,
 
         // Inventory (continued) — per-device posture without --scan-failures fan-out
         "update-status":                  .inventory,

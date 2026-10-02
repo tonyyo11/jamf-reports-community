@@ -1481,7 +1481,6 @@ struct ReportEngine: Sendable {
         "categories",
         "classic-ios-profiles",
         "device-enrollment-instances",
-        "mobile-device-inventory-details",
         // Health audit — cheap single call; see collect command matrix entry above.
         "audit",
         // Duplicate-serial records (v1.23.0+) — data-integrity aggregate query.
@@ -2233,6 +2232,15 @@ struct ReportEngine: Sendable {
         "USER_AND_LOCATION", "SECURITY", "DISK_ENCRYPTION",
     ].joined(separator: ",")
 
+    /// Sections `collect` asks `pro mobile-devices list` for, each as its own `--section`.
+    /// Without the flag jamf-cli returns GENERAL only, so the security flags, serial, model
+    /// and assigned user the Mobile Fleet screen and the workbook read stayed empty.
+    /// APPLICATIONS is left out: about 20 KB per device for a managed-apps count nothing
+    /// shows. The flag is on 1.18 through 1.29; the layout on 1.18 was not verified.
+    static let mobileInventorySections = [
+        "GENERAL", "HARDWARE", "SECURITY", "USER_AND_LOCATION",
+    ]
+
     /// The jamf-cli commands `collect` fetches and the snapshot kind each
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
@@ -2243,7 +2251,8 @@ struct ReportEngine: Sendable {
         // jamf-cli 1.29.0 named these two resources after their OpenAPI tags. The old
         // names warn on stderr until 2027-03-09; the new ones exit 2 before 1.29.
         let enrollments = specNames ? "device-enrollments" : "device-enrollment-instances"
-        let mobileDetails = specNames ? "mobile-devices" : "mobile-device-inventory-details"
+        let mobileDevices = specNames ? "mobile-devices" : "mobile-device-inventory-details"
+        let mobileSections = mobileInventorySections.flatMap { ["--section", $0] }
         return [
             (["-p", profile, "pro", "overview", "--output", "json"], "overview"),
             (["-p", profile, "pro", "report", "security", "--output", "json"], "security"),
@@ -2273,8 +2282,9 @@ struct ReportEngine: Sendable {
              "ea-results"),
             (["-p", profile, "pro", "report", "profile-status", "--output", "json"],
              "profile-status"),
-            (["-p", profile, "pro", "mobile-devices", "list", "--output", "json"],
-             "mobile-devices-list"),
+            // One fetch feeds every mobile reader; both spellings are the same endpoint on 1.29.
+            (["-p", profile, "pro", mobileDevices, "list"] + mobileSections
+             + ["--output", "json"], "mobile-devices-list"),
             (["-p", profile, "pro", "report", "compliance-devices", "--output", "json"],
              "compliance-devices"),
             (["-p", profile, "pro", "report", "compliance-rules", "--output", "json"],
@@ -2309,8 +2319,6 @@ struct ReportEngine: Sendable {
              "classic-ios-profiles"),
             (["-p", profile, "pro", enrollments, "list", "--output", "json"],
              "device-enrollment-instances"),
-            (["-p", profile, "pro", mobileDetails, "list", "--output", "json"],
-             "mobile-device-inventory-details"),
             // Health audit — single cheap server call; matches CLIBridge.audit() shape that
             // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
