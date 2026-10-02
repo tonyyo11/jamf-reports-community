@@ -55,13 +55,22 @@ enum ConfigSchema {
         ["charts"]: ["snapshot_dir": "historical_csv_dir", "auto_archive": "archive_current_csv"],
     ]
 
+    private static let displayCharacterCap = 60
+    /// One character can carry any number of combining marks, so scalars are capped too.
+    private static let displayScalarCap = displayCharacterCap * 4
+
     /// Text taken from config.yaml, safe to show: control and format characters (a pasted
-    /// escape sequence, a right-to-left override) and line breaks removed, capped at 60.
+    /// escape sequence, a right-to-left override) and line breaks removed, capped at 60
+    /// characters and 240 Unicode scalars. Every screen and row that shows file text uses it.
     static func displayText(_ raw: String) -> String {
         let hidden = CharacterSet.controlCharacters.union(.newlines)
-        let kept = String(String.UnicodeScalarView(
-            raw.unicodeScalars.filter { !hidden.contains($0) }))
-        return kept.count > 60 ? String(kept.prefix(59)) + "…" : kept
+        let kept = Array(raw.unicodeScalars.lazy.filter { !hidden.contains($0) }
+            .prefix(displayScalarCap + 1))
+        let text = String(String.UnicodeScalarView(kept.prefix(displayScalarCap)))
+        guard kept.count > displayScalarCap || text.count > displayCharacterCap else {
+            return text
+        }
+        return String(text.prefix(displayCharacterCap - 1)) + "…"
     }
 
     // MARK: - The walk

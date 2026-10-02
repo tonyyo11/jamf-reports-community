@@ -254,6 +254,31 @@ final class ConfigSchemaTests: XCTestCase {
         ])
     }
 
+    func testDisplayTextStripsControlCharactersAndCapsAtSixtyCharacters() {
+        XCTAssertEqual(ConfigSchema.displayText("a\u{7}b\nc\t\u{202E}d\u{2028}e"), "abcde")
+        let sixty = String(repeating: "x", count: 60)
+        XCTAssertEqual(ConfigSchema.displayText(sixty), sixty)
+        XCTAssertEqual(ConfigSchema.displayText(sixty + "y"),
+                       String(repeating: "x", count: 59) + "…")
+        XCTAssertEqual(ConfigSchema.displayText(""), "")
+    }
+
+    /// One character can carry thousands of combining marks; the scalar cap bounds it.
+    func testDisplayTextBoundsUnicodeScalarsAtFourTimesTheCharacterCap() {
+        let heavy = "e" + String(repeating: "\u{301}", count: 5_000)
+        let shown = ConfigSchema.displayText(heavy)
+        XCTAssertTrue(shown.hasSuffix("…"))
+        XCTAssertLessThanOrEqual(shown.unicodeScalars.count, 241)
+
+        let fourScalarsEach = String(repeating: "e\u{301}\u{302}\u{303}", count: 60)
+        XCTAssertEqual(ConfigSchema.displayText(fourScalarsEach), fourScalarsEach,
+                       "240 scalars is within the cap")
+        let fiveScalarsEach = String(repeating: "e\u{301}\u{302}\u{303}\u{304}", count: 60)
+        let cut = ConfigSchema.displayText(fiveScalarsEach)
+        XCTAssertTrue(cut.hasSuffix("…"))
+        XCTAssertLessThanOrEqual(cut.unicodeScalars.count, 241)
+    }
+
     // MARK: - Known keys
 
     func testKnownKeysAtTheRootAreTheTopLevelBlocks() {

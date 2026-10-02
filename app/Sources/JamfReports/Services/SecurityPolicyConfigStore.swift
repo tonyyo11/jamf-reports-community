@@ -68,7 +68,7 @@ enum SecurityPolicyConfigLoader {
             case "score_weights":
                 weightsIssues(node, applied: applied)
             default:
-                unknownKeyIssues("\(blockPath).\(displayText(key))")
+                unknownKeyIssues("\(blockPath).\(ConfigSchema.displayText(key))")
             }
         }
     }
@@ -80,7 +80,7 @@ enum SecurityPolicyConfigLoader {
             return shapeIssues(controlsPath, node, used: "fail for every control")
         }
         return settings(controls).flatMap { key, node -> [SecurityPolicyIssue] in
-            let path = "\(controlsPath).\(displayText(key))"
+            let path = "\(controlsPath).\(ConfigSchema.displayText(key))"
             guard let control = SecurityControl(rawValue: key) else {
                 return unknownKeyIssues(path)
             }
@@ -118,7 +118,7 @@ enum SecurityPolicyConfigLoader {
     ) -> [SecurityPolicyIssue] {
         if case .scalar = node, SecurityControlLevel.parse(typedText(node)) != nil { return [] }
         return [SecurityPolicyIssue(
-            keyPath: path, value: displayText(typedText(node)), used: used)]
+            keyPath: path, value: ConfigSchema.displayText(typedText(node)), used: used)]
     }
 
     /// A block holds settings, so anything but a mapping is the wrong shape. An empty value
@@ -130,7 +130,8 @@ enum SecurityPolicyConfigLoader {
         case .mapping, .scalar(.null):
             []
         default:
-            [SecurityPolicyIssue(keyPath: path, value: displayText(typedText(node)), used: used)]
+            [SecurityPolicyIssue(
+                keyPath: path, value: ConfigSchema.displayText(typedText(node)), used: used)]
         }
     }
 

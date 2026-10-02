@@ -751,20 +751,10 @@ final class SecurityControlPolicyTests: XCTestCase {
                        "one issue for a key, not one per line")
     }
 
-    func testDisplayTextStripsControlCharactersAndCapsAtFortyCharacters() {
-        XCTAssertEqual(SecurityPolicyConfigLoader.displayText("a\u{7}b\nc\t\u{202E}d\u{2028}e"),
-                       "abcde")
-        let forty = String(repeating: "x", count: 40)
-        XCTAssertEqual(SecurityPolicyConfigLoader.displayText(forty), forty)
-        XCTAssertEqual(SecurityPolicyConfigLoader.displayText(forty + "y"),
-                       String(repeating: "x", count: 39) + "…")
-        XCTAssertEqual(SecurityPolicyConfigLoader.displayText(""), "")
-    }
-
     /// Text from the file reaches the Doctor and the card through the issue, so the issue
-    /// is where it is cleaned: a typed value and a key name alike.
+    /// is where it is cleaned, by `ConfigSchema.displayText`: a typed value and a key name alike.
     func testIssuesCleanTheTextTheyTakeFromTheFile() throws {
-        let long = String(repeating: "z", count: 60)
+        let long = String(repeating: "z", count: 70)
         let found = try issues("""
         security_policy:
           controls:
@@ -772,10 +762,10 @@ final class SecurityControlPolicyTests: XCTestCase {
             firewall: \(long)
             \(long): warning
         """)
-        let capped = String(repeating: "z", count: 39) + "…"
+        let capped = String(repeating: "z", count: 59) + "…"
         XCTAssertEqual(found.map(\.value), ["wrn[31m", capped, ""])
         XCTAssertEqual(found.last?.keyPath, "security_policy.controls." + capped)
-        XCTAssertTrue(found.allSatisfy { $0.keyPath.count <= 80 && $0.value.count <= 40 })
+        XCTAssertTrue(found.allSatisfy { $0.keyPath.count <= 100 && $0.value.count <= 60 })
     }
 
     /// Three bad values: for each, `used` is what `load(profile:)` really applied, and the
