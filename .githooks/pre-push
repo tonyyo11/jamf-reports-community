@@ -17,10 +17,29 @@ cd "$repo_root/app"
 
 # CI runs this check too; it takes about a second, so it goes before the build.
 echo "pre-push: check-test-only-symbols..."
-if ! zsh "$repo_root/app/scripts/check-test-only-symbols.zsh"; then
+if zsh "$repo_root/app/scripts/check-test-only-symbols.zsh"; then
+  symbols_status=0
+else
+  symbols_status=$?
+fi
+# 1 is a finding; anything else means the check itself could not run.
+case "$symbols_status" in
+0) ;;
+1)
   echo "pre-push: symbols used only by tests found, push blocked" >&2
   exit 1
-fi
+  ;;
+2)
+  echo "pre-push: check-test-only-symbols rejected the repo layout or allow-list" \
+    "(exit 2), push blocked" >&2
+  exit 1
+  ;;
+*)
+  echo "pre-push: check-test-only-symbols could not run (exit $symbols_status:" \
+    "zsh or the script is missing, or the check crashed), push blocked" >&2
+  exit 1
+  ;;
+esac
 
 echo "pre-push: swift build --build-tests (CI parity)..."
 if output="$(swift build --build-tests 2>&1)"; then
