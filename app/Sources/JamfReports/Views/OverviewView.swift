@@ -726,7 +726,7 @@ struct OverviewView: View {
     private var renderedSections: [OverviewSection] {
         workspace.overviewLayout.visible.filter { section in
             switch section {
-            case .aiInsight: return !workspace.demoMode && ModelAvailability.platformSupported
+            case .aiInsight: return AIInsightCard.isOffered(demoMode: workspace.demoMode)
             case .workspaceStatus: return !workspace.demoMode
             default: return true
             }
@@ -951,15 +951,19 @@ struct OverviewView: View {
     // MARK: - Sections
 
     /// v2.5 (macOS 27, opt-in): the daily digest as a plain-language insight.
-    /// `platformSupported` is a synchronous, config-free check, so a Mac that
-    /// cannot run it never lists or renders this section.
+    /// The card hides itself where `AIInsightCard.isOffered` is false and while
+    /// `ai.enabled` is off.
     private var aiInsightCard: some View {
-        AIInsightCard(
-            profile: workspace.profile,
-            current: trendStore.filteredSummaries.last,
-            previous: trendStore.filteredSummaries.count >= 2
-                ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
-                : nil
+        let summaries = trendStore.filteredSummaries
+        return AIInsightCard(
+            title: "AI Fleet Insight",
+            idleText: "Turn today's fleet data into a plain-language summary using "
+                + "on-device intelligence.",
+            provenanceText: "AI-generated from the daily digest — verify against the tiles below.",
+            input: summaries.last.map { current in
+                .fleet(current: current, previous: summaries.count >= 2
+                    ? FleetReportEmitter.priorSummary(summaries, lookbackDays: 1) : nil)
+            }
         )
     }
 

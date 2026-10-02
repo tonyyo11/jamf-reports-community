@@ -4,7 +4,7 @@ import XCTest
 /// F1: the ungated streaming/prewarm seam additions. All assertions run on the
 /// default toolchain — they exercise the protocol's default `prepare`/
 /// `generateStream` extensions, the stub, and the consumption pattern
-/// `AIInsightCard.generate()` uses (last yield wins; a throw discards partials).
+/// `AIInsightCardModel.generate()` uses (last yield wins; a throw discards partials).
 final class FleetInsightStreamingTests: XCTestCase {
 
     private func summary(_ date: String = "2026-06-06") -> DailySummary {
@@ -110,7 +110,7 @@ final class FleetInsightStreamingTests: XCTestCase {
             failure: .generationFailed("interrupted")
         )
 
-        // Mirrors AIInsightCard.generate(): partials accumulate, a throw
+        // Mirrors AIInsightCardModel.generate(): partials accumulate, a throw
         // clears them so the error state renders instead of a half insight.
         var latest: FleetInsight?
         do {
