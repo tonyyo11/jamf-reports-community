@@ -267,6 +267,29 @@ final class YAMLParseNoteTests: XCTestCase {
                        "output:\n  output_dir: Edited\nhtml:\n  track_history: false\n")
     }
 
+    /// A list item's first key holding a mapping was written at the item's own key column, so
+    /// it read back as null beside the mapping's keys; empty values read back as null.
+    func testListItemsWhoseFirstKeyHoldsABlockReadBack() throws {
+        func item(_ first: YAMLCodec.YAMLEntry, _ name: String) -> YAMLCodec.YAMLValue {
+            .mapping(.init(entries: [first, .init(key: "name", value: .scalar(.string(name)))]))
+        }
+        let value = YAMLCodec.YAMLValue.sequence([
+            item(.init(key: "match", value: .mapping(.init(entries: [
+                .init(key: "sub", value: .scalar(.int(1))),
+                .init(key: "other", value: .scalar(.string("x"))),
+            ]))), "A"),
+            item(.init(key: "settings", value: .mapping(.init(entries: []))), "B"),
+            item(.init(key: "tags", value: .sequence([])), "C"),
+            .sequence([]),
+        ])
+        var document = YAMLCodec.emptyDocument()
+        document.root = .mapping(.init(entries: [.init(key: "matrix", value: value)]))
+        let text = try YAMLCodec.encode(document, replacingTopLevelKeys: ["matrix"])
+        let read = try YAMLCodec.decode(text)
+        XCTAssertEqual(read.root, document.root, text)
+        XCTAssertEqual(read.parseNotes, [], text)
+    }
+
     func testABareDashTakesTheMappingUnderIt() throws {
         let read = try YAMLCodec.decode("""
             security_agents:

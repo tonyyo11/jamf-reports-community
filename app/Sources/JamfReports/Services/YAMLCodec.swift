@@ -260,6 +260,10 @@ enum YAMLCodec {
                 let rest = YAMLMapping(entries: Array(mapping.entries.dropFirst()))
                 lines.append(contentsOf: emitMapping(rest, indent: indent + 2))
             case .sequence(let nested):
+                if nested.isEmpty {
+                    lines.append("\(spaces)- []")
+                    continue
+                }
                 lines.append("\(spaces)-")
                 lines.append(contentsOf: emitSequence(nested, indent: indent + 2))
             }
@@ -276,7 +280,9 @@ enum YAMLCodec {
         case .scalar(let scalar):
             return ["\(spaces)- \(entry.key): \(emitScalar(scalar))"]
         case .mapping(let nested):
-            return ["\(spaces)- \(entry.key):"] + emitMapping(nested, indent: indent + 2)
+            // Two past the item's keys, which sit at indent + 2.
+            if nested.entries.isEmpty { return ["\(spaces)- \(entry.key): {}"] }
+            return ["\(spaces)- \(entry.key):"] + emitMapping(nested, indent: indent + 4)
         case .sequence(let values):
             if values.isEmpty { return ["\(spaces)- \(entry.key): []"] }
             return ["\(spaces)- \(entry.key):"] + emitSequence(values, indent: indent + 2)
