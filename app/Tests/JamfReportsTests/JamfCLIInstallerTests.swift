@@ -2,9 +2,8 @@ import XCTest
 @testable import JamfReports
 
 /// Tests for the W23 jamf-cli direct-download install path.
-/// Covers the pure helpers (`extractChecksum`, `sha256Hex`,
-/// `defaultDirectInstallURL`); the network-bound `installFromGitHub` is not
-/// exercised here.
+/// Covers the pure helpers (`extractChecksum`, `sha256Hex`); the network-bound
+/// `installFromGitHub` is not exercised here.
 @MainActor
 final class JamfCLIInstallerTests: XCTestCase {
 
@@ -76,14 +75,6 @@ final class JamfCLIInstallerTests: XCTestCase {
             digest,
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         )
-    }
-
-    // MARK: - defaultDirectInstallURL
-
-    func test_defaultDirectInstallURL_endsAtLocalBinJamfCli() {
-        let url = JamfCLIInstaller.defaultDirectInstallURL
-        XCTAssertTrue(url.path.hasSuffix("/.local/bin/jamf-cli"),
-                      "Expected ~/.local/bin/jamf-cli, got \(url.path)")
     }
 
     // MARK: - Minimum supported version

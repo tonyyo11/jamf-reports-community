@@ -414,24 +414,6 @@ final class JamfCLIInstaller {
         return payload.specProVersion
     }
 
-    /// Default install location for the direct-download path. `~/.local/bin/`
-    /// is on most users' PATH (XDG-style) and avoids sudo. See
-    /// `ADR-W23-jamf-cli-direct-installer.md` for the location rationale.
-    static var defaultDirectInstallURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".local", isDirectory: true)
-            .appendingPathComponent("bin", isDirectory: true)
-            .appendingPathComponent("jamf-cli")
-    }
-
-    /// First-time install via direct GitHub download. Verifies the asset
-    /// checksum against the release's `*.checksums.txt` and refuses on
-    /// mismatch or when the checksums asset is missing. Writes to
-    /// `~/.local/bin/jamf-cli`. See ADR-W23-jamf-cli-direct-installer.md.
-    func firstTimeInstall() async -> UpdateResult {
-        await Self.installFromGitHub(target: Self.defaultDirectInstallURL)
-    }
-
     func checkForUpdate() async -> UpdateResult {
         guard let installation = Self.currentInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
@@ -616,9 +598,9 @@ final class JamfCLIInstaller {
         return await installFromGitHub(target: URL(fileURLWithPath: installation.path))
     }
 
-    /// Shared entry point for first-time installs. Fetches the latest GitHub
-    /// release, then delegates to `_performInstall`. On first-time install the
-    /// parent directory is created with mode 0755.
+    /// Fetches the latest GitHub release and installs it at `target`, creating
+    /// the parent directory with mode 0755 if it is missing. `updateGitHubRelease`
+    /// uses it when the installed version cannot be read.
     static func installFromGitHub(target: URL) async -> UpdateResult {
         do {
             let release = try await fetchLatestGitHubRelease()
@@ -632,8 +614,8 @@ final class JamfCLIInstaller {
     }
 
     /// Downloads, verifies, and installs the release binary at `target`.
-    /// Called by `installFromGitHub` (first-time) and `updateGitHubRelease`
-    /// (upgrade, with the release already fetched from the version-check step).
+    /// Called by `installFromGitHub` and by `updateGitHubRelease` (upgrade, with
+    /// the release already fetched from the version-check step).
     private static func _performInstall(target: URL, release: GitHubRelease) async -> UpdateResult {
         do {
             guard let asset = preferredAsset(from: release.assets) else {

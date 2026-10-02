@@ -1214,9 +1214,6 @@ struct TabVisibility: Sendable, Equatable {
         tab.isCoreTab || !hidden.contains(tab)
     }
 
-    /// True when this tab is explicitly hidden by the user.
-    func isHidden(_ tab: Tab) -> Bool { !isVisible(tab) }
-
     /// Toggle a tab's visibility. Core tabs are no-ops.
     mutating func toggle(_ tab: Tab) {
         guard !tab.isCoreTab else { return }
