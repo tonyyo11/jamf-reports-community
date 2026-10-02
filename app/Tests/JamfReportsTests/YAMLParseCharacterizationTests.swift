@@ -20,6 +20,32 @@ final class YAMLParseCharacterizationTests: XCTestCase {
         }
     }
 
+    /// Any indent width reads the same: the example re-indented to 3 and to 4 spaces per level
+    /// gives the tree the 2-space original gives.
+    func testTheExampleReindentedToThreeOrFourSpacesParsesToTheSameTree() throws {
+        let text = String(decoding: try Data(contentsOf: try exampleConfig()), as: UTF8.self)
+        let original = try YAMLCodec.decode(text)
+        for width in [3, 4] {
+            let wider = try YAMLCodec.decode(Self.reindent(text, width: width))
+            XCTAssertEqual(wider.root, original.root, "width \(width)")
+            XCTAssertEqual(wider.parseNotes, [], "width \(width)")
+            XCTAssertEqual(wider.repairedKeys, original.repairedKeys, "width \(width)")
+        }
+    }
+
+    /// Each 2-space level becomes `width` spaces, and a list item's text moves to the new level
+    /// (`-   name:` at width 4), as an editor set to that width writes it.
+    private static func reindent(_ text: String, width: Int) -> String {
+        text.components(separatedBy: "\n").map { line in
+            let spaces = line.prefix { $0 == " " }.count
+            var rest = String(line.dropFirst(spaces))
+            if rest.hasPrefix("- ") {
+                rest = "-" + String(repeating: " ", count: width - 1) + rest.dropFirst(2)
+            }
+            return String(repeating: " ", count: spaces / 2 * width) + rest
+        }.joined(separator: "\n")
+    }
+
     private func assertPinned(_ file: URL, golden: String) throws {
         let text = String(decoding: try Data(contentsOf: file), as: UTF8.self)
         let document = try YAMLCodec.decode(text)

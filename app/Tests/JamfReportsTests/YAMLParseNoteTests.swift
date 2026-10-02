@@ -35,7 +35,8 @@ final class YAMLParseNoteTests: XCTestCase {
         XCTAssertEqual(try notes(yaml), [])
     }
 
-    func testALineIndentedDeeperThanItsBlockIsNotedAndStillSkipped() throws {
+    /// A block takes its indent from its first line, at any width; a block indented 4 is read.
+    func testALineIndentedDeeperThanItsSiblingsIsNotedAndAWiderBlockIsRead() throws {
         let yaml = """
         thresholds:
           stale_device_days: 30
@@ -43,14 +44,87 @@ final class YAMLParseNoteTests: XCTestCase {
         output:
             output_dir: Elsewhere
         """
+        XCTAssertEqual(try notes(yaml), [Note(line: 3, kind: .indentation(found: 5, expected: 2))])
+        let root = try YAMLCodec.decode(yaml).root.mapping
+        XCTAssertEqual(root?.value(for: "thresholds")?.mapping?.entries.map(\.key),
+                       ["stale_device_days"])
+        XCTAssertEqual(root?.value(for: "output")?.mapping?.value(for: "output_dir")?.stringValue,
+                       "Elsewhere")
+    }
+
+    /// The expected column in a note is where the line's siblings sit, not two past the key.
+    func testALineThatDisagreesWithItsSiblingsNamesTheirColumn() throws {
+        let yaml = """
+        thresholds:
+            stale_device_days: 45
+              warning_disk_percent: 80
+          cert_warning_days: 60
+        sheets:
+          skip:
+            - Example Sheet
+             - Second Sheet
+        output:
+          output_dir: Reports
+        """
         XCTAssertEqual(try notes(yaml), [
-            Note(line: 3, kind: .indentation(found: 5, expected: 2)),
-            Note(line: 5, kind: .indentation(found: 4, expected: 2)),
+            Note(line: 3, kind: .indentation(found: 6, expected: 4)),
+            Note(line: 4, kind: .indentation(found: 2, expected: 4)),
+            Note(line: 8, kind: .indentation(found: 5, expected: 4)),
         ])
         let root = try YAMLCodec.decode(yaml).root.mapping
         XCTAssertEqual(root?.value(for: "thresholds")?.mapping?.entries.map(\.key),
                        ["stale_device_days"])
-        XCTAssertEqual(root?.value(for: "output")?.mapping?.entries.count, 0)
+        XCTAssertEqual(root?.value(for: "sheets")?.mapping?.value(for: "skip")?.sequence,
+                       [.scalar(.string("Example Sheet"))])
+        XCTAssertEqual(root?.value(for: "output")?.mapping?.value(for: "output_dir")?.stringValue,
+                       "Reports")
+    }
+
+    /// 2 spaces at the top and 4 inside one block, a list 4 under its key, and a list item's
+    /// keys under `-   ` read as the 2-space file does.
+    func testMixedWidthsReadAsTheTwoSpaceFile() throws {
+        let twoSpace = """
+        thresholds:
+          stale_device_days: 45
+        custom_eas:
+          - name: Example EA
+            column: Example - Column
+            current_versions:
+              - "15.4"
+        output:
+          output_dir: Reports
+        """
+        let mixed = """
+        thresholds:
+          stale_device_days: 45
+        custom_eas:
+            -   name: Example EA
+                column: Example - Column
+                current_versions:
+                        - "15.4"
+        output:
+                output_dir: Reports
+        """
+        let expected = try YAMLCodec.decode(twoSpace)
+        let actual = try YAMLCodec.decode(mixed)
+        XCTAssertEqual(actual.root, expected.root)
+        XCTAssertEqual(actual.parseNotes, [])
+    }
+
+    /// Before, an empty `current_versions:` took the outer list's next item as its value, and an
+    /// empty `name:` took the item's other keys as its value.
+    func testAnEmptyKeyIsNullWhenNothingDeeperFollows() throws {
+        let stolen = try YAMLCodec.decode(
+            "custom_eas:\n  - name: A\n    current_versions:\n  - name: B\n")
+        let items = stolen.root.mapping?.value(for: "custom_eas")?.sequence
+        XCTAssertEqual(items?.count, 2)
+        XCTAssertEqual(items?.first?.mapping?.value(for: "current_versions"), .scalar(.null))
+        XCTAssertEqual(items?.last?.mapping?.value(for: "name")?.stringValue, "B")
+
+        let swallowed = try YAMLCodec.decode("custom_eas:\n  - name:\n    column: B\n")
+        let item = swallowed.root.mapping?.value(for: "custom_eas")?.sequence?.first?.mapping
+        XCTAssertEqual(item?.value(for: "name"), .scalar(.null))
+        XCTAssertEqual(item?.value(for: "column")?.stringValue, "B")
     }
 
     func testALineWithNoKeyIsNoted() throws {

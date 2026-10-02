@@ -73,7 +73,8 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
               stale_device_days: 10
               stale_device_days: 45
             output:
-                output_dir: Elsewhere
+              output_dir: Elsewhere
+                 keep_latest_runs: 3
             """).parseNotes
         let rows = ConfigDoctorService.parseNoteRows(notes)
         XCTAssertEqual(rows, [
@@ -83,8 +84,8 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
                     + "one read.",
                 hint: "Remove one of the two lines."),
             DoctorRow(
-                id: "config.parse_note.1", severity: .warn, title: "config.yaml line 5",
-                detail: "Indented 4 spaces where 2 spaces were expected, so it was not read.",
+                id: "config.parse_note.1", severity: .warn, title: "config.yaml line 6",
+                detail: "Indented 5 spaces where 2 spaces were expected, so it was not read.",
                 hint: "Line it up with the other keys of its block: two spaces per level."),
         ])
     }
