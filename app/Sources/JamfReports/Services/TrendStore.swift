@@ -665,8 +665,9 @@ extension FleetInsightInput {
             facts: facts, notes: notes)
     }
 
-    /// The range, then what the facts cannot say: a neutral count prints no change, so its
-    /// start and end go here, and a metric recorded for part of the range names its dates.
+    /// The range, then what the facts leave unclear: a count's change has no unit and a
+    /// neutral count's none at all, so its start and end go here, and a metric recorded
+    /// for part of the range names its dates.
     private static func trendNotes(
         facts: [Fact], spans: [(first: Date, last: Date)], snapshots: Set<Date>
     ) -> [String]? {
@@ -680,7 +681,7 @@ extension FleetInsightInput {
         var notes = ["Range: \(day(start)) to \(day(end)), \(snapshots.count) snapshots. "
             + "Each value is the last snapshot in the range and its prior is the first."]
         for (fact, span) in zip(facts, spans) {
-            if fact.polarity == .neutral, let prior = fact.prior {
+            if case .count = fact.value, let prior = fact.prior {
                 notes.append(
                     "\(fact.label): \(prior.text) at the start, \(fact.value.text) at the end.")
             }

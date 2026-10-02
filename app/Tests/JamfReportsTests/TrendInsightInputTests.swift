@@ -69,6 +69,7 @@ final class TrendInsightInputTests: XCTestCase {
             "Range: 2026-09-01 to 2026-09-15, 3 snapshots. Each value is the last snapshot in "
                 + "the range and its prior is the first.",
             "Active Devices: 80 at the start, 99 at the end.",
+            "Stale Devices (30d+): 20 at the start, 11 at the end.",
             "Security Score (Weighted): compared from 2026-09-08 to 2026-09-15, its first and "
                 + "last snapshots in the range.",
             "Managed Devices: 100 at the start, 110 at the end.",
