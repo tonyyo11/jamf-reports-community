@@ -51,7 +51,8 @@ final class SheetsSettingsTests: XCTestCase {
                 config, dataDir: try fixtureData(["overview", "security"], in: scratch),
                 in: scratch, template: template)
             XCTAssertEqual(tabs, ["Cover", "Fleet Overview"],
-                           "Security Posture is not in the template, Compliance Posture not in only")
+                           "Security Posture is not in the template, Compliance Posture not "
+                               + "in only")
         }
     }
 
