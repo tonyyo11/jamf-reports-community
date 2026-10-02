@@ -283,8 +283,8 @@ jamf_cli:
 # Workbook sheet selection (optional)
 # ---------------------------------------------------------------------------
 sheets:
-  # When non-empty, only the named workbook tabs are written.
-  # This takes precedence over skip.
+  # When non-empty, only the named workbook tabs are written. A tab named in
+  # both only and skip is not written: skip is applied first.
   #
   # Example:
   #   only:
@@ -292,7 +292,7 @@ sheets:
   #     - "Patch Failures"
   only: []
 
-  # Skip named workbook tabs during generate and school-generate.
+  # Skip named workbook tabs during generate.
   # Matching is case-insensitive against the final tab label.
   #
   # Example:
@@ -301,9 +301,10 @@ sheets:
   #     - "Update Failures"
   #     - "Report Sources"
   #
-  # This applies to Jamf Pro sheets, CSV-backed sheets, Jamf School sheets,
-  # custom EA tabs, and the auxiliary "Report Sources" / "Charts" tabs when
-  # they would otherwise be created.
+  # This applies to Jamf Pro sheets, CSV-backed sheets, custom EA tabs, and the
+  # auxiliary "Report Sources" / "Charts" tabs when they would otherwise be
+  # created. It does not apply to Jamf School workbooks: school-generate
+  # writes every School sheet, and only, skip and order are ignored there.
   skip: []
 
   # Tab order. The tabs named here come first, in this order; every other tab

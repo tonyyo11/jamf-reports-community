@@ -262,6 +262,236 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         }
     }
 
+    // MARK: - Values the app ignored
+
+    func testSheetNamesThatMatchNoSheetAreNamedPerList() throws {
+        let found = try rows("""
+        custom_eas:
+          - {name: Disk Use, column: Boot Drive, type: percentage}
+        sheets:
+          only: ["Patch Compliance", "Patch Complience", "disk use", "Device Inventory"]
+          skip: [cover, Nonsense]
+          order: ["Fleet Overview", "Fleet Overveiw"]
+        """)
+        XCTAssertEqual(titles(found), ["sheets.only", "sheets.skip", "sheets.order"])
+        XCTAssertEqual(detail(found, "sheets.only"),
+                       "\"Patch Complience\" matches no sheet, so the app ignores it.")
+        XCTAssertEqual(detail(found, "sheets.skip"),
+                       "\"Nonsense\" matches no sheet, so the app ignores it.")
+        XCTAssertEqual(detail(found, "sheets.order"),
+                       "\"Fleet Overveiw\" matches no sheet, so the app ignores it.")
+    }
+
+    func testTheSheetNamesTheDoctorKnowsAreTheNamesTheDashboardsCanWrite() throws {
+        let core = CoreDashboard(
+            config: ReportConfig(), dataDir: FileManager.default.temporaryDirectory,
+            workbook: Workbook())
+        XCTAssertEqual(Set(core.sheetPlan.map(\.name)), Set(SheetID.allCases.map(\.rawValue)))
+        let computers = "Computer Name,Serial Number,Operating System Version,Last Check-in\n"
+            + "Mac-001,C02,15.0,2026-01-01\n"
+        let mobile = "Display Name,JSS Mobile Device ID,OS Version,Last Inventory Update,"
+            + "Jailbreak Detected,Wi-Fi MAC Address,Battery Level,Lost Mode Enabled,"
+            + "Device Ownership Type,Passcode Status\niPad-001,100,18.0,2026-01-01,false,"
+            + "aa:bb:cc:dd:ee:ff,85%,false,Institutional,Compliant\n"
+        var config = ReportConfig()
+        config.compliance = ComplianceConfig(enabled: true)
+        config.securityAgents = [
+            SecurityAgentConfig(name: "Agent", column: "Agent Status", connectedValue: "Ok")]
+        for csv in [computers, mobile] {
+            let dashboard = try XCTUnwrap(CSVDashboard(
+                config: config, csvData: Data(csv.utf8), workbook: Workbook()))
+            let planned = Set(dashboard.sheetPlan.map(\.name))
+            let known = Set(ConfigDoctorService.csvSheetNames)
+            XCTAssertTrue(planned.isSubset(of: known), "\(planned.subtracting(known))")
+        }
+    }
+
+    func testSheetsSettingsOnAJamfSchoolWorkspaceAreStatedAsNotApplying() throws {
+        let school = "school_cli:\n  enabled: true\n"
+        let found = try rows(school + "sheets:\n  skip: [Users]\n")
+        XCTAssertEqual(titles(found), ["sheets"])
+        XCTAssertEqual(detail(found, "sheets"),
+                       "sheets.only, skip and order do not apply to Jamf School workbooks. "
+                       + "The app writes every School sheet.")
+        XCTAssertEqual(try rows(school + "sheets:\n  skip: []\n"), [])
+        XCTAssertEqual(try rows("sheets:\n  skip: [Cover]\n"), [], "a Jamf Pro profile")
+    }
+
+    /// Pins the comment in config.example.yaml: skip is applied before only.
+    func testASheetListedInBothOnlyAndSkipIsRemoved() {
+        let sheets = SheetsConfig(only: ["A", "B"], skip: ["a"], order: nil)
+        let plan: [(name: String, write: Int)] = [("A", 1), ("B", 2), ("C", 3)]
+        XCTAssertEqual(sheets.applyTo(plan).map(\.name), ["B"])
+    }
+
+    /// Pins the Jamf School row: the School workbook builder never reads `config.sheets`.
+    func testTheJamfSchoolWorkbookIgnoresTheSheetsBlock() throws {
+        let source = TestFixtures.root.appendingPathComponent("jamf-cli-data")
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-school-sheets-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+        for kind in ["school-ibeacons", "school-dep-devices"] {
+            try? TestFixtures.copyDir(source.appendingPathComponent(kind, isDirectory: true),
+                                      to: dataDir.appendingPathComponent(kind, isDirectory: true))
+        }
+        guard FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("school-ibeacons").path) else {
+            throw XCTSkip("school fixtures not available")
+        }
+        var config = ReportConfig()
+        config.sheets = SheetsConfig(only: ["DEP Devices"], skip: ["iBeacons"], order: nil)
+        let written = SchoolDashboard(config: config, dataDir: dataDir, workbook: Workbook())
+            .writeAll().written
+        XCTAssertTrue(written.contains("iBeacons"), "skip: [iBeacons] was ignored")
+        XCTAssertTrue(written.contains("DEP Devices"))
+    }
+
+    func testAnExpiresDateThatIsNotYYYYMMDDIsNamedBecauseTheReportNeverMarksItExpired() throws {
+        let found = try rows("""
+        exceptions:
+          - {id: E-1, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: "12/31/2026"}
+          - {id: E-2, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: "2026-13-45"}
+          - {id: E-3, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: "2026-12-31"}
+          - {id: E-4, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: ""}
+        """)
+        XCTAssertEqual(titles(found),
+                       ["exceptions[0].expires_date", "exceptions[1].expires_date"])
+        XCTAssertEqual(found.first?.detail, "\"12/31/2026\" is not a yyyy-MM-dd date. The report "
+                       + "never marks this exception expired.")
+    }
+
+    func testThresholdsAtOrBelowZeroAndAWarningAboveItsCriticalAreStated() throws {
+        let found = try rows("""
+        thresholds:
+          stale_device_days: 0
+          warning_disk_percent: 95
+          critical_disk_percent: 90
+          cert_warning_days: -1
+          profile_error_warning: 0
+        custom_eas:
+          - {name: Disk, column: c, type: percentage, warning_threshold: 90, critical_threshold: 80}
+        """)
+        XCTAssertEqual(Set(titles(found)), [
+            "thresholds.stale_device_days", "thresholds.cert_warning_days",
+            "thresholds.profile_error_warning", "thresholds.warning_disk_percent",
+            "custom_eas[0].warning_threshold",
+        ])
+        XCTAssertEqual(Set(found.map(\.id)).count, found.count)
+        XCTAssertEqual(detail(found, "thresholds.stale_device_days"),
+                       "0 is not above 0. The app uses it as written, so every Mac counts as "
+                       + "stale.")
+        XCTAssertEqual(detail(found, "thresholds.warning_disk_percent"),
+                       "warning_disk_percent (95) is above critical_disk_percent (90), so the "
+                       + "warning band never applies.")
+        XCTAssertEqual(detail(found, "custom_eas[0].warning_threshold"),
+                       "warning_threshold (90) is above critical_threshold (80), so the "
+                       + "warning band never applies.")
+        XCTAssertEqual(try rows("thresholds:\n  warning_disk_percent: 80\n"
+                                + "  critical_disk_percent: 90\n  stale_device_days: 30\n"), [])
+    }
+
+    func testACustomEAKeyThatDoesNotApplyToItsTypeIsNamed() throws {
+        let found = try rows("""
+        custom_eas:
+          - {name: A, column: ca, type: boolean, true_value: "Yes", warning_threshold: 80, current_versions: ["15"]}
+          - {name: B, column: cb, type: text, warning_days: 30, true_value: "x"}
+          - {name: C, column: cc, type: percentage, warning_threshold: 70, critical_threshold: 90}
+          - {name: D, column: cd, type: date, warning_days: 30, current_versions: []}
+        """)
+        XCTAssertEqual(titles(found), [
+            "custom_eas[0].warning_threshold", "custom_eas[0].current_versions",
+            "custom_eas[1].warning_days",
+        ])
+        XCTAssertEqual(found.first?.detail,
+                       "warning_threshold applies to percentage extension attributes, and this "
+                       + "one is boolean. The app ignores it.")
+    }
+
+    func testAlertRulesWithoutAnEnabledKeyAndANonNumericLookbackAreNamed() throws {
+        let rules = """
+          rules:
+            - {metric: patch_pct, when: drops_more_than, threshold: 5, lookback_days: abc}
+            - {metric: patch_pct, when: drops_more_than, threshold: 5, lookback_days: "14"}
+            - {metric: patch_pct, when: below, threshold: 90, lookback_days: abc}
+        """
+        let found = try rows("alerts:\n" + rules)
+        XCTAssertEqual(titles(found), ["alerts.enabled", "alerts.rules[0].lookback_days"])
+        XCTAssertEqual(detail(found, "alerts.enabled"),
+                       "alerts.rules lists 3 rules but alerts.enabled is not set. Alerts are off "
+                       + "unless it is true, so no rule runs.")
+        XCTAssertEqual(detail(found, "alerts.rules[0].lookback_days"),
+                       "\"abc\" is not a whole number of days. The app uses 7.")
+        XCTAssertEqual(titles(try rows("alerts:\n  enabled: false\n" + rules)),
+                       ["alerts.rules[0].lookback_days"], "an explicit false is a choice")
+    }
+
+    func testKeysNothingReadsAreSuggestionsWhenTheyDifferFromTheirDefaults() throws {
+        let found = try rows("""
+        jamf_cli: {enabled: false, allow_live_overview: false}
+        platform: {enabled: true}
+        thresholds: {checkin_overdue_days: 14, profile_error_critical: 80}
+        charts:
+          os_adoption: {enabled: false}
+          compliance_trend: {enabled: false}
+        """)
+        XCTAssertEqual(Set(titles(found)), [
+            "jamf_cli.enabled", "jamf_cli.allow_live_overview", "platform.enabled",
+            "thresholds.checkin_overdue_days", "thresholds.profile_error_critical",
+            "charts.os_adoption.enabled", "charts.compliance_trend.enabled",
+        ])
+        XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
+        XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
+        XCTAssertEqual(try rows("""
+        jamf_cli: {enabled: true, allow_live_overview: true}
+        platform: {enabled: false}
+        thresholds: {checkin_overdue_days: 7, profile_error_critical: 50}
+        charts:
+          os_adoption: {enabled: true}
+          compliance_trend: {enabled: true}
+        """), [], "what the app writes itself, at the default, says nothing")
+    }
+
+    func testSchoolAndProtectBothEnabledStateWhichOneTheCollectUses() throws {
+        let found = try rows("school_cli: {enabled: true}\nprotect: {enabled: true}\n")
+        XCTAssertEqual(titles(found), ["school_cli.enabled"])
+        XCTAssertEqual(found.first?.detail,
+                       "school_cli.enabled and protect.enabled are both true. The app collects "
+                       + "Jamf School only and never runs Protect for this profile.")
+        XCTAssertEqual(try rows("school_cli: {enabled: true}\nprotect: {enabled: false}\n"), [])
+        XCTAssertEqual(try rows("protect: {enabled: true}\n"), [])
+    }
+
+    func testNoRowIsAFailAndEveryIdIsUnique() throws {
+        let found = try rows("""
+        notify: {enabled: true, provider: x, detail: y}
+        retention: {enabled: true, mode: z, snapshot_keep_days: 0}
+        shared_workspace: {claim_ttl_minutes: 1}
+        thresholds: {stale_device_days: 0, warning_disk_percent: 95, critical_disk_percent: 90}
+        alerts:
+          rules:
+            - {metric: patch_pct, when: below, threshold: 90}
+        platform: {enabled: true}
+        school_cli: {enabled: true}
+        protect: {enabled: true}
+        """)
+        XCTAssertGreaterThan(found.count, 8)
+        XCTAssertFalse(found.contains { $0.severity == .fail },
+                       "only .fail reaches Run History, and a typo must not turn a run red")
+        XCTAssertEqual(Set(found.map(\.id)).count, found.count)
+    }
+
+    func testTheShippedExampleConfigStatesNothingItHasToReplace() throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var example: URL?
+        for _ in 0..<8 {
+            let candidate = dir.appendingPathComponent("config.example.yaml")
+            if FileManager.default.fileExists(atPath: candidate.path) { example = candidate; break }
+            dir = dir.deletingLastPathComponent()
+        }
+        guard let example else { throw XCTSkip("config.example.yaml not found") }
+        XCTAssertEqual(try rows(String(contentsOf: example, encoding: .utf8)), [])
+    }
+
     // MARK: Workspace for the rows that read a folder
 
     private func withWorkspacesRoot(_ body: (URL, URL) throws -> Void) throws {
