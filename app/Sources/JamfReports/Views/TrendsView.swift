@@ -244,6 +244,7 @@ struct TrendsView: View {
                 }
                 metricPicker
                 heroChart
+                aiInsightCard
                 comparisonRow
                 snapshotArchive
             }
@@ -771,6 +772,25 @@ struct TrendsView: View {
                             + "snapshots live.")
                 }
             }
+        }
+    }
+
+    // MARK: AI insight
+
+    /// macOS 27, opt-in: how the offered metrics moved over the selected range. The card
+    /// hides itself while `ai.enabled` is off; the input is built only where it can show.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspaceStore.demoMode) {
+            AIInsightCard(
+                title: "AI Trend Insight",
+                idleText: "Summarize how these metrics moved over the selected range using "
+                    + "on-device intelligence.",
+                provenanceText: "AI-generated from the snapshots in this range — verify "
+                    + "against the chart above.",
+                input: FleetInsightInput.trends(
+                    metrics: availableMetrics, points: points(for:), label: metricLabel)
+            )
         }
     }
 
