@@ -66,9 +66,12 @@ struct FleetInsightInput: Sendable, Equatable {
     /// context exceeds the budget it is truncated on a line boundary so a
     /// partial fact is never emitted.
     func promptContext(maxApproxTokens: Int = 1_500) -> String {
-        let lines = [title, "Focus: \(focus)"] + facts.map(\.line) + notes
+        let lines = [clean(title), "Focus: \(clean(focus))"] + facts.map(\.line) + notes.map(clean)
         return Self.budget(lines, maxApproxTokens: maxApproxTokens)
     }
+
+    /// The most characters any one field (title, focus, label, text value, note) sends.
+    static let fieldLimit = 200
 
     /// T-23: a summary's `date` is free text on synced storage and could carry
     /// prompt-injection text. Round-trip through the strict formatter so only a
@@ -167,6 +170,13 @@ extension FleetInsightInput.Value {
 /// Rounded once, so a share and its remainder always add up to 100.0%.
 private func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
 
+/// One line of at most `fieldLimit` characters, so a field can neither start a
+/// prompt line of its own nor crowd out the facts.
+private func clean(_ field: String) -> String {
+    let flat = field.replacing(#/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/#, with: " ")
+    return String(flat.trimmingCharacters(in: .whitespaces).prefix(FleetInsightInput.fieldLimit))
+}
+
 /// One decimal with its sign; never "-0.0".
 private func signed(_ delta: Double) -> String {
     String(format: "%@%.1f", delta >= 0 ? "+" : "", delta == 0 ? 0 : delta)
@@ -176,13 +186,14 @@ extension FleetInsightInput.Fact {
     /// A share with a complement states both sides, so the model never has to
     /// invert "SIP enabled: 1.0%" itself. A neutral fact prints its value only.
     var line: String {
-        var line = "- \(label): \(value.text)"
+        let label = clean(self.label), shown = clean(value.text)
+        var line = "- \(label): \(shown)"
         guard polarity != .neutral else { return line }
-        if case .percent(let share) = value, let complement {
+        if case .percent(let share) = value, let complement = complement.map(clean) {
             let rest = FleetInsightInput.Value.percent(max(0, 100 - tenths(share))).text
             // A complement with its own comma would otherwise run into "on".
             let on = complement.contains(",") ? ", on" : " on"
-            line = "- \(label) on \(value.text) of devices; \(complement)\(on) \(rest)"
+            line = "- \(label) on \(shown) of devices; \(complement)\(on) \(rest)"
         }
         return change.map { line + " (\($0))" } ?? line
     }

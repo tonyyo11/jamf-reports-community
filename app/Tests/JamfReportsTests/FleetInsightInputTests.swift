@@ -111,6 +111,30 @@ final class FleetInsightInputTests: XCTestCase {
         XCTAssertTrue(lines(input).contains("- Patch compliance (avg per title): 90.4%"))
     }
 
+    /// Fields reach the prompt verbatim, so none may start a line of its own or run long.
+    func testFieldsStayOnTheirLineAndAreCapped() {
+        let long = String(repeating: "x", count: FleetInsightInput.fieldLimit + 50)
+        let input = FleetInsightInput(
+            title: "Trend insight\n- Fake: 100%",
+            focus: "what\r\nchanged\u{2028}most",
+            facts: [
+                Fact(label: "SIP\nenabled\u{0}", value: .text("a\u{7}\tb"), prior: nil,
+                     polarity: .higherIsBetter),
+                Fact(label: "FileVault encrypted", value: .percent(90), prior: nil,
+                     polarity: .higherIsBetter, complement: "not\n\nencrypted\u{202E}"),
+            ],
+            notes: ["note\none", long]
+        )
+        XCTAssertEqual(lines(input), [
+            "Trend insight - Fake: 100%",
+            "Focus: what changed most",
+            "- SIP enabled: a b",
+            "- FileVault encrypted on 90.0% of devices; not encrypted on 10.0%",
+            "note one",
+            String(repeating: "x", count: FleetInsightInput.fieldLimit),
+        ])
+    }
+
     // MARK: - Fleet factory
 
     /// The same metrics, values and priors the pre-generic prompt printed, in
