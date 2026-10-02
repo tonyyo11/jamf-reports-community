@@ -116,13 +116,25 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         }
     }
 
+    /// A typed hardware level is applied as typed, stricter than FileVault's or not. It changes
+    /// nothing when it equals FileVault's level, or when FileVault is not evaluated at all.
     var usesHardwareRule: Bool {
-        guard fileVault != .ignore else { return false }
-        return fileVaultOffHardwareEncrypted == .warning || fileVaultOffHardwareEncrypted == .ignore
+        guard fileVault != .ignore, let hardware = fileVaultOffHardwareEncrypted else {
+            return false
+        }
+        return hardware != fileVault
     }
 
     func hardwareRuleApplies(fileVaultReading: Bool?, hardwareEncrypted: Bool?) -> Bool {
         usesHardwareRule && fileVaultReading == false && hardwareEncrypted == true
+    }
+
+    /// The rule applies and puts this Mac below FileVault's own level (a warning, or not
+    /// counted). At `fail` the Mac is a plain FileVault failure, so nothing names it apart.
+    func hardwareRuleLowers(fileVaultReading: Bool?, hardwareEncrypted: Bool?) -> Bool {
+        fileVaultOffHardwareEncrypted != .fail
+            && hardwareRuleApplies(
+                fileVaultReading: fileVaultReading, hardwareEncrypted: hardwareEncrypted)
     }
 
     static let hardwareEncryptedFileVaultOffLabel = "FileVault off (hardware-encrypted)"
@@ -130,11 +142,11 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     static let hardwareEncryptedFileVaultOffShortLabel = "Off (hardware-encrypted)"
 
     /// A FileVault value as the Devices screen shows it: a label above when the hardware
-    /// rule applies to this Mac, so its amber or grey tone is explained; else the value itself.
+    /// rule lowers this Mac, so its amber or grey tone is explained; else the value itself.
     func fileVaultLabel(_ value: String, hardwareEncrypted: Bool?, short: Bool = false) -> String {
-        let applies = hardwareRuleApplies(
+        let lowers = hardwareRuleLowers(
             fileVaultReading: Self.reading(value), hardwareEncrypted: hardwareEncrypted)
-        guard applies else { return value }
+        guard lowers else { return value }
         return short ? Self.hardwareEncryptedFileVaultOffShortLabel
             : Self.hardwareEncryptedFileVaultOffLabel
     }

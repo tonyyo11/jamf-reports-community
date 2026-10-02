@@ -572,7 +572,7 @@ struct DeviceInventorySnapshot: Sendable {
     /// Macs with FileVault off that the hardware rule keeps out of the FileVault gaps.
     var fileVaultOffHardwareEncryptedCount: Int {
         devices.filter {
-            securityPolicy.hardwareRuleApplies(
+            securityPolicy.hardwareRuleLowers(
                 fileVaultReading: $0.fileVaultEnabled, hardwareEncrypted: $0.hardwareEncrypted)
         }.count
     }

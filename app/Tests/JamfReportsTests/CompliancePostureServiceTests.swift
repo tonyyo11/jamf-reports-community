@@ -270,6 +270,25 @@ final class CompliancePostureServiceTests: XCTestCase {
         }
     }
 
+    /// A typed hardware level stricter than FileVault's is applied as typed: with FileVault
+    /// at warning, FileVault off on a hardware-encrypted Mac is a gap.
+    func testAStricterHardwareLevelMakesHardwareEncryptedFileVaultOffAGap() throws {
+        let policy = SecurityControlPolicy(
+            fileVault: .warning, fileVaultOffHardwareEncrypted: .fail)
+        let hardware = HardwareEncryption.index(computers: hardwareComputers())
+        let outcomes = try fileVaultOffOutcomes(policy: policy, hardware: hardware)
+        for name in ["as-mac", "t2-mac"] {
+            XCTAssertEqual(outcomes[name]?.gaps, 1, name)
+            XCTAssertEqual(outcomes[name]?.failing, 1, name)
+            XCTAssertEqual(outcomes[name]?.warnings, 0, name)
+        }
+        for name in ["intel-mac", "no-computers-row", "empty-serial"] {
+            XCTAssertEqual(outcomes[name]?.gaps, 0, name)
+            XCTAssertEqual(outcomes[name]?.failing, 0, name)
+            XCTAssertEqual(outcomes[name]?.warnings, 1, name)
+        }
+    }
+
     /// Without the rule, or without a hardware index, every Mac keeps today's verdict.
     func testWithoutTheRuleOrTheIndexFileVaultOffStaysAGap() throws {
         let hardware = HardwareEncryption.index(computers: hardwareComputers())

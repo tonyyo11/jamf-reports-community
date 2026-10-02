@@ -295,6 +295,34 @@ final class DeviceSecurityStateTests: XCTestCase {
                        "FileVault off (hardware-encrypted)")
     }
 
+    /// A typed hardware level stricter than FileVault's: FileVault off on an Apple-silicon Mac
+    /// is a plain failure, so neither its label nor the tile's count calls it hardware-encrypted.
+    func testAStricterHardwareLevelMakesAppleSiliconFileVaultOffAPlainFailure() {
+        let stricter = SecurityControlPolicy(
+            fileVault: .warning, fileVaultOffHardwareEncrypted: .fail)
+        let appleSilicon = DeviceInventoryService.recordFromComputer(
+            fileVaultOffComputer(id: 11, serial: "AS1", appleSilicon: true, model: "Mac14,2"),
+            source: "computers.json")
+        let intel = DeviceInventoryService.recordFromComputer(
+            fileVaultOffComputer(
+                id: 12, serial: "IN1", appleSilicon: false, model: "MacBookPro14,1"),
+            source: "computers.json")
+
+        XCTAssertEqual(appleSilicon.securityGapCount(policy: stricter), 1)
+        XCTAssertEqual(riskFactors(appleSilicon, stricter), [.noFileVault])
+        XCTAssertEqual(stricter.fileVaultLabel(appleSilicon.fileVault, hardwareEncrypted: true),
+                       "UNENCRYPTED")
+        XCTAssertEqual(stricter.fileVaultLabel(
+            appleSilicon.fileVault, hardwareEncrypted: true, short: true), "UNENCRYPTED")
+        XCTAssertEqual(intel.securityGapCount(policy: stricter), 0, "FileVault off is a warning")
+        XCTAssertEqual(riskFactors(intel, stricter), [])
+
+        var fleet = snapshot([appleSilicon, intel])
+        fleet.securityPolicy = stricter
+        XCTAssertEqual(fleet.securityGapCount, 1)
+        XCTAssertEqual(fleet.fileVaultOffHardwareEncryptedCount, 0)
+    }
+
     func testHardwareRuleLeavesAnIntelMacWithoutT2AsAGap() {
         let mac = DeviceInventoryService.recordFromComputer(
             fileVaultOffComputer(

@@ -275,7 +275,10 @@ final class SecurityControlPolicyTests: XCTestCase {
             (.warning, .ignore, [true: .ignored, false: .warning, nil: .warning]),
             (.ignore, .warning, [true: .ignored, false: .ignored, nil: .ignored]),
             (.ignore, .ignore, [true: .ignored, false: .ignored, nil: .ignored]),
-            (.warning, .fail, [true: .warning, false: .warning, nil: .warning]),
+            (.ignore, .fail, [true: .ignored, false: .ignored, nil: .ignored]),
+            // A typed hardware level applies even when it is stricter than FileVault's.
+            (.warning, .fail, [true: .fail, false: .warning, nil: .warning]),
+            (.fail, .fail, [true: .fail, false: .fail, nil: .fail]),
             (.fail, nil, [true: .fail, false: .fail, nil: .fail]),
         ]
         for (fileVault, rule, byHardware) in cases {
@@ -311,10 +314,48 @@ final class SecurityControlPolicyTests: XCTestCase {
         XCTAssertTrue(SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
             .usesHardwareRule)
         XCTAssertFalse(SecurityControlPolicy(fileVaultOffHardwareEncrypted: .fail)
+            .usesHardwareRule, "the same level as FileVault changes nothing")
+        XCTAssertTrue(SecurityControlPolicy(fileVault: .warning,
+                                            fileVaultOffHardwareEncrypted: .fail)
+            .usesHardwareRule, "a stricter hardware level is used as typed")
+        XCTAssertTrue(SecurityControlPolicy(fileVault: .warning,
+                                            fileVaultOffHardwareEncrypted: .ignore)
             .usesHardwareRule)
-        XCTAssertFalse(SecurityControlPolicy(fileVault: .ignore,
+        XCTAssertFalse(SecurityControlPolicy(fileVault: .warning,
                                              fileVaultOffHardwareEncrypted: .warning)
-            .usesHardwareRule, "filevault: ignore disables the rule")
+            .usesHardwareRule, "the same level as FileVault changes nothing")
+        for hardware in SecurityControlLevel.allCases {
+            XCTAssertFalse(SecurityControlPolicy(fileVault: .ignore,
+                                                 fileVaultOffHardwareEncrypted: hardware)
+                .usesHardwareRule, "filevault: ignore disables the rule at \(hardware)")
+        }
+    }
+
+    /// Only a hardware level below FileVault's takes the Mac out of FileVault's own count,
+    /// which is what the Devices label and the "more hardware-encrypted" count describe.
+    func testHardwareRuleLowersOnlyAtWarningOrIgnore() {
+        let lowered: [(SecurityControlLevel, SecurityControlLevel)] = [
+            (.fail, .warning), (.fail, .ignore), (.warning, .ignore),
+        ]
+        for (fileVault, hardware) in lowered {
+            let policy = SecurityControlPolicy(
+                fileVault: fileVault, fileVaultOffHardwareEncrypted: hardware)
+            XCTAssertTrue(policy.hardwareRuleLowers(fileVaultReading: false,
+                                                    hardwareEncrypted: true),
+                          "\(fileVault) \(hardware)")
+            XCTAssertFalse(policy.hardwareRuleLowers(fileVaultReading: true,
+                                                     hardwareEncrypted: true))
+            XCTAssertFalse(policy.hardwareRuleLowers(fileVaultReading: false,
+                                                     hardwareEncrypted: nil))
+        }
+        let stricter = SecurityControlPolicy(fileVault: .warning,
+                                             fileVaultOffHardwareEncrypted: .fail)
+        XCTAssertTrue(stricter.hardwareRuleApplies(fileVaultReading: false,
+                                                   hardwareEncrypted: true))
+        XCTAssertFalse(stricter.hardwareRuleLowers(fileVaultReading: false,
+                                                   hardwareEncrypted: true))
+        XCTAssertFalse(SecurityControlPolicy.default.hardwareRuleLowers(
+            fileVaultReading: false, hardwareEncrypted: true))
     }
 
     func testHardwareRuleAppliesOnlyToFileVaultOffOnAHardwareEncryptedMac() {

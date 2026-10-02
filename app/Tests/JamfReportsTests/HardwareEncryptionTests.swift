@@ -309,6 +309,24 @@ final class HardwareEncryptionTests: XCTestCase {
             fileVault: .ignore, fileVaultOffHardwareEncrypted: .warning)
         XCTAssertTrue(HardwareEncryption.index(dataDir: root, for: ignored).isEmpty,
                       "FileVault is not evaluated, so the rule is not in use")
+        for level in SecurityControlLevel.allCases {
+            let same = SecurityControlPolicy(fileVault: level, fileVaultOffHardwareEncrypted: level)
+            XCTAssertTrue(HardwareEncryption.index(dataDir: root, for: same).isEmpty,
+                          "hardware level equal to FileVault's (\(level)) changes nothing")
+            let anyIgnored = SecurityControlPolicy(
+                fileVault: .ignore, fileVaultOffHardwareEncrypted: level)
+            XCTAssertTrue(HardwareEncryption.index(dataDir: root, for: anyIgnored).isEmpty,
+                          "filevault: ignore with hardware \(level)")
+        }
+    }
+
+    /// A typed hardware level stricter than FileVault's is applied, so the index is read.
+    func testIndexFromDiskIsReadForAStricterHardwareLevel() throws {
+        let root = try dataDir(withComputers: "computers-v4/computers-v4.json")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stricter = SecurityControlPolicy(
+            fileVault: .warning, fileVaultOffHardwareEncrypted: .fail)
+        XCTAssertEqual(HardwareEncryption.index(dataDir: root, for: stricter).count, 6)
     }
 
     func testIndexFromDiskReadsTheNewestComputersSnapshotWhenTheRuleIsOn() throws {
