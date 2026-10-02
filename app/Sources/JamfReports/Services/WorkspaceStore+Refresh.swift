@@ -147,7 +147,8 @@ extension WorkspaceStore {
                             "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
                 outcome = Self.collectCompletedToast(
-                    "\(labels) data refreshed", incomplete: honesty.incomplete)
+                    "\(labels) data refreshed", incomplete: honesty.incomplete,
+                    warningsAt: .settingsLogging)
             } else {
                 outcome = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",
@@ -201,7 +202,8 @@ extension WorkspaceStore {
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
                 outcome = Self.collectCompletedToast(
-                    "Data refreshed", incomplete: honesty.incomplete)
+                    "Data refreshed", incomplete: honesty.incomplete,
+                    warningsAt: .settingsLogging)
             } else {
                 outcome = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",
@@ -265,6 +267,7 @@ extension WorkspaceStore {
         do {
             let exit = try await collect(activeProfile) { line in
                 honesty.observe(line.text)
+                CLIBridge.bufferingOnLine(line)
                 recorder?.record(line.text)
             }
             recorder?.finish(exitCode: exit)
@@ -283,15 +286,28 @@ extension WorkspaceStore {
         toast = outcome
     }
 
+    /// Where a GUI collect's warning lines can be read: Run History only for a run a
+    /// `ScheduledRunRecorder` wrote, otherwise the in-app log (`CLIBridge.bufferingOnLine`).
+    enum WarningsDestination: Sendable {
+        case runHistory, settingsLogging
+
+        var pointer: String {
+            switch self {
+            case .runHistory: "see Run History"
+            case .settingsLogging: "see Settings › Logging"
+            }
+        }
+    }
+
     /// The toast for a GUI collect that exited 0, which does not mean every source landed:
     /// `incomplete` (`CollectHonestyWatcher`) is what Run History reads as Partial.
     nonisolated static func collectCompletedToast(
-        _ message: String, incomplete: Bool, runRecorded: Bool = true
+        _ message: String, incomplete: Bool, warningsAt: WarningsDestination
     ) -> Toast {
         guard incomplete else { return Toast(message: message, style: .success) }
-        let tail = runRecorded ? "see Run History" : "check the app log"
         // `.danger` is the toast system's only warning-triangle style; there is no `.warning`.
-        return Toast(message: "Refresh finished with warnings — \(tail)", style: .danger)
+        return Toast(
+            message: "Refresh finished with warnings — \(warningsAt.pointer)", style: .danger)
     }
 
     /// `sink`, after feeding each run line to `honesty`.
@@ -321,7 +337,8 @@ extension WorkspaceStore {
             // Context-neutral: this path also serves CollectNowBanner on every
             // collect-fed screen, not just the first-run flow.
             return collectCompletedToast(
-                "Collection complete", incomplete: incomplete, runRecorded: runRecorded)
+                "Collection complete", incomplete: incomplete,
+                warningsAt: runRecorded ? .runHistory : .settingsLogging)
         }
         if exitCode == CLIBridge.exitCodeUnauthorized {
             return Toast(
