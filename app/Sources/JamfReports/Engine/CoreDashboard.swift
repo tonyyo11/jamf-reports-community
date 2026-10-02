@@ -36,7 +36,6 @@ struct CoreDashboard: Sendable {
         self.aiNarrative = aiNarrative
     }
 
-    private var accentColor: String { config.branding?.resolvedAccentColor ?? "#2D5EA2" }
     private var orgName: String { config.branding?.resolvedOrgName ?? "" }
 
     // MARK: - Sheet plan

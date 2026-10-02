@@ -334,6 +334,7 @@ branding:
 
   # Hex colour used for Excel column headers and the HTML report's primary
   # accent colour (topbar, links, stat-card values).  Default: #2D5EA2
+  # Write it as #RRGGBB or #RGB; both reports use the default for anything else.
   accent_color: "#2D5EA2"
 
   # Darker variant of accent_color — used for the HTML topbar background and

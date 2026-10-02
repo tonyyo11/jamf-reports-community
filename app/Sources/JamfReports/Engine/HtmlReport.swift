@@ -152,10 +152,7 @@ struct HtmlReport: Sendable {
 
         let overview = loadJSON(kind: "overview") as? [[String: Any]] ?? []
         let orgName = config.branding?.resolvedOrgName ?? "Jamf Reports"
-        let accentColor = HtmlReport.sanitizedHexColor(
-            config.branding?.resolvedAccentColor ?? "#2D5EA2",
-            fallback: "#2D5EA2"
-        )
+        let accentColor = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let ts = formattedNow()
         let titleEscaped = HtmlSectionFormatters.escapeHTML(orgName)
         let css = buildCSS(accentColor: accentColor)
@@ -260,10 +257,7 @@ struct HtmlReport: Sendable {
         let firewallPct = computePct(asInt(secData["firewall_enabled"]), total: totalDevices)
         let gatekeeperPct = computePct(asInt(secData["gatekeeper_enabled"]), total: totalDevices)
         let osVersions = security.filter { $0["section"] as? String == "os_version" }
-        let accentColor = HtmlReport.sanitizedHexColor(
-            config.branding?.resolvedAccentColor ?? "#2D5EA2",
-            fallback: "#2D5EA2"
-        )
+        let accentColor = (config.branding ?? BrandingConfig()).sanitizedAccentColor
 
         let tilesHTML = buildSummaryTiles(
             total: totalDevices,
@@ -385,10 +379,7 @@ struct HtmlReport: Sendable {
 
         let osVersions = security.filter { $0["section"] as? String == "os_version" }
         let orgName = config.branding?.resolvedOrgName ?? "Jamf Reports"
-        let accentColor = HtmlReport.sanitizedHexColor(
-            config.branding?.resolvedAccentColor ?? "#2D5EA2",
-            fallback: "#2D5EA2"
-        )
+        let accentColor = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let ts = formattedNow()
         let titleEscaped = HtmlSectionFormatters.escapeHTML(orgName)
         let css = buildCSS(accentColor: accentColor)
@@ -1762,17 +1753,6 @@ struct HtmlReport: Sendable {
             .replacingOccurrences(of: ">", with: "\\u003e")
             .replacingOccurrences(of: "&", with: "\\u0026")
         return result
-    }
-
-    /// P9-A-02: validate a brand accent color string before interpolating it into
-    /// CSS or a JS string literal. A user-supplied value like `red; }` would
-    /// otherwise close the `--accent:` declaration and inject arbitrary CSS, and
-    /// a value containing a single quote would break out of the Chart.js
-    /// `backgroundColor: '...'` JS literal. Accept only conventional hex colors;
-    /// fall back to `fallback` (which the caller controls and is hard-coded).
-    static func sanitizedHexColor(_ raw: String, fallback: String) -> String {
-        let pattern = "^#[0-9A-Fa-f]{3,8}$"
-        return raw.range(of: pattern, options: .regularExpression) != nil ? raw : fallback
     }
 
     private func formattedNow() -> String {

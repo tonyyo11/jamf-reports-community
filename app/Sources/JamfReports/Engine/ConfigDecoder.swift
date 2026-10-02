@@ -697,22 +697,15 @@ struct BrandingConfig: Decodable, Sendable {
     var resolvedOrgName: String { orgName?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedAccentColor: String { accentColor?.trimmingCharacters(in: .whitespaces) ?? "#2D5EA2" }
 
-    /// Accent color validated to `#RRGGBB` or `#RGB` hex format; falls back to `#2D5EA2`.
-    var sanitizedAccentColor: String { Self.sanitizeHex(resolvedAccentColor, fallback: "#2D5EA2") }
-
-    /// Dark-mode accent color validated to `#RRGGBB` or `#RGB` hex format; falls back to `#4A7EC8`.
-    var sanitizedAccentDark: String {
-        let raw = accentDark?.trimmingCharacters(in: .whitespaces) ?? ""
-        return Self.sanitizeHex(raw, fallback: "#4A7EC8")
-    }
-
-    /// Return `value` if it matches `#RRGGBB` or `#RGB`; otherwise return `fallback`.
-    private static func sanitizeHex(_ value: String, fallback: String) -> String {
-        let hex3 = #"^#[0-9A-Fa-f]{3}$"#
-        let hex6 = #"^#[0-9A-Fa-f]{6}$"#
-        if value.range(of: hex3, options: .regularExpression) != nil { return value }
-        if value.range(of: hex6, options: .regularExpression) != nil { return value }
-        return fallback
+    /// The accent both reports use: the typed colour when it is `#RGB` or `#RRGGBB`, else
+    /// `#2D5EA2`. Anything else could break out of the workbook's styles XML, the report's
+    /// CSS or a chart's JS string (P9-A-02).
+    var sanitizedAccentColor: String {
+        let value = resolvedAccentColor
+        let digits = value.dropFirst()
+        guard value.first == "#", [3, 6].contains(digits.count),
+              digits.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return "#2D5EA2" }
+        return value
     }
 }
 

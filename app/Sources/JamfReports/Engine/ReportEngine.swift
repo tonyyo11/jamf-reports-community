@@ -59,7 +59,8 @@ struct ReportEngine: Sendable {
         // the run — SheetSkippable would just skip the offending sheet.
         try Self.preflightStrictManifestCheck(config: config, dataDir: dataDir)
 
-        let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
+        let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
+        let workbook = Workbook(accentColor: accent)
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
         let jamfCLIURL = ExecutableLocator.locate("jamf-cli")
@@ -3238,7 +3239,8 @@ struct ReportEngine: Sendable {
         // dir and share the manifest discipline; integrity violations here
         // should abort the run, not silently render against tampered data.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
-        let workbook = Workbook(accentColor: config.branding?.resolvedAccentColor ?? "#2D5EA2")
+        let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
+        let workbook = Workbook(accentColor: accent)
         let core = SchoolDashboard(config: config, dataDir: dataDir, workbook: workbook)
         let (_, schoolFailures) = core.writeAll()
 

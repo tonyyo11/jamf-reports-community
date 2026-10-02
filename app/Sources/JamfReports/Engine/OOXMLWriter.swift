@@ -586,9 +586,11 @@ final class Workbook: @unchecked Sendable {
         return xml
     }
 
+    /// `#RGB` is spread to `RRGGBB`: the styles part takes six digits after the alpha.
     private func rgbFromHex(_ hex: String) -> String {
         let clean = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        return clean.uppercased()
+        let digits = clean.count == 3 ? clean.map { "\($0)\($0)" }.joined() : clean
+        return digits.uppercased()
     }
 
     // MARK: - Shared strings

@@ -235,8 +235,11 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
             ["branding.accent_color", "charts.compliance_trend.bands[1].color"])
         XCTAssertEqual(
             detail(found, "branding.accent_color"),
-            "\"red\" is not a hex colour such as #2D5EA2. The HTML report uses #2D5EA2 "
-                + "instead; the Excel workbook writes the value as typed.")
+            "\"red\" is not a hex colour such as #2D5EA2. The workbook and the HTML report use "
+                + "#2D5EA2 instead.")
+        XCTAssertEqual(titles(try rows("branding:\n  accent_color: \"#2D5EA2FF\"\n")),
+                       ["branding.accent_color"], "both reports take #RGB or #RRGGBB only")
+        XCTAssertEqual(try rows("branding:\n  accent_color: \"#abc\"\n"), [])
         XCTAssertEqual(
             detail(found, "charts.compliance_trend.bands[1].color"),
             "\"blue\" is not a hex colour such as #4472C4. The chart uses its default "

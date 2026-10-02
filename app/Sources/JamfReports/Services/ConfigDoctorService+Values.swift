@@ -161,16 +161,16 @@ extension ConfigDoctorService {
         return rows
     }
 
-    /// Mirrors what each reader accepts: the HTML report's `sanitizedHexColor`, and the chart
-    /// reader's six digits with or without the `#`.
+    /// Mirrors what each reader accepts: `BrandingConfig.sanitizedAccentColor` for both reports,
+    /// and the chart reader's six digits with or without the `#`.
     private static func colourValueRows(_ config: ReportConfig) -> [DoctorRow] {
         var rows: [DoctorRow] = []
-        if let typed = config.branding?.accentColor?.trimmingCharacters(in: .whitespaces),
-           !typed.isEmpty, HtmlReport.sanitizedHexColor(typed, fallback: "").isEmpty {
+        if let typed = config.branding?.resolvedAccentColor, !typed.isEmpty,
+           config.branding?.sanitizedAccentColor != typed {
             rows.append(valueRow(
                 "branding.accent_color",
-                "\(shown(typed)) is not a hex colour such as #2D5EA2. The HTML report uses "
-                    + "#2D5EA2 instead; the Excel workbook writes the value as typed.",
+                "\(shown(typed)) is not a hex colour such as #2D5EA2. The workbook and the "
+                    + "HTML report use #2D5EA2 instead.",
                 "Write it as #RRGGBB."))
         }
         for (index, band) in (config.charts?.complianceTrend?.bands ?? []).enumerated() {

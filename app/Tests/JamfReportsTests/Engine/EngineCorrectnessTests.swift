@@ -234,19 +234,18 @@ final class EngineCorrectnessTests: XCTestCase {
     func testSanitizedAccentColorAcceptsValidHex() {
         let config = makeBrandingConfig(accentColor: "#2D5EA2", accentDark: "#4A7EC8")
         XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2")
-        XCTAssertEqual(config.sanitizedAccentDark, "#4A7EC8")
     }
 
     func testSanitizedAccentColorFallsBackOnInvalidInput() {
-        let config = makeBrandingConfig(accentColor: "not-a-color", accentDark: "also-bad")
-        XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2")
-        XCTAssertEqual(config.sanitizedAccentDark, "#4A7EC8")
+        for typed in ["not-a-color", "#12345", "#2D5EA2FF", "#GGHHII", "2D5EA2"] {
+            let config = makeBrandingConfig(accentColor: typed, accentDark: nil)
+            XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2", typed)
+        }
     }
 
     func testSanitizedAccentColorAcceptsShortHex() {
         let config = makeBrandingConfig(accentColor: "#ABC", accentDark: "#123")
         XCTAssertEqual(config.sanitizedAccentColor, "#ABC")
-        XCTAssertEqual(config.sanitizedAccentDark, "#123")
     }
 
     // MARK: - Helpers
