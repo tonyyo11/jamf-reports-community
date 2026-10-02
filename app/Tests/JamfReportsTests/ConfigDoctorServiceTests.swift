@@ -885,6 +885,70 @@ final class ConfigDoctorServiceTests: XCTestCase {
                        "a workspace that never opted into alerts gets no alerts rows")
     }
 
+    // MARK: - Unknown keys
+
+    func testUnknownKeysBecomeWarningRowsThatNameTheKeyPath() {
+        let rows = ConfigDoctorService.unknownKeyRows([
+            UnknownKey(keyPath: "output.keep_lastest_runs", suggestion: "keep_latest_runs"),
+            UnknownKey(keyPath: "exceptions[0].expires", suggestion: nil),
+        ])
+        XCTAssertEqual(rows.map(\.id), ["config.unknown_key.0", "config.unknown_key.1"])
+        XCTAssertEqual(rows.map(\.severity), [.warn, .warn],
+                       "a typo must not be able to turn a scheduled run red")
+        XCTAssertEqual(rows.map(\.title), ["output.keep_lastest_runs", "exceptions[0].expires"])
+        XCTAssertEqual(rows.first?.detail,
+                       "The app does not read this key. Did you mean \"keep_latest_runs\"?")
+        XCTAssertEqual(rows.last?.detail, "The app does not read this key.")
+        XCTAssertNotNil(rows.last?.hint)
+    }
+
+    func testMoreThanTwentyUnknownKeysEndInOneRowSayingHowManyMore() {
+        let keys = (0..<23).map { UnknownKey(keyPath: "extra_\($0)", suggestion: nil) }
+        let rows = ConfigDoctorService.unknownKeyRows(keys)
+        XCTAssertEqual(rows.count, 21)
+        XCTAssertEqual(rows.prefix(20).map(\.title), keys.prefix(20).map(\.keyPath))
+        XCTAssertEqual(rows.last?.id, "config.unknown_key.more")
+        XCTAssertEqual(rows.last?.severity, .warn)
+        XCTAssertEqual(rows.last?.detail, "3 more keys in config.yaml that the app does not read.")
+        XCTAssertEqual(ConfigDoctorService.unknownKeyRows(Array(keys.prefix(21))).last?.detail,
+                       "1 more key in config.yaml that the app does not read.")
+        XCTAssertEqual(ConfigDoctorService.unknownKeyRows(Array(keys.prefix(20))).count, 20)
+    }
+
+    func testUnknownKeyRowsReadTheWorkspaceConfigAndNeverShowAValue() throws {
+        let yaml = """
+        notify:
+          enabled: false
+          webhook_url: "https://hooks.example.com/services/T000/B000/abc123"
+        thresholds:
+          stale_device_dayz: 45
+        """
+        try withWorkspace(yaml) { profile, _ in
+            let rows = ConfigDoctorService.unknownKeyRows(profile: profile)
+            XCTAssertEqual(rows.map(\.title),
+                           ["notify.webhook_url", "thresholds.stale_device_dayz"])
+            XCTAssertEqual(rows.last?.detail,
+                           "The app does not read this key. Did you mean \"stale_device_days\"?")
+            let shown = rows.map { $0.title + $0.detail + ($0.hint ?? "") }.joined()
+            XCTAssertFalse(shown.contains("hooks.example.com"))
+            XCTAssertFalse(shown.contains("45"))
+        }
+    }
+
+    func testUnknownKeyRowsStillNameTheTypoWhenTheFileDoesNotDecode() throws {
+        let yaml = """
+        custom_eas:
+          - name: "Disk Use"
+            colum: "Boot Drive Percentage Full"
+            type: percentage
+        """
+        XCTAssertThrowsError(try makeConfig(yaml), "`column` is required")
+        try withWorkspace(yaml) { profile, _ in
+            XCTAssertEqual(ConfigDoctorService.unknownKeyRows(profile: profile).map(\.detail),
+                           ["The app does not read this key. Did you mean \"column\"?"])
+        }
+    }
+
     // MARK: - Security policy (hand-typed values)
 
     func testSecurityPolicyIssuesBecomeWarningRows() {

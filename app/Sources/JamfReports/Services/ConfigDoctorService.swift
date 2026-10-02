@@ -84,6 +84,7 @@ enum ConfigDoctorService {
             csvFamily: csvFamily,
             eaCoverageNames: eaNames
         )
+        rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
         if let config, parseError == nil {
             rows += accuracyRows(config: config, profile: profile)
             rows += securityPolicyRows(profile: profile, config: config)
@@ -569,6 +570,45 @@ enum ConfigDoctorService {
             return "threshold \(threshold) is not a valid non-negative number"
         }
         return nil
+    }
+
+    // MARK: - Unknown keys
+
+    private static let unknownKeyCap = 20
+
+    /// Reads the profile's config.yaml as the decoder sees it, whether or not it decodes: a
+    /// misspelled required key is the likeliest reason it does not. Nothing for a file that is
+    /// missing or is not YAML.
+    static func unknownKeyRows(profile: String, workspaceRoot: URL? = nil) -> [DoctorRow] {
+        guard let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot),
+              let text = try? String(contentsOf: url, encoding: .utf8),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
+        else { return [] }
+        return unknownKeyRows(ConfigSchema.unknownKeys(in: root))
+    }
+
+    /// One warning per unknown key, titled with its key path. The value is never shown: it can
+    /// be a webhook URL under a misspelled key.
+    static func unknownKeyRows(_ keys: [UnknownKey]) -> [DoctorRow] {
+        var rows = keys.prefix(unknownKeyCap).enumerated().map { index, key in
+            DoctorRow(
+                id: "config.unknown_key.\(index)", severity: .warn, title: key.keyPath,
+                detail: "The app does not read this key."
+                    + (key.suggestion.map { " Did you mean \"\($0)\"?" } ?? ""),
+                hint: "Remove it from config.yaml, or check its spelling: keys are case-sensitive."
+            )
+        }
+        if keys.count > unknownKeyCap {
+            let more = keys.count - unknownKeyCap
+            rows.append(DoctorRow(
+                id: "config.unknown_key.more", severity: .warn,
+                title: "More keys the app does not read",
+                detail: "\(more) more key\(more == 1 ? "" : "s") in config.yaml that the app "
+                    + "does not read.",
+                hint: "Fix the keys above, then run the check again to see the rest."
+            ))
+        }
+        return rows
     }
 
     // MARK: - Security policy (hand-typed values)

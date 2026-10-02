@@ -31,7 +31,7 @@ struct ReportConfig: Decodable, Sendable {
     var html: HTMLReportConfig?
     var securityPolicy: SecurityControlPolicy?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case columns
         case mobileColumns = "mobile_columns"
         case securityAgents = "security_agents"
@@ -110,7 +110,7 @@ struct ColumnConfig: Decodable, Sendable {
     /// Device purchase or acquisition date column. YAML key: `purchase_date`.
     var purchaseDate: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case computerName = "computer_name"
         case serialNumber = "serial_number"
         case operatingSystem = "operating_system"
@@ -215,7 +215,7 @@ struct MobileColumnConfig: Decodable, Sendable {
     var managed: String?
     var supervised: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case deviceName = "device_name"
         case serialNumber = "serial_number"
         case operatingSystem = "operating_system"
@@ -233,7 +233,7 @@ struct SecurityAgentConfig: Decodable, Sendable {
     let column: String
     let connectedValue: String  // key is `connected_value`, NOT `installed_value`
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case name, column
         case connectedValue = "connected_value"
     }
@@ -257,7 +257,7 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// not write this key, and a Config screen save keeps it.
     var collectSkip: [String]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case dataDir = "data_dir"
         case profile
@@ -374,7 +374,7 @@ struct ComplianceBaselineConfig: Decodable, Sendable {
     /// above this value is rejected as unparseable (No Data).
     var ruleCount: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case name
         case failuresCountColumn = "failures_count_column"
         case failuresListColumn = "failures_list_column"
@@ -415,7 +415,7 @@ struct ComplianceConfig: Decodable, Sendable {
     /// real-data result and the proxy remains active.
     var baselines: [ComplianceBaselineConfig]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case failuresCountColumn = "failures_count_column"
         case failuresListColumn = "failures_list_column"
@@ -491,7 +491,7 @@ struct CustomEAConfig: Decodable, Sendable {
         var id: String { rawValue }
     }
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case name, column, type
         case trueValue = "true_value"
         case warningThreshold = "warning_threshold"
@@ -511,6 +511,10 @@ struct SheetsConfig: Decodable, Sendable {
     /// skipped sheets stay removed; `only` limits to the allowed subset; `order` controls
     /// position within the survivors.
     var order: [String]?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case only, skip, order
+    }
 
     /// Apply `only`, `skip`, and `order` to a sheet plan.
     ///
@@ -557,7 +561,7 @@ struct ThresholdsConfig: Decodable, Sendable {
     var profileErrorCritical: Int?
     var profileErrorWarning: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case staleDeviceDays = "stale_device_days"
         case checkinOverdueDays = "checkin_overdue_days"
         case criticalDiskPercent = "critical_disk_percent"
@@ -585,7 +589,7 @@ struct OutputConfig: Decodable, Sendable {
     var archiveDir: String?
     var keepLatestRuns: Int?        // key is `keep_latest_runs`
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case outputDir = "output_dir"
         case timestampOutputs = "timestamp_outputs"
         case archiveEnabled = "archive_enabled"
@@ -611,7 +615,7 @@ struct ChartsConfig: Decodable, Sendable {
     var complianceTrend: ComplianceTrendConfig?
     var deviceStateTrend: DeviceStateTrendConfig?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case savePng = "save_png"
         case embedInXlsx = "embed_in_xlsx"
@@ -629,7 +633,7 @@ struct OSAdoptionConfig: Decodable, Sendable {
     var enabled: Bool?
     var perMajorCharts: Bool?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case perMajorCharts = "per_major_charts"
     }
@@ -638,6 +642,10 @@ struct OSAdoptionConfig: Decodable, Sendable {
 struct ComplianceTrendConfig: Decodable, Sendable {
     var enabled: Bool?
     var bands: [ComplianceBandConfig]?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case enabled, bands
+    }
 }
 
 struct ComplianceBandConfig: Decodable, Sendable {
@@ -646,7 +654,7 @@ struct ComplianceBandConfig: Decodable, Sendable {
     let maxFailures: Int
     let color: String
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case label
         case minFailures = "min_failures"
         case maxFailures = "max_failures"
@@ -656,6 +664,10 @@ struct ComplianceBandConfig: Decodable, Sendable {
 
 struct DeviceStateTrendConfig: Decodable, Sendable {
     var enabled: Bool?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case enabled
+    }
 }
 
 // MARK: - branding
@@ -666,7 +678,7 @@ struct BrandingConfig: Decodable, Sendable {
     var accentColor: String?
     var accentDark: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case orgName = "org_name"
         case logoPath = "logo_path"
         case accentColor = "accent_color"
@@ -705,7 +717,7 @@ struct ProtectConfig: Decodable, Sendable {
     var enabled: Bool?
     var profile: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, profile
     }
 
@@ -723,7 +735,7 @@ struct SchoolCLIConfig: Decodable, Sendable {
     var enabled: Bool?
     var profile: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, profile
     }
 
@@ -749,7 +761,7 @@ struct NotifyConfig: Decodable, Sendable {
     var url: String?
     var detail: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, provider, url, detail
     }
 
@@ -777,7 +789,7 @@ struct AlertsConfig: Decodable, Sendable {
     var enabled: Bool?
     var rules: [AlertRule]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, rules
     }
 
@@ -815,7 +827,7 @@ struct AlertRule: Decodable, Sendable, Equatable {
     var threshold: Double?
     var lookbackDays: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case metric, when, threshold
         case lookbackDays = "lookback_days"
     }
@@ -921,7 +933,7 @@ struct AIConfig: Decodable, Sendable {
     var tier: String?
     var reasoningLevel: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, tier
         case reasoningLevel = "reasoning_level"
     }
@@ -960,7 +972,7 @@ struct RetentionConfig: Decodable, Sendable {
     var includeSummaries: Bool?
     var archiveDir: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case mode
         case snapshotKeepDays = "snapshot_keep_days"
@@ -999,7 +1011,7 @@ struct SharedWorkspaceConfig: Decodable, Sendable {
     var claimTtlMinutes: Int?
     var minCollectIntervalHours: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case claimTtlMinutes = "claim_ttl_minutes"
         case minCollectIntervalHours = "min_collect_interval_hours"
@@ -1047,7 +1059,7 @@ struct ConfigException: Decodable, Sendable, Equatable {
     /// `ConfigException.typedControlID` (`ConfigSchema+ControlID.swift`).
     var controlID: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id, description
         case signedOffBy = "signed_off_by"
         case signedOffDate = "signed_off_date"
@@ -1081,7 +1093,7 @@ struct ConfigException: Decodable, Sendable, Equatable {
 struct HTMLReportConfig: Decodable, Sendable {
     var sectionLimits: HTMLSectionLimits?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case sectionLimits = "section_limits"
     }
 }
@@ -1094,7 +1106,7 @@ struct HTMLSectionLimits: Decodable, Sendable {
     var protectAlerts: Int?
     var insightsDriftSnapshots: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case protectAlerts = "protect_alerts"
         case insightsDriftSnapshots = "insights_drift_snapshots"
     }
@@ -1130,7 +1142,7 @@ struct PlatformConfig: Decodable, Sendable {
     var enabled: Bool?
     var complianceBenchmarks: [String]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case complianceBenchmarks = "compliance_benchmarks"
     }
@@ -1250,6 +1262,12 @@ enum ConfigLoader {
         } catch {
             throw LoadError.decodeError(url.lastPathComponent, error)
         }
+    }
+
+    /// The document as the decoder sees it, before decoding: a repeated key holds its last
+    /// value here too.
+    static func rawMapping(fromYAML text: String) throws -> [String: Any] {
+        nodeToJSONObject(try YAMLCodec.decode(text).root) as? [String: Any] ?? [:]
     }
 
     // MARK: - YAML → JSON conversion

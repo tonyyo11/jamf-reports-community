@@ -88,13 +88,13 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         self.scoreWeights = scoreWeights
     }
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case controls
         case fileVaultOffHardwareEncrypted = "filevault_off_hardware_encrypted"
         case scoreWeights = "score_weights"
     }
 
-    private enum ControlKeys: String, CodingKey {
+    enum ControlKeys: String, CodingKey, CaseIterable {
         case filevault, sip, firewall, gatekeeper
     }
 
