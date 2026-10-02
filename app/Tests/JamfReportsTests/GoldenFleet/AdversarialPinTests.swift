@@ -174,7 +174,7 @@ final class AdversarialPinTests: XCTestCase {
     // MARK: - Pin 4 — patchPct excludes zero-device titles
 
     /// A 0-device patch title is dropped by the `total > 0` guard, so the
-    /// unweighted mean is taken over the real title only.
+    /// device-weighted figure is taken over the real title only.
     func testPin4_PatchPctZeroDeviceTitleExcluded() throws {
         let root = makeRoot()
         let dataDir = root.appendingPathComponent("data", isDirectory: true)
@@ -197,8 +197,8 @@ final class AdversarialPinTests: XCTestCase {
             .emitSummaryJSON(summariesDir: summariesDir)
         let s = try onlySummary(in: summariesDir)
 
-        // Only the total>0 title counts: mean over {80.0} = 80.0.
-        // Without the guard, the "0%" title would drag it to (80 + 0) / 2 = 40.0.
+        // Only the total>0 title counts: 80 / 100 = 80.0. A mean that kept the "0%" title
+        // would read (80 + 0) / 2 = 40.0.
         XCTAssertEqual(try XCTUnwrap(s.patchPct), 80.0, accuracy: 0.001)
     }
 

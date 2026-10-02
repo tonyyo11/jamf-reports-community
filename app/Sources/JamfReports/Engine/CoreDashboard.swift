@@ -2732,12 +2732,8 @@ struct CoreDashboard: Sendable {
     /// Populate patch compliance % from the cached `patch-status` snapshot.
     private func applyPatchMetric(to m: inout ExecutiveSummaryMetrics) {
         guard let rows = loadLatestTyped(names: ["patch-status", "patch_status"],
-                                          as: [PatchStatusRow].self),
-              !rows.isEmpty else { return }
-        let snap = PatchStatusService.Snapshot(
-            titles: rows, failures: [], sourceFile: nil, snapshotDate: nil
-        )
-        m.patchFleetCompliancePct = snap.fleetCompliancePct
+                                          as: [PatchStatusRow].self) else { return }
+        m.patchFleetCompliancePct = PatchStatusService.fleetCompliancePct(rows)
     }
 
     /// Populate managed count + stale tier buckets from the cached `device-compliance` snapshot.
@@ -3056,10 +3052,9 @@ struct CoreDashboard: Sendable {
             ? Double(managedCount) / Double(deviceTotal) * 100 : 0
 
         // Patch compliance snapshot
-        let patchItems = ((try? loadLatestJSON(
-            names: ["patch-status", "patch_status"]
-        )) as? [[String: Any]]) ?? []
-        let patchPct = averagePatchCompliancePct(patchItems)
+        let patchPct = loadLatestTyped(
+            names: ["patch-status", "patch_status"], as: [PatchStatusRow].self
+        ).flatMap(PatchStatusService.fleetCompliancePct)
 
         // Metric rows: (label, rawValue, pctValue for RAG, security control the policy grades)
         let metrics: [(label: String, value: String, pct: Double?, control: SecurityControl?)] = [
@@ -3078,9 +3073,9 @@ struct CoreDashboard: Sendable {
             ("Gatekeeper Enabled",
              percentLabel(asInt(secSummary["gatekeeper_enabled"]), total: totalDevices),
              nil, .gatekeeper),
-            ("Patch Compliance (avg across titles)",
-             patchItems.isEmpty ? "\u{2014}" : String(format: "%.0f%%", patchPct),
-             patchItems.isEmpty ? nil : patchPct, nil),
+            ("Patch Compliance (devices on latest)",
+             patchPct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",
+             patchPct, nil),
             ("Stale Devices (>\(config.thresholds?.resolvedStaleDays ?? 30) days)",
              "\(staleCount)",
              nil, nil),
@@ -3158,17 +3153,6 @@ struct CoreDashboard: Sendable {
                      row: row, col: 4, format: fmt)
             row += 1
         }
-    }
-
-    /// Average patch compliance % across all titles; returns 0.0 if no data.
-    private func averagePatchCompliancePct(_ items: [[String: Any]]) -> Double {
-        guard !items.isEmpty else { return 0 }
-        let pcts = items.compactMap { item -> Double? in
-            let s = item["compliance_pct"] as? String ?? ""
-            return Double(s.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces))
-        }
-        guard !pcts.isEmpty else { return 0 }
-        return pcts.reduce(0, +) / Double(pcts.count)
     }
 
     /// A security row's status under the workspace's policy: not counted at `ignore`, else

@@ -6,7 +6,7 @@ import Foundation
 ///
 /// The view consumes a single `Snapshot` value containing both patch titles
 /// (for the main table) and device failures (for the Recent Failures table).
-/// Fleet compliance percentage is computed as a weighted average across all titles.
+/// Fleet compliance is device-weighted across titles (`fleetCompliancePct`).
 struct PatchStatusService: Sendable {
 
     /// Everything the PatchView needs from both patch status snapshots.
@@ -43,15 +43,9 @@ struct PatchStatusService: Sendable {
             }.count
         }
 
-        /// Fleet-wide compliance percentage: sum(on_latest) / sum(total) * 100.
-        /// Titles with total == 0 contribute nothing to either numerator or denominator.
-        /// Returns 0 when there are no titles or no devices across all titles.
-        var fleetCompliancePct: Double {
-            guard !titles.isEmpty else { return 0 }
-            let totalDevices = titles.reduce(0) { $0 + $1.total }
-            guard totalDevices > 0 else { return 0 }
-            let totalOnLatest = titles.reduce(0) { $0 + $1.onLatest }
-            return Double(totalOnLatest) / Double(totalDevices) * 100.0
+        /// `PatchStatusService.fleetCompliancePct(titles)`; nil when no title has devices.
+        var fleetCompliancePct: Double? {
+            PatchStatusService.fleetCompliancePct(titles)
         }
 
         /// Number of devices with patch failures, grouped by policy name.
@@ -164,6 +158,20 @@ struct PatchStatusService: Sendable {
             snapshotDate: mtime,
             sourceDates: sourceDates
         )
+    }
+
+    // MARK: - Fleet compliance
+
+    /// The one patch-compliance definition (epic #207 C1): `Σ on_latest / Σ total * 100`
+    /// over titles with `total > 0`, so every device counts once however many titles there
+    /// are. A title nobody has carries no signal, and some jamf-cli builds emit a parseable
+    /// "0%" for it, so it joins neither sum. Nil, never 0, when no title has devices.
+    static func fleetCompliancePct(_ titles: [PatchStatusRow]) -> Double? {
+        let counted = titles.filter { $0.total > 0 }
+        let devices = counted.reduce(0) { $0 + $1.total }
+        guard devices > 0 else { return nil }
+        let onLatest = counted.reduce(0) { $0 + $1.onLatest }
+        return Double(onLatest) / Double(devices) * 100.0
     }
 
     // MARK: - Internals

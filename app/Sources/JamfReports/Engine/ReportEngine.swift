@@ -704,27 +704,12 @@ struct ReportEngine: Sendable {
                 macOSRows: macOSRows, osCounts: osCounts, totalDevices: totalDevices)
         }
 
-        // Patch % — unweighted mean of per-title compliance_pct across patch-status
-        // rows; nil when patch-status data is absent (not the same as 0%).
-        //
-        // `compactMap` excludes titles that carry a nil or unparseable
-        // compliance_pct (e.g. patch titles with no enrolled devices yet).
-        // Those titles are not counted in the denominator, so `patchPct` is the
-        // average title compliance for titles that *have* data. It is NOT a
-        // device-weighted fleet compliance figure. The displayed label "Patch
-        // Compliance" should be read as "average per-title compliance", not as
-        // the fraction of devices on the latest patch version.
+        // Patch % — device-weighted (`PatchStatusService.fleetCompliancePct`); nil when
+        // patch-status is absent or no title has devices (not the same as 0%).
         var patchPct: Double? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
-            // total > 0 guard matches PatchVelocityBuilder: a 0-device title
-            // carries no compliance signal, and some jamf-cli builds emit a
-            // parseable "0%" for it that would drag the unweighted mean down.
-            let values = rows.filter { $0.total > 0 }
-                .compactMap { parsePercentString($0.compliancePct) }
-            if !values.isEmpty {
-                patchPct = values.reduce(0, +) / Double(values.count)
-            }
+            patchPct = PatchStatusService.fleetCompliancePct(rows)
         }
 
         // Real mSCP compliance from ea-results — overrides the proxy when the
@@ -847,7 +832,8 @@ struct ReportEngine: Sendable {
             // Only on a shared workspace. On a single-Mac install the answer is
             // trivially "this Mac", and writing it into every summary would add
             // a hostname to a file that never needed one.
-            collectedByHost: Self.collectingHostLabel(dataDir: dataDir)
+            collectedByHost: Self.collectingHostLabel(dataDir: dataDir),
+            patchPctBasis: DailySummary.deviceWeightedPatchBasis
         )
     }
 

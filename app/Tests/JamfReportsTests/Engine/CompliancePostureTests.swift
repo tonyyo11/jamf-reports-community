@@ -122,9 +122,9 @@ final class CompliancePostureTests: XCTestCase {
 
         // Seed patch-status snapshot (2 titles)
         let patchJSON: [[String: Any]] = [
-            ["title": "Firefox", "on_latest": 90, "on_other": 10, "total": 100,
+            ["title": "Firefox", "id": "1", "on_latest": 90, "on_other": 10, "total": 100,
              "latest": "130.0", "compliance_pct": "90%"],
-            ["title": "Chrome", "on_latest": 70, "on_other": 30, "total": 100,
+            ["title": "Chrome", "id": "2", "on_latest": 70, "on_other": 30, "total": 100,
              "latest": "120.0", "compliance_pct": "70%"],
         ]
         try seedJSON(patchJSON, name: "patch-status", in: tmp)

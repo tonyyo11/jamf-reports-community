@@ -78,7 +78,7 @@ final class PatchStatusServiceTests: XCTestCase {
         // Chrome: 45% × 100 devices = 4500
         // Office: 95% × 100 devices = 9500
         // Total: 22000 / 300 = 73.33%
-        XCTAssertEqual(snapshot.fleetCompliancePct, 73.33, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(snapshot.fleetCompliancePct), 73.33, accuracy: 0.01)
 
         // Failure counts
         XCTAssertEqual(snapshot.failures.count, 3)
@@ -174,7 +174,7 @@ final class PatchStatusServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.totalTitles, 0)
         XCTAssertEqual(snapshot.compliantTitleCount, 0)
         XCTAssertEqual(snapshot.failingTitleCount, 0)
-        XCTAssertEqual(snapshot.fleetCompliancePct, 0)
+        XCTAssertNil(snapshot.fleetCompliancePct, "no title has devices: no figure, not 0%")
         XCTAssertEqual(snapshot.devicesWithFailures, 0)
         XCTAssertTrue(snapshot.failuresByTitle.isEmpty)
     }

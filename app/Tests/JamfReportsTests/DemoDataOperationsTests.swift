@@ -10,17 +10,13 @@ final class DemoDataOperationsTests: XCTestCase {
 
     // MARK: - Patch Compliance
 
-    /// The Patch trend ends at 87.5%. Patch Compliance weights by device and a
-    /// daily summary averages the titles' rates; both must land there.
-    func testDemoPatchComplianceEndsOnThePatchTrend() {
+    /// The Patch trend ends at 87.5%, the device-weighted figure the Patch screen shows.
+    func testDemoPatchComplianceEndsOnThePatchTrend() throws {
         let snapshot = DemoData.patchStatus
         let trendEnd = DemoData.trends[.patch]?.last ?? 0
-        let rates = snapshot.titles.map { PatchStatusService.parseCompliancePct($0.compliancePct) }
-        let meanRate = rates.reduce(0, +) / Double(max(rates.count, 1))
 
         XCTAssertEqual(trendEnd, 87.5, accuracy: 0.001)
-        XCTAssertEqual(snapshot.fleetCompliancePct, trendEnd, accuracy: 0.001)
-        XCTAssertEqual(meanRate, trendEnd, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(snapshot.fleetCompliancePct), trendEnd, accuracy: 0.001)
     }
 
     /// Each title's label is its own on-latest share, and the Devices screen's
