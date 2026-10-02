@@ -139,3 +139,109 @@ enum SecurityPolicyConfigLoader {
         return kept.count > 40 ? String(kept.prefix(39)) + "…" : kept
     }
 }
+
+/// Scoped write-back for the Config → Scoring Security Policy card. Like
+/// `ChartsConfigWriter` it reads the existing mapping and sets individual keys, outside
+/// `ConfigService`'s managed keys, so `score_weights`, a key the app does not read and every
+/// other top-level block survive a save.
+///
+/// A key whose typed value already reads as the saved level is left as typed: a synonym
+/// (`warn`) or a typo the app already treats as `fail` is not rewritten by a save of another
+/// control, and its issue stays reported until its own row changes.
+enum SecurityPolicyConfigWriter {
+    enum WriteError: Error, LocalizedError {
+        case invalidProfile(String)
+        case invalidDocumentRoot
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidProfile(let profile): "Invalid profile name: \(profile)"
+            case .invalidDocumentRoot:
+                "config.yaml's YAML root is not a mapping — cannot save the security policy."
+            }
+        }
+    }
+
+    private static let hardwareKey = "filevault_off_hardware_encrypted"
+
+    static func save(_ policy: SecurityControlPolicy, profile: String) throws {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else {
+            throw WriteError.invalidProfile(profile)
+        }
+        let manager = FileManager.default
+        try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let configURL = workspace.appendingPathComponent("config.yaml")
+
+        var document: YAMLCodec.YAMLDocument
+        if manager.fileExists(atPath: configURL.path) {
+            document = try YAMLCodec.decode(String(contentsOf: configURL, encoding: .utf8))
+        } else {
+            document = YAMLCodec.emptyDocument()
+        }
+        guard case .mapping(var root) = document.root else {
+            throw WriteError.invalidDocumentRoot
+        }
+
+        let existing = root.value(for: "security_policy")?.mapping ?? .init(entries: [])
+        var block = existing
+        apply(policy, to: &block)
+        // Nothing to write: leave the file, and any comments in the block, as it is.
+        guard block != existing else { return }
+        root.set("security_policy", value: .mapping(block))
+        document.root = .mapping(root)
+
+        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["security_policy"])
+        let tempURL = workspace.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
+        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
+        if !manager.fileExists(atPath: configURL.path) {
+            manager.createFile(atPath: configURL.path, contents: Data())
+        }
+        _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
+    }
+
+    private static func apply(
+        _ policy: SecurityControlPolicy, to block: inout YAMLCodec.YAMLMapping
+    ) {
+        let existing = block.value(for: "controls")?.mapping ?? .init(entries: [])
+        var controls = existing
+        for control in SecurityControl.allCases {
+            let level = policy.level(for: control)
+            // The decoder reads an absent or unreadable level as fail.
+            if (typedLevel(lastValue(of: control.rawValue, in: controls)) ?? .fail) != level {
+                assign(.scalar(.string(level.rawValue)), to: control.rawValue, in: &controls)
+            }
+        }
+        // `controls` stays as the file had it (even a non-mapping) when nothing was written.
+        if controls != existing { block.set("controls", value: .mapping(controls)) }
+
+        let hardware = policy.fileVaultOffHardwareEncrypted
+        guard typedLevel(lastValue(of: hardwareKey, in: block)) != hardware else { return }
+        if let hardware {
+            assign(.scalar(.string(hardware.rawValue)), to: hardwareKey, in: &block)
+        } else {
+            block.entries.removeAll { $0.key == hardwareKey }
+        }
+    }
+
+    /// What the decoder sees for a repeated key: the last entry.
+    private static func lastValue(
+        of key: String, in mapping: YAMLCodec.YAMLMapping
+    ) -> YAMLCodec.YAMLValue? {
+        mapping.entries.last { $0.key == key }?.value
+    }
+
+    private static func typedLevel(_ node: YAMLCodec.YAMLValue?) -> SecurityControlLevel? {
+        guard case .scalar(.string(let text)) = node else { return nil }
+        return SecurityControlLevel.parse(text)
+    }
+
+    /// Sets the key where it first appears and drops any repeat, so the entry the decoder
+    /// reads is the one set.
+    private static func assign(
+        _ value: YAMLCodec.YAMLValue, to key: String, in mapping: inout YAMLCodec.YAMLMapping
+    ) {
+        let position = mapping.entries.firstIndex { $0.key == key } ?? mapping.entries.count
+        mapping.entries.removeAll { $0.key == key }
+        mapping.entries.insert(.init(key: key, value: value), at: position)
+    }
+}

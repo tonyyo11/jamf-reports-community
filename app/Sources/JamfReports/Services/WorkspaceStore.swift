@@ -176,6 +176,11 @@ final class WorkspaceStore {
     /// Keys the YAML parser auto-healed on load (orphaned sequence items re-attached).
     /// Non-empty means the on-disk file is still malformed until the user saves from Config.
     var configRepairedKeys: [String] = []
+    /// The active workspace's `security_policy:` as the app applies it, and each value or key
+    /// in a hand-typed block it did not use as written. Loaded with the config; the Scoring
+    /// card edits them through `saveSecurityPolicy`.
+    var securityPolicy: SecurityControlPolicy = .default
+    var securityPolicyIssues: [SecurityPolicyIssue] = []
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
@@ -696,6 +701,10 @@ final class WorkspaceStore {
             applyDemoConfig()
             return
         }
+        // Read before the config decode below, which can throw: the loaders never do, and a
+        // workspace with no policy (or a profile switch) has to drop the previous one.
+        securityPolicy = SecurityPolicyConfigLoader.load(profile: profile)
+        securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
@@ -733,6 +742,17 @@ final class WorkspaceStore {
         configRepairedKeys = newDoc.repairedKeys.sorted()
     }
 
+    /// Writes the policy to config.yaml, then adopts it and re-reads the file's issues: a
+    /// saved level clears its own issue and nothing else's. A failed write throws and leaves
+    /// the loaded policy as it was. Demo mode returns without writing; the card's controls
+    /// are disabled there too.
+    func saveSecurityPolicy(_ policy: SecurityControlPolicy) throws {
+        guard !demoMode else { return }
+        try SecurityPolicyConfigWriter.save(policy, profile: profile)
+        securityPolicy = policy
+        securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
+    }
+
     /// The demo workspace's config in place of whatever was loaded before, with
     /// no document to write back to.
     private func applyDemoConfig() {
@@ -741,6 +761,8 @@ final class WorkspaceStore {
         _savedState = DemoData.configState
         configError = nil
         configRepairedKeys = []
+        securityPolicy = .default
+        securityPolicyIssues = []
         rebuildColumnMappings()
         rebuildCustomEAs()
     }
