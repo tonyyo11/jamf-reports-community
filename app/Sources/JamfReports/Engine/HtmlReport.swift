@@ -587,12 +587,16 @@ struct HtmlReport: Sendable {
 
     /// A security tile's colour under the workspace's policy: the share of Macs not failing
     /// the control (the tile's own share without fleet counts), amber instead of green while
-    /// some Macs only warn.
+    /// some Macs only warn, none when no Mac is left to grade.
     private func securityTileClass(
         _ control: SecurityControl, pct: Double, fleet: SecurityFleetCounts?
     ) -> String {
-        let statusClass = colorClass(fleet?.nonFailingPct(control) ?? pct)
-        let warnings = fleet?.controls[control]?.warning ?? 0
+        guard let fleet, fleet.controls[control] != nil, fleet.totalDevices > 0 else {
+            return colorClass(pct)
+        }
+        guard let share = fleet.nonFailingPct(control) else { return "" }
+        let statusClass = colorClass(share)
+        let warnings = fleet.controls[control]?.warning ?? 0
         return statusClass == "ok" && warnings > 0 ? "warn" : statusClass
     }
 

@@ -1015,22 +1015,33 @@ final class HtmlReportTests: XCTestCase {
         }
     }
 
-    /// Ten Macs, FileVault on for seven; the three off are Apple silicon.
-    private func hardwareTilesDir() throws -> URL {
+    /// `encrypted` Macs with FileVault on, then `silicon` Apple silicon and `intel` Intel Macs
+    /// with it off; by default ten Macs, seven on and three Apple silicon off.
+    private func hardwareTilesDir(
+        encrypted: Int = 7, silicon: Int = 3, intel: Int = 0
+    ) throws -> URL {
         func device(_ name: String, _ serial: String, _ fileVault: String) -> [String: Any] {
             ["section": "device", "name": name, "serial": serial, "os_version": "15.4.1",
              "filevault": fileVault, "sip": "ENABLED", "firewall": true,
              "gatekeeper": "APP_STORE"]
         }
+        let total = encrypted + silicon + intel
         var items: [[String: Any]] = [["section": "summary", "data": [
-            "total_devices": 10, "filevault_encrypted": 7, "sip_enabled": 10,
-            "firewall_enabled": 10, "gatekeeper_enabled": 10,
+            "total_devices": total, "filevault_encrypted": encrypted, "sip_enabled": total,
+            "firewall_enabled": total, "gatekeeper_enabled": total,
         ]]]
-        for n in 1...7 { items.append(device("on\(n)", "ON\(n)", "ENCRYPTED")) }
-        for n in 1...3 { items.append(device("as\(n)", "AS\(n)", "UNENCRYPTED")) }
-        let computers: [[String: Any]] = (1...3).map { n in
-            ["general": ["name": "as\(n)"],
-             "hardware": ["serialNumber": "AS\(n)", "appleSilicon": true]]
+        var computers: [[String: Any]] = []
+        for n in 0..<encrypted { items.append(device("on\(n)", "ON\(n)", "ENCRYPTED")) }
+        for n in 0..<silicon {
+            items.append(device("as\(n)", "AS\(n)", "UNENCRYPTED"))
+            computers.append(["general": ["name": "as\(n)"],
+                              "hardware": ["serialNumber": "AS\(n)", "appleSilicon": true]])
+        }
+        for n in 0..<intel {
+            items.append(device("in\(n)", "IN\(n)", "UNENCRYPTED"))
+            computers.append(["general": ["name": "in\(n)"],
+                              "hardware": ["serialNumber": "IN\(n)", "appleSilicon": false,
+                                           "modelIdentifier": "MacBookPro14,1"]])
         }
         return try securityDataDir(
             json: JSONSerialization.data(withJSONObject: items), computers: computers)
@@ -1075,5 +1086,32 @@ final class HtmlReportTests: XCTestCase {
         """, dataDir: dir, templated: false)
         XCTAssertEqual(tiles[1].cssClass, "bad")
         XCTAssertFalse(tiles[1].block.contains("hardware-encrypted"))
+    }
+
+    /// Ten Macs, five encrypted, three Apple silicon and two Intel off, hardware level at
+    /// `ignore`: the tile reads the 5 of 7 Macs counted (71.4%, bad), as the workbook does.
+    /// The value stays the fact, 5 of 10.
+    func testFileVaultTileGradesOverTheMacsThatAreCounted() async throws {
+        let dir = try hardwareTilesDir(encrypted: 5, silicon: 3, intel: 2)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for templated in [false, true] {
+            let tiles = try await renderedTiles(
+                yaml: "security_policy:\n  filevault_off_hardware_encrypted: ignore\n",
+                dataDir: dir, templated: templated)
+            XCTAssertEqual(tiles[1].value, "50.0%")
+            XCTAssertEqual(tiles[1].cssClass, "bad", "templated: \(templated)")
+        }
+    }
+
+    /// Every Mac with FileVault off is hardware-encrypted and not counted, and none is on:
+    /// no Mac is left to grade, so the tile has no colour rather than a red one.
+    func testFileVaultTileHasNoColourWhenNoMacIsCounted() async throws {
+        let dir = try hardwareTilesDir(encrypted: 0, silicon: 2, intel: 0)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let tiles = try await renderedTiles(
+            yaml: "security_policy:\n  filevault_off_hardware_encrypted: ignore\n",
+            dataDir: dir, templated: false)
+        XCTAssertEqual(tiles[1].cssClass, "")
+        XCTAssertEqual(tiles[2].cssClass, "ok", "the other tiles still grade")
     }
 }

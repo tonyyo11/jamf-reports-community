@@ -513,28 +513,39 @@ final class CoreDashboardSecurityTests: XCTestCase {
 
     // MARK: - Security Posture and Compliance Posture: the hardware rule
 
-    /// `pro report security` shape: ten Macs, FileVault on for seven; the three off are Apple
-    /// silicon (the `computers` snapshot says so), every other control is on everywhere.
-    private func hardwareDataDir() throws -> URL {
+    /// `pro report security` shape: `encrypted` Macs with FileVault on, then `silicon` Apple
+    /// silicon and `intel` Intel Macs with it off (the `computers` snapshot says which); every
+    /// other control is on everywhere. By default ten Macs: seven on, three Apple silicon off.
+    private func hardwareDataDir(
+        encrypted: Int = 7, silicon: Int = 3, intel: Int = 0
+    ) throws -> URL {
         func device(_ name: String, _ serial: String, _ fileVault: String) -> [String: Any] {
             ["section": "device", "name": name, "serial": serial, "os_version": "15.4.1",
              "filevault": fileVault, "sip": "ENABLED", "firewall": true,
              "gatekeeper": "APP_STORE"]
         }
-        let summary: [String: Any] = ["section": "summary", "data": [
-            "total_devices": 10, "filevault_encrypted": 7, "sip_enabled": 10,
-            "firewall_enabled": 10, "gatekeeper_enabled": 10,
-        ]]
-        var items: [[String: Any]] = [summary]
-        for n in 1...7 { items.append(device("on\(n)", "ON\(n)", "ENCRYPTED")) }
-        for n in 1...3 { items.append(device("as\(n)", "AS\(n)", "UNENCRYPTED")) }
+        let total = encrypted + silicon + intel
+        var items: [[String: Any]] = [["section": "summary", "data": [
+            "total_devices": total, "filevault_encrypted": encrypted, "sip_enabled": total,
+            "firewall_enabled": total, "gatekeeper_enabled": total,
+        ]]]
+        var computers: [[String: Any]] = []
+        for n in 0..<encrypted { items.append(device("on\(n)", "ON\(n)", "ENCRYPTED")) }
+        for n in 0..<silicon {
+            items.append(device("as\(n)", "AS\(n)", "UNENCRYPTED"))
+            computers.append(["general": ["name": "as\(n)"],
+                              "hardware": ["serialNumber": "AS\(n)", "appleSilicon": true]])
+        }
+        for n in 0..<intel {
+            items.append(device("in\(n)", "IN\(n)", "UNENCRYPTED"))
+            computers.append(["general": ["name": "in\(n)"],
+                              "hardware": ["serialNumber": "IN\(n)", "appleSilicon": false,
+                                           "modelIdentifier": "MacBookPro14,1"]])
+        }
         let dir = try makeTempDir()
         try seedJSON(String(decoding: JSONSerialization.data(withJSONObject: items), as: UTF8.self),
                      kind: "security", in: dir)
-        try seedComputers((1...3).map { n in
-            ["general": ["name": "as\(n)"],
-             "hardware": ["serialNumber": "AS\(n)", "appleSilicon": true]]
-        }, in: dir)
+        try seedComputers(computers, in: dir)
         return dir
     }
 
@@ -624,5 +635,41 @@ final class CoreDashboardSecurityTests: XCTestCase {
             XCTAssertEqual(cells[2]?.text, "GREEN", label)
             XCTAssertEqual(cells[2]?.format, .green, label)
         }
+    }
+
+    /// Ten Macs: five encrypted, three Apple silicon and two Intel with FileVault off, the
+    /// hardware level at `ignore`. The three are not counted, so FileVault is graded on 5 of
+    /// the 7 Macs left (71.4%, RED), the share the score and the CSV sheet use; with them in
+    /// the share it read 8 of 10 (AMBER).
+    func testCompliancePostureGradesFileVaultOverTheMacsThatAreCounted() throws {
+        let dir = try hardwareDataDir(encrypted: 5, silicon: 3, intel: 2)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let dash = try dashboard(
+            "security_policy:\n  filevault_off_hardware_encrypted: ignore\n", dataDir: dir)
+        try dash.writeCompliancePosture()
+        let cells = try row(dash, "Compliance Posture", "FileVault Encrypted")
+        XCTAssertEqual(cells[1]?.text, "5 (50.0%)", "the value column is the fact")
+        XCTAssertEqual(cells[2]?.text, "RED")
+        XCTAssertEqual(cells[2]?.format, .red)
+
+        // At warning the three stay in the share as not failing: 8 of 10.
+        let warning = try dashboard(
+            "security_policy:\n  filevault_off_hardware_encrypted: warning\n", dataDir: dir)
+        try warning.writeCompliancePosture()
+        XCTAssertEqual(try row(warning, "Compliance Posture", "FileVault Encrypted")[2]?.text,
+                       "AMBER")
+    }
+
+    /// Every Mac with FileVault off is hardware-encrypted and not counted, and none is on:
+    /// nothing is left to grade, so the row has no status rather than a red one.
+    func testCompliancePostureHasNoFileVaultStatusWhenNoMacIsCounted() throws {
+        let dir = try hardwareDataDir(encrypted: 0, silicon: 2, intel: 0)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let dash = try dashboard(
+            "security_policy:\n  filevault_off_hardware_encrypted: ignore\n", dataDir: dir)
+        try dash.writeCompliancePosture()
+        let cells = try row(dash, "Compliance Posture", "FileVault Encrypted")
+        XCTAssertEqual(cells[2]?.text, "\u{2014}")
+        XCTAssertEqual(cells[2]?.format, .cell)
     }
 }
