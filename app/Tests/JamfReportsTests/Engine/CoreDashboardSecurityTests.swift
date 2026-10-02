@@ -720,4 +720,28 @@ final class CoreDashboardSecurityTests: XCTestCase {
                            "yaml: \(yaml)")
         }
     }
+
+    // MARK: - The hardware index is read once
+
+    /// The computers snapshot is parsed for the hardware rule once per dashboard, however many
+    /// sheets use it. Taking the snapshot away after the first sheet leaves the second graded
+    /// on the first read (AMBER, the three Macs counted as warnings); a new dashboard, which
+    /// reads again, finds none (RED).
+    func testHardwareIndexIsReadOncePerDashboard() throws {
+        let dir = try hardwareDataDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let yaml = "security_policy:\n  filevault_off_hardware_encrypted: warning\n"
+        let dash = try dashboard(yaml, dataDir: dir)
+        try dash.writeSecurity()
+        let named = try row(dash, "Security Posture", "FileVault off, hardware-encrypted")
+        XCTAssertEqual(named[1]?.text, "3")
+        try FileManager.default.removeItem(at: dir.appendingPathComponent("computers"))
+
+        try dash.writeCompliancePosture()
+        XCTAssertEqual(try row(dash, "Compliance Posture", "FileVault Encrypted")[2]?.text, "AMBER")
+
+        let fresh = try dashboard(yaml, dataDir: dir)
+        try fresh.writeCompliancePosture()
+        XCTAssertEqual(try row(fresh, "Compliance Posture", "FileVault Encrypted")[2]?.text, "RED")
+    }
 }

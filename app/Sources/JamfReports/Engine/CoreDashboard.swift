@@ -19,6 +19,8 @@ struct CoreDashboard: Sendable {
     /// GUI-generate-only AI executive narrative (F3). nil (the default) writes
     /// no AI block on the Executive Summary sheet — headless callers never set it.
     let aiNarrative: String?
+    /// Shared by the copies of this struct that `sheetPlan`'s closures hold.
+    private let hardwareIndex = HardwareIndexCache()
 
     init(
         config: ReportConfig,
@@ -2681,9 +2683,10 @@ struct CoreDashboard: Sendable {
     /// Security Posture screen take P0, P1 and the score from. Nil without a summary section.
     private func securityFleet(items: [SecurityReportItem]) -> SecurityFleetCounts? {
         let policy = config.resolvedSecurityPolicy
-        return SecurityFleetCounts.build(
-            items: items, hardware: HardwareEncryption.index(dataDir: dataDir, for: policy),
-            policy: policy)
+        let hardware = hardwareIndex.value {
+            HardwareEncryption.index(dataDir: dataDir, for: policy)
+        }
+        return SecurityFleetCounts.build(items: items, hardware: hardware, policy: policy)
     }
 
     /// Populate per-control coverage percentages from a security summary.
@@ -3555,5 +3558,23 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
         case .noCachedData(let names):
             return "No cached jamf-cli snapshot found for: \(names.joined(separator: ", "))"
         }
+    }
+}
+
+// MARK: - HardwareIndexCache
+
+/// The hardware index reads and parses the `computers` snapshot, so a dashboard builds it once
+/// however many sheets grade by it.
+private final class HardwareIndexCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var index: [String: Bool]?
+
+    func value(_ make: () -> [String: Bool]) -> [String: Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let index { return index }
+        let made = make()
+        index = made
+        return made
     }
 }
