@@ -165,33 +165,41 @@ enum SecurityPolicyConfigLoader {
     }
 }
 
-/// Scoped write-back for the Config → Scoring Security Policy card. Like
-/// `ChartsConfigWriter` it reads the existing mapping and sets individual keys, outside
-/// `ConfigService`'s managed keys, so `score_weights`, a key the app does not read and every
-/// other top-level block survive a save.
+/// Scoped write-back for the Config → Scoring cards. Like `ChartsConfigWriter` it reads the
+/// existing mapping and sets individual keys, outside `ConfigService`'s managed keys, so a
+/// key the app does not read and every other top-level block survive a save.
 ///
-/// A key whose typed value already reads as the saved level is left as typed: a synonym
-/// (`warn`) or a typo the app already treats as `fail` is not rewritten by a save of another
-/// control, and its issue stays reported until its own row changes. `score_weights` follows
-/// the same rule per weight; a nil `scoreWeights` removes the block.
+/// A save writes only the setting it names, from what the file holds now, never from the
+/// caller's copy of the policy: a copy that is stale, or that fell back to the default
+/// because something else in config.yaml did not decode, cannot overwrite a value an operator
+/// typed for another key. `score_weights` writes only the weights the file does not already
+/// yield.
 enum SecurityPolicyConfigWriter {
+    /// One part of the `security_policy` block.
+    enum Setting {
+        case level(SecurityControlLevel, for: SecurityControl)
+        /// Nil removes the key, so FileVault's own level applies.
+        case hardwareLevel(SecurityControlLevel?)
+        /// Nil removes the block, so the default weights apply.
+        case scoreWeights(SecurityScoreWeights?)
+    }
+
     enum WriteError: Error, LocalizedError {
         case invalidProfile(String)
-        case invalidDocumentRoot
 
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile): "Invalid profile name: \(profile)"
-            case .invalidDocumentRoot:
-                "config.yaml's YAML root is not a mapping — cannot save the security policy."
             }
         }
     }
 
+    private static let blockKey = "security_policy"
+    private static let controlsKey = "controls"
     private static let hardwareKey = "filevault_off_hardware_encrypted"
     private static let weightsKey = "score_weights"
 
-    static func save(_ policy: SecurityControlPolicy, profile: String) throws {
+    static func save(_ setting: Setting, profile: String) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw WriteError.invalidProfile(profile)
         }
@@ -205,19 +213,20 @@ enum SecurityPolicyConfigWriter {
         } else {
             document = YAMLCodec.emptyDocument()
         }
+        // `decode` and `emptyDocument` yield a mapping, so this is not a reachable failure.
         guard case .mapping(var root) = document.root else {
-            throw WriteError.invalidDocumentRoot
+            throw YAMLCodec.CodecError.invalidTopLevel
         }
 
-        let existing = root.value(for: "security_policy")?.mapping ?? .init(entries: [])
+        let existing = lastValue(of: blockKey, in: root)?.mapping ?? .init(entries: [])
         var block = existing
-        apply(policy, to: &block)
+        apply(setting, to: &block)
         // Nothing to write: leave the file, and any comments in the block, as it is.
         guard block != existing else { return }
-        root.set("security_policy", value: .mapping(block))
+        assign(.mapping(block), to: blockKey, in: &root)
         document.root = .mapping(root)
 
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["security_policy"])
+        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: [blockKey])
         let tempURL = workspace.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
         try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
         if !manager.fileExists(atPath: configURL.path) {
@@ -226,30 +235,21 @@ enum SecurityPolicyConfigWriter {
         _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
     }
 
-    private static func apply(
-        _ policy: SecurityControlPolicy, to block: inout YAMLCodec.YAMLMapping
-    ) {
-        let existing = block.value(for: "controls")?.mapping ?? .init(entries: [])
-        var controls = existing
-        for control in SecurityControl.allCases {
-            let level = policy.level(for: control)
-            // The decoder reads an absent or unreadable level as fail.
-            if (typedLevel(lastValue(of: control.rawValue, in: controls)) ?? .fail) != level {
-                assign(.scalar(.string(level.rawValue)), to: control.rawValue, in: &controls)
-            }
-        }
-        // `controls` stays as the file had it (even a non-mapping) when nothing was written.
-        if controls != existing { block.set("controls", value: .mapping(controls)) }
-
-        let hardware = policy.fileVaultOffHardwareEncrypted
-        if typedLevel(lastValue(of: hardwareKey, in: block)) != hardware {
-            if let hardware {
-                assign(.scalar(.string(hardware.rawValue)), to: hardwareKey, in: &block)
+    private static func apply(_ setting: Setting, to block: inout YAMLCodec.YAMLMapping) {
+        switch setting {
+        case .level(let level, let control):
+            var controls = lastValue(of: controlsKey, in: block)?.mapping ?? .init(entries: [])
+            assign(.scalar(.string(level.rawValue)), to: control.rawValue, in: &controls)
+            assign(.mapping(controls), to: controlsKey, in: &block)
+        case .hardwareLevel(let level):
+            if let level {
+                assign(.scalar(.string(level.rawValue)), to: hardwareKey, in: &block)
             } else {
                 block.entries.removeAll { $0.key == hardwareKey }
             }
+        case .scoreWeights(let weights):
+            applyWeights(weights, to: &block)
         }
-        applyWeights(policy.scoreWeights, to: &block)
     }
 
     /// Writes the whole set when the file has no weights block, else only the weights the
@@ -285,11 +285,6 @@ enum SecurityPolicyConfigWriter {
         of key: String, in mapping: YAMLCodec.YAMLMapping
     ) -> YAMLCodec.YAMLValue? {
         mapping.entries.last { $0.key == key }?.value
-    }
-
-    private static func typedLevel(_ node: YAMLCodec.YAMLValue?) -> SecurityControlLevel? {
-        guard case .scalar(.string(let text)) = node else { return nil }
-        return SecurityControlLevel.parse(text)
     }
 
     /// Sets the key where it first appears and drops any repeat, so the entry the decoder

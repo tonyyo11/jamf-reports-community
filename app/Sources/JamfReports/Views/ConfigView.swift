@@ -1411,9 +1411,10 @@ private struct EACard: View {
 
 /// What counts as a security gap in this workspace: the level of FileVault, SIP, Firewall and
 /// Gatekeeper, and of FileVault off on a hardware-encrypted Mac. Every change is written to
-/// config.yaml at once through `WorkspaceStore.saveSecurityPolicy`; the pickers read the
-/// store's policy, so a failed save leaves them on what is saved. A value or key a hand-typed
-/// block carries that the app did not use as written is shown against its row.
+/// config.yaml at once, one key at a time, through `WorkspaceStore.saveSecurityLevel` and
+/// `saveHardwareLevel`; the pickers read the store's policy, so a failed save leaves them on
+/// what is saved. A value or key a hand-typed block carries that the app did not use as
+/// written is shown against its row.
 struct SecurityPolicyCard: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
@@ -1421,7 +1422,7 @@ struct SecurityPolicyCard: View {
 
     /// Each failure is its own value, so a second identical failure still redraws the pickers
     /// back onto the saved policy.
-    private struct SaveFailure: Equatable {
+    struct SaveFailure: Equatable {
         let id = UUID()
         let message: String
     }
@@ -1466,10 +1467,9 @@ struct SecurityPolicyCard: View {
                     .font(.footnote)
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer(minLength: 12)
-                Picker(control.displayName, selection: Binding(
-                    get: { workspace.securityPolicy.level(for: control) },
-                    set: { save(workspace.securityPolicy.setting($0, for: control)) }
-                )) {
+                Picker(control.displayName, selection: Self.levelBinding(
+                    control, in: workspace, failure: $saveFailure)
+                ) {
                     ForEach(SecurityControlLevel.allCases, id: \.self) { level in
                         Text(level.displayName).tag(level)
                     }
@@ -1490,14 +1490,9 @@ struct SecurityPolicyCard: View {
             Text("FileVault off on a hardware-encrypted Mac")
                 .font(.footnote)
                 .foregroundStyle(Theme.Colors.fg)
-            Picker("FileVault off on a hardware-encrypted Mac", selection: Binding(
-                get: { workspace.securityPolicy.fileVaultOffHardwareEncrypted },
-                set: { level in
-                    var policy = workspace.securityPolicy
-                    policy.fileVaultOffHardwareEncrypted = level
-                    save(policy)
-                }
-            )) {
+            Picker("FileVault off on a hardware-encrypted Mac", selection: Self.hardwareBinding(
+                in: workspace, failure: $saveFailure)
+            ) {
                 Text("Same as FileVault").tag(SecurityControlLevel?.none)
                 ForEach(SecurityControlLevel.allCases, id: \.self) { level in
                     Text(level.displayName).tag(SecurityControlLevel?.some(level))
@@ -1535,13 +1530,36 @@ struct SecurityPolicyCard: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func save(_ policy: SecurityControlPolicy) {
-        guard !workspace.demoMode else { return }
+    // MARK: Saving
+
+    /// The binding a control's picker uses: it reads the store's policy and a change writes
+    /// that one key.
+    static func levelBinding(
+        _ control: SecurityControl, in workspace: WorkspaceStore,
+        failure: Binding<SaveFailure?>
+    ) -> Binding<SecurityControlLevel> {
+        Binding(
+            get: { workspace.securityPolicy.level(for: control) },
+            set: { level in
+                persist(failure) { try workspace.saveSecurityLevel(level, for: control) }
+            })
+    }
+
+    static func hardwareBinding(
+        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>
+    ) -> Binding<SecurityControlLevel?> {
+        Binding(
+            get: { workspace.securityPolicy.fileVaultOffHardwareEncrypted },
+            set: { level in persist(failure) { try workspace.saveHardwareLevel(level) } })
+    }
+
+    /// A successful write clears the failure, a failed one becomes the card's message.
+    static func persist(_ failure: Binding<SaveFailure?>, _ write: () throws -> Void) {
         do {
-            try workspace.saveSecurityPolicy(policy)
-            saveFailure = nil
+            try write()
+            failure.wrappedValue = nil
         } catch {
-            saveFailure = SaveFailure(
+            failure.wrappedValue = SaveFailure(
                 message: "Couldn't save the security policy: \(error.localizedDescription)")
         }
     }
@@ -1612,7 +1630,7 @@ struct SecurityPolicyCard: View {
 
 /// Lets the user set the weighted Security Score formula lifted from v3.5. The weights are
 /// saved to the workspace's `security_policy.score_weights` through
-/// `WorkspaceStore.saveSecurityPolicy`, so the summary, the workbook and the Security Posture
+/// `WorkspaceStore.saveScoreWeights`, so the summary, the workbook and the Security Posture
 /// screen score with the same set. A workspace with none saved shows this Mac's earlier
 /// preference (`ScoringConfig.storageKey`), which is only read. Tenants without certain agent
 /// stacks (e.g. no CrowdStrike) can zero out the matching weight to drop that metric from the
@@ -1641,10 +1659,8 @@ private struct ScoringTab: View {
     /// Nil removes the block, so the workspace scores with the defaults again.
     private func save(_ weights: SecurityScoreWeights?) {
         guard !workspace.demoMode else { return }
-        var policy = workspace.securityPolicy
-        policy.scoreWeights = weights
         do {
-            try workspace.saveSecurityPolicy(policy)
+            try workspace.saveScoreWeights(weights)
             saveFailure = nil
         } catch {
             saveFailure = "Couldn't save the score weights: \(error.localizedDescription)"

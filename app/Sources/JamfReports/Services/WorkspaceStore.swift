@@ -178,7 +178,7 @@ final class WorkspaceStore {
     var configRepairedKeys: [String] = []
     /// The active workspace's `security_policy:` as the app applies it, and each value or key
     /// in a hand-typed block it did not use as written. Loaded with the config; the Scoring
-    /// card edits them through `saveSecurityPolicy`.
+    /// cards edit them through `saveSecurityLevel` and its siblings.
     var securityPolicy: SecurityControlPolicy = .default
     var securityPolicyIssues: [SecurityPolicyIssue] = []
 
@@ -742,14 +742,34 @@ final class WorkspaceStore {
         configRepairedKeys = newDoc.repairedKeys.sorted()
     }
 
-    /// Writes the policy to config.yaml, then adopts it and re-reads the file's issues: a
-    /// saved level clears its own issue and nothing else's. A failed write throws and leaves
-    /// the loaded policy as it was. Demo mode returns without writing; the card's controls
-    /// are disabled there too.
-    func saveSecurityPolicy(_ policy: SecurityControlPolicy) throws {
+    /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's
+    /// issues: a saved level clears its own issue and nothing else's. The write is built from
+    /// the file, not from `securityPolicy`, so a stale or fallen-back copy cannot overwrite
+    /// another key. A failed write throws and leaves the loaded policy as it was. Demo mode
+    /// returns without writing; the cards' controls are disabled there too.
+    func saveSecurityLevel(_ level: SecurityControlLevel, for control: SecurityControl) throws {
+        try saveSecuritySetting(.level(level, for: control)) {
+            $0 = $0.setting(level, for: control)
+        }
+    }
+
+    /// Nil removes the key, so FileVault's own level applies.
+    func saveHardwareLevel(_ level: SecurityControlLevel?) throws {
+        try saveSecuritySetting(.hardwareLevel(level)) { $0.fileVaultOffHardwareEncrypted = level }
+    }
+
+    /// Nil removes the block, so the default weights apply.
+    func saveScoreWeights(_ weights: SecurityScoreWeights?) throws {
+        try saveSecuritySetting(.scoreWeights(weights)) { $0.scoreWeights = weights }
+    }
+
+    private func saveSecuritySetting(
+        _ setting: SecurityPolicyConfigWriter.Setting,
+        adopt: (inout SecurityControlPolicy) -> Void
+    ) throws {
         guard !demoMode else { return }
-        try SecurityPolicyConfigWriter.save(policy, profile: profile)
-        securityPolicy = policy
+        try SecurityPolicyConfigWriter.save(setting, profile: profile)
+        adopt(&securityPolicy)
         securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
     }
 
