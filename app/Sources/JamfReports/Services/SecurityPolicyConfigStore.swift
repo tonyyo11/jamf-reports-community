@@ -29,8 +29,13 @@ enum SecurityPolicyConfigLoader {
     private static let weightsPath = "security_policy.score_weights"
 
     /// Key paths of the blocks that hold other settings: an issue at one of them is about
-    /// the block's shape, and any other issue with a `used` is about a typed level.
+    /// the block's shape. Any other issue with a `used` is about a typed level, or when
+    /// `isWeightPath` holds, a typed weight.
     static let blockKeyPaths: Set<String> = [blockPath, controlsPath, weightsPath]
+
+    static func isWeightPath(_ keyPath: String) -> Bool {
+        keyPath.hasPrefix(weightsPath + ".")
+    }
 
     /// Reads the file `load(profile:)` reads and reports, without throwing, each value or key
     /// it did not use as written. An accepted synonym is not an issue. `used` is taken from
@@ -61,7 +66,7 @@ enum SecurityPolicyConfigLoader {
             case "filevault_off_hardware_encrypted":
                 levelIssues(hardwarePath, node, used: hardwareUsed)
             case "score_weights":
-                shapeIssues(weightsPath, node, used: "the default weights")
+                weightsIssues(node, applied: applied)
             default:
                 unknownKeyIssues("\(blockPath).\(displayText(key))")
             }
@@ -80,6 +85,26 @@ enum SecurityPolicyConfigLoader {
                 return unknownKeyIssues(path)
             }
             return levelIssues(path, node, used: applied.level(for: control).rawValue)
+        }
+    }
+
+    private static func weightsIssues(
+        _ node: YAMLCodec.YAMLValue, applied: SecurityControlPolicy
+    ) -> [SecurityPolicyIssue] {
+        guard case .mapping(let weights) = node else {
+            return shapeIssues(weightsPath, node, used: "the default weights")
+        }
+        let used = applied.scoreWeights ?? .defaultWeights
+        return settings(weights).flatMap { key, node -> [SecurityPolicyIssue] in
+            let path = "\(weightsPath).\(displayText(key))"
+            guard let weight = used.weight(forConfigKey: key) else {
+                return unknownKeyIssues(path)
+            }
+            if case .scalar = node,
+               SecurityControlPolicy.scoreWeight(typed: typedText(node)) != nil { return [] }
+            return [SecurityPolicyIssue(
+                keyPath: path, value: displayText(typedText(node)),
+                used: String(format: "%g", weight))]
         }
     }
 
@@ -147,7 +172,8 @@ enum SecurityPolicyConfigLoader {
 ///
 /// A key whose typed value already reads as the saved level is left as typed: a synonym
 /// (`warn`) or a typo the app already treats as `fail` is not rewritten by a save of another
-/// control, and its issue stays reported until its own row changes.
+/// control, and its issue stays reported until its own row changes. `score_weights` follows
+/// the same rule per weight; a nil `scoreWeights` removes the block.
 enum SecurityPolicyConfigWriter {
     enum WriteError: Error, LocalizedError {
         case invalidProfile(String)
@@ -163,6 +189,7 @@ enum SecurityPolicyConfigWriter {
     }
 
     private static let hardwareKey = "filevault_off_hardware_encrypted"
+    private static let weightsKey = "score_weights"
 
     static func save(_ policy: SecurityControlPolicy, profile: String) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
@@ -215,12 +242,42 @@ enum SecurityPolicyConfigWriter {
         if controls != existing { block.set("controls", value: .mapping(controls)) }
 
         let hardware = policy.fileVaultOffHardwareEncrypted
-        guard typedLevel(lastValue(of: hardwareKey, in: block)) != hardware else { return }
-        if let hardware {
-            assign(.scalar(.string(hardware.rawValue)), to: hardwareKey, in: &block)
-        } else {
-            block.entries.removeAll { $0.key == hardwareKey }
+        if typedLevel(lastValue(of: hardwareKey, in: block)) != hardware {
+            if let hardware {
+                assign(.scalar(.string(hardware.rawValue)), to: hardwareKey, in: &block)
+            } else {
+                block.entries.removeAll { $0.key == hardwareKey }
+            }
         }
+        applyWeights(policy.scoreWeights, to: &block)
+    }
+
+    /// Writes the whole set when the file has no weights block, else only the weights the
+    /// file does not already yield. Keys the app does not read stay.
+    private static func applyWeights(
+        _ weights: SecurityScoreWeights?, to block: inout YAMLCodec.YAMLMapping
+    ) {
+        guard let weights else {
+            block.entries.removeAll { $0.key == weightsKey }
+            return
+        }
+        let whole = weights.rounded()
+        let existing = lastValue(of: weightsKey, in: block)?.mapping
+        var mapping = existing ?? .init(entries: [])
+        for slot in SecurityScoreWeights.configSlots {
+            // The decoder reads an absent or unreadable weight as its default.
+            let typed = typedWeight(lastValue(of: slot.key, in: mapping))
+                ?? SecurityScoreWeights.defaultWeights[keyPath: slot.path]
+            if existing == nil || typed != weights[keyPath: slot.path] {
+                assign(.scalar(.int(Int(whole[keyPath: slot.path]))), to: slot.key, in: &mapping)
+            }
+        }
+        if mapping != existing { assign(.mapping(mapping), to: weightsKey, in: &block) }
+    }
+
+    private static func typedWeight(_ node: YAMLCodec.YAMLValue?) -> Double? {
+        guard let node, case .scalar = node else { return nil }
+        return SecurityControlPolicy.scoreWeight(typed: node.stringValue ?? "")
     }
 
     /// What the decoder sees for a repeated key: the last entry.

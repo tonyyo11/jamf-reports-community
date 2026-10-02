@@ -83,15 +83,14 @@ final class EDRAgentLabelTests: XCTestCase {
         )
     }
 
-    // MARK: - Scoring weights serialization compatibility
+    // MARK: - Scoring weights preference compatibility
 
-    func testScoringConfigPositionalSerializationUnchanged() {
+    func testScoringConfigPositionalParsingUnchanged() {
         // Slot 4 is the EDR weight regardless of the property rename — a
         // pre-rename persisted preference must parse identically.
         let parsed = ScoringConfig.parse("15,15,15,10,20,5,15,5")
         XCTAssertEqual(parsed.weights.edrAgent, 10)
         XCTAssertEqual(parsed.weights, SecurityScoreWeights.defaultWeights)
-        XCTAssertEqual(ScoringConfig().serialize(), "15,15,15,10,20,5,15,5")
     }
 
     // MARK: - Metric ordering preserved

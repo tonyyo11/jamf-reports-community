@@ -1522,6 +1522,9 @@ struct SecurityPolicyCard: View {
         ForEach(Self.shapeIssues(in: issues), id: \.keyPath) { issue in
             warnNote(Self.shapeCaption(issue))
         }
+        ForEach(Self.weightIssues(in: issues), id: \.keyPath) { issue in
+            warnNote(Self.weightCaption(issue))
+        }
         if let unknown = Self.unknownKeysCaption(issues) { warnNote(unknown) }
     }
 
@@ -1566,9 +1569,23 @@ struct SecurityPolicyCard: View {
         issues.filter { SecurityPolicyConfigLoader.blockKeyPaths.contains($0.keyPath) }
     }
 
+    /// A `score_weights` value the app did not read as a weight. The weights card has its own
+    /// steppers, so these are noted here with the other hand-typed values.
+    static func weightIssues(in issues: [SecurityPolicyIssue]) -> [SecurityPolicyIssue] {
+        issues.filter { SecurityPolicyConfigLoader.isWeightPath($0.keyPath) && !$0.used.isEmpty }
+    }
+
     static func levelCaption(_ issue: SecurityPolicyIssue) -> String {
         "config.yaml says \"\(shown(issue.value))\", which is not fail, warning or ignore — "
             + "using \(shown(issue.used))."
+    }
+
+    /// Names the key as `score_weights.<key>`: the whole key path of the longest key is past
+    /// what `shown` allows.
+    static func weightCaption(_ issue: SecurityPolicyIssue) -> String {
+        let key = issue.keyPath.split(separator: ".").last.map(String.init) ?? issue.keyPath
+        return "config.yaml's score_weights.\(shown(key)) is \"\(shown(issue.value))\", which "
+            + "is not a number from 0 to 100 — using \(shown(issue.used))."
     }
 
     static func shapeCaption(_ issue: SecurityPolicyIssue) -> String {
@@ -1593,35 +1610,52 @@ struct SecurityPolicyCard: View {
 
 // MARK: - Scoring tab
 
-/// Lets the user override the weighted Security Score formula lifted from
-/// v3.5. Backed by `@AppStorage(ScoringConfig.storageKey)`. Edits are
-/// applied immediately to `SecurityScoreCalculator` callers that read
-/// `ScoringConfig.parse(...)` from storage. Tenants without certain agent
-/// stacks (e.g. no CrowdStrike) can zero out the matching weight to drop
-/// that metric from the score entirely.
+/// Lets the user set the weighted Security Score formula lifted from v3.5. The weights are
+/// saved to the workspace's `security_policy.score_weights` through
+/// `WorkspaceStore.saveSecurityPolicy`, so the summary, the workbook and the Security Posture
+/// screen score with the same set. A workspace with none saved shows this Mac's earlier
+/// preference (`ScoringConfig.storageKey`), which is only read. Tenants without certain agent
+/// stacks (e.g. no CrowdStrike) can zero out the matching weight to drop that metric from the
+/// score entirely.
 private struct ScoringTab: View {
-    @AppStorage(ScoringConfig.storageKey) private var raw: String = ""
+    @AppStorage(ScoringConfig.storageKey) private var legacyRaw: String = ""
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(WorkspaceStore.self) private var workspace
+    @State private var saveFailure: String?
 
-    private var config: ScoringConfig {
-        raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
+    /// Demo mode shows the defaults the demo's own score uses, not this Mac's preference.
+    private var displayed: (weights: SecurityScoreWeights, fromLegacyPreference: Bool) {
+        ScoringConfig.displayedWeights(
+            config: workspace.securityPolicy.scoreWeights,
+            legacyRaw: workspace.demoMode ? "" : legacyRaw)
     }
 
-    /// The weights are an app-wide preference that scores live profiles too, so
-    /// demo mode shows them without letting an edit reach that preference.
+    /// Saves the whole set with one weight changed.
     private func update(_ mutate: (inout SecurityScoreWeights) -> Void) {
         guard !workspace.demoMode else { return }
-        var c = config
-        mutate(&c.weights)
-        raw = c.serialize()
+        var weights = displayed.weights
+        mutate(&weights)
+        save(weights)
+    }
+
+    /// Nil removes the block, so the workspace scores with the defaults again.
+    private func save(_ weights: SecurityScoreWeights?) {
+        guard !workspace.demoMode else { return }
+        var policy = workspace.securityPolicy
+        policy.scoreWeights = weights
+        do {
+            try workspace.saveSecurityPolicy(policy)
+            saveFailure = nil
+        } catch {
+            saveFailure = "Couldn't save the score weights: \(error.localizedDescription)"
+        }
     }
 
     var body: some View {
-        // Read once per body evaluation — `config` re-parses `raw` on every
-        // access, and this view reads it 9 times (8 weight rows + totalWeight).
-        let config = self.config
-        let totalWeight = Self.totalWeight(config)
+        // Read once per body evaluation: the 8 weight rows and the total share it.
+        let shown = displayed
+        let weights = shown.weights
+        let totalWeight = Self.totalWeight(weights)
         return VStack(alignment: .leading, spacing: 14) {
             SecurityPolicyCard()
             Card(padding: 18) {
@@ -1635,8 +1669,7 @@ private struct ScoringTab: View {
                             icon: totalWeight == 100 ? "checkmark" : "scalemass"
                         )
                         PNPButton(title: "Reset to v3.5 defaults", size: .sm) {
-                            guard !workspace.demoMode else { return }
-                            raw = ""
+                            save(ScoringConfig.resetWeights(legacyRaw: legacyRaw))
                         }
                         .disabled(workspace.demoMode)
                         .help(workspace.demoMode
@@ -1644,35 +1677,46 @@ private struct ScoringTab: View {
                               : "Restore the eight default weights from the v3.5 production "
                                   + "script.")
                     }
-                    Text("These weights drive the Security Score on the Security Posture screen. " +
-                         "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
-                         "data are auto-renormalized so the score still scales to 100.")
+                    Text("These weights drive the Security Score everywhere: Security Posture, "
+                         + "the Overview, Trends, alerts and reports. They are saved to this "
+                         + "workspace's config.yaml. Set a weight to 0 to drop that metric "
+                         + "entirely. Missing metrics in your data are auto-renormalized so the "
+                         + "score still scales to 100."
+                         + (shown.fromLegacyPreference
+                            ? " These are this Mac's earlier weights; they apply once you change "
+                                + "one, which saves them to this workspace."
+                            : ""))
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
+                    if let saveFailure {
+                        Text(saveFailure)
+                            .font(.caption)
+                            .foregroundStyle(Theme.Colors.danger)
+                    }
                     VStack(spacing: 6) {
                         weightRow("FileVault Encryption",
-                                  value: Binding(get: { Int(config.weights.fileVault) },
+                                  value: Binding(get: { Int(weights.fileVault) },
                                                  set: { v in update { $0.fileVault = Double(v) } }))
                         weightRow("System Integrity Protection",
-                                  value: Binding(get: { Int(config.weights.sip) },
+                                  value: Binding(get: { Int(weights.sip) },
                                                  set: { v in update { $0.sip = Double(v) } }))
                         weightRow("Firewall Enabled",
-                                  value: Binding(get: { Int(config.weights.firewall) },
+                                  value: Binding(get: { Int(weights.firewall) },
                                                  set: { v in update { $0.firewall = Double(v) } }))
                         weightRow("\(workspace.edrAgentName ?? "EDR Agent") Connected",
-                                  value: Binding(get: { Int(config.weights.edrAgent) },
+                                  value: Binding(get: { Int(weights.edrAgent) },
                                                  set: { v in update { $0.edrAgent = Double(v) } }))
                         weightRow("mSCP Compliance",
-                                  value: Binding(get: { Int(config.weights.mscp) },
+                                  value: Binding(get: { Int(weights.mscp) },
                                                  set: { v in update { $0.mscp = Double(v) } }))
                         weightRow("XProtect Current",
-                                  value: Binding(get: { Int(config.weights.xprotect) },
+                                  value: Binding(get: { Int(weights.xprotect) },
                                                  set: { v in update { $0.xprotect = Double(v) } }))
                         weightRow("CVE Clean",
-                                  value: Binding(get: { Int(config.weights.cve) },
+                                  value: Binding(get: { Int(weights.cve) },
                                                  set: { v in update { $0.cve = Double(v) } }))
                         weightRow("Secure Boot (Full)",
-                                  value: Binding(get: { Int(config.weights.secureBoot) },
+                                  value: Binding(get: { Int(weights.secureBoot) },
                                                  set: { v in update { $0.secureBoot = Double(v) } }))
                     }
                     .disabled(workspace.demoMode)
@@ -1684,10 +1728,8 @@ private struct ScoringTab: View {
         }
     }
 
-    private static func totalWeight(_ config: ScoringConfig) -> Double {
-        let w = config.weights
-        return w.fileVault + w.sip + w.firewall + w.edrAgent +
-               w.mscp + w.xprotect + w.cve + w.secureBoot
+    private static func totalWeight(_ w: SecurityScoreWeights) -> Double {
+        w.fileVault + w.sip + w.firewall + w.edrAgent + w.mscp + w.xprotect + w.cve + w.secureBoot
     }
 
     @ViewBuilder

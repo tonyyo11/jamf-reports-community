@@ -2708,7 +2708,7 @@ struct CoreDashboard: Sendable {
     ) {
         let score = SecurityScoreCalculator.score(
             input: fleet.scoreInput(),
-            weights: config.resolvedSecurityPolicy.effectiveScoreWeights(.defaultWeights)
+            weights: config.resolvedSecurityPolicy.resolvedScoreWeights
         )
         if !score.available.isEmpty {
             m.securityScore = score.value

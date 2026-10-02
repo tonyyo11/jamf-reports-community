@@ -467,6 +467,16 @@ security_policy:
   # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
   # silicon, or Intel with the T2 chip). Omit to use the filevault level.
   # filevault_off_hardware_encrypted: warning
+  # Security Score weights, 0-100 each. Omit for these defaults.
+  # score_weights:
+  #   filevault: 15
+  #   sip: 15
+  #   firewall: 15
+  #   edr_agent: 10
+  #   mscp: 20
+  #   xprotect: 5
+  #   cve: 15
+  #   secure_boot: 5
 
 # =============================================================================
 # SNAPSHOT RETENTION (admin-controlled; OFF by default)

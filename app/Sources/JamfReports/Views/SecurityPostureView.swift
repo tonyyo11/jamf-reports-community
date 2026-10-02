@@ -17,9 +17,6 @@ struct SecurityPostureView: View {
     @State private var loadGeneration = 0
     /// False until the first read lands: until then the screen does not say there is no data.
     @State private var hasRead = false
-    /// User-configurable weight overrides edited in ConfigView → Scoring tab.
-    /// Empty string ⇒ the v3.5 defaults via `ScoringConfig.parse`.
-    @AppStorage(ScoringConfig.storageKey) private var scoringRaw: String = ""
 
     var body: some View {
         PageScaffold {
@@ -107,13 +104,13 @@ struct SecurityPostureView: View {
 
     // MARK: - Computed values
 
-    private var score: SecurityScore {
-        let weights = scoringRaw.isEmpty
-            ? SecurityScoreWeights.defaultWeights
-            : ScoringConfig.parse(scoringRaw).weights
-        return SecurityScoreCalculator.score(
+    private var score: SecurityScore { Self.score(snapshot) }
+
+    /// The ring's score, under the weights the workspace's policy carries.
+    static func score(_ snapshot: SecurityPostureService.Snapshot) -> SecurityScore {
+        SecurityScoreCalculator.score(
             input: snapshot.fleetCounts.scoreInput(),
-            weights: snapshot.policy.effectiveScoreWeights(weights)
+            weights: snapshot.policy.resolvedScoreWeights
         )
     }
 

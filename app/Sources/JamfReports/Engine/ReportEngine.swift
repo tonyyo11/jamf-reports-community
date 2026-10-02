@@ -805,7 +805,7 @@ struct ReportEngine: Sendable {
             hardware: hardware, policy: securityPolicy)
         let score = SecurityScoreCalculator.score(
             input: fleet.scoreInput(),
-            weights: securityPolicy.effectiveScoreWeights(.defaultWeights)
+            weights: securityPolicy.resolvedScoreWeights
         )
         // Score is only meaningful when at least one metric contributed.
         let securityScore: Double? = score.available.isEmpty ? nil : score.value

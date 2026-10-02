@@ -613,6 +613,9 @@ enum ConfigDoctorService {
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
         }
+        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
+            return "\"\(issue.value)\" is not a number from 0 to 100 — using \(issue.used)"
+        }
         return "\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)"
     }
 
@@ -622,6 +625,9 @@ enum ConfigDoctorService {
         }
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Write it as indented key: value lines in config.yaml, or remove it."
+        }
+        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
+            return "Set it to a number from 0 to 100 in config.yaml, or remove the line."
         }
         return "Set it to fail, warning or ignore in config.yaml, or remove the line."
     }

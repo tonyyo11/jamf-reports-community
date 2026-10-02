@@ -472,6 +472,40 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertNil(s.crowdstrikePct, "A column no Mac reports is unknown, not 0%")
     }
 
+    // MARK: - Score weights from the security policy
+
+    /// GoldenFleet case A's security summary (250 Macs; FileVault 240, SIP 250, Firewall 245,
+    /// Gatekeeper 248) under the given config: the score the summary writer records.
+    private func goldenFleetScore(policyYAML: String) throws -> Double {
+        let dataDir = tmpDir.appendingPathComponent("weights-data", isDirectory: true)
+        let stamp = GoldenFleetClock.stamp(Date().addingTimeInterval(-3600))
+        try GoldenFleetWorkspace.writeJSON(
+            GoldenFleetWorkspace.securitySummaryPayload(
+                total: 250, filevault: 240, sip: 250, firewall: 245, gatekeeper: 248),
+            to: dataDir.appendingPathComponent("security/security_\(stamp).json"))
+        let summaries = tmpDir.appendingPathComponent("weights-summaries", isDirectory: true)
+        ReportEngine(config: try ConfigLoader.loadFromString(policyYAML), dataDir: dataDir)
+            .emitSummaryJSON(summariesDir: summaries)
+        return try XCTUnwrap(
+            try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first).securityScore)
+    }
+
+    /// With no `score_weights` the weights are 15/15/15 over the three measured controls:
+    /// (96.0 + 100.0 + 98.0) / 3 = 98.0, as before the weights moved into the policy.
+    func testSummaryScoreWithNoWeightsBlockIsTodaysNumber() throws {
+        XCTAssertEqual(try goldenFleetScore(policyYAML: "thresholds:\n  stale_device_days: 30\n"),
+                       98.0, accuracy: 0.001)
+        XCTAssertEqual(try goldenFleetScore(policyYAML: "security_policy:\n  controls:\n"
+                                            + "    sip: warning\n"), 98.0, accuracy: 0.001)
+    }
+
+    /// FileVault 30 against SIP 15 and Firewall 15 (total 60):
+    /// (96.0 * 30 + 100.0 * 15 + 98.0 * 15) / 60 = (2880 + 1500 + 1470) / 60 = 97.5.
+    func testSummaryScoreUsesTheWorkspacesScoreWeights() throws {
+        let yaml = "security_policy:\n  score_weights:\n    filevault: 30\n"
+        XCTAssertEqual(try goldenFleetScore(policyYAML: yaml), 97.5, accuracy: 0.001)
+    }
+
     // MARK: - mobileDeviceCount derivation wiring
 
     /// A mobile-devices-list snapshot on disk at collect time is reflected in

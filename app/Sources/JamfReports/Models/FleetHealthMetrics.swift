@@ -80,7 +80,9 @@ struct SecurityScore: Sendable, Equatable {
     }
 }
 
-/// Per-user override of the SecurityScoreWeights, persisted via @AppStorage.
+/// This Mac's earlier override of the SecurityScoreWeights, kept under @AppStorage before the
+/// weights moved into the workspace's `security_policy.score_weights`. Nothing writes it now;
+/// the Scoring tab reads it to show what a workspace without saved weights used to have.
 /// Stored as a single comma-separated string of integers in the order
 /// `fileVault,sip,firewall,crowdstrike,mscp,xprotect,cve,secureBoot` for
 /// stability. Missing or malformed values fall back to the v3.5 defaults so
@@ -114,12 +116,23 @@ struct ScoringConfig: Sendable, Equatable {
         ))
     }
 
-    func serialize() -> String {
-        let w = weights
-        return [w.fileVault, w.sip, w.firewall, w.edrAgent,
-                w.mscp, w.xprotect, w.cve, w.secureBoot]
-            .map { String(format: "%g", $0) }
-            .joined(separator: ",")
+    /// What the Scoring tab shows: the workspace's weights when it has saved some, else this
+    /// Mac's earlier preference when there is one, else the defaults. Takes the raw
+    /// preference string so it reads no `UserDefaults`.
+    static func displayedWeights(
+        config: SecurityScoreWeights?, legacyRaw: String
+    ) -> (weights: SecurityScoreWeights, fromLegacyPreference: Bool) {
+        if let config { return (config, false) }
+        guard !legacyRaw.isEmpty else { return (.defaultWeights, false) }
+        return (parse(legacyRaw).weights, true)
+    }
+
+    /// What "Reset to v3.5 defaults" saves. Nil removes the workspace's block, which shows the
+    /// defaults only while this Mac has no earlier preference; with one, the tab would show
+    /// that preference again, so the defaults themselves are saved. The preference is not
+    /// cleared.
+    static func resetWeights(legacyRaw: String) -> SecurityScoreWeights? {
+        legacyRaw.isEmpty ? nil : .defaultWeights
     }
 }
 

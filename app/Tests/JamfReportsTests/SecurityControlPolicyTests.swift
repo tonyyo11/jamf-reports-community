@@ -167,6 +167,128 @@ final class SecurityControlPolicyTests: XCTestCase {
             fileVaultOffHardwareEncrypted: .warning))
     }
 
+    // MARK: - Score weights
+
+    /// The weights for `score_weights` lines written at column 0, indented under the block.
+    private func weights(_ lines: String) throws -> SecurityScoreWeights? {
+        let indented = lines.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.isEmpty ? "" : "    " + $0 }.joined(separator: "\n")
+        return try ConfigLoader.loadFromString("security_policy:\n  score_weights:\n" + indented)
+            .resolvedSecurityPolicy.scoreWeights
+    }
+
+    func testAbsentWeightsAreNilAndScoreWithTheDefaults() throws {
+        let policy = try ConfigLoader.loadFromString(
+            "security_policy:\n  controls:\n    sip: warning\n").resolvedSecurityPolicy
+        XCTAssertNil(policy.scoreWeights)
+        XCTAssertEqual(policy.resolvedScoreWeights, .defaultWeights)
+        XCTAssertNil(SecurityControlPolicy.default.scoreWeights)
+        XCTAssertEqual(SecurityControlPolicy.default.resolvedScoreWeights, .defaultWeights)
+    }
+
+    func testWeightsDecodeIntegersAndNumericStrings() throws {
+        let decoded = try weights("""
+        filevault: 30
+        sip: "20"
+        firewall: 0
+        edr_agent: 100
+        mscp: " 7 "
+        xprotect: 12.5
+        """)
+        XCTAssertEqual(decoded, SecurityScoreWeights(
+            fileVault: 30, sip: 20, firewall: 0, edrAgent: 100, mscp: 7, xprotect: 12.5,
+            cve: 15, secureBoot: 5))
+    }
+
+    func testEveryKeyIsReadIntoItsOwnSlot() throws {
+        let decoded = try weights("""
+        filevault: 1
+        sip: 2
+        firewall: 3
+        edr_agent: 4
+        mscp: 5
+        xprotect: 6
+        cve: 7
+        secure_boot: 8
+        """)
+        XCTAssertEqual(decoded, SecurityScoreWeights(
+            fileVault: 1, sip: 2, firewall: 3, edrAgent: 4, mscp: 5, xprotect: 6, cve: 7,
+            secureBoot: 8))
+    }
+
+    func testAMissingNegativeOversizedOrNonNumericWeightKeepsItsDefault() throws {
+        let decoded = try weights("""
+        filevault: -5
+        sip: 150
+        firewall: abc
+        edr_agent:
+        mscp: true
+        xprotect: [1]
+        cve: 30
+        """)
+        XCTAssertEqual(decoded, SecurityScoreWeights(
+            fileVault: 15, sip: 15, firewall: 15, edrAgent: 10, mscp: 20, xprotect: 5,
+            cve: 30, secureBoot: 5))
+        let notNumbers = try weights("filevault: nan\nsip: inf\n")
+        XCTAssertEqual(notNumbers, .defaultWeights, "numbers that are not finite")
+    }
+
+    func testTheEndsOfTheRangeAreWeights() throws {
+        let decoded = try weights("filevault: 0\nsip: 100\n")
+        XCTAssertEqual(decoded?.fileVault, 0)
+        XCTAssertEqual(decoded?.sip, 100)
+    }
+
+    func testABlockThatIsNotAMappingIsNil() throws {
+        for shape in ["5", "\"x\"", "[5]", "true", ""] {
+            let config = try ConfigLoader.loadFromString("""
+            security_policy:
+              controls:
+                sip: warning
+              score_weights: \(shape)
+            thresholds:
+              stale_device_days: 45
+            """)
+            XCTAssertEqual(config.securityPolicy, SecurityControlPolicy(sip: .warning),
+                           "score_weights: \(shape)")
+            XCTAssertEqual(config.thresholds?.staleDeviceDays, 45, "never throws out of the config")
+        }
+    }
+
+    /// The decoder has a branch for a block with no `controls`; the weights ride through it.
+    func testWeightsDecodeBesideControlsAndWithoutThem() throws {
+        let both = try ConfigLoader.loadFromString("""
+        security_policy:
+          controls:
+            firewall: ignore
+          filevault_off_hardware_encrypted: warning
+          score_weights:
+            filevault: 30
+        """)
+        var custom = SecurityScoreWeights.defaultWeights
+        custom.fileVault = 30
+        XCTAssertEqual(both.securityPolicy, SecurityControlPolicy(
+            firewall: .ignore, fileVaultOffHardwareEncrypted: .warning, scoreWeights: custom))
+        XCTAssertEqual(try weights("filevault: 30\n"), custom)
+    }
+
+    func testResolvedScoreWeightsZeroTheWeightOfAnIgnoredControl() {
+        let custom = SecurityScoreWeights(
+            fileVault: 30, sip: 25, firewall: 12, edrAgent: 10, mscp: 20, xprotect: 5, cve: 15,
+            secureBoot: 5)
+        var expected = custom
+        expected.firewall = 0
+        XCTAssertEqual(
+            SecurityControlPolicy(firewall: .ignore, scoreWeights: custom).resolvedScoreWeights,
+            expected, "the custom firewall weight is dropped with the control")
+        XCTAssertEqual(
+            SecurityControlPolicy(firewall: .warning, scoreWeights: custom).resolvedScoreWeights,
+            custom, "a warning still counts")
+        var defaults = SecurityScoreWeights.defaultWeights
+        defaults.sip = 0
+        XCTAssertEqual(SecurityControlPolicy(sip: .ignore).resolvedScoreWeights, defaults)
+    }
+
     // MARK: - Hand-typed levels
 
     func testParseAcceptsEverySpellingInAnyCase() {
@@ -683,5 +805,115 @@ final class SecurityControlPolicyTests: XCTestCase {
             XCTAssertNil(policy.fileVaultOffHardwareEncrypted)
             XCTAssertEqual(found[2].used, "the FileVault level")
         }
+    }
+
+    // MARK: - Issues in the score weights
+
+    func testIssuesNameAWeightThatIsNotANumberFromZeroToOneHundred() throws {
+        let found = try issues("""
+        security_policy:
+          score_weights:
+            filevault: -5
+            sip: 150
+            firewall: abc
+            edr_agent:
+            mscp: true
+            xprotect: [1]
+            cve: 20
+            secure_boot: "7"
+        """)
+        XCTAssertEqual(found, [
+            issue("security_policy.score_weights.filevault", "-5", "15"),
+            issue("security_policy.score_weights.sip", "150", "15"),
+            issue("security_policy.score_weights.firewall", "abc", "15"),
+            issue("security_policy.score_weights.edr_agent", "", "10"),
+            issue("security_policy.score_weights.mscp", "true", "20"),
+            issue("security_policy.score_weights.xprotect", "[1]", "5"),
+        ])
+    }
+
+    func testWeightsTheDecoderReadsAreNotIssues() throws {
+        XCTAssertEqual(try issues("""
+            security_policy:
+              score_weights:
+                filevault: 0
+                sip: 100
+                firewall: "20"
+                edr_agent: " 7 "
+                mscp: 12.5
+            """), [])
+    }
+
+    func testIssuesNameAnUnknownWeightKeyWithoutItsValue() throws {
+        XCTAssertEqual(try issues("""
+            security_policy:
+              score_weights:
+                crowdstrike: 10
+                filevault: 20
+                Sip: 5
+            """), [
+            issue("security_policy.score_weights.crowdstrike", "", ""),
+            issue("security_policy.score_weights.Sip", "", ""),
+        ])
+    }
+
+    func testWeightIssuesFollowTheLastOfARepeatedKey() throws {
+        XCTAssertEqual(try issues("""
+            security_policy:
+              score_weights:
+                sip: abc
+                sip: 5
+            """), [])
+        XCTAssertEqual(try issues("""
+            security_policy:
+              score_weights:
+                sip: 5
+                sip: abc
+            """), [issue("security_policy.score_weights.sip", "abc", "15")])
+    }
+
+    func testWeightIssuesAndTheLoadedPolicyAgree() throws {
+        try withWorkspacesRoot { _ in
+            try writeConfig("""
+            security_policy:
+              score_weights:
+                filevault: 30
+                sip: 150
+                mscp: "25"
+            """, profile: "policy-weights")
+            let policy = SecurityPolicyConfigLoader.load(profile: "policy-weights")
+            let found = SecurityPolicyConfigLoader.issues(profile: "policy-weights")
+
+            XCTAssertEqual(policy.scoreWeights?.fileVault, 30)
+            XCTAssertEqual(policy.scoreWeights?.mscp, 25)
+            XCTAssertEqual(found.map(\.keyPath), ["security_policy.score_weights.sip"])
+            XCTAssertEqual(found.first?.used, "\(Int(try XCTUnwrap(policy.scoreWeights).sip))")
+        }
+    }
+
+    /// The commented block in the shipped example names the keys the decoder reads: with the
+    /// comment markers removed it decodes to the defaults it says it spells out.
+    func testShippedExampleWeightsBlockDecodesToTheDefaults() throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var example: URL?
+        for _ in 0..<8 {
+            let candidate = dir.appendingPathComponent("config.example.yaml")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                example = candidate
+                break
+            }
+            dir = dir.deletingLastPathComponent()
+        }
+        guard let example else {
+            throw XCTSkip("config.example.yaml not found above \(#filePath)")
+        }
+        let lines = try String(contentsOf: example, encoding: .utf8).components(separatedBy: "\n")
+        let start = try XCTUnwrap(lines.firstIndex { $0.contains("# score_weights:") })
+        let block = lines[start...].prefix { $0.hasPrefix("  #") }
+            .map { $0.replacing("# ", with: "", maxReplacements: 1) }
+        let config = try ConfigLoader.loadFromString(
+            "security_policy:\n" + block.joined(separator: "\n") + "\n")
+        XCTAssertEqual(config.securityPolicy?.scoreWeights, .defaultWeights)
+        XCTAssertEqual(block.count, 9, "the key and eight weights")
     }
 }

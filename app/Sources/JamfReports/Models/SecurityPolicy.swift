@@ -58,7 +58,7 @@ struct SecurityPolicyIssue: Sendable, Equatable {
 }
 
 /// The workspace's `security_policy:` block. Absent, every control fails as it always
-/// has and there is no hardware-encrypted FileVault rule.
+/// has, there is no hardware-encrypted FileVault rule and the score uses the default weights.
 struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     var fileVault: SecurityControlLevel
     var sip: SecurityControlLevel
@@ -67,6 +67,8 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     /// Level for FileVault off on a Mac whose internal volume is hardware-encrypted;
     /// nil uses `fileVault`.
     var fileVaultOffHardwareEncrypted: SecurityControlLevel?
+    /// The Security Score's weights; nil uses `SecurityScoreWeights.defaultWeights`.
+    var scoreWeights: SecurityScoreWeights?
 
     static let `default` = SecurityControlPolicy()
 
@@ -75,22 +77,33 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         sip: SecurityControlLevel = .fail,
         firewall: SecurityControlLevel = .fail,
         gatekeeper: SecurityControlLevel = .fail,
-        fileVaultOffHardwareEncrypted: SecurityControlLevel? = nil
+        fileVaultOffHardwareEncrypted: SecurityControlLevel? = nil,
+        scoreWeights: SecurityScoreWeights? = nil
     ) {
         self.fileVault = fileVault
         self.sip = sip
         self.firewall = firewall
         self.gatekeeper = gatekeeper
         self.fileVaultOffHardwareEncrypted = fileVaultOffHardwareEncrypted
+        self.scoreWeights = scoreWeights
     }
 
     private enum CodingKeys: String, CodingKey {
         case controls
         case fileVaultOffHardwareEncrypted = "filevault_off_hardware_encrypted"
+        case scoreWeights = "score_weights"
     }
 
     private enum ControlKeys: String, CodingKey {
         case filevault, sip, firewall, gatekeeper
+    }
+
+    /// A key under `score_weights`, named at run time from `SecurityScoreWeights.configSlots`.
+    private struct WeightKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
     }
 
     /// Never throws (the `AlertRule` pattern): a thrown error would fail the whole
@@ -101,9 +114,10 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
             return
         }
         let hardware = Self.decodedLevel(c, .fileVaultOffHardwareEncrypted)
+        let weights = Self.decodedWeights(c)
         guard let controls = try? c.nestedContainer(keyedBy: ControlKeys.self, forKey: .controls)
         else {
-            self.init(fileVaultOffHardwareEncrypted: hardware)
+            self.init(fileVaultOffHardwareEncrypted: hardware, scoreWeights: weights)
             return
         }
         self.init(
@@ -111,8 +125,38 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
             sip: Self.decodedLevel(controls, .sip) ?? .fail,
             firewall: Self.decodedLevel(controls, .firewall) ?? .fail,
             gatekeeper: Self.decodedLevel(controls, .gatekeeper) ?? .fail,
-            fileVaultOffHardwareEncrypted: hardware
+            fileVaultOffHardwareEncrypted: hardware,
+            scoreWeights: weights
         )
+    }
+
+    /// Nil for a block that is absent or not a mapping; otherwise every key the app reads,
+    /// each at its typed weight or, when missing or unreadable, its default.
+    private static func decodedWeights(
+        _ container: KeyedDecodingContainer<CodingKeys>
+    ) -> SecurityScoreWeights? {
+        guard let block = try? container.nestedContainer(
+            keyedBy: WeightKey.self, forKey: .scoreWeights)
+        else { return nil }
+        return SecurityScoreWeights { slot in
+            guard let key = WeightKey(stringValue: slot) else { return nil }
+            // A fractional YAML scalar arrives as a string, an integer as a number
+            // (`AlertRule.tolerantDouble`).
+            if let number = try? block.decodeIfPresent(Double.self, forKey: key) {
+                return scoreWeight(number)
+            }
+            return (try? block.decodeIfPresent(String.self, forKey: key))
+                .flatMap { scoreWeight(typed: $0) }
+        }
+    }
+
+    /// A typed weight is a number from 0 to 100; anything else is not read.
+    static func scoreWeight(_ value: Double) -> Double? {
+        (0...100).contains(value) ? value : nil
+    }
+
+    static func scoreWeight(typed raw: String) -> Double? {
+        Double(raw.trimmingCharacters(in: .whitespaces)).flatMap { scoreWeight($0) }
     }
 
     private static func decodedLevel<Key: CodingKey>(
@@ -288,6 +332,47 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         if sip == .ignore { weights.sip = 0 }
         if firewall == .ignore { weights.firewall = 0 }
         return weights
+    }
+
+    /// What every score uses: the workspace's weights, or the defaults, less the controls
+    /// that are not counted.
+    var resolvedScoreWeights: SecurityScoreWeights {
+        effectiveScoreWeights(scoreWeights ?? .defaultWeights)
+    }
+}
+
+extension SecurityScoreWeights {
+    /// The keys under `security_policy.score_weights`, in the order the Scoring tab lists them.
+    nonisolated(unsafe) static let configSlots:
+        [(key: String, path: WritableKeyPath<SecurityScoreWeights, Double>)] = [
+            ("filevault", \.fileVault), ("sip", \.sip), ("firewall", \.firewall),
+            ("edr_agent", \.edrAgent), ("mscp", \.mscp), ("xprotect", \.xprotect),
+            ("cve", \.cve), ("secure_boot", \.secureBoot),
+        ]
+
+    /// The defaults, with each slot the lookup has a weight for replaced.
+    init(reading weight: (String) -> Double?) {
+        self = .defaultWeights
+        for slot in Self.configSlots {
+            if let value = weight(slot.key) { self[keyPath: slot.path] = value }
+        }
+    }
+
+    /// The weight under a `score_weights` key; nil for a key the app does not read.
+    func weight(forConfigKey key: String) -> Double? {
+        Self.configSlots.first { $0.key == key }.map { self[keyPath: $0.path] }
+    }
+
+    /// Whole numbers from 0 to 100, as the block stores them; a weight that is not a
+    /// number reads as its default.
+    func rounded() -> SecurityScoreWeights {
+        var copy = self
+        for slot in Self.configSlots {
+            let value = self[keyPath: slot.path].rounded()
+            copy[keyPath: slot.path] = value.isNaN
+                ? Self.defaultWeights[keyPath: slot.path] : min(max(value, 0), 100)
+        }
+        return copy
     }
 }
 
