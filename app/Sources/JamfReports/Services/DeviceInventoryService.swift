@@ -548,7 +548,8 @@ extension DeviceInventoryService {
         record.sip = cell(row, ["System Integrity Protection", "SIP"])
         record.firewall = cell(row, ["Firewall Enabled", "Firewall"])
         record.gatekeeper = cell(row, ["Gatekeeper"])
-        record.bootstrapToken = cell(row, ["Bootstrap Token Escrowed", "Bootstrap Token Allowed"])
+        // Not "Bootstrap Token Allowed": that is whether the server accepts escrow.
+        record.bootstrapToken = cell(row, ["Bootstrap Token Escrowed"])
         record.diskUsage = cell(row, ["Boot Drive Percentage Full", "Disk Usage %"])
         record.failedRules = failureCount(row)
         record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(

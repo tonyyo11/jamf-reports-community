@@ -251,6 +251,25 @@ final class DeviceSecurityStateTests: XCTestCase {
         }
     }
 
+    /// The CSV export's Allowed column is the same server setting, so an empty Escrowed
+    /// cell stays unknown rather than borrowing it.
+    func testCSVBootstrapTokenAllowedAloneIsUnknown() {
+        let base = ["Computer Name": "Lab-Mac-BT", "Serial Number": "BT22"]
+        for allowed in ["Yes", "No"] {
+            let onlyAllowed = ["Bootstrap Token Allowed": allowed]
+            var emptyEscrowed = onlyAllowed
+            emptyEscrowed["Bootstrap Token Escrowed"] = ""
+            for bootstrap in [onlyAllowed, emptyEscrowed] {
+                let mac = DeviceInventoryService.recordFromCSV(
+                    base.merging(bootstrap) { _, new in new }, source: "computers.csv")
+                XCTAssertEqual(mac.bootstrapToken, "", allowed)
+                XCTAssertNil(SecurityControlPolicy.reading(mac.bootstrapToken), allowed)
+                XCTAssertEqual(mac.securityGapCount(policy: .default), 0, allowed)
+                XCTAssertEqual(riskFactors(mac), [], allowed)
+            }
+        }
+    }
+
     // MARK: - security_policy
 
     private let hardwareWarning = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
