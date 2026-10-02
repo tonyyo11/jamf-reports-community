@@ -162,6 +162,9 @@ All scripts are:
   release-channel, build-number and artifact-naming rules that `build-app.sh`,
   `build-pkg.sh` and `package-dmg.sh` all source. `test-versioning.zsh` tests it
   (`zsh scripts/test-versioning.zsh`), and CI runs that test on every push.
+- `check-test-only-symbols.zsh` fails when a type or func in `Sources` is referenced
+  only from `Tests` (deliberate seams go in `test-only-symbols.allow`, each with a
+  reason); `test-check-test-only-symbols.zsh` tests it. CI and `.githooks/pre-push` run the check.
 - Idempotent where possible (safe to re-run)
 - Fail-fast with clear error messages
 
