@@ -123,6 +123,15 @@ enum ScaffoldService {
         "model":            ["model", "hardware model", "device model"],
         "last_enrollment":  ["last enrollment", "enrollment date", "enrolled"],
         "mdm_expiry":       ["mdm profile expiration date", "mdm expiry", "profile expiration date"],
+        // Optional inventory columns; hints come from the retired ReportEngine scaffold.
+        "full_name":        ["full name", "fullname", "user full name"],
+        "asset_tag":        ["asset tag", "assettag", "asset id"],
+        "building":         ["building", "site building"],
+        "position":         ["position", "job title"],
+        "last_logged_in_user": ["last logged in", "last user", "logged in user"],
+        "recovery_lock":    ["recovery lock", "recoverylock", "recovery lock enabled"],
+        "battery_health":   ["battery health", "battery condition", "battery cycle"],
+        "entra_sso_status": ["entra sso", "azure ad", "entra id sso"],
     ]
 
     private static let columnExcludes: [String: [String]] = [
@@ -460,6 +469,8 @@ enum ScaffoldService {
         "department", "manager", "email",
         "filevault", "sip", "firewall", "gatekeeper", "secure_boot", "bootstrap_token",
         "disk_percent_full", "architecture", "model", "last_enrollment", "mdm_expiry",
+        "full_name", "asset_tag", "building", "position", "last_logged_in_user",
+        "recovery_lock", "battery_health", "entra_sso_status",
     ]
 
     // Mobile column key order matches Python DEFAULT_CONFIG["mobile_columns"].

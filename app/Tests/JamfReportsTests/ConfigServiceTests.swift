@@ -125,6 +125,52 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("device_name: Mobile Display Name"))
     }
 
+    /// The Config screen lists `ConfigState.columnKeys` only; the eight extra inventory
+    /// fields (`ColumnField.fullName` ... `.entraSSOStatus`) are edited in config.yaml, and
+    /// a Config-screen save must leave their mappings in place.
+    func testSaveKeepsInventoryColumnsTheConfigScreenDoesNotList() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "extra-cols-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            columns:
+              computer_name: Computer Name
+              full_name: "Full Name"
+              asset_tag: "Asset Tag"
+              building: "Building"
+              position: "Job Title"
+              last_logged_in_user: "Last Logged In"
+              recovery_lock: "Recovery Lock"
+              battery_health: "Battery Health"
+              entra_sso_status: "Entra SSO"
+            """,
+            profile: profile,
+            root: root
+        )
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        var state = loaded.state
+        state.columns["computer_name"] = "Device Name"
+        _ = try ConfigService.save(
+            profile: profile,
+            state: state,
+            existingDocument: loaded.document,
+            workspaceRoot: root
+        )
+
+        let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
+        let columns = try XCTUnwrap(ConfigLoader.load(from: url).columns)
+        XCTAssertEqual(columns.computerName, "Device Name")
+        XCTAssertEqual(columns.fullName, "Full Name")
+        XCTAssertEqual(columns.assetTag, "Asset Tag")
+        XCTAssertEqual(columns.building, "Building")
+        XCTAssertEqual(columns.position, "Job Title")
+        XCTAssertEqual(columns.lastLoggedInUser, "Last Logged In")
+        XCTAssertEqual(columns.recoveryLock, "Recovery Lock")
+        XCTAssertEqual(columns.batteryHealth, "Battery Health")
+        XCTAssertEqual(columns.entraSSOStatus, "Entra SSO")
+    }
+
     func testDefaultStateFileVaultColumnAndEmptyMobileColumns() {
         XCTAssertEqual(ConfigState.defaultState.columns["filevault"], "FileVault 2 Status")
         for key in ConfigState.mobileColumnKeys {

@@ -650,7 +650,12 @@ private struct ColumnsTab: View {
                     let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
                     var loaded = try ConfigService.load(profile: profile)
                     let isMobile = result.family == .mobile
-                    let detected = isMobile ? result.mobileColumns : result.columns
+                    // Merge only the keys ConfigService writes back. The extra inventory
+                    // columns (full_name, asset_tag, ...) are scaffolded once into config.yaml;
+                    // merging one here would report it added while save drops it.
+                    let detected = isMobile
+                        ? result.mobileColumns
+                        : result.columns.filter { ConfigState.columnKeys.contains($0.key) }
                     let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
                     let merge = ScaffoldService.mergeColumns(
                         existing: existing, detected: detected, csvHeaders: sample.headers)
