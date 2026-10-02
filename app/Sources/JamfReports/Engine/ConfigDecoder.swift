@@ -29,6 +29,7 @@ struct ReportConfig: Decodable, Sendable {
     var sharedWorkspace: SharedWorkspaceConfig?
     var ai: AIConfig?
     var html: HTMLReportConfig?
+    var securityPolicy: SecurityControlPolicy?
 
     private enum CodingKeys: String, CodingKey {
         case columns
@@ -52,6 +53,7 @@ struct ReportConfig: Decodable, Sendable {
         case sharedWorkspace = "shared_workspace"
         case ai
         case html
+        case securityPolicy = "security_policy"
     }
 
     /// Produce a config with all optional fields filled in from hardcoded defaults,

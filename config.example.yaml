@@ -446,6 +446,24 @@ alerts:
   #   - {metric: "stale_count", when: "above", threshold: 50}
 
 # =============================================================================
+# SECURITY POLICY — what counts as a security gap, for every screen, report and
+# scheduled run of this workspace. fail (default): a gap — action items, the
+# per-device gap count, risk points and the score, shown red. warning: shown
+# amber, not a gap, does not lower the score. ignore: not evaluated; its score
+# weight is dropped. Percentages (FileVault on, SIP on, ...) are facts and never
+# change. Omit the block, or any key, for the default.
+# =============================================================================
+security_policy:
+  controls:
+    filevault: fail      # fail | warning | ignore
+    sip: fail
+    firewall: fail
+    gatekeeper: fail
+  # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
+  # silicon, or Intel with the T2 chip). Omit to use the filevault level.
+  # filevault_off_hardware_encrypted: warning
+
+# =============================================================================
 # SNAPSHOT RETENTION (admin-controlled; OFF by default)
 # =============================================================================
 # Raw jamf-cli snapshots under jamf-cli-data/ are a reporting input (per-device

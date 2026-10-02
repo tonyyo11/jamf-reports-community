@@ -420,7 +420,9 @@ struct CompliancePostureView: View {
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
-                Text("\(gap.failingDevices) failing")
+                Text(gap.warningDevices > 0
+                     ? "\(gap.failingDevices) failing · \(gap.warningDevices) warnings"
+                     : "\(gap.failingDevices) failing")
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", gap.pct))

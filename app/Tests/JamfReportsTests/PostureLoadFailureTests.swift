@@ -29,7 +29,7 @@ final class PostureLoadFailureTests: XCTestCase {
 
     func test_compliance_loadFrom_corruptFile_returnsNil() throws {
         let url = try corruptFile(); defer { try? FileManager.default.removeItem(at: url) }
-        XCTAssertNil(CompliancePostureService.load(from: url))
+        XCTAssertNil(CompliancePostureService.load(from: url, policy: .default))
     }
 
     func test_compliance_failedSnapshot_isDistinctFromEmpty() {

@@ -629,7 +629,8 @@ struct ReportEngine: Sendable {
                     }
                     // If neither source is available fileVaultPct remains nil.
                 case .device(let device):
-                    if let gaps = CompliancePostureService.deviceGapCount(device) {
+                    if let gaps = CompliancePostureService.deviceGapCount(
+                        device, policy: config.resolvedSecurityPolicy, hardwareEncrypted: nil) {
                         deviceGapCounts.append(gaps)
                     }
                 default:
