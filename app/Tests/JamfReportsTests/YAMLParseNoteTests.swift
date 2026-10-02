@@ -293,6 +293,18 @@ final class YAMLParseNoteTests: XCTestCase {
         }
     }
 
+    /// `''` inside single quotes is one `'`, as in YAML: a column header such as `User's Name`.
+    func testADoubledSingleQuoteReadsAsOne() throws {
+        let root = try YAMLCodec.decode("""
+            columns:
+              full_name: 'User''s Name'
+            band: {'it''s': 'a''b'}
+            """).root.mapping
+        XCTAssertEqual(root?.value(for: "columns")?.mapping?.value(for: "full_name")?.stringValue,
+                       "User's Name")
+        XCTAssertEqual(root?.value(for: "band")?.mapping?.value(for: "it's")?.stringValue, "a'b")
+    }
+
     func testNotesReadAsLinesWithoutTheTypedValues() {
         XCTAssertEqual(
             Note(line: 4, kind: .indentation(found: 1, expected: 2)).display,

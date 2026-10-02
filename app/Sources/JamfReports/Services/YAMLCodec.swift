@@ -613,7 +613,7 @@ private struct Parser {
             return .scalar(.string(unescapeDoubleQuoted(String(value.dropFirst().dropLast()))))
         }
         if value.hasPrefix("'"), value.hasSuffix("'"), value.count >= 2 {
-            return .scalar(.string(String(value.dropFirst().dropLast())))
+            return .scalar(.string(unescapeSingleQuoted(String(value.dropFirst().dropLast()))))
         }
         return .scalar(.string(value))
     }
@@ -693,9 +693,14 @@ private struct Parser {
             return unescapeDoubleQuoted(String(key.dropFirst().dropLast()))
         }
         if key.hasPrefix("'"), key.hasSuffix("'"), key.count >= 2 {
-            return String(key.dropFirst().dropLast())
+            return unescapeSingleQuoted(String(key.dropFirst().dropLast()))
         }
         return key
+    }
+
+    /// Inside single quotes, `''` is one `'`.
+    private func unescapeSingleQuoted(_ value: String) -> String {
+        value.replacingOccurrences(of: "''", with: "'")
     }
 
     private func unescapeDoubleQuoted(_ value: String) -> String {
