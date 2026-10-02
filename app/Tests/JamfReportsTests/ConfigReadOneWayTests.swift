@@ -82,6 +82,45 @@ final class ConfigReadOneWayTests: XCTestCase {
         }
     }
 
+    // MARK: - What a Config screen save keeps
+
+    /// The earlier copy of a repeated block, which no reader takes, stays as typed.
+    func testASaveRewritesOnlyTheLastCopyOfARepeatedBlock() throws {
+        let typed = """
+            thresholds:
+              stale_device_days: 10
+            output:
+              output_dir: Reports
+            thresholds:
+              stale_device_days: 45
+            """
+        let saved = try savedText(typed) { $0.staleDeviceDays = "60" }
+        XCTAssertTrue(saved.text.hasPrefix(
+            "thresholds:\n  stale_device_days: 10\noutput:\n"), saved.text)
+        XCTAssertEqual(saved.engine.thresholds?.staleDeviceDays, 60)
+    }
+
+    /// Known loss, left to Task 4 (backup and banner): a line the reader skipped inside a block
+    /// the Config screen edits is gone after a save, because that block is written anew.
+    func testKnownLossASkippedLineInsideABlockTheScreenEditsIsDroppedOnSave() throws {
+        let saved = try savedText("thresholds:\n  stale_device_days: 30\n  just some words\n")
+        XCTAssertFalse(saved.text.contains("just some words"), saved.text)
+        XCTAssertEqual(saved.engine.thresholds?.staleDeviceDays, 30)
+    }
+
+    func testASkippedLineOutsideTheBlocksTheScreenEditsSurvivesASave() throws {
+        let saved = try savedText("html:\n  track_history: false\n  just some words\n")
+        XCTAssertTrue(saved.text.hasPrefix("html:\n  track_history: false\n  just some words\n"),
+                      saved.text)
+    }
+
+    /// A tab-indented line reads as a top-level key, and a save keeps it as typed.
+    func testATabIndentedLineSurvivesASave() throws {
+        let saved = try savedText("thresholds:\n  stale_device_days: 30\n\tcert_warning_days: 60\n")
+        XCTAssertTrue(saved.text.contains("\n\tcert_warning_days: 60\n"), saved.text)
+        XCTAssertEqual(saved.engine.thresholds?.staleDeviceDays, 30)
+    }
+
     // MARK: - html.track_history and html.history_file (HtmlReport)
 
     /// Each of these turned history off under the line scanner HtmlReport used.
@@ -234,6 +273,24 @@ final class ConfigReadOneWayTests: XCTestCase {
             .filter { $0.hasSuffix(".json") }
         XCTAssertEqual(written.count, 1)
         return written.first
+    }
+
+    /// Loads `typed` on the Config screen, applies `edit`, saves, and returns the file and what
+    /// the engine reads from it.
+    private func savedText(
+        _ typed: String, edit: (inout ConfigState) -> Void = { _ in }
+    ) throws -> (text: String, engine: ReportConfig) {
+        var result: (text: String, engine: ReportConfig)?
+        try withWorkspace(config: typed) { root, profile in
+            var state = try ConfigService.load(profile: profile, workspaceRoot: root).state
+            edit(&state)
+            _ = try ConfigService.save(
+                profile: profile, state: state, existingDocument: nil, workspaceRoot: root)
+            let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
+            let text = try String(contentsOf: url, encoding: .utf8)
+            result = (text, try ConfigLoader.load(from: url))
+        }
+        return try XCTUnwrap(result)
     }
 
     /// Whether the Devices screen marks a Mac last seen 40 days ago as stale.

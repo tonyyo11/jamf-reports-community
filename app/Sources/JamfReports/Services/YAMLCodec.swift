@@ -143,10 +143,16 @@ enum YAMLCodec {
         let lines = document.originalText.components(separatedBy: .newlines)
         var replaced: Set<String> = []
         var index = 0
+        // Only the last copy of a repeated key is the one read, so only it is rewritten; an
+        // earlier copy stays as typed.
+        var lastLine: [String: Int] = [:]
+        for (offset, line) in lines.enumerated() {
+            if let key = topLevelKey(in: line), keys.contains(key) { lastLine[key] = offset }
+        }
 
         while index < lines.count {
             if let key = topLevelKey(in: lines[index]),
-               keys.contains(key),
+               lastLine[key] == index,
                let value = root.value(for: key) {
                 output.append(contentsOf: emitTopLevel(key: key, value: value))
                 replaced.insert(key)
