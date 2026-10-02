@@ -517,9 +517,10 @@ struct SheetsConfig: Decodable, Sendable {
     /// - Parameter plan: Ordered pairs of (name, closure) from the dashboard.
     /// - Returns: Reordered and filtered plan ready for sequential execution.
     /// - Note: Names in `order` that don't match any plan entry are silently skipped.
+    ///   An empty `only` is no restriction, which is what `config.example.yaml` ships.
     func applyTo<T>(_ plan: [(name: String, write: T)]) -> [(name: String, write: T)] {
         let skipSet = Set((skip ?? []).map { $0.lowercased() })
-        let onlySet = only.map { Set($0.map { $0.lowercased() }) }
+        let onlySet = only.flatMap { $0.isEmpty ? nil : Set($0.map { $0.lowercased() }) }
 
         var survivors = plan.filter { entry in
             let lower = entry.name.lowercased()
