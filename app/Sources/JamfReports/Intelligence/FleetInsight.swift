@@ -43,6 +43,9 @@ struct FleetInsightInput: Sendable, Equatable {
         case higherIsBetter, lowerIsBetter, neutral
     }
 
+    /// `label` is a state phrase: a share reads "<label> on N% of devices; <complement> on M%".
+    /// `complement` is used only for `.percent` with non-neutral polarity; a `prior` of
+    /// another `Value` case prints no change.
     struct Fact: Sendable, Equatable {
         let label: String
         let value: Value
@@ -54,7 +57,8 @@ struct FleetInsightInput: Sendable, Equatable {
     }
 
     /// The title, the focus, one line per fact, then the notes. Changes are in
-    /// percentage points for shares and signed integers for counts.
+    /// percentage points for shares, signed integers for counts and one decimal
+    /// for numbers.
     ///
     /// `maxApproxTokens` bounds the size: tokens are approximated at 4 chars per
     /// token (the widely-used rough heuristic; the generator additionally caps
