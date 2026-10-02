@@ -196,6 +196,13 @@ Files: `Services/NotifyConfigStore.swift`, `Intelligence/AIConfigWriter.swift`,
    contains a `#` comment line or a trailing comment), make the same timestamped backup as in
    item 5, once per app launch, and show one line in the banner: `Comments inside the blocks this
    screen edits are not kept. A copy of the file as it was is at <backup name>.`
+7. Added after Task 3's review. A line the reader skipped (a Task 3 parse note) that falls inside
+   a managed block is deleted when that block is re-emitted, and the refresh after save
+   (`ConfigView.save()` → `refreshEngineParseStatus()`) then clears its note. Treat it as item 6
+   treats comments: when a parse note's line falls inside a block the save is about to rewrite,
+   make the timestamped backup (once per app launch, shared with item 6) and show one line in the
+   banner: `Lines this screen could not read inside the blocks it edits are not kept. A copy of
+   the file as it was is at <backup name>.` Test with a skipped line inside `columns:`.
 
 ## Task 5: The Config screen shows what the file says
 
@@ -227,7 +234,7 @@ visible in the app:
 Tests: the pure function that builds the three sections from a fixture file (file-only keys,
 unknown keys, parse notes; a screen-edited key excluded; a secret-like key masked).
 
-## Task 6: `sheets` settings reach every workbook, and three reads found on the way
+## Task 6: `sheets` settings reach every workbook, and four reads found on the way
 
 Found while building Tasks 1 and 2. Each item is "verify first".
 
@@ -264,3 +271,15 @@ Files: `Engine/SheetRegistry.swift` (or wherever `writeSelected` lives), `Engine
    `entra_s_s_o_status`, so it can never suggest a header for `entra_sso_status` and its row title
    is wrong. Use the column's real config key (the decoder's `CodingKeys` raw value) instead of
    deriving it; test every column field's key against the decoder's.
+5. Added after Task 3's review. `ReportEngine.resolveOutputURL` (the workbook and HTML writer's
+   folder) does not expand `~` and, given a profile, sends an absolute `output.output_dir` outside
+   the workspace to `<workspace>/Generated Reports` without reading `output.allow_absolute_paths`;
+   `WorkspacePaths.outputDir(for:)` (the Reports library, the period report) honours the key. So
+   `output_dir` is read two ways, and the documented publish layout (workspace local, `output_dir`
+   in a synced team folder, `allow_absolute_paths: true`) is reported to never place the report
+   there. Verify with a test through `ReportEngine.generate` in a temp workspaces root: an
+   absolute `output_dir` in a second temp folder with `allow_absolute_paths: true`, the same with
+   the key absent, and a `~/`-prefixed value. If confirmed: `resolveOutputURL` resolves the folder
+   through `WorkspacePaths.outputDir(for:)` so both readers agree; a refused path falls back to
+   `Generated Reports` in the workspace and the run log says why in one `[warn]` line. No change
+   when `output_dir` is relative. If refuted, keep the tests and change nothing.
