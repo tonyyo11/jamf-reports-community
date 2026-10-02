@@ -111,6 +111,60 @@ final class HeavyTierStalenessTests: XCTestCase {
         XCTAssertEqual(noData, [.inventory])
     }
 
+    /// A failure recorded for `kind` the way collect records one.
+    private func recordFailure(
+        _ kind: String, exitCode: Int32, cause: FailureCause? = nil
+    ) throws {
+        StateFileStore(directory: try WorkspacePaths.stateDir(for: profile))
+            .record(.failed(exitCode: exitCode), report: kind, at: Date(), cause: cause)
+    }
+
+    /// A retry cannot fix Managed Software Update Plans turned off, so update-status never
+    /// lands; the health banner names it with its cause, and the prompt's button would only
+    /// force the inventory tier again.
+    func testAKindThatFailsForAPermanentCauseDoesNotKeepItsTierStale() throws {
+        let dataDir = try makeWorkspace()
+        try snapshot("computers", in: dataDir)
+        try recordFailure("update-status", exitCode: 0, cause: FailureCause(
+            kind: .softwareUpdatePlansOff, names: [], hint: nil, exitCode: 0))
+
+        let stale = WorkspaceStore.staleTiers(
+            profile: profile, olderThan: week, expectedKinds: ["computers", "update-status"])
+
+        XCTAssertEqual(stale, [])
+    }
+
+    func testARetryableFailureStillKeepsItsTierStale() throws {
+        let dataDir = try makeWorkspace()
+        try snapshot("computers", in: dataDir)
+        try recordFailure("update-status", exitCode: 1, cause: FailureCause(
+            kind: .other, names: [], hint: nil, exitCode: 1))
+
+        let stale = WorkspaceStore.staleTiers(
+            profile: profile, olderThan: week, expectedKinds: ["computers", "update-status"])
+
+        XCTAssertEqual(stale, [.inventory])
+    }
+
+    /// A first collect landed computers and the server refused one kind for a missing
+    /// privilege: the prompt must not read "couldn't be collected" over it.
+    func testAKindRefusedOnTheFirstCollectDoesNotReadAsCouldntBeCollected() throws {
+        let dataDir = try makeWorkspace()
+        try snapshot("computers", in: dataDir)
+        try recordFailure("profile-status", exitCode: 5, cause: FailureCause(
+            kind: .missingPermission, names: ["Read Computers"], hint: nil, exitCode: 5))
+        try recordFailure("policy-status", exitCode: 8)
+        let expected = ["computers", "profile-status", "policy-status"]
+
+        let stale = WorkspaceStore.staleTiers(
+            profile: profile, olderThan: week, expectedKinds: expected)
+        let noData = WorkspaceStore.tiersWithNoData(
+            profile: profile, among: [.inventory], expectedKinds: expected, olderThan: week)
+
+        XCTAssertEqual(stale, [])
+        XCTAssertEqual(noData, [])
+    }
+
     /// The resolver behind the prompt reads the same inputs as the health strip.
     func testTheProfileResolverAppliesCollectSkipAndTheAuthMethod() throws {
         _ = try makeWorkspace(config: """

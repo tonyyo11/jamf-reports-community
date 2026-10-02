@@ -351,8 +351,9 @@ extension WorkspaceStore {
     /// `threshold`, or that never landed (#181: once the workspace directory
     /// exists, the prompt is the only heavy-collect affordance a fresh workspace
     /// has; a missing workspace is the Overview init banner's job). Only
-    /// `expectedKinds` count, so a kind the profile never collects cannot hold
-    /// the prompt up, and a tier with none is never stale.
+    /// `expectedKinds` count, and not one whose last failure repeats on retry,
+    /// so neither a kind the profile never collects nor one it cannot collect
+    /// holds the prompt up. A tier with none is never stale.
     nonisolated static func staleTiers(
         profile: String,
         olderThan threshold: TimeInterval,
@@ -383,14 +384,18 @@ extension WorkspaceStore {
         })
     }
 
-    /// `tier`'s expected kinds that are stale, split by why.
+    /// `tier`'s expected kinds that are stale, split by why. A kind whose last
+    /// failure cannot succeed on retry is left out: the health banner names it
+    /// with its cause, and this prompt's button would only force the tier again.
     private nonisolated static func staleKinds(
         profile: String, tier: CollectionTier, expectedKinds: [String],
         olderThan threshold: TimeInterval
     ) -> (neverLanded: [String], aged: [String]) {
+        let state = (try? WorkspacePaths.stateDir(for: profile)).map(StateFileStore.init)
         var neverLanded: [String] = []
         var aged: [String] = []
         for kind in expectedKinds where CollectionTier.tier(forReport: kind) == tier {
+            if let state, lastFailureRepeatsOnRetry(kind, in: state) { continue }
             if let age = newestSnapshotAge(profile: profile, kind: kind) {
                 if age >= threshold { aged.append(kind) }
             } else {
