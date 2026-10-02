@@ -78,6 +78,61 @@ final class GenerateSheetState {
         return hasOutputType && notRunning && noFolderError && customSelectionValid
     }
 
+    /// The sheet closes while idle only: a run would carry on out of sight.
+    var canDismiss: Bool { !isRunning }
+
+    /// What one Generate press asks for, read from the controls when it is pressed.
+    struct Request: Sendable {
+        let types: Set<GenerateOutputType>
+        let template: any ReportTemplate
+        let collectFirst: Bool
+        let runsAudit: Bool
+        let outputDir: URL?
+        /// The School template's workbook comes from the School generator.
+        let schoolMode: Bool
+        /// The narrative describes Jamf Pro snapshots, which a School report does not read.
+        let asksForNarrative: Bool
+    }
+
+    func request() -> Request {
+        let template = resolvedTemplate
+        let school = template.identifier == SchoolTemplate().identifier
+        return Request(
+            types: selectedTypes, template: template, collectFirst: collectFresh,
+            runsAudit: includeAudit, outputDir: customOutputDir,
+            schoolMode: school, asksForNarrative: !school)
+    }
+
+    /// Runs `request` in the Overview's order (`CLIBridge.runCollectThenGenerate`): the
+    /// collect when asked for, then the narrative, which reads the snapshots that collect
+    /// wrote, then every format. A refused or failed collect generates nothing and says why.
+    static func perform(
+        _ request: Request,
+        collect: () async throws -> Int32,
+        narrative: @escaping () async -> String?,
+        generate: (_ aiNarrative: String?) async -> GenerateAllResult
+    ) async -> (count: Int, message: String?) {
+        var result: GenerateAllResult?
+        do {
+            let exit = try await CLIBridge.runCollectThenGenerate(
+                collect: {
+                    guard request.collectFirst else { return 0 }
+                    return try await collect()
+                },
+                narrative: request.asksForNarrative ? narrative : nil,
+                generate: { aiNarrative in
+                    let generated = await generate(aiNarrative)
+                    result = generated
+                    return generated.allSucceeded ? 0 : 1
+                }
+            )
+            if let result { return summarize(result) }
+            return (0, CLIBridge.explainExit(exit, operation: "Collect"))
+        } catch {
+            return (0, CLIBridge.explainOperationError(error, operation: "Collect"))
+        }
+    }
+
     /// Resolved output directory for display. Falls back to the profile default.
     func resolvedOutputDir(for profile: String) -> URL {
         if let dir = customOutputDir { return dir }
@@ -205,6 +260,7 @@ struct GenerateSheet: View {
         .frame(minWidth: 460, idealWidth: 540)
         .frame(minHeight: 440)
         .background(Theme.Surface.raised)
+        .interactiveDismissDisabled(!state.canDismiss)
     }
 
     // MARK: Subviews
@@ -223,6 +279,7 @@ struct GenerateSheet: View {
                     .font(Theme.Fonts.bodyText)
             }
             .buttonStyle(.plain)
+            .disabled(!state.canDismiss)
             .accessibilityLabel("Close Generate Reports sheet")
         }
         .padding(18)
@@ -703,7 +760,7 @@ struct GenerateSheet: View {
             PNPButton(title: state.isRunning ? "Running\u{2026}" : "Done") {
                 dismiss()
             }
-            .disabled(state.isRunning)
+            .disabled(!state.canDismiss)
             .keyboardShortcut(.cancelAction)
 
             PNPButton(
@@ -747,6 +804,8 @@ struct GenerateSheet: View {
     }
 
     private func runGenerate() async {
+        // A demo profile's name can match a real workspace; the presenter disables Generate too.
+        guard !workspace.demoMode else { return }
         guard workspace.setRunInProgress(for: profile) else {
             state.errorMessage = "Another run is already in progress for profile '\(profile)' — skipped"
             return
@@ -759,21 +818,21 @@ struct GenerateSheet: View {
             state.isRunning = false
         }
 
-        let outputDir: URL? = state.customOutputDir
-        let isSchool = state.resolvedTemplate.identifier == SchoolTemplate().identifier
+        let request = state.request()
+        let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
+            Task { @MainActor in state.appendLine(line) }
+        }
 
         // Opt-in audit-before-generate (v2.2.0): refresh Health Audit data so
         // audit-derived workbook content reflects this run. Failures warn and
         // continue — a stale audit is preferable to no report.
-        if state.includeAudit && !workspace.demoMode {
+        if request.runsAudit {
             state.appendLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[info] running health audit before generate"
             ))
             do {
-                _ = try await bridge.audit(profile: profile, category: nil) { line in
-                    Task { @MainActor in state.appendLine(line) }
-                }
+                _ = try await bridge.audit(profile: profile, category: nil, onLine: onLine)
             } catch {
                 state.appendLine(.init(
                     timestamp: Date(), level: .warn,
@@ -782,45 +841,22 @@ struct GenerateSheet: View {
             }
         }
 
-        // School template routes to the school generate command rather than the standard flow.
-        if isSchool {
-            let result = await bridge.generateAll(
-                types: state.selectedTypes,
-                collectFresh: state.collectFresh,
-                outputDir: outputDir,
-                profile: profile,
-                schoolMode: true
-            ) { line in
-                Task { @MainActor in
-                    state.appendLine(line)
-                }
+        // The collect is the Overview's (`collectThenGenerate`'s), and the F3 narrative,
+        // time-boxed inside makeForGUIGenerate, is asked for after it. `generateAll` gets
+        // collectFresh: false because the collect has already run.
+        let outcome = await GenerateSheetState.perform(
+            request,
+            collect: { try await bridge.collect(profile: profile, force: true, onLine: onLine) },
+            narrative: { await ReportNarrative.makeForGUIGenerate(profile: profile) },
+            generate: { narrative in
+                await bridge.generateAll(
+                    types: request.types, collectFresh: false, outputDir: request.outputDir,
+                    profile: profile, schoolMode: request.schoolMode,
+                    template: request.template, aiNarrative: narrative, onLine: onLine)
             }
-            let summary = GenerateSheetState.summarize(result)
-            state.completedCount = summary.count
-            state.errorMessage = summary.message
-            return
-        }
-
-        // F3: GUI-only AI executive narrative. Time-boxed inside makeForGUIGenerate
-        // (nil on disabled/not-ready/no-data/timeout/error) so generate never blocks.
-        let narrative = workspace.demoMode ? nil : await ReportNarrative.makeForGUIGenerate(profile: profile)
-
-        let result = await bridge.generateAll(
-            types: state.selectedTypes,
-            collectFresh: state.collectFresh,
-            outputDir: outputDir,
-            profile: profile,
-            template: state.resolvedTemplate,
-            aiNarrative: narrative
-        ) { line in
-            Task { @MainActor in
-                state.appendLine(line)
-            }
-        }
-
-        let summary = GenerateSheetState.summarize(result)
-        state.completedCount = summary.count
-        state.errorMessage = summary.message
+        )
+        state.completedCount = outcome.count
+        state.errorMessage = outcome.message
     }
 }
 
