@@ -297,6 +297,74 @@ final class SummaryJSONEmitTests: XCTestCase {
                         "Proxy compliancePct must be populated when device security data is present")
     }
 
+    // MARK: - Hardware-encrypted Macs in the compliance proxy
+
+    /// Four Macs with FileVault off and every other control passing, and the `computers`
+    /// snapshot that says which of them are hardware-encrypted. Returns the summary the
+    /// writer produced for a workspace with the given `security_policy` text.
+    private func hardwareProxySummary(policyYAML: String?) throws -> DailySummary {
+        let config = try ConfigLoader.loadFromString(
+            policyYAML ?? "thresholds:\n  stale_device_days: 30\n")
+        let dataDir = tmpDir.appendingPathComponent("hw-data", isDirectory: true)
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
+        for dir in [secDir, computersDir] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        func row(_ name: String, _ serial: String) -> [String: Any] {
+            ["section": "device", "name": name, "serial": serial, "os_version": "15.4.1",
+             "filevault": "UNENCRYPTED", "sip": "ENABLED", "firewall": true,
+             "gatekeeper": "APP_STORE_AND_IDENTIFIED_DEVELOPERS"]
+        }
+        let summary: [String: Any] = ["section": "summary", "data": [
+            "total_devices": 4, "filevault_encrypted": 0, "sip_enabled": 4,
+            "firewall_enabled": 4, "gatekeeper_enabled": 4,
+        ]]
+        let security = [summary, row("as-mac", "AS1"), row("t2-mac", "T21"),
+                        row("intel-mac", "IN1"), row("mystery", "")]
+        try JSONSerialization.data(withJSONObject: security)
+            .write(to: secDir.appendingPathComponent("security_\(recentStamp).json"))
+        let computers: [[String: Any]] = [
+            ["general": ["name": "as-mac"],
+             "hardware": ["serialNumber": "AS1", "appleSilicon": true]],
+            ["general": ["name": "t2-mac"],
+             "hardware": ["serialNumber": "T21", "modelIdentifier": "MacBookPro16,2"]],
+            ["general": ["name": "intel-mac"],
+             "hardware": ["serialNumber": "IN1", "appleSilicon": false,
+                          "modelIdentifier": "MacBookPro14,1"]],
+        ]
+        try JSONSerialization.data(withJSONObject: computers)
+            .write(to: computersDir.appendingPathComponent("computers_\(recentStamp).json"))
+
+        let summaries = tmpDir.appendingPathComponent("hw-summaries", isDirectory: true)
+        // `liveKinds` makes the writer record `collectionSources`.
+        ReportEngine(config: config, dataDir: dataDir).emitSummaryJSON(
+            summariesDir: summaries, liveKinds: ["security", "computers"])
+        return try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first)
+    }
+
+    /// With no `security_policy` block the writer reads no `computers` snapshot: the
+    /// proxy is today's number and `computers` is not one of the digest's sources.
+    func testProxyWithoutAPolicyIgnoresHardwareAndComputers() throws {
+        let s = try hardwareProxySummary(policyYAML: nil)
+        XCTAssertEqual(try XCTUnwrap(s.compliancePct), 0, accuracy: 0.01)
+        XCTAssertNil(s.collectionSources?["computers"])
+        XCTAssertEqual(s.collectionSources?["security"], "live")
+    }
+
+    /// Four Macs, FileVault off on all: the Apple-silicon and the T2 Mac are warnings (0
+    /// gaps), the Intel Mac and the Mac the snapshot does not know are gaps. 2 of 4 = 50%.
+    func testProxyCountsHardwareEncryptedMacsWithFileVaultOffAsCompliantAtWarning() throws {
+        let s = try hardwareProxySummary(policyYAML: """
+        security_policy:
+          filevault_off_hardware_encrypted: warning
+        """)
+        XCTAssertEqual(try XCTUnwrap(s.compliancePct), 50, accuracy: 0.01)
+        XCTAssertEqual(s.complianceIsProxy, true)
+        XCTAssertNil(s.collectionSources?["computers"],
+                     "the hardware index is read straight from disk, not through cachedData")
+    }
+
     // MARK: - EDR coverage (crowdstrikePct)
 
     /// The jamf-cli writer used to leave the EDR field nil unconditionally, so

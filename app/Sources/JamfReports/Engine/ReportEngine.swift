@@ -614,6 +614,7 @@ struct ReportEngine: Sendable {
            let items = try? JSONDecoder().decode([SecurityReportItem].self, from: secData) {
             var deviceGapCounts: [Int] = []
             let securityPolicy = config.resolvedSecurityPolicy
+            let hardware = HardwareEncryption.index(dataDir: dataDir, for: securityPolicy)
             for item in items {
                 switch item {
                 case .summary(let s):
@@ -630,8 +631,10 @@ struct ReportEngine: Sendable {
                     }
                     // If neither source is available fileVaultPct remains nil.
                 case .device(let device):
+                    let encrypted = HardwareEncryption.lookup(
+                        serial: device.serial, name: device.name, in: hardware)
                     if let gaps = CompliancePostureService.deviceGapCount(
-                        device, policy: securityPolicy, hardwareEncrypted: nil) {
+                        device, policy: securityPolicy, hardwareEncrypted: encrypted) {
                         deviceGapCounts.append(gaps)
                     }
                 default:

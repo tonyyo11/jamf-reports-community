@@ -81,19 +81,24 @@ struct CompliancePostureService: Sendable {
         let securityDir = dir.appendingPathComponent("security", isDirectory: true)
         guard let newest = FileManager.newestJSONFile(in: securityDir) else { return .empty }
         let policy = SecurityPolicyConfigLoader.load(profile: profile)
-        guard let snapshot = decode(at: newest, policy: policy) else {
+        let hardware = HardwareEncryption.index(dataDir: dir, for: policy)
+        guard let snapshot = decode(at: newest, policy: policy, hardware: hardware) else {
             return .failed("Couldn't read the latest compliance snapshot — \(newest.lastPathComponent) may be corrupt.")
         }
         return snapshot
     }
 
-    static func load(from url: URL, policy: SecurityControlPolicy) -> Snapshot? {
-        decode(at: url, policy: policy)
+    static func load(
+        from url: URL, policy: SecurityControlPolicy, hardware: [String: Bool]
+    ) -> Snapshot? {
+        decode(at: url, policy: policy, hardware: hardware)
     }
 
     // MARK: - Internals
 
-    private static func decode(at url: URL, policy: SecurityControlPolicy) -> Snapshot? {
+    private static func decode(
+        at url: URL, policy: SecurityControlPolicy, hardware: [String: Bool]
+    ) -> Snapshot? {
         guard let data = try? Data(contentsOf: url) else {
             AppLogger.platform.warning(
                 "CompliancePostureService: could not read security file \(url.lastPathComponent, privacy: .public)"
@@ -113,8 +118,11 @@ struct CompliancePostureService: Sendable {
         }
         guard !devices.isEmpty else { return .empty }
 
-        let gapCounts: [Int?] = devices.map {
-            deviceGapCount($0, policy: policy, hardwareEncrypted: nil)
+        let encrypted = devices.map {
+            HardwareEncryption.lookup(serial: $0.serial, name: $0.name, in: hardware)
+        }
+        let gapCounts: [Int?] = zip(devices, encrypted).map {
+            deviceGapCount($0, policy: policy, hardwareEncrypted: $1)
         }
         let bands = ComplianceBandingService.bands(failures: gapCounts)
 
@@ -132,7 +140,7 @@ struct CompliancePostureService: Sendable {
             totalDevices: devices.count,
             bands: bands,
             perOSMajor: perOSMajor,
-            controlGaps: controlGaps(devices, policy: policy),
+            controlGaps: controlGaps(devices, hardwareEncrypted: encrypted, policy: policy),
             sourceFile: url,
             snapshotDate: mtime
         )
@@ -153,16 +161,18 @@ struct CompliancePostureService: Sendable {
         )
     }
 
-    /// One row per evaluated control, most failing devices first.
+    /// One row per evaluated control, most failing devices first. `hardwareEncrypted` runs
+    /// parallel to `devices`.
     private static func controlGaps(
-        _ devices: [SecurityDevice], policy: SecurityControlPolicy
+        _ devices: [SecurityDevice], hardwareEncrypted: [Bool?], policy: SecurityControlPolicy
     ) -> [Snapshot.ControlGap] {
         SecurityControl.allCases
             .filter { policy.level(for: $0) != .ignore }
             .map { control in
-                let verdicts = devices.map {
+                let verdicts = zip(devices, hardwareEncrypted).map {
                     policy.verdict(
-                        for: control, reading: reading(control, of: $0), hardwareEncrypted: nil)
+                        for: control, reading: reading(control, of: $0),
+                        hardwareEncrypted: $1)
                 }
                 return Snapshot.ControlGap(
                     control: label(control),

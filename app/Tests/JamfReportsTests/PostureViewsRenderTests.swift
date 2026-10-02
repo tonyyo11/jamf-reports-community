@@ -81,7 +81,8 @@ final class PostureViewsRenderTests: XCTestCase {
         try Data(json.utf8).write(to: tmp)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let snapshot = try XCTUnwrap(CompliancePostureService.load(from: tmp, policy: .default))
+        let snapshot = try XCTUnwrap(
+            CompliancePostureService.load(from: tmp, policy: .default, hardware: [:]))
 
         XCTAssertEqual(snapshot.totalDevices, 4)
 
