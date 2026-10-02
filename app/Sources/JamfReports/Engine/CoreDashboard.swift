@@ -937,13 +937,14 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Mobile Fleet Summary
-    // Sources: overview + mobile-device-inventory-details (or mobile-devices-list) + classic-ios-profiles
+    // Sources: overview + mobile-devices-list (or a legacy mobile-device-inventory-details)
+    // + classic-ios-profiles
 
     func writeMobileFleetSummary() throws {
         let mobileRows = normalizeMobileInventory()
         let profileRows = normalizeMobileProfiles()
         guard !mobileRows.isEmpty || !profileRows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         let ws = workbook.addSheet("Mobile Fleet Summary")
@@ -1040,12 +1041,12 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Mobile Inventory
-    // Source: mobile-device-inventory-details (preferred) or mobile-devices-list
+    // Source: mobile-devices-list (or a newer legacy mobile-device-inventory-details)
 
     func writeMobileInventory() throws {
         let rows = normalizeMobileInventory()
         guard !rows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
@@ -1513,14 +1514,29 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Mobile inventory helpers
 
-    /// Normalize mobile device records from inventory-details, joined to the devices-list
+    /// The inventory rows the mobile sheets read: the newest `mobile-devices-list`, or a
+    /// newer legacy `mobile-device-inventory-details` snapshot, whose rows carry sections.
+    /// Same choice the Mobile Fleet screen makes (`MobileFleetService.inventorySource`).
+    private func loadMobileInventoryRows() -> [MobileDeviceInventoryItem] {
+        let newestPerKind = [
+            ["mobile-devices-list", "mobile_devices_list"],
+            ["mobile-device-inventory-details", "mobile_device_inventory_details"],
+        ].compactMap { FileManager.newestSnapshot(among: snapshotCandidates(names: $0)) }
+        guard let source = MobileFleetService.inventorySource(among: newestPerKind) else {
+            return []
+        }
+        if let data = try? Data(contentsOf: source.url) {
+            SnapshotManifest.verify(snapshot: source.url, data: data)
+        }
+        return source.devices
+    }
+
+    /// Normalize mobile device records from the inventory rows, joined to the devices-list
     /// row with the same id, or from the devices-list alone. Fields are read through
     /// `MobileFleetService`, so the workbook and the Mobile Fleet screen agree. A blank
     /// string means the snapshot does not report the field.
     private func normalizeMobileInventory() -> [[String: Any]] {
-        let rich = loadLatestTyped(
-            names: ["mobile-device-inventory-details", "mobile_device_inventory_details"],
-            as: [MobileDeviceInventoryItem].self) ?? []
+        let rich = loadMobileInventoryRows()
         let light = loadLatestTyped(
             names: ["mobile-devices-list", "mobile_devices_list"],
             as: [MobileDeviceListRow].self) ?? []
@@ -2431,13 +2447,13 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Mobile Supervision Status
-    // Source: mobile-device-inventory-details (or mobile-devices-list) snapshot.
+    // Source: mobile-devices-list (or a newer legacy mobile-device-inventory-details) snapshot.
     // Per-family aggregate of supervised/unsupervised counts.
 
     func writeMobileSupervisionStatus() throws {
         let mobileRows = normalizeMobileInventory()
         guard !mobileRows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         var perFamily: [String: (total: Int, supervised: Int, unsupervised: Int)] = [:]
@@ -2598,14 +2614,8 @@ struct CoreDashboard: Sendable {
 
     /// Returns {osVersion: count} for iOS/iPadOS from the cached mobile inventory.
     private func mobileOSCounts() -> [String: Int] {
-        let inventoryDir = dataDir.appendingPathComponent(
-            "mobile-device-inventory-details", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: inventoryDir),
-              let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
-        else { return [:] }
         var counts: [String: Int] = [:]
-        for item in items {
+        for item in loadMobileInventoryRows() {
             let ver = (item.general?.osVersion ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !ver.isEmpty else { continue }
@@ -3245,6 +3255,20 @@ struct CoreDashboard: Sendable {
     /// enforced strict mode through the Python CLI's `--strict-manifest`
     /// flag).
     private func loadLatestJSONData(names: [String]) throws -> Data {
+        // One ordering rule for every reader: filename stamp first, manifest and
+        // sync-conflict copies excluded.
+        guard let newest = FileManager.newestSnapshot(among: snapshotCandidates(names: names))
+        else {
+            throw CoreDashboardError.noCachedData(names: names)
+        }
+        let data = try Data(contentsOf: newest)
+        SnapshotManifest.verify(snapshot: newest, data: data)
+        return data
+    }
+
+    /// Every JSON file under `dataDir` that could be the snapshot of one of `names`: the
+    /// kind's own directory, and flat `<name>_*.json` files beside it.
+    private func snapshotCandidates(names: [String]) -> [URL] {
         var candidates: [URL] = []
         let fm = FileManager.default
         for name in names {
@@ -3270,16 +3294,7 @@ struct CoreDashboard: Sendable {
                 candidates.append(contentsOf: matching)
             }
         }
-        // One ordering rule for every reader: filename stamp first, manifest and
-        // sync-conflict copies excluded. `newestSnapshot` also replaces a
-        // force-unwrap that only held because `candidates` was checked non-empty
-        // one line above — the filter can now empty it, so the guard does both.
-        guard let newest = FileManager.newestSnapshot(among: candidates) else {
-            throw CoreDashboardError.noCachedData(names: names)
-        }
-        let data = try Data(contentsOf: newest)
-        SnapshotManifest.verify(snapshot: newest, data: data)
-        return data
+        return candidates
     }
 
     private func loadLatestJSON(names: [String]) throws -> Any {

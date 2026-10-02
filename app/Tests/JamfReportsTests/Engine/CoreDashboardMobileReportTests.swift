@@ -350,4 +350,87 @@ final class CoreDashboardMobileReportTests: XCTestCase {
         XCTAssertEqual(row["Username"], "listuser")
         XCTAssertEqual(row["Serial Number"], "S9")
     }
+
+    // MARK: - One mobile snapshot (#226 1)
+
+    /// A data dir holding each fixture under its kind, named with the given stamp.
+    private func stampedDir(
+        _ files: [(kind: String, stamp: String, fixture: String)]
+    ) throws -> URL {
+        let tmp = try makeTempDir()
+        for file in files {
+            let kindDir = tmp.appendingPathComponent(file.kind, isDirectory: true)
+            try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+            try TestFixtures.copyFile(
+                TestFixtures.dir(file.fixture),
+                to: kindDir.appendingPathComponent("\(file.kind)_\(file.stamp).json"))
+        }
+        return tmp
+    }
+
+    private let sectionsFixture =
+        "jamf-cli-data-mobile-sections/mobile-devices-list/"
+        + "mobile-devices-list_2026-10-02T120000000000.json"
+
+    /// Collect now writes only `mobile-devices-list`, with the sections the workbook reads.
+    func testInventoryReadsTheSingleListSnapshot() throws {
+        let dir = try stampedDir([
+            ("mobile-devices-list", "2026-10-02T120000000000", sectionsFixture),
+        ])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let dash = dashboard(dir)
+        try dash.writeMobileInventory()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Mobile Inventory"))
+        let first = try inventoryRow(ws, jamfID: "1")
+        let fourth = try inventoryRow(ws, jamfID: "4")
+
+        XCTAssertEqual(first["Serial Number"], "CA44FE1260A3")
+        XCTAssertEqual(first["Model"], "iPhone 5 (CDMA)")
+        XCTAssertEqual(first["Device Family"], "iPhone")
+        XCTAssertEqual(first["Username"], "user57")
+        XCTAssertEqual(first["Email"], "user57@example.com")
+        XCTAssertEqual(first["Department"], "Sales")
+        XCTAssertEqual(first["Building"], "HQ")
+        XCTAssertEqual(first["Activation Lock"], "No")
+        XCTAssertEqual(first["Passcode Compliant"], "Yes")
+        XCTAssertEqual(first["Data Protection"], "Yes")
+        XCTAssertEqual(first["Jailbreak Status"], "None")
+        XCTAssertEqual(fourth["Jailbreak Status"], "Detected")
+    }
+
+    func testFleetSummaryCountsPostureFromTheSingleListSnapshot() throws {
+        let dir = try stampedDir([
+            ("mobile-devices-list", "2026-10-02T120000000000", sectionsFixture),
+        ])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let dash = dashboard(dir)
+        try dash.writeMobileFleetSummary()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Mobile Fleet Summary"))
+
+        XCTAssertEqual(summaryValue(ws, "Inventory Rows Returned"), "6")
+        XCTAssertEqual(summaryValue(ws, "Passcode Compliant"), "4")
+        XCTAssertEqual(summaryValue(ws, "Activation Lock Enabled"), "3")
+        XCTAssertEqual(summaryValue(ws, "Assigned Users"), "6")
+    }
+
+    /// A flat list from an older collect has no sections: it must not replace the
+    /// inventory-details snapshot that does, so every device would read as reporting nothing.
+    func testFlatListNewerThanLegacyInventoryKeepsTheInventoryRows() throws {
+        let dir = try stampedDir([
+            ("mobile-device-inventory-details", "2026-10-01T120000000000",
+             "jamf-cli-data/mobile-device-inventory-details/mobile-device-inventory-details.json"),
+            ("mobile-devices-list", "2026-10-03T120000000000",
+             "jamf-cli-data/mobile-devices-list/mobile-devices-list.json"),
+        ])
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let dash = dashboard(dir)
+        try dash.writeMobileFleetSummary()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Mobile Fleet Summary"))
+
+        XCTAssertEqual(summaryValue(ws, "Managed Rows"), "103")
+        XCTAssertEqual(summaryValue(ws, "Inventory Rows Returned"), "105")
+    }
 }

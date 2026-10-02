@@ -516,7 +516,8 @@ final class MobileFleetServiceTests: XCTestCase {
         )
 
         XCTAssertNotNil(snapshot.sourceDates["mobile-devices-list"])
-        XCTAssertNotNil(snapshot.sourceDates["mobile-device-inventory-details"])
+        XCTAssertNil(snapshot.sourceDates["mobile-device-inventory-details"],
+                     "the retired kind has no freshness chip")
         XCTAssertNil(snapshot.sourceDates["classic-ios-profiles"])
     }
 

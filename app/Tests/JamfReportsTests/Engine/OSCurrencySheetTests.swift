@@ -124,6 +124,41 @@ final class OSCurrencySheetTests: XCTestCase {
                       "EOL row must be emitted when devices are on majors older than SOFA families")
     }
 
+    // MARK: - iOS counts come from the single mobile snapshot
+
+    /// Collect no longer writes `mobile-device-inventory-details`; the sheet counts iOS
+    /// devices from `mobile-devices-list`. All six fixture devices run iOS 7 or 8, older
+    /// than every major the iOS feed tracks.
+    func testIOSEOLRowCountsDevicesFromTheListSnapshot() throws {
+        let sofaDir = tmpDir.appendingPathComponent("sofa", isDirectory: true)
+        try FileManager.default.createDirectory(at: sofaDir, withIntermediateDirectories: true)
+        try TestFixtures.copyFile(
+            TestFixtures.dir("sofa/ios_data_feed.json"),
+            to: sofaDir.appendingPathComponent("ios_data_feed.json"))
+        let listDir = tmpDir.appendingPathComponent("mobile-devices-list", isDirectory: true)
+        try FileManager.default.createDirectory(at: listDir, withIntermediateDirectories: true)
+        try TestFixtures.copyFile(
+            TestFixtures.dir(
+                "jamf-cli-data-mobile-sections/mobile-devices-list/"
+                + "mobile-devices-list_2026-10-02T120000000000.json"),
+            to: listDir.appendingPathComponent("mobile-devices-list_2026-10-02T120000000000.json"))
+
+        let workbook = Workbook(accentColor: "#2D5EA2")
+        let dashboard = CoreDashboard(config: ReportConfig(), dataDir: tmpDir, workbook: workbook)
+        try dashboard.writeOSCurrency()
+
+        let cells = try XCTUnwrap(workbook.sheet(named: "OS Currency")).dedupedCells
+        let eolRow = try XCTUnwrap(cells.first { cell in
+            if case .string("Out of support (EOL)") = cell.value { return cell.col == 1 }
+            return false
+        }?.row)
+        let devices = try XCTUnwrap(cells.first { $0.row == eolRow && $0.col == 8 })
+        guard case .int(let count) = devices.value else {
+            return XCTFail("EOL device count is not an integer cell: \(devices.value)")
+        }
+        XCTAssertEqual(count, 6)
+    }
+
     // MARK: - Helpers
 
     private func copyMacOSFixture() throws {

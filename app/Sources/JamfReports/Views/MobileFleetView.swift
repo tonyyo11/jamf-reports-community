@@ -633,7 +633,7 @@ struct MobileFleetView: View {
                     .width(min: 80, ideal: 100)
 
                     TableColumn("Serial") { device in
-                        Text(getSerial(device) ?? "—")
+                        Text(getSerial(device, listRowsByID: listRowsByID) ?? "—")
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -700,8 +700,12 @@ struct MobileFleetView: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         SectionHeader(title: device.general?.displayName ?? "Untitled Device")
+                        let listRows = snapshot.lightDevicesByID
                         Mono(
-                            text: device.general?.serialNumber ?? "—",
+                            text: MobileFleetService.serialNumber(
+                                of: device,
+                                listRow: device.mobileDeviceId.flatMap { listRows[$0] }
+                            ) ?? "—",
                             color: Theme.Colors.goldBright
                         )
                         .textSelection(.enabled)
@@ -899,10 +903,15 @@ struct MobileFleetView: View {
         }
     }
 
-    private func getSerial(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String? {
+    private func getSerial(
+        _ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>,
+        listRowsByID: [String: MobileDeviceListRow]
+    ) -> String? {
         switch device {
         case .left(let light): light.serialNumber
-        case .right(let rich): rich.general?.serialNumber
+        case .right(let rich):
+            MobileFleetService.serialNumber(
+                of: rich, listRow: rich.mobileDeviceId.flatMap { listRowsByID[$0] })
         }
     }
 
