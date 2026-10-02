@@ -661,23 +661,6 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
     }
 }
 
-// MARK: - Smart groups
-// `jamf-cli pro computer-groups-smart-groups list --output json`
-// (`smart-computer-groups` is a retained alias; snapshot key remains "smart-computer-groups")
-
-struct SmartGroupRow: Decodable, Sendable {
-    let id: AnyCodable?
-    let name: String?
-    let membershipCount: AnyCodable?
-    let smart: Bool?
-
-    private enum CodingKeys: String, CodingKey {
-        case id, name
-        case membershipCount
-        case smart
-    }
-}
-
 // MARK: - Profile status
 // `jamf-cli pro report profile-status --output json` returns a single-element
 // envelope (verified against live output; same shape Python's
@@ -741,9 +724,8 @@ struct ProfileFailureRow: Decodable, Sendable {
 
 /// Not Identifiable on purpose — a per-access computed id would abort SwiftUI
 /// Table (#185). `id` is `AnyCodable` because jamf-cli has emitted record ids
-/// as both JSON string and number across versions/commands (the exact
-/// ambiguity `SmartGroupRow` was hardened against) — a strict `String?` would
-/// invalidate the whole snapshot on one number-typed row.
+/// as both JSON string and number across versions/commands — a strict
+/// `String?` would invalidate the whole snapshot on one number-typed row.
 struct DuplicateSerialRow: Decodable, Sendable {
     let serial: String?
     let id: AnyCodable?
@@ -941,54 +923,6 @@ struct MobileConfigProfileRow: Decodable, Sendable {
     let category: String?
     let site: String?
     let description: String?
-}
-
-// MARK: - Platform compliance devices
-// `jamf-cli pro report compliance-devices --output json`
-
-struct ComplianceDeviceRow: Decodable, Sendable {
-    let device: String?
-    let deviceId: String?
-    let rulesFailed: Int?
-    let rulesPassed: Int?
-    let compliance: String?
-}
-
-// MARK: - Platform compliance rules
-// `jamf-cli pro report compliance-rules --output json`
-
-struct ComplianceRuleRow: Decodable, Sendable {
-    let rule: String?
-    let passed: Int?
-    let failed: Int?
-    let unknown: Int?
-    let devices: Int?
-    let passRate: String?
-}
-
-// MARK: - DDM status
-// `jamf-cli pro report ddm-status --output json`
-
-struct DDMStatusRow: Decodable, Sendable {
-    let source: String?
-    let type: String?
-    let declarations: Int?
-    let devices: Int?
-    let successful: Int?
-    let unsuccessful: Int?
-}
-
-// MARK: - Blueprint status
-// `jamf-cli pro report blueprint-status --output json`
-
-struct BlueprintStatusRow: Decodable, Sendable {
-    let name: String?
-    let state: String?
-    let scope: Int?
-    let steps: Int?
-    let failed: Int?
-    let pending: Int?
-    let succeeded: Int?
 }
 
 // MARK: - Protect overview

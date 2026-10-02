@@ -19,11 +19,6 @@ controlTextDidEndEditing          # NSTextFieldDelegate method on SecureSecretFi
 # --- Pending removal: production code only tests use ------------------------
 # No production path reaches these. Each needs an owner decision (delete with its
 # tests, move to app/Tests, or wire it in); remove the entry when that lands.
-SmartGroupRow                     # Engine/JamfCLIDecoder.swift:668 decoder struct; CoreDashboard, HtmlReport and AuditView read smart groups as raw dictionaries
-ComplianceDeviceRow               # Engine/JamfCLIDecoder.swift:949 decoder struct; ComplianceBenchmarksService decodes with its own private RawDevice
-ComplianceRuleRow                 # Engine/JamfCLIDecoder.swift:960 decoder struct; ComplianceBenchmarksService decodes with its own private RawRule
-DDMStatusRow                      # Engine/JamfCLIDecoder.swift:972 decoder struct; DDMBlueprintService decodes with its own private RawDeclaration
-BlueprintStatusRow                # Engine/JamfCLIDecoder.swift:984 decoder struct; DDMBlueprintService decodes with its own private RawBlueprint
 SemanticWarnings                  # Engine/SemanticWarnings.swift:9 port of Python _semantic_warnings; nothing calls check(config:sampleRows:)
 HTMLValidator                     # Engine/Validators/HTMLValidator.swift:14 output validator with no call site; its tests assert real checks
 PDFValidator                      # Engine/Validators/PDFValidator.swift:13 output validator with no call site; its tests assert real checks

@@ -588,24 +588,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[1].value?.boolValue, true)
     }
 
-    // MARK: - SmartGroupRow
-
-    func testSmartGroupRowDecodesIntAndStringIds() throws {
-        // id can be Int or String depending on endpoint — AnyCodable accepts both.
-        let json = """
-        [{"id":42,"name":"All Encrypted","membershipCount":100,"smart":true},
-         {"id":"abc-7","name":"Stale Devices","membershipCount":"5","smart":false}]
-        """
-        let rows = try JSONDecoder().decode([SmartGroupRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows.count, 2)
-        XCTAssertEqual(rows[0].id?.intValue, 42)
-        XCTAssertEqual(rows[0].name, "All Encrypted")
-        XCTAssertEqual(rows[0].membershipCount?.intValue, 100)
-        XCTAssertEqual(rows[0].smart, true)
-        XCTAssertEqual(rows[1].id?.stringValue, "abc-7")
-        XCTAssertEqual(rows[1].membershipCount?.stringValue, "5")
-    }
-
     // MARK: - ProfileStatusEnvelope
 
     /// Real `pro report profile-status` shape — the pre-2.2.2 decoder targeted
@@ -650,66 +632,6 @@ final class JamfCLIDecoderTests: XCTestCase {
         XCTAssertEqual(rows[0].model, "iPad Pro")
         XCTAssertEqual(rows[0].serialNumber, "SN12345")
         XCTAssertEqual(rows[0].type, "iPadOS")
-    }
-
-    // MARK: - ComplianceDeviceRow
-
-    func testComplianceDeviceRowDecoding() throws {
-        let json = """
-        [{"device":"MacBook-001","deviceId":"101","rulesFailed":0,
-          "rulesPassed":12,"compliance":"100%"}]
-        """
-        let rows = try JSONDecoder().decode([ComplianceDeviceRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].device, "MacBook-001")
-        XCTAssertEqual(rows[0].deviceId, "101")
-        XCTAssertEqual(rows[0].rulesFailed, 0)
-        XCTAssertEqual(rows[0].rulesPassed, 12)
-        XCTAssertEqual(rows[0].compliance, "100%")
-    }
-
-    // MARK: - ComplianceRuleRow
-
-    func testComplianceRuleRowDecoding() throws {
-        let json = """
-        [{"rule":"Require FileVault","passed":48,"failed":2,
-          "unknown":0,"devices":50,"passRate":"96%"}]
-        """
-        let rows = try JSONDecoder().decode([ComplianceRuleRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].rule, "Require FileVault")
-        XCTAssertEqual(rows[0].passed, 48)
-        XCTAssertEqual(rows[0].failed, 2)
-        XCTAssertEqual(rows[0].devices, 50)
-        XCTAssertEqual(rows[0].passRate, "96%")
-    }
-
-    // MARK: - DDMStatusRow
-
-    func testDDMStatusRowDecoding() throws {
-        let json = """
-        [{"source":"Identity","type":"declaration","declarations":3,
-          "devices":50,"successful":48,"unsuccessful":2}]
-        """
-        let rows = try JSONDecoder().decode([DDMStatusRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].source, "Identity")
-        XCTAssertEqual(rows[0].type, "declaration")
-        XCTAssertEqual(rows[0].declarations, 3)
-        XCTAssertEqual(rows[0].successful, 48)
-        XCTAssertEqual(rows[0].unsuccessful, 2)
-    }
-
-    // MARK: - BlueprintStatusRow
-
-    func testBlueprintStatusRowDecoding() throws {
-        let json = """
-        [{"name":"Core Mac Blueprint","state":"Active","scope":50,
-          "steps":4,"failed":0,"pending":2,"succeeded":48}]
-        """
-        let rows = try JSONDecoder().decode([BlueprintStatusRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows[0].name, "Core Mac Blueprint")
-        XCTAssertEqual(rows[0].state, "Active")
-        XCTAssertEqual(rows[0].scope, 50)
-        XCTAssertEqual(rows[0].failed, 0)
-        XCTAssertEqual(rows[0].succeeded, 48)
     }
 
     // MARK: - ProtectOverviewItem
