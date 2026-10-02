@@ -167,11 +167,12 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         "encrypting paused", "disconnected",
     ]
     private static let falseValues: Set<String> = ["false", "no", "0", "off", "none"]
-    /// Gatekeeper reports its setting ("APP_STORE_AND_IDENTIFIED_DEVELOPERS"), not a yes or no.
-    /// A CSV column an organization maps itself may use an agent's "Running" or "Connected".
+    /// Gatekeeper reports its setting ("APP_STORE_AND_IDENTIFIED_DEVELOPERS"), not a yes or no,
+    /// and the firewall its strictest mode ("Block all incoming connections"). A CSV column an
+    /// organization maps itself may use an agent's "Running" or "Connected".
     private static let trueMarkers = [
         "enabled", "encrypted", "escrowed", "installed", "active", "app store",
-        "identified developers", "running", "connected",
+        "identified developers", "running", "connected", "block all incoming",
     ]
     private static let trueValues: Set<String> = ["true", "yes", "1", "on"]
 

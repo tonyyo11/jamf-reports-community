@@ -64,15 +64,24 @@ final class SecurityControlPolicyTests: XCTestCase {
     }
 
     /// CSV columns an organization maps itself, often a custom extension attribute, use an
-    /// agent's words. A firewall's "Block all incoming connections" says nothing on its own.
+    /// agent's words.
     func testRunningAndConnectedFromMappedColumns() {
         let readings: [(String, Bool?)] = [
             ("Running", true), ("running", true), ("Connected", true), ("CONNECTED", true),
             ("Not Running", false), ("Not Connected", false), ("Disconnected", false),
-            ("DISCONNECTED", false), ("Block all incoming connections", nil),
+            ("DISCONNECTED", false),
         ]
         for (value, expected) in readings {
             XCTAssertEqual(SecurityControlPolicy.reading(value), expected, value)
+        }
+    }
+
+    /// The macOS firewall in its strictest mode is on.
+    func testBlockAllIncomingConnectionsIsAFirewallThatIsOn() {
+        for value in ["Block all incoming connections", " block all incoming connections "] {
+            XCTAssertEqual(SecurityControlPolicy.reading(value), true, value)
+            XCTAssertEqual(SecurityControlPolicy.default.verdict(
+                for: .firewall, value: value, hardwareEncrypted: nil), .pass, value)
         }
     }
 
