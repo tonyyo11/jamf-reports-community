@@ -955,25 +955,25 @@ final class ConfigDoctorServiceTests: XCTestCase {
         let issues = [
             SecurityPolicyIssue(keyPath: "security_policy.controls.sip", value: "wrn",
                                 used: "fail"),
-            SecurityPolicyIssue(keyPath: "security_policy.mode", value: "", used: ""),
+            SecurityPolicyIssue(keyPath: "security_policy.controls.gatekeeper", value: "",
+                                used: "fail"),
         ]
         let rows = ConfigDoctorService.securityPolicyRows(
             issues: issues, policy: .default, hardware: [:])
         XCTAssertEqual(rows.map(\.severity), [.warn, .warn],
                        "a typo must not be able to turn a scheduled run red")
         XCTAssertEqual(rows.map(\.title),
-                       ["security_policy.controls.sip", "security_policy.mode"])
+                       ["security_policy.controls.sip", "security_policy.controls.gatekeeper"])
         XCTAssertEqual(rows[0].detail, "\"wrn\" is not fail, warning or ignore — using fail")
-        XCTAssertEqual(rows[1].detail, "Not a setting the app reads")
         XCTAssertEqual(Set(rows.map(\.id)).count, 2, "the audit list keys its rows by id")
     }
 
-    func testAnUnknownKeyRowNeverEchoesAValue() {
+    func testAnUnknownSecurityPolicyKeyIsLeftToTheUnknownKeyRows() {
         let rows = ConfigDoctorService.securityPolicyRows(
-            issues: [SecurityPolicyIssue(keyPath: "security_policy.mode", value: "secret",
+            issues: [SecurityPolicyIssue(keyPath: "security_policy.mode", value: "",
                                          used: "")],
             policy: .default, hardware: [:])
-        XCTAssertEqual(rows.first?.detail, "Not a setting the app reads")
+        XCTAssertEqual(rows, [], "unknownKeyRows reports it, with every other block's")
     }
 
     func testAHardwareLevelIssueSaysItUsesTheFileVaultLevel() {
@@ -1058,9 +1058,11 @@ final class ConfigDoctorServiceTests: XCTestCase {
         try withWorkspace(yaml) { profile, _ in
             let rows = ConfigDoctorService.securityPolicyRows(
                 profile: profile, config: try makeConfig(yaml))
-            XCTAssertEqual(rows.map(\.title),
-                           ["security_policy.controls.sip", "security_policy.antivirus"])
-            XCTAssertEqual(rows.map(\.severity), [.warn, .warn])
+            XCTAssertEqual(rows.map(\.title), ["security_policy.controls.sip"])
+            XCTAssertEqual(rows.map(\.severity), [.warn])
+            let doctor = rows + ConfigDoctorService.unknownKeyRows(profile: profile)
+            XCTAssertEqual(doctor.filter { $0.title == "security_policy.antivirus" }.count, 1,
+                           "an unknown key is reported once")
         }
     }
 

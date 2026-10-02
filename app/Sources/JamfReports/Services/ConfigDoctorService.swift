@@ -624,12 +624,14 @@ enum ConfigDoctorService {
             policy: policy, hardware: hardware)
     }
 
-    /// One warning per issue, titled with its key path, plus one when the hardware rule is
-    /// set but no Mac has hardware facts yet (the value is valid, so it is no issue).
+    /// One warning per value the app did not use as written, titled with its key path, plus
+    /// one when the hardware rule is set but no Mac has hardware facts yet (the value is valid,
+    /// so it is no issue). A key the app does not read (an empty `used`) is left to
+    /// `unknownKeyRows`, so it is reported once.
     static func securityPolicyRows(
         issues: [SecurityPolicyIssue], policy: SecurityControlPolicy, hardware: [String: Bool]
     ) -> [DoctorRow] {
-        var rows = issues.enumerated().map { index, issue in
+        var rows = issues.filter { !$0.used.isEmpty }.enumerated().map { index, issue in
             DoctorRow(
                 id: "security_policy.issue.\(index)", severity: .warn, title: issue.keyPath,
                 detail: securityPolicyDetail(issue), hint: securityPolicyHint(issue)
@@ -647,9 +649,7 @@ enum ConfigDoctorService {
         return rows
     }
 
-    /// An empty `used` marks a key the app does not read, and its value is never echoed.
     private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
-        if issue.used.isEmpty { return "Not a setting the app reads" }
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
         }
@@ -660,9 +660,6 @@ enum ConfigDoctorService {
     }
 
     private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
-        if issue.used.isEmpty {
-            return "Remove it from config.yaml, or check its spelling: keys are case-sensitive."
-        }
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Write it as indented key: value lines in config.yaml, or remove it."
         }
