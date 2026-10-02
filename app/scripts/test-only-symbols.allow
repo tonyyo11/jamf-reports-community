@@ -1,14 +1,31 @@
-# Symbols in app/Sources that only app/Tests reference, on purpose.
+# Symbols in app/Sources that only app/Tests reference.
 # One name per line as `Name  # reason`; every entry needs a reason.
 # Read by app/scripts/check-test-only-symbols.zsh.
 
-# Test seams: production code never calls these; tests need them.
+# --- Test seams and framework callbacks -------------------------------------
+# Deliberate: production code never calls these; tests need them, or the system
+# calls them at runtime.
 loadFromString                    # ConfigDecoder: decodes YAML text; production reads files through load(url)
 testableCSVEscape                 # ReportEngine: tests reach the private csvEscape
 testableSaveSnapshot              # ReportEngine: tests reach the private saveSnapshot
+testableScaffoldMappings          # ReportEngine: tests reach the private scaffoldMappings
 clearVerificationCacheForTesting  # JamfCLIIdentity: resets the codesign verification cache between tests
 StubTickerRegistrar               # TickerRegistrar test double; tests run the tick loop against it
 invokeRetryForTesting             # ErrorStateView: fires the retry action without a rendered button
+controlTextDidChange              # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
+controlTextDidEndEditing          # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
 
-# Framework callbacks: the system calls these at runtime, tests call them directly.
-controlTextDidChange              # NSTextFieldDelegate method on SecureSecretField's coordinator
+# --- Pending removal: production code only tests use ------------------------
+# No production path reaches these. Each needs an owner decision (delete with its
+# tests, move to app/Tests, or wire it in); remove the entry when that lands.
+SmartGroupRow                     # Engine/JamfCLIDecoder.swift:668 decoder struct; CoreDashboard, HtmlReport and AuditView read smart groups as raw dictionaries
+ComplianceDeviceRow               # Engine/JamfCLIDecoder.swift:949 decoder struct; ComplianceBenchmarksService decodes with its own private RawDevice
+ComplianceRuleRow                 # Engine/JamfCLIDecoder.swift:960 decoder struct; ComplianceBenchmarksService decodes with its own private RawRule
+DDMStatusRow                      # Engine/JamfCLIDecoder.swift:972 decoder struct; DDMBlueprintService decodes with its own private RawDeclaration
+BlueprintStatusRow                # Engine/JamfCLIDecoder.swift:984 decoder struct; DDMBlueprintService decodes with its own private RawBlueprint
+SemanticWarnings                  # Engine/SemanticWarnings.swift:9 port of Python _semantic_warnings; nothing calls check(config:sampleRows:)
+HTMLValidator                     # Engine/Validators/HTMLValidator.swift:14 output validator with no call site; its tests assert real checks
+PDFValidator                      # Engine/Validators/PDFValidator.swift:13 output validator with no call site; its tests assert real checks
+PNGValidator                      # Engine/Validators/PNGValidator.swift:12 output validator with no call site; its tests assert real checks
+XLSXValidator                     # Engine/Validators/XLSXValidator.swift:16 output validator with no call site, left unwired on purpose (ReportEngineTests.swift:727)
+ButtonColors                      # Theme/ThemeSemanticTokens.swift:122 goldFG/dangerFG tokens no view uses; its tests only assert they are Colors

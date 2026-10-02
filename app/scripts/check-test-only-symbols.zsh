@@ -15,9 +15,14 @@
 # as `Name  # reason`. A line without a reason is an error, so the list stays
 # explained.
 #
-# Limits, all of which err toward not reporting:
-#   - Comments and string literals in app/Sources count as occurrences, so a
-#     name that is only mentioned in a comment is not reported.
+# What counts as an occurrence, in both trees:
+#   - Line comments (`//` and `///`, to the end of the line) do not count, so a
+#     `// MARK: - Name` or a doc comment cannot make a type look used. A `//`
+#     inside a string literal also ends the line, except the one in `://`.
+#   - Block comments and string literals do count, which errs toward not
+#     reporting a name that only a block comment or a string mentions.
+#
+# Other limits, all of which err toward not reporting:
 #   - Declarations are found line by line. A keyword is recognised only at the
 #     start of a line after attributes and modifiers (`@MainActor final class`).
 #   - Operators, backticked names and names under 6 characters are skipped, as
@@ -119,7 +124,11 @@ FNR == 1 {
 }
 
 {
+  # Drop a line comment (// and ///) in both trees. ":/" for "://" keeps the
+  # slashes of a URL in a string from starting one; its tokens are unchanged.
   line = $0
+  gsub(/:\/\//, ":/", line)
+  sub(/\/\/.*$/, "", line)
   if (!in_tests) {
     d = line
     sub(/^[ \t]+/, "", d)

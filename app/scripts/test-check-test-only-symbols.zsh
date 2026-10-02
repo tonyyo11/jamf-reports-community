@@ -72,10 +72,11 @@ new_tree() {
   local root="${tmp_root}/$1 repo"
   put "${root}/app/Sources/Demo/Used.swift" 'struct UsedWidget {}'
   put "${root}/app/Sources/Demo/Caller.swift" \
-    '// see CommentedOnly' \
     'func makeThings() {' \
+    '    let note = "see StringMention"' \
     '    _ = UsedWidget()' \
     '    _ = Holder()' \
+    '    let endpoint = "https://example.com/path"; _ = AfterUrlHelper()' \
     '}'
   # Declared once, no references at all: dead code, not test-only.
   put "${root}/app/Sources/Demo/Unused.swift" 'func neverCalledAnywhere() {}'
@@ -84,8 +85,13 @@ new_tree() {
   # The same name declared twice.
   put "${root}/app/Sources/Demo/DupeA.swift" 'struct DupeThing {}'
   put "${root}/app/Sources/Demo/DupeB.swift" 'enum Namespace { struct DupeThing {} }'
-  # Only a comment in Sources mentions it.
-  put "${root}/app/Sources/Demo/Mention.swift" 'struct CommentedOnly {}'
+  # Only a string literal in Sources mentions it; a string counts, a comment does not.
+  put "${root}/app/Sources/Demo/Mention.swift" 'struct StringMention {}'
+  # Its only other use in Sources follows a URL on the same line: "://" must not
+  # start a comment and hide it.
+  put "${root}/app/Sources/Demo/AfterUrl.swift" 'struct AfterUrlHelper {}'
+  # Only a comment in Tests mentions it: no test reference, so not test-only.
+  put "${root}/app/Sources/Demo/TestComment.swift" 'struct TestCommentOnly {}'
   # Backticked names are skipped. The backticks are Swift source, not shell.
   # shellcheck disable=SC2016
   put "${root}/app/Sources/Demo/Ticks.swift" 'func `repository`() {}'
@@ -102,7 +108,9 @@ new_tree() {
     '    _ = UsedWidget()' \
     '    tiny()' \
     '    _ = DupeThing()' \
-    '    _ = CommentedOnly()' \
+    '    _ = StringMention()' \
+    '    _ = AfterUrlHelper()' \
+    '    // TestCommentOnly is covered elsewhere' \
     '    `repository`()' \
     '    _ = SeamHelper()' \
     '}'
@@ -131,8 +139,19 @@ put "${root}/app/Sources/Demo/Methods.swift" \
   '    class func classOrphan() {}' \
   '}' \
   '@available(macOS 15, *) struct AvailableOrphan {}'
+# Line comments that name a symbol must not hide it: a MARK line, a doc comment
+# and a trailing comment all mention a type that real code never uses.
+put "${root}/app/Sources/Demo/Marked.swift" \
+  '// MARK: - MarkedOrphan' \
+  'struct MarkedOrphan {}' \
+  '/// Names DocOrphan in a doc comment.' \
+  'struct DocOrphan {} // and TrailingOrphan, in a trailing comment' \
+  'struct TrailingOrphan {}'
 put "${root}/app/Tests/DemoTests/OrphanTests.swift" \
   'func checkOrphans() {' \
+  '    _ = MarkedOrphan()' \
+  '    _ = DocOrphan()' \
+  '    _ = TrailingOrphan()' \
   '    _ = OrphanWidget()' \
   '    Holder.orphanFunc()' \
   '    _ = Holder.InlineAttr()' \
@@ -155,11 +174,17 @@ has "reports a class func" "${ERR}" \
   "app/Sources/Demo/Methods.swift:5: classOrphan is referenced only from app/Tests"
 has "reports a type after an availability attribute" "${ERR}" \
   "app/Sources/Demo/Methods.swift:7: AvailableOrphan is referenced only from app/Tests"
-expect "orphans report exactly six symbols" 6 \
+has "a MARK comment does not hide a type" "${ERR}" \
+  "app/Sources/Demo/Marked.swift:2: MarkedOrphan is referenced only from app/Tests"
+has "a doc comment does not hide a type" "${ERR}" \
+  "app/Sources/Demo/Marked.swift:4: DocOrphan is referenced only from app/Tests"
+has "a trailing comment does not hide a type" "${ERR}" \
+  "app/Sources/Demo/Marked.swift:5: TrailingOrphan is referenced only from app/Tests"
+expect "orphans report exactly nine symbols" 9 \
   "$(printf '%s\n' "${ERR}" | grep -c 'is referenced only from app/Tests')"
 has "orphans name the allow-list file" "${ERR}" "app/scripts/test-only-symbols.allow"
-for name in UsedWidget makeThings Holder neverCalledAnywhere tiny DupeThing CommentedOnly \
-  repository SeamHelper; do
+for name in UsedWidget makeThings Holder neverCalledAnywhere tiny DupeThing StringMention \
+  AfterUrlHelper TestCommentOnly repository SeamHelper; do
   lacks "does not report ${name}" "${ERR}" ": ${name} is referenced"
 done
 
@@ -171,10 +196,13 @@ put "${root}/app/scripts/test-only-symbols.allow" \
   'InlineAttr      # pinned by a test' \
   'PrivateOrphan   # pinned by a test' \
   'classOrphan     # pinned by a test' \
-  'AvailableOrphan # pinned by a test'
+  'AvailableOrphan # pinned by a test' \
+  'MarkedOrphan    # pinned by a test' \
+  'DocOrphan       # pinned by a test' \
+  'TrailingOrphan  # pinned by a test'
 run_check "${root}"
 expect "allow-listed orphans exit 0" 0 "${CODE}"
-has "allow-listed orphans are counted" "${OUT}" "(7 allow-listed)"
+has "allow-listed orphans are counted" "${OUT}" "(10 allow-listed)"
 
 # --- A symbol with no test reference is not reported ---------------------------
 root="$(new_tree no-test-reference)"
