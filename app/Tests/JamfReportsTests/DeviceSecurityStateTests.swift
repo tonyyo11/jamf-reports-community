@@ -391,6 +391,31 @@ final class DeviceSecurityStateTests: XCTestCase {
             "UNENCRYPTED", hardwareEncrypted: true, short: true), "UNENCRYPTED")
     }
 
+    /// The CSV export names FileVault as the screen does, so a Mac the rule lowered does not
+    /// export UNENCRYPTED beside a risk of OK.
+    func testDevicesCSVExportLabelsHardwareEncryptedFileVaultOff() {
+        let macs = [
+            DeviceInventoryService.recordFromComputer(
+                fileVaultOffComputer(id: 11, serial: "AS1", appleSilicon: true, model: "Mac14,2"),
+                source: "computers.json"),
+            DeviceInventoryService.recordFromComputer(
+                fileVaultOffComputer(
+                    id: 12, serial: "IN1", appleSilicon: false, model: "MacBookPro14,1"),
+                source: "computers.json"),
+        ]
+        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk"
+        XCTAssertEqual(DevicesView.exportCSV(devices: macs, policy: hardwareWarning), [
+            header,
+            #""Lab-Mac-AS1","AS1","","","","","FileVault off (hardware-encrypted)","","ok""#,
+            #""Lab-Mac-IN1","IN1","","","","","UNENCRYPTED","","attention""#,
+        ].joined(separator: "\n"))
+        XCTAssertEqual(DevicesView.exportCSV(devices: macs, policy: .default), [
+            header,
+            #""Lab-Mac-AS1","AS1","","","","","UNENCRYPTED","","attention""#,
+            #""Lab-Mac-IN1","IN1","","","","","UNENCRYPTED","","attention""#,
+        ].joined(separator: "\n"))
+    }
+
     /// The tile counts the Macs the rule took out of the gaps; FileVault stays off for the share.
     func testSnapshotCountsHardwareEncryptedFileVaultOffApart() {
         let macs = [

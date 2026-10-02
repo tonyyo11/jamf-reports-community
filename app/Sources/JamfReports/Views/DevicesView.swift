@@ -1264,21 +1264,30 @@ struct DevicesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isExportingCSV = true
         defer { isExportingCSV = false }
-        let rows = filteredDevices
-        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
-        let body = rows.map { d in
-            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
-             d.fileVault, d.lastContact, d.risk(policy: activeSnapshot.securityPolicy).rawValue]
-                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-                .joined(separator: ",")
-        }.joined(separator: "\n")
+        let text = Self.exportCSV(devices: filteredDevices, policy: activeSnapshot.securityPolicy)
         do {
-            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            try text.write(to: url, atomically: true, encoding: .utf8)
             // Path is user-confirmed via NSSavePanel — safe to reveal directly.
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
             exportError = error.localizedDescription
         }
+    }
+
+    /// The filtered list as CSV, one quoted row per device. FileVault is labelled as on
+    /// screen, so a Mac the hardware rule lowered does not read UNENCRYPTED beside its risk.
+    nonisolated static func exportCSV(
+        devices: [DeviceInventoryRecord], policy: SecurityControlPolicy
+    ) -> String {
+        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
+        let body = devices.map { d in
+            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
+             policy.fileVaultLabel(d.fileVault, hardwareEncrypted: d.hardwareEncrypted),
+             d.lastContact, d.risk(policy: policy).rawValue]
+                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        return header + body
     }
 }
 
