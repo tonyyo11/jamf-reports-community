@@ -85,6 +85,7 @@ enum ConfigDoctorService {
             eaCoverageNames: eaNames
         )
         rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
+        rows += readerRows(profile: profile, workspaceRoot: workspaceRoot)
         if let config, parseError == nil {
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
@@ -610,6 +611,38 @@ enum ConfigDoctorService {
             ))
         }
         return rows
+    }
+
+    // MARK: - What the reader did not take as written
+
+    /// Reads the profile's config.yaml whether or not it decodes. Nothing for a file that is
+    /// missing or is not YAML.
+    static func readerRows(profile: String, workspaceRoot: URL? = nil) -> [DoctorRow] {
+        guard let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot),
+              let text = try? String(contentsOf: url, encoding: .utf8),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
+        else { return [] }
+        return fileReadBooleanRows(root)
+    }
+
+    /// true/false keys the decoder does not model, read by `WorkspacePaths` and `HtmlReport`.
+    private static let fileReadBooleans = [["output", "allow_absolute_paths"],
+                                           ["html", "track_history"]]
+
+    /// One warning for each of those keys holding anything but true or false: it reads as false.
+    static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {
+        fileReadBooleans.compactMap { path in
+            guard let value = ConfigLoader.rawValue(at: path, in: root),
+                  !(value is NSNull), !(value is Bool) else { return nil }
+            let keyPath = path.joined(separator: ".")
+            let typed = ((value as? String) ?? (value as? Int).map(String.init))
+                .map { "\"\(ConfigSchema.displayText($0))\"" } ?? "This value"
+            return DoctorRow(
+                id: "config.value.\(keyPath)", severity: .warn, title: keyPath,
+                detail: "\(typed) is not true or false, so the app reads it as false.",
+                hint: "Write true or false."
+            )
+        }
     }
 
     // MARK: - Security policy (hand-typed values)

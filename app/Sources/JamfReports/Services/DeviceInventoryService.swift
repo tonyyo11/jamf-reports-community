@@ -236,12 +236,14 @@ fileprivate extension DeviceInventoryService {
 
 fileprivate extension DeviceInventoryService {
 
+    /// Reads config.yaml through the engine's loader, so a value reads as the decoder would
+    /// read it.
     static func loadConfigHints(root: URL, warnings: inout [String]) -> ConfigHints {
-        var values: [String: [String: String]] = [:]
+        var values: [String: Any] = [:]
         let configURL = root.appendingPathComponent("config.yaml")
         if let configFile = validatedFile(configURL, root: root),
            let text = readText(configFile, root: root, maxBytes: 256 * 1024, warnings: &warnings) {
-            values = parseSimpleYAML(text)
+            values = (try? ConfigLoader.rawMapping(fromYAML: text)) ?? [:]
         }
 
         let profile = profileName(ofWorkspace: root)
@@ -253,12 +255,13 @@ fileprivate extension DeviceInventoryService {
         return ConfigHints(
             jamfCLIDataDir: jamfCLIDataDir,
             outputDir: resolvedDirectory(
-                values["output"]?["output_dir"],
+                ConfigLoader.rawValue(at: ["output", "output_dir"], in: values) as? String,
                 fallback: "Generated Reports",
                 root: root
             ),
             historicalCSVDir: historicalCSVDir,
-            staleDeviceDays: Int(values["thresholds"]?["stale_device_days"] ?? "") ?? 30
+            staleDeviceDays: ConfigLoader.rawValue(
+                at: ["thresholds", "stale_device_days"], in: values) as? Int ?? 30
         )
     }
 
@@ -269,29 +272,6 @@ fileprivate extension DeviceInventoryService {
             ? URL(fileURLWithPath: value, isDirectory: true)
             : root.appendingPathComponent(value, isDirectory: true)
         return secureURL(candidate, root: root) ?? root.appendingPathComponent(fallback, isDirectory: true)
-    }
-
-    static func parseSimpleYAML(_ text: String) -> [String: [String: String]] {
-        var result: [String: [String: String]] = [:]
-        var section = ""
-        for rawLine in text.components(separatedBy: .newlines) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
-            if !rawLine.hasPrefix(" "), trimmed.hasSuffix(":") {
-                section = String(trimmed.dropLast()).trimmingCharacters(in: .whitespaces)
-                result[section] = result[section] ?? [:]
-                continue
-            }
-            guard !section.isEmpty, let colon = trimmed.firstIndex(of: ":") else { continue }
-            let key = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
-            var value = String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-            if let comment = value.firstIndex(of: "#") {
-                value = String(value[..<comment]).trimmingCharacters(in: .whitespaces)
-            }
-            value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            result[section]?[key] = value
-        }
-        return result
     }
 }
 

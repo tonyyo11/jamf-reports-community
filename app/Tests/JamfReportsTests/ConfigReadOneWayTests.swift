@@ -82,7 +82,130 @@ final class ConfigReadOneWayTests: XCTestCase {
         }
     }
 
+    // MARK: - html.track_history and html.history_file (HtmlReport)
+
+    /// Each of these turned history off under the line scanner HtmlReport used.
+    func testTrackHistoryIsReadWithTheDecodersBooleanRule() throws {
+        for yaml in [
+            "html:\n  track_history: true # keep a trend\n",
+            "html:\n  track_history: True\n",
+            "html:\n  track_history: \"true\"\n",
+            "html:\r\n  track_history: true\r\n",
+            "html: {track_history: true}\n",
+        ] {
+            XCTAssertTrue(try historyFile(yaml) != nil, yaml.debugDescription)
+        }
+        for yaml in ["html:\n  track_history: yes\n", "html:\n  track_history: false\n", "a: 1\n"] {
+            XCTAssertNil(try historyFile(yaml), yaml.debugDescription)
+        }
+    }
+
+    /// The scanner kept the comment as part of the file name.
+    func testHistoryFileIsReadWithoutATrailingComment() throws {
+        let yaml = "html:\n  track_history: true\n  history_file: trend.json # beside the report\n"
+        XCTAssertEqual(try historyFile(yaml), "trend.json")
+    }
+
+    // MARK: - thresholds.stale_device_days (Devices screen)
+
+    /// A Mac last seen 40 days ago is stale at the default 30 and not at 45, so `stale` shows
+    /// which threshold the Devices screen read.
+    func testTheDevicesScreenReadsStaleDeviceDaysWhereTheScannerFellBackTo30() throws {
+        for yaml in [
+            "thresholds: # how old is stale\n  stale_device_days: 45\n",
+            "thresholds: {stale_device_days: 45}\n",
+            "thresholds:\n  stale_device_days: 45 # days\n",
+        ] {
+            XCTAssertEqual(try devicesScreenCallsStale(yaml), false, yaml)
+        }
+        XCTAssertEqual(try devicesScreenCallsStale("other: 1\n"), true)
+    }
+
+    /// The decoder rejects a quoted number for this key (the whole file fails to load, which
+    /// the Config screen and the Doctor report), so the Devices screen no longer takes it.
+    func testTheDevicesScreenDoesNotTakeAQuotedStaleDeviceDays() throws {
+        XCTAssertEqual(try devicesScreenCallsStale("thresholds:\n  stale_device_days: \"45\"\n"),
+                       true)
+        XCTAssertThrowsError(try ConfigLoader.loadFromString(
+            "thresholds:\n  stale_device_days: \"45\"\n"))
+    }
+
+    // MARK: - output.allow_absolute_paths (WorkspacePaths)
+
+    func testAllowAbsolutePathsOptsInForTrueAsTheDecoderReadsIt() throws {
+        for value in ["true", "True", "\"true\"", "true # reports go to the share"] {
+            XCTAssertTrue(try optsIn("output:\n  allow_absolute_paths: \(value)\n"), value)
+        }
+        XCTAssertTrue(try optsIn("output: {allow_absolute_paths: true}\n"))
+    }
+
+    /// The old lookup also took yes, 1 and on, which the decoder's boolean rule does not.
+    func testAllowAbsolutePathsNoLongerOptsInForYesOneOrOn() throws {
+        for value in ["yes", "1", "on", "false", "\"\""] {
+            XCTAssertFalse(try optsIn("output:\n  allow_absolute_paths: \(value)\n"), value)
+        }
+    }
+
     // MARK: - Helpers
+
+    /// Builds the history section from a workspace whose config.yaml is `yaml`; returns the
+    /// history file it wrote, or nil when history is off.
+    private func historyFile(_ yaml: String) throws -> String? {
+        let dir = fileManager.temporaryDirectory
+            .appendingPathComponent("jrc-html-\(UUID().uuidString)", isDirectory: true)
+        let dataDir = dir.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        try fileManager.createDirectory(at: dataDir, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: dir) }
+        try yaml.write(to: dir.appendingPathComponent("config.yaml"), atomically: true,
+                       encoding: .utf8)
+        let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
+        let html = report.buildHistorySection(
+            security: [], outputURL: dir.appendingPathComponent("report.html"))
+        guard !html.isEmpty else { return nil }
+        let written = try fileManager.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasSuffix(".json") }
+        XCTAssertEqual(written.count, 1)
+        return written.first
+    }
+
+    /// Whether the Devices screen marks a Mac last seen 40 days ago as stale.
+    private func devicesScreenCallsStale(_ yaml: String) throws -> Bool? {
+        var stale: Bool?
+        try withWorkspace(config: yaml) { root, profile in
+            let kind = root.appendingPathComponent("\(profile)/jamf-cli-data/device-compliance",
+                                                   isDirectory: true)
+            try fileManager.createDirectory(at: kind, withIntermediateDirectories: true)
+            let row = #"[{"days_since_contact": "40", "name": "Example Mac", "serial": "EX0001", "#
+                + #""stale": false}]"#
+            try row.write(to: kind.appendingPathComponent("device-compliance_20260901T090000.json"),
+                          atomically: true, encoding: .utf8)
+            let devices = DeviceInventoryService.load(profile: profile, demoMode: false).devices
+            XCTAssertEqual(devices.count, 1)
+            stale = devices.first?.stale
+        }
+        return stale
+    }
+
+    /// Whether WorkspacePaths accepts an output folder outside the workspace.
+    private func optsIn(_ yaml: String) throws -> Bool {
+        let outside = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jrc-read-outside-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: outside) }
+        var accepted = false
+        let config = yaml
+            .replacingOccurrences(of: "output:\n", with: "output:\n  output_dir: \(outside.path)\n")
+            .replacingOccurrences(of: "output: {", with: "output: {output_dir: \(outside.path), ")
+        try withWorkspace(config: config) { _, profile in
+            do {
+                accepted = try WorkspacePaths.outputDir(for: profile).standardizedFileURL.path
+                    == outside.standardizedFileURL.path
+            } catch WorkspacePaths.PathError.disallowedAbsolutePath {
+                accepted = false
+            }
+        }
+        return accepted
+    }
 
     /// A temp workspaces root holding one workspace with `config`; `JRC_TEST_WORKSPACES_ROOT`
     /// points at it for the duration and is then restored.

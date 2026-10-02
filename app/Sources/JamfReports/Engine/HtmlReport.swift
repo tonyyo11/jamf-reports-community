@@ -36,50 +36,25 @@ struct HtmlReport: Sendable {
 
     // MARK: - HTML local config
 
-    /// Local representation of `html:` config block, read from YAML if present.
-    /// Avoids touching ConfigDecoder (another agent's territory).
+    /// `html.track_history` and `html.history_file`, which the decoder does not model.
     private struct HtmlConfig: Sendable {
         var trackHistory: Bool = false
         var historyFile: String = ""
     }
 
+    /// Read from the config.yaml beside `dataDir` through the engine's loader, so a value
+    /// reads as the decoder would read it.
     private func htmlConfig() -> HtmlConfig {
-        // Read the raw YAML map via YAMLCodec if it exposed a general accessor,
-        // but since it doesn't, we fall back to loading the raw file ourselves.
-        // This keeps the footprint minimal and avoids touching ConfigDecoder.
-        guard let configURL = dataDir.deletingLastPathComponent()
-                .appendingPathComponent("config.yaml") as URL?,
-              FileManager.default.fileExists(atPath: configURL.path),
-              let text = try? String(contentsOf: configURL, encoding: .utf8)
+        let configURL = dataDir.deletingLastPathComponent().appendingPathComponent("config.yaml")
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
         else { return HtmlConfig() }
-
-        var result = HtmlConfig()
-        var inHtmlBlock = false
-        for rawLine in text.components(separatedBy: "\n") {
-            let line = rawLine
-            // Detect the `html:` top-level block
-            if line.hasPrefix("html:") {
-                inHtmlBlock = true
-                continue
-            }
-            // Leave block when we hit a new top-level key
-            if inHtmlBlock && !line.hasPrefix(" ") && !line.hasPrefix("\t") && !line.isEmpty {
-                inHtmlBlock = false
-            }
-            guard inHtmlBlock else { continue }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("track_history:") {
-                let val = trimmed.components(separatedBy: ":").dropFirst()
-                    .joined(separator: ":").trimmingCharacters(in: .whitespaces)
-                result.trackHistory = val == "true"
-            } else if trimmed.hasPrefix("history_file:") {
-                let val = trimmed.components(separatedBy: ":").dropFirst()
-                    .joined(separator: ":").trimmingCharacters(in: .whitespaces)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-                result.historyFile = val
-            }
-        }
-        return result
+        return HtmlConfig(
+            trackHistory: ConfigLoader.rawValue(at: ["html", "track_history"], in: root)
+                as? Bool ?? false,
+            historyFile: ConfigLoader.rawValue(at: ["html", "history_file"], in: root)
+                as? String ?? ""
+        )
     }
 
     // MARK: - Public API

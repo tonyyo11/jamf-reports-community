@@ -1274,6 +1274,18 @@ enum ConfigLoader {
         nodeToJSONObject(try YAMLCodec.decode(text).root) as? [String: Any] ?? [:]
     }
 
+    /// The value at `path` in a `rawMapping`, typed as the decoder sees it: `as? Bool` holds
+    /// only for `true`/`false` (any case, quoted or not), `as? Int` only for an unquoted
+    /// number. Nil when a step is missing.
+    static func rawValue(at path: [String], in root: [String: Any]) -> Any? {
+        var node: Any = root
+        for key in path {
+            guard let mapping = node as? [String: Any], let next = mapping[key] else { return nil }
+            node = next
+        }
+        return node
+    }
+
     // MARK: - YAML → JSON conversion
 
     private static func yamlDocumentToJSONData(_ document: YAMLCodec.YAMLDocument) throws -> Data {
