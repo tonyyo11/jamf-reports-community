@@ -336,12 +336,8 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
             .appendingPathComponent("jrc-school-sheets-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: dataDir) }
         for kind in ["school-ibeacons", "school-dep-devices"] {
-            try? TestFixtures.copyDir(source.appendingPathComponent(kind, isDirectory: true),
-                                      to: dataDir.appendingPathComponent(kind, isDirectory: true))
-        }
-        guard FileManager.default.fileExists(
-            atPath: dataDir.appendingPathComponent("school-ibeacons").path) else {
-            throw XCTSkip("school fixtures not available")
+            try TestFixtures.copyDir(source.appendingPathComponent(kind, isDirectory: true),
+                                     to: dataDir.appendingPathComponent(kind, isDirectory: true))
         }
         var config = ReportConfig()
         config.sheets = SheetsConfig(only: ["DEP Devices"], skip: ["iBeacons"], order: nil)
@@ -352,13 +348,13 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
     }
 
     func testAnExpiresDateThatIsNotYYYYMMDDIsNamedBecauseTheReportNeverMarksItExpired() throws {
-        let found = try rows("""
-        exceptions:
-          - {id: E-1, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: "12/31/2026"}
-          - {id: E-2, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: "2026-13-45"}
-          - {id: E-3, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: "2026-12-31"}
-          - {id: E-4, description: d, signed_off_by: s, signed_off_date: "2026-01-01", expires_date: ""}
-        """)
+        func exception(_ id: String, expires: String) -> String {
+            "  - id: \(id)\n    description: d\n    signed_off_by: s\n"
+                + "    signed_off_date: \"2026-01-01\"\n    expires_date: \"\(expires)\"\n"
+        }
+        let found = try rows("exceptions:\n"
+            + exception("E-1", expires: "12/31/2026") + exception("E-2", expires: "2026-13-45")
+            + exception("E-3", expires: "2026-12-31") + exception("E-4", expires: ""))
         XCTAssertEqual(titles(found),
                        ["exceptions[0].expires_date", "exceptions[1].expires_date"])
         XCTAssertEqual(found.first?.detail, "\"12/31/2026\" is not a yyyy-MM-dd date. The report "
@@ -398,7 +394,12 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
     func testACustomEAKeyThatDoesNotApplyToItsTypeIsNamed() throws {
         let found = try rows("""
         custom_eas:
-          - {name: A, column: ca, type: boolean, true_value: "Yes", warning_threshold: 80, current_versions: ["15"]}
+          - name: A
+            column: ca
+            type: boolean
+            true_value: "Yes"
+            warning_threshold: 80
+            current_versions: ["15"]
           - {name: B, column: cb, type: text, warning_days: 30, true_value: "x"}
           - {name: C, column: cc, type: percentage, warning_threshold: 70, critical_threshold: 90}
           - {name: D, column: cd, type: date, warning_days: 30, current_versions: []}

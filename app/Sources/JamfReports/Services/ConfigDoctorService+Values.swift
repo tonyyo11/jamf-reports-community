@@ -245,11 +245,11 @@ extension ConfigDoctorService {
         }
         for (index, ea) in (config.customEas ?? []).enumerated() where ea.type == .percentage {
             guard ea.warningThreshold != nil || ea.criticalThreshold != nil else { continue }
-            let (warn, crit) = (ea.warningThreshold ?? warn, ea.criticalThreshold ?? crit)
-            guard warn > crit else { continue }
+            let (eaWarn, eaCrit) = (ea.warningThreshold ?? warn, ea.criticalThreshold ?? crit)
+            guard eaWarn > eaCrit else { continue }
             rows.append(valueRow(
                 "custom_eas[\(index)].warning_threshold",
-                "warning_threshold (\(warn)) is above critical_threshold (\(crit)), so the "
+                "warning_threshold (\(eaWarn)) is above critical_threshold (\(eaCrit)), so the "
                     + "warning band never applies.", "Set the warning below the critical one.",
                 tag: ".order"))
         }
