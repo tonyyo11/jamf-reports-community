@@ -44,6 +44,64 @@ enum YAMLCodec {
         /// documents. Callers should log a warning and re-save to heal the
         /// underlying file.
         var repairedKeys: Set<String> = []
+        /// Lines the reader did not take as written, in line order. Empty for a well-formed file.
+        var parseNotes: [ParseNote] = []
+    }
+
+    /// A line the reader did not take as written. `line` counts from 1.
+    struct ParseNote: Equatable, Sendable {
+        enum Kind: Equatable, Sendable {
+            /// Indented `found` spaces where its block's keys sit at `expected`; not read.
+            case indentation(found: Int, expected: Int)
+            /// No `key: value` where a key was expected; not read.
+            case noKey
+            /// A tab in the indentation, which YAML does not allow; read as indented `spaces`.
+            case tab(spaces: Int)
+            /// The key is set again on `readLine`, and that value is the one read.
+            case duplicateKey(String, readLine: Int)
+            /// A `|` or `>` block value, which the reader does not support: the value reads as
+            /// the indicator and the lines under it are not read.
+            case blockScalar(key: String, indicator: String)
+            /// List items with no key above them to belong to; not read.
+            case orphanItems
+        }
+
+        let line: Int
+        let kind: Kind
+
+        /// What happened to the line. Keys pass through `ConfigSchema.displayText`; no value
+        /// typed in the file is shown.
+        var detail: String {
+            switch kind {
+            case .indentation(let found, let expected):
+                "indented \(Self.spaces(found)) where \(Self.spaces(expected)) were expected, "
+                    + "so it was not read"
+            case .noKey:
+                "no \"key: value\" on this line, so it was not read"
+            case .tab(let spaces):
+                "a tab in the indentation, which YAML does not allow; read as indented "
+                    + Self.spaces(spaces)
+            case .duplicateKey(let key, let readLine) where readLine == line:
+                "\"\(ConfigSchema.displayText(key))\" is set twice on this line; "
+                    + "the second value is the one read"
+            case .duplicateKey(let key, let readLine):
+                "\"\(ConfigSchema.displayText(key))\" is set again on line \(readLine), "
+                    + "and that value is the one read"
+            case .blockScalar(let key, let indicator):
+                "\"\(ConfigSchema.displayText(key))\" uses a block value (\(indicator)), which "
+                    + "is not supported: it reads as \"\(indicator)\" and the lines under it "
+                    + "are not read"
+            case .orphanItems:
+                "a list item with no key above it, so it was not read"
+            }
+        }
+
+        /// `Line N: <detail>`, as the Config screen lists it.
+        var display: String { "Line \(line): \(detail)" }
+
+        private static func spaces(_ count: Int) -> String {
+            count == 1 ? "1 space" : "\(count) spaces"
+        }
     }
 
     enum CodecError: Error, LocalizedError {
@@ -60,7 +118,11 @@ enum YAMLCodec {
         var parser = Parser(text: text)
         let root = parser.parseBlock(indent: 0)
         guard case .mapping = root else { throw CodecError.invalidTopLevel }
-        return YAMLDocument(originalText: text, root: root, repairedKeys: parser.repairedKeys)
+        let notes = parser.notes.enumerated()
+            .sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }
+            .map(\.element)
+        return YAMLDocument(
+            originalText: text, root: root, repairedKeys: parser.repairedKeys, parseNotes: notes)
     }
 
     static func emptyDocument() -> YAMLDocument {
@@ -309,9 +371,26 @@ private struct Parser {
     /// Keys whose orphaned `- item` lines were re-attached during parsing.
     /// See `YAMLCodec.YAMLDocument.repairedKeys`.
     private(set) var repairedKeys: Set<String> = []
+    /// See `YAMLCodec.YAMLDocument.parseNotes`; collected in the order found.
+    private(set) var notes: [YAMLCodec.ParseNote] = []
+    /// The line of the key or item whose value is being read, for a duplicate key inside a
+    /// flow mapping.
+    private var valueLine = 0
 
     init(text: String) {
-        self.lines = text.components(separatedBy: .newlines)
+        // A CRLF is one line break, so a note's line number is the one an editor shows.
+        self.lines = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: .newlines)
+        for (offset, line) in lines.enumerated() {
+            let lead = line.prefix { $0 == " " || $0 == "\t" }
+            let content = line.dropFirst(lead.count)
+            guard lead.contains("\t"), !content.isEmpty, !content.hasPrefix("#") else { continue }
+            note(offset + 1, .tab(spaces: indentation(of: line)))
+        }
+    }
+
+    private mutating func note(_ line: Int, _ kind: YAMLCodec.ParseNote.Kind) {
+        notes.append(.init(line: line, kind: kind))
     }
 
     mutating func parseBlock(indent: Int) -> YAMLCodec.YAMLValue {
@@ -325,8 +404,13 @@ private struct Parser {
         return .mapping(parseMapping(indent: indent))
     }
 
-    private mutating func parseMapping(indent: Int) -> YAMLCodec.YAMLMapping {
+    /// `seedKeys` are keys already read for this mapping (a list item's first key, on its `- `
+    /// line), so a repeat of one is noted.
+    private mutating func parseMapping(
+        indent: Int, seedKeys: [String: Int] = [:]
+    ) -> YAMLCodec.YAMLMapping {
         var entries: [YAMLCodec.YAMLEntry] = []
+        var keyLines = seedKeys
 
         while index < lines.count {
             skipIgnorable()
@@ -345,24 +429,31 @@ private struct Parser {
                 // previous key when it holds an empty/null value; otherwise
                 // drop them — either way, keep parsing so the keys after the
                 // orphans are not silently lost.
+                let orphanLine = index + 1
                 let orphans = parseSequence(indent: currentIndent)
                 if let last = entries.indices.last,
                    entries[last].value == .sequence([]) || entries[last].value == .scalar(.null) {
                     entries[last].value = .sequence(orphans)
                     repairedKeys.insert(entries[last].key)
+                } else {
+                    note(orphanLine, .orphanItems)
                 }
                 continue
             }
             guard currentIndent == indent else {
+                note(index + 1, .indentation(found: currentIndent, expected: indent))
                 index += 1
                 continue
             }
             guard let parsed = YAMLCodec.parseKeyValue(stripInlineComment(trimmed)) else {
+                note(index + 1, .noKey)
                 index += 1
                 continue
             }
 
+            let keyLine = index + 1
             index += 1
+            valueLine = keyLine
             let value: YAMLCodec.YAMLValue
             if parsed.value.isEmpty {
                 // Accept compact block-sequence syntax where list items share the
@@ -384,11 +475,28 @@ private struct Parser {
                 }
             } else {
                 value = parseScalar(parsed.value)
+                skipBlockScalar(parsed.value, key: parsed.key, line: keyLine, indent: indent)
             }
+            if let earlier = keyLines[parsed.key] {
+                note(earlier, .duplicateKey(parsed.key, readLine: keyLine))
+            }
+            keyLines[parsed.key] = keyLine
             entries.append(.init(key: parsed.key, value: value))
         }
 
         return .init(entries: entries)
+    }
+
+    /// A `|` or `>` value is not supported. It keeps reading as the indicator, as before; the
+    /// lines under it, which would each be skipped, are skipped here under one note.
+    private mutating func skipBlockScalar(_ value: String, key: String, line: Int, indent: Int) {
+        guard let first = value.first, first == "|" || first == ">", value.count <= 3,
+              value.dropFirst().allSatisfy({ "+-123456789".contains($0) }) else { return }
+        while index < lines.count,
+              trimmedContent(lines[index]).isEmpty || indentation(of: lines[index]) > indent {
+            index += 1
+        }
+        note(line, .blockScalar(key: key, indicator: value))
     }
 
     /// Returns true if the next non-blank, non-comment content line is indented
@@ -440,7 +548,9 @@ private struct Parser {
 
             let restStart = trimmed.index(trimmed.startIndex, offsetBy: 2)
             let rest = String(trimmed[restStart...]).trimmingCharacters(in: .whitespaces)
+            let itemLine = index + 1
             index += 1
+            valueLine = itemLine
 
             if rest.isEmpty {
                 values.append(parseBlock(indent: indent + 2))
@@ -450,11 +560,18 @@ private struct Parser {
                 // colon inside the braces and fabricate a `{label` key.
                 values.append(parseScalar(rest))
             } else if let parsed = YAMLCodec.parseKeyValue(stripInlineComment(rest)) {
-                var entries = [YAMLCodec.YAMLEntry(
-                    key: parsed.key,
-                    value: parsed.value.isEmpty ? parseBlock(indent: indent + 2) : parseScalar(parsed.value)
-                )]
-                let continuation = parseMapping(indent: indent + 2)
+                let itemIndent = indent + 2
+                let first: YAMLCodec.YAMLValue
+                if parsed.value.isEmpty {
+                    first = parseBlock(indent: itemIndent)
+                } else {
+                    first = parseScalar(parsed.value)
+                    skipBlockScalar(
+                        parsed.value, key: parsed.key, line: itemLine, indent: itemIndent)
+                }
+                var entries = [YAMLCodec.YAMLEntry(key: parsed.key, value: first)]
+                let continuation = parseMapping(
+                    indent: itemIndent, seedKeys: [parsed.key: itemLine])
                 entries.append(contentsOf: continuation.entries)
                 values.append(.mapping(.init(entries: entries)))
             } else {
@@ -476,7 +593,7 @@ private struct Parser {
         }
     }
 
-    private func parseScalar(_ raw: String) -> YAMLCodec.YAMLValue {
+    private mutating func parseScalar(_ raw: String) -> YAMLCodec.YAMLValue {
         let value = stripInlineComment(raw).trimmingCharacters(in: .whitespaces)
         if value == "[]" { return .sequence([]) }
         if value == "{}" { return .mapping(.init(entries: [])) }
@@ -509,23 +626,30 @@ private struct Parser {
     /// Parse `{key: value, key: value}`. Returns nil when any part is not a
     /// `key: value` pair, so almost-flow text degrades to a string scalar
     /// instead of silently dropping content.
-    private func parseFlowMapping(_ value: String) -> YAMLCodec.YAMLValue? {
+    private mutating func parseFlowMapping(_ value: String) -> YAMLCodec.YAMLValue? {
         let inner = String(value.dropFirst().dropLast())
         var entries: [YAMLCodec.YAMLEntry] = []
+        // Notes for a mapping that degrades to a string are taken back with it.
+        let notesBefore = notes.count
         for part in splitFlowParts(inner) {
             let trimmed = part.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
             guard let parsed = YAMLCodec.parseKeyValue(trimmed), !parsed.value.isEmpty else {
+                notes.removeSubrange(notesBefore...)
                 return nil
             }
-            entries.append(.init(key: unquoteFlowKey(parsed.key), value: parseScalar(parsed.value)))
+            let key = unquoteFlowKey(parsed.key)
+            if entries.contains(where: { $0.key == key }) {
+                note(valueLine, .duplicateKey(key, readLine: valueLine))
+            }
+            entries.append(.init(key: key, value: parseScalar(parsed.value)))
         }
         return .mapping(.init(entries: entries))
     }
 
     /// Parse `[a, b, {k: v}]`. Elements recurse through `parseScalar`, so
     /// nested flow collections work.
-    private func parseFlowSequence(_ value: String) -> YAMLCodec.YAMLValue? {
+    private mutating func parseFlowSequence(_ value: String) -> YAMLCodec.YAMLValue? {
         let inner = String(value.dropFirst().dropLast())
         var values: [YAMLCodec.YAMLValue] = []
         for part in splitFlowParts(inner) {
