@@ -1335,6 +1335,153 @@ func commandHealthFindings(_ snapshot: MDMCommandHealthService.Snapshot) -> [Aud
     ]
 }
 
+// MARK: - AI insight input
+
+extension FleetInsightInput {
+    /// The Audit insight: `pro audit` findings by severity and category, and what changed
+    /// since the previous audit. `drift` is nil when there was no previous audit to compare,
+    /// which is not the same as nothing having changed. Only counts, check names, categories
+    /// and the severity buckets go out: a finding's recommendation, and any `detail` or
+    /// `resource` text beside it, can name policies, computers or users and stays behind.
+    /// Nil when there are no findings.
+    static func audit(
+        findings: [AuditFinding],
+        drift: (newKeys: Set<String>, resolved: [AuditFinding])?
+    ) -> FleetInsightInput? {
+        guard !findings.isEmpty else { return nil }
+        let open = findings.filter { AuditSeverity($0.severity) != .passing }
+        let isNew = { (finding: AuditFinding) in drift?.newKeys.contains(finding.driftKey) == true }
+        var facts = auditSeverityFacts(findings)
+        // A passing check that appears or goes missing is no change in risk, so neither counts.
+        let resolved = (drift?.resolved ?? []).filter { AuditSeverity($0.severity) != .passing }
+        if drift != nil {
+            facts.append(Fact(label: "Findings new since the previous audit",
+                              value: .count(open.filter(isNew).count), prior: nil,
+                              polarity: .lowerIsBetter))
+            facts.append(Fact(label: "Findings resolved since the previous audit",
+                              value: .count(resolved.count), prior: nil,
+                              polarity: .higherIsBetter))
+        }
+        facts += auditCategoryFacts(open)
+        let listed = Array(open.sorted(by: auditIsMoreUrgent).prefix(maxListedAuditFindings))
+        facts += listed.map { auditFindingFact($0, isNew: isNew($0)) }
+        var notes = ["A finding's count is the objects it affects, as its check name says "
+            + "(devices, policies, ...). Counts of different checks do not add up."]
+        if open.count > listed.count {
+            notes.append("\(open.count - listed.count) lower-priority findings are not listed.")
+        }
+        if drift == nil {
+            notes.append("No previous audit was available, so what changed is unknown.")
+        }
+        notes += resolved.prefix(maxListedResolvedAuditFindings).map {
+            "Resolved since the previous audit (no longer reported): \($0.name) "
+                + "(\($0.insightCategory), \(AuditSeverity($0.severity).word))."
+        }
+        return FleetInsightInput(
+            title: "Audit insight",
+            focus: "which categories to work first, and what changed since the previous audit.",
+            facts: facts, notes: notes)
+    }
+
+    private static let maxListedAuditFindings = 10
+    private static let maxListedResolvedAuditFindings = 5
+
+    private static func auditSeverityFacts(_ findings: [AuditFinding]) -> [Fact] {
+        let counts = Dictionary(grouping: findings) { AuditSeverity($0.severity) }
+            .mapValues(\.count)
+        var facts = [Fact(label: "Critical findings", value: .count(counts[.critical] ?? 0),
+                          prior: nil, polarity: .lowerIsBetter),
+                     Fact(label: "Warning findings", value: .count(counts[.warning] ?? 0),
+                          prior: nil, polarity: .lowerIsBetter)]
+        if let informational = counts[.informational] {
+            facts.append(Fact(label: "Informational findings", value: .count(informational),
+                              prior: nil, polarity: .lowerIsBetter))
+        }
+        if let passing = counts[.passing] {
+            facts.append(Fact(label: "Checks passing", value: .count(passing), prior: nil,
+                              polarity: .higherIsBetter))
+        }
+        return facts
+    }
+
+    /// One line per category with an open finding, the one with the most critical findings
+    /// first, then the most warnings.
+    private static func auditCategoryFacts(_ open: [AuditFinding]) -> [Fact] {
+        let groups = Dictionary(grouping: open) { $0.insightCategory.lowercased() }.values
+        let tallies = groups.map { rows -> (name: String, counts: [Int]) in
+            let bySeverity = Dictionary(grouping: rows) { AuditSeverity($0.severity) }
+            return (rows[0].insightCategory,
+                    [AuditSeverity.critical, .warning, .informational].map {
+                        bySeverity[$0]?.count ?? 0
+                    })
+        }
+        return tallies.sorted {
+            $0.counts != $1.counts ? $0.counts.lexicographicallyPrecedes($1.counts, by: >)
+                : $0.name < $1.name
+        }.map { tally in
+            let parts = zip(tally.counts, [("critical", "critical"), ("warning", "warnings"),
+                                           ("informational", "informational")])
+                .filter { $0.0 > 0 }
+                .map { "\($0.0) \($0.0 == 1 ? $0.1.0 : $0.1.1)" }
+            return Fact(label: "Category \(tally.name)",
+                        value: .text(parts.joined(separator: ", ")),
+                        prior: nil, polarity: .neutral)
+        }
+    }
+
+    /// `pro audit` reports 0 affected when it has no per-device breakdown, so for a finding
+    /// that is not passing a 0 is "not reported", never "nothing affected".
+    private static func auditFindingFact(_ finding: AuditFinding, isNew: Bool) -> Fact {
+        let marker = isNew ? ", new since the previous audit" : ""
+        let label = "\(finding.name) (\(finding.insightCategory), "
+            + "\(AuditSeverity(finding.severity).word)\(marker))"
+        return Fact(label: label,
+                    value: finding.affected > 0 ? .count(finding.affected)
+                        : .text("count not reported"),
+                    prior: nil, polarity: .lowerIsBetter)
+    }
+
+    private static func auditIsMoreUrgent(_ a: AuditFinding, _ b: AuditFinding) -> Bool {
+        let (left, right) = (AuditSeverity(a.severity), AuditSeverity(b.severity))
+        if left != right { return left < right }
+        if a.affected != b.affected { return a.affected > b.affected }
+        return (a.name, a.category) < (b.name, b.category)
+    }
+}
+
+/// The severity buckets the insight speaks in. The snapshot's own severity text is free
+/// text, so it is mapped to one of these words and never sent itself.
+private enum AuditSeverity: Int, Comparable {
+    case critical, warning, informational, passing
+
+    init(_ raw: String) {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "CRITICAL": self = .critical
+        case "WARNING": self = .warning
+        case "OK": self = .passing
+        default: self = .informational
+        }
+    }
+
+    var word: String {
+        switch self {
+        case .critical: "critical"
+        case .warning: "warning"
+        case .informational: "informational"
+        case .passing: "passing"
+        }
+    }
+
+    static func < (left: Self, right: Self) -> Bool { left.rawValue < right.rawValue }
+}
+
+private extension AuditFinding {
+    var insightCategory: String {
+        let trimmed = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "uncategorized" : trimmed
+    }
+}
+
 /// Maps a finding to the screen that can show its underlying records — by
 /// finding name first, category as fallback. Internal (not private) for tests.
 func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: Tab)? {
