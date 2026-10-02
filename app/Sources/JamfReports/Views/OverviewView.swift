@@ -1129,9 +1129,6 @@ struct OverviewView: View {
         // range the operator picked does not change which day it lands on.
         // Naming the day is both shorter and true.
         //
-        // Patch compliance in the daily summary is the average of per-title
-        // percentages, while the Patch screen's figure is device-weighted; the
-        // caption keeps the two from reading as a contradiction (epic #207 C1).
         // A card with no value says so rather than showing a bare "--".
         let subText: String? = {
             guard lastValue != nil else { return "Not reported by this profile" }
@@ -1139,9 +1136,6 @@ struct OverviewView: View {
             if metric == .activeDevices {
                 let days = Int(workspace.configState.staleDeviceDays) ?? 30
                 parts.append("Checked in within \(days)d")
-            }
-            if metric == .patch {
-                parts.append("Avg per title")
             }
             if values.count >= 2, let comparisonDate {
                 parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")

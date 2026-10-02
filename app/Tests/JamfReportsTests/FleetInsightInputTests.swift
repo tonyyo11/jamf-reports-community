@@ -126,7 +126,7 @@ final class FleetInsightInputTests: XCTestCase {
     func testPercentWithoutComplementPrintsOneSide() {
         let input = FleetInsightInput.fleet(
             current: summary(date: "2026-06-06", patch: 90.4), previous: nil)
-        XCTAssertTrue(lines(input).contains("- Patch compliance (avg per title): 90.4%"))
+        XCTAssertTrue(lines(input).contains("- Patch compliance: 90.4%"))
     }
 
     /// Fields reach the prompt verbatim, so none may start a line of its own or run long.
@@ -177,7 +177,7 @@ final class FleetInsightInputTests: XCTestCase {
             Fact(label: "OS current", value: .percent(61.2), prior: .percent(64),
                  polarity: .higherIsBetter, complement: "not on the newest release of its "
                     + "macOS version, or version not listed"),
-            Fact(label: "Patch compliance (avg per title)", value: .percent(90.4),
+            Fact(label: "Patch compliance", value: .percent(90.4),
                  prior: .percent(89), polarity: .higherIsBetter),
             Fact(label: "System Integrity Protection (SIP) enabled", value: .percent(99.8),
                  prior: .percent(99.8), polarity: .higherIsBetter, complement: notEnabled),

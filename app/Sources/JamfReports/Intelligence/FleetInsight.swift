@@ -129,8 +129,7 @@ extension FleetInsightInput {
             // osCurrentPct counts a Mac on a major the feed does not list as not current.
             share("OS current", \.osCurrentPct, "not on the newest release of its "
                   + "macOS version, or version not listed"),
-            // An unweighted mean of per-title compliance, not a device share.
-            share("Patch compliance (avg per title)", \.patchPct),
+            share("Patch compliance", \.patchPct),
             // "SIP" alone reads as the VoIP protocol to the on-device model.
             share("System Integrity Protection (SIP) enabled", \.sipPct, "not enabled"),
             share("Firewall enabled", \.firewallPct, "not enabled"),
