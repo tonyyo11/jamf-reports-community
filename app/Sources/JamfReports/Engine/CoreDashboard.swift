@@ -3093,6 +3093,13 @@ struct CoreDashboard: Sendable {
         ws.write("Compliance bands: GREEN \u{2265}95% \u{00B7} AMBER \u{2265}80% \u{00B7} RED <80%",
                  row: row, col: 0, format: .subtitle)
         row += 1
+        // Under a policy the security rows are graded differently from the bands above.
+        if config.resolvedSecurityPolicy != .default {
+            ws.write("Security rows follow this workspace's security policy: they are graded on "
+                     + "the Macs not failing, AMBER also covers warnings, and Not counted means "
+                     + "the control is set to ignore.", row: row, col: 0, format: .subtitle)
+            row += 1
+        }
         ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
         row += 2
         writePostureDeviceTable(ws: ws, row: row, items: deviceCompItems)

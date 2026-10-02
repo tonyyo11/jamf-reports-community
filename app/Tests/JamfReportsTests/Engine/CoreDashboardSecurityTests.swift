@@ -672,4 +672,52 @@ final class CoreDashboardSecurityTests: XCTestCase {
         XCTAssertEqual(cells[2]?.text, "\u{2014}")
         XCTAssertEqual(cells[2]?.format, .cell)
     }
+
+    // MARK: - Compliance Posture legend
+
+    private func legendTexts(_ dash: CoreDashboard) -> [String] {
+        (dash.workbook.sheet(named: "Compliance Posture")?.dedupedCells ?? [])
+            .filter { $0.format == .subtitle }.map { Self.text($0.value) }
+    }
+
+    /// The legend's AMBER at 80% would contradict "SIP Enabled 1 (1.0%) AMBER" under a policy,
+    /// so a policy that differs from the default adds one line saying how the security rows
+    /// are graded.
+    func testLegendExplainsTheSecurityRowsUnderAPolicy() throws {
+        let json = try XCTUnwrap(fixtureData(kind: "security"))
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try seedJSON(json, kind: "security", in: dir)
+        let note = "Security rows follow this workspace's security policy: they are graded on the "
+            + "Macs not failing, AMBER also covers warnings, and Not counted means the control is "
+            + "set to ignore."
+        for yaml in [
+            "security_policy:\n  controls:\n    sip: warning\n",
+            "security_policy:\n  controls:\n    firewall: ignore\n",
+            "security_policy:\n  filevault_off_hardware_encrypted: warning\n",
+        ] {
+            let dash = try dashboard(yaml, dataDir: dir)
+            try dash.writeCompliancePosture()
+            let legend = legendTexts(dash)
+            XCTAssertTrue(legend.contains(note), yaml)
+            XCTAssertTrue(legend.contains { $0.hasPrefix("Compliance bands: GREEN") },
+                          "the bands line stays")
+        }
+    }
+
+    /// No extra line at the default policy: no block, or a block that says what the default does.
+    func testLegendHasNoPolicyLineAtTheDefaultPolicy() throws {
+        let json = try XCTUnwrap(fixtureData(kind: "security"))
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try seedJSON(json, kind: "security", in: dir)
+        for yaml in [
+            "", "security_policy:\n  controls:\n    sip: fail\n    firewall: fail\n",
+        ] {
+            let dash = try dashboard(yaml, dataDir: dir)
+            try dash.writeCompliancePosture()
+            XCTAssertFalse(legendTexts(dash).contains { $0.contains("security policy") },
+                           "yaml: \(yaml)")
+        }
+    }
 }
