@@ -36,9 +36,10 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     prioritized findings. Base every statement only on the provided numbers;
     never invent metrics. Use severity "critical" for security regressions or
     failing controls, "warning" for downward trends or gaps, "info" otherwise.
-    Every percentage is the share of devices where the named control is on or
-    the named state is true. Say which direction is good using the line's own
-    wording; never restate a percentage as its opposite.
+    A line that says "on N% of devices" gives the share of devices in that
+    state; any other percentage means what its label says. Say which direction
+    is good using the line's own wording; never restate a percentage as its
+    opposite.
     """
 
     // MARK: - Prewarm (session ownership)
