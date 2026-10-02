@@ -1,0 +1,14 @@
+# Symbols in app/Sources that only app/Tests reference, on purpose.
+# One name per line as `Name  # reason`; every entry needs a reason.
+# Read by app/scripts/check-test-only-symbols.zsh.
+
+# Test seams: production code never calls these; tests need them.
+loadFromString                    # ConfigDecoder: decodes YAML text; production reads files through load(url)
+testableCSVEscape                 # ReportEngine: tests reach the private csvEscape
+testableSaveSnapshot              # ReportEngine: tests reach the private saveSnapshot
+clearVerificationCacheForTesting  # JamfCLIIdentity: resets the codesign verification cache between tests
+StubTickerRegistrar               # TickerRegistrar test double; tests run the tick loop against it
+invokeRetryForTesting             # ErrorStateView: fires the retry action without a rendered button
+
+# Framework callbacks: the system calls these at runtime, tests call them directly.
+controlTextDidChange              # NSTextFieldDelegate method on SecureSecretField's coordinator
