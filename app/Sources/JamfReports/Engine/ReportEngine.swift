@@ -3266,33 +3266,13 @@ struct ReportEngine: Sendable {
     /// `<output_dir>/<stem>_<YYYY-MM-DD_HHmmss>.xlsx`.
     ///
     /// - Parameter stem: Base filename stem (without extension).
-    /// - Parameter profile: Profile slug used to validate absolute config paths against
-    ///   the workspace root. When an absolute `output_dir` fails validation it falls back
-    ///   to `Generated Reports` inside the workspace.
-    func resolveOutputURL(stem: String, profile: String? = nil) -> URL {
-        let rawDir = config.output?.resolvedOutputDir ?? "Generated Reports"
-        let outDir: URL
-        if rawDir.hasPrefix("/") {
-            let candidate = URL(fileURLWithPath: rawDir)
-            if let profile,
-               let root = WorkspacePathGuard.root(for: profile),
-               WorkspacePathGuard.validate(candidate, under: root) != nil {
-                outDir = candidate
-            } else {
-                if let profile, let root = WorkspacePathGuard.root(for: profile) {
-                    outDir = root.appending(component: "Generated Reports")
-                } else {
-                    outDir = candidate
-                }
-            }
-        } else {
-            if let profile, let root = WorkspacePathGuard.root(for: profile) {
-                outDir = root.appending(component: rawDir)
-            } else {
-                outDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                    .appendingPathComponent(rawDir)
-            }
-        }
+    /// - Parameter profile: Profile slug whose workspace the folder resolves against.
+    /// - Parameter onLine: Receives the `[warn]` line when `output_dir` is refused.
+    func resolveOutputURL(
+        stem: String, profile: String? = nil,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) -> URL {
+        let outDir = outputDirectory(profile: profile, onLine: onLine)
 
         // Include the profile in the filename so reports remain attributable
         // to their tenant once moved out of the workspace folder.
@@ -3314,6 +3294,45 @@ struct ReportEngine: Sendable {
             return outDir.appendingPathComponent("\(namedStem)_\(ts).xlsx")
         } else {
             return outDir.appendingPathComponent("\(namedStem).xlsx")
+        }
+    }
+
+    /// `output.output_dir` as `WorkspacePaths.outputDir(for:)` resolves it for the Reports
+    /// library, so the report lands where the library looks. A refused folder falls back to
+    /// `Generated Reports` in the workspace and says why in one `[warn]` line. With no
+    /// workspace to resolve against, the value is used as typed (relative to the working
+    /// directory), as before.
+    private func outputDirectory(
+        profile: String?, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL {
+        let rawDir = config.output?.resolvedOutputDir ?? WorkspacePaths.generatedReportsDirName
+        guard let profile, let root = WorkspacePathGuard.root(for: profile) else {
+            return rawDir.hasPrefix("/") ? URL(fileURLWithPath: rawDir)
+                : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                    .appendingPathComponent(rawDir)
+        }
+        do {
+            return try WorkspacePaths.outputDir(for: profile)
+        } catch {
+            let why: String
+            switch error {
+            case WorkspacePaths.PathError.disallowedAbsolutePath(let url)
+                where WorkspacePaths.isSensitiveAbsolutePath(url):
+                why = "that folder is reserved by macOS or holds credentials"
+            case WorkspacePaths.PathError.disallowedAbsolutePath:
+                why = "it is outside the workspace and output.allow_absolute_paths is not true"
+            case WorkspacePaths.PathError.resolutionEscaped:
+                why = "a relative path must stay inside the workspace"
+            default:
+                why = "config.yaml could not be read"
+            }
+            let msg = "[warn] output.output_dir \"\(ConfigSchema.displayText(rawDir))\" is not "
+                + "used: \(why). Writing to \(WorkspacePaths.generatedReportsDirName) in the "
+                + "workspace instead."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return root.appendingPathComponent(WorkspacePaths.generatedReportsDirName,
+                                               isDirectory: true)
         }
     }
 

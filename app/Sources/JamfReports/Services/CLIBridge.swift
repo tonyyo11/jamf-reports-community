@@ -576,7 +576,8 @@ final class CLIBridge {
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
-        let defaultURL = engine.resolveOutputURL(stem: "report", profile: profile)
+        let defaultURL = engine.resolveOutputURL(
+            stem: "report", profile: profile, onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
@@ -706,7 +707,8 @@ final class CLIBridge {
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
-        let outputURL = engine.resolveOutputURL(stem: "school-report", profile: profile)
+        let outputURL = engine.resolveOutputURL(
+            stem: "school-report", profile: profile, onLine: onLine)
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -1345,7 +1347,7 @@ final class CLIBridge {
             outputURL = URL(fileURLWithPath: path)
         } else {
             let engine = ReportEngine(config: config, dataDir: dataDir)
-            outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
+            outputURL = engine.resolveOutputURL(stem: "report", profile: profile, onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
         let fm = FileManager.default
@@ -1489,7 +1491,8 @@ final class CLIBridge {
             outputURL = URL(fileURLWithPath: path)
         } else {
             let engine = ReportEngine(config: config, dataDir: workspace)
-            outputURL = engine.resolveOutputURL(stem: "inventory", profile: profile)
+            outputURL = engine.resolveOutputURL(
+                stem: "inventory", profile: profile, onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("csv")
         }
         do {

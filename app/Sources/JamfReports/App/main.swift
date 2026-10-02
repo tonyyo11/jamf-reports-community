@@ -485,7 +485,7 @@ private func scheduledRunSingle(
         defer { if holdsGenerateClaim { SharedWorkspace.release(profile: profile) } }
 
         let engine = ReportEngine(config: config, dataDir: dataDir)
-        let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
+        let outputURL = engine.resolveOutputURL(stem: "report", profile: profile, onLine: onLine)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.

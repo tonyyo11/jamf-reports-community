@@ -58,6 +58,20 @@ final class ExportNamingTests: XCTestCase {
 /// Engine report naming: profile must appear in the generated filename.
 final class ReportNamingProfileTests: XCTestCase {
 
+    /// The folder now comes from the profile's config.yaml, so a profile name must never reach
+    /// the real workspaces folder.
+    private func inEmptyWorkspacesRoot(_ body: () -> URL) -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-naming-\(UUID().uuidString)", isDirectory: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        }
+        return body()
+    }
+
     func testResolveOutputURLIncludesProfile() {
         var config = ReportConfig()
         config.output = OutputConfig()
@@ -65,7 +79,7 @@ final class ReportNamingProfileTests: XCTestCase {
         config.output?.timestampOutputs = true
 
         let engine = ReportEngine(config: config, dataDir: URL(fileURLWithPath: "/tmp"))
-        let url = engine.resolveOutputURL(stem: "report", profile: "prod")
+        let url = inEmptyWorkspacesRoot { engine.resolveOutputURL(stem: "report", profile: "prod") }
 
         XCTAssertTrue(
             url.lastPathComponent.hasPrefix("report_prod_"),
@@ -81,7 +95,7 @@ final class ReportNamingProfileTests: XCTestCase {
         config.output?.timestampOutputs = false
 
         let engine = ReportEngine(config: config, dataDir: URL(fileURLWithPath: "/tmp"))
-        let url = engine.resolveOutputURL(stem: "report", profile: "prod")
+        let url = inEmptyWorkspacesRoot { engine.resolveOutputURL(stem: "report", profile: "prod") }
 
         XCTAssertEqual(url.lastPathComponent, "report_prod.xlsx")
     }
