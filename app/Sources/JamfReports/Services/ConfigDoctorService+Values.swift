@@ -91,21 +91,20 @@ extension ConfigDoctorService {
         return rows
     }
 
-    /// The sweep falls back to `_archive` for an absolute path outside the workspaces folder.
+    /// The sweep falls back to `_archive` for a path `SnapshotRetentionService` refuses.
     private static func archiveDirRow(_ retention: RetentionConfig, workspace: URL) -> DoctorRow? {
-        let typed = (retention.resolvedArchiveDir as NSString).expandingTildeInPath
-        guard typed.hasPrefix("/") else { return nil }
-        let fallback = workspace.appendingPathComponent("_archive", isDirectory: true)
-            .standardizedFileURL.path
-        let used = SnapshotRetentionService
-            .resolvedArchiveRoot(config: retention, workspace: workspace).standardizedFileURL.path
-        guard used == fallback, URL(fileURLWithPath: typed).standardizedFileURL.path != fallback
-        else { return nil }
-        return valueRow(
-            "retention.archive_dir",
-            "\(shown(retention.resolvedArchiveDir)) is outside the workspaces folder. The app "
-                + "archives to _archive in the workspace instead.",
-            "Use a folder inside the workspaces folder, or a relative path.")
+        do {
+            _ = try SnapshotRetentionService.typedArchiveRoot(config: retention,
+                                                              workspace: workspace)
+            return nil
+        } catch {
+            return valueRow(
+                "retention.archive_dir",
+                "\(shown(retention.resolvedArchiveDir)) is outside the workspace. The app "
+                    + "archives to _archive in the workspace instead.",
+                "Use a path inside the workspace, or an absolute path with "
+                    + "output.allow_absolute_paths: true. System folders are always refused.")
+        }
     }
 
     private static func sharedWorkspaceValueRows(_ shared: SharedWorkspaceConfig?) -> [DoctorRow] {

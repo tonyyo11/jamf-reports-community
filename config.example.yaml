@@ -818,7 +818,8 @@ output:
   # each report family before older runs are moved into archive_dir.
   keep_latest_runs: 10
 
-  # Allow output_dir / archive_dir to point OUTSIDE the workspace.
+  # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE
+  # the workspace.
   #
   # Off by default: an absolute path outside the workspace is refused, which
   # keeps every generated file under a directory this app controls. Turn it on

@@ -125,34 +125,31 @@ enum SnapshotRetentionService {
         return result.acted
     }
 
-    /// Resolved raw-snapshot archive root: `retention.archive_dir` if set, else
+    /// Resolved raw-snapshot archive root: `retention.archive_dir` if set and allowed, else
     /// `<workspace>/_archive`. Distinct from the reports archive
     /// (`output.archive_dir`) so the two never collide.
-    ///
-    /// Absolute `archive_dir` values are confined to `ProfileService.workspacesRoot()`.
-    /// An out-of-bounds absolute path is rejected with a warning and falls back to the
-    /// default, matching the allow-list idiom used by `SystemActions`.
     static func resolvedArchiveRoot(config: RetentionConfig?, workspace: URL) -> URL {
         let defaultArchive = workspace.appendingPathComponent("_archive", isDirectory: true)
+        do {
+            return try typedArchiveRoot(config: config, workspace: workspace) ?? defaultArchive
+        } catch {
+            AppLogger.collect.warning("""
+                SnapshotRetentionService: archive_dir refused \
+                (\(error.localizedDescription, privacy: .private)), using _archive
+                """)
+            return defaultArchive
+        }
+    }
+
+    /// `retention.archive_dir` resolved the way `output.archive_dir` is (`WorkspacePaths`):
+    /// nil when unset; throws when it leaves the workspace without
+    /// `output.allow_absolute_paths`, or names a system folder.
+    static func typedArchiveRoot(config: RetentionConfig?, workspace: URL) throws -> URL? {
         let raw = config?.resolvedArchiveDir ?? ""
-        guard !raw.isEmpty else { return defaultArchive }
-        let expanded = (raw as NSString).expandingTildeInPath
-        guard expanded.hasPrefix("/") else {
-            // Relative path — join to workspace; always confined by construction.
-            return workspace.appendingPathComponent(expanded, isDirectory: true)
-        }
-        // Absolute path: confine to workspacesRoot using the SystemActions allow-list idiom.
-        let candidate = URL(fileURLWithPath: expanded, isDirectory: true)
-            .resolvingSymlinksInPath()
-        let allowedRoot = ProfileService.workspacesRoot()
-            .resolvingSymlinksInPath().path
-        if candidate.path == allowedRoot || candidate.path.hasPrefix(allowedRoot + "/") {
-            return URL(fileURLWithPath: expanded, isDirectory: true)
-        }
-        AppLogger.collect.warning(
-            "SnapshotRetentionService: archive_dir '\(expanded, privacy: .public)' is outside workspacesRoot — falling back to default _archive"
-        )
-        return defaultArchive
+        guard !raw.isEmpty else { return nil }
+        return try WorkspacePaths.resolve(
+            rawValue: raw, fallback: "_archive",
+            workspace: workspace.resolvingSymlinksInPath().standardizedFileURL)
     }
 
     private static func loadRetentionConfig(workspace: URL) -> RetentionConfig? {

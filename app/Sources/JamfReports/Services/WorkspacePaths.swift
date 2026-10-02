@@ -190,8 +190,10 @@ enum WorkspacePaths {
         return url.resolvingSymlinksInPath().standardizedFileURL
     }
 
-    /// Resolves a raw config value against the workspace.
-    private static func resolve(
+    /// Resolves a raw config value against the workspace (symlinks resolved): a relative path
+    /// must stay inside it; an absolute path outside it needs `output.allow_absolute_paths`
+    /// and is never a system or credentials folder. `retention.archive_dir` follows it too.
+    static func resolve(
         rawValue: String?,
         fallback: String,
         workspace: URL,

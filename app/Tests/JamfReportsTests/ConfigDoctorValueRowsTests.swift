@@ -129,15 +129,20 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         XCTAssertEqual(try rows("retention:\n  enabled: false\n  snapshot_keep_days: 0\n"), [])
     }
 
-    func testARetentionArchiveDirOutsideTheWorkspacesFolderNamesTheFolderTheAppUses() throws {
+    func testARetentionArchiveDirOutsideTheWorkspaceNamesTheFolderTheAppUses() throws {
         try withWorkspacesRoot { root, workspace in
             let outside = "/private/tmp/jrc-elsewhere"
             let found = try rows("retention:\n  archive_dir: \"\(outside)\"\n",
                                  workspace: workspace)
             XCTAssertEqual(
                 detail(found, "retention.archive_dir"),
-                "\"\(outside)\" is outside the workspaces folder. The app archives to _archive "
-                    + "in the workspace instead.")
+                "\"\(outside)\" is outside the workspace. The app archives to _archive in the "
+                    + "workspace instead.")
+            for typed in ["../outside", root.appendingPathComponent("shared").path] {
+                XCTAssertEqual(titles(try rows("retention:\n  archive_dir: \"\(typed)\"\n",
+                                               workspace: workspace)),
+                               ["retention.archive_dir"], typed)
+            }
             let inside = workspace.appendingPathComponent("old").path
             XCTAssertEqual(try rows("retention:\n  archive_dir: \"\(inside)\"\n",
                                     workspace: workspace), [])
@@ -562,9 +567,11 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
 
     // MARK: Workspace for the rows that read a folder
 
+    /// Under the home folder: the temp folder resolves under /private, which the path rules
+    /// refuse for any absolute path, so an absolute path inside a temp workspace reads as outside.
     private func withWorkspacesRoot(_ body: (URL, URL) throws -> Void) throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("jrc-values-\(UUID().uuidString)", isDirectory: true)
+        let root = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".jrc-test-values-\(UUID().uuidString)", isDirectory: true)
         let workspace = root.appendingPathComponent("values", isDirectory: true)
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
