@@ -171,19 +171,17 @@ final class RefreshCoordinator {
     ///
     /// The threshold is the tier probe kind's fixed cadence × 1.5. A `.never`
     /// cadence means the report is intentionally not collected — never
-    /// "stale", so no backfill.
+    /// "stale", so no backfill; nor is a tier with no probe kind.
     private func isDataStale(profile: String, tier: CollectionTier) async -> Bool {
         return await Task.detached(priority: .utility) {
             guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return true }
 
-            switch Self.resolvedStalenessThreshold(for: tier) {
-            case .none:
-                // Probe kind resolves to cadence .never — not collected, not stale.
+            switch (tier.stalenessProbeKind, Self.resolvedStalenessThreshold(for: tier)) {
+            case (.none, _), (_, .none):
+                // No probe kind, or one resolving to cadence .never — not stale.
                 return false
-            case .some(let threshold):
-                let dir = dataDir.appendingPathComponent(
-                    tier.stalenessProbeKind, isDirectory: true
-                )
+            case (.some(let probe), .some(let threshold)):
+                let dir = dataDir.appendingPathComponent(probe, isDirectory: true)
                 guard let entries = try? FileManager.default.contentsOfDirectory(
                     at: dir,
                     includingPropertiesForKeys: [.contentModificationDateKey],
@@ -209,8 +207,9 @@ final class RefreshCoordinator {
     /// Resolve the staleness threshold for `tier`: the fixed collection
     /// cadence for the tier's probe kind × 1.5.
     ///
-    /// Returns `nil` when the tier's probe kind resolves to cadence `.never`
-    /// (intentionally not collected — never triggers a backfill).
+    /// Returns `nil` when the tier has no probe kind, or its probe kind
+    /// resolves to cadence `.never` (intentionally not collected — never
+    /// triggers a backfill).
     ///
     /// `nonisolated` so the `Task.detached` staleness probe can call it off
     /// the main actor — it only touches the pure cadence resolver, no
@@ -218,7 +217,8 @@ final class RefreshCoordinator {
     nonisolated private static func resolvedStalenessThreshold(
         for tier: CollectionTier
     ) -> TimeInterval? {
-        switch CadenceResolver.cadence(forReport: tier.stalenessProbeKind) {
+        guard let probe = tier.stalenessProbeKind else { return nil }
+        switch CadenceResolver.cadence(forReport: probe) {
         case .never:
             return nil
         case .seconds(let n):

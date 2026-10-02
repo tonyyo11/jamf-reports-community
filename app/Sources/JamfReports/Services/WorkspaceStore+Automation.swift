@@ -375,16 +375,10 @@ extension WorkspaceStore {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return [] }
         let store = StateFileStore(directory: stateDir)
-        let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
-        let auth = ProfileAuthMethod.resolve(profile: profile)
+        // The Overview's heavy-tier prompt reads the same list.
         let kinds = expectedKinds(
-            skipExpensive: skipExpensive,
-            authMethod: auth?.authMethod,
-            tenantLevel: auth?.isTenantLevel == true,
-            collectSkip: ReportEngine.collectSkipKinds(
-                loadReportConfig(profile: profile)?.jamfCli?.collectSkip),
-            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion)
-        )
+            profile: profile, jamfCLIVersion: jamfCLIVersion,
+            auth: ProfileAuthMethod.resolve(profile: profile))
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.

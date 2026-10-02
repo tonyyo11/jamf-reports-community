@@ -71,15 +71,15 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         }
     }
 
-    /// Snapshot directory name `RefreshCoordinator` probes for staleness.
-    /// Must be a kind `ReportEngine.collect` actually writes so the mtime
-    /// probe finds real files. Each is the cheapest always-present
-    /// indicator for its tier.
-    var stalenessProbeKind: String {
+    /// Snapshot directory name `RefreshCoordinator` probes for staleness: a
+    /// kind `ReportEngine.collect` actually writes, so the mtime probe finds
+    /// real files. nil for the heavy tiers, which no one kind stands for; the
+    /// Overview prompt reads every kind they are expected to collect
+    /// (`WorkspaceStore.staleTiers`).
+    var stalenessProbeKind: String? {
         switch self {
-        case .refresh:   return "overview"
-        case .inventory: return "computers"
-        case .scan:      return "update-device-failures"
+        case .refresh:           return "overview"
+        case .inventory, .scan:  return nil
         }
     }
 
