@@ -22,12 +22,14 @@ enum YAMLCodec {
     struct YAMLMapping: Equatable, Sendable {
         var entries: [YAMLEntry]
 
+        /// The last value set for `key`, the one the report engine's decoder reads.
         func value(for key: String) -> YAMLValue? {
-            entries.first { $0.key == key }?.value
+            entries.last { $0.key == key }?.value
         }
 
+        /// Replaces the value `value(for:)` returns, so an edit lands where it is read.
         mutating func set(_ key: String, value: YAMLValue) {
-            if let index = entries.firstIndex(where: { $0.key == key }) {
+            if let index = entries.lastIndex(where: { $0.key == key }) {
                 entries[index].value = value
             } else {
                 entries.append(.init(key: key, value: value))
