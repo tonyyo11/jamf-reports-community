@@ -1479,7 +1479,11 @@ struct SecurityPolicyCard: View {
                 .frame(width: 260)
                 .accessibilityLabel("\(control.displayName) level")
             }
-            if let issue { warnNote(Self.levelCaption(issue)) }
+            if let issue {
+                writeNote(issue, level: workspace.securityPolicy.level(for: control)) {
+                    Self.writeAppliedLevel(control, in: workspace, failure: $saveFailure)
+                }
+            }
         }
     }
 
@@ -1508,7 +1512,11 @@ struct SecurityPolicyCard: View {
                 .font(.caption)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
-            if let issue { warnNote(Self.levelCaption(issue)) }
+            if let issue {
+                writeNote(issue, level: workspace.securityPolicy.fileVaultOffHardwareEncrypted) {
+                    Self.writeAppliedHardwareLevel(in: workspace, failure: $saveFailure)
+                }
+            }
         }
     }
 
@@ -1521,6 +1529,20 @@ struct SecurityPolicyCard: View {
             warnNote(Self.weightCaption(issue))
         }
         if let unknown = Self.unknownKeysCaption(issues) { warnNote(unknown) }
+    }
+
+    /// The note for a typed level the app did not accept, with a button that writes the level
+    /// it applied. Choosing the shown level in the picker fires nothing, so without the
+    /// button a typo that reads as that level could not be cleared from here.
+    private func writeNote(
+        _ issue: SecurityPolicyIssue, level: SecurityControlLevel?,
+        write: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            warnNote(Self.levelCaption(issue))
+            Spacer(minLength: 8)
+            PNPButton(title: Self.writeTitle(for: level), size: .sm, action: write)
+        }
     }
 
     private func warnNote(_ text: String) -> some View {
@@ -1551,6 +1573,28 @@ struct SecurityPolicyCard: View {
         Binding(
             get: { workspace.securityPolicy.fileVaultOffHardwareEncrypted },
             set: { level in persist(failure) { try workspace.saveHardwareLevel(level) } })
+    }
+
+    /// The "Write fail" button: writes the level the app applied for this control over what
+    /// the file holds, so the typed value that did not read as a level goes.
+    static func writeAppliedLevel(
+        _ control: SecurityControl, in workspace: WorkspaceStore,
+        failure: Binding<SaveFailure?>
+    ) {
+        let level = workspace.securityPolicy.level(for: control)
+        persist(failure) { try workspace.saveSecurityLevel(level, for: control) }
+    }
+
+    /// Applied nil (FileVault's own level) removes the entry.
+    static func writeAppliedHardwareLevel(
+        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>
+    ) {
+        let level = workspace.securityPolicy.fileVaultOffHardwareEncrypted
+        persist(failure) { try workspace.saveHardwareLevel(level) }
+    }
+
+    static func writeTitle(for level: SecurityControlLevel?) -> String {
+        level.map { "Write \($0.rawValue)" } ?? "Remove the entry"
     }
 
     /// A successful write clears the failure, a failed one becomes the card's message.
@@ -1607,13 +1651,13 @@ struct SecurityPolicyCard: View {
     }
 
     static func shapeCaption(_ issue: SecurityPolicyIssue) -> String {
-        "config.yaml's \(shown(issue.keyPath)) is \"\(shown(issue.value))\", which is not a set "
-            + "of settings — using \(shown(issue.used))."
+        "config.yaml's \(shownPath(issue.keyPath)) is \"\(shown(issue.value))\", which is not "
+            + "a set of settings — using \(shown(issue.used))."
     }
 
     /// Nil when every key in the block is one the app reads.
     static func unknownKeysCaption(_ issues: [SecurityPolicyIssue]) -> String? {
-        let paths = issues.filter { $0.used.isEmpty }.map { shown($0.keyPath) }
+        let paths = issues.filter { $0.used.isEmpty }.map { shownPath($0.keyPath) }
         guard !paths.isEmpty else { return nil }
         let noun = paths.count == 1 ? "setting" : "settings"
         return "config.yaml has \(paths.count) security_policy \(noun) the app does not read: "
@@ -1623,6 +1667,12 @@ struct SecurityPolicyCard: View {
     /// Text taken from the user's file: control characters removed, length capped.
     private static func shown(_ raw: String) -> String {
         SecurityPolicyConfigLoader.displayText(raw)
+    }
+
+    /// A key path in an issue: the loader capped the typed key it ends in, so only control
+    /// characters are removed again, or a long key such as `controls.screen_saver_lock` is cut.
+    private static func shownPath(_ raw: String) -> String {
+        SecurityPolicyConfigLoader.stripped(raw)
     }
 }
 

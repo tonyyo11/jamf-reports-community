@@ -158,10 +158,15 @@ enum SecurityPolicyConfigLoader {
     /// Text taken from the file, safe to show: control and format characters (a pasted escape
     /// sequence, a right-to-left override) and line breaks removed, capped at 40 characters.
     static func displayText(_ raw: String) -> String {
-        let hidden = CharacterSet.controlCharacters.union(.newlines)
-        let kept = String(String.UnicodeScalarView(
-            raw.unicodeScalars.filter { !hidden.contains($0) }))
+        let kept = stripped(raw)
         return kept.count > 40 ? String(kept.prefix(39)) + "…" : kept
+    }
+
+    /// `displayText` without the cap, for a key path that is already built from capped parts.
+    static func stripped(_ raw: String) -> String {
+        let hidden = CharacterSet.controlCharacters.union(.newlines)
+        return String(String.UnicodeScalarView(
+            raw.unicodeScalars.filter { !hidden.contains($0) }))
     }
 }
 

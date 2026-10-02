@@ -858,6 +858,17 @@ final class SecurityPolicyCardTests: XCTestCase {
         XCTAssertNil(SecurityPolicyCard.unknownKeysCaption([]))
     }
 
+    /// The key path is shown in full: the loader capped the typed part of it already.
+    func testAKeyPathLongerThanFortyCharactersIsShownInFull() {
+        let long = "security_policy.controls.screen_saver_lock"
+        XCTAssertGreaterThan(long.count, 40)
+        XCTAssertEqual(
+            SecurityPolicyCard.unknownKeysCaption([issue(long, "", "")]),
+            "config.yaml has 1 security_policy setting the app does not read: \(long).")
+        XCTAssertTrue(SecurityPolicyCard.shapeCaption(issue(long, "strict", "the default policy"))
+            .contains(long))
+    }
+
     func testEachRowFindsItsOwnLevelIssue() {
         let sip = issue("security_policy.controls.sip", "wrn", "fail")
         let hardware = issue(
@@ -917,6 +928,60 @@ final class SecurityPolicyCardTests: XCTestCase {
                 demoMode: demo, jamfCLIProfileNames: { [] }, discoverProfiles: { [] },
                 jamfCLIInstallation: { nil })
             _ = SecurityPolicyCard().environment(workspace)
+        }
+    }
+
+    // MARK: - Writing the level the app applied
+
+    func testTheNoteOffersToWriteTheAppliedLevelOrRemoveTheEntry() {
+        XCTAssertEqual(SecurityPolicyCard.writeTitle(for: .fail), "Write fail")
+        XCTAssertEqual(SecurityPolicyCard.writeTitle(for: .warning), "Write warning")
+        XCTAssertEqual(SecurityPolicyCard.writeTitle(for: .ignore), "Write ignore")
+        XCTAssertEqual(SecurityPolicyCard.writeTitle(for: nil), "Remove the entry")
+    }
+
+    /// A typo is applied as `fail` and the picker shows Fail, so choosing Fail again fires
+    /// nothing; this is how the issue is cleared without changing the level.
+    func testWritingTheAppliedLevelClearsThatIssue() async throws {
+        try await withPolicyWorkspacesRoot {
+            let url = try writePolicyConfig("""
+            security_policy:
+              controls:
+                filevault: faill
+                sip: wrn
+              filevault_off_hardware_encrypted: maybe
+            """, profile: "policy-card")
+            let store = policyTestStore(demo: false, profile: "policy-card")
+            try await store.loadConfig()
+            XCTAssertEqual(store.securityPolicyIssues.count, 3)
+            let failure = Failure()
+
+            SecurityPolicyCard.writeAppliedLevel(.fileVault, in: store, failure: failure.binding)
+            XCTAssertEqual(store.securityPolicyIssues.map(\.keyPath), [
+                "security_policy.controls.sip", "security_policy.filevault_off_hardware_encrypted",
+            ])
+            let text = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertTrue(text.contains("filevault: fail\n"))
+            XCTAssertTrue(text.contains("sip: wrn"), "another key's typed value stays")
+            XCTAssertEqual(store.securityPolicy, .default)
+
+            SecurityPolicyCard.writeAppliedHardwareLevel(in: store, failure: failure.binding)
+            XCTAssertEqual(store.securityPolicyIssues.map(\.keyPath),
+                           ["security_policy.controls.sip"])
+            XCTAssertFalse(try String(contentsOf: url, encoding: .utf8)
+                .contains("filevault_off_hardware_encrypted"))
+            XCTAssertNil(failure.value)
+        }
+    }
+
+    func testAFailedWriteOfTheAppliedLevelIsTheCardsMessage() async throws {
+        try await withPolicyWorkspacesRoot {
+            let store = policyTestStore(demo: false, profile: "escape\n")
+            let failure = Failure()
+            SecurityPolicyCard.writeAppliedLevel(.sip, in: store, failure: failure.binding)
+            XCTAssertEqual(
+                failure.value?.message,
+                "Couldn't save the security policy: Invalid profile name: escape\n")
         }
     }
 
