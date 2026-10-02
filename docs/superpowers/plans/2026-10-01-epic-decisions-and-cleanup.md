@@ -191,3 +191,72 @@ from `only` whenever it is non-nil, so an empty list filters out every sheet.
 2. Otherwise: an empty `only` list is treated as absent. Test both an empty and a one-name list.
 3. `app/scripts/README.md` still says `package-dmg.sh`'s first argument is required; it is now
    optional and checked against the built app's version. Correct that sentence.
+
+## Task 8: Port the eight column hints to the live scaffold, delete the engine copy
+
+Owner decision, 2026-10-02. Files: `Services/ScaffoldService.swift`, `Engine/ReportEngine.swift`,
+`app/scripts/test-only-symbols.allow`, tests.
+
+`ReportEngine.scaffoldMappings` lost its only production caller when `scaffoldConfig` was deleted;
+only the `testableScaffoldMappings` seam and eight `testScaffoldDetects*` tests
+(`CustomFieldExpansionTests.swift`) use it. It holds column-detection hints for eight logical
+fields that the live CSV scaffold (`ScaffoldService`) has no hints for: `full_name`, `asset_tag`,
+`building`, `position`, `last_logged_in_user`, `recovery_lock`, `battery_health`,
+`entra_sso_status`.
+
+1. Add those eight hints to `ScaffoldService`'s column detection, in the form its existing hints
+   use, so `writeConfig` (first scaffold) and `mergeColumns` (re-scaffold) map a CSV header for
+   each. Take the header patterns from `scaffoldMappings` as they are; do not invent others. If
+   `ScaffoldService` detects by a different mechanism (for example `CSVFamilyDetector` /
+   `bestColumnMatch`), add them where that mechanism keeps its table.
+2. Move the eight tests' intent onto `ScaffoldService`: each header the old tests proved is
+   detected is now detected by the live scaffold (same sample headers). A header that matches two
+   logical fields keeps the existing tie-break rule; say what it is.
+3. `mergeColumns` must not overwrite a mapping the user already has for one of these fields
+   (its existing rule: fill empty, repair renamed, keep valid). Test one of the eight.
+4. Delete `ReportEngine.scaffoldMappings`, `testableScaffoldMappings`, the old tests, the now
+   unused `mappings` parameter of `buildConfigYAML` if every caller passes `[:]` (verify), and the
+   allow-list entry. The guard script exits 0.
+5. The Config screen's column list (`ConfigService`'s logical fields) does not show these eight
+   today; do not add editors in this task. Say in your report whether a scaffolded mapping for
+   them survives a Config-screen save (it must — test it; if it does not, stop and report).
+
+## Task 9: The generate sheet is reachable from the Reports screen
+
+Owner decision, 2026-10-02. Files: `Views/ReportsView.swift`, `Views/GenerateSheet.swift`,
+tests where logic is reachable without the view.
+
+`GenerateSheet` (the view in `Views/GenerateSheet.swift`, with `RunLogConsoleEmbed` and
+`NewScheduleSheetWrapper`) has never been presented by anything. It is the only GUI for choosing a
+report template or a custom subset of sheets; the app otherwise always generates the Full
+Instance report, and templates are reachable only from the CLI. Wire it up; do not rewrite it.
+
+1. The Reports screen's generate action opens `GenerateSheet` as a sheet for the active profile.
+   Find how that screen generates today (it calls a generate path and parses the SHA-256 log
+   line); the existing direct action becomes "open the sheet". The Overview's one-click generate
+   is unchanged.
+2. Before wiring, read the view against the current code and list in your report everything in it
+   that no longer matches: an engine or bridge call whose signature changed, a template or sheet
+   name that no longer exists (compare with `TemplateResolver.allTemplates` and
+   `CoreDashboard`'s sheet plan), an option that does nothing, and anything that uses a
+   mechanism removed in 2.8.0 — in particular `NewScheduleSheetWrapper`: hand-built schedules
+   now live in `ScheduleStore` and run through the bundled background item; if the wrapper
+   writes or assumes a LaunchAgent plist, remove that affordance from the sheet rather than
+   repair it, and say so.
+3. Fix only what stops the sheet doing what its controls say: the template picker generates that
+   template; Custom with a sheet selection generates exactly those sheets (persisted selection as
+   today); "collect fresh" collects before generating and stands down correctly when a collect is
+   already in flight; "include audit" does what it says or is removed if nothing implements it.
+   Generation goes through the same entry point the Overview uses, including the AI narrative
+   request (`ReportNarrative.makeForGUIGenerate`) when AI is enabled, and the Reports list
+   refreshes when the sheet finishes.
+4. Demo mode: the action is disabled with `DemoData.liveOnlyHelp`, like other live-only controls.
+5. A generate that fails shows the cause through `CLIBridge.explainOperationError`, as other
+   screens do; the sheet can be dismissed while idle and not mid-run.
+6. Layout: presenting an existing view adds no new layout, but the view has never been on screen.
+   The commit carries `DRAFT — needs visual verification`, and the report lists what the owner
+   should look at (the sheet at the minimum window size, the custom sheet list, the run log
+   console, dark mode).
+7. Tests: whatever decides the generate request from the sheet's state (template, sheets, collect
+   first) is tested through `GenerateSheetState` without the view; the existing
+   `GenerateSheetStateTests` keep passing.
