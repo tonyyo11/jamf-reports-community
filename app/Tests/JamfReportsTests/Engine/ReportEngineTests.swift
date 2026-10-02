@@ -724,23 +724,6 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertTrue(CLIBridge.isSafeDeviceIdentifier("123"))
     }
 
-    // MARK: - P3: why XLSXValidator is not wired into generate()
-
-    // `XLSXValidator` has no production call sites. The reason, recorded here
-    // rather than as a test: it treats a sheet with no row elements as invalid
-    // (deliberately — see `testXLSXValidatorDetectsEmptySheetData`), while a
-    // full-instance report with real tenant data legitimately contains empty
-    // sheets, so wiring it as-is would warn on every genuine generate.
-    //
-    // An earlier version of this asserted that engine output DOES trip that
-    // rule. It passed locally and failed on CI, because whether the generated
-    // workbook happens to contain an empty sheet depends on the data present,
-    // not on the code — CI runs with none. That made it a test of incidental
-    // output, so it was removed rather than made conditional. The design
-    // question it guarded (is an empty sheet legitimate output?) is a product
-    // decision; if it is ever answered "no", the validator can be wired and
-    // this comment deleted.
-
     // MARK: - Helpers
 
     /// Thread-safe collector for `@Sendable` log-line closures so Swift 6

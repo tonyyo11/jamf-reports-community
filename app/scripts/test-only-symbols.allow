@@ -14,8 +14,3 @@ StubTickerRegistrar               # TickerRegistrar test double; tests run the t
 invokeRetryForTesting             # ErrorStateView: fires the retry action without a rendered button
 controlTextDidChange              # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
 controlTextDidEndEditing          # NSTextFieldDelegate method on SecureSecretField's coordinator; AppKit calls it
-
-# --- Pending removal: production code only tests use ------------------------
-# No production path reaches these. Each needs an owner decision (delete with its
-# tests, move to app/Tests, or wire it in); remove the entry when that lands.
-XLSXValidator                     # Engine/Validators/XLSXValidator.swift:16 output validator with no call site, left unwired on purpose (ReportEngineTests.swift:727)

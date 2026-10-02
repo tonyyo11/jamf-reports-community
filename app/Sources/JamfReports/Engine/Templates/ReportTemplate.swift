@@ -171,33 +171,3 @@ protocol ReportTemplate: Sendable {
     /// Minimum data-collection tier required for a complete render.
     var recommendedSchedule: TemplateDataTier { get }
 }
-
-// MARK: - ValidationReport (shared by validators)
-
-/// Result returned by each output validator.
-public struct ValidationReport: Sendable {
-    public var isValid: Bool
-    public var issues: [Issue]
-    public var warnings: [String]
-
-    public init(isValid: Bool, issues: [Issue] = [], warnings: [String] = []) {
-        self.isValid = isValid
-        self.issues = issues
-        self.warnings = warnings
-    }
-
-    /// A single finding attached to a validation report.
-    public struct Issue: Sendable {
-        public enum Severity: String, Sendable { case error, warning }
-        public var severity: Severity
-        public var message: String
-        /// Optional location hint (e.g. file offset, sheet name, img src path).
-        public var location: String?
-
-        public init(severity: Severity, message: String, location: String? = nil) {
-            self.severity = severity
-            self.message = message
-            self.location = location
-        }
-    }
-}
