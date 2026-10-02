@@ -87,8 +87,12 @@ columns:
 
   # --- Hardware info (optional) ---
 
-  # Processor architecture. Typical values: "Apple M3 Pro", "Intel Core i9".
-  architecture: "Architecture"
+  # security_policy's hardware rule on a CSV needs architecture (Apple silicon) and a "Model
+  # Identifier" column as model (T2 Macs); without them hardware is unknown and FileVault off
+  # keeps the control's own level.
+
+  # Processor architecture, as Jamf exports it. Typical values: "arm64", "x86_64".
+  architecture: "Architecture Type"
 
   # The human-readable model name (e.g., "MacBook Pro (16-inch, 2021)").
   model: "Model"
