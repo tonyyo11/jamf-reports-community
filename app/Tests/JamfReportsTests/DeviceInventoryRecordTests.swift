@@ -220,16 +220,23 @@ final class DeviceInventoryRecordTests: XCTestCase {
         XCTAssertNil(encrypted([:]))
     }
 
-    func testMergeKeepsTheFirstKnownHardwareAnswer() {
-        var unknown = DeviceInventoryRecord.empty(id: "serial:s1", source: "csv.csv")
-        var known = DeviceInventoryRecord.empty(id: "serial:s1", source: "computers.json")
-        known.hardwareEncrypted = true
-        unknown.merge(known)
-        XCTAssertEqual(unknown.hardwareEncrypted, true)
-
-        var intel = DeviceInventoryRecord.empty(id: "serial:s1", source: "csv.csv")
-        intel.hardwareEncrypted = false
-        intel.merge(known)
-        XCTAssertEqual(intel.hardwareEncrypted, false)
+    /// One source with an answer gives it; two that agree keep it; two that disagree are
+    /// unknown, so FileVault off stays at the FileVault level rather than the first guess.
+    func testMergeTreatsDisagreeingHardwareAnswersAsUnknown() {
+        let cases: [(Bool?, Bool?, Bool?)] = [
+            (nil, true, true), (true, nil, true), (nil, false, false), (false, nil, false),
+            (true, true, true), (false, false, false),
+            (true, false, nil), (false, true, nil),
+            (nil, nil, nil),
+        ]
+        for (first, second, merged) in cases {
+            var csv = DeviceInventoryRecord.empty(id: "serial:s1", source: "csv.csv")
+            csv.hardwareEncrypted = first
+            var computers = DeviceInventoryRecord.empty(id: "serial:s1", source: "computers.json")
+            computers.hardwareEncrypted = second
+            csv.merge(computers)
+            XCTAssertEqual(csv.hardwareEncrypted, merged,
+                           "\(String(describing: first)) + \(String(describing: second))")
+        }
     }
 }

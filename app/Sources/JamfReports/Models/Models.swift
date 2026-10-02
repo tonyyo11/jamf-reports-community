@@ -502,7 +502,12 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         bootstrapToken = firstNonEmpty(bootstrapToken, other.bootstrapToken)
         diskUsage = firstNonEmpty(diskUsage, other.diskUsage)
         failedRules = max(failedRules, other.failedRules)
-        hardwareEncrypted = hardwareEncrypted ?? other.hardwareEncrypted
+        // Sources that disagree are not a guess either way (the hardware index's rule).
+        if let mine = hardwareEncrypted, let theirs = other.hardwareEncrypted {
+            hardwareEncrypted = mine == theirs ? mine : nil
+        } else {
+            hardwareEncrypted = hardwareEncrypted ?? other.hardwareEncrypted
+        }
         for failure in other.patchFailures where !patchFailures.contains(failure) {
             patchFailures.append(failure)
         }
