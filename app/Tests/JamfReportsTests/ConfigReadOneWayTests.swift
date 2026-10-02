@@ -139,9 +139,28 @@ final class ConfigReadOneWayTests: XCTestCase {
         XCTAssertTrue(try optsIn("output: {allow_absolute_paths: true}\n"))
     }
 
-    /// The old lookup also took yes, 1 and on, which the decoder's boolean rule does not.
-    func testAllowAbsolutePathsNoLongerOptsInForYesOneOrOn() throws {
-        for value in ["yes", "1", "on", "false", "\"\""] {
+    /// The opt-in has always taken yes, on and 1 as well as true; a non-true spelling is a
+    /// Doctor suggestion, not a refusal.
+    func testAllowAbsolutePathsOptsInForYes() throws {
+        for value in ["yes", "Yes", "YES", "\"yes\"", "'yes'"] {
+            XCTAssertTrue(try optsIn("output:\n  allow_absolute_paths: \(value)\n"), value)
+        }
+    }
+
+    func testAllowAbsolutePathsOptsInForOn() throws {
+        for value in ["on", "On", "ON", "\"on\""] {
+            XCTAssertTrue(try optsIn("output:\n  allow_absolute_paths: \(value)\n"), value)
+        }
+    }
+
+    func testAllowAbsolutePathsOptsInForOne() throws {
+        for value in ["1", "\"1\""] {
+            XCTAssertTrue(try optsIn("output:\n  allow_absolute_paths: \(value)\n"), value)
+        }
+    }
+
+    func testAllowAbsolutePathsDoesNotOptInForAnythingElse() throws {
+        for value in ["false", "no", "off", "0", "2", "maybe", "\"\""] {
             XCTAssertFalse(try optsIn("output:\n  allow_absolute_paths: \(value)\n"), value)
         }
     }

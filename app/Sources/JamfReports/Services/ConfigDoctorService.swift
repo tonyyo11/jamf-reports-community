@@ -663,24 +663,46 @@ enum ConfigDoctorService {
         }
     }
 
-    /// true/false keys the decoder does not model, read by `WorkspacePaths` and `HtmlReport`.
-    private static let fileReadBooleans = [["output", "allow_absolute_paths"],
-                                           ["html", "track_history"]]
-
-    /// One warning for each of those keys holding anything but true or false: it reads as false.
+    /// true/false keys the decoder does not model. `output.allow_absolute_paths` also takes yes,
+    /// on and 1 (`WorkspacePaths.optIn`); `html.track_history` takes only true and false.
     static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {
-        fileReadBooleans.compactMap { path in
-            guard let value = ConfigLoader.rawValue(at: path, in: root),
-                  !(value is NSNull), !(value is Bool) else { return nil }
-            let keyPath = path.joined(separator: ".")
-            let typed = ((value as? String) ?? (value as? Int).map { String($0) })
-                .map { "\"\(ConfigSchema.displayText($0))\"" } ?? "This value"
-            return DoctorRow(
-                id: "config.value.\(keyPath)", severity: .warn, title: keyPath,
-                detail: "\(typed) is not true or false, so the app reads it as false.",
-                hint: "Write true or false."
-            )
+        var rows: [DoctorRow] = []
+        if let value = typedNonBoolean(at: ["output", "allow_absolute_paths"], in: root) {
+            switch WorkspacePaths.optIn(value) {
+            case true?:
+                rows.append(DoctorRow(
+                    id: "config.value.output.allow_absolute_paths", severity: .suggest,
+                    title: "output.allow_absolute_paths",
+                    detail: "\(typedText(value)) opts in, as true does.",
+                    hint: "Write true: the rest of config.yaml reads only true and false."))
+            case false?: break
+            case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
+            }
         }
+        if let value = typedNonBoolean(at: ["html", "track_history"], in: root) {
+            rows.append(readsAsFalseRow("html.track_history", value))
+        }
+        return rows
+    }
+
+    /// The value at `path` unless it is absent, null, true or false.
+    private static func typedNonBoolean(at path: [String], in root: [String: Any]) -> Any? {
+        guard let value = ConfigLoader.rawValue(at: path, in: root),
+              !(value is NSNull), !(value is Bool) else { return nil }
+        return value
+    }
+
+    private static func typedText(_ value: Any) -> String {
+        ((value as? String) ?? (value as? Int).map { String($0) })
+            .map { "\"\(ConfigSchema.displayText($0))\"" } ?? "This value"
+    }
+
+    private static func readsAsFalseRow(_ keyPath: String, _ value: Any) -> DoctorRow {
+        DoctorRow(
+            id: "config.value.\(keyPath)", severity: .warn, title: keyPath,
+            detail: "\(typedText(value)) is not true or false, so the app reads it as false.",
+            hint: "Write true or false."
+        )
     }
 
     // MARK: - Security policy (hand-typed values)

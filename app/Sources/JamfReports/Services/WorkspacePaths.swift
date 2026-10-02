@@ -220,19 +220,16 @@ enum WorkspacePaths {
             if isInside(resolved, root: workspace) {
                 return resolved
             }
-            // Only `true`, as the decoder reads a boolean; `yes`, `1` and `on` are not.
-            let optedIn = (try? configValue(
+            let optedIn = optIn((try? configValue(
                 workspace: workspace, section: "output", key: "allow_absolute_paths"
-            )) ?? nil
-            // SF-8 (option b): record the resolved opt-in value alongside the
-            // policy decision. If a future config shape ends up read as nil,
-            // this entry shows *why* the user got "Disallowed absolute path"
-            // rather than the expected acceptance.
-            let logged = optedIn.map { String(describing: $0) } ?? "<nil>"
+            )) ?? nil) == true
+            // SF-8 (option b): record the opt-in decision alongside the policy
+            // decision, so "Disallowed absolute path" can be told apart from a
+            // missing or unreadable opt-in. The typed value stays out of the log.
             AppLogger.collect.info(
-                "WorkspacePaths: allow_absolute_paths resolved to \(logged, privacy: .public)"
+                "WorkspacePaths: allow_absolute_paths opts in: \(optedIn, privacy: .public)"
             )
-            if optedIn as? Bool == true {
+            if optedIn {
                 AppLogger.collect.warning(
                     "WorkspacePaths: accepting absolute path outside workspace via opt-in"
                 )
@@ -247,6 +244,17 @@ enum WorkspacePaths {
         }
 
         throw PathError.resolutionEscaped(value, workspace)
+    }
+
+    /// `output.allow_absolute_paths` as read from `rawMapping`: true for true, yes, on or 1, false
+    /// for false, no, off or 0 (any case, quoted or not), nil for anything else. The opt-in has
+    /// always taken these spellings; the Config Doctor suggests writing true.
+    static func optIn(_ value: Any?) -> Bool? {
+        if let flag = value as? Bool { return flag }
+        guard let word = ((value as? String) ?? (value as? Int).map { String($0) })?.lowercased()
+        else { return nil }
+        if ["yes", "on", "1"].contains(word) { return true }
+        return ["no", "off", "0"].contains(word) ? false : nil
     }
 
     private static func expandTilde(_ value: String) -> String {

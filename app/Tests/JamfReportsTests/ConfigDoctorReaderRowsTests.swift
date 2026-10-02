@@ -11,24 +11,39 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
     func testANonBooleanValueForAKeyReadOutsideTheDecoderIsStated() throws {
         let root = try ConfigLoader.rawMapping(fromYAML: """
             output:
-              allow_absolute_paths: yes
+              allow_absolute_paths: maybe
             html:
-              track_history: 1
+              track_history: yes
             """)
         let rows = ConfigDoctorService.fileReadBooleanRows(root)
         XCTAssertEqual(rows.map(\.id), ["config.value.output.allow_absolute_paths",
                                         "config.value.html.track_history"])
         XCTAssertEqual(rows.map(\.severity), [.warn, .warn])
         XCTAssertEqual(rows.first?.detail,
-                       "\"yes\" is not true or false, so the app reads it as false.")
+                       "\"maybe\" is not true or false, so the app reads it as false.")
         XCTAssertEqual(rows.last?.detail,
-                       "\"1\" is not true or false, so the app reads it as false.")
+                       "\"yes\" is not true or false, so the app reads it as false.")
+    }
+
+    /// yes, on and 1 opt in to absolute paths, as they always have; the row suggests true.
+    func testAnOptInSpelledOtherThanTrueIsASuggestion() throws {
+        for value in ["yes", "ON", "1"] {
+            let yaml = "output:\n  allow_absolute_paths: \(value)\n"
+            let rows = ConfigDoctorService.fileReadBooleanRows(
+                try ConfigLoader.rawMapping(fromYAML: yaml))
+            XCTAssertEqual(rows.map(\.severity), [.suggest], value)
+            XCTAssertEqual(rows.first?.detail, "\"\(value)\" opts in, as true does.", value)
+            XCTAssertEqual(rows.first?.hint, "Write true: the rest of config.yaml reads only true "
+                + "and false.", value)
+        }
     }
 
     func testTrueFalseAndAbsentKeysGiveNoRow() throws {
         for yaml in [
             "output:\n  allow_absolute_paths: \"true\"\nhtml:\n  track_history: False\n",
             "output:\n  allow_absolute_paths:\n",
+            "output:\n  allow_absolute_paths: no\n",
+            "output:\n  allow_absolute_paths: \"OFF\"\n",
             "other: 1\n",
         ] {
             let root = try ConfigLoader.rawMapping(fromYAML: yaml)
