@@ -11,6 +11,10 @@ struct CompliancePostureView: View {
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
     @State private var mscpResults: [MSCPComplianceService.BaselineResult] = []
     @State private var hasLoaded = false
+    /// Bumped by each reload, so a read that a newer one replaced is dropped.
+    @State private var loadGeneration = 0
+    /// False until the first read lands: until then the screen does not say there is no data.
+    @State private var hasRead = false
 
     var body: some View {
         PageScaffold {
@@ -26,12 +30,12 @@ struct CompliancePostureView: View {
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
+            if !workspace.demoMode && hasRead {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
 
             // Show proxy note only when using proxy compliance (no mSCP baselines)
-            if mscpResults.isEmpty {
+            if mscpResults.isEmpty && hasRead {
                 proxyNoteCard
             }
 
@@ -45,7 +49,7 @@ struct CompliancePostureView: View {
                     )
                 }
             } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
-                emptyState
+                if hasRead { emptyState }
             } else {
                 // Show mSCP baseline donuts when available, otherwise proxy bands
                 if !mscpResults.isEmpty {
@@ -91,32 +95,40 @@ struct CompliancePostureView: View {
     }
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? DemoData.compliancePostureSnapshot
-            : CompliancePostureService.load(profile: workspace.profile)
-
-        // Load real mSCP baseline results when not in demo mode
+        loadGeneration += 1
         if workspace.demoMode {
+            snapshot = DemoData.compliancePostureSnapshot
             mscpResults = DemoData.complianceBaselineResults
-        } else {
-            // Load config to get resolved baselines
-            if let config = readConfig(),
-               let compliance = config.compliance,
-               !compliance.resolvedBaselines.isEmpty {
-                mscpResults = MSCPComplianceService.load(
-                    profile: workspace.profile,
-                    baselines: compliance.resolvedBaselines
-                )
-            } else {
-                mscpResults = []
-            }
+            hasRead = true
+            return
+        }
+        let generation = loadGeneration
+        let profile = workspace.profile
+        Task {
+            // The security snapshot, the computers snapshot the hardware rule reads and
+            // ea-results are parsed whole; on a large fleet that stalled the screen.
+            let loaded = await Task.detached(priority: .userInitiated) {
+                (CompliancePostureService.load(profile: profile),
+                 Self.loadBaselineResults(profile: profile))
+            }.value
+            // A read that a profile switch or a later refresh replaced must not paint.
+            guard generation == loadGeneration else { return }
+            snapshot = loaded.0
+            mscpResults = loaded.1
+            hasRead = true
         }
     }
 
-    private func readConfig() -> ReportConfig? {
-        guard let workspaceURL = ProfileService.workspaceURL(for: workspace.profile) else { return nil }
-        let configURL = workspaceURL.appendingPathComponent("config.yaml")
-        return try? ConfigLoader.load(from: configURL)
+    /// The configured mSCP baselines' results; none when config.yaml names none.
+    nonisolated static func loadBaselineResults(
+        profile: String
+    ) -> [MSCPComplianceService.BaselineResult] {
+        guard let workspaceURL = ProfileService.workspaceURL(for: profile),
+              let config = try? ConfigLoader.load(
+                  from: workspaceURL.appendingPathComponent("config.yaml")),
+              let baselines = config.compliance?.resolvedBaselines, !baselines.isEmpty
+        else { return [] }
+        return MSCPComplianceService.load(profile: profile, baselines: baselines)
     }
 
     // MARK: - Sections

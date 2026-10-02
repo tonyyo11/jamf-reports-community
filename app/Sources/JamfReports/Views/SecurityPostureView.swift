@@ -13,6 +13,10 @@ struct SecurityPostureView: View {
     @ScaledMetric(relativeTo: .title) private var actionTileSize: CGFloat = 22
     @State private var snapshot: SecurityPostureService.Snapshot = .empty
     @State private var hasLoaded = false
+    /// Bumped by each reload, so a read that a newer one replaced is dropped.
+    @State private var loadGeneration = 0
+    /// False until the first read lands: until then the screen does not say there is no data.
+    @State private var hasRead = false
     /// User-configurable weight overrides edited in ConfigView → Scoring tab.
     /// Empty string ⇒ the v3.5 defaults via `ScoringConfig.parse`.
     @AppStorage(ScoringConfig.storageKey) private var scoringRaw: String = ""
@@ -31,7 +35,7 @@ struct SecurityPostureView: View {
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
+            if !workspace.demoMode && hasRead {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
                 // Per-kind file dates are the honest per-screen signal here;
                 // digest-level collectionSources belongs on summary screens only.
@@ -51,7 +55,7 @@ struct SecurityPostureView: View {
                     )
                 }
             } else if snapshot.totalDevices == 0 {
-                emptyState
+                if hasRead { emptyState }
             } else {
                 heroScoreCard
                 kpiGrid
@@ -81,9 +85,23 @@ struct SecurityPostureView: View {
     }
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? DemoData.securityPostureSnapshot
-            : SecurityPostureService.load(profile: workspace.profile)
+        loadGeneration += 1
+        if workspace.demoMode {
+            snapshot = DemoData.securityPostureSnapshot
+            hasRead = true
+            return
+        }
+        let generation = loadGeneration
+        let profile = workspace.profile
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) {
+                SecurityPostureService.load(profile: profile)
+            }.value
+            // A read that a profile switch or a later refresh replaced must not paint.
+            guard generation == loadGeneration else { return }
+            snapshot = loaded
+            hasRead = true
+        }
     }
 
     // MARK: - Computed values

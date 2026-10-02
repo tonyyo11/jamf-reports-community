@@ -45,6 +45,61 @@ final class PostureViewsRenderTests: XCTestCase {
                        label + ", 2 warnings")
     }
 
+    // MARK: - Reading off the main actor
+
+    /// Both posture screens read in a detached task, so the readers must not need the main
+    /// actor, and must answer there as they do on it.
+    func testPostureReadsRunOffTheMainActor() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-posture-off-main-\(UUID().uuidString)", isDirectory: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "posture-off-main"
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        let dataDir = workspace.appendingPathComponent("jamf-cli-data")
+        for kind in ["security", "ea-results"] {
+            try FileManager.default.createDirectory(
+                at: dataDir.appendingPathComponent(kind), withIntermediateDirectories: true)
+        }
+        try FileManager.default.copyItem(
+            at: TestFixtures.root.appendingPathComponent("jamf-cli-data/security/security.json"),
+            to: dataDir.appendingPathComponent("security/security_20261001T090000.json"))
+        let eaRows: [[String: Any]] = [
+            ["device": "mac-1", "ea_name": "Failed Rules Count", "value": 0],
+            ["device": "mac-2", "ea_name": "Failed Rules Count", "value": 12],
+        ]
+        try JSONSerialization.data(withJSONObject: eaRows).write(
+            to: dataDir.appendingPathComponent("ea-results/ea-results_20261001T090000.json"))
+        try """
+        compliance:
+          baselines:
+            - name: "Baseline"
+              failures_count_column: "Failed Rules Count"
+        """.write(to: workspace.appendingPathComponent("config.yaml"),
+                  atomically: true, encoding: .utf8)
+
+        let compliance = await Task.detached {
+            CompliancePostureService.load(profile: profile)
+        }.value
+        XCTAssertEqual(compliance, CompliancePostureService.load(profile: profile))
+        XCTAssertEqual(compliance.totalDevices, 101)
+
+        let security = await Task.detached { SecurityPostureService.load(profile: profile) }.value
+        XCTAssertEqual(security, SecurityPostureService.load(profile: profile))
+        XCTAssertEqual(security.totalDevices, 101)
+
+        let baselines = await Task.detached {
+            CompliancePostureView.loadBaselineResults(profile: profile)
+        }.value
+        XCTAssertEqual(baselines.map(\.name), ["Baseline"])
+        XCTAssertEqual(baselines.first?.devicesWithData, 2)
+    }
+
     // MARK: - Service decode parity
 
     /// Confirms the production v1.7 security report shape (flat per-device
