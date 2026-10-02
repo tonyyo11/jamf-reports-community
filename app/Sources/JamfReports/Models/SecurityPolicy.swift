@@ -160,11 +160,12 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         "some partitions",
     ]
     /// Checked before the true forms, because most negatives contain their positive
-    /// word: "UNENCRYPTED", "NOT_ENCRYPTED", "Not Enabled", "inactive", "Disconnected". A
-    /// paused encryption stays paused until someone resumes it, so unlike ENCRYPTING it is off.
+    /// word: "UNENCRYPTED", "NOT_ENCRYPTED", "Not Enabled", "inactive", "Disconnected",
+    /// "Unconnected". A paused encryption stays paused until someone resumes it, so unlike
+    /// ENCRYPTING it is off.
     private static let falseMarkers = [
         "not ", "no partitions", "disabled", "unencrypted", "inactive", "decrypt", "missing",
-        "encrypting paused", "disconnected",
+        "encrypting paused", "disconnected", "unconnected",
     ]
     private static let falseValues: Set<String> = ["false", "no", "0", "off", "none"]
     /// Gatekeeper reports its setting ("APP_STORE_AND_IDENTIFIED_DEVELOPERS"), not a yes or no,

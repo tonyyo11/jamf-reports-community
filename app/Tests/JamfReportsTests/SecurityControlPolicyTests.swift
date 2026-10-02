@@ -76,6 +76,13 @@ final class SecurityControlPolicyTests: XCTestCase {
         }
     }
 
+    /// "Unconnected" contains "connected", so it needs its own off marker.
+    func testUnconnectedIsOff() {
+        for value in ["Unconnected", "unconnected", "UNCONNECTED", "Not connected"] {
+            XCTAssertEqual(SecurityControlPolicy.reading(value), false, value)
+        }
+    }
+
     /// The macOS firewall in its strictest mode is on.
     func testBlockAllIncomingConnectionsIsAFirewallThatIsOn() {
         for value in ["Block all incoming connections", " block all incoming connections "] {
