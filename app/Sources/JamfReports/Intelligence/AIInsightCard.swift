@@ -147,7 +147,7 @@ struct AIInsightCard: View {
         let generatorConfig = config
         let generatorAvailability = availability
         let heldGenerator = generator
-        let input = FleetInsightInput(current: current, previous: previous)
+        let input = FleetInsightInput.fleet(current: current, previous: previous)
         // The profile at click time: if the sidebar switches profiles mid-stream,
         // this Task's view identity survives (only its data props change), so
         // every state write below must be re-checked against the CURRENT

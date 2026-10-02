@@ -24,17 +24,36 @@ struct FleetInsight: Sendable, Equatable {
 
 // MARK: - Pure input builder (ungated)
 
-/// The data the generator turns into an insight: the newest fleet summary plus
-/// the prior-period summary for deltas. Pure value type, no FoundationModels
-/// dependency — built off `TrendStore.filteredSummaries` (oldest-first; `.last`
-/// is current, `previous` via `FleetReportEmitter.priorSummary`).
-struct FleetInsightInput: Sendable {
-    var current: DailySummary
-    var previous: DailySummary?
+/// What a screen hands the generator: a header, the screen's focus and its
+/// aggregate facts. Aggregates only — never a device, user or host name.
+struct FleetInsightInput: Sendable, Equatable {
+    let title: String
+    let focus: String
+    let facts: [Fact]
+    let notes: [String]
 
-    /// Plain-language prompt context: current fleet facts plus deltas vs. the
-    /// prior period. Absent metrics are omitted (never rendered as a misleading
-    /// 0%), matching how the trend surfaces treat nil.
+    enum Value: Sendable, Equatable {
+        case percent(Double)
+        case count(Int)
+        case text(String)
+    }
+
+    enum Polarity: Sendable, Equatable {
+        case higherIsBetter, lowerIsBetter, neutral
+    }
+
+    struct Fact: Sendable, Equatable {
+        let label: String
+        let value: Value
+        let prior: Value?
+        let polarity: Polarity
+        /// The other side of a device share ("not enabled"); nil when the
+        /// remainder is not a device state, as for an average.
+        var complement: String? = nil
+    }
+
+    /// The title, the focus, one line per fact, then the notes. Changes are in
+    /// percentage points for shares and signed integers for counts.
     ///
     /// `maxApproxTokens` bounds the size: tokens are approximated at 4 chars per
     /// token (the widely-used rough heuristic; the generator additionally caps
@@ -42,96 +61,18 @@ struct FleetInsightInput: Sendable {
     /// context exceeds the budget it is truncated on a line boundary so a
     /// partial fact is never emitted.
     func promptContext(maxApproxTokens: Int = 1_500) -> String {
-        var lines: [String] = []
-        lines.append("Fleet snapshot for \(Self.safeDate(current.date)):")
-        lines.append("- Total managed devices: \(current.totalDevices)")
-
-        appendPct(&lines, "FileVault encrypted", current.fileVaultPct, previous?.fileVaultPct)
-        appendPct(&lines, "OS current", current.osCurrentPct, previous?.osCurrentPct)
-        // Unweighted mean of per-title compliance, not the device-weighted figure the
-        // Patch screen shows; labelled so the model does not present it as that one.
-        appendPct(&lines, "Patch compliance (avg per title)", current.patchPct,
-                  previous?.patchPct)
-        appendPct(&lines, "SIP enabled", current.sipPct, previous?.sipPct)
-        appendPct(&lines, "Firewall enabled", current.firewallPct, previous?.firewallPct)
-        appendPct(&lines, "Gatekeeper enabled", current.gatekeeperPct, previous?.gatekeeperPct)
-        appendPct(&lines, "Compliance", current.compliancePct, previous?.compliancePct,
-                  proxyNote: current.complianceIsProxy == true)
-        appendScore(&lines, "Security score", current.securityScore, previous?.securityScore)
-
-        appendCount(&lines, "Stale devices", current.staleCount, previous?.staleCount)
-        appendCount(&lines, "P0 action items", current.actionItemsP0, previous?.actionItemsP0)
-        appendCount(&lines, "P1 action items", current.actionItemsP1, previous?.actionItemsP1)
-        appendCount(&lines, "P2 action items", current.actionItemsP2, previous?.actionItemsP2)
-
-        if let previous {
-            lines.append("Prior period for deltas: \(Self.safeDate(previous.date)).")
-        } else {
-            lines.append("No prior period available; deltas omitted.")
-        }
-
+        let lines = [title, "Focus: \(focus)"] + facts.map(\.line) + notes
         return Self.budget(lines, maxApproxTokens: maxApproxTokens)
     }
 
-    /// T-23: `date` is the ONLY free-text string that reaches the prompt (every
-    /// other field is a formatted numeric). A tampered summary on synced storage
-    /// could otherwise embed prompt-injection text there. Round-trip through the
-    /// strict formatter so only a real `yyyy-MM-dd` value is ever emitted.
+    /// T-23: a summary's `date` is free text on synced storage and could carry
+    /// prompt-injection text. Round-trip through the strict formatter so only a
+    /// real `yyyy-MM-dd` value is ever emitted.
     static func safeDate(_ raw: String) -> String {
         guard let parsed = SummaryJSONParser.dateFormatter.date(from: raw) else {
             return "unknown date"
         }
         return SummaryJSONParser.dateFormatter.string(from: parsed)
-    }
-
-    // MARK: - Rendering helpers
-
-    private func appendPct(
-        _ lines: inout [String], _ label: String,
-        _ value: Double?, _ prior: Double?, proxyNote: Bool = false
-    ) {
-        guard let value else { return }
-        var line = "- \(label): \(Self.pct(value))"
-        if let prior {
-            line += " (\(Self.deltaPct(value - prior)) vs prior)"
-        }
-        if proxyNote { line += " [proxy metric]" }
-        lines.append(line)
-    }
-
-    private func appendScore(
-        _ lines: inout [String], _ label: String, _ value: Double?, _ prior: Double?
-    ) {
-        guard let value else { return }
-        var line = "- \(label): \(Self.num(value))"
-        if let prior {
-            line += " (\(Self.deltaNum(value - prior)) vs prior)"
-        }
-        lines.append(line)
-    }
-
-    private func appendCount(
-        _ lines: inout [String], _ label: String, _ value: Int?, _ prior: Int?
-    ) {
-        guard let value else { return }
-        var line = "- \(label): \(value)"
-        if let prior {
-            let delta = value - prior
-            let sign = delta >= 0 ? "+" : ""
-            line += " (\(sign)\(delta) vs prior)"
-        }
-        lines.append(line)
-    }
-
-    // MARK: - Formatting
-
-    private static func pct(_ value: Double) -> String { String(format: "%.1f%%", value) }
-    private static func num(_ value: Double) -> String { String(format: "%.1f", value) }
-    private static func deltaPct(_ value: Double) -> String {
-        String(format: "%@%.1f%%", value >= 0 ? "+" : "", value)
-    }
-    private static func deltaNum(_ value: Double) -> String {
-        String(format: "%@%.1f", value >= 0 ? "+" : "", value)
     }
 
     /// Truncate the context to `maxApproxTokens` on a line boundary. ~4 chars
@@ -147,6 +88,110 @@ struct FleetInsightInput: Sendable {
             used += cost
         }
         return kept.joined(separator: "\n")
+    }
+}
+
+// MARK: - Fleet digest
+
+extension FleetInsightInput {
+    /// The Overview's input: the newest daily summary, with changes against
+    /// `previous`. Absent metrics are left out, never sent as 0.
+    static func fleet(current: DailySummary, previous: DailySummary?) -> FleetInsightInput {
+        func share(_ label: String, _ key: KeyPath<DailySummary, Double?>,
+                   _ complement: String? = nil) -> Fact? {
+            current[keyPath: key].map {
+                Fact(label: label, value: .percent($0),
+                     prior: previous?[keyPath: key].map(Value.percent),
+                     polarity: .higherIsBetter, complement: complement)
+            }
+        }
+        func count(_ label: String, _ key: KeyPath<DailySummary, Int?>) -> Fact? {
+            current[keyPath: key].map {
+                Fact(label: label, value: .count($0),
+                     prior: previous?[keyPath: key].map(Value.count), polarity: .lowerIsBetter)
+            }
+        }
+        let score = { (summary: DailySummary?) in
+            summary?.securityScore.map { Value.text(String(format: "%.1f", $0)) }
+        }
+        let proxy = current.complianceIsProxy == true ? " [proxy metric]" : ""
+        let facts: [Fact?] = [
+            Fact(label: "Total managed devices", value: .count(current.totalDevices),
+                 prior: nil, polarity: .neutral),
+            share("FileVault encrypted", \.fileVaultPct, "not encrypted"),
+            // osCurrentPct counts a Mac on a major the feed does not list as not current.
+            share("OS current", \.osCurrentPct, "not on the newest release of its "
+                  + "macOS version, or version not listed"),
+            // An unweighted mean of per-title compliance, not a device share.
+            share("Patch compliance (avg per title)", \.patchPct),
+            share("SIP enabled", \.sipPct, "not enabled"),
+            share("Firewall enabled", \.firewallPct, "not enabled"),
+            share("Gatekeeper enabled", \.gatekeeperPct, "not enabled"),
+            share("Compliance" + proxy, \.compliancePct),
+            score(current).map {
+                Fact(label: "Security score", value: $0, prior: score(previous),
+                     polarity: .higherIsBetter)
+            },
+            count("Stale devices", \.staleCount),
+            count("P0 action items", \.actionItemsP0),
+            count("P1 action items", \.actionItemsP1),
+            count("P2 action items", \.actionItemsP2),
+        ]
+        let note = previous.map { "Prior period for deltas: \(safeDate($0.date))." }
+            ?? "No prior period available; deltas omitted."
+        return FleetInsightInput(
+            title: "Fleet snapshot for \(safeDate(current.date))",
+            focus: "overall fleet health, the largest gaps, and what changed since the "
+                + "prior period.",
+            facts: facts.compactMap { $0 },
+            notes: [note]
+        )
+    }
+}
+
+// MARK: - Rendering
+
+extension FleetInsightInput.Value {
+    var text: String {
+        switch self {
+        case .percent(let value): return String(format: "%.1f%%", tenths(value))
+        case .count(let value): return "\(value)"
+        case .text(let value): return value
+        }
+    }
+}
+
+/// Rounded once, so a share and its remainder always add up to 100.0%.
+private func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
+
+extension FleetInsightInput.Fact {
+    /// A share with a complement states both sides, so the model never has to
+    /// invert "SIP enabled: 1.0%" itself. A neutral fact prints its value only.
+    var line: String {
+        var line = "- \(label): \(value.text)"
+        guard polarity != .neutral else { return line }
+        if case .percent(let share) = value, let complement {
+            let rest = FleetInsightInput.Value.percent(max(0, 100 - tenths(share))).text
+            // A complement with its own comma would otherwise run into "on".
+            let on = complement.contains(",") ? ", on" : " on"
+            line = "- \(label) on \(value.text) of devices; \(complement)\(on) \(rest)"
+        }
+        return change.map { line + " (\($0))" } ?? line
+    }
+
+    private var change: String? {
+        switch (value, prior) {
+        case (.percent(let now), .percent(let then)?):
+            let delta = tenths(now - then)
+            let shown = delta == 0 ? 0 : delta  // never "-0.0"
+            return String(format: "%@%.1f pp vs prior", shown >= 0 ? "+" : "", shown)
+        case (.count(let now), .count(let then)?):
+            return "\(now >= then ? "+" : "")\(now - then) vs prior"
+        case (.text, .text(let then)?):
+            return "prior: \(then)"
+        default:
+            return nil
+        }
     }
 }
 
