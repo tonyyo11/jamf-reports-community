@@ -600,7 +600,9 @@ struct OutputConfig: Decodable, Sendable {
     var resolvedOutputDir: String { outputDir?.trimmingCharacters(in: .whitespaces) ?? "Generated Reports" }
     var isTimestampEnabled: Bool { timestampOutputs ?? true }
     var isArchiveEnabled: Bool { archiveEnabled ?? true }
-    var resolvedKeepLatestRuns: Int { keepLatestRuns ?? 10 }
+    /// Never below 1: `archiveOldRuns` keeps this many, so 0 archived the report just written
+    /// and a negative number trapped in `dropFirst`.
+    var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
 }
 
 // MARK: - charts
