@@ -263,7 +263,7 @@ struct CoreDashboard: Sendable {
                 ("Firewall Enabled", percentLabel(s.firewallEnabled, total: total)),
             ]
             if let n = securityFleet(items: items)?.fileVaultOffHardwareEncrypted, n > 0 {
-                fields.insert(("FileVault off, hardware-encrypted", "\(n)"), at: 2)
+                fields.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: 2)
             }
             ws.write("Summary", row: row, col: 0, format: .header)
             ws.write("Count / %", row: row, col: 1, format: .header)
@@ -2802,7 +2802,7 @@ struct CoreDashboard: Sendable {
         ]
         if let n = m.fileVaultOffHardwareEncrypted, n > 0,
            let at = metricRows.firstIndex(where: { $0.0 == "FileVault Coverage" }) {
-            metricRows.insert(("FileVault off, hardware-encrypted", "\(n)"), at: at + 1)
+            metricRows.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: at + 1)
         }
 
         ws.write("Metric", row: row, col: 0, format: .header)

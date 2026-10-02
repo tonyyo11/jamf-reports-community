@@ -343,7 +343,7 @@ final class CSVDashboardTests: XCTestCase {
     /// Writes the Security Controls sheet and returns its rows by label, plus the header.
     private func securityControls(
         csv: Data, columns: ColumnConfig, policy: SecurityControlPolicy? = nil
-    ) throws -> (header: [String], rows: [String: ControlRow]) {
+    ) throws -> (header: [String], rows: [String: ControlRow], footer: [String]) {
         var config = ReportConfig()
         config.columns = columns
         config.securityPolicy = policy
@@ -375,7 +375,11 @@ final class CSVDashboardTests: XCTestCase {
                 percent: text(at(4)), percentFormat: at(4)?.format,
                 warning: at(5).map { text($0) })
         }
-        return (headerCells.map { text($0) }, rows)
+        // Notes under the table are subtitle-format cells below the header row.
+        let headerRow = headerCells.first?.row ?? 0
+        let footer = cells.filter { $0.col == 0 && $0.format == .subtitle && $0.row > headerRow }
+            .sorted { $0.row < $1.row }.map { text($0) }
+        return (headerCells.map { text($0) }, rows, footer)
     }
 
     /// Fixture `jamf1128_computers_builtin.csv`: four Macs; one has FileVault, SIP, Firewall and
@@ -590,5 +594,42 @@ final class CSVDashboardTests: XCTestCase {
         XCTAssertEqual(firewall.percentFormat, .pct)
         XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "1", "0", "0"])
         XCTAssertEqual(sheet.header.last, "Warning")
+    }
+
+    /// With the rule at `ignore` the FileVault row sums to the Macs counted, not the Macs in
+    /// the table, so one line under the table says how many were left out.
+    func testHardwareIgnoredMacsAreNamedUnderTheTable() throws {
+        let sheet = try securityControls(
+            csv: builtinCSV(), columns: hardwareColumns(),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore))
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "0", "0", "0"])
+        XCTAssertEqual(sheet.footer, ["FileVault off, hardware-encrypted (not counted): 1"])
+
+        let two = try securityControls(
+            csv: inlineCSV([
+                ["Not Encrypted", "", "", "", "", "", "", "arm64"],
+                ["Not Encrypted", "", "", "", "", "", "", "arm64"],
+                ["Encrypted", "", "", "", "", "", "", "arm64"],
+            ]), columns: inlineColumns(hardware: true),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore))
+        XCTAssertEqual(two.footer, ["FileVault off, hardware-encrypted (not counted): 2"])
+    }
+
+    /// No line when no Mac is left out: without the rule, at warning (those Macs sit under
+    /// Warning), with a stricter level, with FileVault ignored, and without hardware columns.
+    func testNoHardwareLineWhenNoMacIsLeftOut() throws {
+        let cases: [(SecurityControlPolicy?, ColumnConfig)] = [
+            (nil, hardwareColumns()),
+            (SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning), hardwareColumns()),
+            (SecurityControlPolicy(fileVault: .warning, fileVaultOffHardwareEncrypted: .fail),
+             hardwareColumns()),
+            (SecurityControlPolicy(fileVault: .ignore, fileVaultOffHardwareEncrypted: .ignore),
+             hardwareColumns()),
+            (SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore), securityColumns()),
+        ]
+        for (index, (policy, columns)) in cases.enumerated() {
+            let sheet = try securityControls(csv: builtinCSV(), columns: columns, policy: policy)
+            XCTAssertEqual(sheet.footer, [], "case \(index)")
+        }
     }
 }

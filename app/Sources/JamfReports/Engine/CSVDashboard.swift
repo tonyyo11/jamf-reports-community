@@ -480,6 +480,7 @@ struct CSVDashboard: Sendable {
             ("Bootstrap Token", .bootstrapToken, "bootstrap_token"),
         ]
 
+        var fileVaultNotCounted = 0
         for (label, field, logical) in controls {
             guard let colName = col(field), columns.contains(colName) else { continue }
             let control = SecurityControl(rawValue: logical)
@@ -502,6 +503,7 @@ struct CSVDashboard: Sendable {
             }
             // Macs the hardware rule drops at `ignore` leave the share.
             let counted = total - notCounted
+            if control == .fileVault { fileVaultNotCounted = notCounted }
             let pct = counted > 0 ? Double(compliant) / Double(counted) : 0
             // A warning is not a failure: it grades like a compliant Mac, but keeps the cell
             // from reading green.
@@ -522,6 +524,13 @@ struct CSVDashboard: Sendable {
                 ws.write(warning, row: row, col: 5, format: warning > 0 ? .yellow : .cell)
             }
             row += 1
+        }
+        // The FileVault row sums to the Macs counted; say how many the rule left out.
+        if fileVaultNotCounted > 0 {
+            ws.write(
+                "\(SecurityFleetCounts.hardwareEncryptedRowLabel) (not counted): "
+                    + "\(fileVaultNotCounted)",
+                row: row + 1, col: 0, format: .subtitle)
         }
     }
 

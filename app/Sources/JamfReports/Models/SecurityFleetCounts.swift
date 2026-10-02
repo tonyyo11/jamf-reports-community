@@ -19,6 +19,10 @@ struct SecurityFleetCounts: Sendable, Equatable {
     /// counted). Zero when the rule is off or its level is `fail`.
     let fileVaultOffHardwareEncrypted: Int
 
+    /// The workbook's row label for FileVault-off Macs the hardware rule counts apart or
+    /// leaves out.
+    static let hardwareEncryptedRowLabel = "FileVault off, hardware-encrypted"
+
     static let empty = SecurityFleetCounts(
         totalDevices: 0, controls: [:], fileVaultOffHardwareEncrypted: 0)
 
