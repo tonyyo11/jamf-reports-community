@@ -127,24 +127,24 @@ final class DeviceInventoryRecordTests: XCTestCase {
 
     func testNotEncryptedUnderscoreEnumCountsAsSecurityGap() {
         let good = goodDevice(id: "serial:good")
-        XCTAssertEqual(good.securityGapCount, 0)
+        XCTAssertEqual(good.securityGapCount(policy: .default), 0)
 
         var bad = goodDevice(id: "serial:bad")
         bad.fileVault = "NOT_ENCRYPTED"
-        XCTAssertEqual(bad.securityGapCount, 1)
+        XCTAssertEqual(bad.securityGapCount(policy: .default), 1)
     }
 
     func testNotEnabledUnderscoreEnumCountsAsSecurityGap() {
         var bad = goodDevice(id: "serial:bad")
         bad.sip = "NOT_ENABLED"
-        XCTAssertEqual(bad.securityGapCount, 1)
+        XCTAssertEqual(bad.securityGapCount(policy: .default), 1)
     }
 
     func testAllEncryptedUnderscoreEnumIsNotFlaggedAsBad() {
         // Regression guard: a generic "not " substring check must not fire on
         // ALL_ENCRYPTED/ENCRYPTED/ENABLED — only on genuine "not X" values.
         let good = goodDevice(id: "serial:good")
-        XCTAssertEqual(good.securityGapCount, 0)
+        XCTAssertEqual(good.securityGapCount(policy: .default), 0)
     }
 
     func testFileVaultPercentReflectsRealFleetSplitNotAllOrNothing() {
@@ -167,5 +167,69 @@ final class DeviceInventoryRecordTests: XCTestCase {
 
         XCTAssertEqual(snapshot.fileVaultPercent, 100.0 * 100.0 / 101.0, accuracy: 0.01)
         XCTAssertEqual(snapshot.securityGapCount, 1)
+    }
+
+    // MARK: - Hardware encryption
+
+    /// `hardware.appleSilicon` and `hardware.modelIdentifier` from the `computers` snapshot.
+    func testComputerRecordReadsHardwareEncryption() {
+        func record(_ hardware: [String: Any]) -> DeviceInventoryRecord {
+            DeviceInventoryService.recordFromComputer(
+                ["general": ["id": 5, "name": "Lab-Mac"], "hardware": hardware],
+                source: "computers.json")
+        }
+        XCTAssertEqual(record(["serialNumber": "AS1", "appleSilicon": true,
+                               "modelIdentifier": "Mac14,2"]).hardwareEncrypted, true)
+        XCTAssertEqual(record(["serialNumber": "T21", "appleSilicon": false,
+                               "modelIdentifier": "MacBookPro16,2"]).hardwareEncrypted, true)
+        XCTAssertEqual(record(["serialNumber": "IN1", "appleSilicon": false,
+                               "modelIdentifier": "MacBookPro14,1"]).hardwareEncrypted, false)
+        XCTAssertNil(record(["serialNumber": "NONE1"]).hardwareEncrypted)
+    }
+
+    func testBuiltinCSVAppleSiliconRowsAreHardwareEncrypted() throws {
+        let url = TestFixtures.dir("csv/jamf1128_computers_builtin.csv")
+        let (_, rows) = try CSVParser.parse(Data(contentsOf: url))
+        let records = rows.map {
+            DeviceInventoryService.recordFromCSV($0, source: "jamf1128_computers_builtin.csv")
+        }
+        XCTAssertEqual(records.count, 4)
+        XCTAssertEqual(records.map(\.hardwareEncrypted), [true, true, true, true])
+    }
+
+    /// `Apple Silicon` is Yes or No; the model and architecture decide when it is blank.
+    func testCSVHardwareColumns() {
+        func encrypted(_ row: [String: String]) -> Bool? {
+            DeviceInventoryService.recordFromCSV(
+                row.merging(["Computer Name": "Lab-Mac", "Serial Number": "S1"]) { a, _ in a },
+                source: "computers.csv"
+            ).hardwareEncrypted
+        }
+        XCTAssertEqual(encrypted(["Apple Silicon": "true"]), true)
+        XCTAssertEqual(encrypted(["Apple Silicon": "No", "Model Identifier": "MacBookPro16,2"]),
+                       true)
+        XCTAssertEqual(encrypted(["Apple Silicon": "No", "Model Identifier": "MacBookPro14,1"]),
+                       false)
+        XCTAssertEqual(encrypted(["Apple Silicon": "FALSE", "Model Identifier": "iMac19,1"]), false)
+        XCTAssertNil(encrypted(["Apple Silicon": "No"]), "an Intel Mac could still have a T2")
+        XCTAssertEqual(encrypted(["Apple Silicon": "", "Architecture Type": "arm64"]), true)
+        // The app's default `columns.architecture` header.
+        XCTAssertEqual(encrypted(["Architecture": "x86_64", "Model Identifier": "MacBookPro14,1"]),
+                       false)
+        XCTAssertNil(encrypted(["Apple Silicon": "Unknown"]))
+        XCTAssertNil(encrypted([:]))
+    }
+
+    func testMergeKeepsTheFirstKnownHardwareAnswer() {
+        var unknown = DeviceInventoryRecord.empty(id: "serial:s1", source: "csv.csv")
+        var known = DeviceInventoryRecord.empty(id: "serial:s1", source: "computers.json")
+        known.hardwareEncrypted = true
+        unknown.merge(known)
+        XCTAssertEqual(unknown.hardwareEncrypted, true)
+
+        var intel = DeviceInventoryRecord.empty(id: "serial:s1", source: "csv.csv")
+        intel.hardwareEncrypted = false
+        intel.merge(known)
+        XCTAssertEqual(intel.hardwareEncrypted, false)
     }
 }

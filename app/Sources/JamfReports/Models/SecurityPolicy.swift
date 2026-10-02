@@ -125,6 +125,16 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         usesHardwareRule && fileVaultReading == false && hardwareEncrypted == true
     }
 
+    static let hardwareEncryptedFileVaultOffLabel = "FileVault off (hardware-encrypted)"
+
+    /// A FileVault value as the Devices screen shows it: the label above when the hardware
+    /// rule applies to this Mac, so its amber or grey tone is explained; else the value itself.
+    func fileVaultLabel(_ value: String, hardwareEncrypted: Bool?) -> String {
+        let applies = hardwareRuleApplies(
+            fileVaultReading: Self.reading(value), hardwareEncrypted: hardwareEncrypted)
+        return applies ? Self.hardwareEncryptedFileVaultOffLabel : value
+    }
+
     // MARK: - Reading a value
 
     /// Jamf did not collect the value, the Mac cannot report it, or the value does not

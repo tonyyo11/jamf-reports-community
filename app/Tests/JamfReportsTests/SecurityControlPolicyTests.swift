@@ -7,7 +7,7 @@ final class SecurityControlPolicyTests: XCTestCase {
 
     // MARK: - reading
 
-    /// The same three lists `SecurityValueStateTests` pins for the Devices table.
+    /// The three lists the Devices table's own classifier was pinned to before it read this.
     func testReadingKeepsTheDevicesTableAnswers() {
         let off = [
             "UNENCRYPTED", "NOT_ENCRYPTED", "Not Enabled", "NOT_ESCROWED", "Not Installed",

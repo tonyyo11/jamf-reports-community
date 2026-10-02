@@ -85,10 +85,16 @@ enum DeviceInventoryService {
             warnings: &warnings
         )
 
-        let devices = merger.records.sorted { lhs, rhs in
-            if lhs.risk != rhs.risk { return riskRank(lhs.risk) > riskRank(rhs.risk) }
-            return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
-        }
+        let policy = SecurityPolicyConfigLoader.load(profile: profile)
+        // Ranked once per device: risk reads five values, and the sort compares many times.
+        let devices = merger.records
+            .map { (record: $0, rank: riskRank($0.risk(policy: policy))) }
+            .sorted { lhs, rhs in
+                if lhs.rank != rhs.rank { return lhs.rank > rhs.rank }
+                return lhs.record.displayName
+                    .localizedStandardCompare(rhs.record.displayName) == .orderedAscending
+            }
+            .map(\.record)
         let uniqueSources = sourceFiles.reduce(into: [String]()) { acc, item in
             if !acc.contains(item) { acc.append(item) }
         }
@@ -100,7 +106,8 @@ enum DeviceInventoryService {
             warnings: warnings,
             generatedAt: formattedDate(newestSourceDate),
             generatedDate: newestSourceDate,
-            isDemo: false
+            isDemo: false,
+            securityPolicy: policy
         )
     }
 
@@ -544,6 +551,10 @@ extension DeviceInventoryService {
         record.bootstrapToken = cell(row, ["Bootstrap Token Escrowed", "Bootstrap Token Allowed"])
         record.diskUsage = cell(row, ["Boot Drive Percentage Full", "Disk Usage %"])
         record.failedRules = failureCount(row)
+        record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(
+            appleSilicon: yesNo(cell(row, ["Apple Silicon"])),
+            modelIdentifier: cell(row, ["Model Identifier"]),
+            architecture: cell(row, ["Architecture Type", "Architecture"]))
         return record
     }
 
@@ -587,6 +598,7 @@ extension DeviceInventoryService {
         record.firewall = first(flat, ["security.firewallEnabled", "operatingSystem.activeDirectoryStatus.firewallEnabled"])
         record.gatekeeper = first(flat, ["security.gatekeeperStatus"])
         record.bootstrapToken = first(flat, ["security.bootstrapTokenEscrowed", "security.bootstrapTokenAllowed"])
+        record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
         return record
     }
 
@@ -987,6 +999,16 @@ private extension DeviceInventoryService {
         if let bool = value as? Bool { return bool }
         let text = clean(value)?.lowercased() ?? ""
         return ["true", "yes", "1", "managed", "stale"].contains(text)
+    }
+
+    /// Jamf's CSV `Apple Silicon` column: Yes or No. Nil for anything else, so an empty
+    /// cell leaves the model and architecture to decide.
+    static func yesNo(_ text: String) -> Bool? {
+        switch text.lowercased() {
+        case "yes", "true": true
+        case "no", "false": false
+        default: nil
+        }
     }
 
     static func managedLabel(_ value: String) -> String {

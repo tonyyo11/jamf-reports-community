@@ -7,8 +7,8 @@ import XCTest
 /// The Excel sheet, the DevicesView per-control glyph row, and the detail-panel
 /// "Security State" section all read the five fields populated here. These tests
 /// cover the model layer; the view layer wraps these values in icons whose
-/// tone follows the same compliant/noncompliant classification as
-/// `DeviceInventoryRecord.securityGapCount`.
+/// tone follows the same workspace policy verdicts as
+/// `DeviceInventoryRecord.securityGapCount(policy:)`.
 final class DeviceSecurityStateTests: XCTestCase {
 
     func testRecordFromComputerExtractsAllFiveSecurityControls() {
@@ -34,7 +34,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(record.firewall.lowercased(), "true")
         XCTAssertEqual(record.gatekeeper, "APP_STORE_AND_IDENTIFIED_DEVELOPERS")
         XCTAssertEqual(record.bootstrapToken.lowercased(), "true")
-        XCTAssertEqual(record.securityGapCount, 0)
+        XCTAssertEqual(record.securityGapCount(policy: .default), 0)
     }
 
     func testRecordFromComputerFlagsAllDisabledControls() {
@@ -60,7 +60,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(record.firewall.lowercased(), "false")
         XCTAssertEqual(record.gatekeeper, "DISABLED")
         XCTAssertEqual(record.bootstrapToken.lowercased(), "false")
-        XCTAssertEqual(record.securityGapCount, 5)
+        XCTAssertEqual(record.securityGapCount(policy: .default), 5)
     }
 
     func testRecordWithMissingSecuritySectionLeavesFieldsEmpty() {
@@ -76,6 +76,255 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertTrue(record.firewall.isEmpty)
         XCTAssertTrue(record.gatekeeper.isEmpty)
         XCTAssertTrue(record.bootstrapToken.isEmpty)
-        XCTAssertEqual(record.securityGapCount, 0, "empty values are unknown, not failed")
+        XCTAssertEqual(record.securityGapCount(policy: .default), 0,
+                       "empty values are unknown, not failed")
+    }
+
+    // MARK: - Today's numbers
+
+    private func fixtureComputers() throws -> [DeviceInventoryRecord] {
+        let url = TestFixtures.dir("jamf-cli-data/computers-list/computers-list.json")
+        let items = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
+        return items.map {
+            DeviceInventoryService.recordFromComputer($0, source: "computers-list.json")
+        }
+    }
+
+    /// Jamf Pro 11.28's built-in computer CSV: four Apple-silicon Macs. Row 2 has FileVault
+    /// `0/1` and the firewall `Not Enabled`, row 3 SIP `Disabled`, row 4 Gatekeeper `Disabled`.
+    private func builtinCSVRecords() throws -> [DeviceInventoryRecord] {
+        let url = TestFixtures.dir("csv/jamf1128_computers_builtin.csv")
+        let (_, rows) = try CSVParser.parse(Data(contentsOf: url))
+        return rows.map {
+            DeviceInventoryService.recordFromCSV($0, source: "jamf1128_computers_builtin.csv")
+        }
+    }
+
+    private func snapshot(_ devices: [DeviceInventoryRecord]) -> DeviceInventorySnapshot {
+        DeviceInventorySnapshot(devices: devices, patchTitles: [], sourceFiles: [], warnings: [],
+                                generatedAt: "", generatedDate: nil, isDemo: false)
+    }
+
+    func testComputersListFixtureKeepsTodaysGapsAndRisk() throws {
+        let records = try fixtureComputers()
+        XCTAssertEqual(records.map(\.name), ["Lab-Mac-01", "Lab-Mac-02", "Lab-Mac-03"])
+        XCTAssertEqual(records.map { $0.securityGapCount(policy: .default) }, [0, 5, 0])
+        XCTAssertEqual(records.map { $0.risk(policy: .default) }, [.ok, .attention, .ok])
+    }
+
+    /// Rows 1, 3 and 4; row 2 and the FileVault share change on purpose (below).
+    func testBuiltinCSVKeepsTodaysGapsForRowsWithoutPartitionCounts() throws {
+        let records = try builtinCSVRecords()
+        XCTAssertEqual(records.map(\.name),
+                       ["Fixture-Mac-01", "Fixture-Mac-02", "Fixture-Mac-03", "Fixture-Mac-04"])
+        XCTAssertEqual([0, 2, 3].map { records[$0].securityGapCount(policy: .default) }, [0, 1, 1])
+    }
+
+    // MARK: - Intended changes at the default policy
+
+    private func record(allControls value: String) -> DeviceInventoryRecord {
+        var record = DeviceInventoryRecord.empty(id: "serial:x", source: "computers.json")
+        record.fileVault = value
+        record.sip = value
+        record.firewall = value
+        record.gatekeeper = value
+        record.bootstrapToken = value
+        return record
+    }
+
+    /// The records here carry no disk, check-in or rule facts, so every factor is a security one.
+    private func riskFactors(
+        _ record: DeviceInventoryRecord, _ policy: SecurityControlPolicy = .default
+    ) -> Set<DeviceRisk.Factor> {
+        Set(RiskScoringService.score(input: .from(record: record, policy: policy))
+            .triggered.map(\.factor))
+    }
+
+    private let everySecurityFactor: Set<DeviceRisk.Factor> = [
+        .noFileVault, .sipDisabled, .firewallDisabled, .gatekeeperDisabled, .bootstrapMissing,
+    ]
+
+    func testUnmeasuredValuesAreNoLongerGapsOrRiskPoints() {
+        for value in ["Not collected", "Not supported", "Not available",
+                      "NOT_COLLECTED", "NOT_SUPPORTED", "NOT_AVAILABLE"] {
+            let record = record(allControls: value)
+            XCTAssertEqual(record.securityGapCount(policy: .default), 0, value)
+            XCTAssertEqual(riskFactors(record), [], value)
+        }
+    }
+
+    func testOffNoneInactiveMissingAndDecryptingAreGapsAndRiskPoints() {
+        for value in ["Off", "none", "inactive", "missing"] {
+            let record = record(allControls: value)
+            XCTAssertEqual(record.securityGapCount(policy: .default), 5, value)
+            XCTAssertEqual(riskFactors(record), everySecurityFactor, value)
+        }
+        var decrypting = record(allControls: "Enabled")
+        decrypting.fileVault = "DECRYPTING"
+        XCTAssertEqual(decrypting.securityGapCount(policy: .default), 1)
+        XCTAssertEqual(riskFactors(decrypting), [.noFileVault])
+    }
+
+    /// Jamf's CSV FileVault column counts encrypted partitions over all partitions.
+    func testCSVPartitionCountsReadAsFileVaultOnOrOff() throws {
+        let records = try builtinCSVRecords()
+        XCTAssertEqual(records.map(\.fileVault), ["1/1", "0/1", "1/1", "1/1"])
+        XCTAssertEqual(records[1].securityGapCount(policy: .default), 2,
+                       "FileVault 0/1 and the firewall off")
+        XCTAssertTrue(riskFactors(records[1]).contains(.noFileVault))
+        XCTAssertEqual(records[0].fileVaultEnabled, true)
+        XCTAssertEqual(snapshot(records).fileVaultPercent, 75, accuracy: 0.01)
+    }
+
+    /// The phrase contains "Encrypted", which used to count it as encrypted.
+    func testNoPartitionsEncryptedIsNotEncrypted() {
+        var record = record(allControls: "Enabled")
+        record.fileVault = "No Partitions Encrypted"
+        XCTAssertEqual(record.fileVaultEnabled, false)
+        XCTAssertEqual(snapshot([record]).fileVaultPercent, 0, accuracy: 0.01)
+        XCTAssertEqual(record.securityGapCount(policy: .default), 1)
+        XCTAssertEqual(riskFactors(record), [.noFileVault])
+    }
+
+    /// Jamf FileVault states that are off and stay off until someone acts. The Devices table
+    /// already showed DECRYPTED and DECRYPTING_PAUSED red, but neither counted as a gap.
+    func testDecryptedAndPausedFileVaultAreGapsAndRiskPoints() {
+        for value in ["DECRYPTED", "DECRYPTING_PAUSED", "ENCRYPTING_PAUSED"] {
+            var record = record(allControls: "Enabled")
+            record.fileVault = value
+            XCTAssertEqual(record.fileVaultEnabled, false, value)
+            XCTAssertEqual(record.securityGapCount(policy: .default), 1, value)
+            XCTAssertEqual(riskFactors(record), [.noFileVault], value)
+        }
+    }
+
+    // MARK: - security_policy
+
+    private let hardwareWarning = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+
+    /// FileVault off and every other control on, in the `computers` snapshot shape.
+    private func fileVaultOffComputer(
+        id: Int, serial: String, appleSilicon: Bool, model: String
+    ) -> [String: Any] {
+        [
+            "general": ["id": id, "name": "Lab-Mac-\(serial)"],
+            "hardware": [
+                "serialNumber": serial, "appleSilicon": appleSilicon, "modelIdentifier": model,
+            ],
+            "diskEncryption": [
+                "bootPartitionEncryptionDetails": ["partitionFileVault2State": "UNENCRYPTED"],
+            ],
+            "security": [
+                "sipStatus": "ENABLED", "firewallEnabled": true,
+                "gatekeeperStatus": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
+                "bootstrapTokenEscrowed": true,
+            ],
+        ]
+    }
+
+    func testHardwareRuleAtWarningKeepsAppleSiliconFileVaultOffOutOfTheGaps() {
+        let mac = DeviceInventoryService.recordFromComputer(
+            fileVaultOffComputer(id: 11, serial: "AS1", appleSilicon: true, model: "Mac14,2"),
+            source: "computers.json")
+        XCTAssertEqual(mac.hardwareEncrypted, true)
+
+        XCTAssertEqual(mac.securityGapCount(policy: .default), 1)
+        XCTAssertEqual(mac.risk(policy: .default), .attention)
+        XCTAssertEqual(riskFactors(mac, .default), [.noFileVault])
+        XCTAssertEqual(SecurityControlPolicy.default.fileVaultLabel(
+            mac.fileVault, hardwareEncrypted: mac.hardwareEncrypted), "UNENCRYPTED")
+
+        XCTAssertEqual(mac.securityGapCount(policy: hardwareWarning), 0)
+        XCTAssertEqual(mac.risk(policy: hardwareWarning), .ok)
+        XCTAssertEqual(riskFactors(mac, hardwareWarning), [])
+        XCTAssertEqual(hardwareWarning.fileVaultLabel(
+            mac.fileVault, hardwareEncrypted: mac.hardwareEncrypted),
+                       "FileVault off (hardware-encrypted)")
+    }
+
+    func testHardwareRuleLeavesAnIntelMacWithoutT2AsAGap() {
+        let mac = DeviceInventoryService.recordFromComputer(
+            fileVaultOffComputer(
+                id: 12, serial: "IN1", appleSilicon: false, model: "MacBookPro14,1"),
+            source: "computers.json")
+        XCTAssertEqual(mac.hardwareEncrypted, false)
+        XCTAssertEqual(mac.securityGapCount(policy: hardwareWarning), 1)
+        XCTAssertEqual(riskFactors(mac, hardwareWarning), [.noFileVault])
+        XCTAssertEqual(hardwareWarning.fileVaultLabel(mac.fileVault, hardwareEncrypted: false),
+                       "UNENCRYPTED")
+    }
+
+    func testFileVaultLabelIsTheValueUnlessTheRuleApplies() {
+        XCTAssertEqual(hardwareWarning.fileVaultLabel("ENCRYPTED", hardwareEncrypted: true),
+                       "ENCRYPTED")
+        XCTAssertEqual(hardwareWarning.fileVaultLabel("ENCRYPTING", hardwareEncrypted: true),
+                       "ENCRYPTING")
+        XCTAssertEqual(hardwareWarning.fileVaultLabel("UNENCRYPTED", hardwareEncrypted: nil),
+                       "UNENCRYPTED")
+        XCTAssertEqual(hardwareWarning.fileVaultLabel("", hardwareEncrypted: true), "")
+        let ignored = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
+        XCTAssertEqual(ignored.fileVaultLabel("0/1", hardwareEncrypted: true),
+                       SecurityControlPolicy.hardwareEncryptedFileVaultOffLabel)
+    }
+
+    /// The tile counts the Macs the rule took out of the gaps; FileVault stays off for the share.
+    func testSnapshotCountsHardwareEncryptedFileVaultOffApart() {
+        let macs = [
+            DeviceInventoryService.recordFromComputer(
+                fileVaultOffComputer(id: 11, serial: "AS1", appleSilicon: true, model: "Mac14,2"),
+                source: "computers.json"),
+            DeviceInventoryService.recordFromComputer(
+                fileVaultOffComputer(
+                    id: 12, serial: "IN1", appleSilicon: false, model: "MacBookPro14,1"),
+                source: "computers.json"),
+        ]
+        var fleet = snapshot(macs)
+        XCTAssertEqual(fleet.securityPolicy, .default)
+        XCTAssertEqual(fleet.securityGapCount, 2)
+        XCTAssertEqual(fleet.fileVaultOffHardwareEncryptedCount, 0)
+
+        fleet.securityPolicy = hardwareWarning
+        XCTAssertEqual(fleet.securityGapCount, 1)
+        XCTAssertEqual(fleet.fileVaultOffHardwareEncryptedCount, 1)
+        XCTAssertEqual(fleet.fileVaultPercent, 0, accuracy: 0.01)
+    }
+
+    /// The workspace's policy reaches the snapshot and the risk order: with the rule the
+    /// Apple-silicon Mac is OK and sorts after the Intel Mac; without it both need attention
+    /// and sort by name.
+    func testLoadUsesTheWorkspacePolicy() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-devices-policy-\(UUID().uuidString)", isDirectory: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "devices-policy"
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        let computersDir = workspace.appendingPathComponent("jamf-cli-data/computers")
+        try FileManager.default.createDirectory(at: computersDir, withIntermediateDirectories: true)
+        let computers = [
+            fileVaultOffComputer(id: 11, serial: "AS1", appleSilicon: true, model: "Mac14,2"),
+            fileVaultOffComputer(
+                id: 12, serial: "IN1", appleSilicon: false, model: "MacBookPro14,1"),
+        ]
+        try JSONSerialization.data(withJSONObject: computers)
+            .write(to: computersDir.appendingPathComponent("computers_20261001T090000.json"))
+
+        let before = DeviceInventoryService.load(profile: profile, demoMode: false)
+        XCTAssertEqual(before.securityPolicy, .default)
+        XCTAssertEqual(before.devices.map(\.serial), ["AS1", "IN1"])
+
+        try "security_policy:\n  filevault_off_hardware_encrypted: warning\n".write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let after = DeviceInventoryService.load(profile: profile, demoMode: false)
+        XCTAssertEqual(after.securityPolicy, hardwareWarning)
+        XCTAssertEqual(after.devices.map(\.serial), ["IN1", "AS1"])
+        XCTAssertEqual(after.securityGapCount, 1)
+        XCTAssertEqual(after.fileVaultOffHardwareEncryptedCount, 1)
     }
 }
