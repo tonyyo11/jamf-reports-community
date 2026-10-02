@@ -597,7 +597,10 @@ extension DeviceInventoryService {
         record.sip = first(flat, ["security.sipStatus", "security.systemIntegrityProtection"])
         record.firewall = first(flat, ["security.firewallEnabled", "operatingSystem.activeDirectoryStatus.firewallEnabled"])
         record.gatekeeper = first(flat, ["security.gatekeeperStatus"])
-        record.bootstrapToken = first(flat, ["security.bootstrapTokenEscrowed", "security.bootstrapTokenAllowed"])
+        // Jamf Pro reports escrow as bootstrapTokenEscrowedStatus; the older key only for
+        // snapshots that carry it. bootstrapTokenAllowed says escrow is allowed, not done.
+        record.bootstrapToken = first(
+            flat, ["security.bootstrapTokenEscrowedStatus", "security.bootstrapTokenEscrowed"])
         record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
         return record
     }

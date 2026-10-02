@@ -17,7 +17,7 @@
       "sipStatus": "ENABLED",
       "firewallEnabled": true,
       "gatekeeperStatus": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
-      "bootstrapTokenEscrowed": true
+      "bootstrapTokenEscrowedStatus": "ESCROWED"
     }
   },
   {
@@ -38,7 +38,7 @@
       "sipStatus": "DISABLED",
       "firewallEnabled": false,
       "gatekeeperStatus": "DISABLED",
-      "bootstrapTokenEscrowed": false
+      "bootstrapTokenEscrowedStatus": "NOT_ESCROWED"
     }
   },
   {

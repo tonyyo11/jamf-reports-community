@@ -63,6 +63,13 @@ final class SecurityControlPolicyTests: XCTestCase {
         }
     }
 
+    /// `security.bootstrapTokenEscrowedStatus`: a Mac that cannot escrow is unmeasured.
+    func testBootstrapEscrowStates() {
+        XCTAssertEqual(SecurityControlPolicy.reading("ESCROWED"), true)
+        XCTAssertEqual(SecurityControlPolicy.reading("NOT_ESCROWED"), false)
+        XCTAssertNil(SecurityControlPolicy.reading("NOT_SUPPORTED"))
+    }
+
     // MARK: - Decoding
 
     func testAbsentBlockIsNilAndResolvesToTheDefault() throws {

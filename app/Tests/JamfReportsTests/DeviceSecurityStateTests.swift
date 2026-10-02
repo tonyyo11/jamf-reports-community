@@ -23,7 +23,7 @@ final class DeviceSecurityStateTests: XCTestCase {
                 "sipStatus": "ENABLED",
                 "firewallEnabled": true,
                 "gatekeeperStatus": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
-                "bootstrapTokenEscrowed": true,
+                "bootstrapTokenEscrowedStatus": "ESCROWED",
             ],
         ]
 
@@ -33,7 +33,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(record.sip, "ENABLED")
         XCTAssertEqual(record.firewall.lowercased(), "true")
         XCTAssertEqual(record.gatekeeper, "APP_STORE_AND_IDENTIFIED_DEVELOPERS")
-        XCTAssertEqual(record.bootstrapToken.lowercased(), "true")
+        XCTAssertEqual(record.bootstrapToken, "ESCROWED")
         XCTAssertEqual(record.securityGapCount(policy: .default), 0)
     }
 
@@ -49,7 +49,7 @@ final class DeviceSecurityStateTests: XCTestCase {
                 "sipStatus": "DISABLED",
                 "firewallEnabled": false,
                 "gatekeeperStatus": "DISABLED",
-                "bootstrapTokenEscrowed": false,
+                "bootstrapTokenEscrowedStatus": "NOT_ESCROWED",
             ],
         ]
 
@@ -59,7 +59,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(record.sip, "DISABLED")
         XCTAssertEqual(record.firewall.lowercased(), "false")
         XCTAssertEqual(record.gatekeeper, "DISABLED")
-        XCTAssertEqual(record.bootstrapToken.lowercased(), "false")
+        XCTAssertEqual(record.bootstrapToken, "NOT_ESCROWED")
         XCTAssertEqual(record.securityGapCount(policy: .default), 5)
     }
 
@@ -199,6 +199,58 @@ final class DeviceSecurityStateTests: XCTestCase {
         }
     }
 
+    // MARK: - Bootstrap token escrow
+
+    /// Jamf Pro reports escrow as `security.bootstrapTokenEscrowedStatus`; every other
+    /// control here is on.
+    private func computer(bootstrap: [String: Any]) -> DeviceInventoryRecord {
+        let security: [String: Any] = [
+            "sipStatus": "ENABLED", "firewallEnabled": true,
+            "gatekeeperStatus": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
+        ].merging(bootstrap) { _, new in new }
+        return DeviceInventoryService.recordFromComputer([
+            "general": ["id": 21, "name": "Lab-Mac-BT"],
+            "hardware": ["serialNumber": "BT21"],
+            "diskEncryption": [
+                "bootPartitionEncryptionDetails": ["partitionFileVault2State": "ENCRYPTED"],
+            ],
+            "security": security,
+        ], source: "computers.json")
+    }
+
+    func testNotEscrowedBootstrapTokenIsAGapAndARiskPoint() {
+        let mac = computer(bootstrap: ["bootstrapTokenEscrowedStatus": "NOT_ESCROWED"])
+        XCTAssertEqual(mac.bootstrapToken, "NOT_ESCROWED")
+        XCTAssertEqual(mac.securityGapCount(policy: .default), 1)
+        XCTAssertEqual(riskFactors(mac), [.bootstrapMissing])
+    }
+
+    func testEscrowedBootstrapTokenIsNoGapAndNoRiskPoint() {
+        let mac = computer(bootstrap: ["bootstrapTokenEscrowedStatus": "ESCROWED"])
+        XCTAssertEqual(SecurityControlPolicy.reading(mac.bootstrapToken), true)
+        XCTAssertEqual(mac.securityGapCount(policy: .default), 0)
+        XCTAssertEqual(riskFactors(mac), [])
+    }
+
+    func testUnsupportedBootstrapTokenIsUnknown() {
+        let mac = computer(bootstrap: ["bootstrapTokenEscrowedStatus": "NOT_SUPPORTED"])
+        XCTAssertEqual(mac.bootstrapToken, "NOT_SUPPORTED")
+        XCTAssertNil(SecurityControlPolicy.reading(mac.bootstrapToken))
+        XCTAssertEqual(mac.securityGapCount(policy: .default), 0)
+        XCTAssertEqual(riskFactors(mac), [])
+    }
+
+    /// Allowed says the server accepts escrow, not that this Mac's token was escrowed.
+    func testBootstrapTokenAllowedAloneIsUnknown() {
+        for allowed in [true, false] {
+            let mac = computer(bootstrap: ["bootstrapTokenAllowed": allowed])
+            XCTAssertEqual(mac.bootstrapToken, "", "\(allowed)")
+            XCTAssertNil(SecurityControlPolicy.reading(mac.bootstrapToken), "\(allowed)")
+            XCTAssertEqual(mac.securityGapCount(policy: .default), 0, "\(allowed)")
+            XCTAssertEqual(riskFactors(mac), [], "\(allowed)")
+        }
+    }
+
     // MARK: - security_policy
 
     private let hardwareWarning = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
@@ -218,7 +270,7 @@ final class DeviceSecurityStateTests: XCTestCase {
             "security": [
                 "sipStatus": "ENABLED", "firewallEnabled": true,
                 "gatekeeperStatus": "APP_STORE_AND_IDENTIFIED_DEVELOPERS",
-                "bootstrapTokenEscrowed": true,
+                "bootstrapTokenEscrowedStatus": "ESCROWED",
             ],
         ]
     }
