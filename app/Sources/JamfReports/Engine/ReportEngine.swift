@@ -3793,20 +3793,6 @@ struct ReportEngine: Sendable {
         csvEscape(value)
     }
 
-    /// Test-only exposure of `saveSnapshot` — mirrors `testableScaffoldMappings`.
-    static func testableSaveSnapshot(
-        data: Data,
-        kind: String,
-        dataDir: URL,
-        recordManifest: Bool,
-        onLine: @escaping @Sendable (CLIBridge.LogLine) -> Void
-    ) throws {
-        try saveSnapshot(
-            data: data, kind: kind, dataDir: dataDir,
-            recordManifest: recordManifest, onLine: onLine
-        )
-    }
-
     // MARK: - Column scaffold helpers
 
     /// Internal entry point for scaffold hints — exposed for testing.

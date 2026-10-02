@@ -277,7 +277,7 @@ final class ReportEngineTests: XCTestCase {
         }
 
         let capture = LogCapture()
-        try ReportEngine.testableSaveSnapshot(
+        try ReportEngine.saveSnapshot(
             data: Data(#"{"ok":true}"#.utf8), kind: kind, dataDir: dataDir,
             recordManifest: true, onLine: { capture.append($0) }
         )
