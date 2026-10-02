@@ -27,6 +27,24 @@ final class PostureViewsRenderTests: XCTestCase {
         _ = CompliancePostureView().environment(workspace)
     }
 
+    /// The control bar's visible count and its VoiceOver label both carry warnings.
+    func testControlBarTextCountsWarnings() {
+        typealias Gap = CompliancePostureService.Snapshot.ControlGap
+        let none = Gap(control: "Firewall", failingDevices: 3, totalDevices: 10)
+        let one = Gap(control: "Firewall", failingDevices: 3, totalDevices: 10, warningDevices: 1)
+        let two = Gap(control: "Firewall", failingDevices: 3, totalDevices: 10, warningDevices: 2)
+        XCTAssertEqual(CompliancePostureView.controlBarCountText(none), "3 failing")
+        XCTAssertEqual(CompliancePostureView.controlBarCountText(one), "3 failing · 1 warning")
+        XCTAssertEqual(CompliancePostureView.controlBarCountText(two), "3 failing · 2 warnings")
+
+        let label = "Firewall control coverage, 30.0 percent failing, 3 of 10 devices"
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(none), label)
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(one),
+                       label + ", 1 warning")
+        XCTAssertEqual(CompliancePostureView.controlBarAccessibilityLabel(two),
+                       label + ", 2 warnings")
+    }
+
     // MARK: - Service decode parity
 
     /// Confirms the production v1.7 security report shape (flat per-device

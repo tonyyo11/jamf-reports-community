@@ -420,9 +420,7 @@ struct CompliancePostureView: View {
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
-                Text(gap.warningDevices > 0
-                     ? "\(gap.failingDevices) failing · \(gap.warningDevices) warnings"
-                     : "\(gap.failingDevices) failing")
+                Text(Self.controlBarCountText(gap))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", gap.pct))
@@ -444,7 +442,27 @@ struct CompliancePostureView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(gap.control) control coverage, \(String(format: "%.1f", gap.pct)) percent failing, \(gap.failingDevices) of \(gap.totalDevices) devices")
+        .accessibilityLabel(Self.controlBarAccessibilityLabel(gap))
+    }
+
+    static func controlBarCountText(_ gap: CompliancePostureService.Snapshot.ControlGap) -> String {
+        let failing = "\(gap.failingDevices) failing"
+        guard gap.warningDevices > 0 else { return failing }
+        return failing + " · " + warningCount(gap.warningDevices)
+    }
+
+    /// The bar ignores its children for VoiceOver, so the warnings must be in the label.
+    static func controlBarAccessibilityLabel(
+        _ gap: CompliancePostureService.Snapshot.ControlGap
+    ) -> String {
+        let label = "\(gap.control) control coverage, \(String(format: "%.1f", gap.pct)) percent "
+            + "failing, \(gap.failingDevices) of \(gap.totalDevices) devices"
+        guard gap.warningDevices > 0 else { return label }
+        return label + ", " + warningCount(gap.warningDevices)
+    }
+
+    private static func warningCount(_ count: Int) -> String {
+        count == 1 ? "1 warning" : "\(count) warnings"
     }
 
     private func barColor(for pct: Double) -> Color {

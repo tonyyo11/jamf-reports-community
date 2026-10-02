@@ -76,8 +76,9 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     private static func decodedLevel<Key: CodingKey>(
         _ container: KeyedDecodingContainer<Key>, _ key: Key
     ) -> SecurityControlLevel? {
-        guard let raw = (try? container.decodeIfPresent(String.self, forKey: key)) ?? nil
-        else { return nil }
+        guard let raw = try? container.decodeIfPresent(String.self, forKey: key) else {
+            return nil
+        }
         return SecurityControlLevel(
             rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
     }

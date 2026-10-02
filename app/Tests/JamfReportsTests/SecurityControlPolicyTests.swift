@@ -133,6 +133,25 @@ final class SecurityControlPolicyTests: XCTestCase {
         """)
         XCTAssertEqual(sequenceBlock.resolvedSecurityPolicy, .default)
         XCTAssertEqual(sequenceBlock.thresholds?.staleDeviceDays, 45)
+
+        let scalarBlock = try ConfigLoader.loadFromString("""
+        security_policy: "x"
+        thresholds:
+          stale_device_days: 45
+        """)
+        XCTAssertEqual(scalarBlock.resolvedSecurityPolicy, .default)
+        XCTAssertEqual(scalarBlock.thresholds?.staleDeviceDays, 45)
+
+        for hardwareShape in ["{level: warning}", "[warning]"] {
+            let config = try ConfigLoader.loadFromString("""
+            security_policy:
+              controls:
+                sip: warning
+              filevault_off_hardware_encrypted: \(hardwareShape)
+            """)
+            XCTAssertEqual(config.securityPolicy, SecurityControlPolicy(sip: .warning),
+                           "hardware level \(hardwareShape) is nil; the controls still decode")
+        }
     }
 
     /// The shipped example spells out the defaults, so a fresh workspace behaves as today.
