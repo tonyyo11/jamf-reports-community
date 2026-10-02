@@ -11,8 +11,8 @@ final class PostureInsightInputTests: XCTestCase {
         + "is a Mac with the control off that the policy does not count as a gap."
     private let actionNote = "P0 and P1 add up each control's gaps, so a Mac failing two of "
         + "their controls counts twice."
-    private let bandNote = "A control-gap band counts the controls a Mac fails: Pass is none, "
-        + "Low and above one or more, No Data none measured."
+    private let bandNote = "Bands count the controls a Mac fails: Pass is none, Low and above "
+        + "one or more, No Data none measured."
 
     // MARK: - Fixtures
 
@@ -75,14 +75,15 @@ final class PostureInsightInputTests: XCTestCase {
             "Posture insight",
             "Focus: which control accounts for most of the gap, and what to do first.",
             "- Macs in the security report: 10",
+            // Most Macs failing first, as the Control Coverage Gaps bars order them.
+            "- Gatekeeper failing on 40.0% of devices; not failing on 60.0%",
+            "- Macs failing Gatekeeper: 4",
+            "- Firewall failing on 30.0% of devices; not failing on 70.0%",
+            "- Macs failing Firewall: 3",
             "- FileVault failing on 20.0% of devices; not failing on 80.0%",
             "- Macs failing FileVault: 2",
             "- System Integrity Protection (SIP) failing on 10.0% of devices; not failing on 90.0%",
             "- Macs failing SIP: 1",
-            "- Firewall failing on 30.0% of devices; not failing on 70.0%",
-            "- Macs failing Firewall: 3",
-            "- Gatekeeper failing on 40.0% of devices; not failing on 60.0%",
-            "- Macs failing Gatekeeper: 4",
             "- P0 action items (FileVault, SIP and Firewall gaps): 6",
             "- P1 action items (Gatekeeper gaps): 4",
             gapNote,
@@ -108,7 +109,7 @@ final class PostureInsightInputTests: XCTestCase {
             "- Macs in the security report: 3",
             "- FileVault failing on 33.3% of devices; not failing on 66.7%",
             "- Macs failing FileVault: 1",
-            "- Macs with FileVault off, hardware-encrypted (a warning, not a gap): 1",
+            "- Macs with FileVault off, hardware-encrypted (a warning, not failing): 1",
         ])
         XCTAssertTrue(context.contains("- P0 action items (FileVault, SIP and Firewall gaps): 1"))
         XCTAssertEqual(SecurityPostureView.p0TileCount(security.fleetCounts), 1)
@@ -134,7 +135,7 @@ final class PostureInsightInputTests: XCTestCase {
                 + "policy (left out of FileVault's share): 1",
             "- System Integrity Protection (SIP) failing on 0.0% of devices; not failing on 100.0%",
         ])
-        XCTAssertFalse(context.contains { $0.contains("a warning, not a gap") })
+        XCTAssertFalse(context.contains { $0.contains("a warning, not failing") })
     }
 
     func testSecurityLeavesOutIgnoredControlsAndControlsWithoutACount() throws {
@@ -190,9 +191,10 @@ final class PostureInsightInputTests: XCTestCase {
             "- Macs failing Firewall: 2",
             "- Gatekeeper failing on 25.0% of devices; not failing on 75.0%",
             "- Macs failing Gatekeeper: 1",
-            "- All Macs per control-gap band: Pass 1, Low 3 (4 Macs)",
-            "- macOS 15 Macs per control-gap band: Pass 1, Low 1 (2 Macs)",
-            "- macOS 14 Macs per control-gap band: Low 2 (2 Macs)",
+            "- All Macs: 3 of 4 Macs fail at least one control (Pass 1, Low 3)",
+            // The screen lists macOS 15 first; the major with more Macs failing leads here.
+            "- macOS 14: 2 of 2 Macs fail at least one control (Low 2)",
+            "- macOS 15: 1 of 2 Macs fail at least one control (Pass 1, Low 1)",
             gapNote,
             bandNote,
         ])
@@ -209,9 +211,10 @@ final class PostureInsightInputTests: XCTestCase {
         XCTAssertEqual(Array(context[3...5]), [
             "- FileVault failing on 33.3% of devices; not failing on 66.7%",
             "- Macs failing FileVault: 1",
-            "- Macs with FileVault off, hardware-encrypted (a warning, not a gap): 1",
+            "- Macs with FileVault off, hardware-encrypted (a warning, not failing): 1",
         ])
-        XCTAssertTrue(context.contains("- All Macs per control-gap band: Pass 2, Low 1 (3 Macs)"))
+        XCTAssertTrue(
+            context.contains("- All Macs: 1 of 3 Macs fail at least one control (Pass 2, Low 1)"))
         let text = context.joined(separator: "\n").lowercased()
         XCTAssertFalse(text.contains("unencrypted") || text.contains("not encrypted"))
     }
@@ -219,8 +222,8 @@ final class PostureInsightInputTests: XCTestCase {
     func testComplianceWithoutTheBandsCardSendsNoFleetBands() throws {
         let compliance = try snapshots(fourMacs).compliance
         let context = lines(FleetInsightInput.posture(.compliance(compliance, showsBands: false)))
-        XCTAssertFalse(context.contains { $0.hasPrefix("- All Macs per control-gap band") })
-        XCTAssertTrue(context.contains("- macOS 14 Macs per control-gap band: Low 2 (2 Macs)"),
+        XCTAssertFalse(context.contains { $0.hasPrefix("- All Macs:") })
+        XCTAssertTrue(context.contains("- macOS 14: 2 of 2 Macs fail at least one control (Low 2)"),
                       "the per-OS card shows under mSCP donuts too")
     }
 
@@ -249,7 +252,7 @@ final class PostureInsightInputTests: XCTestCase {
                       FleetInsightInput.posture(.compliance(both.compliance, showsBands: true))]
         for input in inputs {
             let context = try XCTUnwrap(input).promptContext()
-            XCTAssertTrue(context.contains("hardware-encrypted (a warning, not a gap): 1"),
+            XCTAssertTrue(context.contains("hardware-encrypted (a warning, not failing): 1"),
                           "the device rows were read")
             for secret in ["Johns-MacBook-Pro", "C02XK1ABCDEF", "jdoe", "C02JDOE00001"] {
                 XCTAssertFalse(context.contains(secret), "\(secret) reached the prompt")

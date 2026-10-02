@@ -233,15 +233,18 @@ extension FleetInsightInput {
         case .compliance(let snapshot, let showsBands):
             (macs, policy) = (snapshot.totalDevices, snapshot.policy)
             rows = complianceRows(snapshot.controlGaps)
-            let majors = snapshot.perOSMajor.compactMap {
-                bandFact("macOS \($0.osMajor) Macs", $0.bands)
-            }
-            let fleet = showsBands ? bandFact("All Macs", snapshot.bands) : nil
+            // The most Macs failing first: the on-device model leans on the first line it reads.
+            let majors = snapshot.perOSMajor
+                .compactMap { bandFact("macOS \($0.osMajor)", $0.bands) }
+                .sorted { $0.failing > $1.failing }.map { $0.fact }
+            let fleet = showsBands ? bandFact("All Macs", snapshot.bands)?.fact : nil
             more = [fleet].compactMap { $0 } + majors
             byMajor = !majors.isEmpty
             if !more.isEmpty { notes.append(postureBandNote) }
         }
-        let facts = rows.flatMap { controlFacts($0, policy: policy) } + more
+        // Ordered as the Control Coverage Gaps bars are, most Macs failing first.
+        let facts = rows.sorted { $0.failing > $1.failing }
+            .flatMap { controlFacts($0, policy: policy) } + more
         guard !facts.isEmpty else { return nil }
         let total = Fact(label: "Macs in the security report", value: .count(macs), prior: nil,
                          polarity: .neutral)
@@ -257,8 +260,8 @@ extension FleetInsightInput {
         + "A warning is a Mac with the control off that the policy does not count as a gap."
     private static let postureActionNote = "P0 and P1 add up each control's gaps, so a Mac "
         + "failing two of their controls counts twice."
-    private static let postureBandNote = "A control-gap band counts the controls a Mac fails: "
-        + "Pass is none, Low and above one or more, No Data none measured."
+    private static let postureBandNote = "Bands count the controls a Mac fails: Pass is none, "
+        + "Low and above one or more, No Data none measured."
 
     /// One control as a posture screen shows it.
     private struct PostureRow {
@@ -315,7 +318,7 @@ extension FleetInsightInput {
             let isHardware = row.control == .fileVault && policy.usesHardwareRule
                 && policy.fileVaultOffHardwareEncrypted == .warning
             let off = isHardware ? hardware : "Macs with \(name) off"
-            facts.append(Fact(label: off + " (a warning, not a gap)", value: .count(row.warning),
+            facts.append(Fact(label: off + " (a warning, not failing)", value: .count(row.warning),
                               prior: nil, polarity: .lowerIsBetter))
         }
         if row.notCounted > 0 {
@@ -344,13 +347,19 @@ extension FleetInsightInput {
         return facts
     }
 
-    /// One bands row as the screen's legend reads it: the bands holding Macs, then the total.
-    private static func bandFact(_ macs: String, _ bands: [ComplianceBand]) -> Fact? {
+    /// One bands row: its Macs in a band below Pass, out of its Macs, then the bands holding
+    /// Macs as the screen's legend reads them. Nil for a row with no Mac.
+    private static func bandFact(
+        _ label: String, _ bands: [ComplianceBand]
+    ) -> (failing: Int, fact: Fact)? {
         let total = bands.reduce(0) { $0 + $1.count }
         guard total > 0 else { return nil }
+        let clear = [ComplianceBandingService.Band.pass.label,
+                     ComplianceBandingService.Band.noData.label]
+        let failing = bands.filter { !clear.contains($0.label) }.reduce(0) { $0 + $1.count }
         let counts = bands.filter { $0.count > 0 }.map { "\($0.label) \($0.count)" }
-        return Fact(label: "\(macs) per control-gap band",
-                    value: .text(counts.joined(separator: ", ") + " (\(total) Macs)"),
-                    prior: nil, polarity: .neutral)
+        let text = "\(failing) of \(total) Macs fail at least one control ("
+            + counts.joined(separator: ", ") + ")"
+        return (failing, Fact(label: label, value: .text(text), prior: nil, polarity: .neutral))
     }
 }
