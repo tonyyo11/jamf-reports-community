@@ -240,6 +240,14 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(riskFactors(mac), [])
     }
 
+    /// A snapshot that still carries the older Bool key, with no status key, is read from it.
+    func testOlderEscrowedKeyIsReadWhenTheStatusKeyIsAbsent() {
+        let mac = computer(bootstrap: ["bootstrapTokenEscrowed": false])
+        XCTAssertEqual(SecurityControlPolicy.reading(mac.bootstrapToken), false)
+        XCTAssertEqual(mac.securityGapCount(policy: .default), 1)
+        XCTAssertEqual(riskFactors(mac), [.bootstrapMissing])
+    }
+
     /// Allowed says the server accepts escrow, not that this Mac's token was escrowed.
     func testBootstrapTokenAllowedAloneIsUnknown() {
         for allowed in [true, false] {
