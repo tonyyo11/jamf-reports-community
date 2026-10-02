@@ -427,6 +427,16 @@ final class ScaffoldServiceTests: XCTestCase {
         XCTAssertEqual(bothResult.columns["computer_name"], "Computer Name")
     }
 
+    /// Documents current behaviour, not a goal: hints match as substrings, so the `position` hint
+    /// also takes "Disposition". Narrowing it (word boundaries, an exclude) should change this test
+    /// on purpose.
+    func test_matchColumns_positionHintAlsoMatchesDisposition() throws {
+        let url = try csvURL(headers: ["Disposition"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.columns["position"], "Disposition")
+    }
+
     func test_writeConfig_writesExtraInventoryColumns() throws {
         let url = try csvURL(headers: Self.extraInventoryHeaders.compactMap { $0.headers.first })
         defer { try? FileManager.default.removeItem(at: url) }
