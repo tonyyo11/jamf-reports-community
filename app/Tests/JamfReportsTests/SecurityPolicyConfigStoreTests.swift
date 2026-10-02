@@ -389,3 +389,103 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
         }
     }
 }
+
+/// The Security Policy card's wording and its mapping from the file's issues to rows.
+@MainActor
+final class SecurityPolicyCardTests: XCTestCase {
+
+    private func issue(_ keyPath: String, _ value: String, _ used: String) -> SecurityPolicyIssue {
+        SecurityPolicyIssue(keyPath: keyPath, value: value, used: used)
+    }
+
+    func testControlAndLevelNamesAreTheOnesTheCardShows() {
+        XCTAssertEqual(SecurityControl.allCases.map(\.displayName),
+                       ["FileVault", "System Integrity Protection", "Firewall", "Gatekeeper"])
+        XCTAssertEqual(SecurityControlLevel.allCases.map(\.displayName),
+                       ["Fail", "Warning", "Not counted"])
+    }
+
+    func testSettingALevelChangesOnlyThatControl() {
+        let policy = SecurityControlPolicy(
+            fileVault: .warning, fileVaultOffHardwareEncrypted: .fail)
+        let changed = policy.setting(.ignore, for: .firewall)
+        XCTAssertEqual(changed, SecurityControlPolicy(
+            fileVault: .warning, firewall: .ignore, fileVaultOffHardwareEncrypted: .fail))
+        for control in SecurityControl.allCases {
+            XCTAssertEqual(policy.setting(.warning, for: control).level(for: control), .warning)
+        }
+    }
+
+    func testALevelIssueSaysWhatTheFileSaysAndWhatTheAppUsed() {
+        XCTAssertEqual(
+            SecurityPolicyCard.levelCaption(
+                issue("security_policy.controls.sip", "wrn", "fail")),
+            "config.yaml says \"wrn\", which is not fail, warning or ignore — using fail.")
+        XCTAssertEqual(
+            SecurityPolicyCard.levelCaption(issue(
+                "security_policy.filevault_off_hardware_encrypted", "", "the FileVault level")),
+            "config.yaml says \"\", which is not fail, warning or ignore — "
+                + "using the FileVault level.")
+    }
+
+    /// The loader already cleans what it reads; the card cleans again whatever it is handed.
+    func testTextFromTheFileIsCleanedBeforeItIsShown() {
+        let raw = "ev\u{1B}[31mil\u{202E}\n" + String(repeating: "x", count: 80)
+        let caption = SecurityPolicyCard.levelCaption(
+            issue("security_policy.controls.sip", raw, "fail"))
+        XCTAssertFalse(caption.contains("\u{1B}"))
+        XCTAssertFalse(caption.contains("\u{202E}"))
+        XCTAssertFalse(caption.contains("\n"))
+        XCTAssertLessThan(caption.count, 140)
+        let unknown = SecurityPolicyCard.unknownKeysCaption(
+            [issue("security_policy.a\u{1B}b", "", "")])
+        XCTAssertEqual(unknown, SecurityPolicyCard.unknownKeysCaption(
+            [issue("security_policy.ab", "", "")]))
+    }
+
+    func testUnknownKeysAreListedOnceAndCounted() {
+        let mode = issue("security_policy.mode", "", "")
+        let custom = issue("security_policy.controls.custom", "", "")
+        let level = issue("security_policy.controls.sip", "wrn", "fail")
+        XCTAssertEqual(
+            SecurityPolicyCard.unknownKeysCaption([level, mode]),
+            "config.yaml has 1 security_policy setting the app does not read: "
+                + "security_policy.mode.")
+        XCTAssertEqual(
+            SecurityPolicyCard.unknownKeysCaption([mode, level, custom]),
+            "config.yaml has 2 security_policy settings the app does not read: "
+                + "security_policy.mode, security_policy.controls.custom.")
+        XCTAssertNil(SecurityPolicyCard.unknownKeysCaption([level]))
+        XCTAssertNil(SecurityPolicyCard.unknownKeysCaption([]))
+    }
+
+    func testEachRowFindsItsOwnLevelIssue() {
+        let sip = issue("security_policy.controls.sip", "wrn", "fail")
+        let hardware = issue(
+            "security_policy.filevault_off_hardware_encrypted", "maybe", "the FileVault level")
+        let shape = issue("security_policy.controls", "strict", "fail for every control")
+        let unknown = issue("security_policy.mode", "", "")
+        let all = [unknown, shape, sip, hardware]
+        XCTAssertEqual(SecurityPolicyCard.levelIssue(for: .sip, in: all), sip)
+        XCTAssertNil(SecurityPolicyCard.levelIssue(for: .fileVault, in: all))
+        XCTAssertEqual(SecurityPolicyCard.hardwareLevelIssue(in: all), hardware)
+        XCTAssertEqual(SecurityPolicyCard.shapeIssues(in: all), [shape])
+    }
+
+    func testABlockOfTheWrongShapeIsExplained() {
+        XCTAssertEqual(
+            SecurityPolicyCard.shapeCaption(
+                issue("security_policy.controls", "strict", "fail for every control")),
+            "config.yaml's security_policy.controls is \"strict\", which is not a set of "
+                + "settings — using fail for every control.")
+    }
+
+    func testTheCardInstantiatesInAndOutOfDemoMode() {
+        for demo in [true, false] {
+            let workspace = WorkspaceStore(
+                demoMode: demo, jamfCLIProfileNames: { [] }, discoverProfiles: { [] },
+                jamfCLIInstallation: { nil })
+            _ = SecurityPolicyCard().environment(workspace)
+        }
+    }
+}

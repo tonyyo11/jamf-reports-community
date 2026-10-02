@@ -24,8 +24,8 @@ enum SecurityPolicyConfigLoader {
     // MARK: - What the block says that `load` did not use as written
 
     private static let blockPath = "security_policy"
-    private static let controlsPath = "security_policy.controls"
-    private static let hardwarePath = "security_policy.filevault_off_hardware_encrypted"
+    static let controlsPath = "security_policy.controls"
+    static let hardwarePath = "security_policy.filevault_off_hardware_encrypted"
     private static let weightsPath = "security_policy.score_weights"
 
     /// Key paths of the blocks that hold other settings: an issue at one of them is about

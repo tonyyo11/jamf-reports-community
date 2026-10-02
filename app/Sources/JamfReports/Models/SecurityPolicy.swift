@@ -3,12 +3,29 @@ import Foundation
 /// The four security controls a workspace's `security_policy` governs.
 enum SecurityControl: String, CaseIterable, Sendable {
     case fileVault = "filevault", sip, firewall, gatekeeper
+
+    var displayName: String {
+        switch self {
+        case .fileVault: "FileVault"
+        case .sip: "System Integrity Protection"
+        case .firewall: "Firewall"
+        case .gatekeeper: "Gatekeeper"
+        }
+    }
 }
 
 /// What a failing control means: a gap (`fail`), amber but not a gap (`warning`),
 /// or not evaluated at all (`ignore`).
 enum SecurityControlLevel: String, CaseIterable, Sendable {
     case fail, warning, ignore
+
+    var displayName: String {
+        switch self {
+        case .fail: "Fail"
+        case .warning: "Warning"
+        case .ignore: "Not counted"
+        }
+    }
 
     /// The one place a typed level is read: trimmed, case-insensitive, `_` and `-` read as
     /// spaces. Nil for anything that is not one of these spellings.
@@ -114,6 +131,17 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         case .firewall: firewall
         case .gatekeeper: gatekeeper
         }
+    }
+
+    func setting(_ level: SecurityControlLevel, for control: SecurityControl) -> Self {
+        var policy = self
+        switch control {
+        case .fileVault: policy.fileVault = level
+        case .sip: policy.sip = level
+        case .firewall: policy.firewall = level
+        case .gatekeeper: policy.gatekeeper = level
+        }
+        return policy
     }
 
     /// A typed hardware level is applied as typed, stricter than FileVault's or not. It changes

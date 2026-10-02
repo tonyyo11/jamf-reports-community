@@ -1407,6 +1407,190 @@ private struct EACard: View {
     }
 }
 
+// MARK: - Security policy card
+
+/// What counts as a security gap in this workspace: the level of FileVault, SIP, Firewall and
+/// Gatekeeper, and of FileVault off on a hardware-encrypted Mac. Every change is written to
+/// config.yaml at once through `WorkspaceStore.saveSecurityPolicy`; the pickers read the
+/// store's policy, so a failed save leaves them on what is saved. A value or key a hand-typed
+/// block carries that the app did not use as written is shown against its row.
+struct SecurityPolicyCard: View {
+    @Environment(WorkspaceStore.self) private var workspace
+    @Environment(\.colorSchemeContrast) private var contrast
+    @State private var saveFailure: SaveFailure?
+
+    /// Each failure is its own value, so a second identical failure still redraws the pickers
+    /// back onto the saved policy.
+    private struct SaveFailure: Equatable {
+        let id = UUID()
+        let message: String
+    }
+
+    var body: some View {
+        let issues = workspace.securityPolicyIssues
+        let fileVaultIgnored = workspace.securityPolicy.fileVault == .ignore
+        return Card(padding: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionHeader(title: "Security Policy")
+                Text("Decides what counts as a security gap on every screen, report and "
+                     + "scheduled run for this workspace. Saved to config.yaml.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(SecurityControl.allCases, id: \.self) { control in
+                        controlRow(control, issue: Self.levelIssue(for: control, in: issues))
+                    }
+                    hardwareRow(
+                        issue: Self.hardwareLevelIssue(in: issues),
+                        fileVaultIgnored: fileVaultIgnored)
+                    issueNotes(issues)
+                }
+                .disabled(workspace.demoMode)
+                .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                if let saveFailure {
+                    Text(saveFailure.message)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Security policy configuration")
+    }
+
+    private func controlRow(_ control: SecurityControl, issue: SecurityPolicyIssue?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Text(control.displayName)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fg)
+                Spacer(minLength: 12)
+                Picker(control.displayName, selection: Binding(
+                    get: { workspace.securityPolicy.level(for: control) },
+                    set: { save(workspace.securityPolicy.setting($0, for: control)) }
+                )) {
+                    ForEach(SecurityControlLevel.allCases, id: \.self) { level in
+                        Text(level.displayName).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 260)
+                .accessibilityLabel("\(control.displayName) level")
+            }
+            if let issue { warnNote(Self.levelCaption(issue)) }
+        }
+    }
+
+    /// Stacked, not beside its label: four segments and the long label do not share a row at
+    /// `PageScaffold.minSupportedWidth`.
+    private func hardwareRow(issue: SecurityPolicyIssue?, fileVaultIgnored: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("FileVault off on a hardware-encrypted Mac")
+                .font(.footnote)
+                .foregroundStyle(Theme.Colors.fg)
+            Picker("FileVault off on a hardware-encrypted Mac", selection: Binding(
+                get: { workspace.securityPolicy.fileVaultOffHardwareEncrypted },
+                set: { level in
+                    var policy = workspace.securityPolicy
+                    policy.fileVaultOffHardwareEncrypted = level
+                    save(policy)
+                }
+            )) {
+                Text("Same as FileVault").tag(SecurityControlLevel?.none)
+                ForEach(SecurityControlLevel.allCases, id: \.self) { level in
+                    Text(level.displayName).tag(SecurityControlLevel?.some(level))
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 420)
+            .disabled(fileVaultIgnored)
+            .accessibilityLabel("FileVault off on a hardware-encrypted Mac level")
+            Text("Apple silicon Macs and Intel Macs with the T2 chip always encrypt the "
+                 + "internal disk; with FileVault off it unlocks without a password.")
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+            if let issue { warnNote(Self.levelCaption(issue)) }
+        }
+    }
+
+    @ViewBuilder
+    private func issueNotes(_ issues: [SecurityPolicyIssue]) -> some View {
+        ForEach(Self.shapeIssues(in: issues), id: \.keyPath) { issue in
+            warnNote(Self.shapeCaption(issue))
+        }
+        if let unknown = Self.unknownKeysCaption(issues) { warnNote(unknown) }
+    }
+
+    private func warnNote(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(Theme.Colors.warn)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func save(_ policy: SecurityControlPolicy) {
+        guard !workspace.demoMode else { return }
+        do {
+            try workspace.saveSecurityPolicy(policy)
+            saveFailure = nil
+        } catch {
+            saveFailure = SaveFailure(
+                message: "Couldn't save the security policy: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: Wording
+
+    private static func level(
+        _ keyPath: String, in issues: [SecurityPolicyIssue]
+    ) -> SecurityPolicyIssue? {
+        issues.first { $0.keyPath == keyPath && !$0.used.isEmpty }
+    }
+
+    static func levelIssue(
+        for control: SecurityControl, in issues: [SecurityPolicyIssue]
+    ) -> SecurityPolicyIssue? {
+        level("\(SecurityPolicyConfigLoader.controlsPath).\(control.rawValue)", in: issues)
+    }
+
+    static func hardwareLevelIssue(in issues: [SecurityPolicyIssue]) -> SecurityPolicyIssue? {
+        level(SecurityPolicyConfigLoader.hardwarePath, in: issues)
+    }
+
+    /// The block, `controls` or `score_weights` holding something other than settings.
+    static func shapeIssues(in issues: [SecurityPolicyIssue]) -> [SecurityPolicyIssue] {
+        issues.filter { SecurityPolicyConfigLoader.blockKeyPaths.contains($0.keyPath) }
+    }
+
+    static func levelCaption(_ issue: SecurityPolicyIssue) -> String {
+        "config.yaml says \"\(shown(issue.value))\", which is not fail, warning or ignore — "
+            + "using \(shown(issue.used))."
+    }
+
+    static func shapeCaption(_ issue: SecurityPolicyIssue) -> String {
+        "config.yaml's \(shown(issue.keyPath)) is \"\(shown(issue.value))\", which is not a set "
+            + "of settings — using \(shown(issue.used))."
+    }
+
+    /// Nil when every key in the block is one the app reads.
+    static func unknownKeysCaption(_ issues: [SecurityPolicyIssue]) -> String? {
+        let paths = issues.filter { $0.used.isEmpty }.map { shown($0.keyPath) }
+        guard !paths.isEmpty else { return nil }
+        let noun = paths.count == 1 ? "setting" : "settings"
+        return "config.yaml has \(paths.count) security_policy \(noun) the app does not read: "
+            + paths.joined(separator: ", ") + "."
+    }
+
+    /// Text taken from the user's file: control characters removed, length capped.
+    private static func shown(_ raw: String) -> String {
+        SecurityPolicyConfigLoader.displayText(raw)
+    }
+}
+
 // MARK: - Scoring tab
 
 /// Lets the user override the weighted Security Score formula lifted from
@@ -1439,6 +1623,7 @@ private struct ScoringTab: View {
         let config = self.config
         let totalWeight = Self.totalWeight(config)
         return VStack(alignment: .leading, spacing: 14) {
+            SecurityPolicyCard()
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
