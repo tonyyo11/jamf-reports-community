@@ -191,6 +191,46 @@ final class YAMLParseNoteTests: XCTestCase {
         XCTAssertEqual(ea?.value(for: "column")?.stringValue, "Example - Column")
     }
 
+    /// The encoder writes a list inside a list as a bare `-` with the items under it.
+    func testABareDashItemWrittenByTheEncoderReadsBack() throws {
+        let value = YAMLCodec.YAMLValue.sequence([
+            .sequence([.scalar(.string("a")), .scalar(.int(1))]),
+            .sequence([.mapping(.init(entries: [
+                .init(key: "name", value: .scalar(.string("Example"))),
+                .init(key: "column", value: .scalar(.string("Example - Column"))),
+            ]))]),
+            .mapping(.init(entries: [])),
+            .mapping(.init(entries: [.init(key: "name", value: .scalar(.string("Last")))])),
+        ])
+        var document = YAMLCodec.emptyDocument()
+        document.root = .mapping(.init(entries: [.init(key: "matrix", value: value)]))
+        let text = try YAMLCodec.encode(document, replacingTopLevelKeys: ["matrix"])
+        XCTAssertTrue(text.contains("\n  -\n"), text)
+        let read = try YAMLCodec.decode(text)
+        XCTAssertEqual(read.root, document.root)
+        XCTAssertEqual(read.parseNotes, [])
+    }
+
+    func testABareDashTakesTheMappingUnderIt() throws {
+        let read = try YAMLCodec.decode("""
+            security_agents:
+              -
+                name: First Agent
+                column: First Agent - Status
+              -
+              - name: Third Agent
+            """)
+        XCTAssertEqual(read.root.mapping?.value(for: "security_agents"), .sequence([
+            .mapping(.init(entries: [
+                .init(key: "name", value: .scalar(.string("First Agent"))),
+                .init(key: "column", value: .scalar(.string("First Agent - Status"))),
+            ])),
+            .scalar(.null),
+            .mapping(.init(entries: [.init(key: "name", value: .scalar(.string("Third Agent")))])),
+        ]))
+        XCTAssertEqual(read.parseNotes, [])
+    }
+
     func testListItemsWithNoKeyAboveThemAreNoted() throws {
         let yaml = """
         some_key: real value

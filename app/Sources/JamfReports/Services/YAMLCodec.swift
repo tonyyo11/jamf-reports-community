@@ -407,8 +407,9 @@ private struct Parser {
         return .mapping(parseMapping(indent: indent))
     }
 
+    /// `- item`, or a bare `-` whose item is the block on the lines under it.
     private static func isListItem(_ trimmed: String) -> Bool {
-        trimmed.hasPrefix("- ")
+        trimmed.hasPrefix("- ") || trimmed == "-"
     }
 
     /// `seedKeys` are keys already read for this mapping (a list item's first key, on its `- `
@@ -431,10 +432,10 @@ private struct Parser {
             let trimmed = trimmedContent(line)
             if currentIndent < indent { break }
             if Self.isListItem(trimmed) {
-                // Sequence items at this mapping's own indent. Well-formed
-                // documents never reach here (zero-indent sequences under a
-                // bare `key:` are consumed by the peek path below), so this
-                // is the corrupt `key: []` + orphaned `- item` pattern from
+                // Sequence items no key took. Well-formed documents never
+                // reach here (a list under a bare `key:` is consumed by
+                // parseNestedValue below), so this is a mis-indented item
+                // or the corrupt `key: []` + orphaned `- item` pattern from
                 // pre-fix GUI builds. Repair by attaching the items to the
                 // previous key when it holds an empty/null value; otherwise
                 // drop them — either way, keep parsing so the keys after the
@@ -541,7 +542,7 @@ private struct Parser {
             valueLine = itemLine
 
             if rest.isEmpty {
-                values.append(parseBlock(indent: indent + 2))
+                values.append(parseNestedValue(below: indent, listAtSameColumn: false).0)
             } else if rest.hasPrefix("{") || rest.hasPrefix("[") {
                 // Flow-style item (`- {label: …}`). Must run before
                 // parseKeyValue, which would otherwise split on the first
