@@ -246,6 +246,7 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 3)
         XCTAssertEqual(fleet.p0, 1)
         XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 4)
+        XCTAssertEqual(fleet.scoreInput().metricTotals, [:], "a share of the whole fleet")
     }
 
     func testHardwareRuleAtIgnoreDropsHardwareEncryptedMacs() throws {
@@ -256,6 +257,45 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 3)
         XCTAssertEqual(fleet.p0, 1)
         XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 1)
+        XCTAssertEqual(fleet.scoreInput().metricTotals, [.fileVault: 2])
+    }
+
+    /// Not counted means not counted in the score either: FileVault's share is the same as
+    /// for a fleet without the three Macs the rule dropped (1 of the 2 left).
+    func testHardwareRuleAtIgnoreLeavesThoseMacsOutOfTheFileVaultShare() throws {
+        let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
+        let withDropped = score(try hardwareCounts(policy), policy)
+        let without = score(SecurityFleetCounts.build(
+            totalDevices: 2,
+            onCounts: [.fileVault: 1, .sip: 2, .firewall: 2, .gatekeeper: 2],
+            devices: [], hardware: [:], policy: policy), policy)
+        XCTAssertEqual(withDropped, without)
+        // (50 + 100 + 100) / 3
+        XCTAssertEqual(withDropped.value, 83.3, accuracy: 0.001)
+    }
+
+    /// Every Mac hardware-encrypted with FileVault off and dropped: FileVault has no share
+    /// this run, neither 0% nor 100%, so the score leaves it out.
+    func testHardwareRuleAtIgnoreOverTheWholeFleetDropsTheFileVaultMetric() throws {
+        let summary: [String: Any] = ["section": "summary", "data": [
+            "total_devices": 2, "filevault_encrypted": 0, "sip_enabled": 2,
+            "firewall_enabled": 1, "gatekeeper_enabled": 2,
+        ]]
+        let json = try JSONSerialization.data(withJSONObject: [summary,
+            row("as-mac", serial: "AS1", fileVault: "UNENCRYPTED"),
+            row("t2-mac", serial: "T21", fileVault: "UNENCRYPTED"),
+        ])
+        let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
+        let fleet = try XCTUnwrap(SecurityFleetCounts.build(
+            items: JSONDecoder().decode([SecurityReportItem].self, from: json),
+            hardware: HardwareEncryption.index(computers: computers), policy: policy))
+        XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 2)
+        XCTAssertNil(fleet.scoreInput().compliantCounts[.fileVault])
+        let result = score(fleet, policy)
+        XCTAssertEqual(result.available, [.sip, .firewall])
+        XCTAssertTrue(result.missing.contains(.fileVault))
+        // (100 + 50) / 2
+        XCTAssertEqual(result.value, 75.0, accuracy: 0.001)
     }
 
     /// A typed hardware level stricter than FileVault's moves those Macs to fail, and the
@@ -269,6 +309,7 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 0)
         XCTAssertEqual(fleet.p0, 3)
         XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 2)
+        XCTAssertEqual(fleet.scoreInput().metricTotals, [:], "a share of the whole fleet")
     }
 
     func testFileVaultAtIgnoreWithTheRuleMovesNothing() throws {
@@ -336,6 +377,15 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(summary.securityScore), 93.3, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(summary.compliancePct), 80, accuracy: 0.01)
         XCTAssertEqual(try XCTUnwrap(summary.fileVaultPct), 20, accuracy: 0.01)
+
+        let ignored = try writtenSummary(
+            config: ConfigLoader.loadFromString(
+                "security_policy:\n  filevault_off_hardware_encrypted: ignore\n"),
+            security: hardwareFleetJSON(), computers: computers)
+        XCTAssertEqual(ignored.actionItemsP0, 1)
+        // FileVault 1 of the 2 Macs left counted: (50 + 100 + 100) / 3.
+        XCTAssertEqual(try XCTUnwrap(ignored.securityScore), 83.3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(ignored.fileVaultPct), 20, accuracy: 0.01, "the fact")
     }
 
     // MARK: - The Security Posture service

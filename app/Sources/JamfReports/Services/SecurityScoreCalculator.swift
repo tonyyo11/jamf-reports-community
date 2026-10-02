@@ -22,10 +22,17 @@ struct SecurityScoreCalculator: Sendable {
         /// Map of metric → number of compliant devices. Missing keys are
         /// treated as "no data" (skipped, not zero).
         let compliantCounts: [SecurityScore.Metric: Int]
+        /// A metric whose share is over fewer devices than the fleet (some are not counted
+        /// for it). A total of zero or less is no data for that metric.
+        let metricTotals: [SecurityScore.Metric: Int]
 
-        init(totalDevices: Int, compliantCounts: [SecurityScore.Metric: Int]) {
+        init(
+            totalDevices: Int, compliantCounts: [SecurityScore.Metric: Int],
+            metricTotals: [SecurityScore.Metric: Int] = [:]
+        ) {
             self.totalDevices = totalDevices
             self.compliantCounts = compliantCounts
+            self.metricTotals = metricTotals
         }
     }
 
@@ -53,7 +60,8 @@ struct SecurityScoreCalculator: Sendable {
         var applied: [SecurityScore.Metric: Double] = [:]
 
         for metric in SecurityScore.Metric.allCases {
-            guard let compliant = input.compliantCounts[metric] else {
+            let total = input.metricTotals[metric] ?? input.totalDevices
+            guard let compliant = input.compliantCounts[metric], total > 0 else {
                 missing.append(metric)
                 continue
             }
@@ -63,7 +71,7 @@ struct SecurityScoreCalculator: Sendable {
                 // metric — neither score nor surface it as "missing data".
                 continue
             }
-            let pct = (Double(compliant) / Double(input.totalDevices)) * 100
+            let pct = (Double(compliant) / Double(total)) * 100
             let clamped = min(max(pct, 0), 100)
             weightedSum += clamped * weight
             totalWeight += weight

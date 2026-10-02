@@ -34,16 +34,31 @@ struct SecurityFleetCounts: Sendable, Equatable {
     var p1: Int? { controls[.gatekeeper]?.fail }
 
     /// A warning is not a gap, so it scores as compliant. An ignored control keeps its count,
-    /// so `effectiveScoreWeights` can drop it without the score calling it missing.
+    /// so `effectiveScoreWeights` can drop it without the score calling it missing. Macs the
+    /// hardware rule does not count are left out of FileVault's share; when that is every
+    /// Mac, FileVault has no share this run.
     func scoreInput() -> SecurityScoreCalculator.Input {
         let scored: [(SecurityControl, SecurityScore.Metric)] = [
             (.fileVault, .fileVault), (.sip, .sip), (.firewall, .firewall),
         ]
         var compliant: [SecurityScore.Metric: Int] = [:]
+        var totals: [SecurityScore.Metric: Int] = [:]
         for (control, metric) in scored {
-            if let counts = controls[control] { compliant[metric] = counts.on + counts.warning }
+            guard let counts = controls[control] else { continue }
+            if control == .fileVault, fileVaultNotCountedByHardware > 0 {
+                let counted = totalDevices - fileVaultNotCountedByHardware
+                guard counted > 0 else { continue }
+                totals[metric] = counted
+            }
+            compliant[metric] = counts.on + counts.warning
         }
-        return .init(totalDevices: totalDevices, compliantCounts: compliant)
+        return .init(totalDevices: totalDevices, compliantCounts: compliant, metricTotals: totals)
+    }
+
+    /// FileVault-off Macs in neither bucket: the ones the hardware rule dropped at `ignore`.
+    private var fileVaultNotCountedByHardware: Int {
+        guard let counts = controls[.fileVault], counts.level != .ignore else { return 0 }
+        return max(totalDevices - counts.on, 0) - counts.fail - counts.warning
     }
 
     static func onCounts(_ summary: SecuritySummaryData) -> [SecurityControl: Int] {
