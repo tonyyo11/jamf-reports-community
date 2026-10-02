@@ -673,7 +673,7 @@ enum ConfigDoctorService {
             guard let value = ConfigLoader.rawValue(at: path, in: root),
                   !(value is NSNull), !(value is Bool) else { return nil }
             let keyPath = path.joined(separator: ".")
-            let typed = ((value as? String) ?? (value as? Int).map(String.init))
+            let typed = ((value as? String) ?? (value as? Int).map { String($0) })
                 .map { "\"\(ConfigSchema.displayText($0))\"" } ?? "This value"
             return DoctorRow(
                 id: "config.value.\(keyPath)", severity: .warn, title: keyPath,
