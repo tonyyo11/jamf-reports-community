@@ -627,3 +627,95 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return MobileFleetService.deviceCount(fromMobileDevicesListData: data)
     }
 }
+
+// MARK: - AI insight input
+
+extension FleetInsightInput {
+    /// The Trends insight: each of `metrics` with two or more points, valued at its last
+    /// point with its first as the prior. `points` is the screen's own series, so the facts
+    /// match its pills, and `label` its metric names. Nil when no metric qualifies.
+    static func trends(
+        metrics: [TrendSeries.Metric],
+        points: (TrendSeries.Metric) -> [TrendPoint],
+        label: (TrendSeries.Metric) -> String
+    ) -> FleetInsightInput? {
+        var facts: [Fact] = []
+        var spans: [(first: Date, last: Date)] = []
+        var snapshots = Set<Date>()
+        // Its headline counts devices with band data: coverage, not a measure of health.
+        for metric in metrics where metric != .mscpBandTrend {
+            let series = points(metric)
+            guard series.count >= 2, let first = series.first, let last = series.last else {
+                continue
+            }
+            facts.append(Fact(
+                label: label(metric), value: metric.insightValue(last.value),
+                prior: metric.insightValue(first.value), polarity: metric.insightPolarity,
+                complement: metric.insightComplement))
+            spans.append((first.date, last.date))
+            snapshots.formUnion(series.map(\.date))
+        }
+        guard let notes = trendNotes(facts: facts, spans: spans, snapshots: snapshots) else {
+            return nil
+        }
+        return FleetInsightInput(
+            title: "Trend insight",
+            focus: "which metrics moved together or against each other over the period, "
+                + "and which change matters most.",
+            facts: facts, notes: notes)
+    }
+
+    /// The range, then what the facts cannot say: a neutral count prints no change, so its
+    /// start and end go here, and a metric recorded for part of the range names its dates.
+    private static func trendNotes(
+        facts: [Fact], spans: [(first: Date, last: Date)], snapshots: Set<Date>
+    ) -> [String]? {
+        guard !facts.isEmpty, let start = snapshots.min(), let end = snapshots.max() else {
+            return nil
+        }
+        // `parsedDate` is `.distantPast` for a summary whose date is not a day.
+        func day(_ date: Date) -> String {
+            safeDate(date == .distantPast ? "" : SummaryJSONParser.dateFormatter.string(from: date))
+        }
+        var notes = ["Range: \(day(start)) to \(day(end)), \(snapshots.count) snapshots. "
+            + "Each value is the last snapshot in the range and its prior is the first."]
+        for (fact, span) in zip(facts, spans) {
+            if fact.polarity == .neutral, let prior = fact.prior {
+                notes.append(
+                    "\(fact.label): \(prior.text) at the start, \(fact.value.text) at the end.")
+            }
+            if span.first != start || span.last != end {
+                notes.append("\(fact.label): compared from \(day(span.first)) to "
+                    + "\(day(span.last)), its first and last snapshots in the range.")
+            }
+        }
+        return notes
+    }
+}
+
+private extension TrendSeries.Metric {
+    /// A percentage where the screen shows one, a count where it shows none, and the two
+    /// composite scores as numbers, so a metric added later is described by its unit.
+    func insightValue(_ value: Double) -> FleetInsightInput.Value {
+        switch self {
+        case .stability, .securityScore: return .number(value)
+        default: return unit == "%" ? .percent(value) : .count(Int(value.rounded()))
+        }
+    }
+
+    /// Fewer stale devices is better; a device count has no good direction; any other
+    /// percentage is a share where higher is better.
+    var insightPolarity: FleetInsightInput.Polarity {
+        if self == .stale { return .lowerIsBetter }
+        return unit == "%" ? .higherIsBetter : .neutral
+    }
+
+    /// The other side of a device share, where the rest of the fleet is a plain statement.
+    var insightComplement: String? {
+        switch self {
+        case .fileVault: return "not encrypted"
+        case .edrAgent: return "not installed"
+        default: return nil
+        }
+    }
+}
