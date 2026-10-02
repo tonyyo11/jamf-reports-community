@@ -493,6 +493,8 @@ final class CSVDashboardTests: XCTestCase {
         ])
         XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "0", "0", "1"])
         XCTAssertEqual(sheet.rows["FileVault"]?.percent, "0.75")
+        XCTAssertEqual(sheet.rows["FileVault"]?.percentFormat, .pctYellow,
+                       "no Mac fails, one only warns")
         XCTAssertEqual(counts(sheet.rows["SIP"]), ["3", "1", "0", "0"])
         XCTAssertEqual(counts(sheet.rows["Secure Boot"]), ["4", "0", "0", "0"])
     }
@@ -538,6 +540,40 @@ final class CSVDashboardTests: XCTestCase {
             policy: SecurityControlPolicy(sip: .warning))
         XCTAssertEqual(counts(sheet.rows["SIP"]), ["3", "0", "0", "1"])
         XCTAssertEqual(counts(sheet.rows["FileVault"]), ["3", "1", "0", "0"])
+        // The value is still the compliant share. No Mac fails SIP, so the cell is graded green
+        // and, with a Mac that only warns, shown amber like the workbook's other sheets.
+        XCTAssertEqual(sheet.rows["SIP"]?.percent, "0.75")
+        XCTAssertEqual(sheet.rows["SIP"]?.percentFormat, .pctYellow)
+        XCTAssertEqual(sheet.rows["FileVault"]?.percentFormat, .pctRed, "a failing Mac stays red")
+    }
+
+    /// Warnings do not make the share worse than not failing, and do not make it green: one
+    /// Mac with FileVault on, one the rule counts as a warning, three Intel Macs that fail.
+    func testWarningsAreAmberOnlyWhenNothingFailsTheShare() throws {
+        let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+        let intel = "\"MacBookPro14,1\""
+        let silicon = "\"MacBookPro17,1\""
+        let csv = inlineCSV([
+            ["Encrypted", "", "", "", "", "", intel, "x86_64"],
+            ["Not Encrypted", "", "", "", "", "", silicon, "arm64"],
+            ["Not Encrypted", "", "", "", "", "", intel, "x86_64"],
+            ["Not Encrypted", "", "", "", "", "", intel, "x86_64"],
+            ["Not Encrypted", "", "", "", "", "", intel, "x86_64"],
+        ])
+        let sheet = try securityControls(
+            csv: csv, columns: inlineColumns(hardware: true), policy: policy)
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["1", "3", "0", "1"])
+        XCTAssertEqual(sheet.rows["FileVault"]?.percent, "0.2")
+        XCTAssertEqual(sheet.rows["FileVault"]?.percentFormat, .pctRed)
+
+        // Without the failing Macs the same warning leaves the cell amber, not green.
+        let passing = try securityControls(
+            csv: inlineCSV([
+                ["Encrypted", "", "", "", "", "", intel, "x86_64"],
+                ["Not Encrypted", "", "", "", "", "", silicon, "arm64"],
+            ]), columns: inlineColumns(hardware: true), policy: policy)
+        XCTAssertEqual(passing.rows["FileVault"]?.percent, "0.5")
+        XCTAssertEqual(passing.rows["FileVault"]?.percentFormat, .pctYellow)
     }
 
     /// An ignored control says so in its label and shows no Non-Compliant count; its other

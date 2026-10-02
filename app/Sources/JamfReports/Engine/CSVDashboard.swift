@@ -503,8 +503,12 @@ struct CSVDashboard: Sendable {
             // Macs the hardware rule drops at `ignore` leave the share.
             let counted = total - notCounted
             let pct = counted > 0 ? Double(compliant) / Double(counted) : 0
-            let pctFmt: CellFormat = ignored ? .pct
-                : pct >= 0.95 ? .pctGreen : pct >= 0.80 ? .pctYellow : .pctRed
+            // A warning is not a failure: it grades like a compliant Mac, but keeps the cell
+            // from reading green.
+            let graded = counted > 0 ? Double(compliant + warning) / Double(counted) : 0
+            var pctFmt: CellFormat = ignored ? .pct
+                : graded >= 0.95 ? .pctGreen : graded >= 0.80 ? .pctYellow : .pctRed
+            if pctFmt == .pctGreen, warning > 0 { pctFmt = .pctYellow }
             ws.write(ignored ? "\(label) (not counted)" : label, row: row, col: 0, format: .cell)
             ws.write(compliant, row: row, col: 1, format: .green)
             if ignored {
