@@ -76,6 +76,27 @@ final class PostureViewsRenderTests: XCTestCase {
                        "at hardware level fail those Macs are plain failures")
     }
 
+    /// Without a FileVault count summary.json writes no P0, but the tile still sums the SIP
+    /// and Firewall failures, as it did before the counts moved to the policy.
+    func testP0TileSumsThePresentControlsWithoutAFileVaultCount() {
+        let noFileVault = SecurityFleetCounts.build(
+            totalDevices: 10, onCounts: [.sip: 9, .firewall: 7, .gatekeeper: 8],
+            devices: [], hardware: [:], policy: .default)
+        XCTAssertNil(noFileVault.p0)
+        XCTAssertEqual(SecurityPostureView.p0TileCount(noFileVault), 1 + 3)
+
+        let sipWarning = SecurityFleetCounts.build(
+            totalDevices: 10, onCounts: [.sip: 9, .firewall: 7], devices: [], hardware: [:],
+            policy: SecurityControlPolicy(sip: .warning))
+        XCTAssertEqual(SecurityPostureView.p0TileCount(sipWarning), 3, "a warning is not a gap")
+
+        let withFileVault = SecurityFleetCounts.build(
+            totalDevices: 10, onCounts: [.fileVault: 6, .sip: 9], devices: [], hardware: [:],
+            policy: .default)
+        XCTAssertEqual(SecurityPostureView.p0TileCount(withFileVault), withFileVault.p0)
+        XCTAssertEqual(SecurityPostureView.p0TileCount(.empty), 0)
+    }
+
     /// The report carries FileVault even when the hardware rule leaves no Mac to score it
     /// over, so the hero card gives it its own reason instead of calling it missing.
     func testMissingTextSaysWhyFileVaultIsNotScored() {

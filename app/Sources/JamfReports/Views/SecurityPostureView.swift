@@ -119,7 +119,14 @@ struct SecurityPostureView: View {
     private var actionItems: (p0: Int, p1: Int, p2: Int) {
         // P0 = FileVault, SIP or Firewall failures under the workspace's policy. P1 =
         // Gatekeeper failures. P2 reserved. Matches v3.5 surface taxonomy.
-        (snapshot.fleetCounts.p0 ?? 0, snapshot.fleetCounts.p1 ?? 0, 0)
+        (Self.p0TileCount(snapshot.fleetCounts), snapshot.fleetCounts.p1 ?? 0, 0)
+    }
+
+    /// summary.json writes no P0 without a FileVault count; the tile still sums the
+    /// controls the report does carry, as it always has.
+    static func p0TileCount(_ fleet: SecurityFleetCounts) -> Int {
+        fleet.p0 ?? [SecurityControl.sip, .firewall].compactMap { fleet.controls[$0]?.fail }
+            .reduce(0, +)
     }
 
     /// A KPI tile's sub-line. The tile's value stays the fact; this says how the
