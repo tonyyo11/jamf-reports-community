@@ -391,7 +391,14 @@ private struct Parser {
     private var valueLine = 0
 
     init(text: String) {
-        self.lines = text.components(separatedBy: .newlines)
+        var lines = text.components(separatedBy: .newlines)
+        // `---` opening the file marks where the document starts; it is not content.
+        let content = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+        if let first = content.firstIndex(where: { !$0.isEmpty && !$0.hasPrefix("#") }),
+           content[first] == "---" || content[first].hasPrefix("--- #") {
+            lines[first] = ""
+        }
+        self.lines = lines
         for (offset, line) in lines.enumerated() {
             let lead = line.prefix { $0 == " " || $0 == "\t" }
             let content = line.dropFirst(lead.count)

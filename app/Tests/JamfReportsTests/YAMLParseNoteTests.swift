@@ -305,6 +305,18 @@ final class YAMLParseNoteTests: XCTestCase {
         XCTAssertEqual(root?.value(for: "band")?.mapping?.value(for: "it's")?.stringValue, "a'b")
     }
 
+    /// `---` opening the file marks the start of the document; elsewhere it is still noted.
+    func testADocumentStartMarkerAtTheTopIsNotNoted() throws {
+        for yaml in ["---\nthresholds:\n  stale_device_days: 45\n",
+                     "# config\n--- # start\nthresholds:\n  stale_device_days: 45\n"] {
+            let document = try YAMLCodec.decode(yaml)
+            XCTAssertEqual(document.parseNotes, [], yaml)
+            XCTAssertEqual(document.root.mapping?.value(for: "thresholds")?.mapping?
+                .value(for: "stale_device_days")?.intValue, 45)
+        }
+        XCTAssertEqual(try notes("a: 1\n---\nb: 2\n"), [Note(line: 2, kind: .noKey)])
+    }
+
     func testNotesReadAsLinesWithoutTheTypedValues() {
         XCTAssertEqual(
             Note(line: 4, kind: .indentation(found: 1, expected: 2)).display,
