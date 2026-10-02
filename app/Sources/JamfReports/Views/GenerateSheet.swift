@@ -163,11 +163,8 @@ final class GenerateSheetState {
 struct GenerateSheet: View {
     let profile: String
     let bridge: CLIBridge
-    var onSchedule: (ScheduleFormState) -> Void = { _ in }
 
     @State private var state = GenerateSheetState()
-    @State private var showScheduleSheet = false
-    @State private var scheduleForm = ScheduleFormState()
 
     @Environment(\.dismiss) private var dismiss
     @Environment(WorkspaceStore.self) private var workspace
@@ -206,14 +203,6 @@ struct GenerateSheet: View {
         .frame(minWidth: 460, idealWidth: 540)
         .frame(minHeight: 440)
         .background(Theme.Surface.raised)
-        .sheet(isPresented: $showScheduleSheet) {
-            NewScheduleSheetWrapper(form: $scheduleForm, profiles: [profile]) { form in
-                showScheduleSheet = false
-                onSchedule(form)
-            } onCancel: {
-                showScheduleSheet = false
-            }
-        }
     }
 
     // MARK: Subviews
@@ -707,17 +696,6 @@ struct GenerateSheet: View {
 
     private var footer: some View {
         HStack {
-            Button {
-                prefillAndOpenScheduleSheet()
-            } label: {
-                Text("Save as schedule\u{2026}")
-                    .font(Theme.Fonts.label)
-                    .foregroundStyle(Theme.Colors.goldBright)
-            }
-            .buttonStyle(.plain)
-            .disabled(state.isRunning)
-            .accessibilityLabel("Save current settings as a recurring schedule")
-
             Spacer()
 
             PNPButton(title: state.isRunning ? "Running\u{2026}" : "Done") {
@@ -764,12 +742,6 @@ struct GenerateSheet: View {
             state.folderPickerError = "Cannot write to \(url.lastPathComponent): "
                 + error.localizedDescription
         }
-    }
-
-    private func prefillAndOpenScheduleSheet() {
-        scheduleForm = ScheduleFormState(defaultProfile: profile)
-        scheduleForm.mode = state.collectFresh ? .jamfCLIOnly : .snapshotOnly
-        showScheduleSheet = true
     }
 
     private func runGenerate() async {
@@ -923,117 +895,5 @@ private struct RunLogConsoleEmbed: View {
             return Theme.Colors.ok
         }
         return Theme.Text.secondary
-    }
-}
-
-// MARK: - NewScheduleSheet wrapper
-
-/// Thin wrapper so GenerateSheet can present NewScheduleSheet (which is `private` in
-/// SchedulesView). We re-expose the necessary interface here using ScheduleFormState,
-/// which is already `internal`.
-private struct NewScheduleSheetWrapper: View {
-    @Binding var form: ScheduleFormState
-    let profiles: [String]
-    let onSave: (ScheduleFormState) -> Void
-    let onCancel: () -> Void
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("New Schedule")
-                    .font(Theme.Fonts.title)
-                    .foregroundStyle(Theme.Text.primary)
-                Spacer()
-                Button(action: onCancel) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .font(Theme.Fonts.bodyText)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Cancel")
-            }
-            .padding(18)
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    formRow(label: "Name") {
-                        PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
-                    }
-                    formRow(label: "Profile") {
-                        Picker("", selection: $form.profile) {
-                            ForEach(profiles, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
-                    }
-                    formRow(label: "Mode") {
-                        Picker("", selection: $form.mode) {
-                            ForEach(Schedule.RunMode.allCases) {
-                                Text($0.rawValue).tag($0)
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    Text(modeDescription(for: form.mode))
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                    formRow(label: "Cadence") {
-                        Picker("", selection: $form.cadenceType) {
-                            ForEach(ScheduleFormState.CadenceType.allCases) {
-                                Text($0.rawValue).tag($0)
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    formRow(label: "Time") {
-                        DatePicker("", selection: $form.scheduledTime,
-                                   displayedComponents: [.hourAndMinute])
-                            .labelsHidden()
-                            .datePickerStyle(.compact)
-                    }
-                    formRow(label: "Enabled") {
-                        Toggle("", isOn: $form.enabled).labelsHidden()
-                    }
-                    FieldHelp(text: "Cadence preview: \(form.scheduleString)")
-                    Text("Note: schedules always produce XLSX. HTML/PDF format selection from Generate applies to on-demand runs only.")
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(18)
-            }
-            Divider()
-            HStack {
-                Spacer()
-                PNPButton(title: "Cancel", action: onCancel)
-                PNPButton(title: "Add Schedule", icon: "checkmark", style: .gold) {
-                    onSave(form)
-                }
-                .disabled(!form.isValid)
-            }
-            .padding(14)
-        }
-        .frame(minWidth: 360, idealWidth: 420)
-        .background(Theme.Surface.raised)
-    }
-
-    @ViewBuilder
-    private func formRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            FieldLabel(label: label)
-            HStack(spacing: 8) { content() }
-        }
-    }
-
-    private func modeDescription(for mode: Schedule.RunMode) -> String {
-        switch mode {
-        case .snapshotOnly: "Refresh jamf-cli JSON and archive CSV snapshots. No report generated."
-        case .jamfCLIOnly:  "Generate a report from live or cached jamf-cli data. No CSV required."
-        case .jamfCLIFull:  "Full run: collect snapshots, archive CSV, then generate from both sources."
-        case .csvAssisted:  "Generate combining a CSV from the inbox with live jamf-cli data."
-        case .backup:       "Back up Jamf Pro configuration objects to the workspace's backups folder."
-        }
     }
 }
