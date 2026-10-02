@@ -94,6 +94,11 @@ final class WorkspaceStore {
     /// Manual collects in THIS process holding `tickLock`. A count: the first of
     /// two overlapping ones to finish must not remove the file under the other.
     var manualCollectLockHolds = 0
+    /// The profile's jamf-cli auth method, for the freshness re-probes. Injectable
+    /// so a test runs no `jamf-cli config list`.
+    var resolveAuthMethod: @Sendable (String) -> ProfileAuthMethod.Resolved? = {
+        ProfileAuthMethod.resolve(profile: $0)
+    }
     private var didAutoUpdateJamfCLI = false
     /// Dedup guard for `autoRefreshAuditIfStale()` — rapid profile switches or
     /// repeated launch-task firings must not stack concurrent audit runs

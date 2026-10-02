@@ -359,8 +359,10 @@ extension WorkspaceStore {
         }
         let profile = self.profile
         let jamfCLIVersion = self.jamfCLIVersion
+        let resolveAuth = resolveAuthMethod
         let issues = await Task.detached(priority: .utility) {
-            Self.evaluateFreshness(profile: profile, jamfCLIVersion: jamfCLIVersion)
+            Self.evaluateFreshness(
+                profile: profile, jamfCLIVersion: jamfCLIVersion, resolveAuth: resolveAuth)
         }.value
         AutomationHealthModel.shared.freshnessIssues = issues
     }
@@ -370,6 +372,9 @@ extension WorkspaceStore {
     nonisolated static func evaluateFreshness(
         profile: String,
         jamfCLIVersion: String? = nil,
+        resolveAuth: (String) -> ProfileAuthMethod.Resolved? = {
+            ProfileAuthMethod.resolve(profile: $0)
+        },
         now: Date = Date()
     ) -> [DataFreshnessIssue] {
         guard ProfileService.isValid(profile),
@@ -377,8 +382,7 @@ extension WorkspaceStore {
         let store = StateFileStore(directory: stateDir)
         // The Overview's heavy-tier prompt reads the same list.
         let kinds = expectedKinds(
-            profile: profile, jamfCLIVersion: jamfCLIVersion,
-            auth: ProfileAuthMethod.resolve(profile: profile))
+            profile: profile, jamfCLIVersion: jamfCLIVersion, auth: resolveAuth(profile))
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.

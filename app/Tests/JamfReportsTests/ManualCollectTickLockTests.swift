@@ -23,7 +23,8 @@ final class ManualCollectTickLockTests: XCTestCase {
         return root
     }
 
-    /// A store whose tick lock is a temporary file. Init runs no jamf-cli.
+    /// A store whose tick lock is a temporary file. Neither init nor the re-probes after a
+    /// collect run jamf-cli.
     private func makeStore() throws -> (store: WorkspaceStore, lock: TickLock) {
         let root = try useTemporaryRoot()
         let lock = TickLock(url: root.appendingPathComponent("test-tick.lock"))
@@ -31,6 +32,7 @@ final class ManualCollectTickLockTests: XCTestCase {
             demoMode: false, tickerRegistrar: StubTickerRegistrar(),
             jamfCLIProfileNames: { [] }, discoverProfiles: { [] }, jamfCLIInstallation: { nil })
         store.profile = profile
+        store.resolveAuthMethod = { _ in nil }
         store.tickLock = { lock }
         return (store, lock)
     }
@@ -45,6 +47,20 @@ final class ManualCollectTickLockTests: XCTestCase {
             guard ContinuousClock.now < deadline else { return XCTFail("timed out waiting") }
             try await Task.sleep(for: .milliseconds(10))
         }
+    }
+
+    /// The re-probes after a collect ask the store for the profile's auth method, so a test
+    /// answers it instead of `ProfileAuthMethod.resolve` running `jamf-cli config list`.
+    func testTheReprobesResolveTheAuthMethodThroughTheStore() async throws {
+        let (store, _) = try makeStore()
+        let asked = Recorder()
+        store.resolveAuthMethod = { profile in
+            asked.record(profile)
+            return nil
+        }
+        await store.checkHeavyTierStaleness()
+        await store.refreshDataFreshness()
+        XCTAssertEqual(asked.values, [profile, profile])
     }
 
     // MARK: - Held for the collect

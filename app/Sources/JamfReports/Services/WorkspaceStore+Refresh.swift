@@ -102,11 +102,12 @@ extension WorkspaceStore {
         }
         let activeProfile = profile
         let jamfCLIVersion = self.jamfCLIVersion
+        let resolveAuth = resolveAuthMethod
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
         let (stale, noData) = await Task.detached(priority: .utility) {
             let expected = Self.expectedKinds(
                 profile: activeProfile, jamfCLIVersion: jamfCLIVersion,
-                auth: ProfileAuthMethod.resolve(profile: activeProfile))
+                auth: resolveAuth(activeProfile))
             let stale = Self.staleTiers(profile: activeProfile, olderThan: threshold,
                                         expectedKinds: expected)
             return (stale, Self.tiersWithNoData(profile: activeProfile, among: stale,
