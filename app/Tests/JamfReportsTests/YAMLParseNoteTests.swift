@@ -52,6 +52,24 @@ final class YAMLParseNoteTests: XCTestCase {
                        "Elsewhere")
     }
 
+    /// A key line at a list's column after a mapping item belongs with the item's keys; the
+    /// note used to name the list's own column, the one the line already sits at.
+    func testAStrayKeyAfterAListItemNamesTheItemsKeyColumn() throws {
+        XCTAssertEqual(
+            try notes("security_agents:\n  - name: Example Agent\n  column: Example - Status\n"),
+            [Note(line: 3, kind: .indentation(found: 2, expected: 4))])
+        XCTAssertEqual(
+            try notes("security_agents:\n    - name: Example Agent\n  column: Example - Status\n"),
+            [Note(line: 3, kind: .indentation(found: 2, expected: 6))])
+        let bareDash = "security_agents:\n  -\n    name: Example Agent\n"
+            + "  column: Example - Status\n"
+        XCTAssertEqual(try notes(bareDash),
+                       [Note(line: 4, kind: .indentation(found: 2, expected: 4))])
+        // After plain items there are no item keys: the line belongs with the key above the list.
+        XCTAssertEqual(try notes("sheets:\n  skip:\n    - Example Sheet\n    only: []\n"),
+                       [Note(line: 4, kind: .indentation(found: 4, expected: 2))])
+    }
+
     /// The expected column in a note is where the line's siblings sit, not two past the key.
     func testALineThatDisagreesWithItsSiblingsNamesTheirColumn() throws {
         let yaml = """

@@ -420,7 +420,7 @@ private struct Parser {
         guard index < lines.count else { return .mapping(.init(entries: [])) }
         let line = lines[index]
         if indentation(of: line) == indent, Self.isListItem(trimmedContent(line)) {
-            return .sequence(parseSequence(indent: indent))
+            return .sequence(parseSequence(indent: indent).items)
         }
         return .mapping(parseMapping(indent: indent))
     }
@@ -437,9 +437,10 @@ private struct Parser {
     ) -> YAMLCodec.YAMLMapping {
         var entries: [YAMLCodec.YAMLEntry] = []
         var keyLines = seedKeys
-        // The column of the last key's nested block: where a stray deeper line most likely
-        // belongs, so its note names that column.
+        // The column of the last key's nested block, where a stray list item belongs, and the
+        // column of that block's keys (for a list, its last item's), where a stray key belongs.
         var childIndent: Int?
+        var keyColumn: Int?
 
         while index < lines.count {
             skipIgnorable()
@@ -459,12 +460,12 @@ private struct Parser {
                 // drop them — either way, keep parsing so the keys after the
                 // orphans are not silently lost.
                 let orphanLine = index + 1
-                let orphans = parseSequence(indent: currentIndent)
+                let orphans = parseSequence(indent: currentIndent).items
                 if let last = entries.indices.last,
                    entries[last].value == .sequence([]) || entries[last].value == .scalar(.null) {
                     entries[last].value = .sequence(orphans)
                     repairedKeys.insert(entries[last].key)
-                } else if currentIndent > indent, let childIndent {
+                } else if currentIndent > indent, let childIndent, childIndent != currentIndent {
                     note(orphanLine, .indentation(found: currentIndent, expected: childIndent))
                 } else {
                     note(orphanLine, .orphanItems)
@@ -472,7 +473,9 @@ private struct Parser {
                 continue
             }
             guard currentIndent == indent else {
-                note(index + 1, .indentation(found: currentIndent, expected: childIndent ?? indent))
+                let expected = [keyColumn, childIndent].compactMap { $0 }
+                    .first { $0 != currentIndent } ?? indent
+                note(index + 1, .indentation(found: currentIndent, expected: expected))
                 index += 1
                 continue
             }
@@ -491,10 +494,11 @@ private struct Parser {
                 // indent, is valid YAML (PyYAML / ruamel accept it):
                 //   security_agents:
                 //   - name: foo
-                (value, childIndent) = parseNestedValue(below: indent, listAtSameColumn: true)
+                (value, childIndent, keyColumn) = parseNestedValue(
+                    below: indent, listAtSameColumn: true)
             } else {
                 value = parseScalar(parsed.value)
-                childIndent = nil
+                (childIndent, keyColumn) = (nil, nil)
                 skipBlockScalar(parsed.value, key: parsed.key, line: keyLine, indent: indent)
             }
             if let earlier = keyLines[parsed.key] {
@@ -520,26 +524,32 @@ private struct Parser {
     }
 
     /// The value of a `key:` with nothing after the colon: the block on the following lines, at
-    /// whatever column its first line sits, with that column. Null when nothing deeper follows
-    /// (an empty mapping would later fail to decode as `[Element]` or `Optional<Element>`).
+    /// whatever column its first line sits, with that column and the column of its keys (for a
+    /// list, its last item's keys). Null when nothing deeper follows (an empty mapping would
+    /// later fail to decode as `[Element]` or `Optional<Element>`).
     private mutating func parseNestedValue(
         below column: Int, listAtSameColumn: Bool
-    ) -> (YAMLCodec.YAMLValue, Int?) {
+    ) -> (value: YAMLCodec.YAMLValue, column: Int?, keyColumn: Int?) {
         guard let next = lines[index...].first(where: {
             let trimmed = trimmedContent($0)
             return !trimmed.isEmpty && !trimmed.hasPrefix("#")
-        }) else { return (.scalar(.null), nil) }
+        }) else { return (.scalar(.null), nil, nil) }
         let child = indentation(of: next)
         let isList = Self.isListItem(trimmedContent(next))
         guard child > column || (isList && listAtSameColumn && child == column) else {
-            return (.scalar(.null), nil)
+            return (.scalar(.null), nil, nil)
         }
-        return (isList ? .sequence(parseSequence(indent: child))
-                       : .mapping(parseMapping(indent: child)), child)
+        guard isList else { return (.mapping(parseMapping(indent: child)), child, child) }
+        let list = parseSequence(indent: child)
+        return (.sequence(list.items), child, list.keyColumn)
     }
 
-    private mutating func parseSequence(indent: Int) -> [YAMLCodec.YAMLValue] {
+    /// The items, and the column of the last item's keys when it is a mapping.
+    private mutating func parseSequence(
+        indent: Int
+    ) -> (items: [YAMLCodec.YAMLValue], keyColumn: Int?) {
         var values: [YAMLCodec.YAMLValue] = []
+        var keyColumn: Int?
 
         while index < lines.count {
             skipIgnorable()
@@ -560,16 +570,19 @@ private struct Parser {
             valueLine = itemLine
 
             if rest.isEmpty {
-                values.append(parseNestedValue(below: indent, listAtSameColumn: false).0)
+                let nested = parseNestedValue(below: indent, listAtSameColumn: false)
+                values.append(nested.value)
+                keyColumn = nested.keyColumn
             } else if rest.hasPrefix("{") || rest.hasPrefix("[") {
                 // Flow-style item (`- {label: …}`). Must run before
                 // parseKeyValue, which would otherwise split on the first
                 // colon inside the braces and fabricate a `{label` key.
                 values.append(parseScalar(rest))
+                keyColumn = nil
             } else if let parsed = YAMLCodec.parseKeyValue(stripInlineComment(rest)) {
                 let first: YAMLCodec.YAMLValue
                 if parsed.value.isEmpty {
-                    first = parseNestedValue(below: itemIndent, listAtSameColumn: true).0
+                    first = parseNestedValue(below: itemIndent, listAtSameColumn: true).value
                 } else {
                     first = parseScalar(parsed.value)
                     skipBlockScalar(
@@ -580,12 +593,14 @@ private struct Parser {
                     indent: itemIndent, seedKeys: [parsed.key: itemLine])
                 entries.append(contentsOf: continuation.entries)
                 values.append(.mapping(.init(entries: entries)))
+                keyColumn = itemIndent
             } else {
                 values.append(parseScalar(rest))
+                keyColumn = nil
             }
         }
 
-        return values
+        return (values, keyColumn)
     }
 
     private mutating func skipIgnorable() {
