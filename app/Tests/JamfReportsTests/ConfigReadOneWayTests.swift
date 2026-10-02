@@ -204,6 +204,34 @@ final class ConfigReadOneWayTests: XCTestCase {
         }
     }
 
+    // MARK: - Path keys
+
+    /// A folder key holding a number, true or a quoted null, which the decoder does not take as
+    /// a folder name, uses the default folder. Before 1f647944, WorkspacePaths and the Devices
+    /// screen used a folder named `2024` or `null`.
+    func testAPathKeyThatIsNotTextUsesTheDefaultFolder() throws {
+        for value in ["2024", "\"null\"", "true"] {
+            let yaml = "output:\n  output_dir: \(value)\njamf_cli:\n  data_dir: \(value)\n"
+            try withWorkspace(config: yaml) { root, profile in
+                XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).lastPathComponent,
+                               "Generated Reports", value)
+                XCTAssertEqual(try WorkspacePaths.dataDir(for: profile).lastPathComponent,
+                               "jamf-cli-data", value)
+                let reports = root.appendingPathComponent("\(profile)/Generated Reports",
+                                                          isDirectory: true)
+                try fileManager.createDirectory(at: reports, withIntermediateDirectories: true)
+                try "Computer Name,Serial Number\nExample Mac,EX0001\n".write(
+                    to: reports.appendingPathComponent("automation_inventory_example.csv"),
+                    atomically: true, encoding: .utf8)
+                let sources = DeviceInventoryService.load(profile: profile, demoMode: false)
+                    .sourceFiles
+                XCTAssertTrue(sources.contains {
+                    $0.hasSuffix("Generated Reports/automation_inventory_example.csv")
+                }, "\(value): \(sources)")
+            }
+        }
+    }
+
     // MARK: - A quoted true, false or null
 
     /// A text key whose value is the word true stays text, instead of failing the whole file.
