@@ -99,6 +99,8 @@ struct AuditView: View {
     @State private var selectedCommandFinding: AuditFinding?
     @State private var newFindingKeys: Set<String> = []
     @State private var resolvedFindings: [AuditFinding] = []
+    /// A previous audit snapshot was read, so the two drift values above mean something.
+    @State private var hasPreviousAudit = false
 
     @State private var selectedTab = 0
     @State private var query = ""
@@ -424,6 +426,7 @@ struct AuditView: View {
                 .padding(20)
             } else {
                 auditSummaryStrip
+                aiInsightCard
                 Card(padding: 0) {
                     Table(filteredFindings, sortOrder: $sortOrderAudit) {
                         TableColumn("Finding", value: \.name) { f in
@@ -480,6 +483,25 @@ struct AuditView: View {
             }
             duplicateSerialsSection
             commandHealthSection
+        }
+    }
+
+    /// macOS 27, opt-in: which audit findings to work first and what changed since the
+    /// previous audit. The card hides itself while `ai.enabled` is off; the input is built
+    /// only where it can show.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspace.demoMode) {
+            AIInsightCard(
+                title: "AI Audit Insight",
+                idleText: "Suggest which audit findings to work first and what changed since "
+                    + "the previous audit, using on-device intelligence.",
+                provenanceText: "AI-generated from the audit findings on this screen — verify "
+                    + "against the table below.",
+                input: FleetInsightInput.audit(
+                    findings: findings,
+                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil)
+            )
         }
     }
 
@@ -1002,6 +1024,7 @@ struct AuditView: View {
         lastHygieneDate = nil
         newFindingKeys = []
         resolvedFindings = []
+        hasPreviousAudit = false
         await loadIntegritySummary()
         duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
         commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
@@ -1021,6 +1044,7 @@ struct AuditView: View {
                     let previousKeys = Set(previous.map(\.driftKey))
                     newFindingKeys = currentKeys.subtracting(previousKeys)
                     resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+                    hasPreviousAudit = true
                 } catch {
                     AppLogger.ui.warning(
                         "AuditView: previous snapshot decode failed — \(error, privacy: .private)"
