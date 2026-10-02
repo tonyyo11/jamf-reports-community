@@ -15,17 +15,19 @@ final class ConfigViewReaderCardTests: XCTestCase {
         XCTAssertEqual(text.detail, "custom_eas, security_agents")
     }
 
-    func testParseNotesAreListedOneLineEach() {
-        let text = ConfigView.readerCardText(keys: [], notes: [
-            "Line 3: no \"key: value\" on this line, so it was not read",
-            "Line 9: a tab in the indentation; read as indented 0 spaces",
-        ])
+    /// The notes come from the reader, as `refreshEngineParseStatus` passes them.
+    func testParseNotesAreListedOneLineEach() throws {
+        let yaml = "output:\n  output_dir: Reports\n  just some words\n"
+            + "thresholds:\n\tstale_device_days: 30\n"
+        let notes = try YAMLCodec.decode(yaml).parseNotes.map(\.display)
+        let text = ConfigView.readerCardText(keys: [], notes: notes)
         XCTAssertEqual(text.title, "Some lines in config.yaml were not read as written")
         XCTAssertEqual(text.pill, "2 lines")
         XCTAssertEqual(text.summary, "The app did not read the lines below as written. "
             + "Correct them in config.yaml.")
         XCTAssertEqual(text.detail, "Line 3: no \"key: value\" on this line, so it was not read\n"
-            + "Line 9: a tab in the indentation; read as indented 0 spaces")
+            + "Line 5: a tab in the indentation, which YAML does not allow; read as indented "
+            + "0 spaces")
     }
 
     func testBothKindsShareTheCardAndLongNoteListsEndInACount() {
