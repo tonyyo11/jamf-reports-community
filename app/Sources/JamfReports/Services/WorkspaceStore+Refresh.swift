@@ -138,13 +138,16 @@ extension WorkspaceStore {
         defer { globalStatus = nil }
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
+        let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(activeProfile, Set(tiers), CLIBridge.bufferingOnLine)
+            let exit = try await collect(
+                activeProfile, Set(tiers), Self.observing(honesty, then: CLIBridge.bufferingOnLine))
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
-                outcome = Toast(message: "\(labels) data refreshed", style: .success)
+                outcome = Self.collectCompletedToast(
+                    "\(labels) data refreshed", incomplete: honesty.incomplete)
             } else {
                 outcome = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",
@@ -189,13 +192,16 @@ extension WorkspaceStore {
         defer { globalStatus = nil }
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
+        let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(activeProfile, tiers, CLIBridge.bufferingOnLine)
+            let exit = try await collect(
+                activeProfile, tiers, Self.observing(honesty, then: CLIBridge.bufferingOnLine))
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
             if exit == 0 {
-                outcome = Toast(message: "Data refreshed", style: .success)
+                outcome = Self.collectCompletedToast(
+                    "Data refreshed", incomplete: honesty.incomplete)
             } else {
                 outcome = Toast(
                     message: "Refresh finished with exit \(exit) — see Runs for details",
@@ -254,13 +260,16 @@ extension WorkspaceStore {
                 "First-collect run recorder unavailable — this run will not appear in Run History"
             )
         }
+        let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
             let exit = try await collect(activeProfile) { line in
+                honesty.observe(line.text)
                 recorder?.record(line.text)
             }
             recorder?.finish(exitCode: exit)
-            outcome = Self.firstCollectToast(exitCode: exit, runRecorded: recorder != nil)
+            outcome = Self.firstCollectToast(
+                exitCode: exit, runRecorded: recorder != nil, incomplete: honesty.incomplete)
         } catch {
             recorder?.record("[error] \(error.localizedDescription)")
             recorder?.finish(exitCode: 1)
@@ -274,6 +283,28 @@ extension WorkspaceStore {
         toast = outcome
     }
 
+    /// The toast for a GUI collect that exited 0, which does not mean every source landed:
+    /// `incomplete` (`CollectHonestyWatcher`) is what Run History reads as Partial.
+    nonisolated static func collectCompletedToast(
+        _ message: String, incomplete: Bool, runRecorded: Bool = true
+    ) -> Toast {
+        guard incomplete else { return Toast(message: message, style: .success) }
+        let tail = runRecorded ? "see Run History" : "check the app log"
+        // `.danger` is the toast system's only warning-triangle style; there is no `.warning`.
+        return Toast(message: "Refresh finished with warnings — \(tail)", style: .danger)
+    }
+
+    /// `sink`, after feeding each run line to `honesty`.
+    nonisolated static func observing(
+        _ honesty: CollectHonestyWatcher,
+        then sink: @escaping @Sendable (CLIBridge.LogLine) -> Void
+    ) -> @Sendable (CLIBridge.LogLine) -> Void {
+        { line in
+            honesty.observe(line.text)
+            sink(line)
+        }
+    }
+
     /// Must carry the LaunchAgent label prefix or `ScheduledRunRecorder.init`
     /// rejects it and the run silently goes unrecorded.
     nonisolated static var firstCollectRunLabel: String {
@@ -283,11 +314,14 @@ extension WorkspaceStore {
     /// Exit-code triage for the first-collect toast. Only exit 3 blames
     /// credentials — exit 1 is usually partial per-kind failures, and blaming
     /// auth sent the #181 field tester to the wrong page.
-    nonisolated static func firstCollectToast(exitCode: Int32, runRecorded: Bool = true) -> Toast {
+    nonisolated static func firstCollectToast(
+        exitCode: Int32, runRecorded: Bool = true, incomplete: Bool = false
+    ) -> Toast {
         if exitCode == 0 {
             // Context-neutral: this path also serves CollectNowBanner on every
             // collect-fed screen, not just the first-run flow.
-            return Toast(message: "Collection complete", style: .success)
+            return collectCompletedToast(
+                "Collection complete", incomplete: incomplete, runRecorded: runRecorded)
         }
         if exitCode == CLIBridge.exitCodeUnauthorized {
             return Toast(

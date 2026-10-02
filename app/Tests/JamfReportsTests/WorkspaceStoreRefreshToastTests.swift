@@ -71,6 +71,88 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
         XCTAssertEqual(seen.tiers, [], "the toast must follow the re-probe, not precede it")
     }
 
+    // MARK: - Honesty: exit 0 is not "everything landed"
+
+    private static let warningsText = "Refresh finished with warnings — see Run History"
+
+    /// The field case: Managed Software Update Plans off, so `update-status` records a cause,
+    /// does not land, and the collect still exits 0.
+    private nonisolated static let unlandedLine =
+        ReportEngine.unlandedSourcesLine(["update-status"], attempted: 1)
+
+    private nonisolated static func line(_ text: String) -> CLIBridge.LogLine {
+        CLIBridge.LogLine(timestamp: Date(), level: .warn, text: text)
+    }
+
+    func testRunTierRefreshWarnsWhenASourceDidNotLand() async throws {
+        let (store, dataDir) = try await makeStaleWorkspace()
+        await store.runTierRefresh(Set(CollectionTier.allCases)) { _, _, onLine in
+            try Self.landFreshSnapshots(in: dataDir)
+            onLine(Self.line(Self.unlandedLine))
+            return 0
+        }
+        XCTAssertEqual(store.toast?.message, Self.warningsText)
+        XCTAssertEqual(store.toast?.style, .danger)
+    }
+
+    func testRunTierRefreshKeepsItsTextForAStandDown() async throws {
+        let (store, dataDir) = try await makeStaleWorkspace()
+        await store.runTierRefresh(Set(CollectionTier.allCases)) { _, _, onLine in
+            try Self.landFreshSnapshots(in: dataDir)
+            onLine(Self.line(ReportEngine.standDownLine(reason: "[info] peer collected recently")))
+            return 0
+        }
+        XCTAssertEqual(store.toast?.message, "Data refreshed")
+        XCTAssertEqual(store.toast?.style, .success)
+    }
+
+    func testRunHeavyTierRefreshWarnsWhenASourceDidNotLand() async throws {
+        let (store, dataDir) = try await makeStaleWorkspace()
+        await store.runHeavyTierRefresh { _, _, onLine in
+            try Self.landFreshSnapshots(in: dataDir)
+            onLine(Self.line(Self.unlandedLine))
+            return 0
+        }
+        XCTAssertEqual(store.toast?.message, Self.warningsText)
+        XCTAssertEqual(store.toast?.style, .danger)
+    }
+
+    func testRunFirstCollectWarnsWhenASourceDidNotLand() async throws {
+        let (store, dataDir) = try await makeStaleWorkspace()
+        await store.runFirstCollect { _, onLine in
+            try Self.landFreshSnapshots(in: dataDir)
+            onLine(Self.line(Self.unlandedLine))
+            return 0
+        }
+        XCTAssertEqual(store.toast?.message, Self.warningsText)
+        XCTAssertEqual(store.toast?.style, .danger)
+    }
+
+    func testCollectCompletedToastPicksTheTextFromTheRunsHonesty() {
+        let clean = WorkspaceStore.collectCompletedToast("Data refreshed", incomplete: false)
+        XCTAssertEqual(clean.message, "Data refreshed")
+        XCTAssertEqual(clean.style, .success)
+
+        let warned = WorkspaceStore.collectCompletedToast("Data refreshed", incomplete: true)
+        XCTAssertEqual(warned.message, Self.warningsText)
+        XCTAssertEqual(warned.style, .danger)
+
+        // The same rule firstCollectToast applies to its failure text: never point at a run
+        // log that was not written.
+        let unrecorded = WorkspaceStore.collectCompletedToast(
+            "Data refreshed", incomplete: true, runRecorded: false)
+        XCTAssertEqual(unrecorded.message, "Refresh finished with warnings — check the app log")
+    }
+
+    func testFirstCollectToastWarnsOnlyForAnExitZeroRunThatDidNotFullyLand() {
+        let warned = WorkspaceStore.firstCollectToast(exitCode: 0, incomplete: true)
+        XCTAssertEqual(warned.message, Self.warningsText)
+
+        let failed = WorkspaceStore.firstCollectToast(exitCode: 1, incomplete: true)
+        XCTAssertTrue(failed.message.hasPrefix("Collect finished with errors (exit 1)"),
+                      "a non-zero exit keeps its own text; got: \(failed.message)")
+    }
+
     /// Records what the heavy-tier re-probe had published when the toast was set.
     private func watchToast(_ store: WorkspaceStore) -> TierBox {
         let seen = TierBox()
