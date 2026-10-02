@@ -889,8 +889,10 @@ struct OverviewView: View {
             // Only cancellation is thrown; the read that replaced this one paints.
             return
         }
-        // A profile switch mid-read must not paint the previous tenant's data.
-        guard !Task.isCancelled, profile == workspace.profile, !workspace.demoMode else { return }
+        // A read started before a profile switch or a Customize change must not paint:
+        // the refresh paths run in plain Tasks that `.task(id:)` does not cancel.
+        guard !Task.isCancelled, profile == workspace.profile, !workspace.demoMode,
+              sections == visibleLiveSections else { return }
         live = data
         liveLoaded = true
     }
