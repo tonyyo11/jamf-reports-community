@@ -111,6 +111,31 @@ final class YAMLParseNoteTests: XCTestCase {
         XCTAssertEqual(actual.parseNotes, [])
     }
 
+    /// The style an editor set to 4 spaces usually produces: a list item's keys two past its dash.
+    func testAFourSpaceFileWithKeysTwoPastTheDashReadsAsTheTwoSpaceFile() throws {
+        let twoSpace = """
+        thresholds:
+          stale_device_days: 45
+        custom_eas:
+          - name: Example EA
+            column: Example - Column
+            current_versions:
+              - "15.4"
+        """
+        let fourSpace = """
+        thresholds:
+            stale_device_days: 45
+        custom_eas:
+            - name: Example EA
+              column: Example - Column
+              current_versions:
+                  - "15.4"
+        """
+        let actual = try YAMLCodec.decode(fourSpace)
+        XCTAssertEqual(actual.root, try YAMLCodec.decode(twoSpace).root)
+        XCTAssertEqual(actual.parseNotes, [])
+    }
+
     /// Before, an empty `current_versions:` took the outer list's next item as its value, and an
     /// empty `name:` took the item's other keys as its value.
     func testAnEmptyKeyIsNullWhenNothingDeeperFollows() throws {
