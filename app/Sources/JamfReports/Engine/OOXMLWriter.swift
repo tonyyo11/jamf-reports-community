@@ -1,19 +1,6 @@
 import Foundation
 import ZIPFoundation
 
-// MARK: - Errors
-
-enum OOXMLError: Error, LocalizedError {
-    case archiveCreationFailed(URL)
-
-    var errorDescription: String? {
-        switch self {
-        case .archiveCreationFailed(let url):
-            return "Failed to create XLSX archive at \(url.path)"
-        }
-    }
-}
-
 // MARK: - Cell value
 
 /// A sanitized, formula-injection-safe cell value.

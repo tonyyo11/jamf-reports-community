@@ -3368,26 +3368,6 @@ struct ReportEngine: Sendable {
                      text: "[ok] workspace initialized at \(workspace.path)"))
     }
 
-    // MARK: - Scaffold helper
-
-    /// Generate a starter `config.yaml` by inspecting CSV column headers.
-    ///
-    /// Reads the header row, fuzzy-matches known logical field names to CSV columns,
-    /// and writes a `config.yaml` with `columns:` pre-filled. Replaces `cmd_scaffold`.
-    static func scaffoldConfig(csvURL: URL, outputURL: URL, profile: String) throws {
-        let data = try Data(contentsOf: csvURL)
-        let (columns, _) = try CSVParser.parse(data)
-
-        let mappings = scaffoldMappings(from: columns)
-        let yaml = buildConfigYAML(profile: profile, mappings: mappings)
-        let fm = FileManager.default
-        try fm.createDirectory(
-            at: outputURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try yaml.write(to: outputURL, atomically: true, encoding: .utf8)
-    }
-
     // MARK: - Private helpers
 
     /// Assembles the liveKinds set for R4 provenance from the kinds that were
