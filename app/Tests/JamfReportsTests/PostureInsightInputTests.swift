@@ -139,6 +139,36 @@ final class PostureInsightInputTests: XCTestCase {
         XCTAssertFalse(context.contains { $0.contains("a warning, not failing") })
     }
 
+    /// With FileVault itself at `warning` the hardware rule changes nothing, so every
+    /// FileVault-off Mac is a plain FileVault warning, hardware-encrypted or not.
+    func testFileVaultAndHardwareRuleBothAtWarningNameNoMacHardwareEncrypted() throws {
+        let policy = SecurityControlPolicy(
+            fileVault: .warning, fileVaultOffHardwareEncrypted: .warning)
+        let both = try snapshots([
+            summary(["total_devices": 3, "filevault_encrypted": 1, "sip_enabled": 3,
+                     "firewall_enabled": 3, "gatekeeper_enabled": 3]),
+            device("as-mac", serial: "AS1", fileVault: "UNENCRYPTED"),
+            device("intel-mac", serial: "IN1", fileVault: "UNENCRYPTED"),
+            device("other-mac", serial: "OT1"),
+        ], policy: policy, hardware: HardwareEncryption.index(computers: computers()))
+        let security = lines(FleetInsightInput.posture(.security(both.security)))
+        XCTAssertEqual(Array(security[3...5]), [
+            "- FileVault enabled on 33.3% of devices; off on 66.7%",
+            "- Macs failing FileVault: 0",
+            "- Macs with FileVault off (a warning, not failing): 2",
+        ])
+        let compliance = lines(
+            FleetInsightInput.posture(.compliance(both.compliance, showsBands: true)))
+        XCTAssertEqual(Array(compliance[3...5]), [
+            "- FileVault failing on 0.0% of devices; not failing on 100.0%",
+            "- Macs failing FileVault: 0",
+            "- Macs with FileVault off (a warning, not failing): 2",
+        ])
+        for context in [security, compliance] {
+            XCTAssertFalse(context.contains { $0.contains("hardware-encrypted") })
+        }
+    }
+
     /// The share is the tile's (Macs with the control on); the policy shows in the counts.
     func testSecurityControlAtWarningKeepsTheTilesShare() throws {
         let security = try snapshots([summary([
