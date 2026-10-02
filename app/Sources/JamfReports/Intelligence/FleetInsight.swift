@@ -35,6 +35,7 @@ struct FleetInsightInput: Sendable, Equatable {
     enum Value: Sendable, Equatable {
         case percent(Double)
         case count(Int)
+        case number(Double)
         case text(String)
     }
 
@@ -111,9 +112,6 @@ extension FleetInsightInput {
                      prior: previous?[keyPath: key].map(Value.count), polarity: .lowerIsBetter)
             }
         }
-        let score = { (summary: DailySummary?) in
-            summary?.securityScore.map { Value.text(String(format: "%.1f", $0)) }
-        }
         let proxy = current.complianceIsProxy == true ? " [proxy metric]" : ""
         let facts: [Fact?] = [
             Fact(label: "Total managed devices", value: .count(current.totalDevices),
@@ -128,9 +126,9 @@ extension FleetInsightInput {
             share("Firewall enabled", \.firewallPct, "not enabled"),
             share("Gatekeeper enabled", \.gatekeeperPct, "not enabled"),
             share("Compliance" + proxy, \.compliancePct),
-            score(current).map {
-                Fact(label: "Security score", value: $0, prior: score(previous),
-                     polarity: .higherIsBetter)
+            current.securityScore.map {
+                Fact(label: "Security score", value: .number($0),
+                     prior: previous?.securityScore.map(Value.number), polarity: .higherIsBetter)
             },
             count("Stale devices", \.staleCount),
             count("P0 action items", \.actionItemsP0),
@@ -156,6 +154,7 @@ extension FleetInsightInput.Value {
         switch self {
         case .percent(let value): return String(format: "%.1f%%", tenths(value))
         case .count(let value): return "\(value)"
+        case .number(let value): return String(format: "%.1f", tenths(value))
         case .text(let value): return value
         }
     }
@@ -163,6 +162,11 @@ extension FleetInsightInput.Value {
 
 /// Rounded once, so a share and its remainder always add up to 100.0%.
 private func tenths(_ value: Double) -> Double { (value * 10).rounded() / 10 }
+
+/// One decimal with its sign; never "-0.0".
+private func signed(_ delta: Double) -> String {
+    String(format: "%@%.1f", delta >= 0 ? "+" : "", delta == 0 ? 0 : delta)
+}
 
 extension FleetInsightInput.Fact {
     /// A share with a complement states both sides, so the model never has to
@@ -182,13 +186,11 @@ extension FleetInsightInput.Fact {
     private var change: String? {
         switch (value, prior) {
         case (.percent(let now), .percent(let then)?):
-            let delta = tenths(now - then)
-            let shown = delta == 0 ? 0 : delta  // never "-0.0"
-            return String(format: "%@%.1f pp vs prior", shown >= 0 ? "+" : "", shown)
+            return signed(tenths(now - then)) + " pp vs prior"
+        case (.number(let now), .number(let then)?):
+            return signed(tenths(now - then)) + " vs prior"
         case (.count(let now), .count(let then)?):
             return "\(now >= then ? "+" : "")\(now - then) vs prior"
-        case (.text, .text(let then)?):
-            return "prior: \(then)"
         default:
             return nil
         }

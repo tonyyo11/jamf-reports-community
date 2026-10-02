@@ -90,6 +90,21 @@ final class FleetInsightInputTests: XCTestCase {
         XCTAssertEqual(same.line, "- P1 action items: 7 (+0 vs prior)")
     }
 
+    func testNumbersChangeWithOneDecimal() {
+        let fact = Fact(label: "Stability index", value: .number(72.44), prior: .number(70),
+                        polarity: .higherIsBetter)
+        XCTAssertEqual(fact.line, "- Stability index: 72.4 (+2.4 vs prior)")
+    }
+
+    func testPriorOfAnotherCasePrintsNoChange() {
+        let mixed = Fact(label: "SIP enabled", value: .percent(50), prior: .count(3),
+                         polarity: .higherIsBetter)
+        let text = Fact(label: "Most failing control", value: .text("Firewall"),
+                        prior: .text("SIP"), polarity: .lowerIsBetter)
+        XCTAssertEqual(mixed.line, "- SIP enabled: 50.0%")
+        XCTAssertEqual(text.line, "- Most failing control: Firewall")
+    }
+
     func testPercentWithoutComplementPrintsOneSide() {
         let input = FleetInsightInput.fleet(
             current: summary(date: "2026-06-06", patch: 90.4), previous: nil)
@@ -130,7 +145,7 @@ final class FleetInsightInputTests: XCTestCase {
                  polarity: .higherIsBetter, complement: notEnabled),
             Fact(label: "Compliance [proxy metric]", value: .percent(88), prior: .percent(86.5),
                  polarity: .higherIsBetter),
-            Fact(label: "Security score", value: .text("87.3"), prior: .text("86.0"),
+            Fact(label: "Security score", value: .number(87.3), prior: .number(86),
                  polarity: .higherIsBetter),
             Fact(label: "Stale devices", value: .count(12), prior: .count(15),
                  polarity: .lowerIsBetter),
@@ -142,7 +157,7 @@ final class FleetInsightInputTests: XCTestCase {
                  polarity: .lowerIsBetter),
         ])
         XCTAssertEqual(input.notes, ["Prior period for deltas: 2026-06-05."])
-        XCTAssertTrue(lines(input).contains("- Security score: 87.3 (prior: 86.0)"))
+        XCTAssertTrue(lines(input).contains("- Security score: 87.3 (+1.3 vs prior)"))
     }
 
     func testFleetFactoryLeavesAbsentMetricsOut() {
