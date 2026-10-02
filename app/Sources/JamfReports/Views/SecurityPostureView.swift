@@ -173,7 +173,8 @@ struct SecurityPostureView: View {
                     }
                     // The demo cannot collect, so it never tells its viewer to.
                     if !score.missing.isEmpty && !workspace.demoMode {
-                        Text(missingText)
+                        Text(Self.missingText(score, fleet: snapshot.fleetCounts,
+                                              edrAgentName: workspace.edrAgentName))
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -190,13 +191,28 @@ struct SecurityPostureView: View {
         return "Weighted across: \(names)."
     }
 
-    private var missingText: String {
+    /// The hero card's line for metrics the ring does not score. FileVault, when the report
+    /// carries it but the hardware rule left no Mac to score it over, gets its own reason.
+    static func missingText(
+        _ score: SecurityScore, fleet: SecurityFleetCounts, edrAgentName: String?
+    ) -> String {
+        let fileVaultNotCounted = score.missing.contains(.fileVault)
+            && fleet.controls[.fileVault] != nil
         let names = score.missing
-            .map { $0.displayLabel(edrAgentName: workspace.edrAgentName) }
+            .filter { !(fileVaultNotCounted && $0 == .fileVault) }
+            .map { $0.displayLabel(edrAgentName: edrAgentName) }
             .joined(separator: ", ")
+        var sentences: [String] = []
         // The ring scores `pro report security`, which carries FileVault, SIP and the
         // firewall only. No collect adds the rest here, so the line asks for none.
-        return "Not in the security report, so not scored here: \(names)."
+        if !names.isEmpty {
+            sentences.append("Not in the security report, so not scored here: \(names).")
+        }
+        if fileVaultNotCounted {
+            sentences.append("FileVault is not scored: every Mac with it off is "
+                + "hardware-encrypted and not counted by this workspace's policy.")
+        }
+        return sentences.joined(separator: " ")
     }
 
     private func pillTone(for grade: SecurityScore.Grade) -> Pill.Tone {

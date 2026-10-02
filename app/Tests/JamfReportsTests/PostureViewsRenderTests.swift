@@ -76,6 +76,36 @@ final class PostureViewsRenderTests: XCTestCase {
                        "at hardware level fail those Macs are plain failures")
     }
 
+    /// The report carries FileVault even when the hardware rule leaves no Mac to score it
+    /// over, so the hero card gives it its own reason instead of calling it missing.
+    func testMissingTextSaysWhyFileVaultIsNotScored() {
+        typealias Control = SecurityFleetCounts.Control
+        let notInReport = "Not in the security report, so not scored here: EDR Agent Connected, "
+            + "mSCP Compliance, XProtect Current, CVE Clean, Secure Boot (Full)."
+        let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
+        let on = Control(level: .fail, on: 2, fail: 0, warning: 0)
+        let allDropped = SecurityFleetCounts(
+            totalDevices: 2,
+            controls: [.fileVault: Control(level: .fail, on: 0, fail: 0, warning: 0),
+                       .sip: on, .firewall: on],
+            fileVaultOffHardwareEncrypted: 2)
+        let dropped = SecurityScoreCalculator.score(
+            input: allDropped.scoreInput(), weights: policy.effectiveScoreWeights(.defaultWeights))
+        XCTAssertTrue(dropped.missing.contains(.fileVault))
+        XCTAssertEqual(
+            SecurityPostureView.missingText(dropped, fleet: allDropped, edrAgentName: nil),
+            notInReport + " FileVault is not scored: every Mac with it off is hardware-encrypted "
+                + "and not counted by this workspace's policy.")
+
+        let noFileVault = SecurityFleetCounts(
+            totalDevices: 2, controls: [.sip: on, .firewall: on], fileVaultOffHardwareEncrypted: 0)
+        let absent = SecurityScoreCalculator.score(input: noFileVault.scoreInput())
+        XCTAssertEqual(
+            SecurityPostureView.missingText(absent, fleet: noFileVault, edrAgentName: nil),
+            "Not in the security report, so not scored here: FileVault Encryption, EDR Agent "
+                + "Connected, mSCP Compliance, XProtect Current, CVE Clean, Secure Boot (Full).")
+    }
+
     // MARK: - Reading off the main actor
 
     /// Both posture screens read in a detached task, so the readers must not need the main
