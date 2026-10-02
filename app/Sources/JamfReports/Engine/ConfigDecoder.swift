@@ -200,6 +200,41 @@ enum ColumnField: String, CaseIterable, Sendable {
     case lastLoggedInUser, recoveryLock, batteryHealth, entraSSOStatus
     /// Device purchase or acquisition date. YAML key: `purchase_date`.
     case purchaseDate
+
+    /// The `columns:` key in config.yaml, taken from the decoder rather than spelled from the
+    /// case name (which would read `entraSSOStatus` as `entra_s_s_o_status`).
+    var configKey: String {
+        let key: ColumnConfig.CodingKeys = switch self {
+        case .computerName: .computerName
+        case .serialNumber: .serialNumber
+        case .operatingSystem: .operatingSystem
+        case .lastCheckin: .lastCheckin
+        case .department: .department
+        case .manager: .manager
+        case .email: .email
+        case .filevault: .filevault
+        case .sip: .sip
+        case .firewall: .firewall
+        case .gatekeeper: .gatekeeper
+        case .secureBoot: .secureBoot
+        case .bootstrapToken: .bootstrapToken
+        case .diskPercentFull: .diskPercentFull
+        case .architecture: .architecture
+        case .model: .model
+        case .lastEnrollment: .lastEnrollment
+        case .mdmExpiry: .mdmExpiry
+        case .fullName: .fullName
+        case .assetTag: .assetTag
+        case .building: .building
+        case .position: .position
+        case .lastLoggedInUser: .lastLoggedInUser
+        case .recoveryLock: .recoveryLock
+        case .batteryHealth: .batteryHealth
+        case .entraSSOStatus: .entraSSOStatus
+        case .purchaseDate: .purchaseDate
+        }
+        return key.rawValue
+    }
 }
 
 // MARK: - mobile_columns

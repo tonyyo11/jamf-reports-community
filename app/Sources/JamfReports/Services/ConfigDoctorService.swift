@@ -772,7 +772,7 @@ enum ConfigDoctorService {
     private static func computerMappings(_ config: ReportConfig) -> [Mapping] {
         guard let columns = config.columns else { return [] }
         return ColumnField.allCases.compactMap { field in
-            columns.columnName(for: field).map { (field.rawValue.snakeCased, $0) }
+            columns.columnName(for: field).map { (field.configKey, $0) }
         }
     }
 
@@ -1153,25 +1153,6 @@ extension ConfigDoctorService {
                 hint: nil
             )
         }
-    }
-}
-
-// MARK: - Logical-field naming
-
-private extension String {
-    /// camelCase → snake_case, matching `config.yaml` logical column keys
-    /// (e.g. `operatingSystem` → `operating_system`).
-    var snakeCased: String {
-        var out = ""
-        for ch in self {
-            if ch.isUppercase {
-                out += "_"
-                out += ch.lowercased()
-            } else {
-                out.append(ch)
-            }
-        }
-        return out
     }
 }
 
