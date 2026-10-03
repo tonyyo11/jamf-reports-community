@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
@@ -213,13 +214,16 @@ struct ConfigSaveReport: Equatable, Sendable {
     }
 }
 
-/// A config file's modification date and size. Both nil when there is no file.
+/// A config file's modification date and size (both nil when there is no file), and the
+/// SHA-256 of the text read with them.
 struct ConfigFileStamp: Equatable, Sendable {
     static let absent = ConfigFileStamp(modified: nil, size: nil)
 
     var modified: Date?
     var size: Int?
+    var digest: Data?
 
+    /// Date and size only; the caller that read the text sets `digest`.
     static func of(_ url: URL) -> ConfigFileStamp {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
             return .absent
@@ -227,6 +231,21 @@ struct ConfigFileStamp: Equatable, Sendable {
         return ConfigFileStamp(
             modified: attributes[.modificationDate] as? Date,
             size: (attributes[.size] as? NSNumber)?.intValue)
+    }
+
+    /// Whether the file at `url` is still the one stamped: the same date and size, or, when a
+    /// sync provider has restamped a file it did not change, the same text.
+    func matches(_ url: URL) -> Bool {
+        let now = Self.of(url)
+        if now.modified == modified && now.size == size { return true }
+        guard let digest, let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return false
+        }
+        return Self.digest(text) == digest
+    }
+
+    static func digest(_ text: String) -> Data {
+        Data(SHA256.hash(data: Data(text.utf8)))
     }
 }
 
@@ -264,9 +283,10 @@ enum ConfigService {
             throw ConfigError.missingConfig(url)
         }
 
-        // Taken before the read, so a change made during it shows as a change.
-        let stamp = ConfigFileStamp.of(url)
+        // Date and size are taken before the read, so a change made during it shows as one.
+        var stamp = ConfigFileStamp.of(url)
         let text = try String(contentsOf: url, encoding: .utf8)
+        stamp.digest = ConfigFileStamp.digest(text)
         let document = try YAMLCodec.decode(text)
         if !document.repairedKeys.isEmpty {
             AppLogger.collect.warning(
@@ -288,7 +308,7 @@ enum ConfigService {
     ) throws -> SavedConfig {
         let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
         try rejectSymlinkDestination(url)
-        if let stamp, ConfigFileStamp.of(url) != stamp { throw ConfigError.changedOnDisk }
+        if let stamp, !stamp.matches(url) { throw ConfigError.changedOnDisk }
 
         let manager = FileManager.default
         let directory = url.deletingLastPathComponent()
@@ -326,8 +346,11 @@ enum ConfigService {
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
 
         let written = try YAMLCodec.decode(encoded)
+        var writtenStamp = ConfigFileStamp.of(url)
+        writtenStamp.digest = ConfigFileStamp.digest(encoded)
         return SavedConfig(
-            document: written, state: Self.state(from: written), stamp: .of(url), report: report)
+            document: written, state: Self.state(from: written), stamp: writtenStamp,
+            report: report)
     }
 
     /// The list blocks whose value is a mapping or a scalar other than null.

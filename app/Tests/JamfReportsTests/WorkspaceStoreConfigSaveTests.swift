@@ -59,13 +59,26 @@ final class WorkspaceStoreConfigSaveTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), edited)
     }
 
-    func testAModificationDateAloneCountsAsAChange() async throws {
+    /// A sync provider can restamp a file it did not change; the same text is not a change.
+    func testANewDateOnTheSameTextStillSaves() async throws {
         let (store, config) = try await makeStore()
         let later = Date().addingTimeInterval(5)
         try FileManager.default.setAttributes([.modificationDate: later], ofItemAtPath: config.path)
+        store.configState.staleDeviceDays = "45"
 
-        await assertRefused(store, "same size, newer date: still changed")
-        XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), typed)
+        try await store.saveConfig()
+        XCTAssertTrue(try String(contentsOf: config, encoding: .utf8)
+            .contains("stale_device_days: 45"))
+    }
+
+    func testOtherTextOfTheSameSizeIsAChange() async throws {
+        let (store, config) = try await makeStore()
+        let edited = typed.replacingOccurrences(of: "30", with: "45")
+        XCTAssertEqual(edited.utf8.count, typed.utf8.count)
+        try edited.write(to: config, atomically: true, encoding: .utf8)
+
+        await assertRefused(store, "same size, other text: changed")
+        XCTAssertEqual(try String(contentsOf: config, encoding: .utf8), edited)
     }
 
     /// The app's own writes move the baseline: a second save, and the Save a re-scaffold
