@@ -1274,8 +1274,10 @@ struct DevicesView: View {
         }
     }
 
-    /// The filtered list as CSV, one quoted row per device. FileVault is labelled as on
-    /// screen, so a Mac the hardware rule lowered does not read UNENCRYPTED beside its risk.
+    /// The filtered list as CSV, one row per device, each field through
+    /// `StaleDeviceService.csvField` so a typed formula opens as text. FileVault is labelled
+    /// as on screen, so a Mac the hardware rule lowered does not read UNENCRYPTED beside its
+    /// risk.
     nonisolated static func exportCSV(
         devices: [DeviceInventoryRecord], policy: SecurityControlPolicy
     ) -> String {
@@ -1284,7 +1286,7 @@ struct DevicesView: View {
             [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
              policy.fileVaultLabel(d.fileVault, hardwareEncrypted: d.hardwareEncrypted),
              d.lastContact, d.risk(policy: policy).rawValue]
-                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+                .map(StaleDeviceService.csvField)
                 .joined(separator: ",")
         }.joined(separator: "\n")
         return header + body

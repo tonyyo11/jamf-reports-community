@@ -406,14 +406,41 @@ final class DeviceSecurityStateTests: XCTestCase {
         let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk"
         XCTAssertEqual(DevicesView.exportCSV(devices: macs, policy: hardwareWarning), [
             header,
-            #""Lab-Mac-AS1","AS1","","","","","FileVault off (hardware-encrypted)","","ok""#,
-            #""Lab-Mac-IN1","IN1","","","","","UNENCRYPTED","","attention""#,
+            "Lab-Mac-AS1,AS1,,,,,FileVault off (hardware-encrypted),,ok",
+            "Lab-Mac-IN1,IN1,,,,,UNENCRYPTED,,attention",
         ].joined(separator: "\n"))
         XCTAssertEqual(DevicesView.exportCSV(devices: macs, policy: .default), [
             header,
-            #""Lab-Mac-AS1","AS1","","","","","UNENCRYPTED","","attention""#,
-            #""Lab-Mac-IN1","IN1","","","","","UNENCRYPTED","","attention""#,
+            "Lab-Mac-AS1,AS1,,,,,UNENCRYPTED,,attention",
+            "Lab-Mac-IN1,IN1,,,,,UNENCRYPTED,,attention",
         ].joined(separator: "\n"))
+    }
+
+    /// Device names, users and departments come from Jamf, where anyone who can name a Mac
+    /// can type a formula; a spreadsheet must open them as text.
+    func testTheDevicesCSVExportNeutralisesFormulaPrefixes() throws {
+        var mac = DeviceInventoryService.recordFromComputer(
+            fileVaultOffComputer(id: 11, serial: "AS1", appleSilicon: true, model: "Mac14,2"),
+            source: "computers.json")
+        mac.name = "=HYPERLINK(\"https://x\",\"y\")"
+        mac.serial = "-3"
+        mac.osVersion = "\r=2"
+        mac.user = "+1"
+        mac.email = "@sum"
+        mac.department = "\t=1"
+        let row = try XCTUnwrap(
+            DevicesView.exportCSV(devices: [mac], policy: .default)
+                .components(separatedBy: "\n").dropFirst().first)
+        XCTAssertEqual(
+            row,
+            "\"\t=HYPERLINK(\"\"https://x\"\",\"\"y\"\")\",\t-3,\"\t\r=2\",\t+1,\t@sum,"
+                + "\t\t=1,UNENCRYPTED,,attention")
+    }
+
+    func testCSVFieldNeutralisesALeadingTabOrCarriageReturn() {
+        XCTAssertEqual(StaleDeviceService.csvField("\t=1"), "\t\t=1")
+        XCTAssertEqual(StaleDeviceService.csvField("\r=1"), "\"\t\r=1\"")
+        XCTAssertEqual(StaleDeviceService.csvField("a\t=1"), "a\t=1")
     }
 
     /// The tile counts the Macs the rule took out of the gaps; FileVault stays off for the share.

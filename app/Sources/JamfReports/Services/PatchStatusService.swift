@@ -209,15 +209,14 @@ struct PatchStatusService: Sendable {
     }
 
     /// Escape a value for CSV output. First neutralizes spreadsheet formula
-    /// injection — a leading `=`, `+`, `-`, or `@` makes Excel/Numbers evaluate
-    /// the cell — by prefixing a tab, mirroring `OOXMLWriter.sanitizeString`
-    /// and the Python `_safe_write` contract so both export paths treat the
-    /// same Jamf-sourced data identically. Then applies RFC 4180 quoting: a
+    /// injection — a leading `=`, `+`, `-`, `@`, tab or carriage return can make
+    /// Excel/Numbers evaluate the cell — by prefixing a tab, as
+    /// `StaleDeviceService.csvField` does. Then applies RFC 4180 quoting: a
     /// field containing a comma, double-quote, CR or LF is wrapped in
     /// double-quotes with embedded quotes doubled.
     private static func csvField(_ value: String) -> String {
         var field = value
-        if let first = field.first, "=+-@".contains(first) {
+        if let first = field.first, "=+-@\t\r".contains(first) {
             field = "\t" + field
         }
         guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
