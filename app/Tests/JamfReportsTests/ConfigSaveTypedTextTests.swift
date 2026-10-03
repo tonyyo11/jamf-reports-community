@@ -38,6 +38,17 @@ final class ConfigSaveTypedTextTests: XCTestCase {
                        "output:\n  output_dir: B\n\n# Next section\n\nhtml:\n  x: 1\n")
     }
 
+    /// A key the Config screen does not edit inside `columns:` stays: the save sets its own
+    /// keys on the block as read.
+    func testAnUnknownKeyInsideColumnsSurvivesASave() throws {
+        let (root, url) = try workspace(
+            with: "columns:\n  computer_name: Name\n  site_code: \"Site Code\"\n")
+        _ = try saveLoaded(root: root)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertNotNil(text.range(of: #"\n  site_code: "?Site Code"?\n"#,
+                                   options: .regularExpression), text)
+    }
+
     // MARK: A block that is not a list
 
     /// The audit read a mapping under custom_eas or security_agents as no entries, and a

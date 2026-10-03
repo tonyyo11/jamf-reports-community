@@ -331,8 +331,9 @@ enum ScaffoldService {
 
     /// Write a populated `config.yaml` to `url` based on scaffold results.
     ///
-    /// Matched columns are placed in the `columns:` section. Unmatched columns
-    /// are listed as empty strings. Compliance columns go in `compliance:`.
+    /// Matched columns are placed in the `columns:` section. An unmatched base column is
+    /// listed as an empty string; an unmatched optional one (`ConfigState.optionalColumnKeys`)
+    /// is left out. Compliance columns go in `compliance:`.
     /// - Parameters:
     ///   - url: Destination file URL. Parent directory must already exist.
     ///   - result: Column matches returned by `matchColumns(from:profile:)`.
