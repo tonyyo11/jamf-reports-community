@@ -1321,7 +1321,9 @@ enum ConfigLoader {
     /// A quoted `"true"`, `"false"` or `"null"` reads as a boolean or null, so a hand-quoted
     /// `enabled: "true"` works. Where the decoder wants text instead (`true_value: "true"`, which
     /// the Config screen writes), that value is read again as the text it was and the decode
-    /// retried, once per such value. A file that decodes on the first pass is unaffected.
+    /// retried, once per such value. An unquoted number where text is wanted (`true_value: 1`,
+    /// `current_versions: [26]`, `profile: 2026`) is retried as its digits the same way. A file
+    /// that decodes on the first pass is unaffected.
     private static func decodeConfig(_ document: YAMLCodec.YAMLDocument) throws -> ReportConfig {
         var asText: Set<[String]> = []
         while true {
@@ -1335,10 +1337,18 @@ enum ConfigLoader {
                 let path = context.codingPath.map { key in
                     key.intValue.map { "[\($0)]" } ?? key.stringValue
                 }
-                guard case .scalar(.string)? = node(at: path, in: document.root),
+                guard isTextRetryable(node(at: path, in: document.root)),
                       asText.insert(path).inserted
                 else { throw error }
             }
+        }
+    }
+
+    /// A string the scalar reader typed as a boolean or null, or an unquoted number.
+    private static func isTextRetryable(_ node: YAMLCodec.YAMLValue?) -> Bool {
+        switch node {
+        case .scalar(.string)?, .scalar(.int)?: true
+        default: false
         }
     }
 
@@ -1367,6 +1377,8 @@ enum ConfigLoader {
         switch node {
         case .scalar(.string(let text)) where asText.contains(path):
             return text
+        case .scalar(.int(let number)) where asText.contains(path):
+            return String(number)
         case .scalar(let scalar):
             return scalarToJSON(scalar)
         case .mapping(let mapping):

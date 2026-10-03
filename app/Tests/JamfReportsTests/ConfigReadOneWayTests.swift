@@ -254,6 +254,30 @@ final class ConfigReadOneWayTests: XCTestCase {
         XCTAssertEqual(config.securityAgents?.last?.connectedValue, "False")
     }
 
+    /// An unquoted number in a text key reads as the number's text, instead of failing the
+    /// whole file; a number key still reads a number.
+    func testAnUnquotedNumberInATextKeyReadsAsText() throws {
+        let config = try ConfigLoader.loadFromString("""
+            jamf_cli:
+              profile: 2026
+            thresholds:
+              stale_device_days: 45
+            custom_eas:
+              - name: Build Flag
+                column: Build - Flag
+                type: boolean
+                true_value: 1
+              - name: OS Major
+                column: OS - Major
+                type: version
+                current_versions: [26, "15"]
+            """)
+        XCTAssertEqual(config.jamfCli?.profile, "2026")
+        XCTAssertEqual(config.customEas?.first?.trueValue, "1")
+        XCTAssertEqual(config.customEas?.last?.currentVersions, ["26", "15"])
+        XCTAssertEqual(config.thresholds?.staleDeviceDays, 45)
+    }
+
     /// A boolean key still takes a quoted boolean; an unquoted one in a text key still fails.
     func testBooleanKeysStillTakeAQuotedBoolean() throws {
         let config = try ConfigLoader.loadFromString(
