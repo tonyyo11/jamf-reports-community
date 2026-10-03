@@ -249,9 +249,10 @@ struct SecurityPostureView: View {
         let total = snapshot.totalDevices
         if let count, total > 0 {
             let pct = (Double(count) / Double(total)) * 100
+            // Rounded as the AI card rounds it, so an exact x.x5 reads the same in both.
             StatTile(
                 label: label,
-                value: String(format: "%.1f%%", pct),
+                value: FleetInsightInput.Value.percent(pct).text,
                 sub: Self.kpiTileSub(
                     control, on: count, total: total, fleet: snapshot.fleetCounts)
             )
