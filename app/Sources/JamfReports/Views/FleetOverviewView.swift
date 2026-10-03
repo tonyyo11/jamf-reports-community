@@ -892,8 +892,8 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     if let patchPct = summary.patchPct, patchPct < 80 {
         issues.append(FleetProfileIssue(
             reason: "Patch \(String(format: "%.1f", patchPct))% (below 80%)",
-            explanation: "Share of devices on the latest version of their patch titles, in "
-                + "the latest patch snapshot. It is the Patch screen's fleet compliance.",
+            explanation: "Share of devices on the latest version of their patch titles, "
+                + "in the latest patch snapshot.",
             actionLabel: "Open Patch Compliance",
             tab: .patch
         ))
