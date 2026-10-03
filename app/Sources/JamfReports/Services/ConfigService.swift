@@ -169,6 +169,14 @@ struct LoadedConfig: Sendable {
 struct SavedConfig: Sendable {
     var document: YAMLCodec.YAMLDocument
     var stamp: ConfigFileStamp
+    var report = ConfigSaveReport()
+}
+
+/// What a save left as typed, for the Config screen to say.
+struct ConfigSaveReport: Equatable, Sendable {
+    /// `custom_eas`/`security_agents` left as typed: the value is not a list, so the editor
+    /// read no entries from it and would have written its own list over it.
+    var keptBlocks: [String] = []
 }
 
 /// A config file's modification date and size. Both nil when there is no file.
@@ -263,8 +271,10 @@ enum ConfigService {
         }
 
         try rejectCredentialKeys(in: document.root)
+        let report = ConfigSaveReport(keptBlocks: nonListBlocks(in: document.root))
         apply(state: state, to: &document)
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: managedTopLevelKeys)
+        let encoded = try YAMLCodec.encode(
+            document, replacingTopLevelKeys: managedTopLevelKeys.subtracting(report.keptBlocks))
 
         let tempURL = directory.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
         try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
@@ -273,7 +283,16 @@ enum ConfigService {
         }
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
 
-        return SavedConfig(document: try YAMLCodec.decode(encoded), stamp: .of(url))
+        return SavedConfig(document: try YAMLCodec.decode(encoded), stamp: .of(url), report: report)
+    }
+
+    /// The list blocks whose value is a mapping or a scalar other than null.
+    private static func nonListBlocks(in root: YAMLCodec.YAMLValue) -> [String] {
+        ["custom_eas", "security_agents"].filter { key in
+            guard let value = root.mapping?.value(for: key) else { return false }
+            if case .sequence = value { return false }
+            return value != .scalar(.null)
+        }
     }
 
     /// Copies the file at `url` to `<name>.bak-<yyyyMMdd-HHmmss>` beside it, before the app

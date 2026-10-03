@@ -42,9 +42,25 @@ final class ConfigViewReaderCardTests: XCTestCase {
         XCTAssertEqual(lines.last, "…and 3 more")
     }
 
+    func testASaveThatLeftAListBlockAsTypedSaysWhy() throws {
+        XCTAssertNil(ConfigView.saveNotice(changedOnDisk: false, report: ConfigSaveReport()))
+        let notice = try XCTUnwrap(ConfigView.saveNotice(
+            changedOnDisk: false,
+            report: ConfigSaveReport(keptBlocks: ["custom_eas", "security_agents"])))
+        XCTAssertEqual(notice.title, "Saved with notes")
+        XCTAssertEqual(notice.lines, [
+            "Save left custom_eas as typed: it is not a list, so this screen reads no entries "
+                + "from it and did not write the Custom EAs tab. Write each entry as a "
+                + "\"- name:\" list item to edit it here.",
+            "Save left security_agents as typed: it is not a list, so this screen reads no "
+                + "entries from it and did not write the Security Agents tab. Write each entry "
+                + "as a \"- name:\" list item to edit it here.",
+        ])
+    }
+
     func testARefusedSaveSaysWhyAndWhatReloadDiscards() throws {
-        XCTAssertNil(ConfigView.saveNotice(changedOnDisk: false))
-        let notice = try XCTUnwrap(ConfigView.saveNotice(changedOnDisk: true))
+        XCTAssertNil(ConfigView.saveNotice(changedOnDisk: false, report: nil))
+        let notice = try XCTUnwrap(ConfigView.saveNotice(changedOnDisk: true, report: nil))
         XCTAssertEqual(notice.title, "Not saved")
         XCTAssertEqual(notice.lines, [
             "config.yaml changed on disk since this screen loaded it. Reload reads the file "

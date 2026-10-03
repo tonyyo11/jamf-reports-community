@@ -38,6 +38,50 @@ final class ConfigSaveTypedTextTests: XCTestCase {
                        "output:\n  output_dir: B\n\n# Next section\n\nhtml:\n  x: 1\n")
     }
 
+    // MARK: A block that is not a list
+
+    /// The audit read a mapping under custom_eas or security_agents as no entries, and a
+    /// save wrote `[]` over it.
+    func testAListBlockTypedAsAMappingIsLeftAsTyped() throws {
+        let eas = "custom_eas:\n  Battery:\n    column: Battery Cycle Count\n    type: text\n"
+        let agents = "security_agents: Agent One\n"
+        let (root, url) = try workspace(with: "columns:\n  computer_name: Name\n" + eas + agents)
+
+        let loaded = try ConfigService.load(profile: Self.profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.customEAs, [], "the editor reads it as empty")
+        XCTAssertEqual(loaded.state.securityAgents, [])
+        var state = loaded.state
+        state.columns["computer_name"] = "Device Name"
+        state.securityAgents = [
+            ConfigSecurityAgent(name: "Added", column: "Added - Status", connectedValue: "Up"),
+        ]
+        let saved = try ConfigService.save(
+            profile: Self.profile, state: state, existingDocument: loaded.document,
+            workspaceRoot: root)
+
+        XCTAssertEqual(saved.report.keptBlocks, ["custom_eas", "security_agents"])
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains(eas + agents), text)
+        XCTAssertTrue(text.contains("computer_name: Device Name"), text)
+        XCTAssertFalse(text.contains("Added"), text)
+    }
+
+    func testAnEmptyOrNullListBlockIsStillWritten() throws {
+        for typed in ["custom_eas:\nsecurity_agents: []\n", "custom_eas: null\n"] {
+            let (root, url) = try workspace(with: typed)
+            let loaded = try ConfigService.load(profile: Self.profile, workspaceRoot: root)
+            var state = loaded.state
+            state.securityAgents = [
+                ConfigSecurityAgent(name: "Added", column: "Added - Status", connectedValue: "Up"),
+            ]
+            let saved = try ConfigService.save(
+                profile: Self.profile, state: state, existingDocument: loaded.document,
+                workspaceRoot: root)
+            XCTAssertEqual(saved.report.keptBlocks, [], typed)
+            XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("- name: Added"))
+        }
+    }
+
     // MARK: Backups
 
     func testABackupIsACopyBesideTheFileAndOnlyTheNewestFiveAreKept() throws {

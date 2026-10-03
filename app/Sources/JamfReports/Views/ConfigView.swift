@@ -87,6 +87,8 @@ struct ConfigView: View {
     @State private var showRestoreConfirm = false
     /// A Save found config.yaml changed since the screen read it, and wrote nothing.
     @State private var changedOnDisk = false
+    /// What the last Save left as typed.
+    @State private var saveReport: ConfigSaveReport?
 
     var body: some View {
         PageScaffold(spacing: 16) {
@@ -98,13 +100,14 @@ struct ConfigView: View {
             if !workspace.configRepairedKeys.isEmpty || !parseNotes.isEmpty {
                 configHealedKeysCard(workspace.configRepairedKeys, notes: parseNotes)
             }
-            if let notice = Self.saveNotice(changedOnDisk: changedOnDisk) {
+            if let notice = Self.saveNotice(changedOnDisk: changedOnDisk, report: saveReport) {
                 saveNoticeCard(notice)
             }
             tabContent
         }
         .task(id: workspace.profile) {
             changedOnDisk = false
+            saveReport = nil
             do {
                 try await workspace.loadConfig()
             } catch {
@@ -264,13 +267,23 @@ struct ConfigView: View {
     }
 
     /// What the last Save could not do, or nil when there is nothing to say.
-    static func saveNotice(changedOnDisk: Bool) -> (title: String, lines: [String])? {
-        guard changedOnDisk else { return nil }
-        return (
-            title: "Not saved",
-            lines: ["config.yaml changed on disk since this screen loaded it. Reload reads the "
-                + "file again and discards the changes you have not saved here."]
-        )
+    static func saveNotice(
+        changedOnDisk: Bool, report: ConfigSaveReport?
+    ) -> (title: String, lines: [String])? {
+        if changedOnDisk {
+            return (
+                title: "Not saved",
+                lines: ["config.yaml changed on disk since this screen loaded it. Reload reads "
+                    + "the file again and discards the changes you have not saved here."]
+            )
+        }
+        let tabs = ["custom_eas": "Custom EAs", "security_agents": "Security Agents"]
+        let lines = (report?.keptBlocks ?? []).map { key in
+            "Save left \(key) as typed: it is not a list, so this screen reads no entries from "
+                + "it and did not write the \(tabs[key] ?? key) tab. Write each entry as a "
+                + "\"- name:\" list item to edit it here."
+        }
+        return lines.isEmpty ? nil : (title: "Saved with notes", lines: lines)
     }
 
     private func saveNoticeCard(_ notice: (title: String, lines: [String])) -> some View {
@@ -306,6 +319,7 @@ struct ConfigView: View {
                 workspace.configError = error.localizedDescription
             }
             changedOnDisk = false
+            saveReport = nil
             refreshEngineParseStatus()
         }
     }
@@ -442,7 +456,7 @@ struct ConfigView: View {
         saveStatus = .saving
         saveTask = Task { @MainActor in
             do {
-                try await workspace.saveConfig()
+                saveReport = try await workspace.saveConfig()
                 changedOnDisk = false
                 // A save rewrites the blocks this screen edits; re-read what the card lists.
                 refreshEngineParseStatus()

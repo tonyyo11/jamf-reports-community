@@ -727,12 +727,14 @@ final class WorkspaceStore {
         rebuildCustomEAs()
     }
 
-    /// Flush current configState (+ any column mapping edits) to disk atomically.
-    func saveConfig() async throws {
+    /// Flush current configState (+ any column mapping edits) to disk atomically. Returns what
+    /// the save left as typed, for the Config screen to say.
+    @discardableResult
+    func saveConfig() async throws -> ConfigSaveReport {
         // Demo edits stay in memory. Writing would create the fictional profile's
         // config.yaml in the real workspaces root, where profile discovery and the
         // background item's all-profiles runs treat it as a real workspace.
-        guard !demoMode else { return }
+        guard !demoMode else { return ConfigSaveReport() }
         syncColumnMappingsToState()
         let saved = try ConfigService.save(
             profile: profile,
@@ -746,6 +748,7 @@ final class WorkspaceStore {
         configError = nil
         // Re-saving drops the orphaned sequence items, so the healed-keys note clears.
         configRepairedKeys = saved.document.repairedKeys.sorted()
+        return saved.report
     }
 
     /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's
