@@ -163,14 +163,17 @@ struct PatchStatusService: Sendable {
     // MARK: - Fleet compliance
 
     /// The one patch-compliance definition (epic #207 C1): `Σ on_latest / Σ total * 100`
-    /// over titles with `total > 0`, so every device counts once however many titles there
-    /// are. A title nobody has carries no signal, and some jamf-cli builds emit a parseable
-    /// "0%" for it, so it joins neither sum. Nil, never 0, when no title has devices.
+    /// over titles with `total > 0`, so each title weighs in by its device count. A title
+    /// nobody has carries no signal, and some jamf-cli builds emit a parseable "0%" for it,
+    /// so it joins neither sum. jamf-cli can count a device twice across patch policies
+    /// (`PatchVelocityBuilder` clamps the same way), so each title's `on_latest` is held
+    /// between 0 and its own `total`: the figure never passes 100. Nil, never 0, when no
+    /// title has devices.
     static func fleetCompliancePct(_ titles: [PatchStatusRow]) -> Double? {
         let counted = titles.filter { $0.total > 0 }
         let devices = counted.reduce(0) { $0 + $1.total }
         guard devices > 0 else { return nil }
-        let onLatest = counted.reduce(0) { $0 + $1.onLatest }
+        let onLatest = counted.reduce(0) { $0 + min(max($1.onLatest, 0), $1.total) }
         return Double(onLatest) / Double(devices) * 100.0
     }
 

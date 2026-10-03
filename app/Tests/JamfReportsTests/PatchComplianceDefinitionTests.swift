@@ -76,6 +76,27 @@ final class PatchComplianceDefinitionTests: XCTestCase {
         XCTAssertNil(PatchStatusService.fleetCompliancePct([row("Empty", onLatest: 0, total: 0)]))
     }
 
+    /// jamf-cli can count a device twice across patch policies, so a title can report more on
+    /// latest than it has devices. Each title is held to its own total, so one such title
+    /// cannot lift the fleet figure, and the figure never passes 100.
+    func testTitleReportingMoreOnLatestThanItsTotalIsHeldToItsTotal() throws {
+        let rows = [row("Doubled", onLatest: 120, total: 100),
+                    row("Half", onLatest: 50, total: 100)]
+        // (min(120, 100) + 50) / (100 + 100) = 75.0; unclamped it would read 170 / 200 = 85.0.
+        XCTAssertEqual(try XCTUnwrap(PatchStatusService.fleetCompliancePct(rows)), 75.0,
+                       accuracy: 0.0001)
+
+        let over = [row("Doubled", onLatest: 105, total: 100)]
+        XCTAssertEqual(try XCTUnwrap(PatchStatusService.fleetCompliancePct(over)), 100.0,
+                       accuracy: 0.0001)
+    }
+
+    func testNegativeOnLatestCountsAsNoneOnLatest() throws {
+        let rows = [row("Bad", onLatest: -30, total: 100), row("Good", onLatest: 100, total: 100)]
+        XCTAssertEqual(try XCTUnwrap(PatchStatusService.fleetCompliancePct(rows)), 50.0,
+                       accuracy: 0.0001)
+    }
+
     // MARK: - The summary writer
 
     private func writeSummary(patchRows: [[String: Any]]) throws -> (DailySummary, URL) {
@@ -106,6 +127,15 @@ final class PatchComplianceDefinitionTests: XCTestCase {
                 .first { $0.hasPrefix("summary_") })
         let text = try String(contentsOf: dir.appendingPathComponent(file), encoding: .utf8)
         XCTAssertTrue(text.contains("\"patchPctBasis\" : \"device\""), text)
+    }
+
+    /// A figure above 100% must never reach the permanent summary history or an alert.
+    func testSummaryNeverRecordsMoreThan100Percent() throws {
+        let (summary, _) = try writeSummary(patchRows: [
+            GoldenFleetWorkspace.patchRow(id: "1", title: "Firefox", onLatest: 105, total: 100),
+        ])
+
+        XCTAssertEqual(try XCTUnwrap(summary.patchPct), 100.0, accuracy: 0.001)
     }
 
     func testSummaryWithNoTitleOnDevicesOmitsThePercentButStillNamesTheBasis() throws {
