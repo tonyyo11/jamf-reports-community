@@ -117,14 +117,16 @@ struct ScoringConfig: Sendable, Equatable {
     }
 
     /// What the Scoring tab shows: the workspace's weights when it has saved some, else this
-    /// Mac's earlier preference when there is one, else the defaults. Takes the raw
-    /// preference string so it reads no `UserDefaults`.
+    /// Mac's earlier preference when there is one, else the defaults. A preference that holds
+    /// the defaults is not called one. Takes the raw preference string so it reads no
+    /// `UserDefaults`.
     static func displayedWeights(
         config: SecurityScoreWeights?, legacyRaw: String
     ) -> (weights: SecurityScoreWeights, fromLegacyPreference: Bool) {
         if let config { return (config, false) }
         guard !legacyRaw.isEmpty else { return (.defaultWeights, false) }
-        return (parse(legacyRaw).weights, true)
+        let weights = parse(legacyRaw).weights
+        return (weights, weights != .defaultWeights)
     }
 
     /// What "Reset to v3.5 defaults" saves. Nil removes the workspace's block, which shows the

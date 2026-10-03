@@ -26,6 +26,16 @@ final class SecurityScoreWeightsTests: XCTestCase {
         XCTAssertTrue(shown.fromLegacyPreference)
     }
 
+    /// A preference that holds the defaults is shown as the defaults, with no note that it
+    /// is this Mac's earlier set.
+    func testAnEarlierPreferenceEqualToTheDefaultsIsNotCalledOne() {
+        let defaults = "15,15,15,10,20,5,15,5"
+        XCTAssertEqual(ScoringConfig.parse(defaults).weights, .defaultWeights, "precondition")
+        let shown = ScoringConfig.displayedWeights(config: nil, legacyRaw: defaults)
+        XCTAssertEqual(shown.weights, .defaultWeights)
+        XCTAssertFalse(shown.fromLegacyPreference)
+    }
+
     func testTheDefaultsAreShownWithNeither() {
         let shown = ScoringConfig.displayedWeights(config: nil, legacyRaw: "")
         XCTAssertEqual(shown.weights, .defaultWeights)
