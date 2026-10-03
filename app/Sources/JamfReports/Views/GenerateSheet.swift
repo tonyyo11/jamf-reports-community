@@ -837,15 +837,14 @@ struct GenerateSheet: View {
         }
 
         // The collect is the Overview's (`collectThenGenerate`'s), and the F3 narrative,
-        // time-boxed inside makeForGUIGenerate, is asked for after it. `generateAll` gets
-        // collectFresh: false because the collect has already run.
+        // time-boxed inside makeForGUIGenerate, is asked for after it.
         let outcome = await GenerateSheetState.perform(
             request,
             collect: { try await bridge.collect(profile: profile, force: true, onLine: onLine) },
             narrative: { await ReportNarrative.makeForGUIGenerate(profile: profile) },
             generate: { narrative in
                 await bridge.generateAll(
-                    types: request.types, collectFresh: false, outputDir: request.outputDir,
+                    types: request.types, outputDir: request.outputDir,
                     profile: profile, schoolMode: request.schoolMode,
                     template: request.template, aiNarrative: narrative, onLine: onLine)
             }

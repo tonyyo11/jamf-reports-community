@@ -262,20 +262,6 @@ final class ManualCollectTickLockTests: XCTestCase {
         XCTAssertEqual(CLIBridge.tickLockHolds, 0)
     }
 
-    /// The Generate sheet with Collect fresh: every type fails with the refusal in its log.
-    func testGenerateWithCollectFreshReportsTheRefusal() async throws {
-        let (_, lock) = try makeStore()
-        let lines = Recorder()
-        try await whileAnotherProcessHolds(lock) {
-            let result = await CLIBridge().generateAll(
-                types: [.xlsx], collectFresh: true, outputDir: nil, profile: profile
-            ) { line in lines.record(line.text) }
-            XCTAssertEqual(result.failed.map { $0.type }, [.xlsx])
-            XCTAssertEqual(result.succeeded, [])
-        }
-        XCTAssertEqual(lines.values, ["[fatal] collect failed: \(busy)"])
-    }
-
     /// Overview's Generate and Trends' Archive now: the error they toast is the refusal.
     func testCollectThenGenerateThrowsTheRefusal() async throws {
         let (_, lock) = try makeStore()
