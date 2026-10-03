@@ -661,7 +661,7 @@ final class CoreDashboardSecurityTests: XCTestCase {
     }
 
     /// Every Mac with FileVault off is hardware-encrypted and not counted, and none is on:
-    /// nothing is left to grade, so the row has no status rather than a red one.
+    /// nothing is left to grade, so the row is Not counted rather than red, as the legend says.
     func testCompliancePostureHasNoFileVaultStatusWhenNoMacIsCounted() throws {
         let dir = try hardwareDataDir(encrypted: 0, silicon: 2, intel: 0)
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -669,7 +669,7 @@ final class CoreDashboardSecurityTests: XCTestCase {
             "security_policy:\n  filevault_off_hardware_encrypted: ignore\n", dataDir: dir)
         try dash.writeCompliancePosture()
         let cells = try row(dash, "Compliance Posture", "FileVault Encrypted")
-        XCTAssertEqual(cells[2]?.text, "\u{2014}")
+        XCTAssertEqual(cells[2]?.text, "Not counted")
         XCTAssertEqual(cells[2]?.format, .cell)
     }
 
@@ -690,7 +690,7 @@ final class CoreDashboardSecurityTests: XCTestCase {
         try seedJSON(json, kind: "security", in: dir)
         let note = "Security rows follow this workspace's security policy: they are graded on the "
             + "Macs not failing, AMBER also covers warnings, and Not counted means the control is "
-            + "set to ignore."
+            + "set to ignore or no Mac is left to grade."
         for yaml in [
             "security_policy:\n  controls:\n    sip: warning\n",
             "security_policy:\n  controls:\n    firewall: ignore\n",
@@ -713,6 +713,8 @@ final class CoreDashboardSecurityTests: XCTestCase {
         try seedJSON(json, kind: "security", in: dir)
         for yaml in [
             "", "security_policy:\n  controls:\n    sip: fail\n    firewall: fail\n",
+            "security_policy:\n  filevault_off_hardware_encrypted: fail\n",
+            "security_policy:\n  score_weights:\n    sip: 20\n",
         ] {
             let dash = try dashboard(yaml, dataDir: dir)
             try dash.writeCompliancePosture()

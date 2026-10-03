@@ -197,6 +197,12 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         return hardware != fileVault
     }
 
+    /// Every control at fail and no hardware rule in use: the security rows are graded as with
+    /// no policy. The score weights grade no control.
+    var gradesLikeTheDefault: Bool {
+        SecurityControl.allCases.allSatisfy { level(for: $0) == .fail } && !usesHardwareRule
+    }
+
     func hardwareRuleApplies(fileVaultReading: Bool?, hardwareEncrypted: Bool?) -> Bool {
         usesHardwareRule && fileVaultReading == false && hardwareEncrypted == true
     }

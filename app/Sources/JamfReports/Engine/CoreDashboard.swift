@@ -3061,10 +3061,11 @@ struct CoreDashboard: Sendable {
                  row: row, col: 0, format: .subtitle)
         row += 1
         // Under a policy the security rows are graded differently from the bands above.
-        if config.resolvedSecurityPolicy != .default {
+        if !config.resolvedSecurityPolicy.gradesLikeTheDefault {
             ws.write("Security rows follow this workspace's security policy: they are graded on "
                      + "the Macs not failing, AMBER also covers warnings, and Not counted means "
-                     + "the control is set to ignore.", row: row, col: 0, format: .subtitle)
+                     + "the control is set to ignore or no Mac is left to grade.",
+                     row: row, col: 0, format: .subtitle)
             row += 1
         }
         ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
@@ -3114,13 +3115,18 @@ struct CoreDashboard: Sendable {
         }
     }
 
-    /// A security row's status under the workspace's policy: not counted at `ignore`, else
+    /// A security row's status under the workspace's policy: not counted at `ignore` or with
+    /// no Mac left to grade, else
     /// graded on the share of Macs not failing the control, amber instead of green when some
     /// Macs only warn.
     private func securityRagStatus(
         _ control: SecurityControl, fleet: SecurityFleetCounts?
     ) -> (String, CellFormat) {
         if config.resolvedSecurityPolicy.level(for: control) == .ignore {
+            return ("Not counted", .cell)
+        }
+        // Every Mac the hardware rule took out of FileVault's count: none is left to grade.
+        if fleet?.controls[control] != nil, fleet?.nonFailingPct(control) == nil {
             return ("Not counted", .cell)
         }
         let status = ragStatus(pct: fleet?.nonFailingPct(control))
