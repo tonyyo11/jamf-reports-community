@@ -95,6 +95,25 @@ final class GenerateSheetRequestTests: XCTestCase {
         XCTAssertTrue(request.asksForNarrative)
     }
 
+    /// Collect fresh starts the way the Overview decides: off while the snapshots are fresh,
+    /// on when they are stale or absent; once the user has chosen, the check leaves it alone.
+    func testCollectFreshFollowsSnapshotFreshnessUntilTheUserChooses() {
+        let state = GenerateSheetState()
+        state.applySnapshotFreshness(.fresh(ageMinutes: 5))
+        XCTAssertFalse(state.collectFresh)
+        state.applySnapshotFreshness(.stale(ageMinutes: 300))
+        XCTAssertTrue(state.collectFresh)
+        state.applySnapshotFreshness(.fresh(ageMinutes: 5))
+        state.applySnapshotFreshness(.noSnapshots)
+        XCTAssertTrue(state.collectFresh)
+
+        let chosen = GenerateSheetState()
+        chosen.toggleCollectFresh()
+        XCTAssertFalse(chosen.collectFresh)
+        chosen.applySnapshotFreshness(.stale(ageMinutes: 300))
+        XCTAssertFalse(chosen.collectFresh, "a late freshness check overrode the user's choice")
+    }
+
     /// "What will be written" names the files the generators write: their stems, and the
     /// profile as a file name carries it.
     func testWhatWillBeWrittenNamesTheRealFiles() {

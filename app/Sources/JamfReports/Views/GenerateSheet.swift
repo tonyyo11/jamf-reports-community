@@ -13,6 +13,8 @@ import Combine
 final class GenerateSheetState {
     var selectedTypes: Set<GenerateOutputType> = [.xlsx]
     var collectFresh: Bool = true
+    /// Set once the user toggles Collect fresh, so the freshness check leaves it alone.
+    private var collectFreshChosen = false
     /// When true, run a Health Audit before generating so audit-derived
     /// workbook content reflects this run. Persisted via the same UserDefaults
     /// key OverviewView's quick "Generate Report" button reads, so the
@@ -80,6 +82,22 @@ final class GenerateSheetState {
 
     /// The sheet closes while idle only: a run would carry on out of sight.
     var canDismiss: Bool { !isRunning }
+
+    func toggleCollectFresh() {
+        collectFresh.toggle()
+        collectFreshChosen = true
+    }
+
+    /// Sets Collect fresh the way the Overview decides to collect: off while the snapshots
+    /// are fresh, on when they are stale or absent. A choice the user already made stands.
+    func applySnapshotFreshness(_ decision: SnapshotFreshness.Decision) {
+        guard !collectFreshChosen, !isRunning else { return }
+        if case .fresh = decision {
+            collectFresh = false
+        } else {
+            collectFresh = true
+        }
+    }
 
     /// What one Generate press asks for, read from the controls when it is pressed.
     struct Request: Sendable {
@@ -271,6 +289,7 @@ struct GenerateSheet: View {
         .frame(minHeight: 440)
         .background(Theme.Surface.raised)
         .interactiveDismissDisabled(!state.canDismiss)
+        .task { await defaultCollectFreshFromSnapshots() }
     }
 
     // MARK: Subviews
@@ -542,7 +561,7 @@ struct GenerateSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             FieldLabel(label: "Data")
             Button {
-                state.collectFresh.toggle()
+                state.toggleCollectFresh()
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: state.collectFresh ? "checkmark.square.fill" : "square")
@@ -798,6 +817,20 @@ struct GenerateSheet: View {
             state.folderPickerError = "Cannot write to \(url.lastPathComponent): "
                 + error.localizedDescription
         }
+    }
+
+    /// The Overview's freshness check, off the main actor: it walks the data directory.
+    private func defaultCollectFreshFromSnapshots() async {
+        guard !workspace.demoMode else { return }
+        let profile = profile
+        let decision = await Task.detached(priority: .utility) {
+            guard ProfileService.isValid(profile),
+                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
+                return SnapshotFreshness.Decision.noSnapshots
+            }
+            return SnapshotFreshness.evaluate(dataDir: dataDir)
+        }.value
+        state.applySnapshotFreshness(decision)
     }
 
     private func runGenerate() async {
