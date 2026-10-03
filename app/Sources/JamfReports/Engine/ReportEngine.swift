@@ -138,8 +138,20 @@ struct ReportEngine: Sendable {
         workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)
 
+        finishWorkbook(at: outputURL, csvURL: csvURL, templateID: template.identifier,
+                       profile: profile, provenance: prov, onLine: onLine)
+
+        return coreFailures
+    }
+
+    /// What follows a written workbook: the manifest, the sha256 sidecar, the CSV snapshot,
+    /// run rotation and the trend summary.
+    private func finishWorkbook(
+        at outputURL: URL, csvURL: URL?, templateID: String, profile: String,
+        provenance prov: Provenance, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) {
         // Write a SHA-256 manifest alongside the artifact for federal compliance.
-        writeManifest(for: outputURL, profile: profile, template: template.identifier)
+        writeManifest(for: outputURL, profile: profile, template: templateID)
 
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar in
         // `shasum -a 256` output format. The hash is also surfaced to the UI
@@ -177,8 +189,6 @@ struct ReportEngine: Sendable {
         if let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
             emitSummaryJSON(summariesDir: summariesDir, provenance: prov, onLine: onLine)
         }
-
-        return coreFailures
     }
 
     // MARK: - Output rotation (mirrors Python _archive_old_output_runs)
