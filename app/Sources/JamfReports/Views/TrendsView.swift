@@ -782,15 +782,10 @@ struct TrendsView: View {
     @ViewBuilder
     private var aiInsightCard: some View {
         if AIInsightCard.isOffered(demoMode: workspaceStore.demoMode) {
-            AIInsightCard(
-                title: "AI Trend Insight",
-                idleText: "Summarize how these metrics moved over the selected range using "
-                    + "on-device intelligence.",
-                provenanceText: "AI-generated from the snapshots in this range — verify "
-                    + "against the chart above.",
-                input: FleetInsightInput.trends(
-                    metrics: availableMetrics, points: points(for:), label: metricLabel)
-            )
+            TrendsAIInsightCard(
+                trendStore: trendStore,
+                benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
+                edrAgentName: workspaceStore.edrAgentName)
         }
     }
 
@@ -1820,5 +1815,33 @@ private struct ChartExportView: View {
         if normalized <= 2 { return 2 * magnitude }
         if normalized <= 5 { return 5 * magnitude }
         return 10 * magnitude
+    }
+}
+
+/// The Trends screen's AI card, in a view of its own: a chart hover redraws the screen, and
+/// with nothing here changed SwiftUI does not run this body again, so the input is not
+/// rebuilt; `AIInsightCard` builds it only while the card shows. Live profiles only, so the
+/// points are the store's.
+private struct TrendsAIInsightCard: View {
+    let trendStore: TrendStore
+    let benchmarkLabel: String?
+    let edrAgentName: String?
+
+    var body: some View {
+        AIInsightCard(
+            title: "AI Trend Insight",
+            idleText: "Summarize how these metrics moved over the selected range using "
+                + "on-device intelligence.",
+            provenanceText: "AI-generated from the snapshots in this range — verify "
+                + "against the chart above."
+        ) {
+            // `trends` leaves out the band metric and any metric with fewer than two
+            // points, which is what the screen's picker hides on a live profile.
+            FleetInsightInput.trends(
+                metrics: TrendSeries.Metric.allCases,
+                points: { trendStore.points(metric: $0) },
+                label: { $0.displayLabel(
+                    benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) })
+        }
     }
 }

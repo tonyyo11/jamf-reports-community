@@ -8,11 +8,26 @@ struct AIInsightCard: View {
     let title: String
     let idleText: String
     let provenanceText: String
-    let input: FleetInsightInput?
+    /// Called only while the card shows (`AIInsightCardModel.shown`).
+    let makeInput: @MainActor () -> FleetInsightInput?
 
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var model = AIInsightCardModel()
+
+    init(title: String, idleText: String, provenanceText: String, input: FleetInsightInput?) {
+        self.init(title: title, idleText: idleText, provenanceText: provenanceText) { input }
+    }
+
+    init(
+        title: String, idleText: String, provenanceText: String,
+        makeInput: @escaping @MainActor () -> FleetInsightInput?
+    ) {
+        self.title = title
+        self.idleText = idleText
+        self.provenanceText = provenanceText
+        self.makeInput = makeInput
+    }
 
     /// macOS 27 and a live profile. Synchronous, so a screen can leave the
     /// card out of its layout before any config is read.
@@ -24,9 +39,11 @@ struct AIInsightCard: View {
 
     /// Decided synchronously, so an absent card adds nothing to its stack, not even spacing.
     var body: some View {
-        if model.isPresent(profile: workspace.profile, demoMode: workspace.demoMode) {
+        let shown = model.shown(
+            profile: workspace.profile, demoMode: workspace.demoMode, input: makeInput)
+        if shown.isPresent {
             card
-                .onChange(of: input, initial: true) { _, new in model.setInput(new) }
+                .onChange(of: shown.input, initial: true) { _, new in model.setInput(new) }
                 // The generator keeps its prewarmed session for the first request.
                 .task(id: workspace.profile) {
                     model.select(workspace.profile)
@@ -194,6 +211,19 @@ final class AIInsightCardModel {
     ) -> Bool {
         AIInsightCard.isOffered(demoMode: demoMode, platformSupported: platformSupported)
             && setup(for: profile).config.isUsable
+    }
+
+    /// Whether the card shows and, when it does, its input from `make`. `make` is not called
+    /// for a card that does not show, so a screen that redraws often builds nothing while
+    /// `ai.enabled` is off.
+    func shown(
+        profile: String, demoMode: Bool,
+        platformSupported: Bool = ModelAvailability.platformSupported,
+        input make: () -> FleetInsightInput?
+    ) -> (isPresent: Bool, input: FleetInsightInput?) {
+        guard isPresent(profile: profile, demoMode: demoMode,
+                        platformSupported: platformSupported) else { return (false, nil) }
+        return (true, make())
     }
 
     /// Switches to `profile`, clearing what was shown for another one.

@@ -71,6 +71,37 @@ final class AIInsightCardModelTests: XCTestCase {
         XCTAssertFalse(on.isPresent(profile: "p", demoMode: false, platformSupported: false))
     }
 
+    /// Trends redraws on every chart hover; its input is built only for a card that shows,
+    /// so nothing is built while `ai.enabled` is off.
+    func testTheInputIsBuiltOnlyForACardThatShows() {
+        func model(enabled: Bool) -> AIInsightCardModel {
+            AIInsightCardModel { _ in
+                .init(config: AIConfig(enabled: enabled), availability: .available,
+                      generator: StubInsightGenerator())
+            }
+        }
+        var built = 0
+        func make() -> FleetInsightInput? {
+            built += 1
+            return input("Trends")
+        }
+        let off = model(enabled: false)
+            .shown(profile: "p", demoMode: false, platformSupported: true, input: make)
+        XCTAssertFalse(off.isPresent)
+        XCTAssertNil(off.input)
+        _ = model(enabled: true)
+            .shown(profile: "p", demoMode: true, platformSupported: true, input: make)
+        _ = model(enabled: true)
+            .shown(profile: "p", demoMode: false, platformSupported: false, input: make)
+        XCTAssertEqual(built, 0, "a card that does not show builds no input")
+
+        let on = model(enabled: true)
+            .shown(profile: "p", demoMode: false, platformSupported: true, input: make)
+        XCTAssertTrue(on.isPresent)
+        XCTAssertEqual(on.input, input("Trends"))
+        XCTAssertEqual(built, 1)
+    }
+
     func testConfigIsReadOncePerProfile() {
         var reads: [String] = []
         let model = AIInsightCardModel { profile in
