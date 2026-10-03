@@ -246,6 +246,21 @@ final class ManualCollectTickLockTests: XCTestCase {
                                                        operation: "Generate"), busy)
     }
 
+    /// Overview's Generate and Trends' Archive collect first, through the bridge; a refusal
+    /// there reads the same, as information rather than a red failure.
+    func testOverviewAndTrendsShowARefusalAsInformation() {
+        for toast in [OverviewView.generateFailureToast(CLIBridgeError.tickLockHeld),
+                      TrendsView.archiveFailureToast(CLIBridgeError.tickLockHeld)] {
+            XCTAssertEqual(toast.message, busy)
+            XCTAssertEqual(toast.style, .info)
+        }
+        let failed = TrendsView.archiveFailureToast(CLIBridgeError.executableNotFound)
+        XCTAssertEqual(failed.style, .danger)
+        XCTAssertTrue(failed.message.hasPrefix("Archive failed — "), failed.message)
+        XCTAssertEqual(OverviewView.generateFailureToast(CLIBridgeError.executableNotFound).style,
+                       .danger)
+    }
+
     // MARK: - Every GUI path refuses through the bridge
 
     /// The bridge refuses before the auth probe, so a refused collect runs no jamf-cli.

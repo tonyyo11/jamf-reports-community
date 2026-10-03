@@ -1444,9 +1444,17 @@ struct TrendsView: View {
         } catch {
             isArchiving = false
             workspaceStore.globalStatus = nil
-            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
-            workspaceStore.toast = Toast(message: "Archive failed — \(error.localizedDescription)", style: .danger)
+            // The bridge logs a refusal itself, as a notice.
+            if (error as? CLIBridgeError) != .tickLockHeld {
+                AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            }
+            workspaceStore.toast = Self.archiveFailureToast(error)
         }
+    }
+
+    /// A scheduled run holding the tick lock is a refusal, shown as information.
+    nonisolated static func archiveFailureToast(_ error: Error) -> Toast {
+        WorkspaceStore.collectFailureToast(error, operation: "Archive")
     }
 
     // MARK: Export PNG

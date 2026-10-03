@@ -713,10 +713,18 @@ struct OverviewView: View {
             }
         } catch {
             workspace.globalStatus = nil
-            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
-            workspace.toast = Toast(message: "Generate failed — \(error.localizedDescription)", style: .danger)
+            // The bridge logs a refusal itself, as a notice.
+            if (error as? CLIBridgeError) != .tickLockHeld {
+                AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            }
+            workspace.toast = Self.generateFailureToast(error)
             generatedHashes.removeAll()
         }
+    }
+
+    /// A scheduled run holding the tick lock is a refusal, shown as information.
+    nonisolated static func generateFailureToast(_ error: Error) -> Toast {
+        WorkspaceStore.collectFailureToast(error, operation: "Generate")
     }
 
     /// Format the first artifact's 12-char short fingerprint for the toast.
