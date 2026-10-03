@@ -744,6 +744,15 @@ final class WorkspaceStore {
         )
         _loadedDoc = saved.document
         _loadedStamp = saved.stamp
+        // A block left as typed was not written: the screen goes back to what the file holds
+        // for it, rather than calling its own entries saved.
+        if saved.report.keptBlocks.contains("custom_eas") {
+            configState.customEAs = saved.state.customEAs
+            rebuildCustomEAs()
+        }
+        if saved.report.keptBlocks.contains("security_agents") {
+            configState.securityAgents = saved.state.securityAgents
+        }
         _savedState = configState
         configError = nil
         // Re-saving drops the orphaned sequence items, so the healed-keys note clears.

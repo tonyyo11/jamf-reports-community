@@ -175,6 +175,8 @@ struct LoadedConfig: Sendable {
 
 struct SavedConfig: Sendable {
     var document: YAMLCodec.YAMLDocument
+    /// The state read back from what was written.
+    var state: ConfigState
     var stamp: ConfigFileStamp
     var report = ConfigSaveReport()
 }
@@ -323,7 +325,9 @@ enum ConfigService {
         }
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
 
-        return SavedConfig(document: try YAMLCodec.decode(encoded), stamp: .of(url), report: report)
+        let written = try YAMLCodec.decode(encoded)
+        return SavedConfig(
+            document: written, state: Self.state(from: written), stamp: .of(url), report: report)
     }
 
     /// The list blocks whose value is a mapping or a scalar other than null.

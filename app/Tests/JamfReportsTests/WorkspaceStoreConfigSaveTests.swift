@@ -8,14 +8,16 @@ final class WorkspaceStoreConfigSaveTests: XCTestCase {
     private let profile = "typed-acme"
     private let typed = "thresholds:\n  stale_device_days: 30\noutput:\n  output_dir: Reports\n"
 
-    private func makeStore() async throws -> (store: WorkspaceStore, config: URL) {
+    private func makeStore(
+        _ yaml: String? = nil
+    ) async throws -> (store: WorkspaceStore, config: URL) {
         let manager = FileManager.default
         let root = manager.temporaryDirectory
             .appendingPathComponent("jrc-config-save-\(UUID().uuidString)", isDirectory: true)
         let workspace = root.appendingPathComponent(profile, isDirectory: true)
         try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
         let config = workspace.appendingPathComponent("config.yaml")
-        try typed.write(to: config, atomically: true, encoding: .utf8)
+        try (yaml ?? typed).write(to: config, atomically: true, encoding: .utf8)
         let previousRoot = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
         let sentinel = UserDefaults.standard.string(forKey: WorkspaceMigration.sentinelKey)
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
@@ -85,6 +87,27 @@ final class WorkspaceStoreConfigSaveTests: XCTestCase {
         let text = try String(contentsOf: config, encoding: .utf8)
         XCTAssertTrue(text.contains("stale_device_days: 42"), text)
         XCTAssertTrue(text.contains("serial_number: Serial"), text)
+    }
+
+    /// A block left as typed was not written, so what the screen added to it is not saved:
+    /// the screen goes back to what the file holds rather than calling it saved.
+    func testEntriesAddedToABlockLeftAsTypedAreNotKeptAsSaved() async throws {
+        let (store, config) = try await makeStore(
+            typed + "custom_eas:\n  Battery:\n    column: Battery\n")
+        store.addCustomEA()
+        store.addSecurityAgent()
+
+        let report = try await store.saveConfig()
+
+        XCTAssertEqual(report.keptBlocks, ["custom_eas"])
+        XCTAssertEqual(store.configState.customEAs, [])
+        XCTAssertTrue(store.customEAs.isEmpty, "the Custom EAs tab shows the file")
+        XCTAssertEqual(store.configState.securityAgents.map(\.name), ["New Agent"],
+                       "a block that was written keeps the new entry")
+        XCTAssertFalse(store.hasUnsavedChanges)
+        XCTAssertEqual(try ConfigService.load(profile: profile).state, store.configState)
+        XCTAssertTrue(try String(contentsOf: config, encoding: .utf8)
+            .contains("custom_eas:\n  Battery:\n    column: Battery\n"))
     }
 
     func testAReloadAfterARefusalLetsTheNextSaveWrite() async throws {
