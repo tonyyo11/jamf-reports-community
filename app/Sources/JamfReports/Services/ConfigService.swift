@@ -461,7 +461,7 @@ enum ConfigService {
             } catch {
                 let reason = error.localizedDescription
                 AppLogger.collect.warning(
-                    "ConfigService: kept an old config backup: \(reason, privacy: .public)")
+                    "ConfigService: kept an old config backup: \(reason, privacy: .private)")
             }
         }
         return backup
