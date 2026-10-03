@@ -83,7 +83,14 @@ struct ReportEngine: Sendable {
         for sheetID in template.includedSheets {
             AppLogger.report.debug("sheet \(sheetID.rawValue, privacy: .public)")
         }
-        let sheets = config.sheets ?? SheetsConfig()
+        // The CSV is read first so `sheets.only` is judged against every tab this
+        // workbook can have.
+        let csv = try csvURL.map { try csvDashboard(at: $0, workbook: workbook) }
+        let sheets = Self.sheetSettings(
+            config, tabs: template.includedSheets.map(\.rawValue)
+                + (csv?.sheetPlan.map(\.name) ?? [])
+                + (config.charts?.isEnabled == true ? [Self.chartsSheetName] : []),
+            onLine: onLine)
         let (writtenCore, coreFailures, unimplementedSheets) =
             registry.writeSelected(template: template, sheets: sheets)
         for sheetID in unimplementedSheets {
@@ -100,22 +107,9 @@ struct ReportEngine: Sendable {
             }
         }
 
-        // CSVDashboard sheets — Swift CSV writers are non-throwing; failures are captured
-        // in writeAll()'s return value (currently always empty, reserved for future writers).
-        if let csvURL {
-            let csvData = try Data(contentsOf: csvURL)
-            guard let csv = CSVDashboard(
-                config: config,
-                csvData: csvData,
-                workbook: workbook,
-                currentCSVURL: csvURL
-            ) else {
-                throw ReportEngineError.csvParseFailed(csvURL)
-            }
-            // CSVDashboard.writeAll returns [String] — its closures are non-throwing
-            // so there is no failure list here. Named for clarity if the contract widens.
-            _ = csv.writeAll()
-        }
+        // CSVDashboard sheets — Swift CSV writers are non-throwing, so there is no
+        // failure list here.
+        _ = csv?.writeAll(sheets: sheets)
 
         // Chart sheet — render PNG charts from trend summaries and embed in workbook.
         // Standalone PNGs land next to the xlsx via ExportNaming conventions.
@@ -142,6 +136,34 @@ struct ReportEngine: Sendable {
                        profile: profile, provenance: prov, onLine: onLine)
 
         return coreFailures
+    }
+
+    private func csvDashboard(at csvURL: URL, workbook: Workbook) throws -> CSVDashboard {
+        let csvData = try Data(contentsOf: csvURL)
+        guard let csv = CSVDashboard(config: config, csvData: csvData, workbook: workbook,
+                                     currentCSVURL: csvURL) else {
+            throw ReportEngineError.csvParseFailed(csvURL)
+        }
+        return csv
+    }
+
+    /// `config.sheets` for a workbook that can hold `tabs`. An `only` list that names none of
+    /// them is ignored, with one `[warn]` line, so a typo can never leave a workbook empty.
+    static func sheetSettings(
+        _ config: ReportConfig, tabs: [String],
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> SheetsConfig {
+        let settings = config.sheets ?? SheetsConfig()
+        guard let only = settings.only, !only.isEmpty else { return settings }
+        let names = Set(tabs.map { $0.lowercased() })
+        guard !only.contains(where: { names.contains($0.lowercased()) }) else { return settings }
+        let typed = only.prefix(5).map { "\"\(ConfigSchema.displayText($0))\"" }
+            .joined(separator: ", ") + (only.count > 5 ? ", and \(only.count - 5) more" : "")
+        let msg = "[warn] sheets.only names no tab of this workbook (\(typed)), so the app "
+            + "ignores it."
+        AppLogger.report.warning("\(msg, privacy: .private)")
+        onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+        return SheetsConfig(only: nil, skip: settings.skip, order: settings.order)
     }
 
     /// What follows a written workbook: the manifest, the sha256 sidecar, the CSV snapshot,
@@ -3244,7 +3266,8 @@ struct ReportEngine: Sendable {
         config: ReportConfig,
         csvURL: URL?,
         dataDir: URL,
-        outputURL: URL
+        outputURL: URL,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to School
         // generation too. School snapshots live under the same workspace data
@@ -3254,7 +3277,8 @@ struct ReportEngine: Sendable {
         let accent = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let workbook = Workbook(accentColor: accent)
         let core = SchoolDashboard(config: config, dataDir: dataDir, workbook: workbook)
-        let (_, schoolFailures) = core.writeAll()
+        let sheets = sheetSettings(config, tabs: core.sheetPlan.map(\.name), onLine: onLine)
+        let (_, schoolFailures) = core.writeAll(sheets: sheets)
 
         if let csvURL {
             let csvData = try Data(contentsOf: csvURL)
@@ -3263,7 +3287,7 @@ struct ReportEngine: Sendable {
             _ = school?.writeAll()
         }
 
-        workbook.arrange(by: config.sheets ?? SheetsConfig())
+        workbook.arrange(by: sheets)
         try workbook.write(to: outputURL)
         // T-13 integrity envelope: write `<basename>.xlsx.sha256` sidecar.
         _ = writeSHA256Sidecar(for: outputURL)

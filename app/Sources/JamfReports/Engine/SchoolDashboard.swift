@@ -29,12 +29,15 @@ struct SchoolDashboard: Sendable {
     ///
     /// `SchoolDashboardError.noCachedData` (and any `SheetSkippable` conformer) is treated
     /// as an expected-absent skip — tenants that haven't collected school snapshots get
-    /// empty written lists, not failures. A sheet `sheets` in config.yaml leaves out never runs.
+    /// empty written lists, not failures. A sheet `sheets` leaves out never runs; the engine
+    /// passes the settings from config.yaml (`ReportEngine.sheetSettings`).
     @discardableResult
-    func writeAll() -> (written: [String], failures: [SheetFailure]) {
+    func writeAll(
+        sheets: SheetsConfig = SheetsConfig()
+    ) -> (written: [String], failures: [SheetFailure]) {
         var written: [String] = []
         var failures: [SheetFailure] = []
-        for (name, fn) in (config.sheets ?? SheetsConfig()).applyTo(sheetPlan) {
+        for (name, fn) in sheets.applyTo(sheetPlan) {
             do {
                 try fn()
                 written.append(name)

@@ -263,9 +263,12 @@ struct CSVDashboard: Sendable {
         return plan
     }
 
+    /// Writes the CSV tabs `sheets` keeps; the engine passes the settings from config.yaml
+    /// (`ReportEngine.sheetSettings`).
     @discardableResult
-    func writeAll(selectedNames: Set<String>? = nil) -> [String] {
-        let effectivePlan = (config.sheets ?? SheetsConfig()).applyTo(sheetPlan)
+    func writeAll(selectedNames: Set<String>? = nil, sheets: SheetsConfig = SheetsConfig())
+        -> [String] {
+        let effectivePlan = sheets.applyTo(sheetPlan)
         var written: [String] = []
         for (name, fn) in effectivePlan {
             if let sel = selectedNames, !sel.contains(name.lowercased()) { continue }

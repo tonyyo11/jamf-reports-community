@@ -282,15 +282,18 @@ jamf_cli:
 # Workbook sheet selection (optional)
 # ---------------------------------------------------------------------------
 sheets:
-  # only, skip and order apply to every workbook the app writes: the Jamf Pro
-  # tabs, the CSV tabs (custom EA tabs included), the Charts tab, and the tabs
-  # of a Jamf School workbook. The report template picks its sheets first;
-  # these lists work on what it picked, so only never adds a sheet the
-  # template left out. Names match the tab label, case-insensitively, and a
-  # name that matches no tab is ignored.
+  # only, skip and order apply to every report workbook: the Jamf Pro tabs,
+  # the CSV tabs (custom EA tabs included), the Charts tab, and the tabs of a
+  # Jamf School workbook. The period and fleet workbooks do not read them.
+  # The report template picks its sheets first; these lists work on what it
+  # picked, so only never adds a sheet the template left out. Names match the
+  # tab label, case-insensitively, and a name that matches no tab is ignored.
 
-  # When non-empty, only the named workbook tabs are written. A tab named in
-  # both only and skip is not written: skip is applied first.
+  # When non-empty, only the named workbook tabs are written, the Charts tab
+  # included: list "Charts" to keep it. A tab named in both only and skip is
+  # not written: skip is applied first. An only list that names no tab of the
+  # workbook is ignored as a whole, with a warning in the run log, so a typo
+  # never leaves a workbook empty.
   #
   # Example:
   #   only:

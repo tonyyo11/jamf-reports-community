@@ -336,6 +336,21 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         XCTAssertEqual(try rows("sheets:\n  skip: [Cover, charts]\n"), [], "a Jamf Pro profile")
     }
 
+    func testAnOnlyListThatMatchesNoSheetIsStatedAsIgnoredWhole() throws {
+        XCTAssertEqual(
+            detail(try rows("sheets:\n  only: [Patch Complience, Fleet Overveiw]\n"),
+                   "sheets.only"),
+            "\"Patch Complience\", \"Fleet Overveiw\" match no sheet, so the app ignores the "
+                + "whole only list and says so in the run log.")
+        XCTAssertEqual(
+            detail(try rows("sheets:\n  only: [Covr]\n"), "sheets.only"),
+            "\"Covr\" matches no sheet, so the app ignores the whole only list and says so in "
+                + "the run log.")
+        XCTAssertEqual(
+            detail(try rows("sheets:\n  skip: [Covr]\n"), "sheets.skip"),
+            "\"Covr\" matches no sheet, so the app ignores it.", "skip has no whole-list rule")
+    }
+
     /// Pins the comment in config.example.yaml: skip is applied before only.
     func testASheetListedInBothOnlyAndSkipIsRemoved() {
         let sheets = SheetsConfig(only: ["A", "B"], skip: ["a"], order: nil)

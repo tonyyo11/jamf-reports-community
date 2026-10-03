@@ -197,8 +197,12 @@ extension ConfigDoctorService {
         return lists.compactMap { key, names in
             let unmatched = (names ?? []).filter { !known.contains($0.lowercased()) }
             guard !unmatched.isEmpty else { return nil }
-            return valueRow("sheets.\(key)",
-                            "\(listed(unmatched)) matches no sheet, so the app ignores it.",
+            // `ReportEngine.sheetSettings` drops an only list that matches no tab.
+            let detail = key == "only" && unmatched.count == names?.count
+                ? "\(listed(unmatched)) \(unmatched.count == 1 ? "matches" : "match") no sheet, "
+                    + "so the app ignores the whole only list and says so in the run log."
+                : "\(listed(unmatched)) matches no sheet, so the app ignores it."
+            return valueRow("sheets.\(key)", detail,
                             "Names are matched against the tab names, ignoring case.")
         }
     }

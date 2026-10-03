@@ -731,7 +731,8 @@ final class CLIBridge {
                 config: config,
                 csvURL: csvURL,
                 dataDir: dataDir,
-                outputURL: outputURL
+                outputURL: outputURL,
+                onLine: onLine
             )
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
