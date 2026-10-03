@@ -1444,11 +1444,17 @@ extension FleetInsightInput {
         guard !ranked.isEmpty else { return nil }
         let words = [("critical", "critical"), ("warning", "warnings"),
                      ("informational", "informational")]
-        let text = ranked.map { tally in
+        let entries = ranked.map { tally in
             let parts = zip(tally.counts, words).filter { $0.0 > 0 }
                 .map { "\($0.0) \($0.0 == 1 ? $0.1.0 : $0.1.1)" }
             return "\(tally.name) (\(parts.joined(separator: ", ")))"
-        }.joined(separator: "; ")
+        }
+        // Whole categories while they fit the field; a first one too long alone is cut.
+        var text = entries[0]
+        for entry in entries.dropFirst() {
+            guard text.count + 2 + entry.count <= FleetInsightInput.fieldLimit else { break }
+            text += "; " + entry
+        }
         return Fact(label: "Categories to work first, in order", value: .text(text),
                     prior: nil, polarity: .neutral)
     }

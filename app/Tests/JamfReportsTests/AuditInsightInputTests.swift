@@ -103,6 +103,20 @@ final class AuditInsightInputTests: XCTestCase {
         XCTAssertFalse(context.contains("warning): 0"))
     }
 
+    /// A field holds 200 characters; five categories with all three severities run past it,
+    /// so the line keeps the categories that fit whole rather than one cut mid-entry.
+    func testTheCategoryLineKeepsWholeCategoriesWithinTheFieldLimit() {
+        let names = ["security", "networking", "inventory", "configuration", "compliance"]
+        let findings = names.flatMap { name in
+            ["CRITICAL", "WARNING", "INFO"].map { finding("\(name) \($0)", name, $0, affected: 1) }
+        }
+        let every = " (1 critical, 1 warning, 1 informational)"
+        let line = lines(FleetInsightInput.audit(findings: findings, drift: nil))
+            .first { $0.hasPrefix("- Categories to work first") }
+        XCTAssertEqual(line, "- Categories to work first, in order: compliance\(every); "
+            + "configuration\(every); inventory\(every)")
+    }
+
     func testSeverityIsCaseInsensitiveAndOtherValuesAreInformational() {
         let input = FleetInsightInput.audit(findings: [
             finding("A check", "platform", "critical", affected: 4),
