@@ -174,7 +174,26 @@ final class DeviceSecurityStateTests: XCTestCase {
                        "FileVault 0/1 and the firewall off")
         XCTAssertTrue(riskFactors(records[1]).contains(.noFileVault))
         XCTAssertEqual(records[0].fileVaultEnabled, true)
-        XCTAssertEqual(snapshot(records).fileVaultPercent, 75, accuracy: 0.01)
+        XCTAssertEqual(snapshot(records).fileVaultPercent, 75)
+    }
+
+    /// The share is over Macs whose FileVault value reads as on or off: a value that says
+    /// neither is left out, not counted as not encrypted, and with no reading at all the
+    /// share is unknown rather than 0%.
+    func testTheFileVaultShareCountsOnlyMacsWithAReading() {
+        var on = record(allControls: "Enabled")
+        on.fileVault = "ENCRYPTED"
+        var off = record(allControls: "Enabled")
+        off.fileVault = "UNENCRYPTED"
+        var encrypting = record(allControls: "Enabled")
+        encrypting.fileVault = "ENCRYPTING"
+        var unknown = record(allControls: "Enabled")
+        unknown.fileVault = "Not Collected"
+        XCTAssertEqual(snapshot([on, off, encrypting, unknown]).fileVaultPercent, 50)
+        XCTAssertNil(snapshot([encrypting, unknown]).fileVaultPercent)
+        XCTAssertNil(snapshot([]).fileVaultPercent)
+        XCTAssertEqual(DevicesView.fileVaultTileValue(nil), "—")
+        XCTAssertEqual(DevicesView.fileVaultTileValue(66.6), "67%")
     }
 
     /// The phrase contains "Encrypted", which used to count it as encrypted.
@@ -182,7 +201,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         var record = record(allControls: "Enabled")
         record.fileVault = "No Partitions Encrypted"
         XCTAssertEqual(record.fileVaultEnabled, false)
-        XCTAssertEqual(snapshot([record]).fileVaultPercent, 0, accuracy: 0.01)
+        XCTAssertEqual(snapshot([record]).fileVaultPercent, 0)
         XCTAssertEqual(record.securityGapCount(policy: .default), 1)
         XCTAssertEqual(riskFactors(record), [.noFileVault])
     }
@@ -462,7 +481,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         fleet.securityPolicy = hardwareWarning
         XCTAssertEqual(fleet.securityGapCount, 1)
         XCTAssertEqual(fleet.fileVaultOffHardwareEncryptedCount, 1)
-        XCTAssertEqual(fleet.fileVaultPercent, 0, accuracy: 0.01)
+        XCTAssertEqual(fleet.fileVaultPercent, 0)
     }
 
     /// The workspace's policy reaches the snapshot and the risk order: with the rule the

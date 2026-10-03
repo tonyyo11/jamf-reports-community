@@ -375,9 +375,15 @@ struct DevicesView: View {
                      sub: "\(staleDays)+ days since contact")
             StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
-            StatTile(label: "FileVault", value: "\(Int(activeSnapshot.fileVaultPercent.rounded()))%",
+            StatTile(label: "FileVault",
+                     value: Self.fileVaultTileValue(activeSnapshot.fileVaultPercent),
                      sub: fileVaultTileSub)
         }
+    }
+
+    /// "—" when no Mac's FileVault value reads as on or off.
+    nonisolated static func fileVaultTileValue(_ percent: Double?) -> String {
+        percent.map { "\(Int($0.rounded()))%" } ?? "—"
     }
 
     /// Macs the hardware rule took out of the gaps are named, so the share and the gap

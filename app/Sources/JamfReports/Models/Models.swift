@@ -591,11 +591,12 @@ struct DeviceInventorySnapshot: Sendable {
         }.count
     }
 
-    var fileVaultPercent: Double {
-        let known = devices.filter { !$0.fileVault.isEmpty }
-        guard !known.isEmpty else { return 0 }
-        let encrypted = known.filter { $0.fileVaultEnabled == true }.count
-        return Double(encrypted) / Double(known.count) * 100
+    /// The share of Macs whose FileVault value reads as on, over those whose value reads as
+    /// on or off; nil when none does, so no reading shows as unknown rather than 0%.
+    var fileVaultPercent: Double? {
+        let readings = devices.compactMap(\.fileVaultEnabled)
+        guard !readings.isEmpty else { return nil }
+        return Double(readings.filter { $0 }.count) / Double(readings.count) * 100
     }
 
     var osDistribution: [DeviceOSSummary] {

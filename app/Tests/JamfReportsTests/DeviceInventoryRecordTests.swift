@@ -147,7 +147,7 @@ final class DeviceInventoryRecordTests: XCTestCase {
         XCTAssertEqual(good.securityGapCount(policy: .default), 0)
     }
 
-    func testFileVaultPercentReflectsRealFleetSplitNotAllOrNothing() {
+    func testFileVaultPercentReflectsRealFleetSplitNotAllOrNothing() throws {
         // Regression for the 101-device fleet (100 ALL_ENCRYPTED, 1 NOT_ENCRYPTED)
         // that previously rounded to a false 100%/0-gap reading.
         var devices: [DeviceInventoryRecord] = (0..<100).map { goodDevice(id: "serial:good\($0)") }
@@ -165,7 +165,8 @@ final class DeviceInventoryRecordTests: XCTestCase {
             isDemo: false
         )
 
-        XCTAssertEqual(snapshot.fileVaultPercent, 100.0 * 100.0 / 101.0, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(snapshot.fileVaultPercent), 100.0 * 100.0 / 101.0,
+                       accuracy: 0.01)
         XCTAssertEqual(snapshot.securityGapCount, 1)
     }
 
