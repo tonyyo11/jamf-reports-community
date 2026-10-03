@@ -88,6 +88,24 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
         }
     }
 
+    /// config.example.yaml documents the block in comments, which a rewrite of the block does
+    /// not keep: the save keeps a copy of the file that holds them.
+    func testASaveThatDropsTheBlocksCommentsKeepsACopy() throws {
+        try withWorkspacesRoot {
+            let typed = "security_policy:\n  # what counts as a gap\n  controls:\n    sip: fail\n"
+            try write(typed)
+
+            let saved = try SecurityPolicyConfigWriter.save(
+                .level(.warning, for: .sip), profile: profile)
+
+            XCTAssertTrue(saved.report.droppedComments)
+            let name = try XCTUnwrap(saved.report.backupName)
+            let copy = try configURL().deletingLastPathComponent().appendingPathComponent(name)
+            XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), typed)
+            XCTAssertEqual(try readBack(), "security_policy:\n  controls:\n    sip: warning\n")
+        }
+    }
+
     // MARK: - What a save keeps
 
     func testSaveKeepsNotifyChartsAndTheOtherSecurityPolicyKeys() throws {
@@ -785,6 +803,64 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
 
             try store.saveHardwareLevel(nil)
             XCTAssertNil(store.securityPolicy.fileVaultOffHardwareEncrypted)
+        }
+    }
+
+    /// The Scoring tab sits on the Config screen: its writes are the screen's own, so the
+    /// screen's Save that follows must not read them as config.yaml changing on disk.
+    func testTheConfigSaveAfterAScoringTabWriteSucceedsAndKeepsIt() async throws {
+        try await withPolicyWorkspacesRoot {
+            _ = try writePolicyConfig(
+                "columns:\n  serial_number: \"Serial Number\"\n", profile: "policy-store-cs")
+            let store = policyTestStore(demo: false, profile: "policy-store-cs")
+            try await store.loadConfig()
+
+            try store.saveSecurityLevel(.warning, for: .sip)
+            try store.saveScoreWeights(.defaultWeights)
+            store.configState.staleDeviceDays = "45"
+            try await store.saveConfig()
+
+            let saved = SecurityPolicyConfigLoader.load(profile: "policy-store-cs")
+            XCTAssertEqual(saved.sip, .warning)
+            XCTAssertEqual(saved.scoreWeights, .defaultWeights)
+            try await store.loadConfig()
+            XCTAssertEqual(store.configState.staleDeviceDays, "45")
+        }
+    }
+
+    /// A file that has no config.yaml yet: the Scoring tab's write creates it.
+    func testTheConfigSaveAfterAScoringTabWriteThatCreatedTheFileSucceeds() async throws {
+        try await withPolicyWorkspacesRoot {
+            let store = policyTestStore(demo: false, profile: "policy-store-cn")
+            try await store.loadConfig()
+
+            try store.saveSecurityLevel(.ignore, for: .firewall)
+            try await store.saveConfig()
+
+            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: "policy-store-cn").firewall,
+                           .ignore)
+        }
+    }
+
+    /// A change made outside the app before the Scoring tab's write is still one the
+    /// Config screen's Save must not write over.
+    func testAnOutsideEditBeforeAScoringTabWriteStillStopsTheConfigSave() async throws {
+        try await withPolicyWorkspacesRoot {
+            let url = try writePolicyConfig(
+                "columns:\n  serial_number: \"Serial Number\"\n", profile: "policy-store-oe")
+            let store = policyTestStore(demo: false, profile: "policy-store-oe")
+            try await store.loadConfig()
+            try "columns:\n  serial_number: \"Serial\"\nthresholds:\n  stale_device_days: 9\n"
+                .write(to: url, atomically: true, encoding: .utf8)
+
+            try store.saveSecurityLevel(.warning, for: .sip)
+
+            do {
+                try await store.saveConfig()
+                XCTFail("the outside edit must stop the save")
+            } catch ConfigService.ConfigError.changedOnDisk {}
+            XCTAssertTrue(try String(contentsOf: url, encoding: .utf8)
+                .contains("stale_device_days: 9"))
         }
     }
 }

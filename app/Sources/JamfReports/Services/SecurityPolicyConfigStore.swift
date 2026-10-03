@@ -205,40 +205,16 @@ enum SecurityPolicyConfigWriter {
     private static let hardwareKey = "filevault_off_hardware_encrypted"
     private static let weightsKey = "score_weights"
 
-    static func save(_ setting: Setting, profile: String) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            throw WriteError.invalidProfile(profile)
+    @discardableResult
+    static func save(
+        _ setting: Setting, profile: String
+    ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
+        guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
+        return try ConfigService.saveBlock(key: blockKey, profile: profile) { root in
+            var block = lastValue(of: blockKey, in: root)?.mapping ?? .init(entries: [])
+            apply(setting, to: &block)
+            assign(.mapping(block), to: blockKey, in: &root)
         }
-        let manager = FileManager.default
-        try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let configURL = workspace.appendingPathComponent("config.yaml")
-
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: configURL.path) {
-            document = try YAMLCodec.decode(String(contentsOf: configURL, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
-        // `decode` and `emptyDocument` yield a mapping, so this is not a reachable failure.
-        guard case .mapping(var root) = document.root else {
-            throw YAMLCodec.CodecError.invalidTopLevel
-        }
-
-        let existing = lastValue(of: blockKey, in: root)?.mapping ?? .init(entries: [])
-        var block = existing
-        apply(setting, to: &block)
-        // Nothing to write: leave the file, and any comments in the block, as it is.
-        guard block != existing else { return }
-        assign(.mapping(block), to: blockKey, in: &root)
-        document.root = .mapping(root)
-
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: [blockKey])
-        let tempURL = workspace.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: configURL.path) {
-            manager.createFile(atPath: configURL.path, contents: Data())
-        }
-        _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
     }
 
     /// Sets `setting` on the `security_policy` block. Internal so `ConfigEditedKeys` can read

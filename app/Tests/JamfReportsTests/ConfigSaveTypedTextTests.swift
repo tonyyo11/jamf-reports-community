@@ -239,6 +239,104 @@ final class ConfigSaveTypedTextTests: XCTestCase {
                        "output:\n  output_dir: B\n\t# typed with a tab\nhtml:\n  x: 1\n")
     }
 
+    // MARK: A scoped writer's block
+
+    private func saveNotify(
+        enabled: Bool, root: URL
+    ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
+        try ConfigService.saveBlock(key: "notify", profile: Self.profile, workspaceRoot: root) {
+            NotifyConfigWriter.apply(
+                enabled: enabled, provider: "teams", url: "", detail: "full", to: &$0)
+        }
+    }
+
+    /// The four scoped writers (charts, notify, ai, security_policy) used to drop a block's
+    /// comments with no copy; config.example.yaml documents each block in comments.
+    func testAScopedWriteThatDropsACommentKeepsACopyAndEveryOtherLine() throws {
+        let typed = "columns:\n  computer_name: Name  # mine\nnotify:\n  # the team channel\n"
+            + "  enabled: false\n  provider: teams\n  url: \"\"\n  detail: full\n"
+        let (root, url) = try workspace(with: typed)
+
+        let saved = try saveNotify(enabled: true, root: root)
+
+        XCTAssertTrue(saved.report.droppedComments)
+        let name = try XCTUnwrap(saved.report.backupName)
+        let copy = url.deletingLastPathComponent().appendingPathComponent(name)
+        XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), typed)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.hasPrefix("columns:\n  computer_name: Name  # mine\nnotify:\n"), text)
+        XCTAssertTrue(text.contains("  enabled: true\n"), text)
+        XCTAssertFalse(text.contains("# the team channel"), text)
+        XCTAssertTrue(saved.stamp.matches(url), "the stamp is the file as written")
+    }
+
+    func testAScopedWriteThatDropsAnUnreadLineKeepsACopy() throws {
+        let (root, _) = try workspace(with: "notify:\n  enabled: false\n  just some words\n")
+        let saved = try saveNotify(enabled: true, root: root)
+        XCTAssertTrue(saved.report.droppedUnreadLines)
+        XCTAssertNotNil(saved.report.backupName)
+    }
+
+    /// Nothing changes, so nothing is written: the comments stay and no copy is made.
+    func testAScopedWriteOfWhatTheFileHoldsWritesNothing() throws {
+        let typed = "notify:\n  # the team channel\n  enabled: false\n  provider: teams\n"
+            + "  url: \"\"\n  detail: full\n"
+        let (root, url) = try workspace(with: typed)
+
+        let saved = try saveNotify(enabled: false, root: root)
+
+        XCTAssertEqual(saved.report, ConfigSaveReport())
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), typed)
+        XCTAssertEqual(try backups(beside: url), [])
+        XCTAssertTrue(saved.stamp.matches(url))
+    }
+
+    /// Like `custom_eas` typed as a mapping for the Config screen: a block typed as a single
+    /// value is left as typed, and the error says so.
+    func testAScopedWriteLeavesABlockTypedAsAValueAsTyped() throws {
+        let typed = "security_policy: strict\nnotify: [teams]\n"
+        let (root, url) = try workspace(with: typed)
+
+        for key in ["security_policy", "notify"] {
+            XCTAssertThrowsError(try ConfigService.saveBlock(
+                key: key, profile: Self.profile, workspaceRoot: root
+            ) { $0.set(key, value: .mapping(.init(entries: []))) }) { error in
+                guard case ConfigService.ConfigError.notASettingsBlock(key) = error else {
+                    return XCTFail("expected notASettingsBlock(\(key)), got \(error)")
+                }
+                XCTAssertTrue(error.localizedDescription.hasPrefix(
+                    "\(key) in config.yaml is not a set of settings"), "\(error)")
+            }
+        }
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), typed)
+    }
+
+    func testAScopedWriteToAnEmptyBlockOrNoFileWrites() throws {
+        let (root, url) = try workspace(with: "notify:\n")
+        _ = try saveNotify(enabled: true, root: root)
+        XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("  enabled: true\n"))
+
+        try FileManager.default.removeItem(at: url)
+        let saved = try saveNotify(enabled: true, root: root)
+        XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).hasPrefix("notify:\n"))
+        XCTAssertTrue(saved.stamp.matches(url))
+    }
+
+    func testAScopedWriteRefusesASymlinkedConfig() throws {
+        let (root, url) = try workspace(with: "notify:\n  enabled: false\n")
+        let target = url.deletingLastPathComponent().appendingPathComponent("elsewhere.yaml")
+        try FileManager.default.moveItem(at: url, to: target)
+        try FileManager.default.createSymbolicLink(at: url, withDestinationURL: target)
+
+        XCTAssertThrowsError(try saveNotify(enabled: true, root: root)) { error in
+            guard case ConfigService.ConfigError.symlinkDestination = error else {
+                return XCTFail("expected symlinkDestination, got \(error)")
+            }
+        }
+        XCTAssertEqual(try String(contentsOf: target, encoding: .utf8),
+                       "notify:\n  enabled: false\n")
+    }
+
     // MARK: Helpers
 
     private static let profile = "typed-text"

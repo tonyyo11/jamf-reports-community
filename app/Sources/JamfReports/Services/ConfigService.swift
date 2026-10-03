@@ -258,6 +258,8 @@ enum ConfigService {
         case credentialKey(String)
         case invalidTopLevel
         case changedOnDisk
+        /// A scoped writer's block typed as a single value or a list.
+        case notASettingsBlock(String)
 
         var errorDescription: String? {
             switch self {
@@ -268,6 +270,10 @@ enum ConfigService {
             case .credentialKey(let key): "Refusing to load credential-shaped key: \(key)"
             case .invalidTopLevel: "config.yaml must contain a top-level mapping."
             case .changedOnDisk: "config.yaml changed on disk since this screen loaded it."
+            case .notASettingsBlock(let key):
+                "\(key) in config.yaml is not a set of settings, so it was left as typed and "
+                    + "nothing was written. Write its settings indented under \"\(key):\", "
+                    + "or remove that line."
             }
         }
     }
@@ -328,6 +334,63 @@ enum ConfigService {
         var report = ConfigSaveReport(keptBlocks: nonListBlocks(in: document.root))
         let keys = managedTopLevelKeys.subtracting(report.keptBlocks)
         apply(state: state, to: &document)
+        try backUpDropped(from: document, rewriting: keys, at: url, into: &report)
+        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: keys)
+        let writtenStamp = try replace(url, with: encoded)
+
+        let written = try YAMLCodec.decode(encoded)
+        return SavedConfig(
+            document: written, state: Self.state(from: written), stamp: writtenStamp,
+            report: report)
+    }
+
+    /// Writes the one top-level block a scoped writer owns (`charts`, `notify`, `ai`,
+    /// `security_policy`) from what the file holds now; `apply` edits the root and every other
+    /// line stays as typed. Like `save`, it refuses a symlink and credential-shaped keys and
+    /// keeps a copy of the file when the rewritten block held a comment or an unread line.
+    /// Writes nothing when `apply` leaves the block's settings as they were. A block typed as
+    /// something other than settings is left as typed: `notASettingsBlock` is thrown. Returns
+    /// the file's stamp afterwards, for a screen that loaded the file to adopt the write.
+    static func saveBlock(
+        key: String, profile: String, workspaceRoot: URL? = nil,
+        apply: (inout YAMLCodec.YAMLMapping) -> Void
+    ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
+        let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
+        try rejectSymlinkDestination(url)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        var stamp = ConfigFileStamp.of(url)
+        var document = YAMLCodec.emptyDocument()
+        if FileManager.default.fileExists(atPath: url.path) {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            stamp.digest = ConfigFileStamp.digest(text)
+            document = try YAMLCodec.decode(text)
+            try rejectCredentialKeys(in: document.root)
+        }
+        guard case .mapping(var root) = document.root else { throw ConfigError.invalidTopLevel }
+        let before = root.value(for: key)
+        if let before, before.mapping == nil, before != .scalar(.null) {
+            throw ConfigError.notASettingsBlock(key)
+        }
+        apply(&root)
+        let empty = YAMLCodec.YAMLMapping(entries: [])
+        guard (root.value(for: key)?.mapping ?? empty) != (before?.mapping ?? empty) else {
+            return (stamp, ConfigSaveReport())
+        }
+        document.root = .mapping(root)
+        var report = ConfigSaveReport()
+        try backUpDropped(from: document, rewriting: [key], at: url, into: &report)
+        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: [key])
+        return (try replace(url, with: encoded), report)
+    }
+
+    /// Records what rewriting `keys` drops from the file `document` was read from (comments,
+    /// lines the reader did not read), and copies the file first when it drops any.
+    private static func backUpDropped(
+        from document: YAMLCodec.YAMLDocument, rewriting keys: Set<String>, at url: URL,
+        into report: inout ConfigSaveReport
+    ) throws {
         let rewritten = YAMLCodec.replacedLines(document, replacingTopLevelKeys: keys)
         report.droppedComments = YAMLCodec.hasComment(document, onLines: rewritten)
         report.droppedUnreadLines = document.parseNotes.contains { note in
@@ -336,21 +399,22 @@ enum ConfigService {
         if report.droppedComments || report.droppedUnreadLines {
             report.backupName = try backUp(url)?.lastPathComponent
         }
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: keys)
+    }
 
-        let tempURL = directory.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
+    /// Replaces the file at `url` with `encoded` through a temporary file beside it, and
+    /// returns the stamp of what was written.
+    private static func replace(_ url: URL, with encoded: String) throws -> ConfigFileStamp {
+        let manager = FileManager.default
+        let tempURL = url.deletingLastPathComponent()
+            .appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
         try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
         if !manager.fileExists(atPath: url.path) {
             manager.createFile(atPath: url.path, contents: Data())
         }
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
-
-        let written = try YAMLCodec.decode(encoded)
-        var writtenStamp = ConfigFileStamp.of(url)
-        writtenStamp.digest = ConfigFileStamp.digest(encoded)
-        return SavedConfig(
-            document: written, state: Self.state(from: written), stamp: writtenStamp,
-            report: report)
+        var stamp = ConfigFileStamp.of(url)
+        stamp.digest = ConfigFileStamp.digest(encoded)
+        return stamp
     }
 
     /// The list blocks whose value is a mapping or a scalar other than null.

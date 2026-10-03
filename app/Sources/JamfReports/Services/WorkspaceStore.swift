@@ -786,7 +786,13 @@ final class WorkspaceStore {
         adopt: (inout SecurityControlPolicy) -> Void
     ) throws {
         guard !demoMode else { return }
-        try SecurityPolicyConfigWriter.save(setting, profile: profile)
+        // The Scoring tab is on the Config screen, whose Save compares config.yaml with the
+        // stamp it loaded: this write is the screen's own, so the stamp moves with it. A file
+        // that had already changed on disk keeps the old stamp, so that Save still refuses.
+        let loadedWasCurrent = (try? ConfigService.configURL(for: profile))
+            .map { _loadedStamp?.matches($0) ?? false } ?? false
+        let written = try SecurityPolicyConfigWriter.save(setting, profile: profile)
+        if loadedWasCurrent { _loadedStamp = written.stamp }
         adopt(&securityPolicy)
         securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
     }

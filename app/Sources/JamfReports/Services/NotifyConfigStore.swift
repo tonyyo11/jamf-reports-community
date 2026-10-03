@@ -23,20 +23,16 @@ enum NotifyConfigLoader {
 /// screen's Notifications panel. Deliberately NOT routed through
 /// `ConfigService.save`/`managedTopLevelKeys` — that surface round-trips a fixed
 /// key list for the full Config tab editor, and adding `notify` there would put
-/// this block under that save contract. `YAMLCodec.encode(replacingTopLevelKeys:
-/// ["notify"])` rewrites only the `notify:` top-level block; every other key
-/// (managed or not) is preserved verbatim, same atomic-write discipline as
-/// `ConfigService.save` and `AIConfigWriter`.
+/// this block under that save contract. `ConfigService.saveBlock` rewrites only
+/// the `notify:` top-level block; every other key (managed or not) is preserved
+/// verbatim.
 enum NotifyConfigWriter {
     enum WriteError: Error, LocalizedError {
         case invalidProfile(String)
-        case invalidDocumentRoot
 
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile): "Invalid profile name: \(profile)"
-            case .invalidDocumentRoot:
-                "config.yaml's YAML root is not a mapping — cannot save the notify block."
             }
         }
     }
@@ -58,36 +54,14 @@ enum NotifyConfigWriter {
     /// Persist the four `notify:` fields. No validation beyond the trim in `apply` —
     /// `NotifyConfig.isUsable` gates every send path, so an empty or non-https URL simply
     /// produces a disabled block.
+    @discardableResult
     static func save(
         enabled: Bool, provider: String, url: String, detail: String, profile: String
-    ) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            throw WriteError.invalidProfile(profile)
+    ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
+        guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
+        return try ConfigService.saveBlock(key: "notify", profile: profile) {
+            apply(enabled: enabled, provider: provider, url: url, detail: detail, to: &$0)
         }
-        let manager = FileManager.default
-        try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let configURL = workspace.appendingPathComponent("config.yaml")
-
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: configURL.path) {
-            document = try YAMLCodec.decode(String(contentsOf: configURL, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
-
-        guard case .mapping(var root) = document.root else {
-            throw WriteError.invalidDocumentRoot
-        }
-        apply(enabled: enabled, provider: provider, url: url, detail: detail, to: &root)
-        document.root = .mapping(root)
-
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["notify"])
-        let tempURL = workspace.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: configURL.path) {
-            manager.createFile(atPath: configURL.path, contents: Data())
-        }
-        _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
     }
 
     /// Pure predicate behind the inline "URL must start with https://" caption:

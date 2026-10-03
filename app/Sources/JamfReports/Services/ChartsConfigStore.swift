@@ -46,13 +46,10 @@ enum ChartsConfigLoader {
 enum ChartsConfigWriter {
     enum WriteError: Error, LocalizedError {
         case invalidProfile(String)
-        case invalidDocumentRoot
 
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile): "Invalid profile name: \(profile)"
-            case .invalidDocumentRoot:
-                "config.yaml's YAML root is not a mapping — cannot save chart options."
             }
         }
     }
@@ -69,34 +66,13 @@ enum ChartsConfigWriter {
         root.set("charts", value: .mapping(charts))
     }
 
-    static func save(_ options: ChartsOptions, profile: String) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            throw WriteError.invalidProfile(profile)
+    @discardableResult
+    static func save(
+        _ options: ChartsOptions, profile: String
+    ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
+        guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
+        return try ConfigService.saveBlock(key: "charts", profile: profile) {
+            apply(options, to: &$0)
         }
-        let manager = FileManager.default
-        try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let configURL = workspace.appendingPathComponent("config.yaml")
-
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: configURL.path) {
-            document = try YAMLCodec.decode(String(contentsOf: configURL, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
-
-        guard case .mapping(var root) = document.root else {
-            throw WriteError.invalidDocumentRoot
-        }
-
-        apply(options, to: &root)
-        document.root = .mapping(root)
-
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["charts"])
-        let tempURL = workspace.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: configURL.path) {
-            manager.createFile(atPath: configURL.path, contents: Data())
-        }
-        _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
     }
 }
