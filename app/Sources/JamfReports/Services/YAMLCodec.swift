@@ -257,10 +257,10 @@ enum YAMLCodec {
         return end
     }
 
+    /// A tab-led line is not: the reader counts spaces only, so it reads at column 0.
     private static func isBlockText(_ line: String) -> Bool {
         if line.hasPrefix("- ") || line == "-" { return true }
-        guard line.first == " " || line.first == "\t" else { return false }
-        return !line.trimmingCharacters(in: .whitespaces).isEmpty
+        return line.first == " " && !line.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private static func emitTopLevel(key: String, value: YAMLValue) -> [String] {

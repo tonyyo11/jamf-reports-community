@@ -225,6 +225,20 @@ final class ConfigSaveTypedTextTests: XCTestCase {
             atPath: url.deletingLastPathComponent().path), [])
     }
 
+    /// The reader reads a tab-led line at column 0, so a tab-led comment after a block is
+    /// not the block's.
+    func testATabLedCommentAfterABlockIsKept() throws {
+        var document = try YAMLCodec.decode(
+            "output:\n  output_dir: A\n\t# typed with a tab\nhtml:\n  x: 1\n")
+        var root = try XCTUnwrap(document.root.mapping)
+        root.set("output", value: .mapping(.init(entries: [
+            .init(key: "output_dir", value: .scalar(.string("B"))),
+        ])))
+        document.root = .mapping(root)
+        XCTAssertEqual(try YAMLCodec.encode(document, replacingTopLevelKeys: ["output"]),
+                       "output:\n  output_dir: B\n\t# typed with a tab\nhtml:\n  x: 1\n")
+    }
+
     // MARK: Helpers
 
     private static let profile = "typed-text"
@@ -253,8 +267,8 @@ final class ConfigSaveTypedTextTests: XCTestCase {
             return String(line[..<colon])
         }
         func isBlockText(_ line: String) -> Bool {
-            line.hasPrefix("- ") || line == "-" || ((line.first == " " || line.first == "\t")
-                && !line.trimmingCharacters(in: .whitespaces).isEmpty)
+            line.hasPrefix("- ") || line == "-"
+                || (line.first == " " && !line.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         var inBlock = Set<Int>()
         for (start, line) in lines.enumerated() {
