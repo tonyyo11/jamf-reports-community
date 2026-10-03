@@ -58,6 +58,18 @@ final class ConfigViewReaderCardTests: XCTestCase {
         ])
     }
 
+    func testASaveThatDroppedCommentsNamesTheCopy() throws {
+        var report = ConfigSaveReport(droppedComments: true)
+        XCTAssertNil(ConfigView.saveNotice(changedOnDisk: false, report: report),
+                     "no copy, nothing to point at")
+        report.backupName = "config.yaml.bak-20261002-101500"
+        let notice = try XCTUnwrap(ConfigView.saveNotice(changedOnDisk: false, report: report))
+        XCTAssertEqual(notice.lines, [
+            "Comments inside the blocks this screen edits are not kept. A copy of the file as "
+                + "it was is at config.yaml.bak-20261002-101500.",
+        ])
+    }
+
     func testARefusedSaveSaysWhyAndWhatReloadDiscards() throws {
         XCTAssertNil(ConfigView.saveNotice(changedOnDisk: false, report: nil))
         let notice = try XCTUnwrap(ConfigView.saveNotice(changedOnDisk: true, report: nil))

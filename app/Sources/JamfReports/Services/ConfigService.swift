@@ -177,6 +177,10 @@ struct ConfigSaveReport: Equatable, Sendable {
     /// `custom_eas`/`security_agents` left as typed: the value is not a list, so the editor
     /// read no entries from it and would have written its own list over it.
     var keptBlocks: [String] = []
+    /// A block the save rewrote held a `#` comment, which the rewrite does not keep.
+    var droppedComments = false
+    /// The copy of the file made, once per launch, before a save that dropped any of it.
+    var backupName: String?
 }
 
 /// A config file's modification date and size. Both nil when there is no file.
@@ -271,10 +275,15 @@ enum ConfigService {
         }
 
         try rejectCredentialKeys(in: document.root)
-        let report = ConfigSaveReport(keptBlocks: nonListBlocks(in: document.root))
+        var report = ConfigSaveReport(keptBlocks: nonListBlocks(in: document.root))
+        let keys = managedTopLevelKeys.subtracting(report.keptBlocks)
         apply(state: state, to: &document)
-        let encoded = try YAMLCodec.encode(
-            document, replacingTopLevelKeys: managedTopLevelKeys.subtracting(report.keptBlocks))
+        let rewritten = YAMLCodec.replacedLines(document, replacingTopLevelKeys: keys)
+        report.droppedComments = YAMLCodec.hasComment(document, onLines: rewritten)
+        if report.droppedComments {
+            report.backupName = try launchBackup(of: url)
+        }
+        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: keys)
 
         let tempURL = directory.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
         try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
@@ -284,6 +293,20 @@ enum ConfigService {
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
 
         return SavedConfig(document: try YAMLCodec.decode(encoded), stamp: .of(url), report: report)
+    }
+
+    /// The copy made of each file this launch, by path, before a save that dropped some of it.
+    nonisolated(unsafe) private static var launchBackups: [String: String] = [:]
+    private static let launchBackupsLock = NSLock()
+
+    /// The name of this launch's copy of the file at `url`, made now if there is none yet.
+    private static func launchBackup(of url: URL) throws -> String? {
+        try launchBackupsLock.withLock {
+            if let name = launchBackups[url.path] { return name }
+            let name = try backUp(url)?.lastPathComponent
+            launchBackups[url.path] = name
+            return name
+        }
     }
 
     /// The list blocks whose value is a mapping or a scalar other than null.

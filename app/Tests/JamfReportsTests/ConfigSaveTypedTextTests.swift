@@ -82,6 +82,40 @@ final class ConfigSaveTypedTextTests: XCTestCase {
         }
     }
 
+    // MARK: Comments inside a rewritten block
+
+    /// A rewritten block is emitted afresh, so a comment inside it is gone. The first save
+    /// that drops one keeps a copy of the file, once per launch.
+    func testASaveThatDropsACommentInsideABlockKeepsOneCopy() throws {
+        let typed = "columns:\n  # the export's name column\n  computer_name: Name  # mine\n"
+            + "\n# Thresholds\nthresholds:\n  stale_device_days: 30\n"
+        let (root, url) = try workspace(with: typed)
+
+        let first = try saveLoaded(root: root)
+        XCTAssertTrue(first.report.droppedComments)
+        let name = try XCTUnwrap(first.report.backupName)
+        let copy = url.deletingLastPathComponent().appendingPathComponent(name)
+        XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), typed)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(text.contains("# the export's"), text)
+        XCTAssertTrue(text.contains("\n# Thresholds\n"), "a comment between blocks stays")
+
+        try (text + "  # typed later\n").write(to: url, atomically: true, encoding: .utf8)
+        let second = try saveLoaded(root: root)
+        XCTAssertTrue(second.report.droppedComments)
+        XCTAssertEqual(second.report.backupName, name, "one copy per launch")
+        XCTAssertEqual(try backups(beside: url), [name])
+    }
+
+    func testASaveWithNoCommentInsideTheBlocksItRewritesMakesNoCopy() throws {
+        let (root, url) = try workspace(
+            with: "# Columns\ncolumns:\n  computer_name: \"Name # 1\"\n\n# Others\nhtml:\n"
+                + "  # not a block this screen edits\n  track_history: false\n")
+        let saved = try saveLoaded(root: root)
+        XCTAssertEqual(saved.report, ConfigSaveReport())
+        XCTAssertEqual(try backups(beside: url), [])
+    }
+
     // MARK: Backups
 
     func testABackupIsACopyBesideTheFileAndOnlyTheNewestFiveAreKept() throws {
@@ -120,6 +154,19 @@ final class ConfigSaveTypedTextTests: XCTestCase {
     // MARK: Helpers
 
     private static let profile = "typed-text"
+
+    /// Loads the file and saves it back unedited, as a Save with no edits does.
+    private func saveLoaded(root: URL) throws -> SavedConfig {
+        let loaded = try ConfigService.load(profile: Self.profile, workspaceRoot: root)
+        return try ConfigService.save(
+            profile: Self.profile, state: loaded.state, existingDocument: loaded.document,
+            workspaceRoot: root)
+    }
+
+    private func backups(beside url: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
+            .filter { $0.hasPrefix("config.yaml.bak-") }
+    }
 
     /// Blank lines and unindented comments, in order, leaving out those inside the text of the
     /// blocks `keys` names: from the key's line through the block's last indented line.

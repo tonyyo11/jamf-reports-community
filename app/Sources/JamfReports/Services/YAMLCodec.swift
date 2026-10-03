@@ -153,22 +153,15 @@ enum YAMLCodec {
 
         var output: [String] = []
         let lines = document.originalText.components(separatedBy: .newlines)
+        let blocks = replacedBlocks(in: lines, keys: keys, root: root)
         var replaced: Set<String> = []
         var index = 0
-        // Only the last copy of a repeated key is the one read, so only it is rewritten; an
-        // earlier copy stays as typed.
-        var lastLine: [String: Int] = [:]
-        for (offset, line) in lines.enumerated() {
-            if let key = topLevelKey(in: line), keys.contains(key) { lastLine[key] = offset }
-        }
 
         while index < lines.count {
-            if let key = topLevelKey(in: lines[index]),
-               lastLine[key] == index,
-               let value = root.value(for: key) {
-                output.append(contentsOf: emitTopLevel(key: key, value: value))
-                replaced.insert(key)
-                index = endOfTopLevelBlock(in: lines, startingAt: index)
+            if let block = blocks[index], let value = root.value(for: block.key) {
+                output.append(contentsOf: emitTopLevel(key: block.key, value: value))
+                replaced.insert(block.key)
+                index = block.end
             } else {
                 output.append(lines[index])
                 index += 1
@@ -185,6 +178,47 @@ enum YAMLCodec {
         }
 
         return output.joined(separator: "\n") + "\n"
+    }
+
+    /// The lines, counted from 1, that `encode` replaces for `keys`.
+    static func replacedLines(
+        _ document: YAMLDocument, replacingTopLevelKeys keys: Set<String>
+    ) -> [ClosedRange<Int>] {
+        guard case .mapping(let root) = document.root else { return [] }
+        let lines = document.originalText.components(separatedBy: .newlines)
+        return replacedBlocks(in: lines, keys: keys, root: root)
+            .map { ($0.key + 1)...$0.value.end }
+            .sorted { $0.lowerBound < $1.lowerBound }
+    }
+
+    /// Whether any of `ranges` (lines counted from 1) holds a `#` comment, on a line of its own
+    /// or after a value. A replaced block is written afresh, without its comments.
+    static func hasComment(_ document: YAMLDocument, onLines ranges: [ClosedRange<Int>]) -> Bool {
+        let lines = document.originalText.components(separatedBy: .newlines)
+        return ranges.contains { range in
+            range.contains { number in
+                guard number <= lines.count else { return false }
+                let trimmed = lines[number - 1].trimmingCharacters(in: .whitespaces)
+                return stripInlineComment(trimmed) != trimmed
+            }
+        }
+    }
+
+    /// Each key in `keys` that `root` sets, by the line its block starts on (counted from 0),
+    /// with the line after the block. Only the last copy of a repeated key is the one read, so
+    /// only it is rewritten; an earlier copy stays as typed.
+    private static func replacedBlocks(
+        in lines: [String], keys: Set<String>, root: YAMLMapping
+    ) -> [Int: (key: String, end: Int)] {
+        var lastLine: [String: Int] = [:]
+        for (offset, line) in lines.enumerated() {
+            if let key = topLevelKey(in: line), keys.contains(key) { lastLine[key] = offset }
+        }
+        var blocks: [Int: (key: String, end: Int)] = [:]
+        for (key, start) in lastLine where root.value(for: key) != nil {
+            blocks[start] = (key, endOfTopLevelBlock(in: lines, startingAt: start))
+        }
+        return blocks
     }
 
     private static func topLevelKey(in line: String) -> String? {
@@ -357,6 +391,27 @@ enum YAMLCodec {
         }
         return nil
     }
+}
+
+/// `value` up to a `#` that starts a comment (outside quotes, at the start or after a
+/// space), trimmed; `value` unchanged when it has no comment.
+private func stripInlineComment(_ value: String) -> String {
+    var inSingle = false
+    var inDouble = false
+    var previous: Character?
+
+    for index in value.indices {
+        let char = value[index]
+        if char == "'", !inDouble { inSingle.toggle() }
+        if char == "\"", !inSingle, previous != "\\" { inDouble.toggle() }
+        if char == "#", !inSingle, !inDouble {
+            if index == value.startIndex || previous?.isWhitespace == true {
+                return String(value[..<index]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        previous = char
+    }
+    return value
 }
 
 extension YAMLCodec.YAMLValue {
@@ -758,25 +813,6 @@ private struct Parser {
         value
             .replacingOccurrences(of: "\\\"", with: "\"")
             .replacingOccurrences(of: "\\\\", with: "\\")
-    }
-
-    private func stripInlineComment(_ value: String) -> String {
-        var inSingle = false
-        var inDouble = false
-        var previous: Character?
-
-        for index in value.indices {
-            let char = value[index]
-            if char == "'", !inDouble { inSingle.toggle() }
-            if char == "\"", !inSingle, previous != "\\" { inDouble.toggle() }
-            if char == "#", !inSingle, !inDouble {
-                if index == value.startIndex || previous?.isWhitespace == true {
-                    return String(value[..<index]).trimmingCharacters(in: .whitespaces)
-                }
-            }
-            previous = char
-        }
-        return value
     }
 
     private func trimmedContent(_ line: String) -> String {

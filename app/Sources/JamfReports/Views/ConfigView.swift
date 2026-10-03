@@ -278,10 +278,14 @@ struct ConfigView: View {
             )
         }
         let tabs = ["custom_eas": "Custom EAs", "security_agents": "Security Agents"]
-        let lines = (report?.keptBlocks ?? []).map { key in
+        var lines = (report?.keptBlocks ?? []).map { key in
             "Save left \(key) as typed: it is not a list, so this screen reads no entries from "
                 + "it and did not write the \(tabs[key] ?? key) tab. Write each entry as a "
                 + "\"- name:\" list item to edit it here."
+        }
+        if let report, let copy = report.backupName, report.droppedComments {
+            lines.append("Comments inside the blocks this screen edits are not kept. A copy of "
+                + "the file as it was is at \(copy).")
         }
         return lines.isEmpty ? nil : (title: "Saved with notes", lines: lines)
     }
