@@ -100,12 +100,6 @@ struct ReportEngine: Sendable {
             print(msg)
             onLine?(.init(timestamp: Date(), level: .warn, text: msg))
         }
-        if writtenCore.isEmpty {
-            // No cached data at all — not an error if CSV was provided.
-            if csvURL == nil {
-                throw ReportEngineError.noCachedData(dataDir)
-            }
-        }
 
         // CSVDashboard sheets — Swift CSV writers are non-throwing, so there is no
         // failure list here.
@@ -126,6 +120,12 @@ struct ReportEngine: Sendable {
             if let pngDir { createPNGFolder(pngDir) }
             renderChartSheet(workbook: workbook, summariesDir: summariesDir,
                              pngOutputDir: pngDir, profile: profile)
+        }
+        // Nothing to write: no jamf-cli sheet had data, no CSV, and no Charts tab that stays.
+        if writtenCore.isEmpty, csv == nil,
+           workbook.sheet(named: Self.chartsSheetName) == nil
+            || !sheets.keeps(Self.chartsSheetName) {
+            throw ReportEngineError.noCachedData(dataDir)
         }
 
         // The tabs of every writer above, the Charts tab included, as one list.

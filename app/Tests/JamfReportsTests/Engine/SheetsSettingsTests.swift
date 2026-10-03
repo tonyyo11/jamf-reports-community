@@ -159,6 +159,26 @@ final class SheetsSettingsTests: XCTestCase {
         }
     }
 
+    func testOnlyChartsWritesTheChartsTabWhenNoJamfCLISheetHasData() async throws {
+        try await withScratch { scratch in
+            let dataDir = try chartData(in: scratch)
+            for sheets in ["{only: [Charts]}", "{only: [Charts, Fleet Overview]}"] {
+                let run = try await chartRun(scratch, dataDir, savePNG: false, sheets: sheets)
+                XCTAssertEqual(run.tabs, ["Charts"], sheets)
+            }
+            // Nothing to write is still "no cached data": no summaries for this profile, or a
+            // Charts tab the lists then drop.
+            for (profile, sheets) in [("empty", "{only: [Charts]}"),
+                                      ("charts", "{only: [Fleet Overview]}")] {
+                do {
+                    _ = try await chartRun(scratch, dataDir, savePNG: true, sheets: sheets,
+                                           profile: profile)
+                    XCTFail("\(profile) \(sheets): expected noCachedData")
+                } catch ReportEngineError.noCachedData {}
+            }
+        }
+    }
+
     func testChartPNGsReachAnOutputFolderThatDoesNotExistYet() async throws {
         try await withScratch { scratch in
             let run = try await chartRun(scratch, try chartData(in: scratch), savePNG: true,
@@ -176,11 +196,12 @@ final class SheetsSettingsTests: XCTestCase {
 
     /// generate into a folder that does not exist yet; the tabs and the PNGs beside it.
     private func chartRun(
-        _ scratch: URL, _ dataDir: URL, savePNG: Bool, sheets: String
+        _ scratch: URL, _ dataDir: URL, savePNG: Bool, sheets: String,
+        profile: String = "charts"
     ) async throws -> (tabs: [String], pngs: Int) {
         let out = scratch.appendingPathComponent("out-\(UUID().uuidString)/report.xlsx")
         let config = try ConfigLoader.loadFromString("""
-        jamf_cli: {profile: charts}
+        jamf_cli: {profile: \(profile)}
         charts: {enabled: true, save_png: \(savePNG)}
         sheets: \(sheets)
         """)
