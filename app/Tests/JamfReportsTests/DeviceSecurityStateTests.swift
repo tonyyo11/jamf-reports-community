@@ -166,6 +166,19 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(riskFactors(decrypting), [.noFileVault])
     }
 
+    /// A hyphen reads as a space, and a true word with `not` or `un` joined on is off: each of
+    /// these contains a word that reads as on.
+    func testHyphenatedAndJoinedNegativesReadAsOff() {
+        for value in ["Not-Connected", "NotConnected", "Not-Enabled", "notencrypted",
+                      "Uninstalled", "Unescrowed"] {
+            XCTAssertEqual(SecurityControlPolicy.reading(value), false, value)
+        }
+        for value in ["Connected", "Installed", "Escrowed", "Running", "Block-all-incoming"] {
+            XCTAssertEqual(SecurityControlPolicy.reading(value), true, value)
+        }
+        XCTAssertNil(SecurityControlPolicy.reading("Not-Collected"))
+    }
+
     /// Jamf's CSV FileVault column counts encrypted partitions over all partitions.
     func testCSVPartitionCountsReadAsFileVaultOnOrOff() throws {
         let records = try builtinCSVRecords()

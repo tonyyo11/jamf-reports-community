@@ -251,20 +251,27 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
 
     /// Whether a security value reads as on (true), off (false) or unmeasured (nil).
     /// FileVault mid-transition (ENCRYPTING, OPTIMIZING) or unable to report
-    /// (INELIGIBLE, RESTART_NEEDED) reads nil.
+    /// (INELIGIBLE, RESTART_NEEDED) reads nil. `-` and `_` read as spaces.
     static func reading(_ raw: String?) -> Bool? {
         let text = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
         if text.isEmpty || unknownMarkers.contains(where: { text.contains($0) }) { return nil }
         if let partitions = partitionReading(text) { return partitions }
-        if falseValues.contains(text) || falseMarkers.contains(where: { text.contains($0) }) {
+        if falseValues.contains(text) || falseMarkers.contains(where: { text.contains($0) })
+            || negatesATrueWord(text) {
             return false
         }
         if trueValues.contains(text) || trueMarkers.contains(where: { text.contains($0) }) {
             return true
         }
         return nil
+    }
+
+    /// A true word with `not` or `un` joined on: "NotConnected", "Uninstalled", "Unescrowed".
+    private static func negatesATrueWord(_ text: String) -> Bool {
+        trueMarkers.contains { text.hasPrefix("not" + $0) || text.contains("un" + $0) }
     }
 
     /// Jamf's CSV FileVault column is "encrypted/total partitions": on only when every
