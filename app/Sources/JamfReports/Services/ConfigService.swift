@@ -244,6 +244,40 @@ enum ConfigService {
         return try YAMLCodec.decode(encoded)
     }
 
+    /// Copies the file at `url` to `<name>.bak-<yyyyMMdd-HHmmss>` beside it, before the app
+    /// replaces or rewrites it, and keeps the newest five such copies. Nil when there is no file.
+    /// A copy already made in the same second is kept: it holds the earlier text.
+    static func backUp(_ url: URL, now: Date = Date()) throws -> URL? {
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: url.path) else { return nil }
+        let directory = url.deletingLastPathComponent()
+        let prefix = url.lastPathComponent + ".bak-"
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let backup = directory.appendingPathComponent(prefix + formatter.string(from: now))
+        if !manager.fileExists(atPath: backup.path) {
+            try manager.copyItem(at: url, to: backup)
+        }
+        let copies = try manager.contentsOfDirectory(atPath: directory.path).filter { name in
+            guard name.hasPrefix(prefix) else { return false }
+            let stamp = Array(name.dropFirst(prefix.count))
+            return stamp.count == 15 && stamp.enumerated().allSatisfy {
+                $0.offset == 8 ? $0.element == "-" : "0123456789".contains($0.element)
+            }
+        }
+        for old in copies.sorted().dropLast(5) {
+            do {
+                try manager.removeItem(at: directory.appendingPathComponent(old))
+            } catch {
+                let reason = error.localizedDescription
+                AppLogger.collect.warning(
+                    "ConfigService: kept an old config backup: \(reason, privacy: .public)")
+            }
+        }
+        return backup
+    }
+
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
         // ProfileName.pathComponent is the path-traversal control: it encodes `/`, and the
         // leading `.` of `.` and `..`, so the name is always one folder under the root.
