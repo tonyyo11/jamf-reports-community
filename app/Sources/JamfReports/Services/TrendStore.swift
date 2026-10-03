@@ -658,7 +658,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     nonisolated static func loadPatchPctRecompute(
         profile: String, summaries: [DailySummary]
     ) -> [String: Double] {
-        // No I/O once every recorded figure carries the device basis (2.9 on).
+        // The scan is bounded: one directory listing and at most one decode per eligible
+        // day, off the main thread. It is skipped when every recorded figure already
+        // carries the device basis (a workspace that began on 2.9).
         guard summaries.contains(where: isRecordedPerTitle),
               let workspace = ProfileService.workspaceURL(for: profile) else { return [:] }
         let dataDir = (try? WorkspacePaths.dataDir(for: profile))
@@ -674,8 +676,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     /// The device-weighted patch figure (`PatchStatusService.fleetCompliancePct`) for each
     /// summary recorded under the old per-title mean, from the newest `patch-status`
-    /// snapshot stamped that local day. Without it the Patch series would step at the
-    /// upgrade by however much the two definitions differ.
+    /// snapshot stamped that local day, rounded to a tenth as the summary writer records
+    /// it. Without it the Patch series would step at the upgrade by however much the two
+    /// definitions differ.
     ///
     /// Manifest, `.partial` and sync-conflict files are dropped before ordering, and a
     /// file that does not decode gives way to the next-newest of the same day. A day
@@ -696,7 +699,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         var recomputed: [String: Double] = [:]
         for (day, urls) in newestFirstByDay {
             guard let rows = urls.lazy.compactMap(decodePatchRows).first else { continue }
-            if let pct = PatchStatusService.fleetCompliancePct(rows) { recomputed[day] = pct }
+            if let pct = PatchStatusService.fleetCompliancePct(rows) {
+                recomputed[day] = (pct * 10).rounded() / 10
+            }
         }
         return recomputed
     }

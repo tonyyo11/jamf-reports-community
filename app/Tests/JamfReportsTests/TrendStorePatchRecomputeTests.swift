@@ -7,13 +7,16 @@ import XCTest
 /// device-weighted one from the newest `patch-status` snapshot stamped the same local day.
 ///
 /// Fixture, worked by hand: Chrome 450 of 500, Zoom 20 of 100, Slack 10 of 10.
-/// Device-weighted (450 + 20 + 10) / (500 + 100 + 10) = 78.689%; the old mean was 70.0%.
+/// Device-weighted (450 + 20 + 10) / (500 + 100 + 10) = 78.689%, which the summary writer
+/// records as 78.7; the old mean was 70.0%.
 final class TrendStorePatchRecomputeTests: XCTestCase {
 
     private var root: URL!
     private var dataDir: URL!
 
-    private static let weighted = 480.0 / 610.0 * 100.0
+    /// 480 / 610, rounded to a tenth the way the summary writer records it, so a day
+    /// recomputed here reads the same as one written after the upgrade.
+    private static let weighted = 78.7
 
     override func setUpWithError() throws {
         try super.setUpWithError()
