@@ -9,8 +9,18 @@ final class GenerateSheetRequestTests: XCTestCase {
 
     private let busy = "A scheduled run is in progress — try again when it finishes"
 
+    /// What `generateAll` was handed, the narrative and log sink aside.
+    private struct GenerateCall: Equatable {
+        let types: Set<GenerateOutputType>
+        let outputDir: URL?
+        let profile: String
+        let schoolMode: Bool
+        let template: String
+    }
+
     private final class Events {
         var log: [String] = []
+        var calls: [GenerateCall] = []
     }
 
     private func run(
@@ -21,6 +31,8 @@ final class GenerateSheetRequestTests: XCTestCase {
     ) async -> (count: Int, message: String?) {
         await GenerateSheetState.perform(
             request,
+            profile: "acme",
+            onLine: CLIBridge.noOpOnLine,
             collect: {
                 events.log.append("collect")
                 return try await collect()
@@ -29,8 +41,11 @@ final class GenerateSheetRequestTests: XCTestCase {
                 events.log.append("narrative")
                 return "Fleet is healthy."
             },
-            generate: { narrative in
+            generateAll: { types, outputDir, profile, schoolMode, template, narrative, _ in
                 events.log.append("generate: \(narrative ?? "nil")")
+                events.calls.append(GenerateCall(
+                    types: types, outputDir: outputDir, profile: profile,
+                    schoolMode: schoolMode, template: template.identifier))
                 return result
             }
         )
@@ -187,6 +202,26 @@ final class GenerateSheetRequestTests: XCTestCase {
         let events = Events()
         _ = await run(state.request(), events: events)
         XCTAssertEqual(events.log, ["collect", "generate: nil"])
+    }
+
+    /// What the sheet hands `generateAll`: handing School's HTML and PDF Full Instance again,
+    /// or dropping School mode, fails here.
+    func testGenerateAllGetsTheRequestsFormatsFolderTemplateAndSchoolMode() async {
+        let state = GenerateSheetState()
+        let folder = URL(fileURLWithPath: "/tmp/reports-\(UUID().uuidString)")
+        state.selectedTypes = [.xlsx, .html]
+        state.customOutputDir = folder
+        state.selectedTemplateID = SchoolTemplate().identifier
+        let events = Events()
+        _ = await run(state.request(), events: events)
+        state.selectedTemplateID = ExecutiveTemplate().identifier
+        _ = await run(state.request(), events: events)
+        XCTAssertEqual(events.calls, [
+            GenerateCall(types: [.xlsx, .html], outputDir: folder, profile: "acme",
+                         schoolMode: true, template: SchoolTemplate().identifier),
+            GenerateCall(types: [.xlsx, .html], outputDir: folder, profile: "acme",
+                         schoolMode: false, template: ExecutiveTemplate().identifier),
+        ])
     }
 
     func testAPartlyFailedGenerateIsSummarized() async {

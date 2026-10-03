@@ -139,14 +139,23 @@ final class GenerateSheetState {
         }
     }
 
+    /// `CLIBridge.generateAll(types:outputDir:profile:schoolMode:template:aiNarrative:onLine:)`,
+    /// injected so a test sees what the sheet hands it.
+    typealias GenerateAll = @MainActor (
+        Set<GenerateOutputType>, URL?, String, Bool, any ReportTemplate, String?,
+        @escaping @Sendable (CLIBridge.LogLine) -> Void
+    ) async -> GenerateAllResult
+
     /// Runs `request` in the Overview's order (`CLIBridge.runCollectThenGenerate`): the
     /// collect when asked for, then the narrative, which reads the snapshots that collect
     /// wrote, then every format. A refused or failed collect generates nothing and says why.
     static func perform(
         _ request: Request,
+        profile: String,
+        onLine: @escaping @Sendable (CLIBridge.LogLine) -> Void,
         collect: () async throws -> Int32,
         narrative: @escaping () async -> String?,
-        generate: (_ aiNarrative: String?) async -> GenerateAllResult
+        generateAll: GenerateAll
     ) async -> (count: Int, message: String?) {
         var result: GenerateAllResult?
         do {
@@ -157,7 +166,9 @@ final class GenerateSheetState {
                 },
                 narrative: request.asksForNarrative ? narrative : nil,
                 generate: { aiNarrative in
-                    let generated = await generate(aiNarrative)
+                    let generated = await generateAll(
+                        request.types, request.outputDir, profile, request.schoolMode,
+                        request.template, aiNarrative, onLine)
                     result = generated
                     return generated.allSucceeded ? 0 : 1
                 }
@@ -875,14 +886,12 @@ struct GenerateSheet: View {
         // time-boxed inside makeForGUIGenerate, is asked for after it.
         let outcome = await GenerateSheetState.perform(
             request,
+            profile: profile,
+            onLine: onLine,
             collect: { try await bridge.collect(profile: profile, force: true, onLine: onLine) },
             narrative: { await ReportNarrative.makeForGUIGenerate(profile: profile) },
-            generate: { narrative in
-                await bridge.generateAll(
-                    types: request.types, outputDir: request.outputDir,
-                    profile: profile, schoolMode: request.schoolMode,
-                    template: request.template, aiNarrative: narrative, onLine: onLine)
-            }
+            generateAll: bridge.generateAll(
+                types:outputDir:profile:schoolMode:template:aiNarrative:onLine:)
         )
         state.completedCount = outcome.count
         state.errorMessage = outcome.message
