@@ -810,7 +810,8 @@ struct OverviewView: View {
             if offeredScoreCards.isEmpty {
                 return OverviewUnavailable(
                     reason: "Every selected score card is a control the security policy "
-                        + "does not count.")
+                        + "does not count. Its levels are on Config › Scoring.",
+                    remedy: .config)
             }
         }
         guard !workspace.demoMode else { return nil }

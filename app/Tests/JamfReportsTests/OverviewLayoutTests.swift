@@ -92,7 +92,7 @@ final class OverviewLayoutTests: XCTestCase {
         }
     }
 
-    func testControlCardsNameTheSecurityReportAndPosture() {
+    func testControlCardsNeedTheSecurityReport() {
         for metric in [TrendSeries.Metric.sip, .firewall, .gatekeeper] {
             XCTAssertEqual(metric.dataRequirement, "Needs jamf-cli's security report.")
         }

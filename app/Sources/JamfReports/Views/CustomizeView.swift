@@ -191,6 +191,12 @@ struct CustomizeView: View {
         .frame(width: 260)
     }
 
+    /// The selected cards the Overview shows: one whose control the policy ignores is not.
+    private var offeredScoreCardCount: Int {
+        workspace.selectedScoreCards.filter { $0.isOffered(under: workspace.securityPolicy) }
+            .count
+    }
+
     /// The Overview's score cards and sections are chosen in one editor on the
     /// Overview itself, where it can say which ones this profile can fill.
     /// This card only points there; a second, availability-blind copy of the
@@ -200,7 +206,7 @@ struct CustomizeView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Overview", style: .body)
                 Text("Score cards and Overview sections — what shows, in what order — "
-                     + "are chosen on the Overview. \(workspace.selectedScoreCards.count) "
+                     + "are chosen on the Overview. \(offeredScoreCardCount) "
                      + "score cards selected.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
