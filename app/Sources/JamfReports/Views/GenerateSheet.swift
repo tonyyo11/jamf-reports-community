@@ -24,6 +24,9 @@ final class GenerateSheetState {
     }
     nonisolated static let includeAuditKey = "includeAuditInGenerate"
     var customOutputDir: URL? = nil
+    /// Where the generators write with no folder chosen: `output.output_dir` as
+    /// `WorkspacePaths.reportsDir` resolves it. Nil until the sheet has read it.
+    var configuredOutputDir: URL? = nil
     var folderPickerError: String? = nil
     var logLines: [CLIBridge.LogLine] = []
     var isRunning: Bool = false
@@ -180,9 +183,10 @@ final class GenerateSheetState {
         }
     }
 
-    /// Resolved output directory for display. Falls back to the profile default.
+    /// Resolved output directory for display: the chosen folder, else the configured one,
+    /// else the profile default.
     func resolvedOutputDir(for profile: String) -> URL {
-        if let dir = customOutputDir { return dir }
+        if let dir = customOutputDir ?? configuredOutputDir { return dir }
         let fallback = ProfileService.workspaceURL(for: profile)
             ?? WorkspaceRootStore.defaultRoot
         return fallback.appendingPathComponent("Generated Reports", isDirectory: true)
@@ -299,7 +303,10 @@ struct GenerateSheet: View {
         .frame(minHeight: 440)
         .background(Theme.Surface.raised)
         .interactiveDismissDisabled(!state.canDismiss)
-        .task { await defaultCollectFreshFromSnapshots() }
+        .task {
+            await readConfiguredOutputDir()
+            await defaultCollectFreshFromSnapshots()
+        }
     }
 
     // MARK: Subviews
@@ -827,6 +834,16 @@ struct GenerateSheet: View {
             state.folderPickerError = "Cannot write to \(url.lastPathComponent): "
                 + error.localizedDescription
         }
+    }
+
+    /// `output.output_dir` as the generators resolve it, off the main actor: it reads
+    /// config.yaml. Demo mode reads no workspace.
+    private func readConfiguredOutputDir() async {
+        guard !workspace.demoMode else { return }
+        let profile = profile
+        state.configuredOutputDir = await Task.detached(priority: .utility) {
+            WorkspacePaths.reportsDir(for: profile, onLine: nil)
+        }.value
     }
 
     /// The Overview's freshness check, off the main actor: it walks the data directory.

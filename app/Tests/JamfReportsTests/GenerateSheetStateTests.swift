@@ -71,6 +71,17 @@ final class GenerateSheetStateTests: XCTestCase {
                       "Expected fallback to end in 'Generated Reports', got: \(dir.path)")
     }
 
+    /// With no folder chosen, the folder `output.output_dir` names, where the generators write.
+    func testResolvedOutputDirIsTheConfiguredFolderWhenNoneIsChosen() {
+        let state = GenerateSheetState()
+        let configured = URL(fileURLWithPath: "/Users/Shared/Team Reports", isDirectory: true)
+        state.configuredOutputDir = configured
+        XCTAssertEqual(state.resolvedOutputDir(for: "any-profile"), configured)
+        let custom = URL(fileURLWithPath: "/tmp/my-reports")
+        state.customOutputDir = custom
+        XCTAssertEqual(state.resolvedOutputDir(for: "any-profile"), custom, "a chosen folder wins")
+    }
+
     func testResolvedOutputDirUsesCustomWhenSet() {
         let state = GenerateSheetState()
         let custom = URL(fileURLWithPath: "/tmp/my-reports")
