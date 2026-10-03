@@ -1005,6 +1005,20 @@ struct ReportEngine: Sendable {
 
     // MARK: - Chart sheet rendering
 
+    /// The Charts tab's Patch % line. A summary recorded under the per-title mean takes the
+    /// device-weighted figure recomputed from that day's `patch-status` snapshot, as the
+    /// Trends screen does (`TrendStore.recomputePatchPct`), so the line does not step at
+    /// the upgrade; a day with no snapshot keeps its recorded figure.
+    static func patchTrendPoints(
+        _ summaries: [DailySummary], dataDir: URL
+    ) -> [(date: Date, value: Double)] {
+        let recomputed = TrendStore.recomputePatchPct(dataDir: dataDir, summaries: summaries)
+        return summaries.compactMap { s in
+            guard let pct = recomputed[s.date] ?? s.patchPct else { return nil }
+            return (s.parsedDate, pct)
+        }
+    }
+
     /// Render trend charts from daily summary snapshots and embed in a "Charts" worksheet.
     ///
     /// Reads `DailySummary` JSON files from `summariesDir`. With 2+ data points produces
@@ -1080,10 +1094,7 @@ struct ReportEngine: Sendable {
                 guard let pct = s.fileVaultPct else { return nil }
                 return (s.parsedDate, pct)
             }
-            let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
-                guard let pct = s.patchPct else { return nil }
-                return (s.parsedDate, pct)
-            }
+            let patchPoints = Self.patchTrendPoints(summaries, dataDir: dataDir)
             var secSeries: [ChartSeries] = []
             if !fvPoints.isEmpty {
                 secSeries.append(ChartSeries(label: "FileVault %",

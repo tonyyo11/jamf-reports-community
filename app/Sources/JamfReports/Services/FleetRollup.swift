@@ -50,7 +50,9 @@ struct FleetRollup: Sendable, Equatable {
             weightedMetric("sip", "SIP %", current, previous, \.sipPct),
             weightedMetric("firewall", "Firewall %", current, previous, \.firewallPct),
             weightedMetric("gatekeeper", "Gatekeeper %", current, previous, \.gatekeeperPct),
-            weightedMetric("patch", "Patch %", current, previous, \.patchPct),
+            // Across the per-title mean and the device-weighted figure there is no prior.
+            weightedMetric("patch", "Patch %", current,
+                           samePatchBasis(current + previous) ? previous : [], \.patchPct),
             weightedMetric("osCurrent", "OS Current %", current, previous, \.osCurrentPct),
             weightedMetric("securityScore", "Security Score", current, previous, \.securityScore),
         ]
@@ -96,6 +98,12 @@ struct FleetRollup: Sendable, Equatable {
             value: deviceWeighted(current, keyPath),
             previous: deviceWeighted(previous, keyPath)
         )
+    }
+
+    /// Whether every summary with a patch figure recorded it on one basis
+    /// (`patchPctBasis`): the per-title mean before it, device-weighted after.
+    static func samePatchBasis(_ summaries: [DailySummary]) -> Bool {
+        Set(summaries.filter { $0.patchPct != nil }.map(\.patchPctBasis)).count <= 1
     }
 
     /// Device-weighted average of a percent KPI: Σ(pct × devices) / Σ(devices)

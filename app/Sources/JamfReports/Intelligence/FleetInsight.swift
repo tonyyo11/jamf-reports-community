@@ -108,10 +108,10 @@ extension FleetInsightInput {
     /// `previous`. Absent metrics are left out, never sent as 0.
     static func fleet(current: DailySummary, previous: DailySummary?) -> FleetInsightInput {
         func share(_ label: String, _ key: KeyPath<DailySummary, Double?>,
-                   _ complement: String? = nil) -> Fact? {
+                   _ complement: String? = nil, comparable: Bool = true) -> Fact? {
             current[keyPath: key].map {
                 Fact(label: label, value: .percent($0),
-                     prior: previous?[keyPath: key].map(Value.percent),
+                     prior: comparable ? previous?[keyPath: key].map(Value.percent) : nil,
                      polarity: .higherIsBetter, complement: complement)
             }
         }
@@ -129,7 +129,9 @@ extension FleetInsightInput {
             // osCurrentPct counts a Mac on a major the feed does not list as not current.
             share("OS current", \.osCurrentPct, "not on the newest release of its "
                   + "macOS version, or version not listed"),
-            share("Patch compliance", \.patchPct),
+            // A figure on the other basis (`patchPctBasis`) is no prior for this one.
+            share("Patch compliance", \.patchPct,
+                  comparable: previous?.patchPctBasis == current.patchPctBasis),
             // "SIP" alone reads as the VoIP protocol to the on-device model.
             share("System Integrity Protection (SIP) enabled", \.sipPct, "not enabled"),
             share("Firewall enabled", \.firewallPct, "not enabled"),

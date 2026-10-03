@@ -41,6 +41,19 @@ final class TrendStorePatchRecomputeTests: XCTestCase {
         XCTAssertNotEqual(recomputed, 70.0, accuracy: 1.0, "the recorded per-title mean")
     }
 
+    /// The workbook's Charts tab draws the Patch % line the Trends screen draws, so it does
+    /// not step at the upgrade either.
+    func testTheWorkbookChartsPatchLineTakesTheRecomputedFigure() throws {
+        try writePatchSnapshot(at: instant("2026-05-10", hour: 14))
+        let points = ReportEngine.patchTrendPoints([
+            summary("2026-05-10"),
+            summary("2026-05-11", patchPct: 80, basis: DailySummary.deviceWeightedPatchBasis),
+            summary("2026-05-12", patchPct: nil),
+            summary("2026-05-13"),
+        ], dataDir: dataDir)
+        XCTAssertEqual(points.map(\.value), [Self.weighted, 80, 70])
+    }
+
     func testDayWithoutASnapshotKeepsItsRecordedValue() throws {
         try writePatchSnapshot(at: instant("2026-05-09", hour: 14))
 
