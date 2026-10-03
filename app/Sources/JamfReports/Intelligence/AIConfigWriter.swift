@@ -34,7 +34,16 @@ enum AIConfigWriter {
         }
 
         guard case .mapping(var root) = document.root else { return }
-        root.set("ai", value: encode(config))
+        // Sets the three keys Settings models and keeps any other key typed in the block, but
+        // drops the retired `lock_on_device` and `external:`, which nothing reads any more.
+        var ai = root.value(for: "ai")?.mapping ?? .init(entries: [])
+        ai.entries.removeAll { $0.key == "lock_on_device" || $0.key == "external" }
+        ai.set("enabled", value: .scalar(.bool(config.isEnabled)))
+        ai.set("tier", value: .scalar(.string(config.resolvedTier.rawValue)))
+        ai.set(
+            "reasoning_level",
+            value: .scalar(.string(config.resolvedReasoningLevel.rawValue)))
+        root.set("ai", value: .mapping(ai))
         document.root = .mapping(root)
 
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["ai"])
@@ -44,13 +53,5 @@ enum AIConfigWriter {
             manager.createFile(atPath: url.path, contents: Data())
         }
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
-    }
-
-    private static func encode(_ config: AIConfig) -> YAMLCodec.YAMLValue {
-        .mapping(.init(entries: [
-            .init(key: "enabled", value: .scalar(.bool(config.isEnabled))),
-            .init(key: "tier", value: .scalar(.string(config.resolvedTier.rawValue))),
-            .init(key: "reasoning_level", value: .scalar(.string(config.resolvedReasoningLevel.rawValue))),
-        ]))
     }
 }

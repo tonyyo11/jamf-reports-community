@@ -64,12 +64,13 @@ enum NotifyConfigWriter {
         guard case .mapping(var root) = document.root else {
             throw WriteError.invalidDocumentRoot
         }
-        root.set("notify", value: encode(
-            enabled: enabled,
-            provider: provider,
-            url: url.trimmingCharacters(in: .whitespaces),
-            detail: detail
-        ))
+        // Sets the four keys this panel models and keeps any other key typed in the block.
+        var notify = root.value(for: "notify")?.mapping ?? .init(entries: [])
+        notify.set("enabled", value: .scalar(.bool(enabled)))
+        notify.set("provider", value: .scalar(.string(provider)))
+        notify.set("url", value: .scalar(.string(url.trimmingCharacters(in: .whitespaces))))
+        notify.set("detail", value: .scalar(.string(detail)))
+        root.set("notify", value: .mapping(notify))
         document.root = .mapping(root)
 
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["notify"])
@@ -79,17 +80,6 @@ enum NotifyConfigWriter {
             manager.createFile(atPath: configURL.path, contents: Data())
         }
         _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
-    }
-
-    private static func encode(
-        enabled: Bool, provider: String, url: String, detail: String
-    ) -> YAMLCodec.YAMLValue {
-        .mapping(.init(entries: [
-            .init(key: "enabled", value: .scalar(.bool(enabled))),
-            .init(key: "provider", value: .scalar(.string(provider))),
-            .init(key: "url", value: .scalar(.string(url))),
-            .init(key: "detail", value: .scalar(.string(detail))),
-        ]))
     }
 
     /// Pure predicate behind the inline "URL must start with https://" caption:

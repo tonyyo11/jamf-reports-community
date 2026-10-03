@@ -97,6 +97,33 @@ final class AIConfigPersistenceTests: XCTestCase {
         XCTAssertEqual(AIConfigLoader.load(profile: profile).isEnabled, true)
     }
 
+    /// Settings models three keys; one it does not model stays in the block a save rewrites.
+    /// The retired `external:` and `lock_on_device` still go (see the test above).
+    func testSaveKeepsAKeyTheSettingsPanelDoesNotModel() throws {
+        let profile = "ai-test-\(UUID().uuidString.lowercased())"
+        let workspace = try makeWorkspace(profile: profile)
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        try """
+        ai:
+          enabled: false
+          insight_style: brief
+          lock_on_device: true
+          tier: on_device
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        var config = AIConfig()
+        config.enabled = true
+        config.reasoningLevel = "deep"
+        try AIConfigWriter.save(config, profile: profile)
+
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("  insight_style: brief"), text)
+        XCTAssertFalse(text.contains("lock_on_device"), text)
+        let reloaded = AIConfigLoader.load(profile: profile)
+        XCTAssertTrue(reloaded.isEnabled)
+        XCTAssertEqual(reloaded.resolvedReasoningLevel, .deep)
+    }
+
     func testSavePreservesUnrelatedTopLevelKeys() throws {
         let profile = "ai-test-\(UUID().uuidString.lowercased())"
         let workspace = try makeWorkspace(profile: profile)
