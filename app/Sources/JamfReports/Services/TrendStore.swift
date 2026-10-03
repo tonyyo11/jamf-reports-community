@@ -788,11 +788,16 @@ private extension TrendSeries.Metric {
         }
     }
 
-    /// Fewer stale devices is better; a device count has no good direction; any other
-    /// percentage is a share where higher is better.
+    /// Fewer stale devices is better; a device count has no good direction; every other
+    /// metric is a share or score where higher is better. No default, so a new metric needs
+    /// a decision here.
     var insightPolarity: FleetInsightInput.Polarity {
-        if self == .stale { return .lowerIsBetter }
-        return unit == "%" ? .higherIsBetter : .neutral
+        switch self {
+        case .stale: .lowerIsBetter
+        case .activeDevices, .mscpBandTrend, .managedDevices: .neutral
+        case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .patch,
+             .securityScore, .sip, .firewall, .gatekeeper: .higherIsBetter
+        }
     }
 
     /// The other side of a device share, where the rest of the fleet is a plain statement.
