@@ -300,6 +300,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .stale:         return summary.staleCount.map(Double.init)
         case .patch:         return summary.patchPct
         case .securityScore: return summary.securityScore
+        case .sip:           return summary.sipPct
+        case .firewall:      return summary.firewallPct
+        case .gatekeeper:    return summary.gatekeeperPct
         case .mscpBandTrend:
             // Derive from the SELECTED baseline's points: find the point whose
             // date matches this summary's date (string-matched), then sum the 5

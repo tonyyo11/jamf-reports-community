@@ -155,10 +155,13 @@ struct OverviewCustomizeSheet: View {
 
     // MARK: Score cards
 
-    /// Selected cards in their display order, then the rest.
-    private var scoreCardRows: [TrendSeries.Metric] {
-        let selected = workspace.selectedScoreCards
-        return selected + TrendSeries.Metric.allCases.filter { !selected.contains($0) }
+    /// Selected cards in their display order, then the rest; a card the policy
+    /// does not offer is left out of both.
+    static func scoreCardRows(
+        selected: [TrendSeries.Metric], policy: SecurityControlPolicy
+    ) -> [TrendSeries.Metric] {
+        let rows = selected + TrendSeries.Metric.allCases.filter { !selected.contains($0) }
+        return rows.filter { $0.isOffered(under: policy) }
     }
 
     private var scoreCardsCard: some View {
@@ -172,7 +175,8 @@ struct OverviewCustomizeSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
                     .padding(.bottom, 8)
-                let rows = scoreCardRows
+                let rows = Self.scoreCardRows(
+                    selected: workspace.selectedScoreCards, policy: workspace.securityPolicy)
                 ForEach(Array(rows.enumerated()), id: \.element) { index, metric in
                     scoreCardRow(metric)
                     if index < rows.count - 1 {
@@ -185,7 +189,9 @@ struct OverviewCustomizeSheet: View {
 
     private func scoreCardRow(_ metric: TrendSeries.Metric) -> some View {
         let selected = workspace.selectedScoreCards
-        let position = selected.firstIndex(of: metric)
+        // Positions follow the listed cards; the selection keeps the hidden ones.
+        let shown = selected.filter { $0.isOffered(under: workspace.securityPolicy) }
+        let position = shown.firstIndex(of: metric)
         let label = metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,
             edrAgentName: workspace.edrAgentName
@@ -218,14 +224,19 @@ struct OverviewCustomizeSheet: View {
                 moveButtons(
                     name: label,
                     canMoveUp: position > 0,
-                    canMoveDown: position < selected.count - 1,
-                    up: { workspace.selectedScoreCards = selected.moving(metric, by: -1) },
-                    down: { workspace.selectedScoreCards = selected.moving(metric, by: 1) }
+                    canMoveDown: position < shown.count - 1,
+                    up: { moveScoreCard(metric, to: shown[safe: position - 1]) },
+                    down: { moveScoreCard(metric, to: shown[safe: position + 1]) }
                 )
             }
             PNPToggle(isOn: isOn, label: "Show \(label)")
         }
         .padding(.vertical, 8)
+    }
+
+    private func moveScoreCard(_ metric: TrendSeries.Metric, to neighbour: TrendSeries.Metric?) {
+        guard let neighbour else { return }
+        workspace.selectedScoreCards = workspace.selectedScoreCards.moving(metric, to: neighbour)
     }
 
     // MARK: Shared pieces

@@ -795,8 +795,15 @@ struct OverviewView: View {
     /// Why a section has nothing to show on this profile; nil when it has.
     /// Demo mode always has content.
     private func unavailableReason(_ section: OverviewSection) -> OverviewUnavailable? {
-        if section == .scoreCards, workspace.selectedScoreCards.isEmpty {
-            return OverviewUnavailable(reason: "No score cards are selected.")
+        if section == .scoreCards {
+            if workspace.selectedScoreCards.isEmpty {
+                return OverviewUnavailable(reason: "No score cards are selected.")
+            }
+            if offeredScoreCards.isEmpty {
+                return OverviewUnavailable(
+                    reason: "Every selected score card is a control the security policy "
+                        + "does not count.")
+            }
         }
         guard !workspace.demoMode else { return nil }
         switch section {
@@ -1019,7 +1026,7 @@ struct OverviewView: View {
     /// tops out of line.
     private var statRow: some View {
         EqualHeightTileGrid(minTileWidth: 220) {
-            ForEach(workspace.selectedScoreCards) { metric in
+            ForEach(offeredScoreCards) { metric in
                 let hasData = !metricValues(metric).isEmpty
                 let isDanger = hasData && scoreCardTrend(for: metric) == .down && metric != .stale
                 Button {
@@ -1036,6 +1043,12 @@ struct OverviewView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// The selection without the cards whose control the security policy does not
+    /// count. The stored selection is not edited, so a card returns with its control.
+    private var offeredScoreCards: [TrendSeries.Metric] {
+        workspace.selectedScoreCards.filter { $0.isOffered(under: workspace.securityPolicy) }
     }
 
     private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
@@ -1755,6 +1768,8 @@ struct OverviewView: View {
             "Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution."
         case .managedDevices:
             "Historical computers-vs-mobile split. Open Devices or Mobile Fleet to inspect current records."
+        case .sip, .firewall, .gatekeeper:
+            "Open Security Posture for the per-control breakdown."
         }
         return Text(text)
             .font(.footnote)
@@ -1773,6 +1788,8 @@ struct OverviewView: View {
             return [.devices, .config]
         case .managedDevices:
             return [.devices, .mobileFleet]
+        case .sip, .firewall, .gatekeeper:
+            return [.securityPosture, .devices]
         }
     }
 

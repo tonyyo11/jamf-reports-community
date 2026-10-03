@@ -90,6 +90,27 @@ final class TrendStoreTests: XCTestCase {
         }
     }
 
+    /// SIP, Firewall and Gatekeeper read the summary's own shares; a day that
+    /// recorded none of them has no point rather than a zero.
+    func testSecurityControlMetricsReadTheirSummaryShares() {
+        let store = TrendStore(
+            summaries: [
+                summary(date: "2026-04-01", sipPct: 100, firewallPct: 91.5, gatekeeperPct: 97.7),
+                summary(date: "2026-04-08"),
+                summary(date: "2026-04-15", sipPct: 99.8, firewallPct: 92.0, gatekeeperPct: nil),
+            ],
+            range: .all
+        )
+
+        XCTAssertEqual(store.values(metric: .sip), [100, 99.8])
+        XCTAssertEqual(store.values(metric: .firewall), [91.5, 92.0])
+        XCTAssertEqual(store.values(metric: .gatekeeper), [97.7])
+        XCTAssertEqual(store.points(metric: .sip).map { dateString($0.date) },
+                       ["2026-04-01", "2026-04-15"])
+        XCTAssertEqual(store.points(metric: .gatekeeper).map { dateString($0.date) },
+                       ["2026-04-01"])
+    }
+
     func testDemoPointsClampMismatchedDateAndValueArrays() {
         let dates = ["2026-04-01", "2026-04-08", "2026-04-15"]
             .compactMap(SummaryJSONParser.dateFormatter.date)
@@ -107,7 +128,10 @@ final class TrendStoreTests: XCTestCase {
         compliancePct: Double? = 90,
         crowdstrikePct: Double? = 95,
         mobileDeviceCount: Int? = nil,
-        staleCount: Int? = 12
+        staleCount: Int? = 12,
+        sipPct: Double? = nil,
+        firewallPct: Double? = nil,
+        gatekeeperPct: Double? = nil
     ) -> DailySummary {
         DailySummary(
             date: date,
@@ -118,6 +142,9 @@ final class TrendStoreTests: XCTestCase {
             osCurrentPct: 80,
             crowdstrikePct: crowdstrikePct,
             patchPct: 88,
+            sipPct: sipPct,
+            firewallPct: firewallPct,
+            gatekeeperPct: gatekeeperPct,
             mobileDeviceCount: mobileDeviceCount
         )
     }

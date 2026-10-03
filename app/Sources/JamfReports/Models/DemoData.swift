@@ -88,6 +88,15 @@ enum DemoData {
     private static let securityScoreTrend = trend(
         start: 88, end: 96, jitter: 0.8, pinnedLast: 96.6)
 
+    /// Each control's card ends on its share of the fleet in `securityControls`, the
+    /// counts the Security Posture screen shows.
+    private static let sipTrend = trend(
+        start: 94, end: 99.8, jitter: 0.4, pinnedLast: coverage(securityControls.sip))
+    private static let firewallTrend = trend(
+        start: 86, end: 92, jitter: 1.2, pinnedLast: coverage(securityControls.firewall))
+    private static let gatekeeperTrend = trend(
+        start: 93, end: 97.7, jitter: 0.8, pinnedLast: coverage(securityControls.gatekeeper))
+
     static let stabilityTrend: [Double] = complianceTrend.indices.map { idx in
         let total = Int((totalDevicesTrend[safe: idx] ?? totalDevicesTrend.last ?? 1).rounded())
         return TrendSeries.stabilityIndex(
@@ -141,6 +150,9 @@ enum DemoData {
         .patch:           patchTrend,
         .securityScore:   securityScoreTrend,
         .mscpBandTrend:   mscpBandTrend,
+        .sip:             sipTrend,
+        .firewall:        firewallTrend,
+        .gatekeeper:      gatekeeperTrend,
     ]
 
     /// Labelled the way the live Overview labels a version ("macOS 15.4"), so the

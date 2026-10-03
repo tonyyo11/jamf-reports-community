@@ -928,6 +928,9 @@ struct TrendSeries: Identifiable, Sendable {
         /// (computer count — Jamf Pro itself can't answer "how many managed
         /// Macs did we have on <past date>", but every archived summary can).
         case managedDevices
+        /// Share of Macs with each control on, read from the summary's own shares.
+        /// Appended last so `allCases` keeps every older position.
+        case sip, firewall, gatekeeper
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
@@ -942,6 +945,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .securityScore: return "Security Score (Weighted)"
             case .mscpBandTrend: return "mSCP Compliance Bands"
             case .managedDevices: return "Managed Devices"
+            case .sip:           return "System Integrity Protection"
+            case .firewall:      return "Firewall Enabled"
+            case .gatekeeper:    return "Gatekeeper Enabled"
             }
         }
 
@@ -965,7 +971,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .activeDevices, .mscpBandTrend, .managedDevices: return 0
             case .stability:     return 40
             case .compliance:    return 40
-            case .fileVault:     return 60
+            case .fileVault, .sip, .firewall, .gatekeeper: return 60
             case .osCurrent:     return 30
             case .edrAgent:      return 70
             case .stale:         return 0
@@ -994,6 +1000,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .securityScore: return 0xFF453A
             case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
             case .managedDevices: return 0x4472C4  // Matches the Computers series line
+            case .sip:           return 0x64D2FF
+            case .firewall:      return 0x5E5CE6
+            case .gatekeeper:    return 0xAC8E68
             }
         }
     }

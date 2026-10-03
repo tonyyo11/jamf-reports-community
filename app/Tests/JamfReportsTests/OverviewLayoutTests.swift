@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import JamfReports
 
+@MainActor
 final class OverviewLayoutTests: XCTestCase {
 
     // MARK: - Defaults
@@ -51,6 +52,86 @@ final class OverviewLayoutTests: XCTestCase {
         XCTAssertEqual([1, 2, 3].moving(3, by: -2), [3, 1, 2])
         XCTAssertEqual([1, 2, 3].moving(1, by: -1), [1, 2, 3], "The first element cannot move up")
         XCTAssertEqual([1, 2, 3].moving(2, by: 5), [1, 3, 2], "A long move stops at the end")
+    }
+
+    func testMovingToANeighbourStepsOverWhatLiesBetween() {
+        let order = [1, 2, 3, 4]
+        XCTAssertEqual(order.moving(1, to: 3), [2, 3, 1, 4])
+        XCTAssertEqual(order.moving(4, to: 2), [1, 4, 2, 3])
+        XCTAssertEqual(order.moving(1, to: 9), order, "An absent neighbour changes nothing")
+        XCTAssertEqual(order.moving(9, to: 1), order, "An absent element changes nothing")
+    }
+
+    // MARK: - Security-control score cards
+
+    func testControlCardsMapToTheirSecurityControl() {
+        XCTAssertEqual(TrendSeries.Metric.fileVault.securityControl, .fileVault)
+        XCTAssertEqual(TrendSeries.Metric.sip.securityControl, .sip)
+        XCTAssertEqual(TrendSeries.Metric.firewall.securityControl, .firewall)
+        XCTAssertEqual(TrendSeries.Metric.gatekeeper.securityControl, .gatekeeper)
+        let controlCards: [TrendSeries.Metric] = [.fileVault, .sip, .firewall, .gatekeeper]
+        for metric in TrendSeries.Metric.allCases where !controlCards.contains(metric) {
+            XCTAssertNil(metric.securityControl, "\(metric) is not a security control")
+        }
+    }
+
+    /// Only a control the policy does not count hides its card; a warning is
+    /// still a fact worth a card.
+    func testACardIsOfferedUnlessItsControlIsIgnored() {
+        let policy = SecurityControlPolicy(
+            fileVault: .ignore, sip: .warning, firewall: .ignore, gatekeeper: .fail)
+
+        XCTAssertFalse(TrendSeries.Metric.fileVault.isOffered(under: policy))
+        XCTAssertFalse(TrendSeries.Metric.firewall.isOffered(under: policy))
+        XCTAssertTrue(TrendSeries.Metric.sip.isOffered(under: policy))
+        XCTAssertTrue(TrendSeries.Metric.gatekeeper.isOffered(under: policy))
+        XCTAssertTrue(TrendSeries.Metric.stability.isOffered(under: policy))
+        XCTAssertTrue(TrendSeries.Metric.edrAgent.isOffered(under: policy))
+        for metric in TrendSeries.Metric.allCases {
+            XCTAssertTrue(metric.isOffered(under: .default), "\(metric) under no policy")
+        }
+    }
+
+    func testControlCardsNameTheSecurityReportAndPosture() {
+        for metric in [TrendSeries.Metric.sip, .firewall, .gatekeeper] {
+            XCTAssertEqual(metric.dataRequirement, "Needs jamf-cli's security report.")
+        }
+    }
+
+    /// With no policy the editor lists what it always did: the selection in its
+    /// order, then every other card in declaration order.
+    func testScoreCardRowsKeepTodaysOrderUnderTheDefaultPolicy() {
+        let selected: [TrendSeries.Metric] = [.patch, .fileVault]
+        let rows = OverviewCustomizeSheet.scoreCardRows(selected: selected, policy: .default)
+
+        XCTAssertEqual(
+            rows, selected + TrendSeries.Metric.allCases.filter { !selected.contains($0) })
+        XCTAssertEqual(Set(rows), Set(TrendSeries.Metric.allCases))
+    }
+
+    func testScoreCardRowsDropACardWhoseControlIsIgnored() {
+        let policy = SecurityControlPolicy(firewall: .ignore)
+        let selected: [TrendSeries.Metric] = [.firewall, .stability, .sip]
+        let rows = OverviewCustomizeSheet.scoreCardRows(selected: selected, policy: policy)
+
+        XCTAssertFalse(rows.contains(.firewall), "A card that is not offered is not listed")
+        XCTAssertEqual(Array(rows.prefix(2)), [.stability, .sip])
+        XCTAssertEqual(
+            Set(rows), Set(TrendSeries.Metric.allCases).subtracting([.firewall]))
+        XCTAssertEqual(selected, [.firewall, .stability, .sip], "The selection is not edited")
+    }
+
+    /// A hidden card sits between two listed ones; moving a listed card past its
+    /// listed neighbour must change what the editor shows, not swap with the hidden one.
+    func testMovingAListedCardStepsOverAHiddenOne() {
+        let policy = SecurityControlPolicy(firewall: .ignore)
+        let selected: [TrendSeries.Metric] = [.stability, .firewall, .sip]
+
+        let moved = selected.moving(.sip, to: .stability)
+
+        XCTAssertEqual(moved, [.sip, .stability, .firewall], "The hidden card stays selected")
+        let rows = OverviewCustomizeSheet.scoreCardRows(selected: moved, policy: policy)
+        XCTAssertEqual(Array(rows.prefix(2)), [.sip, .stability])
     }
 
     // MARK: - Persistence
