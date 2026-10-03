@@ -201,13 +201,23 @@ enum YAMLCodec {
         return parsed.key
     }
 
+    /// The line after the block's last indented or `- ` line. Blank lines and unindented
+    /// comments between it and the next top-level key are not the block's, so a rewrite of the
+    /// block keeps them.
     private static func endOfTopLevelBlock(in lines: [String], startingAt start: Int) -> Int {
+        var end = start + 1
         var index = start + 1
-        while index < lines.count {
-            if topLevelKey(in: lines[index]) != nil { break }
+        while index < lines.count, topLevelKey(in: lines[index]) == nil {
+            if isBlockText(lines[index]) { end = index + 1 }
             index += 1
         }
-        return index
+        return end
+    }
+
+    private static func isBlockText(_ line: String) -> Bool {
+        if line.hasPrefix("- ") || line == "-" { return true }
+        guard line.first == " " || line.first == "\t" else { return false }
+        return !line.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private static func emitTopLevel(key: String, value: YAMLValue) -> [String] {
