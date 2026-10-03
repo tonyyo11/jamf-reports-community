@@ -183,6 +183,25 @@ struct ConfigSaveReport: Equatable, Sendable {
     var droppedUnreadLines = false
     /// The copy of the file as it was, made before a save that dropped any of it.
     var backupName: String?
+
+    /// One sentence for each thing the save left as typed or did not keep.
+    var notes: [String] {
+        var lines = keptBlocks.map { key in
+            "\(key) in config.yaml is not a list, so it was left as typed and nothing was "
+                + "written to it. Write each entry as a \"- name:\" list item so the app can "
+                + "read and edit it."
+        }
+        guard let copy = backupName else { return lines }
+        if droppedComments {
+            lines.append("Comments inside the blocks this screen edits are not kept. A copy of "
+                + "the file as it was is at \(copy).")
+        }
+        if droppedUnreadLines {
+            lines.append("Lines this screen could not read inside the blocks it edits are not "
+                + "kept. A copy of the file as it was is at \(copy).")
+        }
+        return lines
+    }
 }
 
 /// A config file's modification date and size. Both nil when there is no file.

@@ -364,14 +364,18 @@ enum ScaffoldService {
 
     /// Re-scaffold: detect column mappings from `csvURL` and merge them into profile's existing
     /// config.yaml through `mergeColumns`, then save. Agents, custom EAs and thresholds are not
-    /// touched. The report counts what reached the file; `state` is what was saved.
+    /// touched. The report counts what reached the file; `state` is what was saved;
+    /// `saveReport` is what the save left as typed or did not keep.
     ///
     /// - Throws: If the CSV cannot be read or the config cannot be loaded or saved.
     static func mergeIntoConfig(
         csvURL: URL,
         profile: String,
         workspaceRoot: URL? = nil
-    ) throws -> (report: ColumnMergeReport, familyLabel: String, state: ConfigState) {
+    ) throws -> (
+        report: ColumnMergeReport, familyLabel: String, state: ConfigState,
+        saveReport: ConfigSaveReport
+    ) {
         let sample = try readSample(from: csvURL)
         let result = try matchColumns(from: csvURL, profile: profile)
         var loaded = try ConfigService.load(profile: profile, workspaceRoot: workspaceRoot)
@@ -402,10 +406,12 @@ enum ScaffoldService {
             report.keptCount += cMerge.report.keptCount
             report.staleUnresolved += cMerge.report.staleUnresolved
         }
-        _ = try ConfigService.save(
+        let saved = try ConfigService.save(
             profile: profile, state: loaded.state, existingDocument: loaded.document,
             workspaceRoot: workspaceRoot)
-        return (report, isMobile ? "mobile device export" : "computer export", loaded.state)
+        return (
+            report, isMobile ? "mobile device export" : "computer export", loaded.state,
+            saved.report)
     }
 
     // MARK: - Private helpers

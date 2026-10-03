@@ -104,6 +104,20 @@ final class ScaffoldMergeTests: XCTestCase {
         XCTAssertEqual(reloaded.state.columns, outcome.state.columns)
     }
 
+    /// The re-scaffold's save says what it left as typed and where the copy of the file is.
+    func testRescaffoldReturnsItsSavesReport() throws {
+        let ws = try workspace(
+            config: "columns:\n  # mine\n  computer_name: Computer Name\n"
+                + "custom_eas:\n  Battery:\n    column: Battery\n",
+            csvHeaders: ["Computer Name", "Serial Number"])
+        let outcome = try ScaffoldService.mergeIntoConfig(
+            csvURL: ws.csv, profile: ws.profile, workspaceRoot: ws.root)
+
+        XCTAssertEqual(outcome.saveReport.keptBlocks, ["custom_eas"])
+        XCTAssertTrue(outcome.saveReport.droppedComments)
+        XCTAssertNotNil(outcome.saveReport.backupName)
+    }
+
     func testRescaffoldKeepsTheUsersMappingForAnExtraColumn() throws {
         let ws = try workspace(
             config: "columns:\n  computer_name: Computer Name\n  position: My Title Col\n",

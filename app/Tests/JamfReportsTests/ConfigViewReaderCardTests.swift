@@ -49,13 +49,35 @@ final class ConfigViewReaderCardTests: XCTestCase {
             report: ConfigSaveReport(keptBlocks: ["custom_eas", "security_agents"])))
         XCTAssertEqual(notice.title, "Saved with notes")
         XCTAssertEqual(notice.lines, [
-            "Save left custom_eas as typed: it is not a list, so this screen reads no entries "
-                + "from it and did not write the Custom EAs tab. Write each entry as a "
-                + "\"- name:\" list item to edit it here.",
-            "Save left security_agents as typed: it is not a list, so this screen reads no "
-                + "entries from it and did not write the Security Agents tab. Write each entry "
-                + "as a \"- name:\" list item to edit it here.",
+            "custom_eas in config.yaml is not a list, so it was left as typed and nothing was "
+                + "written to it. Write each entry as a \"- name:\" list item so the app can "
+                + "read and edit it.",
+            "security_agents in config.yaml is not a list, so it was left as typed and nothing "
+                + "was written to it. Write each entry as a \"- name:\" list item so the app can "
+                + "read and edit it.",
         ])
+    }
+
+    /// The EA walkthrough and the re-scaffold save too; their messages carry the same notes.
+    func testTheWalkthroughAndRescaffoldMessagesCarryTheSaveNotes() {
+        let notes = ConfigSaveReport(keptBlocks: ["custom_eas"]).notes
+        XCTAssertEqual(
+            CSVEAWalkthroughSheet.adoptionMessage(eas: 0, agents: 0, notes: notes, profile: "p"),
+            notes.joined(separator: " "), "nothing was added: no \"already there\" either")
+        XCTAssertEqual(
+            CSVEAWalkthroughSheet.adoptionMessage(eas: 0, agents: 1, notes: notes, profile: "p"),
+            "Added 1 Security Agent to config.yaml for profile p. They appear in the Config tab "
+                + "now and in reports after the next generate. " + notes[0])
+        XCTAssertEqual(
+            CSVEAWalkthroughSheet.adoptionMessage(eas: 0, agents: 0, notes: [], profile: "p"),
+            "Those columns are already in config.yaml.")
+        XCTAssertEqual(
+            ConfigView.rescaffoldMessage(
+                profile: "p", familyLabel: "computer export", summary: "1 added",
+                notes: notes),
+            "Merged computer export column mappings into p's config — 1 added. Security "
+                + "agents, custom EAs and thresholds were kept. Review the Columns tab, then "
+                + "Save. " + notes[0])
     }
 
     func testASaveThatDroppedCommentsNamesTheCopy() throws {

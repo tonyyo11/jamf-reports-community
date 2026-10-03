@@ -277,22 +277,7 @@ struct ConfigView: View {
                     + "the file again and discards the changes you have not saved here."]
             )
         }
-        let tabs = ["custom_eas": "Custom EAs", "security_agents": "Security Agents"]
-        var lines = (report?.keptBlocks ?? []).map { key in
-            "Save left \(key) as typed: it is not a list, so this screen reads no entries from "
-                + "it and did not write the \(tabs[key] ?? key) tab. Write each entry as a "
-                + "\"- name:\" list item to edit it here."
-        }
-        if let report, let copy = report.backupName {
-            if report.droppedComments {
-                lines.append("Comments inside the blocks this screen edits are not kept. A copy "
-                    + "of the file as it was is at \(copy).")
-            }
-            if report.droppedUnreadLines {
-                lines.append("Lines this screen could not read inside the blocks it edits are "
-                    + "not kept. A copy of the file as it was is at \(copy).")
-            }
-        }
+        let lines = report?.notes ?? []
         return lines.isEmpty ? nil : (title: "Saved with notes", lines: lines)
     }
 
@@ -318,6 +303,15 @@ struct ConfigView: View {
                 }
             }
         }
+    }
+
+    /// The re-scaffold toast: what it merged, then the notes its save left.
+    static func rescaffoldMessage(
+        profile: String, familyLabel: String, summary: String, notes: [String]
+    ) -> String {
+        (["Merged \(familyLabel) column mappings into \(profile)'s config — \(summary). "
+            + "Security agents, custom EAs and thresholds were kept. Review the Columns tab, "
+            + "then Save."] + notes).joined(separator: " ")
     }
 
     /// Reads config.yaml again, dropping the edits not yet saved; the notice says so.
@@ -766,16 +760,15 @@ private struct ColumnsTab: View {
                 // thresholds) untouched. ConfigService.save preserves unmanaged keys.
                 // File reads + config load/save; keep off the main actor so a
                 // large CSV export never blocks the UI.
-                let (report, familyLabel, merged) = try await Task.detached {
-                    let outcome = try ScaffoldService.mergeIntoConfig(
-                        csvURL: csvURL, profile: profile)
-                    return (outcome.report, outcome.familyLabel, outcome.state)
+                let outcome = try await Task.detached {
+                    try ScaffoldService.mergeIntoConfig(csvURL: csvURL, profile: profile)
                 }.value
+                let merged = outcome.state
                 await MainActor.run {
                     workspace.toast = Toast(
-                        message: "Merged \(familyLabel) column mappings into \(profile)'s "
-                            + "config — \(report.summary). Security agents, custom EAs and "
-                            + "thresholds were kept. Review the Columns tab, then Save.",
+                        message: ConfigView.rescaffoldMessage(
+                            profile: profile, familyLabel: outcome.familyLabel,
+                            summary: outcome.report.summary, notes: outcome.saveReport.notes),
                         style: .success
                     )
                 }
