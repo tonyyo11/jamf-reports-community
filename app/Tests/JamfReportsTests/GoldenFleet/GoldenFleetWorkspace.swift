@@ -196,4 +196,45 @@ enum GoldenFleetWorkspace {
     static func eaRow(device: String, ea: String, value: Any) -> [String: Any] {
         ["device": device, "ea_name": ea, "value": value]
     }
+
+    // MARK: - Security report and computers rows
+
+    /// One `pro report security` device row, keyed as fixture `security/security.json` is.
+    static func securityDeviceRow(
+        name: String, serial: String, osVersion: String, fileVault: String, sip: String,
+        firewall: Bool, gatekeeper: String
+    ) -> [String: Any] {
+        ["section": "device", "name": name, "serial": serial, "os_version": osVersion,
+         "filevault": fileVault, "sip": sip, "firewall": firewall, "gatekeeper": gatekeeper]
+    }
+
+    /// One v4 `computers` record with the keys the security surfaces read, as fixtures
+    /// `computers-v4` (hardware) and `computers-list` (disk encryption, security) carry them.
+    static func computerRow(
+        name: String, serial: String, appleSilicon: Bool, modelIdentifier: String,
+        fileVault: String, sip: String, firewall: Bool, gatekeeper: String,
+        bootstrap: String = "ESCROWED"
+    ) -> [String: Any] {
+        [
+            "general": ["name": name],
+            "hardware": ["serialNumber": serial, "appleSilicon": appleSilicon,
+                         "modelIdentifier": modelIdentifier],
+            "diskEncryption": ["bootPartitionEncryptionDetails": [
+                "partitionFileVault2State": fileVault]],
+            "security": ["sipStatus": sip, "firewallEnabled": firewall,
+                         "gatekeeperStatus": gatekeeper,
+                         "bootstrapTokenEscrowedStatus": bootstrap],
+        ]
+    }
+
+    /// Writes one `<kind>/<kind>_<stamp>.json` snapshot, the name `saveSnapshot` gives it.
+    @discardableResult
+    static func writeSnapshot(
+        kind: String, dataDir: URL, at ts: Date, rows: [[String: Any]]
+    ) throws -> URL {
+        let url = dataDir.appendingPathComponent(kind, isDirectory: true)
+            .appendingPathComponent("\(kind)_\(GoldenFleetClock.stamp(ts)).json")
+        try writeJSON(rows, to: url)
+        return url
+    }
 }
