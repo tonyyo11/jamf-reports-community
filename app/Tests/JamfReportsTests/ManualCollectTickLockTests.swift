@@ -81,6 +81,8 @@ final class ManualCollectTickLockTests: XCTestCase {
 
     // MARK: - The bridge's hold
 
+    /// Polls for the beat rather than sleeping a fixed time: the beats run on a detached
+    /// utility task, which a loaded CI runner can start later than any fixed window.
     func testAHoldNamesThisProcessBeatsAndReleases() async throws {
         let (_, lock) = try makeStore()
         let seen = try await CLIBridge.holdingTickLock(beatEvery: .milliseconds(20)) {
@@ -89,10 +91,14 @@ final class ManualCollectTickLockTests: XCTestCase {
             try? FileManager.default.setAttributes(
                 [.modificationDate: Date().addingTimeInterval(-10 * 60)],
                 ofItemAtPath: lock.url.path)
-            try await Task.sleep(for: .milliseconds(150))
-            let modified = (try? FileManager.default.attributesOfItem(atPath: lock.url.path))?[
-                .modificationDate] as? Date
-            let beat = abs(modified?.timeIntervalSinceNow ?? -600) < 5
+            let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+            var beat = false
+            while !beat, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(10))
+                let modified = (try? FileManager.default.attributesOfItem(
+                    atPath: lock.url.path))?[.modificationDate] as? Date
+                beat = abs(modified?.timeIntervalSinceNow ?? -600) < 5
+            }
             return "\(pid) beat=\(beat)"
         }
         XCTAssertEqual(seen, "\(getpid()) beat=true")
