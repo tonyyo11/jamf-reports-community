@@ -886,6 +886,8 @@ struct GenerateSheet: View {
         )
         state.completedCount = outcome.count
         state.errorMessage = outcome.message
+        // As every GUI collect path does, so the health banner describes this collect.
+        if request.collectFirst { await workspace.refreshDataFreshness() }
         if outcome.count > 0 { onGenerated() }
     }
 }
