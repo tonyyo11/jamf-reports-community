@@ -450,11 +450,13 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         charts:
           os_adoption: {enabled: false}
           compliance_trend: {enabled: false}
+        branding: {accent_dark: "#112233"}
         """)
         XCTAssertEqual(Set(titles(found)), [
             "jamf_cli.allow_live_overview", "platform.enabled",
             "thresholds.checkin_overdue_days", "thresholds.profile_error_critical",
             "charts.os_adoption.enabled", "charts.compliance_trend.enabled",
+            "branding.accent_dark",
         ])
         XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
         XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
@@ -519,6 +521,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
             ("thresholds:", "checkin_overdue_days:", nil),
             ("thresholds:", "profile_error_critical:", nil),
             ("charts:", "os_adoption:", "enabled:"), ("charts:", "compliance_trend:", "enabled:"),
+            ("branding:", "accent_dark:", nil),
         ]
         func line(_ prefix: String, after start: Int) throws -> Int {
             try XCTUnwrap(lines[(start + 1)...].firstIndex {

@@ -335,10 +335,11 @@ branding:
   # the HTML report header.
   org_name: ""
 
-  # Path to a PNG logo file (relative to this config file, or absolute). A JPEG
-  # is refused with a warning. The logo is inserted at the top of each
-  # CSV-backed tab of the Excel workbook; the HTML report and the Jamf Pro tabs
-  # do not carry it.
+  # Path to a PNG logo file. Only the workbook built from a Jamf Pro CSV export
+  # uses it: the logo is placed at the top left of each of that workbook's
+  # sheets. A relative path resolves from the folder the app or command runs
+  # in, not from this file, so write an absolute path. Other image formats are
+  # skipped with a warning; the HTML report shows no logo.
   logo_path: ""
 
   # Hex colour used for Excel column headers and the HTML report's primary
@@ -346,8 +347,8 @@ branding:
   # Write it as #RRGGBB or #RGB; both reports use the default for anything else.
   accent_color: "#2D5EA2"
 
-  # Darker variant of accent_color. Currently has no effect: nothing reads this
-  # key (the Config screen still edits it).  Default: #004165
+  # This key currently has no effect: no report reads it. The Config screen
+  # still edits it.  Default: #004165
   accent_dark:  "#004165"
 
 
