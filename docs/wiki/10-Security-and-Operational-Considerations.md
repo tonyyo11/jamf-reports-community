@@ -28,6 +28,9 @@ Raw snapshots, run logs, backups, and `config.yaml` stay local, where their
 permissions and single-writer assumptions still hold. Run Check confirms this
 with a green **"Reports publish to …"** row.
 
+`~` is expanded; a folder the app will not use is named in the run log and
+reports go to `Generated Reports` in the workspace.
+
 `~/Library` is otherwise off-limits to output paths, but `~/Library/CloudStorage`
 is deliberately carved out — that is where macOS mounts every modern sync
 provider, and it holds user data rather than application state.
@@ -117,6 +120,12 @@ made it, and each machine prunes only its own — an unscoped prune would spend
 one machine's retention budget on everyone's backups. Backups made before this
 version carry no ownership record and are never auto-removed, so clear those out
 once by hand.
+
+**Config copies.** Before a save or a scaffold drops text from config.yaml,
+the app copies it to `config.yaml.bak-<date-time>` beside it (the newest five
+are kept). The copy holds whatever the file holds, including a webhook URL,
+and sits in the same folder, so on a synced workspace it syncs like
+config.yaml itself.
 
 **Keep every Mac on the same app version.** Versions before 2.7.0 order
 snapshots by modification date and prune backups without checking whose they

@@ -38,6 +38,13 @@ Every non-core dashboard is toggleable, so unused screens disappear from the sid
 - **Configurable Security Score** — a weighted posture score (FileVault, SIP, firewall,
   Gatekeeper, and more), with the weights editable in the app and a per-workspace
   security policy that decides what counts as a gap.
+- **Security policy** — decide per workspace whether FileVault, SIP, Firewall and
+  Gatekeeper failures count as gaps, warnings or nothing, with a rule for
+  hardware-encrypted Macs. See
+  [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
+- **A config.yaml you can edit by hand** — the app lists the keys and lines it did not read,
+  keeps your comments outside the blocks it edits, and copies the file before a save drops
+  text.
 - **Historical Trends** — Swift Charts over archived `summary.json` snapshots, with a
   configurable trend range.
 - **Period reports** — a workbook covering a quarter, a month, or any window you pick:

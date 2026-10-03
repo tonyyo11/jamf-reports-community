@@ -98,9 +98,12 @@ next collect fetches it.
   - Managed Software Update Plans turned off in Jamf Pro (OS update status and failures)
   - Compliance Benchmark titles that match none on the tenant
 
-  Those sources stay in the strip so you can see them, but the hourly repair skips them.
-  Pressing **Collect now** yourself does try them, on the assumption that you have just
-  fixed the cause.
+  Those sources stay in the strip so you can see them, but the hourly repair skips them,
+  and so does the background item's same-day retry. That retry still tries a source whose
+  credentials the server rejected (exit 3), so it lands once you re-authenticate. A run
+  whose only missing sources fail this way still shows as Partial in Run History; it is
+  just not retried. Pressing **Collect now** yourself does try them, on the assumption
+  that you have just fixed the cause.
 
 The strip re-evaluates after any manual refresh, not only at launch, so a collect you just
 ran is reflected immediately.
