@@ -1,19 +1,22 @@
 import CryptoKit
 import Foundation
 
+/// A list entry as read from config.yaml. A save sets the editor's values on it, so its other
+/// keys, their order and an earlier copy of a repeated key are written back as typed. Always
+/// equal, so an entry's synthesized `==` compares only the values the editor shows: two
+/// entries with the same values are the same edit.
+struct ConfigEntryAsRead: Equatable, Sendable {
+    var mapping = YAMLCodec.YAMLMapping(entries: [])
+
+    static func == (lhs: Self, rhs: Self) -> Bool { true }
+}
+
 struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
     var id: String { "\(name)|\(column)|\(connectedValue)" }
     var name: String
     var column: String
     var connectedValue: String
-    /// The entry as read. A save sets the editor's values on it, so its other keys, their
-    /// order and an earlier copy of a repeated key are written back as typed. Not compared:
-    /// two entries with the same values are the same edit.
-    var source = YAMLCodec.YAMLMapping(entries: [])
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        (lhs.name, lhs.column, lhs.connectedValue) == (rhs.name, rhs.column, rhs.connectedValue)
-    }
+    var source = ConfigEntryAsRead()
 }
 
 struct ConfigCustomEA: Identifiable, Equatable, Sendable {
@@ -26,16 +29,7 @@ struct ConfigCustomEA: Identifiable, Equatable, Sendable {
     var criticalThreshold: String
     var currentVersions: [String]
     var warningDays: String
-    /// The entry as read; see `ConfigSecurityAgent.source`. Not compared.
-    var source = YAMLCodec.YAMLMapping(entries: [])
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        (lhs.name, lhs.column, lhs.type, lhs.trueValue) ==
-            (rhs.name, rhs.column, rhs.type, rhs.trueValue)
-            && (lhs.warningThreshold, lhs.criticalThreshold, lhs.warningDays) ==
-            (rhs.warningThreshold, rhs.criticalThreshold, rhs.warningDays)
-            && lhs.currentVersions == rhs.currentVersions
-    }
+    var source = ConfigEntryAsRead()
 }
 
 struct ConfigState: Equatable, Sendable {
@@ -557,7 +551,7 @@ enum ConfigService {
                 name: string($0, "name"),
                 column: string($0, "column"),
                 connectedValue: string($0, "connected_value"),
-                source: $0
+                source: ConfigEntryAsRead(mapping: $0)
             )
         }
 
@@ -571,7 +565,7 @@ enum ConfigService {
                 criticalThreshold: string($0, "critical_threshold"),
                 currentVersions: stringSequence($0, "current_versions"),
                 warningDays: string($0, "warning_days"),
-                source: $0
+                source: ConfigEntryAsRead(mapping: $0)
             )
         }
 
@@ -654,7 +648,7 @@ enum ConfigService {
         root.set("mobile_columns", value: .mapping(mobileColumns))
 
         root.set("security_agents", value: .sequence(state.securityAgents.map { agent in
-            var entry = agent.source
+            var entry = agent.source.mapping
             entry.set("name", value: scalar(agent.name))
             entry.set("column", value: scalar(agent.column))
             entry.set("connected_value", value: scalar(agent.connectedValue))
@@ -711,7 +705,7 @@ enum ConfigService {
     /// The EA's values set on the entry as read. A key its type does not use, and an integer
     /// key left empty, are removed (every copy), so none of them is read.
     private static func customEAValue(_ ea: ConfigCustomEA) -> YAMLCodec.YAMLValue {
-        var entry = ea.source
+        var entry = ea.source.mapping
         entry.set("name", value: scalar(ea.name))
         entry.set("column", value: scalar(ea.column))
         entry.set("type", value: scalar(ea.type))
