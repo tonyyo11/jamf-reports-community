@@ -193,20 +193,63 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertEqual(path.deletingLastPathComponent().path, tmp.path)
     }
 
+    /// Relative to the config file's folder, as config.example.yaml says.
     func testResolvedHistoryPathRelative() throws {
-        let tmp = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let outputURL = tmp.appendingPathComponent("report.html")
-        let report = makeReport()
+        let (dataDir, outputURL) = try historyWorkspace(config: "columns: {}\n")
+        let report = makeReport(dataDir: dataDir)
         let path = report.resolvedHistoryPath("snapshots/history.json", outputURL: outputURL)
-        XCTAssertTrue(path.path.hasSuffix("snapshots/history.json"))
+        XCTAssertEqual(
+            path.path,
+            dataDir.deletingLastPathComponent().resolvingSymlinksInPath()
+                .appendingPathComponent("snapshots/history.json").path)
     }
 
-    func testResolvedHistoryPathAbsolute() throws {
-        let outputURL = URL(fileURLWithPath: "/tmp/report.html")
-        let report = makeReport()
-        let path = report.resolvedHistoryPath("/var/log/history.json", outputURL: outputURL)
-        XCTAssertEqual(path.path, "/var/log/history.json")
+    private final class Lines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+        func add(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+    }
+
+    /// A workspace holding `config` and its data folder; the report goes in Generated Reports.
+    private func historyWorkspace(config: String) throws -> (dataDir: URL, output: URL) {
+        let workspace = try makeTempDir()
+        addTeardownBlock { try? FileManager.default.removeItem(at: workspace) }
+        try config.write(to: workspace.appendingPathComponent("config.yaml"), atomically: true,
+                         encoding: .utf8)
+        return (workspace.appendingPathComponent("jamf-cli-data", isDirectory: true),
+                workspace.appendingPathComponent("Generated Reports/report.html"))
+    }
+
+    /// The history file is written to, so `html.history_file` follows the rules every path
+    /// config.yaml names follows. A refused path is said once and the default is used.
+    func testARefusedHistoryFileFallsBackBesideTheReportWithOneWarning() throws {
+        let (dataDir, outputURL) = try historyWorkspace(config: "columns: {}\n")
+        let fallback = outputURL.deletingLastPathComponent()
+            .appendingPathComponent("html_history.json")
+        for typed in ["../history.json", "/Users/Shared/history.json", "~/history.json",
+                      "~/.ssh/config", "/var/log/history.json"] {
+            let lines = Lines()
+            var report = makeReport(dataDir: dataDir)
+            report.onLine = { lines.add($0.text) }
+            XCTAssertEqual(report.resolvedHistoryPath(typed, outputURL: outputURL).path,
+                           fallback.path, typed)
+            XCTAssertEqual(lines.all.count, 1, typed)
+            XCTAssertTrue(lines.all.first?.hasPrefix("[warn] html.history_file") == true,
+                          "\(lines.all)")
+        }
+    }
+
+    func testTheSensitiveFoldersStayRefusedWithTheOptIn() throws {
+        let (dataDir, outputURL) = try historyWorkspace(
+            config: "output:\n  allow_absolute_paths: true\n")
+        let report = makeReport(dataDir: dataDir)
+        let away = "~/.jrc-history-\(UUID().uuidString)/history.json"
+        XCTAssertEqual(report.resolvedHistoryPath(away, outputURL: outputURL).path,
+                       NSString(string: away).expandingTildeInPath)
+        XCTAssertEqual(
+            report.resolvedHistoryPath("~/.ssh/config", outputURL: outputURL).lastPathComponent,
+            "html_history.json")
     }
 
     // MARK: - History: append + round-trip

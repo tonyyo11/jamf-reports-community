@@ -359,8 +359,10 @@ branding:
 # macOS Adoption Timeline chart appears in the HTML report.
 #
 # history_file: path to the JSON file that persists snapshots across runs.
-#   Relative paths resolve from this config file's directory.
-#   Default (when blank): ~/.jamf-report-history.json
+#   Relative paths resolve from this config file's directory and must stay
+#   inside it. An absolute path outside the workspace needs
+#   output.allow_absolute_paths: true; system and credentials folders are never
+#   used. Default (when blank or refused): html_history.json beside the report.
 #
 html:
   track_history: false

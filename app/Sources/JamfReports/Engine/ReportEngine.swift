@@ -2994,7 +2994,8 @@ struct ReportEngine: Sendable {
         // generation too — otherwise the GUI's "Require snapshot manifest"
         // toggle would be a false promise for users who generate HTML reports.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
-        let report = HtmlReport(config: config, dataDir: dataDir, aiNarrative: aiNarrative)
+        let report = HtmlReport(
+            config: config, dataDir: dataDir, aiNarrative: aiNarrative, onLine: onLine)
         let digest = try await report.generate(
             outputURL: outputURL, sections: template.htmlSections
         )

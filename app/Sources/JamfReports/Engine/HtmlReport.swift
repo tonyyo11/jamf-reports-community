@@ -33,6 +33,8 @@ struct HtmlReport: Sendable {
     /// GUI-generate-only AI executive narrative (F3). nil (the default) omits
     /// the `.aiNarrative` section entirely — headless callers never set it.
     var aiNarrative: String? = nil
+    /// Where a `[warn]` line goes, beside the run's other log lines.
+    var onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 
     // MARK: - HTML local config
 
@@ -426,7 +428,8 @@ struct HtmlReport: Sendable {
         let categoriesTableHTML = buildCategoriesTable(categories)
         let historyHTML = buildHistorySection(
             security: security,
-            outputURL: outputURL
+            outputURL: outputURL,
+            historyURL: historyURL
         )
 
         // Task 6: Catalog moved to appendix
@@ -1246,15 +1249,17 @@ struct HtmlReport: Sendable {
     // MARK: - History tracking + inline SVG trend
 
     /// Append a metric snapshot to the history file (when `html.track_history: true`)
-    /// and render an inline SVG trend chart from recent history entries.
+    /// and render an inline SVG trend chart from recent history entries. `historyURL` is the
+    /// file a caller already resolved, so a refused path is warned about once.
     func buildHistorySection(
         security: [[String: Any]],
-        outputURL: URL
+        outputURL: URL,
+        historyURL: URL? = nil
     ) -> String {
         let cfg = htmlConfig()
         guard cfg.trackHistory else { return "" }
 
-        let histPath = resolvedHistoryPath(cfg.historyFile, outputURL: outputURL)
+        let histPath = historyURL ?? resolvedHistoryPath(cfg.historyFile, outputURL: outputURL)
         appendHistoryEntry(security: security, path: histPath)
 
         let history = loadHistory(path: histPath)
@@ -1277,18 +1282,30 @@ struct HtmlReport: Sendable {
 
     // MARK: History helpers
 
-    /// Resolve the history file path. Relative paths are resolved next to the output file.
+    /// `html.history_file`, which the report writes to, under the rules for every path
+    /// config.yaml names (`WorkspacePaths.resolve`): relative to the workspace and inside it,
+    /// an absolute path outside it only with `output.allow_absolute_paths`, never a system or
+    /// credentials folder. Blank or refused, it is `html_history.json` beside the report; a
+    /// refused path is one `[warn]` line.
     func resolvedHistoryPath(_ configured: String, outputURL: URL) -> URL {
+        let fallback = outputURL.deletingLastPathComponent()
+            .appendingPathComponent("html_history.json")
         let trimmed = configured.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
-            return outputURL.deletingLastPathComponent()
-                .appendingPathComponent("html_history.json")
+        guard !trimmed.isEmpty else { return fallback }
+        let workspace = dataDir.deletingLastPathComponent()
+            .resolvingSymlinksInPath().standardizedFileURL
+        do {
+            let resolved = try WorkspacePaths.resolve(
+                rawValue: trimmed, fallback: fallback.path, workspace: workspace)
+            return URL(fileURLWithPath: resolved.path, isDirectory: false)
+        } catch {
+            let msg = "[warn] html.history_file \"\(ConfigSchema.displayText(trimmed))\" is not "
+                + "used: \(WorkspacePaths.refusal(of: error)). Writing the history to "
+                + "\(fallback.lastPathComponent) beside the report instead."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return fallback
         }
-        if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
-            return URL(fileURLWithPath:
-                NSString(string: trimmed).expandingTildeInPath)
-        }
-        return outputURL.deletingLastPathComponent().appendingPathComponent(trimmed)
     }
 
     struct HistoryEntry: Sendable {
