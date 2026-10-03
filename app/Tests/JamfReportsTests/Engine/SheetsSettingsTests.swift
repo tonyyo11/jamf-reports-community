@@ -144,35 +144,51 @@ final class SheetsSettingsTests: XCTestCase {
 
     func testAChartsTabTheListsDropIsNotRenderedUnlessItsPNGsAreSaved() async throws {
         try await withScratch { scratch in
-            let summaries = scratch.appendingPathComponent("charts/snapshots/summaries")
-            try TestFixtures.copyDir("snapshots/computers/summaries", to: summaries)
-            let dataDir = try fixtureData([], in: scratch)
-            func run(savePNG: Bool, skip: String) async throws -> (tabs: [String], pngs: Int) {
-                let out = scratch.appendingPathComponent("out-\(UUID().uuidString)/report.xlsx")
-                // PNGs are written before the workbook, into a folder that must exist.
-                try FileManager.default.createDirectory(
-                    at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let config = try ConfigLoader.loadFromString("""
-                jamf_cli: {profile: charts}
-                charts: {enabled: true, save_png: \(savePNG)}
-                sheets: {skip: [\(skip)]}
-                """)
-                try await ReportEngine(config: config, dataDir: dataDir).generate(
-                    csvURL: nil, outputURL: out, locateJamfCLI: { nil })
-                let folder = try FileManager.default.contentsOfDirectory(
-                    atPath: out.deletingLastPathComponent().path)
-                return (try Self.tabs(of: out), folder.filter { $0.hasSuffix(".png") }.count)
-            }
-            let shown = try await run(savePNG: false, skip: "")
+            let dataDir = try chartData(in: scratch)
+            let shown = try await chartRun(scratch, dataDir, savePNG: false, sheets: "{}")
             XCTAssertTrue(shown.tabs.contains("Charts"), "the summaries make a Charts tab")
             XCTAssertEqual(shown.pngs, 0)
-            let saved = try await run(savePNG: true, skip: "charts")
+            let saved = try await chartRun(scratch, dataDir, savePNG: true,
+                                           sheets: "{skip: [charts]}")
             XCTAssertFalse(saved.tabs.contains("Charts"))
             XCTAssertGreaterThan(saved.pngs, 0, "save_png still writes the PNGs")
-            let neither = try await run(savePNG: false, skip: "charts")
+            let neither = try await chartRun(scratch, dataDir, savePNG: false,
+                                             sheets: "{skip: [charts]}")
             XCTAssertFalse(neither.tabs.contains("Charts"))
             XCTAssertEqual(neither.pngs, 0)
         }
+    }
+
+    func testChartPNGsReachAnOutputFolderThatDoesNotExistYet() async throws {
+        try await withScratch { scratch in
+            let run = try await chartRun(scratch, try chartData(in: scratch), savePNG: true,
+                                         sheets: "{}")
+            XCTAssertGreaterThan(run.pngs, 0)
+        }
+    }
+
+    /// An empty data folder, with the summary fixtures as profile `charts`'s trend history.
+    private func chartData(in scratch: URL) throws -> URL {
+        try TestFixtures.copyDir("snapshots/computers/summaries",
+                                 to: scratch.appendingPathComponent("charts/snapshots/summaries"))
+        return try fixtureData([], in: scratch)
+    }
+
+    /// generate into a folder that does not exist yet; the tabs and the PNGs beside it.
+    private func chartRun(
+        _ scratch: URL, _ dataDir: URL, savePNG: Bool, sheets: String
+    ) async throws -> (tabs: [String], pngs: Int) {
+        let out = scratch.appendingPathComponent("out-\(UUID().uuidString)/report.xlsx")
+        let config = try ConfigLoader.loadFromString("""
+        jamf_cli: {profile: charts}
+        charts: {enabled: true, save_png: \(savePNG)}
+        sheets: \(sheets)
+        """)
+        try await ReportEngine(config: config, dataDir: dataDir).generate(
+            csvURL: nil, outputURL: out, locateJamfCLI: { nil })
+        let folder = try FileManager.default.contentsOfDirectory(
+            atPath: out.deletingLastPathComponent().path)
+        return (try Self.tabs(of: out), folder.filter { $0.hasSuffix(".png") }.count)
     }
 
     func testKeepsSaysWhetherTheListsKeepATab() {

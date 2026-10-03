@@ -121,12 +121,11 @@ struct ReportEngine: Sendable {
         let savePNGs = config.charts?.savePng ?? true
         if config.charts?.isEnabled == true, savePNGs || sheets.keeps(Self.chartsSheetName),
            let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
-            renderChartSheet(
-                workbook: workbook,
-                summariesDir: summariesDir,
-                pngOutputDir: savePNGs ? outputURL.deletingLastPathComponent() : nil,
-                profile: profile
-            )
+            // The PNGs are written before the workbook creates its folder.
+            let pngDir = savePNGs ? outputURL.deletingLastPathComponent() : nil
+            if let pngDir { createPNGFolder(pngDir) }
+            renderChartSheet(workbook: workbook, summariesDir: summariesDir,
+                             pngOutputDir: pngDir, profile: profile)
         }
 
         // The tabs of every writer above, the Charts tab included, as one list.
@@ -137,6 +136,18 @@ struct ReportEngine: Sendable {
                        profile: profile, provenance: prov, onLine: onLine)
 
         return coreFailures
+    }
+
+    /// Best effort, like the PNG writes: a folder that cannot be made is logged, not fatal.
+    private func createPNGFolder(_ folder: URL) {
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        } catch {
+            AppLogger.report.warning("""
+                generate: could not create \(folder.path, privacy: .private) for chart PNGs: \
+                \(error.localizedDescription, privacy: .private)
+                """)
+        }
     }
 
     private func csvDashboard(at csvURL: URL, workbook: Workbook) throws -> CSVDashboard {
