@@ -94,6 +94,8 @@ struct ConfigView: View {
     @State private var saveReport: ConfigSaveReport?
     /// What config.yaml holds that the other tabs do not edit, for the From config.yaml tab.
     @State private var fileReading: ConfigFileReading = .sections(ConfigFileSections())
+    /// config.yaml exists, whether or not the tab could read it.
+    @State private var canRevealFile = false
 
     var body: some View {
         PageScaffold(spacing: 16) {
@@ -192,6 +194,7 @@ struct ConfigView: View {
     /// Re-reads config.yaml for the From config.yaml tab only; the editors keep their state.
     private func refreshFileReading() {
         fileReading = ConfigFileReading.read(at: configFileURL, demoMode: workspace.demoMode)
+        canRevealFile = ConfigFileReading.canReveal(at: configFileURL, demoMode: workspace.demoMode)
     }
 
     private func revealConfigFile() {
@@ -477,7 +480,7 @@ struct ConfigView: View {
         case .scoring:    ScoringTab()
         case .fromFile:
             ConfigFromFileTab(
-                reading: fileReading, isDemo: workspace.demoMode,
+                reading: fileReading, isDemo: workspace.demoMode, canReveal: canRevealFile,
                 reveal: revealConfigFile, reload: refreshEngineParseStatus)
         }
     }

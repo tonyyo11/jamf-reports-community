@@ -5,6 +5,8 @@ import SwiftUI
 struct ConfigFromFileTab: View {
     let reading: ConfigFileReading
     let isDemo: Bool
+    /// The file exists, so Finder has something to show; true even when it cannot be read.
+    let canReveal: Bool
     let reveal: () -> Void
     let reload: () -> Void
 
@@ -26,24 +28,19 @@ struct ConfigFromFileTab: View {
         }
     }
 
-    private var hasFile: Bool {
-        if case .sections = reading { return !isDemo }
-        return false
-    }
-
     // MARK: Cards
 
     private var introCard: some View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "From config.yaml")
-                Text("Read only. Lists what the other tabs do not edit. "
-                    + "Change it in config.yaml, then Reload.")
+                Text("Read only. Lists the settings no screen in the app edits. "
+                    + "Reload re-reads this list; the other tabs keep what they loaded.")
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
                 HStack(spacing: 8) {
                     PNPButton(title: "Reveal in Finder", icon: "folder", size: .sm, action: reveal)
-                        .disabled(!hasFile)
+                        .disabled(!canReveal)
                         .help(isDemo ? DemoData.liveOnlyHelp : "")
                     PNPButton(
                         title: "Reload", icon: "arrow.clockwise", size: .sm, action: reload)
@@ -88,7 +85,7 @@ struct ConfigFromFileTab: View {
                     title: "Not read by the app",
                     trailingValue: Self.count(
                         sections.unknown.count + sections.omittedUnknown, "key"))
-                ForEach(sections.unknown, id: \.keyPath) { key in
+                ForEach(Array(sections.unknown.enumerated()), id: \.offset) { _, key in
                     row(key.keyPath, key.suggestion.map { "Did you mean \"\($0)\"?" } ?? "")
                 }
                 moreLine(sections.omittedUnknown, "key")

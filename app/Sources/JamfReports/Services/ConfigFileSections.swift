@@ -71,8 +71,8 @@ struct ConfigFileSections: Equatable, Sendable {
 
     /// `path` is the key's place in the schema (no list indices); `shown` is what is listed.
     /// A value of the wrong shape (a scalar where the app reads a block, a block where it
-    /// reads a scalar) is skipped: the decoder rejects it by key path, and the file-problem
-    /// card names it.
+    /// reads a scalar) is not listed: the app does not read it as that key. A file with one
+    /// usually fails to decode, and the file-problem card then names the key path.
     private static func visit(
         _ value: YAMLCodec.YAMLValue, path: [String], shown: String, edited: Set<[String]>,
         into settings: inout [Setting]
@@ -153,6 +153,12 @@ enum ConfigFileReading: Equatable, Sendable {
     case sections(ConfigFileSections)
     /// A sentence saying why there is nothing to list.
     case unavailable(String)
+
+    /// Whether there is a config.yaml to reveal in Finder, readable or not. Never in demo mode.
+    static func canReveal(at url: URL?, demoMode: Bool = false) -> Bool {
+        guard !demoMode, let url else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
 
     /// Demo mode reads no file and shows the demo workspace's nothing-to-show state.
     static func read(at url: URL?, demoMode: Bool = false) -> ConfigFileReading {

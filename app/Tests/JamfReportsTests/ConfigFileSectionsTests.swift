@@ -255,6 +255,15 @@ final class ConfigFileSectionsTests: XCTestCase {
         XCTAssertEqual(sections.omittedUnknown, 60 - ConfigFileSections.noteCap)
     }
 
+    /// Two keys cut to the same displayed text list under one key path, so a row cannot be
+    /// identified by it.
+    func testTwoLongUnknownKeysCanShareADisplayedPath() throws {
+        let stem = String(repeating: "k", count: 70)
+        let sections = try build("columns:\n  \(stem)a: 1\n  \(stem)b: 2\n")
+        XCTAssertEqual(sections.unknown.count, 2)
+        XCTAssertEqual(Set(sections.unknown.map(\.keyPath)).count, 1)
+    }
+
     func testAFileThatIsNotAMappingThrows() {
         XCTAssertThrowsError(try build("- a\n- b\n"))
     }
@@ -296,6 +305,16 @@ final class ConfigFileSectionsTests: XCTestCase {
         XCTAssertEqual(
             ConfigFileReading.read(at: try tempFile("- a\n")),
             .unavailable("config.yaml must contain a top-level YAML mapping."))
+    }
+
+    /// Reveal needs the file to exist, not to be readable as a mapping.
+    func testRevealIsOfferedForAnyFileThatExists() throws {
+        XCTAssertTrue(ConfigFileReading.canReveal(at: try tempFile("jamf_cli:\n  data_dir: s\n")))
+        XCTAssertTrue(ConfigFileReading.canReveal(at: try tempFile("- a\n")))
+        XCTAssertFalse(ConfigFileReading.canReveal(at: try tempFile(nil)))
+        XCTAssertFalse(ConfigFileReading.canReveal(at: nil))
+        XCTAssertFalse(ConfigFileReading.canReveal(
+            at: try tempFile("a: 1\n"), demoMode: true))
     }
 
     func testDemoModeReadsNoFile() throws {
