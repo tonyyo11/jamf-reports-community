@@ -85,6 +85,8 @@ struct ConfigView: View {
     /// `Line N: …` for each line the YAML reader did not take as written.
     @State private var parseNotes: [String] = []
     @State private var showRestoreConfirm = false
+    /// A Save found config.yaml changed since the screen read it, and wrote nothing.
+    @State private var changedOnDisk = false
 
     var body: some View {
         PageScaffold(spacing: 16) {
@@ -96,9 +98,13 @@ struct ConfigView: View {
             if !workspace.configRepairedKeys.isEmpty || !parseNotes.isEmpty {
                 configHealedKeysCard(workspace.configRepairedKeys, notes: parseNotes)
             }
+            if let notice = Self.saveNotice(changedOnDisk: changedOnDisk) {
+                saveNoticeCard(notice)
+            }
             tabContent
         }
         .task(id: workspace.profile) {
+            changedOnDisk = false
             do {
                 try await workspace.loadConfig()
             } catch {
@@ -257,6 +263,53 @@ struct ConfigView: View {
         )
     }
 
+    /// What the last Save could not do, or nil when there is nothing to say.
+    static func saveNotice(changedOnDisk: Bool) -> (title: String, lines: [String])? {
+        guard changedOnDisk else { return nil }
+        return (
+            title: "Not saved",
+            lines: ["config.yaml changed on disk since this screen loaded it. Reload reads the "
+                + "file again and discards the changes you have not saved here."]
+        )
+    }
+
+    private func saveNoticeCard(_ notice: (title: String, lines: [String])) -> some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.warn)
+                        .accessibilityHidden(true)
+                    Text(notice.title)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                }
+                ForEach(notice.lines, id: \.self) { line in
+                    Text(line)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if changedOnDisk {
+                    PNPButton(title: "Reload", icon: "arrow.clockwise", size: .sm) { reload() }
+                }
+            }
+        }
+    }
+
+    /// Reads config.yaml again, dropping the edits not yet saved; the notice says so.
+    private func reload() {
+        Task { @MainActor in
+            do {
+                try await workspace.loadConfig()
+            } catch {
+                workspace.configError = error.localizedDescription
+            }
+            changedOnDisk = false
+            refreshEngineParseStatus()
+        }
+    }
+
     // MARK: Tab strip
 
     /// Full labels need ~804 pt; the page has 672 at the minimum window with the
@@ -390,9 +443,15 @@ struct ConfigView: View {
         saveTask = Task { @MainActor in
             do {
                 try await workspace.saveConfig()
+                changedOnDisk = false
                 // A save rewrites the blocks this screen edits; re-read what the card lists.
                 refreshEngineParseStatus()
                 withAnimation { saveStatus = .saved }
+            } catch ConfigService.ConfigError.changedOnDisk {
+                // Nothing was written: the notice says why and offers Reload.
+                changedOnDisk = true
+                saveStatus = .idle
+                return
             } catch {
                 let message = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription

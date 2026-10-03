@@ -350,7 +350,7 @@ final class ConfigServiceTests: XCTestCase {
             state: state,
             existingDocument: nil,
             workspaceRoot: root
-        )
+        ).document
         let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
 
         XCTAssertEqual(savedDocument, loaded.document)

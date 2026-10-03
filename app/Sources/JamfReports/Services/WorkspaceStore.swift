@@ -184,6 +184,8 @@ final class WorkspaceStore {
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
+    // config.yaml as configState was read from it; a save refuses once the file differs.
+    private var _loadedStamp: ConfigFileStamp?
     // Snapshot of state at last load/save — used by revert().
     private var _savedState: ConfigState?
 
@@ -708,6 +710,7 @@ final class WorkspaceStore {
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
+            _loadedStamp = loaded.stamp
             _savedState = loaded.state
             configState = loaded.state
             configError = nil
@@ -715,6 +718,7 @@ final class WorkspaceStore {
         } catch ConfigService.ConfigError.missingConfig {
             configState = .defaultState
             _loadedDoc = nil
+            _loadedStamp = .absent
             _savedState = nil
             configError = nil
             configRepairedKeys = []
@@ -730,16 +734,18 @@ final class WorkspaceStore {
         // background item's all-profiles runs treat it as a real workspace.
         guard !demoMode else { return }
         syncColumnMappingsToState()
-        let newDoc = try ConfigService.save(
+        let saved = try ConfigService.save(
             profile: profile,
             state: configState,
-            existingDocument: _loadedDoc
+            existingDocument: _loadedDoc,
+            ifUnchangedSince: _loadedStamp
         )
-        _loadedDoc = newDoc
+        _loadedDoc = saved.document
+        _loadedStamp = saved.stamp
         _savedState = configState
         configError = nil
         // Re-saving drops the orphaned sequence items, so the healed-keys note clears.
-        configRepairedKeys = newDoc.repairedKeys.sorted()
+        configRepairedKeys = saved.document.repairedKeys.sorted()
     }
 
     /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's
@@ -811,6 +817,7 @@ final class WorkspaceStore {
         _savedState?.failuresListColumn = saved.failuresListColumn
         if let reloaded = try? ConfigService.load(profile: profile) {
             _loadedDoc = reloaded.document
+            _loadedStamp = reloaded.stamp
         }
         rebuildColumnMappings()
     }

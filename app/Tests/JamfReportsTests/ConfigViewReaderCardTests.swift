@@ -41,4 +41,14 @@ final class ConfigViewReaderCardTests: XCTestCase {
         XCTAssertEqual(lines.count, 22)
         XCTAssertEqual(lines.last, "…and 3 more")
     }
+
+    func testARefusedSaveSaysWhyAndWhatReloadDiscards() throws {
+        XCTAssertNil(ConfigView.saveNotice(changedOnDisk: false))
+        let notice = try XCTUnwrap(ConfigView.saveNotice(changedOnDisk: true))
+        XCTAssertEqual(notice.title, "Not saved")
+        XCTAssertEqual(notice.lines, [
+            "config.yaml changed on disk since this screen loaded it. Reload reads the file "
+                + "again and discards the changes you have not saved here.",
+        ])
+    }
 }

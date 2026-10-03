@@ -162,6 +162,30 @@ struct ConfigState: Equatable, Sendable {
 struct LoadedConfig: Sendable {
     var document: YAMLCodec.YAMLDocument
     var state: ConfigState
+    /// The file as it was read, for a save to tell whether it changed since.
+    var stamp = ConfigFileStamp.absent
+}
+
+struct SavedConfig: Sendable {
+    var document: YAMLCodec.YAMLDocument
+    var stamp: ConfigFileStamp
+}
+
+/// A config file's modification date and size. Both nil when there is no file.
+struct ConfigFileStamp: Equatable, Sendable {
+    static let absent = ConfigFileStamp(modified: nil, size: nil)
+
+    var modified: Date?
+    var size: Int?
+
+    static func of(_ url: URL) -> ConfigFileStamp {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return .absent
+        }
+        return ConfigFileStamp(
+            modified: attributes[.modificationDate] as? Date,
+            size: (attributes[.size] as? NSNumber)?.intValue)
+    }
 }
 
 enum ConfigService {
@@ -172,6 +196,7 @@ enum ConfigService {
         case missingConfig(URL)
         case credentialKey(String)
         case invalidTopLevel
+        case changedOnDisk
 
         var errorDescription: String? {
             switch self {
@@ -181,6 +206,7 @@ enum ConfigService {
             case .missingConfig(let url): "No config.yaml at \(url.path)"
             case .credentialKey(let key): "Refusing to load credential-shaped key: \(key)"
             case .invalidTopLevel: "config.yaml must contain a top-level mapping."
+            case .changedOnDisk: "config.yaml changed on disk since this screen loaded it."
             }
         }
     }
@@ -196,6 +222,8 @@ enum ConfigService {
             throw ConfigError.missingConfig(url)
         }
 
+        // Taken before the read, so a change made during it shows as a change.
+        let stamp = ConfigFileStamp.of(url)
         let text = try String(contentsOf: url, encoding: .utf8)
         let document = try YAMLCodec.decode(text)
         if !document.repairedKeys.isEmpty {
@@ -204,17 +232,21 @@ enum ConfigService {
             )
         }
         try rejectCredentialKeys(in: document.root)
-        return LoadedConfig(document: document, state: state(from: document))
+        return LoadedConfig(document: document, state: state(from: document), stamp: stamp)
     }
 
+    /// `ifUnchangedSince`: the stamp of the file the state was read from. When the file on
+    /// disk no longer matches it, nothing is written and `changedOnDisk` is thrown.
     static func save(
         profile: String,
         state: ConfigState,
         existingDocument: YAMLCodec.YAMLDocument?,
-        workspaceRoot: URL? = nil
-    ) throws -> YAMLCodec.YAMLDocument {
+        workspaceRoot: URL? = nil,
+        ifUnchangedSince stamp: ConfigFileStamp? = nil
+    ) throws -> SavedConfig {
         let url = try configURL(for: profile, workspaceRoot: workspaceRoot)
         try rejectSymlinkDestination(url)
+        if let stamp, ConfigFileStamp.of(url) != stamp { throw ConfigError.changedOnDisk }
 
         let manager = FileManager.default
         let directory = url.deletingLastPathComponent()
@@ -241,7 +273,7 @@ enum ConfigService {
         }
         _ = try manager.replaceItemAt(url, withItemAt: tempURL)
 
-        return try YAMLCodec.decode(encoded)
+        return SavedConfig(document: try YAMLCodec.decode(encoded), stamp: .of(url))
     }
 
     /// Copies the file at `url` to `<name>.bak-<yyyyMMdd-HHmmss>` beside it, before the app
