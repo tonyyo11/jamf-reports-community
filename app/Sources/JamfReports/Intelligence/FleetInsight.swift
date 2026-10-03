@@ -25,7 +25,8 @@ struct FleetInsight: Sendable, Equatable {
 // MARK: - Pure input builder (ungated)
 
 /// What a screen hands the generator: a header, the screen's focus and its
-/// aggregate facts. Aggregates only — never a device, user or host name.
+/// aggregate facts. A label can carry a name typed in config.yaml (a security agent
+/// or a compliance benchmark), never a device, user, host or EA name.
 struct FleetInsightInput: Sendable, Equatable {
     let title: String
     let focus: String

@@ -658,8 +658,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     nonisolated static func loadPatchPctRecompute(
         profile: String, summaries: [DailySummary]
     ) -> [String: Double] {
-        // The scan is bounded: one directory listing and at most one decode per eligible
-        // day, off the main thread. It is skipped when every recorded figure already
+        // The scan is bounded: one directory listing and at most one successful decode per
+        // eligible day (an undecodable file gives way to the next), off the main thread. It is skipped when every recorded figure already
         // carries the device basis (a workspace that began on 2.9).
         guard summaries.contains(where: isRecordedPerTitle),
               let workspace = ProfileService.workspaceURL(for: profile) else { return [:] }
