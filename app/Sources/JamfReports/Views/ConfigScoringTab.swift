@@ -73,7 +73,8 @@ struct SecurityPolicyCard: View {
                 .accessibilityLabel("\(control.displayName) level")
             }
             if let issue {
-                writeNote(issue, level: workspace.securityPolicy.level(for: control)) {
+                writeNote(issue, level: workspace.securityPolicy.level(for: control),
+                          for: control.displayName) {
                     Self.writeAppliedLevel(control, in: workspace, failure: $saveFailure)
                 }
             }
@@ -106,7 +107,8 @@ struct SecurityPolicyCard: View {
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
             if let issue {
-                writeNote(issue, level: workspace.securityPolicy.fileVaultOffHardwareEncrypted) {
+                writeNote(issue, level: workspace.securityPolicy.fileVaultOffHardwareEncrypted,
+                          for: "FileVault off on a hardware-encrypted Mac") {
                     Self.writeAppliedHardwareLevel(in: workspace, failure: $saveFailure)
                 }
             }
@@ -128,13 +130,14 @@ struct SecurityPolicyCard: View {
     /// it applied. Choosing the shown level in the picker fires nothing, so without the
     /// button a typo that reads as that level could not be cleared from here.
     private func writeNote(
-        _ issue: SecurityPolicyIssue, level: SecurityControlLevel?,
+        _ issue: SecurityPolicyIssue, level: SecurityControlLevel?, for setting: String,
         write: @escaping () -> Void
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             warnNote(Self.levelCaption(issue))
             Spacer(minLength: 8)
             PNPButton(title: Self.writeTitle(for: level), size: .sm, action: write)
+                .accessibilityLabel("\(Self.writeTitle(for: level)) for \(setting)")
         }
     }
 
