@@ -292,6 +292,15 @@ final class GenerateSheetStateTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
     }
 
+    /// Every sheet the engine writes can be picked for Custom, and only once.
+    func testTheCustomListOffersEverySheetOnce() {
+        let listed = CustomSheetGroup.allGroups.flatMap(\.sheets)
+        XCTAssertEqual(listed.count, Set(listed).count, "a sheet is listed twice")
+        let missing = Set(SheetID.allCases).subtracting(listed)
+        XCTAssertTrue(missing.isEmpty,
+                      "not offered: \(missing.map(\.rawValue).sorted().joined(separator: ", "))")
+    }
+
     /// A tap must redraw the checkmark, the "N sheets selected" line and Generate, so a
     /// change to the selection has to reach the view's observation, and still be saved.
     func testATappedSheetReachesObserversAndIsSaved() {

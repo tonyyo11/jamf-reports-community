@@ -1109,7 +1109,8 @@ struct CustomSheetGroup: Sendable {
     let sheets: [SheetID]
 
     /// All sheet groups organized by functional area.
-    /// Order matches the sidebar grouping in the main app for consistency.
+    /// Order matches the sidebar grouping in the main app for consistency. Together they
+    /// list every `SheetID` once; a test holds that when a sheet is added.
     static let allGroups: [CustomSheetGroup] = [
         CustomSheetGroup(name: "Executive", sheets: [
             .executiveSummary,
@@ -1128,6 +1129,7 @@ struct CustomSheetGroup: Sendable {
             .patchCompliance,
             .patchFailures,
             .patchSummaryDashboard,
+            .patchVelocity,
             .updateStatus,
             .updateFailures,
             .policyHealth,
@@ -1136,6 +1138,8 @@ struct CustomSheetGroup: Sendable {
             .eaCoverage,
             .eaDefinitions,
             .ddmStatus,
+            .ddmDeviceStatus,
+            .mdmCommandHealth,
             .blueprintStatus,
         ]),
         CustomSheetGroup(name: "Fleet", sheets: [
