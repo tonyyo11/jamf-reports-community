@@ -20,6 +20,9 @@ final class ConfigEditedKeysTests: XCTestCase {
             ["charts", "save_png"], ["charts", "os_adoption", "per_major_charts"],
             ["notify", "enabled"], ["notify", "url"], ["notify", "detail"],
             ["ai", "enabled"], ["ai", "tier"], ["ai", "reasoning_level"],
+            ["security_policy", "controls", "sip"], ["security_policy", "controls", "filevault"],
+            ["security_policy", "filevault_off_hardware_encrypted"],
+            ["security_policy", "score_weights", "edr_agent"],
         ]
         for path in expected {
             XCTAssertTrue(paths.contains(path), path.joined(separator: "."))

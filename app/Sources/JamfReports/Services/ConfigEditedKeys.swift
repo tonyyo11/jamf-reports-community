@@ -1,9 +1,10 @@
 import Foundation
 
 /// The key paths the app's screens write to config.yaml, read off the code that writes them:
-/// `ConfigService.apply` for the Config screen's blocks, and each scoped writer's `apply`
-/// (charts, notify, ai). A key added to an editor joins the set with no second list to
-/// update. A path leaves out list indices (`custom_eas`, `name`), as `ConfigSchema` does.
+/// `ConfigService.apply` for the Config screen's blocks, and the `apply` of each scoped
+/// writer (`ChartsConfigWriter`, `NotifyConfigWriter`, `AIConfigWriter`,
+/// `SecurityPolicyConfigWriter`). A key added to an editor joins the set with no second list
+/// to update. A path leaves out list indices (`custom_eas`, `name`), as `ConfigSchema` does.
 enum ConfigEditedKeys {
     static let paths: Set<[String]> = derive()
 
@@ -15,9 +16,22 @@ enum ConfigEditedKeys {
         NotifyConfigWriter.apply(
             enabled: false, provider: "teams", url: "", detail: "full", to: &root)
         AIConfigWriter.apply(AIConfig(), to: &root)
+        root.set("security_policy", value: .mapping(securityPolicyProbe))
         var found: Set<[String]> = []
         collect(root, under: [], into: &found)
         return found
+    }
+
+    /// The block with every setting the Scoring tab writes, on an empty block: each control's
+    /// level, FileVault's hardware level, and the whole set of weights.
+    private static var securityPolicyProbe: YAMLCodec.YAMLMapping {
+        var block = YAMLCodec.YAMLMapping(entries: [])
+        for control in SecurityControl.allCases {
+            SecurityPolicyConfigWriter.apply(.level(.fail, for: control), to: &block)
+        }
+        SecurityPolicyConfigWriter.apply(.hardwareLevel(.fail), to: &block)
+        SecurityPolicyConfigWriter.apply(.scoreWeights(.defaultWeights), to: &block)
+        return block
     }
 
     /// A state that sets every key the Config screen can write: the columns it writes only
@@ -28,7 +42,7 @@ enum ConfigEditedKeys {
         state.securityAgents = [
             ConfigSecurityAgent(name: "x", column: "x", connectedValue: "x"),
         ]
-        state.customEAs = ["boolean", "percentage", "version", "date", "text"].map { type in
+        state.customEAs = CustomEAConfig.EAType.allCases.map(\.rawValue).map { type in
             ConfigCustomEA(
                 name: "x", column: "x", type: type, trueValue: "x", warningThreshold: "1",
                 criticalThreshold: "2", currentVersions: ["x"], warningDays: "3")

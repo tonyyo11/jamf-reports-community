@@ -150,6 +150,24 @@ final class ConfigFileSectionsTests: XCTestCase {
         XCTAssertTrue(sections.isEmpty)
     }
 
+    /// The Scoring tab's cards write these; listing them as "not editable here" on the same
+    /// screen would be wrong.
+    func testTheSecurityPolicyKeysTheScoringTabEditsAreNotListed() throws {
+        let yaml = """
+        security_policy:
+          controls:
+            sip: warning
+            firewall: ignore
+          filevault_off_hardware_encrypted: warning
+          score_weights:
+            filevault: 20
+            sip: 10
+        """
+        let sections = try build(yaml)
+        XCTAssertEqual(summary(sections), [])
+        XCTAssertEqual(sections.unknown, [])
+    }
+
     func testAKeyNextToAnEditedOneIsStillListed() throws {
         let sections = try build(
             "charts:\n  save_png: true\n  historical_csv_dir: snaps\n"

@@ -241,7 +241,9 @@ enum SecurityPolicyConfigWriter {
         _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
     }
 
-    private static func apply(_ setting: Setting, to block: inout YAMLCodec.YAMLMapping) {
+    /// Sets `setting` on the `security_policy` block. Internal so `ConfigEditedKeys` can read
+    /// the keys the Scoring tab writes off it.
+    static func apply(_ setting: Setting, to block: inout YAMLCodec.YAMLMapping) {
         switch setting {
         case .level(let level, let control):
             var controls = lastValue(of: controlsKey, in: block)?.mapping ?? .init(entries: [])
