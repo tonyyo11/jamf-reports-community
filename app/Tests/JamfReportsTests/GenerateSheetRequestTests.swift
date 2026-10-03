@@ -127,15 +127,18 @@ final class GenerateSheetRequestTests: XCTestCase {
         XCTAssertEqual(outcome.message, busy)
     }
 
+    /// The cached snapshots are still there; the message says how to use them.
     func testAFailedCollectExplainsItsExitAndGeneratesNothing() async {
         let state = GenerateSheetState()
-        let events = Events()
-        let outcome = await run(state.request(), events: events,
-                                collect: { CLIBridge.exitCodeUnauthorized })
-        XCTAssertEqual(events.log, ["collect"])
-        XCTAssertEqual(outcome.count, 0)
-        XCTAssertEqual(outcome.message,
-                       CLIBridge.explainExit(CLIBridge.exitCodeUnauthorized, operation: "Collect"))
+        let hint = " Uncheck Collect fresh data first to generate from cached snapshots."
+        for code in [Int32(1), CLIBridge.exitCodeUnauthorized] {
+            let events = Events()
+            let outcome = await run(state.request(), events: events, collect: { code })
+            XCTAssertEqual(events.log, ["collect"])
+            XCTAssertEqual(outcome.count, 0)
+            XCTAssertEqual(outcome.message,
+                           CLIBridge.explainExit(code, operation: "Collect") + hint)
+        }
     }
 
     func testSchoolAsksForNoNarrative() async {

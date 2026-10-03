@@ -127,7 +127,8 @@ final class GenerateSheetState {
                 }
             )
             if let result { return summarize(result) }
-            return (0, CLIBridge.explainExit(exit, operation: "Collect"))
+            return (0, CLIBridge.explainExit(exit, operation: "Collect")
+                + " Uncheck Collect fresh data first to generate from cached snapshots.")
         } catch {
             return (0, CLIBridge.explainOperationError(error, operation: "Collect"))
         }
