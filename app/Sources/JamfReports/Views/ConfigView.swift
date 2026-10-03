@@ -283,9 +283,15 @@ struct ConfigView: View {
                 + "it and did not write the \(tabs[key] ?? key) tab. Write each entry as a "
                 + "\"- name:\" list item to edit it here."
         }
-        if let report, let copy = report.backupName, report.droppedComments {
-            lines.append("Comments inside the blocks this screen edits are not kept. A copy of "
-                + "the file as it was is at \(copy).")
+        if let report, let copy = report.backupName {
+            if report.droppedComments {
+                lines.append("Comments inside the blocks this screen edits are not kept. A copy "
+                    + "of the file as it was is at \(copy).")
+            }
+            if report.droppedUnreadLines {
+                lines.append("Lines this screen could not read inside the blocks it edits are "
+                    + "not kept. A copy of the file as it was is at \(copy).")
+            }
         }
         return lines.isEmpty ? nil : (title: "Saved with notes", lines: lines)
     }

@@ -179,6 +179,8 @@ struct ConfigSaveReport: Equatable, Sendable {
     var keptBlocks: [String] = []
     /// A block the save rewrote held a `#` comment, which the rewrite does not keep.
     var droppedComments = false
+    /// A block the save rewrote held a line the reader did not read, which it does not keep.
+    var droppedUnreadLines = false
     /// The copy of the file made, once per launch, before a save that dropped any of it.
     var backupName: String?
 }
@@ -280,7 +282,10 @@ enum ConfigService {
         apply(state: state, to: &document)
         let rewritten = YAMLCodec.replacedLines(document, replacingTopLevelKeys: keys)
         report.droppedComments = YAMLCodec.hasComment(document, onLines: rewritten)
-        if report.droppedComments {
+        report.droppedUnreadLines = document.parseNotes.contains { note in
+            note.isUnread && rewritten.contains { $0.contains(note.line) }
+        }
+        if report.droppedComments || report.droppedUnreadLines {
             report.backupName = try launchBackup(of: url)
         }
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: keys)

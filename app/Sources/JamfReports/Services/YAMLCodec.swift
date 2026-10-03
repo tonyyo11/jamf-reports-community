@@ -110,6 +110,15 @@ enum YAMLCodec {
         /// `Line N: <detail>`, as the Config screen lists it.
         var display: String { "Line \(line): \(detail)" }
 
+        /// The line's text (for a block value, the lines under it) is not in what was read,
+        /// so writing its block afresh loses it.
+        var isUnread: Bool {
+            switch kind {
+            case .indentation, .noKey, .blockScalar, .orphanItems, .secondDocument: true
+            case .tab, .duplicateKey, .unclosedFlow: false
+            }
+        }
+
         private static func spaces(_ count: Int) -> String {
             count == 1 ? "1 space" : "\(count) spaces"
         }

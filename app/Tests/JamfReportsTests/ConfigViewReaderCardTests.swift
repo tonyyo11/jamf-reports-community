@@ -70,6 +70,19 @@ final class ConfigViewReaderCardTests: XCTestCase {
         ])
     }
 
+    func testASaveThatDroppedUnreadLinesNamesTheSameCopy() throws {
+        let report = ConfigSaveReport(
+            droppedComments: true, droppedUnreadLines: true,
+            backupName: "config.yaml.bak-20261002-101500")
+        let notice = try XCTUnwrap(ConfigView.saveNotice(changedOnDisk: false, report: report))
+        XCTAssertEqual(notice.lines, [
+            "Comments inside the blocks this screen edits are not kept. A copy of the file as "
+                + "it was is at config.yaml.bak-20261002-101500.",
+            "Lines this screen could not read inside the blocks it edits are not kept. A copy "
+                + "of the file as it was is at config.yaml.bak-20261002-101500.",
+        ])
+    }
+
     func testARefusedSaveSaysWhyAndWhatReloadDiscards() throws {
         XCTAssertNil(ConfigView.saveNotice(changedOnDisk: false, report: nil))
         let notice = try XCTUnwrap(ConfigView.saveNotice(changedOnDisk: true, report: nil))

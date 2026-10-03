@@ -116,6 +116,42 @@ final class ConfigSaveTypedTextTests: XCTestCase {
         XCTAssertEqual(try backups(beside: url), [])
     }
 
+    // MARK: Unread lines inside a rewritten block
+
+    /// A line the reader skipped is not in what it read, so a rewrite of its block loses it,
+    /// and the refresh after the save clears its note.
+    func testASaveThatDropsAnUnreadLineInsideABlockKeepsACopy() throws {
+        let typed = "columns:\n  computer_name: Name\n  just some words\n"
+            + "html:\n  also some words\n  track_history: false\n"
+        let (root, url) = try workspace(with: typed)
+        let loaded = try ConfigService.load(profile: Self.profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.document.parseNotes.map(\.line), [3, 5])
+
+        let saved = try saveLoaded(root: root)
+        XCTAssertTrue(saved.report.droppedUnreadLines)
+        XCTAssertFalse(saved.report.droppedComments)
+        let name = try XCTUnwrap(saved.report.backupName)
+        let copy = url.deletingLastPathComponent().appendingPathComponent(name)
+        XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), typed)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(text.contains("just some words"), text)
+        XCTAssertTrue(text.contains("\n  also some words\n"), "html is not rewritten")
+    }
+
+    /// A duplicate key is read (both copies are written back), and html is not rewritten.
+    func testNotesOnLinesThatAreKeptMakeNoCopy() throws {
+        let (root, url) = try workspace(
+            with: "columns:\n  computer_name: A\n  computer_name: B\nhtml:\n  stray words\n")
+        let loaded = try ConfigService.load(profile: Self.profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.document.parseNotes.map(\.line), [2, 5])
+
+        let saved = try saveLoaded(root: root)
+        XCTAssertFalse(saved.report.droppedUnreadLines)
+        XCTAssertNil(saved.report.backupName)
+        XCTAssertEqual(try backups(beside: url), [])
+        XCTAssertTrue(try String(contentsOf: url, encoding: .utf8).contains("computer_name: A"))
+    }
+
     // MARK: Backups
 
     func testABackupIsACopyBesideTheFileAndOnlyTheNewestFiveAreKept() throws {
