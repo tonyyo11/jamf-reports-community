@@ -84,9 +84,9 @@ final class ConfigSaveTypedTextTests: XCTestCase {
 
     // MARK: Comments inside a rewritten block
 
-    /// A rewritten block is emitted afresh, so a comment inside it is gone. The first save
-    /// that drops one keeps a copy of the file, once per launch.
-    func testASaveThatDropsACommentInsideABlockKeepsOneCopy() throws {
+    /// A rewritten block is emitted afresh, so a comment inside it is gone. Every save that
+    /// drops one keeps a copy of the file that holds it.
+    func testEverySaveThatDropsACommentKeepsACopyHoldingIt() throws {
         let typed = "columns:\n  # the export's name column\n  computer_name: Name  # mine\n"
             + "\n# Thresholds\nthresholds:\n  stale_device_days: 30\n"
         let (root, url) = try workspace(with: typed)
@@ -100,11 +100,16 @@ final class ConfigSaveTypedTextTests: XCTestCase {
         XCTAssertFalse(text.contains("# the export's"), text)
         XCTAssertTrue(text.contains("\n# Thresholds\n"), "a comment between blocks stays")
 
-        try (text + "  # typed later\n").write(to: url, atomically: true, encoding: .utf8)
+        let later = text + "  # typed later\n"
+        try later.write(to: url, atomically: true, encoding: .utf8)
         let second = try saveLoaded(root: root)
         XCTAssertTrue(second.report.droppedComments)
-        XCTAssertEqual(second.report.backupName, name, "one copy per launch")
-        XCTAssertEqual(try backups(beside: url), [name])
+        let secondName = try XCTUnwrap(second.report.backupName)
+        XCTAssertNotEqual(secondName, name)
+        let secondCopy = url.deletingLastPathComponent().appendingPathComponent(secondName)
+        XCTAssertEqual(try String(contentsOf: secondCopy, encoding: .utf8), later,
+                       "the copy the notice names holds the line typed since the first save")
+        XCTAssertEqual(try backups(beside: url).sorted(), [name, secondName].sorted())
     }
 
     func testASaveWithNoCommentInsideTheBlocksItRewritesMakesNoCopy() throws {
@@ -165,10 +170,12 @@ final class ConfigSaveTypedTextTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 1_790_000_000)
         var names: [String] = []
         for minute in 0..<7 {
+            let text = typed + "# edit \(minute)\n"
+            try text.write(to: url, atomically: true, encoding: .utf8)
             let backup = try XCTUnwrap(
                 ConfigService.backUp(url, now: start.addingTimeInterval(Double(minute) * 60)))
             XCTAssertEqual(backup.deletingLastPathComponent().path, dir.path)
-            XCTAssertEqual(try String(contentsOf: backup, encoding: .utf8), typed)
+            XCTAssertEqual(try String(contentsOf: backup, encoding: .utf8), text)
             names.append(backup.lastPathComponent)
         }
         XCTAssertNotNil(names[0].range(
@@ -177,6 +184,37 @@ final class ConfigSaveTypedTextTests: XCTestCase {
             .filter { $0.hasPrefix("config.yaml.") }.sorted()
         XCTAssertEqual(left, (names.suffix(5) + ["config.yaml.bak-notes",
                                                  "config.yaml.broken-20200101-000000"]).sorted())
+    }
+
+    /// A copy holding the same bytes already is the copy; one made in the same second as
+    /// another, with other text, takes the next free second rather than naming the old one.
+    func testACopyIsMadeOnlyWhenNoCopyHoldsTheSameText() throws {
+        let (_, url) = try workspace(with: "columns: {}\n")
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let first = try XCTUnwrap(ConfigService.backUp(url, now: now))
+        XCTAssertEqual(try ConfigService.backUp(url, now: now.addingTimeInterval(90)), first)
+        XCTAssertEqual(try backups(beside: url), [first.lastPathComponent])
+
+        try "columns: {}\n# more\n".write(to: url, atomically: true, encoding: .utf8)
+        let second = try XCTUnwrap(ConfigService.backUp(url, now: now))
+        XCTAssertNotEqual(second, first)
+        XCTAssertEqual(try String(contentsOf: second, encoding: .utf8), "columns: {}\n# more\n")
+        XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "columns: {}\n")
+    }
+
+    /// Names carry local time, so on a workspace shared across time zones the copy just made
+    /// can sort before older ones. It is kept all the same.
+    func testTheCopyJustMadeIsNeverPruned() throws {
+        let (_, url) = try workspace(with: "columns: {}\n")
+        let dir = url.deletingLastPathComponent()
+        let later = (1...5).map { "config.yaml.bak-2099010\($0)-000000" }
+        for name in later {
+            try name.write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        let made = try XCTUnwrap(
+            ConfigService.backUp(url, now: Date(timeIntervalSince1970: 1_790_000_000)))
+        XCTAssertEqual(try backups(beside: url).sorted(),
+                       ([made.lastPathComponent] + later.suffix(4)).sorted())
     }
 
     func testNoFileMeansNoBackup() throws {

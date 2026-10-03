@@ -181,7 +181,7 @@ struct ConfigSaveReport: Equatable, Sendable {
     var droppedComments = false
     /// A block the save rewrote held a line the reader did not read, which it does not keep.
     var droppedUnreadLines = false
-    /// The copy of the file made, once per launch, before a save that dropped any of it.
+    /// The copy of the file as it was, made before a save that dropped any of it.
     var backupName: String?
 }
 
@@ -286,7 +286,7 @@ enum ConfigService {
             note.isUnread && rewritten.contains { $0.contains(note.line) }
         }
         if report.droppedComments || report.droppedUnreadLines {
-            report.backupName = try launchBackup(of: url)
+            report.backupName = try backUp(url)?.lastPathComponent
         }
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: keys)
 
@@ -300,20 +300,6 @@ enum ConfigService {
         return SavedConfig(document: try YAMLCodec.decode(encoded), stamp: .of(url), report: report)
     }
 
-    /// The copy made of each file this launch, by path, before a save that dropped some of it.
-    nonisolated(unsafe) private static var launchBackups: [String: String] = [:]
-    private static let launchBackupsLock = NSLock()
-
-    /// The name of this launch's copy of the file at `url`, made now if there is none yet.
-    private static func launchBackup(of url: URL) throws -> String? {
-        try launchBackupsLock.withLock {
-            if let name = launchBackups[url.path] { return name }
-            let name = try backUp(url)?.lastPathComponent
-            launchBackups[url.path] = name
-            return name
-        }
-    }
-
     /// The list blocks whose value is a mapping or a scalar other than null.
     private static func nonListBlocks(in root: YAMLCodec.YAMLValue) -> [String] {
         ["custom_eas", "security_agents"].filter { key in
@@ -324,28 +310,35 @@ enum ConfigService {
     }
 
     /// Copies the file at `url` to `<name>.bak-<yyyyMMdd-HHmmss>` beside it, before the app
-    /// replaces or rewrites it, and keeps the newest five such copies. Nil when there is no file.
-    /// A copy already made in the same second is kept: it holds the earlier text.
+    /// replaces or rewrites it. A copy that already holds the same bytes is returned instead;
+    /// a name taken by other text moves to the next free second. Keeps the returned copy and
+    /// the newest four others. Nil when there is no file.
     static func backUp(_ url: URL, now: Date = Date()) throws -> URL? {
         let manager = FileManager.default
         guard manager.fileExists(atPath: url.path) else { return nil }
         let directory = url.deletingLastPathComponent()
         let prefix = url.lastPathComponent + ".bak-"
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let backup = directory.appendingPathComponent(prefix + formatter.string(from: now))
-        if !manager.fileExists(atPath: backup.path) {
+        let text = try Data(contentsOf: url)
+        let copies = try backupNames(in: directory, prefix: prefix)
+        var backup: URL
+        if let same = copies.sorted().last(where: {
+            (try? Data(contentsOf: directory.appendingPathComponent($0))) == text
+        }) {
+            backup = directory.appendingPathComponent(same)
+        } else {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyyMMdd-HHmmss"
+            var stamp = now
+            backup = directory.appendingPathComponent(prefix + formatter.string(from: stamp))
+            while manager.fileExists(atPath: backup.path) {
+                stamp.addTimeInterval(1)
+                backup = directory.appendingPathComponent(prefix + formatter.string(from: stamp))
+            }
             try manager.copyItem(at: url, to: backup)
         }
-        let copies = try manager.contentsOfDirectory(atPath: directory.path).filter { name in
-            guard name.hasPrefix(prefix) else { return false }
-            let stamp = Array(name.dropFirst(prefix.count))
-            return stamp.count == 15 && stamp.enumerated().allSatisfy {
-                $0.offset == 8 ? $0.element == "-" : "0123456789".contains($0.element)
-            }
-        }
-        for old in copies.sorted().dropLast(5) {
+        // Names carry local time, so the copy just made can sort before older ones.
+        for old in copies.filter({ $0 != backup.lastPathComponent }).sorted().dropLast(4) {
             do {
                 try manager.removeItem(at: directory.appendingPathComponent(old))
             } catch {
@@ -355,6 +348,17 @@ enum ConfigService {
             }
         }
         return backup
+    }
+
+    /// `<prefix><yyyyMMdd-HHmmss>` names in `directory`; nothing else that shares the prefix.
+    private static func backupNames(in directory: URL, prefix: String) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { name in
+            guard name.hasPrefix(prefix) else { return false }
+            let stamp = Array(name.dropFirst(prefix.count))
+            return stamp.count == 15 && stamp.enumerated().allSatisfy {
+                $0.offset == 8 ? $0.element == "-" : "0123456789".contains($0.element)
+            }
+        }
     }
 
     static func configURL(for profile: String, workspaceRoot: URL? = nil) throws -> URL {
