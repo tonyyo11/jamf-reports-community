@@ -39,6 +39,8 @@ struct ReportEngine: Sendable {
     ///   - aiNarrative: Optional AI executive narrative (F3). GUI-generate flows pass
     ///                  a pre-generated paragraph; headless callers (scheduled runs,
     ///                  included CLI) leave the default nil and no AI block is written.
+    ///   - locateJamfCLI: Finds the jamf-cli whose version the Cover sheet records; tests
+    ///                    pass `{ nil }` so no jamf-cli runs.
     ///   - onLine: Optional streaming log callback. Post-generate side-effect warnings
     ///             (archive rotation, CSV snapshot, summary JSON) are routed here when
     ///             provided, so callers with a live log view (e.g. GenerateSheet) see them.
@@ -51,6 +53,7 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> [SheetFailure] {
         // PR-10 / threat-model T-11: strict-mode pre-flight. Abort before any
@@ -63,11 +66,10 @@ struct ReportEngine: Sendable {
         let workbook = Workbook(accentColor: accent)
 
         // Capture provenance once per run — jamf-cli version + tenant URL are best-effort.
-        let jamfCLIURL = ExecutableLocator.locate("jamf-cli")
         let profile = config.jamfCli?.resolvedProfile ?? ""
         let prov = await Provenance.current(
             profile: profile,
-            jamfCLIURL: jamfCLIURL,
+            jamfCLIURL: locateJamfCLI(),
             dataDir: dataDir
         )
 

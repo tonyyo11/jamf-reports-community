@@ -126,7 +126,7 @@ final class SheetsSettingsTests: XCTestCase {
     ) async throws -> [String] {
         let out = scratch.appendingPathComponent("out-\(UUID().uuidString)/report.xlsx")
         try await ReportEngine(config: config, dataDir: dataDir)
-            .generate(csvURL: csv, outputURL: out, template: template)
+            .generate(csvURL: csv, outputURL: out, template: template, locateJamfCLI: { nil })
         return try Self.tabs(of: out)
     }
 

@@ -54,7 +54,8 @@ final class AccentColourTests: XCTestCase {
     private func stylesParts(_ config: ReportConfig, in scratch: URL) async throws -> [String] {
         let pro = scratch.appendingPathComponent("pro-\(UUID().uuidString).xlsx")
         try await ReportEngine(config: config, dataDir: scratch)
-            .generate(csvURL: nil, outputURL: pro, template: ComplianceTemplate())
+            .generate(csvURL: nil, outputURL: pro, template: ComplianceTemplate(),
+                      locateJamfCLI: { nil })
         let school = scratch.appendingPathComponent("school-\(UUID().uuidString).xlsx")
         try await ReportEngine.schoolGenerate(
             config: config, csvURL: nil, dataDir: scratch, outputURL: school)

@@ -95,7 +95,7 @@ final class ReportEngineTests: XCTestCase {
         let outURL = dataDir.appendingPathComponent("out.xlsx")
 
         do {
-            try await engine.generate(csvURL: nil, outputURL: outURL)
+            try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
             XCTFail("Expected snapshotIntegrityViolation, generate returned cleanly")
         } catch let ReportEngineError.snapshotIntegrityViolation(summary, _) {
             XCTAssertEqual(summary.mismatch, 1)
@@ -130,7 +130,7 @@ final class ReportEngineTests: XCTestCase {
 
         // Should NOT throw snapshotIntegrityViolation. May skip sheets due
         // to schema mismatch — the test goal is "didn't pre-flight-abort."
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Workbook should be written when only .absent results exist")
     }
@@ -243,7 +243,7 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outURL = dataDir.appendingPathComponent("out.xlsx")
 
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Permissive mode must not abort on mismatch")
     }
@@ -316,7 +316,7 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: config, dataDir: emptyDir)
         let outURL = emptyDir.appendingPathComponent("out.xlsx")
 
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Workbook with Cover sheet should be produced even without data")
     }
@@ -347,7 +347,7 @@ final class ReportEngineTests: XCTestCase {
 
         let engine = ReportEngine(config: config, dataDir: emptyDataDir)
         // CSV-only: no CoreDashboard data, but should succeed because CSV provides sheets.
-        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL)
+        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL, locateJamfCLI: { nil })
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
         let data = try Data(contentsOf: outURL)
@@ -371,7 +371,7 @@ final class ReportEngineTests: XCTestCase {
         let outURL = emptyDir.appendingPathComponent("out.xlsx")
 
         do {
-            try await engine.generate(csvURL: badCSV, outputURL: outURL)
+            try await engine.generate(csvURL: badCSV, outputURL: outURL, locateJamfCLI: { nil })
             XCTFail("Expected csvParseFailed error")
         } catch ReportEngineError.csvParseFailed {
             // Expected.

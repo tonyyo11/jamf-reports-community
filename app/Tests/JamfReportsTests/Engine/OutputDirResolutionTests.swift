@@ -97,7 +97,8 @@ final class OutputDirResolutionTests: XCTestCase {
                                   dataDir: workspace.appendingPathComponent("jamf-cli-data"))
         let url = engine.resolveOutputURL(stem: "report", profile: profile,
                                           onLine: { lines.add($0.text) })
-        try await engine.generate(csvURL: nil, outputURL: url, template: ComplianceTemplate())
+        try await engine.generate(csvURL: nil, outputURL: url, template: ComplianceTemplate(),
+                                  locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         return (url.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL.path,
                 url)
