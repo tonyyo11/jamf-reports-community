@@ -180,30 +180,26 @@ final class GenerateSheetState {
     }
 
     /// Summarise a `GenerateAllResult` into the count and optional error message
-    /// the UI should display. Three cases:
-    /// - All succeed  → `(succeeded.count, nil)`
-    /// - Partial      → `(succeeded.count, "Generated X, Y; Z failed (exit N)")`
-    /// - All fail     → `(0, "Generation failed (…). Check the log above.")`
+    /// the UI should display: nil when every format was written; otherwise one
+    /// `CLIBridge.explainExit` per exit code naming the formats that ended with it,
+    /// after "Generated X, Y." when some were written.
     ///
     /// `nonisolated` — the function is pure over its input; callers from any
     /// actor context can invoke it.
     nonisolated static func summarize(_ result: GenerateAllResult) -> (count: Int, message: String?) {
-        if result.failed.isEmpty {
-            return (result.succeeded.count, nil)
+        guard !result.failed.isEmpty else { return (result.succeeded.count, nil) }
+        var codes: [Int32] = []
+        for failure in result.failed where !codes.contains(failure.exitCode) {
+            codes.append(failure.exitCode)
         }
-        if result.succeeded.isEmpty {
-            let codes = result.failed
-                .map { "\($0.type.rawValue): exit \($0.exitCode)" }
-                .joined(separator: ", ")
-            return (0, "Generation failed (\(codes)). Check the log above.")
-        }
-        // Partial: some succeeded, some failed.
-        let succeededLabel = result.succeeded.map(\.rawValue).sorted().joined(separator: ", ")
-        let failedLabel = result.failed
-            .map { "\($0.type.rawValue) (exit \($0.exitCode))" }
-            .joined(separator: ", ")
-        return (result.succeeded.count,
-                "Generated \(succeededLabel); \(failedLabel) failed. Check the log above.")
+        let causes = codes.map { code in
+            let formats = result.failed.filter { $0.exitCode == code }
+                .map(\.type.rawValue).joined(separator: ", ")
+            return CLIBridge.explainExit(code, operation: "\(formats) generation")
+        }.joined(separator: " ")
+        guard !result.succeeded.isEmpty else { return (0, causes) }
+        let written = result.succeeded.map(\.rawValue).sorted().joined(separator: ", ")
+        return (result.succeeded.count, "Generated \(written). \(causes)")
     }
 }
 

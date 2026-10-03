@@ -192,6 +192,16 @@ final class GenerateSheetStateTests: XCTestCase {
         XCTAssertNil(message, "empty result (nothing requested) must return nil message")
     }
 
+    /// A failed format reads its cause, as other screens do, once per exit code.
+    func testFailedFormatsAreExplainedByTheirExitCode() {
+        let result = GenerateAllResult(succeeded: [.pdf], failed: [(.xlsx, 1), (.csv, 3), (.html, 1)])
+        let (count, message) = GenerateSheetState.summarize(result)
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(message, "Generated PDF. "
+            + CLIBridge.explainExit(1, operation: "XLSX, HTML generation") + " "
+            + CLIBridge.explainExit(3, operation: "CSV generation"))
+    }
+
     // MARK: - Custom template selection
 
     func testDefaultSelectedTemplateIDIsFullInstance() {
