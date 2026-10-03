@@ -12,6 +12,14 @@ final class SettingsAIPanelCopyTests: XCTestCase {
         XCTAssertTrue(intro.contains("nothing leaves it"), intro)
     }
 
+    /// The insight card is on five screens, not only Overview.
+    func testIntroNamesEveryScreenWithAnInsightCard() {
+        let intro = SettingsView.aiInsightsBlurb
+        for screen in ["Overview", "Trends", "Audit", "Security Posture", "Compliance Posture"] {
+            XCTAssertTrue(intro.contains(screen), "intro does not name \(screen): \(intro)")
+        }
+    }
+
     func testIntroDoesNotMentionAnOffDeviceModel() {
         let intro = SettingsView.aiInsightsBlurb.lowercased()
         for word in ["private cloud", "external", "provider", "opt in"] {

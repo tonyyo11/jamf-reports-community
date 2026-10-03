@@ -947,12 +947,13 @@ struct SettingsView: View {
     // MARK: - AI Insights (macOS 27+, opt-in)
 
     nonisolated static let aiInsightsBlurb: String =
-        "Turn already-collected fleet data into a plain-language insight card "
-        + "on Overview, using Apple's on-device Foundation Model. Off by default. "
+        "Turn already-collected fleet data into plain-language insight cards on "
+        + "Overview, Trends, Audit, Security Posture and Compliance Posture, using "
+        + "Apple's on-device Foundation Model. Off by default. "
         + "The model runs on this Mac and nothing leaves it."
 
-    /// Turns already-collected fleet data into a plain-language insight card
-    /// on Overview. Off by default; requires macOS 27, where Apple's on-device
+    /// Turns already-collected fleet data into plain-language insight cards on
+    /// five screens. Off by default; requires macOS 27, where Apple's on-device
     /// Foundation Model generates it. Persists to this profile's `config.yaml`
     /// (`ai:` block) via `AIConfigWriter`, scoped to just that key — the same
     /// pattern as `DebugLoggingService`'s own plist, not the Config-tab's
