@@ -138,6 +138,9 @@ columns:
   # Microsoft Entra SSO registration status.
   entra_sso_status: ""
 
+  # Purchase date. Read; no report uses it yet (adds no column).
+  # purchase_date: ""
+
 
 # =============================================================================
 # MOBILE CSV COLUMN MAPPING
@@ -676,6 +679,7 @@ exceptions: []
 #     signed_off_date: "2026-01-15"
 #     expires_date: "2026-07-15"
 #     linked_finding: "os_version_current"
+#     control_id: "AC-2"   # read; no report uses it yet
 
 
 # =============================================================================
