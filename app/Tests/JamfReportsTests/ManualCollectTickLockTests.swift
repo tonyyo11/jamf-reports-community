@@ -375,15 +375,7 @@ final class ManualCollectTickLockTests: XCTestCase {
     func testNoScheduleReadsOverdueWhileThisProcessHoldsTheLock() async throws {
         let (store, _) = try makeStore()
         defer { AutomationHealthModel.shared.issues = [] }
-        let twoHoursAgo = Calendar.current.dateComponents(
-            [.hour, .minute], from: Date().addingTimeInterval(-2 * 3600))
-        store.schedules = [Schedule(
-            name: "Daily", profile: profile,
-            schedule: String(format: "Daily %02d:%02d",
-                             twoHoursAgo.hour ?? 0, twoHoursAgo.minute ?? 0),
-            cadence: "custom", mode: .snapshotOnly, next: "—", last: "—", lastStatus: .ok,
-            artifacts: [], enabled: true,
-            launchAgentLabel: "\(LaunchAgentWriter.labelPrefix).\(profile).daily")]
+        store.schedules = [dailyScheduleThatFiredTwoHoursAgo()]
 
         // Past any window an earlier test's hold left behind: the release time is per process.
         let afterTheWindow = Date().addingTimeInterval(TickLock.wakeInterval + 61)
@@ -405,6 +397,34 @@ final class ManualCollectTickLockTests: XCTestCase {
             now: Date().addingTimeInterval(TickLock.wakeInterval + 61))
         XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [.overdue],
                        "still overdue one wake after the hold ends is reported")
+    }
+
+    /// A tick that holds the lock now is running what came due, so that is not overdue
+    /// either; once the tick is gone it is.
+    func testNoScheduleReadsOverdueWhileATickHoldsTheLock() async throws {
+        let (store, lock) = try makeStore()
+        defer { AutomationHealthModel.shared.issues = [] }
+        store.schedules = [dailyScheduleThatFiredTwoHoursAgo()]
+        let afterTheWindow = Date().addingTimeInterval(TickLock.wakeInterval + 61)
+
+        try await whileAnotherProcessHolds(lock) {
+            await store.refreshAutomationHealth(now: afterTheWindow)
+            XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [])
+        }
+        await store.refreshAutomationHealth(now: afterTheWindow)
+        XCTAssertEqual(AutomationHealthModel.shared.issues.map(\.kind), [.overdue])
+    }
+
+    private func dailyScheduleThatFiredTwoHoursAgo() -> Schedule {
+        let twoHoursAgo = Calendar.current.dateComponents(
+            [.hour, .minute], from: Date().addingTimeInterval(-2 * 3600))
+        return Schedule(
+            name: "Daily", profile: profile,
+            schedule: String(format: "Daily %02d:%02d",
+                             twoHoursAgo.hour ?? 0, twoHoursAgo.minute ?? 0),
+            cadence: "custom", mode: .snapshotOnly, next: "—", last: "—", lastStatus: .ok,
+            artifacts: [], enabled: true,
+            launchAgentLabel: "\(LaunchAgentWriter.labelPrefix).\(profile).daily")
     }
 
     // MARK: - The tick's side

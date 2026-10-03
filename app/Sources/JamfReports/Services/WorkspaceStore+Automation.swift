@@ -329,9 +329,10 @@ extension WorkspaceStore {
         }.value
         tickerStatus = evaluated.status
         // While this process holds the tick lock, and until the wake it turned away has had
-        // its turn, a schedule that came due is waiting, not missed: neither the banner nor
-        // the digest calls it overdue.
-        let issues = CLIBridge.tickLockHeldRecently(now: now)
+        // its turn, a schedule that came due is waiting, not missed; while a tick holds it,
+        // the schedule is running. Neither the banner nor the digest calls it overdue.
+        let waiting = CLIBridge.tickLockHeldRecently(now: now) || CLIBridge.tickLockHeldElsewhere()
+        let issues = waiting
             ? evaluated.issues.filter { $0.kind != .overdue }
             : evaluated.issues
         AutomationHealthModel.shared.issues = issues
