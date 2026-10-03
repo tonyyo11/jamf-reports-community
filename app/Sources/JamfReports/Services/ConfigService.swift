@@ -1,22 +1,21 @@
 import Foundation
 
 struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
-    static let modelledKeys: Set<String> = ["name", "column", "connected_value"]
-
     var id: String { "\(name)|\(column)|\(connectedValue)" }
     var name: String
     var column: String
     var connectedValue: String
-    /// Keys typed on the entry that the editor does not model, written back as read.
-    var otherKeys = YAMLCodec.YAMLMapping(entries: [])
+    /// The entry as read. A save sets the editor's values on it, so its other keys, their
+    /// order and an earlier copy of a repeated key are written back as typed. Not compared:
+    /// two entries with the same values are the same edit.
+    var source = YAMLCodec.YAMLMapping(entries: [])
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        (lhs.name, lhs.column, lhs.connectedValue) == (rhs.name, rhs.column, rhs.connectedValue)
+    }
 }
 
 struct ConfigCustomEA: Identifiable, Equatable, Sendable {
-    static let modelledKeys: Set<String> = [
-        "name", "column", "type", "true_value", "warning_threshold", "critical_threshold",
-        "current_versions", "warning_days",
-    ]
-
     var id: String { "\(name)|\(column)|\(type)" }
     var name: String
     var column: String
@@ -26,8 +25,16 @@ struct ConfigCustomEA: Identifiable, Equatable, Sendable {
     var criticalThreshold: String
     var currentVersions: [String]
     var warningDays: String
-    /// Keys typed on the entry that the editor does not model, written back as read.
-    var otherKeys = YAMLCodec.YAMLMapping(entries: [])
+    /// The entry as read; see `ConfigSecurityAgent.source`. Not compared.
+    var source = YAMLCodec.YAMLMapping(entries: [])
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        (lhs.name, lhs.column, lhs.type, lhs.trueValue) ==
+            (rhs.name, rhs.column, rhs.type, rhs.trueValue)
+            && (lhs.warningThreshold, lhs.criticalThreshold, lhs.warningDays) ==
+            (rhs.warningThreshold, rhs.criticalThreshold, rhs.warningDays)
+            && lhs.currentVersions == rhs.currentVersions
+    }
 }
 
 struct ConfigState: Equatable, Sendable {
@@ -459,7 +466,7 @@ enum ConfigService {
                 name: string($0, "name"),
                 column: string($0, "column"),
                 connectedValue: string($0, "connected_value"),
-                otherKeys: otherKeys($0, ConfigSecurityAgent.modelledKeys)
+                source: $0
             )
         }
 
@@ -473,7 +480,7 @@ enum ConfigService {
                 criticalThreshold: string($0, "critical_threshold"),
                 currentVersions: stringSequence($0, "current_versions"),
                 warningDays: string($0, "warning_days"),
-                otherKeys: otherKeys($0, ConfigCustomEA.modelledKeys)
+                source: $0
             )
         }
 
@@ -556,11 +563,11 @@ enum ConfigService {
         root.set("mobile_columns", value: .mapping(mobileColumns))
 
         root.set("security_agents", value: .sequence(state.securityAgents.map { agent in
-            .mapping(.init(entries: [
-                .init(key: "name", value: scalar(agent.name)),
-                .init(key: "column", value: scalar(agent.column)),
-                .init(key: "connected_value", value: scalar(agent.connectedValue)),
-            ] + agent.otherKeys.entries))
+            var entry = agent.source
+            entry.set("name", value: scalar(agent.name))
+            entry.set("column", value: scalar(agent.column))
+            entry.set("connected_value", value: scalar(agent.connectedValue))
+            return .mapping(entry)
         }))
 
         root.set("custom_eas", value: .sequence(state.customEAs.map(customEAValue)))
@@ -610,35 +617,30 @@ enum ConfigService {
         document.root = .mapping(root)
     }
 
+    /// The EA's values set on the entry as read. A key its type does not use, and an integer
+    /// key left empty, are removed (every copy), so none of them is read.
     private static func customEAValue(_ ea: ConfigCustomEA) -> YAMLCodec.YAMLValue {
-        var entries: [YAMLCodec.YAMLEntry] = [
-            .init(key: "name", value: scalar(ea.name)),
-            .init(key: "column", value: scalar(ea.column)),
-            .init(key: "type", value: scalar(ea.type)),
+        var entry = ea.source
+        entry.set("name", value: scalar(ea.name))
+        entry.set("column", value: scalar(ea.column))
+        entry.set("type", value: scalar(ea.type))
+        let typed: [(key: String, value: YAMLCodec.YAMLValue?)] = [
+            ("true_value", ea.type == "boolean" ? scalar(ea.trueValue) : nil),
+            ("warning_threshold", ea.type == "percentage" ? optionalInt(ea.warningThreshold) : nil),
+            ("critical_threshold",
+             ea.type == "percentage" ? optionalInt(ea.criticalThreshold) : nil),
+            ("current_versions",
+             ea.type == "version" ? .sequence(ea.currentVersions.map { scalar($0) }) : nil),
+            ("warning_days", ea.type == "date" ? optionalInt(ea.warningDays) : nil),
         ]
-        switch ea.type {
-        case "boolean":
-            entries.append(.init(key: "true_value", value: scalar(ea.trueValue)))
-        case "percentage":
-            appendIntEntry(&entries, key: "warning_threshold", ea.warningThreshold)
-            appendIntEntry(&entries, key: "critical_threshold", ea.criticalThreshold)
-        case "version":
-            entries.append(.init(
-                key: "current_versions",
-                value: .sequence(ea.currentVersions.map { scalar($0) })
-            ))
-        case "date":
-            appendIntEntry(&entries, key: "warning_days", ea.warningDays)
-        default:
-            break
+        for (key, value) in typed {
+            if let value {
+                entry.set(key, value: value)
+            } else {
+                entry.entries.removeAll { $0.key == key }
+            }
         }
-        return .mapping(.init(entries: entries + ea.otherKeys.entries))
-    }
-
-    private static func otherKeys(
-        _ mapping: YAMLCodec.YAMLMapping, _ modelled: Set<String>
-    ) -> YAMLCodec.YAMLMapping {
-        .init(entries: mapping.entries.filter { !modelled.contains($0.key) })
+        return .mapping(entry)
     }
 
     private static func sequenceMappings(
@@ -664,18 +666,14 @@ enum ConfigService {
         .scalar(.string(value))
     }
 
-    /// Append an integer-typed config key ONLY when the string parses to an Int.
-    /// An empty or non-numeric value is omitted entirely rather than written as
-    /// `key: ""` — the engine decoder types these as `Int?`, and an empty string
-    /// fails its decode ("value has the wrong type"). Omitting lets the engine
-    /// fall back to its default. (This is the recurring "Configuration file
-    /// problem" banner after the EA walkthrough adopts a percentage EA with no
-    /// threshold set.)
-    private static func appendIntEntry(
-        _ entries: inout [YAMLCodec.YAMLEntry], key: String, _ value: String
-    ) {
-        guard let int = Int(value.trimmingCharacters(in: .whitespaces)) else { return }
-        entries.append(.init(key: key, value: .scalar(.int(int))))
+    /// An integer-typed key's value ONLY when the string parses to an Int; nil (the key is
+    /// left out) for an empty or non-numeric value rather than `key: ""` — the engine
+    /// decoder types these as `Int?`, and an empty string fails its decode ("value has the
+    /// wrong type"). Omitting lets the engine fall back to its default. (This is the
+    /// recurring "Configuration file problem" banner after the EA walkthrough adopts a
+    /// percentage EA with no threshold set.)
+    private static func optionalInt(_ value: String) -> YAMLCodec.YAMLValue? {
+        Int(value.trimmingCharacters(in: .whitespaces)).map { .scalar(.int($0)) }
     }
 
     private static func intScalar(_ value: String) -> YAMLCodec.YAMLValue {

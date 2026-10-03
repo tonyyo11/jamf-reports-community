@@ -120,7 +120,7 @@ final class ConfigServiceTests: XCTestCase {
         let agents = try XCTUnwrap(YAMLCodec.decode(text).root.mapping?
             .value(for: "security_agents")?.sequence?.compactMap(\.mapping))
         XCTAssertEqual(agents.map { $0.entries.map(\.key) }, [
-            ["name", "column", "connected_value", "owner_team"],
+            ["name", "column", "owner_team", "connected_value"],
             ["name", "column", "connected_value"],
         ])
         XCTAssertEqual(agents[0].value(for: "owner_team"), .scalar(.string("desk-two")))
@@ -132,6 +132,46 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertEqual(ea.value(for: "tags"), .sequence([.scalar(.string("power"))]))
         XCTAssertEqual(try ConfigService.load(profile: profile, workspaceRoot: root).state,
                        state, "a reload reads back what was saved")
+    }
+
+    /// The editor's values are set on each entry's own keys, so an untouched entry comes back
+    /// as typed: key order, and an earlier copy of a repeated key, included.
+    func testAnUntouchedEntryIsWrittenBackAsTyped() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "entry-order-\(UUID().uuidString.lowercased())"
+        let agents = """
+            security_agents:
+              - column: Agent One - Status
+                owner_team: desk
+                name: Agent One
+                connected_value: Running
+              - name: Agent Two
+                column: Old Column
+                column: Agent Two - Status
+                connected_value: Running
+
+            """
+        let eas = """
+            custom_eas:
+              - type: percentage
+                name: Disk Free
+                note: typed
+                critical_threshold: 90
+                column: Disk Free Percent
+                warning_threshold: 80
+
+            """
+        try writeConfig(agents + eas, profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.securityAgents[1].column, "Agent Two - Status")
+        _ = try ConfigService.save(
+            profile: profile, state: loaded.state, existingDocument: loaded.document,
+            workspaceRoot: root)
+
+        let text = try savedText(profile: profile, root: root)
+        XCTAssertTrue(text.contains(agents), text)
+        XCTAssertTrue(text.contains(eas.dropLast()), text)
     }
 
     func testMobileColumnsPersistAndPreserveSiblings() throws {
