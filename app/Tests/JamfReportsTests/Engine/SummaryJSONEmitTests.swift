@@ -476,14 +476,17 @@ final class SummaryJSONEmitTests: XCTestCase {
 
     /// GoldenFleet case A's security summary (250 Macs; FileVault 240, SIP 250, Firewall 245,
     /// Gatekeeper 248) under the given config: the score the summary writer records.
+    /// Each call writes its own folders: a second call into the first's summaries folder
+    /// would read back the first call's summary (today's is written once).
     private func goldenFleetScore(policyYAML: String) throws -> Double {
-        let dataDir = tmpDir.appendingPathComponent("weights-data", isDirectory: true)
+        let run = UUID().uuidString
+        let dataDir = tmpDir.appendingPathComponent("weights-data-\(run)", isDirectory: true)
         let stamp = GoldenFleetClock.stamp(Date().addingTimeInterval(-3600))
         try GoldenFleetWorkspace.writeJSON(
             GoldenFleetWorkspace.securitySummaryPayload(
                 total: 250, filevault: 240, sip: 250, firewall: 245, gatekeeper: 248),
             to: dataDir.appendingPathComponent("security/security_\(stamp).json"))
-        let summaries = tmpDir.appendingPathComponent("weights-summaries", isDirectory: true)
+        let summaries = tmpDir.appendingPathComponent("weights-summaries-\(run)", isDirectory: true)
         ReportEngine(config: try ConfigLoader.loadFromString(policyYAML), dataDir: dataDir)
             .emitSummaryJSON(summariesDir: summaries)
         return try XCTUnwrap(

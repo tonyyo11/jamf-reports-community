@@ -806,6 +806,30 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
         }
     }
 
+    /// The weights card saves the set it shows with one weight changed; a hand-typed level
+    /// synonym and a fractional weight the file already yields stay as typed.
+    func testEditingOneWeightKeepsTheHandTypedLevelAndWeight() async throws {
+        try await withPolicyWorkspacesRoot {
+            let url = try writePolicyConfig("""
+            security_policy:
+              controls:
+                firewall: warn
+              score_weights:
+                xprotect: 12.5
+            """, profile: "policy-store-w1")
+            let store = policyTestStore(demo: false, profile: "policy-store-w1")
+            try await store.loadConfig()
+            var weights = try XCTUnwrap(store.securityPolicy.scoreWeights)
+            weights.sip = 25
+            try store.saveScoreWeights(weights)
+
+            let text = try String(contentsOf: url, encoding: .utf8)
+            XCTAssertTrue(text.contains("firewall: warn\n"), text)
+            XCTAssertTrue(text.contains("xprotect: 12.5\n"), text)
+            XCTAssertTrue(text.contains("sip: 25\n"), text)
+        }
+    }
+
     /// The Scoring tab sits on the Config screen: its writes are the screen's own, so the
     /// screen's Save that follows must not read them as config.yaml changing on disk.
     func testTheConfigSaveAfterAScoringTabWriteSucceedsAndKeepsIt() async throws {
