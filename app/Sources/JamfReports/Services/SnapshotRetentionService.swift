@@ -96,7 +96,7 @@ enum SnapshotRetentionService {
             .trimmingCharacters(in: .whitespacesAndNewlines) == today { return 0 }
 
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return 0 }
-        let archiveRoot = resolvedArchiveRoot(config: config, workspace: workspace)
+        let archiveRoot = resolvedArchiveRoot(config: config, workspace: workspace, onLine: onLine)
         let summariesDir = pol.includeSummaries ? try? WorkspacePaths.summariesDir(for: profile) : nil
 
         let result = sweepWithResult(
@@ -128,15 +128,21 @@ enum SnapshotRetentionService {
     /// Resolved raw-snapshot archive root: `retention.archive_dir` if set and allowed, else
     /// `<workspace>/_archive`. Distinct from the reports archive
     /// (`output.archive_dir`) so the two never collide.
-    static func resolvedArchiveRoot(config: RetentionConfig?, workspace: URL) -> URL {
+    /// A refused folder says why in one `[warn]` line on `onLine`, as `output_dir` does.
+    static func resolvedArchiveRoot(
+        config: RetentionConfig?, workspace: URL,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
+    ) -> URL {
         let defaultArchive = workspace.appendingPathComponent("_archive", isDirectory: true)
         do {
             return try typedArchiveRoot(config: config, workspace: workspace) ?? defaultArchive
         } catch {
-            AppLogger.collect.warning("""
-                SnapshotRetentionService: archive_dir refused \
-                (\(error.localizedDescription, privacy: .private)), using _archive
-                """)
+            let typed = ConfigSchema.displayText(config?.resolvedArchiveDir ?? "")
+            let msg = "[warn] retention.archive_dir \"\(typed)\" is not used: "
+                + "\(WorkspacePaths.refusal(of: error)). Archiving to _archive in the workspace "
+                + "instead."
+            AppLogger.collect.warning("\(msg, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .warn, text: msg))
             return defaultArchive
         }
     }

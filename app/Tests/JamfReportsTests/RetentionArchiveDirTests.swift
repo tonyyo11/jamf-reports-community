@@ -12,8 +12,14 @@ final class RetentionArchiveDirTests: XCTestCase {
         try withWorkspace { root, workspace in
             let old = try oldSnapshot(in: workspace)
             try configure(workspace, archiveDir: "../outside")
+            let lines = LineBox()
 
-            SnapshotRetentionService.sweepIfDue(profile: profile)
+            SnapshotRetentionService.sweepIfDue(profile: profile, onLine: { lines.add($0.text) })
+
+            XCTAssertEqual(lines.all.filter { $0.hasPrefix("[warn] retention.archive_dir") }, [
+                "[warn] retention.archive_dir \"../outside\" is not used: a relative path must "
+                    + "stay inside the workspace. Archiving to _archive in the workspace instead.",
+            ])
 
             let outside = root.appendingPathComponent("outside")
             XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path),
@@ -54,6 +60,13 @@ final class RetentionArchiveDirTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    private final class LineBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+        func add(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+    }
 
     private func usedPath(_ workspace: URL) throws -> String {
         SnapshotRetentionService.resolvedArchiveRoot(config: try config(workspace),
