@@ -29,6 +29,8 @@ struct CSVEAWalkthroughSheet: View {
     @State private var loaded = false
     @State private var adoptError: String?
     @State private var confirmation: String?
+    /// The save left notes (a block left as typed, a copy made), so the banner warns.
+    @State private var confirmationHasNotes = false
     /// Full sample rows from the source CSV, kept for the dry-run parse check —
     /// `proposals` only carries one sample value per column.
     @State private var csvSample: ScaffoldService.CSVSample?
@@ -57,7 +59,7 @@ struct CSVEAWalkthroughSheet: View {
                         errorBanner(adoptError)
                     }
                     if let confirmation {
-                        confirmationBanner(confirmation)
+                        confirmationBanner(confirmation, warns: confirmationHasNotes)
                     }
                 }
             }
@@ -357,17 +359,18 @@ struct CSVEAWalkthroughSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func confirmationBanner(_ message: String) -> some View {
+    private func confirmationBanner(_ message: String, warns: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Theme.Colors.tealBright)
+            Image(systemName: warns ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(warns ? Theme.Colors.warn : Theme.Colors.tealBright)
             Text(message)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Text.primary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .padding(12)
-        .background(Theme.Colors.teal.opacity(0.12))
+        .background((warns ? Theme.Colors.warn : Theme.Colors.teal).opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -452,6 +455,7 @@ struct CSVEAWalkthroughSheet: View {
                 eaProposals: eas, agentProposals: agents,
                 connectedValues: connectedValues, profile: profile)
             let notes = result.report.notes
+            confirmationHasNotes = !notes.isEmpty
             confirmation = Self.adoptionMessage(
                 eas: result.eas, agents: result.agents, notes: notes, profile: profile)
             // Brief confirmation, then dismiss; a save note stays until Close.
