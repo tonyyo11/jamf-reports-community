@@ -1,13 +1,22 @@
 import Foundation
 
 struct ConfigSecurityAgent: Identifiable, Equatable, Sendable {
+    static let modelledKeys: Set<String> = ["name", "column", "connected_value"]
+
     var id: String { "\(name)|\(column)|\(connectedValue)" }
     var name: String
     var column: String
     var connectedValue: String
+    /// Keys typed on the entry that the editor does not model, written back as read.
+    var otherKeys = YAMLCodec.YAMLMapping(entries: [])
 }
 
 struct ConfigCustomEA: Identifiable, Equatable, Sendable {
+    static let modelledKeys: Set<String> = [
+        "name", "column", "type", "true_value", "warning_threshold", "critical_threshold",
+        "current_versions", "warning_days",
+    ]
+
     var id: String { "\(name)|\(column)|\(type)" }
     var name: String
     var column: String
@@ -17,6 +26,8 @@ struct ConfigCustomEA: Identifiable, Equatable, Sendable {
     var criticalThreshold: String
     var currentVersions: [String]
     var warningDays: String
+    /// Keys typed on the entry that the editor does not model, written back as read.
+    var otherKeys = YAMLCodec.YAMLMapping(entries: [])
 }
 
 struct ConfigState: Equatable, Sendable {
@@ -311,7 +322,8 @@ enum ConfigService {
             ConfigSecurityAgent(
                 name: string($0, "name"),
                 column: string($0, "column"),
-                connectedValue: string($0, "connected_value")
+                connectedValue: string($0, "connected_value"),
+                otherKeys: otherKeys($0, ConfigSecurityAgent.modelledKeys)
             )
         }
 
@@ -324,7 +336,8 @@ enum ConfigService {
                 warningThreshold: string($0, "warning_threshold"),
                 criticalThreshold: string($0, "critical_threshold"),
                 currentVersions: stringSequence($0, "current_versions"),
-                warningDays: string($0, "warning_days")
+                warningDays: string($0, "warning_days"),
+                otherKeys: otherKeys($0, ConfigCustomEA.modelledKeys)
             )
         }
 
@@ -411,7 +424,7 @@ enum ConfigService {
                 .init(key: "name", value: scalar(agent.name)),
                 .init(key: "column", value: scalar(agent.column)),
                 .init(key: "connected_value", value: scalar(agent.connectedValue)),
-            ]))
+            ] + agent.otherKeys.entries))
         }))
 
         root.set("custom_eas", value: .sequence(state.customEAs.map(customEAValue)))
@@ -483,7 +496,13 @@ enum ConfigService {
         default:
             break
         }
-        return .mapping(.init(entries: entries))
+        return .mapping(.init(entries: entries + ea.otherKeys.entries))
+    }
+
+    private static func otherKeys(
+        _ mapping: YAMLCodec.YAMLMapping, _ modelled: Set<String>
+    ) -> YAMLCodec.YAMLMapping {
+        .init(entries: mapping.entries.filter { !modelled.contains($0.key) })
     }
 
     private static func sequenceMappings(

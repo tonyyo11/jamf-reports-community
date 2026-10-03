@@ -79,6 +79,61 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("allow_live_overview: false"))
     }
 
+    /// The editor models a few keys per entry; any other key typed on an entry rides along with
+    /// it. A deleted entry takes its keys with it, and a new one has none.
+    func testEntryKeysTheEditorDoesNotModelSurviveASave() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "entry-extras-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            security_agents:
+              - name: Agent One
+                column: Agent One - Status
+                connected_value: Running
+                owner_team: desk-one
+              - name: Agent Two
+                column: Agent Two - Status
+                owner_team: desk-two
+                connected_value: Running
+            custom_eas:
+              - name: Battery
+                column: Battery Cycle Count
+                type: text
+                sheet_note: from the battery EA
+                tags:
+                  - power
+            """,
+            profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        var state = loaded.state
+        state.securityAgents.removeFirst()
+        state.securityAgents[0].connectedValue = "Connected"
+        state.securityAgents.append(
+            ConfigSecurityAgent(name: "Agent Three", column: "Three", connectedValue: "Up"))
+        state.customEAs[0].name = "Battery Cycles"
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
+
+        let text = try savedText(profile: profile, root: root)
+        XCTAssertFalse(text.contains("desk-one"), "a deleted entry's keys go with it")
+        let agents = try XCTUnwrap(YAMLCodec.decode(text).root.mapping?
+            .value(for: "security_agents")?.sequence?.compactMap(\.mapping))
+        XCTAssertEqual(agents.map { $0.entries.map(\.key) }, [
+            ["name", "column", "connected_value", "owner_team"],
+            ["name", "column", "connected_value"],
+        ])
+        XCTAssertEqual(agents[0].value(for: "owner_team"), .scalar(.string("desk-two")))
+        XCTAssertEqual(agents[0].value(for: "connected_value"), .scalar(.string("Connected")))
+        let ea = try XCTUnwrap(YAMLCodec.decode(text).root.mapping?
+            .value(for: "custom_eas")?.sequence?.first?.mapping)
+        XCTAssertEqual(ea.value(for: "name"), .scalar(.string("Battery Cycles")))
+        XCTAssertEqual(ea.value(for: "sheet_note"), .scalar(.string("from the battery EA")))
+        XCTAssertEqual(ea.value(for: "tags"), .sequence([.scalar(.string("power"))]))
+        XCTAssertEqual(try ConfigService.load(profile: profile, workspaceRoot: root).state,
+                       state, "a reload reads back what was saved")
+    }
+
     func testMobileColumnsPersistAndPreserveSiblings() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "mobile-cols-\(UUID().uuidString.lowercased())"
