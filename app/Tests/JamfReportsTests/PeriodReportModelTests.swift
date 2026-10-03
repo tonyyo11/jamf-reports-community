@@ -26,6 +26,44 @@ final class PeriodReportModelTests: XCTestCase {
             generatedAt: d("2026-07-15"))
     }
 
+    private func patchSummary(_ date: String, patch: Double?, basis: String?) -> DailySummary {
+        DailySummary(date: date, totalDevices: 600, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: patch,
+            source: "test", patchPctBasis: basis)
+    }
+
+    /// A summary recorded before `patchPctBasis` holds the per-title mean; one recorded after
+    /// holds the device-weighted figure. The gap between them is the definition, not the
+    /// fleet, so the period report shows both ends and no change (epic #207 C1).
+    func testPatchChangeIsWithheldAcrossADefinitionChange() throws {
+        let m = model([patchSummary("2026-04-01", patch: 70, basis: nil),
+                       patchSummary("2026-06-30", patch: 78.7, basis: "device")])
+        let row = try XCTUnwrap(m.rows.first { $0.metricID == "patchPct" })
+        XCTAssertEqual(row.startValue, 70)
+        XCTAssertEqual(row.endValue, 78.7)
+        XCTAssertNil(row.change)
+        XCTAssertTrue(row.definitionChanged)
+        XCTAssertEqual(PeriodReportModel.formatChange(row.change, unit: .percent), "—")
+    }
+
+    func testPatchChangeIsKeptWhenBothEndsShareADefinition() throws {
+        for basis in [nil, "device"] {
+            let m = model([patchSummary("2026-04-01", patch: 70, basis: basis),
+                           patchSummary("2026-06-30", patch: 75, basis: basis)])
+            let row = try XCTUnwrap(m.rows.first { $0.metricID == "patchPct" })
+            XCTAssertEqual(try XCTUnwrap(row.change), 5.0, accuracy: 0.001)
+            XCTAssertFalse(row.definitionChanged)
+        }
+    }
+
+    /// Only the patch row carries the flag, and an end with no patch figure has no change to
+    /// withhold.
+    func testOtherRowsAndAnUnmeasuredEndAreNotFlagged() throws {
+        let m = model([patchSummary("2026-04-01", patch: 70, basis: nil),
+                       patchSummary("2026-06-30", patch: nil, basis: "device")])
+        XCTAssertFalse(m.rows.contains { $0.definitionChanged })
+    }
+
     func testStartAndEndComeFromTheBoundarySummaries() throws {
         let m = model([summary("2026-04-01", total: 600, fv: 90),
                        summary("2026-05-15", total: 630, fv: 95),

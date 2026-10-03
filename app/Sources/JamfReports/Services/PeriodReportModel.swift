@@ -30,7 +30,14 @@ struct PeriodReportModel: Sendable {
         /// Distinct values dropped by the cap, so truncation is stated rather
         /// than silently changing what the sheet appears to say.
         var omittedValueCount: Int = 0
+        /// True when both ends have a value but were recorded under different
+        /// definitions of it; `change` is then nil, since the gap is the definition.
+        var definitionChanged: Bool = false
     }
+
+    /// The About-sheet note for a row whose `definitionChanged` is set.
+    static let patchDefinitionNote = "Patch compliance changed definition during this period "
+        + "(device-weighted from 2.9); the change is not shown."
 
     struct DayPoint: Sendable, Equatable {
         let date: Date
@@ -70,10 +77,16 @@ struct PeriodReportModel: Sendable {
                 let s = startSummary.flatMap { fleetValue(metric.id, $0) }
                 let e = endSummary.flatMap { fleetValue(metric.id, $0) }
                 // nil is not zero: without both ends there is no defensible change.
-                let change: Double? = (s != nil && e != nil) ? (e! - s!) : nil
+                // A patch figure from before `patchPctBasis` is a per-title mean, so its
+                // gap to a device-weighted end is the definition, not the fleet.
+                let changedDefinition = metric.id == "patchPct" && s != nil && e != nil
+                    && startSummary?.patchPctBasis != endSummary?.patchPctBasis
+                var change: Double?
+                if let s, let e, !changedDefinition { change = e - s }
                 return Row(metricID: metric.id, label: metric.label, unit: metric.unit,
                            startValue: s, endValue: e, change: change,
-                           startDate: period.start.resolved, endDate: period.end.resolved)
+                           startDate: period.start.resolved, endDate: period.end.resolved,
+                           definitionChanged: changedDefinition)
             case .extensionAttribute(let name, let match):
                 return eaRow(metric: metric, name: name, match: match,
                              period: period, snapshots: eaSnapshots)
