@@ -27,7 +27,8 @@ final class ConfigWriterKeysTests: XCTestCase {
             enabled: true, provider: "slack", url: " https://hooks.example.test/x ",
             detail: "minimal", to: &mapping)
         let notify = try XCTUnwrap(mapping.value(for: "notify")?.mapping)
-        XCTAssertEqual(notify.entries.map(\.key), ["mention", "enabled", "provider", "url", "detail"])
+        XCTAssertEqual(
+            notify.entries.map(\.key), ["mention", "enabled", "provider", "url", "detail"])
         XCTAssertEqual(notify.value(for: "url")?.stringValue, "https://hooks.example.test/x")
     }
 

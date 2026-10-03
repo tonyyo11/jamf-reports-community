@@ -566,7 +566,7 @@ enum ConfigService {
         return state
     }
 
-    private static func apply(state: ConfigState, to document: inout YAMLCodec.YAMLDocument) {
+    static func apply(state: ConfigState, to document: inout YAMLCodec.YAMLDocument) {
         var root = document.root.mapping ?? .init(entries: [])
 
         var columns = root.value(for: "columns")?.mapping ?? .init(entries: [])

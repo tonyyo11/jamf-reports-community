@@ -34,7 +34,7 @@ struct ConfigView: View {
     @State private var cli = CLIBridge()
 
     enum ConfigTab: String, CaseIterable {
-        case columns, agents, eas, thresholds, platform, output, scoring
+        case columns, agents, eas, thresholds, platform, output, scoring, fromFile
         var label: String {
             switch self {
             case .columns:    "Columns"
@@ -44,6 +44,7 @@ struct ConfigView: View {
             case .platform:   "Platform API"
             case .output:     "Output & Branding"
             case .scoring:    "Scoring"
+            case .fromFile:   "From config.yaml"
             }
         }
         var icon: String {
@@ -55,6 +56,7 @@ struct ConfigView: View {
             case .platform:   "arrow.triangle.branch"
             case .output:     "folder"
             case .scoring:    "scalemass"
+            case .fromFile:   "doc.text"
             }
         }
         /// Lets the strip fit PageScaffold.minSupportedWidth when the full labels do not.
@@ -64,6 +66,7 @@ struct ConfigView: View {
             case .eas:      "EAs"
             case .platform: "Platform"
             case .output:   "Output"
+            case .fromFile: "From file"
             default:        label
             }
         }
@@ -89,6 +92,8 @@ struct ConfigView: View {
     @State private var changedOnDisk = false
     /// What the last Save left as typed.
     @State private var saveReport: ConfigSaveReport?
+    /// What config.yaml holds that the other tabs do not edit, for the From config.yaml tab.
+    @State private var fileReading: ConfigFileReading = .sections(ConfigFileSections())
 
     var body: some View {
         PageScaffold(spacing: 16) {
@@ -97,8 +102,10 @@ struct ConfigView: View {
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
-            if !workspace.configRepairedKeys.isEmpty || !parseNotes.isEmpty {
-                configHealedKeysCard(workspace.configRepairedKeys, notes: parseNotes)
+            // The From config.yaml tab lists the skipped lines itself.
+            let bannerNotes = tab == .fromFile ? [] : parseNotes
+            if !workspace.configRepairedKeys.isEmpty || !bannerNotes.isEmpty {
+                configHealedKeysCard(workspace.configRepairedKeys, notes: bannerNotes)
             }
             if let notice = Self.saveNotice(changedOnDisk: changedOnDisk, report: saveReport) {
                 saveNoticeCard(notice)
@@ -114,6 +121,9 @@ struct ConfigView: View {
                 workspace.configError = error.localizedDescription
             }
             refreshEngineParseStatus()
+        }
+        .onChange(of: tab) { _, selected in
+            if selected == .fromFile { refreshFileReading() }
         }
         .confirmationDialog(
             "Restore the default config.yaml?",
@@ -153,6 +163,7 @@ struct ConfigView: View {
     /// still breaks report generation, so both checks matter. Also lists the
     /// lines the reader did not take as written, for the healed-keys card.
     private func refreshEngineParseStatus() {
+        refreshFileReading()
         guard !workspace.demoMode,
               let url = ProfileService.workspaceURL(for: workspace.profile)?
                   .appendingPathComponent("config.yaml"),
@@ -171,6 +182,21 @@ struct ConfigView: View {
         } catch {
             engineParseDetail = error.localizedDescription
         }
+    }
+
+    private var configFileURL: URL? {
+        ProfileService.workspaceURL(for: workspace.profile)?
+            .appendingPathComponent("config.yaml")
+    }
+
+    /// Re-reads config.yaml for the From config.yaml tab only; the editors keep their state.
+    private func refreshFileReading() {
+        fileReading = ConfigFileReading.read(at: configFileURL, demoMode: workspace.demoMode)
+    }
+
+    private func revealConfigFile() {
+        guard !workspace.demoMode, let url = configFileURL else { return }
+        SystemActions.reveal(url)
     }
 
     private func configRecoveryCard(_ problem: String) -> some View {
@@ -449,6 +475,10 @@ struct ConfigView: View {
         case .platform:   PlatformTab()
         case .output:     OutputTab()
         case .scoring:    ScoringTab()
+        case .fromFile:
+            ConfigFromFileTab(
+                reading: fileReading, isDemo: workspace.demoMode,
+                reveal: revealConfigFile, reload: refreshEngineParseStatus)
         }
     }
 
