@@ -39,22 +39,22 @@ final class GenerateSheetState {
     /// Kept for the sheet's lifetime; each open starts on Full Instance.
     var selectedTemplateID: String = FullInstanceTemplate().identifier
 
-    /// Custom sheet selection for the "custom" template.
-    /// Persisted across app launches via UserDefaults. The serialized order is
-    /// rawValue-alphabetical (`.sorted()`), not tap order.
-    var customSelectedSheets: Set<SheetID> {
-        get {
-            let raw = UserDefaults.standard.string(forKey: Self.customSheetsKey) ?? ""
-            let identifiers = raw.split(separator: ",").compactMap { SheetID(rawValue: String($0)) }
-            return Set(identifiers)
-        }
-        set {
-            let raw = newValue.map(\.rawValue).sorted().joined(separator: ",")
+    /// Custom sheet selection for the "custom" template, persisted across app launches
+    /// via UserDefaults. Stored, not computed over UserDefaults, so `@Observable` sees a
+    /// tap. The serialized order is rawValue-alphabetical (`.sorted()`), not tap order.
+    var customSelectedSheets: Set<SheetID> = GenerateSheetState.savedCustomSelection() {
+        didSet {
+            let raw = customSelectedSheets.map(\.rawValue).sorted().joined(separator: ",")
             UserDefaults.standard.set(raw, forKey: Self.customSheetsKey)
         }
     }
 
     nonisolated static let customSheetsKey = "generateSheetCustomSelection"
+
+    nonisolated static func savedCustomSelection() -> Set<SheetID> {
+        let raw = UserDefaults.standard.string(forKey: customSheetsKey) ?? ""
+        return Set(raw.split(separator: ",").compactMap { SheetID(rawValue: String($0)) })
+    }
 
     /// The resolved template for the current selection. Always a known template —
     /// unknown identifiers fall back to Executive via `TemplateResolver`. Custom lists its

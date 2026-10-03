@@ -291,4 +291,25 @@ final class GenerateSheetStateTests: XCTestCase {
         // Clean up
         UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
     }
+
+    /// A tap must redraw the checkmark, the "N sheets selected" line and Generate, so a
+    /// change to the selection has to reach the view's observation, and still be saved.
+    func testATappedSheetReachesObserversAndIsSaved() {
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+        let state = GenerateSheetState()
+        let changed = ObservedChange()
+        withObservationTracking {
+            _ = state.customSelectedSheets
+        } onChange: {
+            changed.seen = true
+        }
+        state.customSelectedSheets.insert(.cover)
+        XCTAssertTrue(changed.seen, "the view would not redraw")
+        XCTAssertEqual(GenerateSheetState().customSelectedSheets, [.cover])
+    }
+}
+
+private final class ObservedChange: @unchecked Sendable {
+    var seen = false
 }
