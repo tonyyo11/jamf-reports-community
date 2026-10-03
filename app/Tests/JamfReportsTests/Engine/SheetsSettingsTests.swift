@@ -140,6 +140,49 @@ final class SheetsSettingsTests: XCTestCase {
         }
     }
 
+    // MARK: - The Charts tab
+
+    func testAChartsTabTheListsDropIsNotRenderedUnlessItsPNGsAreSaved() async throws {
+        try await withScratch { scratch in
+            let summaries = scratch.appendingPathComponent("charts/snapshots/summaries")
+            try TestFixtures.copyDir("snapshots/computers/summaries", to: summaries)
+            let dataDir = try fixtureData([], in: scratch)
+            func run(savePNG: Bool, skip: String) async throws -> (tabs: [String], pngs: Int) {
+                let out = scratch.appendingPathComponent("out-\(UUID().uuidString)/report.xlsx")
+                // PNGs are written before the workbook, into a folder that must exist.
+                try FileManager.default.createDirectory(
+                    at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let config = try ConfigLoader.loadFromString("""
+                jamf_cli: {profile: charts}
+                charts: {enabled: true, save_png: \(savePNG)}
+                sheets: {skip: [\(skip)]}
+                """)
+                try await ReportEngine(config: config, dataDir: dataDir).generate(
+                    csvURL: nil, outputURL: out, locateJamfCLI: { nil })
+                let folder = try FileManager.default.contentsOfDirectory(
+                    atPath: out.deletingLastPathComponent().path)
+                return (try Self.tabs(of: out), folder.filter { $0.hasSuffix(".png") }.count)
+            }
+            let shown = try await run(savePNG: false, skip: "")
+            XCTAssertTrue(shown.tabs.contains("Charts"), "the summaries make a Charts tab")
+            XCTAssertEqual(shown.pngs, 0)
+            let saved = try await run(savePNG: true, skip: "charts")
+            XCTAssertFalse(saved.tabs.contains("Charts"))
+            XCTAssertGreaterThan(saved.pngs, 0, "save_png still writes the PNGs")
+            let neither = try await run(savePNG: false, skip: "charts")
+            XCTAssertFalse(neither.tabs.contains("Charts"))
+            XCTAssertEqual(neither.pngs, 0)
+        }
+    }
+
+    func testKeepsSaysWhetherTheListsKeepATab() {
+        XCTAssertTrue(SheetsConfig().keeps("Charts"))
+        XCTAssertFalse(SheetsConfig(only: nil, skip: ["CHARTS"], order: nil).keeps("Charts"))
+        XCTAssertFalse(SheetsConfig(only: ["Cover"], skip: nil, order: nil).keeps("Charts"))
+        XCTAssertTrue(SheetsConfig(only: ["Cover", "charts"], skip: nil, order: ["Cover"])
+            .keeps("Charts"))
+    }
+
     // MARK: - The pieces
 
     func testASheetSkipLeavesOutNeverRunsSoItCannotFailTheRun() {

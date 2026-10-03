@@ -583,6 +583,9 @@ struct SheetsConfig: Decodable, Sendable {
         result += survivors
         return result
     }
+
+    /// True when these lists keep a tab called `name`.
+    func keeps(_ name: String) -> Bool { !applyTo([(name: name, write: ())]).isEmpty }
 }
 
 // MARK: - thresholds

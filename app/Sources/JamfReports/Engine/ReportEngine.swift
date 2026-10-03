@@ -117,9 +117,10 @@ struct ReportEngine: Sendable {
         // separately by embed_in_xlsx, so turning PNGs off still leaves charts in
         // the workbook. Defaults to true: the key was declared but unread before
         // 2.7.0, so PNGs always appeared, and absent config must keep doing that.
-        if config.charts?.isEnabled == true,
+        // A Charts tab the lists drop is still rendered when its PNGs are saved.
+        let savePNGs = config.charts?.savePng ?? true
+        if config.charts?.isEnabled == true, savePNGs || sheets.keeps(Self.chartsSheetName),
            let summariesDir = resolvedSummariesDir(profile: profile, onLine: onLine) {
-            let savePNGs = config.charts?.savePng ?? true
             renderChartSheet(
                 workbook: workbook,
                 summariesDir: summariesDir,
