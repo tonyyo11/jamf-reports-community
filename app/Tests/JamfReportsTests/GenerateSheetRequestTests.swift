@@ -95,6 +95,27 @@ final class GenerateSheetRequestTests: XCTestCase {
         XCTAssertTrue(request.asksForNarrative)
     }
 
+    /// "What will be written" names the files the generators write: their stems, and the
+    /// profile as a file name carries it.
+    func testWhatWillBeWrittenNamesTheRealFiles() {
+        func names(_ profile: String, school: Bool = false) -> [String] {
+            GenerateOutputType.allCases.map {
+                GenerateSheetState.writtenFiles(for: $0, profile: profile, schoolMode: school)
+            }
+        }
+        XCTAssertEqual(names("acme"), [
+            "report_acme_<date>.xlsx + integrity sidecar (.sha256, manifest)",
+            "jamf_report_acme_<date>.html + integrity manifest",
+            "jamf_report_acme_<date>.pdf + integrity manifest",
+            "inventory_acme_<date>.csv",
+        ])
+        XCTAssertEqual(names("acme", school: true).first,
+                       "school-report_acme_<date>.xlsx + integrity sidecar (.sha256)")
+        let part = ExportNaming.profilePart("acme/prod")
+        XCTAssertNotEqual(part, "acme/prod")
+        XCTAssertEqual(names("acme/prod")[3], "inventory_\(part)_<date>.csv")
+    }
+
     // MARK: - The run
 
     func testCollectFreshCollectsThenAsksForTheNarrativeThenGenerates() async {

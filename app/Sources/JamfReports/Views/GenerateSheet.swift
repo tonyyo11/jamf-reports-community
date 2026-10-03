@@ -95,12 +95,30 @@ final class GenerateSheetState {
     }
 
     func request() -> Request {
-        let template = resolvedTemplate
-        let school = template.identifier == SchoolTemplate().identifier
+        let school = schoolMode
         return Request(
-            types: selectedTypes, template: template, collectFirst: collectFresh,
+            types: selectedTypes, template: resolvedTemplate, collectFirst: collectFresh,
             runsAudit: includeAudit, outputDir: customOutputDir,
             schoolMode: school, asksForNarrative: !school)
+    }
+
+    /// True for the School template, whose workbook the School generator writes.
+    var schoolMode: Bool { selectedTemplateID == SchoolTemplate().identifier }
+
+    /// What one format writes, as "What will be written" lists it: the generators' stems
+    /// with the profile as `ExportNaming` puts it in a file name.
+    nonisolated static func writtenFiles(
+        for type: GenerateOutputType, profile: String, schoolMode: Bool
+    ) -> String {
+        let part = ExportNaming.profilePart(profile)
+        switch type {
+        case .xlsx where schoolMode:
+            return "school-report_\(part)_<date>.xlsx + integrity sidecar (.sha256)"
+        case .xlsx: return "report_\(part)_<date>.xlsx + integrity sidecar (.sha256, manifest)"
+        case .html: return "jamf_report_\(part)_<date>.html + integrity manifest"
+        case .pdf: return "jamf_report_\(part)_<date>.pdf + integrity manifest"
+        case .csv: return "inventory_\(part)_<date>.csv"
+        }
     }
 
     /// Runs `request` in the Overview's order (`CLIBridge.runCollectThenGenerate`): the
@@ -298,7 +316,8 @@ struct GenerateSheet: View {
                 .padding(.top, 6)
 
             ForEach(Array(state.selectedTypes.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { type in
-                Text("• \(artifactDescription(for: type))")
+                Text("• " + GenerateSheetState.writtenFiles(
+                    for: type, profile: profile, schoolMode: state.schoolMode))
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -310,20 +329,6 @@ struct GenerateSheet: View {
             }
         }
         .padding(.leading, 4)
-    }
-
-    private func artifactDescription(for type: GenerateOutputType) -> String {
-        let timestamp = "report_\(profile)_<date>"
-        switch type {
-        case .xlsx:
-            return "\(timestamp).xlsx + integrity sidecar (.sha256, manifest)"
-        case .html:
-            return "\(timestamp).html + integrity sidecar (.sha256, manifest)"
-        case .pdf:
-            return "\(timestamp).pdf + integrity sidecar (.sha256, manifest)"
-        case .csv:
-            return "automation_inventory_\(profile)_<date>.csv"
-        }
     }
 
     private var templateSection: some View {
