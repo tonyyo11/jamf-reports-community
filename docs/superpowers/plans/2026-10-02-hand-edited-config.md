@@ -192,15 +192,17 @@ Files: `Services/NotifyConfigStore.swift`, `Intelligence/AIConfigWriter.swift`,
    exists), the existing file is copied to `config.yaml.bak-<yyyyMMdd-HHmmss>` beside it; keep
    the newest 5 such backups. The CLI prints the backup path.
 6. Saving a managed block re-emits it, which drops comments inside that block. Do not try to
-   preserve them. Instead, the first time a save would drop a comment (the block's on-disk text
+   preserve them. Instead, whenever a save would drop a comment (the block's on-disk text
    contains a `#` comment line or a trailing comment), make the same timestamped backup as in
-   item 5, once per app launch, and show one line in the banner: `Comments inside the blocks this
+   item 5 — skipped only when an existing backup beside the file holds the same bytes, and never
+   pruned by the save that made it (amended after review: "once per app launch" named a copy that
+   lacked text typed since) — and show one line in the banner: `Comments inside the blocks this
    screen edits are not kept. A copy of the file as it was is at <backup name>.`
 7. Added after Task 3's review. A line the reader skipped (a Task 3 parse note) that falls inside
    a managed block is deleted when that block is re-emitted, and the refresh after save
    (`ConfigView.save()` → `refreshEngineParseStatus()`) then clears its note. Treat it as item 6
    treats comments: when a parse note's line falls inside a block the save is about to rewrite,
-   make the timestamped backup (once per app launch, shared with item 6) and show one line in the
+   make the timestamped backup (same rule as item 6) and show one line in the
    banner: `Lines this screen could not read inside the blocks it edits are not kept. A copy of
    the file as it was is at <backup name>.` Test with a skipped line inside `columns:`.
 8. Added after Task 3's re-review. `YAMLCodec`'s `endOfTopLevelBlock` treats the blank lines and
