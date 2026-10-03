@@ -57,6 +57,18 @@ enum ChartsConfigWriter {
         }
     }
 
+    /// Sets the two options on `root`'s `charts:` block and keeps every other key in it.
+    static func apply(_ options: ChartsOptions, to root: inout YAMLCodec.YAMLMapping) {
+        var charts = root.value(for: "charts")?.mapping ?? .init(entries: [])
+        charts.set("save_png", value: .scalar(.bool(options.savePNGs)))
+
+        var osAdoption = charts.value(for: "os_adoption")?.mapping ?? .init(entries: [])
+        osAdoption.set("per_major_charts", value: .scalar(.bool(options.perMajorCharts)))
+        charts.set("os_adoption", value: .mapping(osAdoption))
+
+        root.set("charts", value: .mapping(charts))
+    }
+
     static func save(_ options: ChartsOptions, profile: String) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw WriteError.invalidProfile(profile)
@@ -76,14 +88,7 @@ enum ChartsConfigWriter {
             throw WriteError.invalidDocumentRoot
         }
 
-        var charts = root.value(for: "charts")?.mapping ?? .init(entries: [])
-        charts.set("save_png", value: .scalar(.bool(options.savePNGs)))
-
-        var osAdoption = charts.value(for: "os_adoption")?.mapping ?? .init(entries: [])
-        osAdoption.set("per_major_charts", value: .scalar(.bool(options.perMajorCharts)))
-        charts.set("os_adoption", value: .mapping(osAdoption))
-
-        root.set("charts", value: .mapping(charts))
+        apply(options, to: &root)
         document.root = .mapping(root)
 
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["charts"])

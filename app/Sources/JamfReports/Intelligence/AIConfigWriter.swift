@@ -18,6 +18,20 @@ enum AIConfigWriter {
         }
     }
 
+    /// Sets the three keys Settings models on `root`'s `ai:` block and keeps any other key
+    /// typed in it, but drops the retired `lock_on_device` and `external:`, which nothing
+    /// reads any more.
+    static func apply(_ config: AIConfig, to root: inout YAMLCodec.YAMLMapping) {
+        var ai = root.value(for: "ai")?.mapping ?? .init(entries: [])
+        ai.entries.removeAll { $0.key == "lock_on_device" || $0.key == "external" }
+        ai.set("enabled", value: .scalar(.bool(config.isEnabled)))
+        ai.set("tier", value: .scalar(.string(config.resolvedTier.rawValue)))
+        ai.set(
+            "reasoning_level",
+            value: .scalar(.string(config.resolvedReasoningLevel.rawValue)))
+        root.set("ai", value: .mapping(ai))
+    }
+
     static func save(_ config: AIConfig, profile: String) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             throw WriteError.invalidProfile(profile)
@@ -34,16 +48,7 @@ enum AIConfigWriter {
         }
 
         guard case .mapping(var root) = document.root else { return }
-        // Sets the three keys Settings models and keeps any other key typed in the block, but
-        // drops the retired `lock_on_device` and `external:`, which nothing reads any more.
-        var ai = root.value(for: "ai")?.mapping ?? .init(entries: [])
-        ai.entries.removeAll { $0.key == "lock_on_device" || $0.key == "external" }
-        ai.set("enabled", value: .scalar(.bool(config.isEnabled)))
-        ai.set("tier", value: .scalar(.string(config.resolvedTier.rawValue)))
-        ai.set(
-            "reasoning_level",
-            value: .scalar(.string(config.resolvedReasoningLevel.rawValue)))
-        root.set("ai", value: .mapping(ai))
+        apply(config, to: &root)
         document.root = .mapping(root)
 
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["ai"])

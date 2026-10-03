@@ -41,9 +41,23 @@ enum NotifyConfigWriter {
         }
     }
 
-    /// Persist the four `notify:` fields. The URL is trimmed; no further
-    /// validation is applied here — `NotifyConfig.isUsable` gates every send
-    /// path, so an empty or non-https URL simply produces a disabled block.
+    /// Sets the four keys this panel models on `root`'s `notify:` block and keeps any other
+    /// key typed in it. The URL is trimmed.
+    static func apply(
+        enabled: Bool, provider: String, url: String, detail: String,
+        to root: inout YAMLCodec.YAMLMapping
+    ) {
+        var notify = root.value(for: "notify")?.mapping ?? .init(entries: [])
+        notify.set("enabled", value: .scalar(.bool(enabled)))
+        notify.set("provider", value: .scalar(.string(provider)))
+        notify.set("url", value: .scalar(.string(url.trimmingCharacters(in: .whitespaces))))
+        notify.set("detail", value: .scalar(.string(detail)))
+        root.set("notify", value: .mapping(notify))
+    }
+
+    /// Persist the four `notify:` fields. No validation beyond the trim in `apply` —
+    /// `NotifyConfig.isUsable` gates every send path, so an empty or non-https URL simply
+    /// produces a disabled block.
     static func save(
         enabled: Bool, provider: String, url: String, detail: String, profile: String
     ) throws {
@@ -64,13 +78,7 @@ enum NotifyConfigWriter {
         guard case .mapping(var root) = document.root else {
             throw WriteError.invalidDocumentRoot
         }
-        // Sets the four keys this panel models and keeps any other key typed in the block.
-        var notify = root.value(for: "notify")?.mapping ?? .init(entries: [])
-        notify.set("enabled", value: .scalar(.bool(enabled)))
-        notify.set("provider", value: .scalar(.string(provider)))
-        notify.set("url", value: .scalar(.string(url.trimmingCharacters(in: .whitespaces))))
-        notify.set("detail", value: .scalar(.string(detail)))
-        root.set("notify", value: .mapping(notify))
+        apply(enabled: enabled, provider: provider, url: url, detail: detail, to: &root)
         document.root = .mapping(root)
 
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["notify"])
