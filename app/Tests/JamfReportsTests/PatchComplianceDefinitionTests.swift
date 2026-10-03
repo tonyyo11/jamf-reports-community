@@ -197,6 +197,47 @@ final class PatchComplianceDefinitionTests: XCTestCase {
             "\u{2014}")
     }
 
+    /// Active devices only: the sheet scales each title by the active share, but its fleet
+    /// row is the same figure as every other surface.
+    private func summaryDashboard(patchRows: [[String: Any]]) throws -> CoreDashboard {
+        let dash = try dashboard(patchRows: patchRows)
+        let devices: [[String: Any]] = (1...3).map {
+            ["name": "Mac-\($0)", "serial": "S\($0)", "managed": true, "stale": false]
+        }
+        try GoldenFleetWorkspace.writeJSON(
+            devices,
+            to: dash.dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+                .appendingPathComponent("device-compliance_\(GoldenFleetClock.stamp(anchor)).json"))
+        try dash.writePatchSummaryDashboard()
+        return dash
+    }
+
+    func testPatchSummaryDashboardFleetRowReadsTheDeviceWeightedFigure() throws {
+        let dash = try summaryDashboard(patchRows: threeTitleSnapshotRows)
+
+        // The per-title mean the row used to show reads 70.0%.
+        XCTAssertEqual(
+            try sheetValue(dash, sheet: "Patch Summary Dashboard",
+                           labelPrefix: "Fleet Compliance (devices on latest)"),
+            "78.7%")
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Patch Summary Dashboard"))
+        XCTAssertFalse(ws.dedupedCells.contains {
+            if case .string(let s) = $0.value { return s.hasPrefix("Average Completion") }
+            return false
+        })
+    }
+
+    func testPatchSummaryDashboardFleetRowIsADashWhenNoTitleHasDevices() throws {
+        let dash = try summaryDashboard(patchRows: [
+            GoldenFleetWorkspace.patchRow(id: "1", title: "Empty", onLatest: 0, total: 0),
+        ])
+
+        XCTAssertEqual(
+            try sheetValue(dash, sheet: "Patch Summary Dashboard",
+                           labelPrefix: "Fleet Compliance (devices on latest)"),
+            "\u{2014}")
+    }
+
     func testExecutiveSummaryRowReadsTheSameFigure() throws {
         let dash = try dashboard(patchRows: threeTitleSnapshotRows)
         try dash.writeExecutiveSummary()

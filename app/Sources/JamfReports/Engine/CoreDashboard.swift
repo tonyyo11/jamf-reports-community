@@ -2228,9 +2228,7 @@ struct CoreDashboard: Sendable {
         }
 
         let totalTitles = patchRows.count
-        let avgPct = totalTitles > 0
-            ? patchRows.reduce(0.0) { $0 + $1.adjPct } / Double(totalTitles)
-            : 0.0
+        let fleetPct = PatchStatusService.fleetCompliancePct(patchItems)
         let excellent = patchRows.filter { $0.adjPct >= 0.95 }.count
         let good = patchRows.filter { $0.adjPct >= 0.80 && $0.adjPct < 0.95 }.count
         let warning = patchRows.filter { $0.adjPct >= 0.50 && $0.adjPct < 0.80 }.count
@@ -2267,9 +2265,9 @@ struct CoreDashboard: Sendable {
         ws.write("Total Patch Titles", row: row, col: 0, format: .cell)
         ws.write(totalTitles, row: row, col: 1, format: .cell)
         row += 1
-        let avgPctStr = String(format: "%.1f%%", avgPct * 100)
-        ws.write("Average Completion (Adjusted)", row: row, col: 0, format: .cell)
-        ws.write(avgPctStr, row: row, col: 1, format: .cell)
+        ws.write("Fleet Compliance (devices on latest)", row: row, col: 0, format: .cell)
+        ws.write(fleetPct.map { String(format: "%.1f%%", $0) } ?? "\u{2014}",
+                 row: row, col: 1, format: .cell)
         row += 1
         ws.write("Fully Compliant (\u{2265}95%)", row: row, col: 0, format: .cell)
         ws.write(excellent, row: row, col: 1, format: .cell)
