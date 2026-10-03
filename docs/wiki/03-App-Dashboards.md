@@ -55,8 +55,10 @@ these interactive dashboards either — it produces a separate generated workboo
   reconciliation, EA coverage drift) — see [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting).
   Data source: `pro audit` (instance-config checks, fetched by the Run Audit button)
   and group lists (tier 1).
-- **Generated** — the library of reports already produced, with actions to generate new
-  workbooks, HTML reports, and inventory CSVs. A **Period report** button builds a
+- **Generated** — the library of reports already produced, with **Generate…** (a sheet:
+  a template or your own sheets, the formats XLSX, HTML, PDF and CSV, whether to collect
+  fresh data first, and whether to run a Health Audit first), Export PDF, an inventory CSV
+  export, and a **Period report** button that builds a
   start/end/change workbook for a rolling or calendar window — see
   [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports).
   Data source: generated report catalog (no single tier; see [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) for report composition).
@@ -133,7 +135,8 @@ these interactive dashboards either — it produces a separate generated workboo
 
 - **Mobile Fleet** — iOS/iPadOS device counts, compliance signals, OS-version
   distribution, and a device/profile inventory.
-  Data source: per-device mobile device inventory (tier 1) and profiles (tier 2).
+  Data source: `mobile-devices-list` (one fetch with the General, Hardware, Security and
+  User and Location sections, tier 1) and profiles (tier 2).
 - **Jamf Protect** — Protect alerts, agent health, and insights. Shows an explicit
   "Protect not detected" state for tenants that do not run Jamf Protect.
   Data source: Jamf Protect GraphQL API (separate OAuth2 credentials, tier 2).
@@ -163,8 +166,9 @@ these interactive dashboards either — it produces a separate generated workboo
   [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
   Data source: no tier (configuration only).
 - **Customize** — the chart options generated workbooks use: whether to save chart images,
-  and one OS chart per major macOS version. The app always generates the Full Instance
-  template; `jamf-reports generate --template` makes the shorter ones. Overview score cards
+  and one OS chart per major macOS version. The Overview's Generate makes the Full Instance
+  report; **Generate…** on Generated Reports, and `jamf-reports generate --template`, make
+  the others. Overview score cards
   and sections are chosen on the Overview itself.
   Data source: no tier (user preferences).
 - **Data Sources** — the inputs surface: cached `jamf-cli` data, the CSV inbox, and

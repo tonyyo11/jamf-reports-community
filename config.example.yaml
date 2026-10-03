@@ -11,7 +11,9 @@
 #
 # Column names in this file must exactly match your Jamf Pro CSV headers,
 # including capitalization and spaces. The Config screen's Health Audit flags
-# any mapping that no longer matches a CSV header.
+# any mapping that no longer matches a CSV header. Config Doctor also lists keys
+# the app does not read, with the nearest known key, and lines it skipped; the
+# Config screen's From config.yaml tab shows them.
 
 
 # =============================================================================
@@ -62,8 +64,8 @@ columns:
 
   # --- Security controls (optional — each drives a row in Security Controls sheet) ---
 
-  # FileVault 2 encryption status. Prefer the detailed FileVault 2 status column
-  # over summary/count-style columns such as "FileVault Status" with values like "1/1".
+  # FileVault 2 encryption status. Prefer the detailed FileVault 2 status column;
+  # a count column such as "FileVault Status" ("1/1", "0/1") also works.
   filevault: "FileVault 2 Status"
 
   # System Integrity Protection status. Typical values: "Enabled", "Disabled".
@@ -327,12 +329,13 @@ sheets:
 branding:
   # Your organisation's name. When set, it is prepended to every sheet title
   # in the Excel workbook (e.g. "Acme Corp — Fleet Overview") and shown in
-  # the HTML report header and PPTX title slide.
+  # the HTML report header.
   org_name: ""
 
-  # Path to a PNG or JPEG logo file (relative to this config file, or absolute).
-  # The logo is embedded as a base64 image in the self-contained HTML report,
-  # and inserted on the Report Sources sheet of the Excel workbook.
+  # Path to a PNG logo file (relative to this config file, or absolute). A JPEG
+  # is refused with a warning. The logo is inserted at the top of each
+  # CSV-backed tab of the Excel workbook; the HTML report and the Jamf Pro tabs
+  # do not carry it.
   logo_path: ""
 
   # Hex colour used for Excel column headers and the HTML report's primary
@@ -340,8 +343,8 @@ branding:
   # Write it as #RRGGBB or #RGB; both reports use the default for anything else.
   accent_color: "#2D5EA2"
 
-  # Darker variant of accent_color — used for the HTML topbar background and
-  # dark-mode accent elements.  Default: #004165
+  # Darker variant of accent_color. Currently has no effect: nothing reads this
+  # key (the Config screen still edits it).  Default: #004165
   accent_dark:  "#004165"
 
 
@@ -402,8 +405,7 @@ protect:
 # =============================================================================
 # Post a short "report generated" digest to a Microsoft Teams or Slack incoming
 # webhook after a scheduled run. OFF by default — set enabled: true and supply a
-# provider + https URL. The Python CLI also accepts --notify <url> as an
-# override (provider still read from here). Never commit a real webhook URL.
+# provider + https URL. Never commit a real webhook URL.
 notify:
   enabled: false
   provider: "teams"   # teams | slack
@@ -412,7 +414,7 @@ notify:
   # text, and schedule names in cards; "minimal" sends event facts only
   # ("2 alert rules tripped", "run failed", "1 schedule overdue" — no values,
   # no free text). Use minimal for headless/high-security deployments where
-  # the webhook is a doorbell, not a data channel.
+  # the webhook is a doorbell, not a data channel. Any other value sends minimal.
   detail: "full"      # full | minimal
 
 # =============================================================================
@@ -500,7 +502,7 @@ retention:
   snapshot_keep_days: 365    # archive/delete raw snapshots older than this (<=0 = no age rule)
   snapshot_keep_count: 0     # always keep at least N newest per kind (0 = no count floor)
   include_summaries: false   # leave the trend summaries alone
-  archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
+  archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir); outside the workspace needs output.allow_absolute_paths
 
 # =============================================================================
 # SHARED WORKSPACE (multi-Mac coordination; auto-detected)
@@ -538,8 +540,9 @@ retention:
 # =============================================================================
 # AI INSIGHTS (macOS 27+; opt-in; OFF by default)
 # =============================================================================
-# Turn already-collected fleet data (the daily summary) into a plain-language
-# insight card using Apple's on-device Foundation Model. OFF by default and
+# Turn already-collected fleet data (the daily summary) into plain-language
+# insight cards on the Overview, Trends, Audit, Security Posture and Compliance
+# Posture screens, using Apple's on-device Foundation Model. OFF by default and
 # inert on any macOS below 27 — set enabled: true to opt in per profile.
 #
 # Apple Foundation Models is on-device only, so tier: "on_device" is the
@@ -804,6 +807,9 @@ output:
 
   # Directory where report files are written. Relative paths resolve from the
   # folder containing config.yaml. Created automatically if it does not exist.
+  # A leading ~ is expanded. A folder the app will not use (outside the workspace
+  # without allow_absolute_paths, or a system folder) is named in the run log and
+  # reports go to "Generated Reports" in the workspace.
   output_dir: "Generated Reports"
 
   # Append a local date/time stamp to generated filenames unless they already
@@ -818,7 +824,8 @@ output:
   archive_dir: ""
 
   # Number of recent timestamped runs to keep in the main output folder for
-  # each report family before older runs are moved into archive_dir.
+  # each report family before older runs are moved into archive_dir. A value
+  # below 1 is read as 1.
   keep_latest_runs: 10
 
   # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE
@@ -841,6 +848,8 @@ output:
   #
   # Sensitive locations (/etc, /System, ~/.ssh, the rest of ~/Library, ...) stay
   # refused even with this enabled.
+  #
+  # true, yes, on and 1 all opt in; write true.
   allow_absolute_paths: false
 
 

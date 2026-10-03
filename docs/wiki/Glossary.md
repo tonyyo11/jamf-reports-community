@@ -21,7 +21,7 @@ educational institutions (and what Jamf School integrates with).
 ### Activation Lock
 Anti-theft mechanism tying a device to its Apple ID. On managed devices, MDM
 can hold a bypass code so IT can recover from a lock state. Surfaces as a
-field on `pro mobile-device-inventory-details` payloads.
+field in the Security section of `pro mobile-devices list`.
 
 ### ADE — Automated Device Enrollment
 Modern term for what was previously called DEP. Devices purchased through
@@ -345,10 +345,11 @@ source visible in the health strip but never re-collects it automatically.
 ## jamf-reports-community
 
 ### AI Fleet Insight
-The Overview card that turns the current daily-summary digest into a plain-language
+The Overview's insight card, which turns the current daily-summary digest into a plain-language
 headline and severity-tagged findings using Apple's on-device Foundation Model. Opt-in,
-off by default, and hidden entirely below macOS 27 — one of three AI Insights surfaces
-alongside the Run History failure explainer and the report executive-summary narrative.
+off by default, and hidden entirely below macOS 27. Trends, Audit, Security Posture and
+Compliance Posture have their own insight cards, alongside the Run History failure explainer
+and the report executive-summary narrative.
 
 ### Background item (ticker)
 The one macOS `SMAppService` agent (2.8.0) the app ships inside its own signed bundle —

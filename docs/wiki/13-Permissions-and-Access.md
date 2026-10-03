@@ -121,7 +121,7 @@ and the health strip use.
 | Report area | Data sources | Jamf Pro API role (direct) | Jamf Account integration (Platform API) |
 |---|---|---|---|
 | Fleet inventory and security | `security`, `inventory-summary`, `device-compliance`, `computers`, `software-installs`, `duplicate-serials` | Read Computers | Inventory > Devices |
-| Mobile devices | `mobile-devices-list`, `mobile-device-inventory-details` | Read Mobile Devices | Inventory > Devices |
+| Mobile devices | `mobile-devices-list` | Read Mobile Devices | Inventory > Devices |
 | Patch management | `patch-status`, `patch-device-failures`, `patch-release-dates` | Read Patch Management Software Titles; Read Patch Policies | App lifecycle management > Patch titles; App lifecycle management > Patch policies |
 | Software updates | `update-status`, `update-device-failures` | Read Managed Software Updates; Read Computers; Read Mobile Devices | Deployment > Software updates; Inventory > Devices |
 | Policies | `policy-status`, `policies` | Read Policies; Read Computers | Deployment > Policies; Inventory > Device history; Inventory > Devices |

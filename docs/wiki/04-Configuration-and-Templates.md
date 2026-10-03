@@ -20,7 +20,7 @@ Scaffolding is a starting point, not a final answer. Always review the result.
 
 ![config.yaml editor](images/config-editor.png)
 
-In the app, the **Config** screen edits `config.yaml` through seven tabs:
+In the app, the **Config** screen edits `config.yaml` through eight tabs:
 
 | Tab | What it covers |
 |---|---|
@@ -31,6 +31,7 @@ In the app, the **Config** screen edits `config.yaml` through seven tabs:
 | Platform API | opt-in Jamf Platform API reporting |
 | Output & Branding | output directory, archiving, run retention, report branding |
 | Scoring | the weighted Security Score and risk-score weights |
+| From config.yaml | read-only: settings no tab edits, keys the app does not read, lines it skipped |
 
 ## Reviewing column mappings
 
@@ -48,21 +49,26 @@ header comments list every field.
 
 ## Tracked sections
 
-Not every config block has a screen in the app. The Config screen's seven tabs cover
-`columns`, `security_agents`, `custom_eas`, `thresholds`, `platform`, `output`, and
-`scoring`. `notify` and `ai` each have their own dedicated panel elsewhere in the app
+Not every config block has a screen in the app. The Config screen's seven editing tabs
+cover `columns`, `security_agents`, `custom_eas`, `thresholds`, `platform`, `output`, and
+`scoring`; the eighth, **From config.yaml**, is read-only and lists what none of them
+edit. `notify` and `ai` each have their own dedicated panel elsewhere in the app
 (linked below). `alerts`, `retention`, and `compliance.baselines` are hand-edited in
 `config.yaml` directly — there is no editor for them in the app yet, and so are
 `shared_workspace` and the two `charts` sub-keys the Customize screen does not cover.
+The From config.yaml tab shows all of these read-only.
 
-Hand-editing is safe alongside the GUI: the app's config editor only rewrites its own
-managed keys and preserves everything else verbatim, and scheduled runs read
-`config.yaml` fresh at each run — an edit to `alerts:` or `notify:` takes effect on the
-next scheduled run, no relaunch required.
+Hand-editing is safe alongside the GUI: a save from the Config screen rewrites only the
+blocks that screen edits and keeps the rest, and scheduled runs read `config.yaml` fresh
+at each run — an edit to `alerts:` or `notify:` takes effect on the next scheduled run,
+no relaunch required. Inside a block the screen rewrites, comments and lines the app
+could not read are not kept: the app copies the file first, and refuses a save when the
+file changed on disk after the screen loaded it. See
+[A hand-edited config.yaml](#a-hand-edited-configyaml).
 
 - **`security_agents`** — a list of third-party agents. Each entry drives a row in the
   Security Agents sheet. `connected_value` is a case-insensitive substring match.
-- **`sheets`** — optional `only` / `skip` lists to trim the workbook by tab name.
+- **`sheets`** — `only`, `skip` and `order`, by tab name (case-insensitive), shape every report workbook: the Jamf Pro tabs, the CSV tabs, the Charts tab and Jamf School workbooks. The report template picks its sheets first, so `only` never adds a tab; a name in both `only` and `skip` is not written; `order` can put a CSV tab ahead of the Jamf Pro tabs; a non-empty `only` drops Charts unless you list "Charts"; an `only` that names no tab of the workbook is ignored with a warning. An empty `only: []` means no restriction. Period and fleet workbooks do not read these.
 - **`thresholds`**, **`output`**, **`charts`** — stale-device window, disk-usage bands,
   output retention, chart toggles.
 
@@ -151,8 +157,8 @@ trend summaries alone unless explicitly set true; `archive_dir` defaults to
 
 ### AI insights (`ai`)
 
-Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` |
-`external` — `external` is reserved, not yet built), and `reasoning_level`
+Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device`, the
+only one), and `reasoning_level`
 (`light` | `moderate` | `deep`). Apple Foundation Models is on-device only, so
 `on_device` is the default and the only built behaviour.
 See [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights) for what the feature does and its in-app Settings
@@ -227,7 +233,8 @@ The **Customize** screen holds the report options that are not in Config:
   (`charts.os_adoption.per_major_charts`).
 - A button to the Overview's own **Customize** sheet, where you choose which score cards and
   sections the Overview shows.
-- How to get a shorter workbook: the command-line tool's `--template` (see Report templates
+- How to get a shorter workbook: choose a template or your own sheets with **Generate…** on
+  Generated Reports, or use the command-line tool's `--template` (see Report templates
   below).
 
 Before 2.8.1 the screen also had a grid of sheet toggles, an Executive preset and three more
@@ -262,10 +269,11 @@ against broken column mappings no longer looks clean in Run History.
 
 ## Report templates
 
-The app ships five report templates, each a curated sheet selection rather than a separate
-engine. The app itself generates the Full Instance report, with every sheet; generate a
-template with the command-line tool, for example
-`jamf-reports generate --profile <profile> --template executive` (see
+The app ships report templates, each a curated sheet selection rather than a separate
+engine. The Overview generates the Full Instance report, with every sheet. **Generate…** on
+Generated Reports generates any template, or a custom set of sheets;
+`jamf-reports generate --profile <profile> --template executive` generates the same
+templates (see
 [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line)).
 All formats — XLSX, HTML, PDF — are produced by the native Swift engine.
 

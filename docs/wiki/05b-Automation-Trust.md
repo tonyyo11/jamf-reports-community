@@ -245,7 +245,7 @@ alerts:
 - **`drops_more_than` needs history.** It only fires when a prior summary at least
   `lookback_days` old exists. It also deliberately skips a `compliance_pct` comparison that
   spans a measurement-basis change (the four-control proxy versus a real mSCP failure
-  count), so switching on `compliance.baselines` does not fabricate a large false drop.
+  count), so switching on `compliance.baselines` does not fabricate a large false drop, and a `patch_pct` comparison across the 2.9 change from a per-title mean to the device-weighted figure.
 - **Once per day per rule.** A second same-day run does not re-card a rule that already
   fired, but a rule that trips for the first time later the same day still alerts.
 - **One card per run.** When at least one rule trips, a single attention-styled card is

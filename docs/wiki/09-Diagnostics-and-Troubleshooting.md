@@ -29,7 +29,7 @@ Every action logs through the unified `os.Logger` under subsystem
 `collect`, `report`, `auth`, `schedule`, `webhook`, `platform`, `ui` — so you can filter
 to the area you care about in Console.app or the in-app viewer.
 
-**Settings → Diagnostics → Logging** controls verbosity and shows recent entries:
+**Settings → Logging** controls verbosity and shows recent entries:
 
 - **Persist verbose logs** — keeps `debug`/`info` entries in the local log store (off by
   default; the OS otherwise persists only `notice` and above). Interpolated values stay

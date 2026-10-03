@@ -50,7 +50,7 @@ Every collect or generate run writes one `summary.json` file to:
 Each file is a per-day aggregate — date, total devices, compliance percentage, FileVault
 percentage, patch percentage, and related metrics. The Trends screen reads this directory;
 one file equals one point on the timeline. The first run of a given day writes that day's
-summary; later runs the same day leave it in place. See [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance)
+summary; a later run the same day replaces it only when it measured a source the first run could not. See [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance)
 for details on where each metric comes from.
 
 Because the cadence determines the granularity, **build the collection cadence first**
