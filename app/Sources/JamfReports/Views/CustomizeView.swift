@@ -5,8 +5,9 @@ import SwiftUI
 ///
 /// Before 2.8.1 this screen also had a grid of sheet toggles, an Executive preset,
 /// a workbook preview and three more chart switches. None of them was saved or
-/// read by any generate path, yet Apply then read "Saved" (#207 G9). The app
-/// generates the Full Instance template; the command-line tool takes `--template`.
+/// read by any generate path, yet Apply then read "Saved" (#207 G9). The Overview
+/// generates the Full Instance template; the Generate sheet (Generated Reports) and the
+/// command-line tool's `--template` make the others.
 struct CustomizeView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
@@ -143,8 +144,9 @@ struct CustomizeView: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Workbook sheets", style: .body)
-                Text("A workbook generated in the app has every sheet: the Full Instance "
-                     + "report. For a shorter one, generate a smaller template with the "
+                Text("The Overview's Generate makes the Full Instance report, with every "
+                     + "sheet. For a shorter one, choose a template or your own sheets with "
+                     + "Generate\u{2026} on the Generated Reports screen, or use the "
                      + "command-line tool:")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
