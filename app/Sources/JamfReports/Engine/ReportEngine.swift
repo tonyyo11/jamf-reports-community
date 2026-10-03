@@ -3334,43 +3334,19 @@ struct ReportEngine: Sendable {
         }
     }
 
-    /// `output.output_dir` as `WorkspacePaths.outputDir(for:)` resolves it for the Reports
-    /// library, so the report lands where the library looks. A refused folder falls back to
-    /// `Generated Reports` in the workspace and says why in one `[warn]` line. With no
-    /// workspace to resolve against, the value is used as typed (relative to the working
-    /// directory), as before.
+    /// The report folder from `WorkspacePaths.reportsDir`, so every report writer agrees on it.
+    /// With no workspace to resolve against, the value is used as typed (relative to the
+    /// working directory), as before.
     private func outputDirectory(
         profile: String?, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) -> URL {
+        if let profile, let dir = WorkspacePaths.reportsDir(for: profile, onLine: onLine) {
+            return dir
+        }
         let rawDir = config.output?.resolvedOutputDir ?? WorkspacePaths.generatedReportsDirName
-        guard let profile, let root = WorkspacePathGuard.root(for: profile) else {
-            return rawDir.hasPrefix("/") ? URL(fileURLWithPath: rawDir)
-                : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-                    .appendingPathComponent(rawDir)
-        }
-        do {
-            return try WorkspacePaths.outputDir(for: profile)
-        } catch {
-            let why: String
-            switch error {
-            case WorkspacePaths.PathError.disallowedAbsolutePath(let url)
-                where WorkspacePaths.isSensitiveAbsolutePath(url):
-                why = "that folder is reserved by macOS or holds credentials"
-            case WorkspacePaths.PathError.disallowedAbsolutePath:
-                why = "it is outside the workspace and output.allow_absolute_paths is not true"
-            case WorkspacePaths.PathError.resolutionEscaped:
-                why = "a relative path must stay inside the workspace"
-            default:
-                why = "config.yaml could not be read"
-            }
-            let msg = "[warn] output.output_dir \"\(ConfigSchema.displayText(rawDir))\" is not "
-                + "used: \(why). Writing to \(WorkspacePaths.generatedReportsDirName) in the "
-                + "workspace instead."
-            AppLogger.report.warning("\(msg, privacy: .private)")
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
-            return root.appendingPathComponent(WorkspacePaths.generatedReportsDirName,
-                                               isDirectory: true)
-        }
+        return rawDir.hasPrefix("/") ? URL(fileURLWithPath: rawDir)
+            : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                .appendingPathComponent(rawDir)
     }
 
     // MARK: - Workspace init helper

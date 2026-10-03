@@ -130,3 +130,75 @@ final class OutputDirResolutionTests: XCTestCase {
         try await body(workspace, published)
     }
 }
+
+/// The GUI's HTML (and PDF) report goes to the folder the workbook goes to.
+@MainActor
+final class GUIReportFolderTests: XCTestCase {
+
+    func testTheGUIHTMLReportGoesToTheAllowedOutputDir() async throws {
+        try await withPublishWorkspace { workspace, published in
+            let lines = try await generateHTML(
+                in: workspace, yaml: "output:\n  output_dir: \"\(published.path)\"\n"
+                    + "  allow_absolute_paths: true\n")
+            XCTAssertEqual(try htmlFiles(in: published).count, 1, "\(lines)")
+            XCTAssertTrue(lines.filter { $0.hasPrefix("[warn] output.output_dir") }.isEmpty)
+        }
+    }
+
+    func testARefusedOutputDirSendsTheGUIHTMLReportToGeneratedReportsWithAWarning()
+        async throws {
+        try await withPublishWorkspace { workspace, published in
+            let lines = try await generateHTML(
+                in: workspace, yaml: "output:\n  output_dir: \"\(published.path)\"\n")
+            XCTAssertEqual(try htmlFiles(in: workspace.appendingPathComponent(
+                "Generated Reports")).count, 1)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: published.path))
+            XCTAssertEqual(lines.filter { $0.hasPrefix("[warn] output.output_dir") }.count, 1,
+                           "\(lines)")
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func generateHTML(in workspace: URL, yaml: String) async throws -> [String] {
+        try yaml.write(to: workspace.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+        let lines = LineBox()
+        let result = await CLIBridge().generateAll(
+            types: [.html], collectFresh: false, outputDir: nil,
+            profile: workspace.lastPathComponent, onLine: { lines.add($0.text) })
+        XCTAssertEqual(result.failed.count, 0, "\(lines.all)")
+        return lines.all
+    }
+
+    private func htmlFiles(in folder: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: folder.path)
+            .filter { $0.hasSuffix(".html") }
+    }
+
+    private final class LineBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+        func add(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+    }
+
+    /// Both folders under ~: the temp folder resolves under /private, which the path rules
+    /// refuse even with the opt-in.
+    private func withPublishWorkspace(_ body: (URL, URL) async throws -> Void) async throws {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let root = home.appendingPathComponent(".jrc-test-gui-\(UUID().uuidString)")
+        let published = home.appendingPathComponent(".jrc-test-gui-out-\(UUID().uuidString)")
+        let workspace = root.appendingPathComponent("gui", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: published)
+        }
+        try await body(workspace, published)
+    }
+}

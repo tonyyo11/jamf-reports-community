@@ -28,6 +28,41 @@ enum WorkspacePaths {
         )
     }
 
+    /// The folder every report is written to: `outputDir(for:)`, or `Generated Reports` in the
+    /// workspace when the typed folder is refused, with one `[warn]` line on `onLine` naming
+    /// it and why. Nil for a profile with no workspace.
+    static func reportsDir(
+        for profile: String, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL? {
+        guard let workspace = workspaceRoot(for: profile) else { return nil }
+        do {
+            return try outputDir(for: profile)
+        } catch {
+            let typed = ((try? configValue(workspace: workspace, section: "output",
+                                           key: "output_dir")) ?? nil) as? String ?? ""
+            let msg = "[warn] output.output_dir \"\(ConfigSchema.displayText(typed))\" is not "
+                + "used: \(refusal(of: error)). Writing to \(generatedReportsDirName) in the "
+                + "workspace instead."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return workspace.appendingPathComponent(generatedReportsDirName, isDirectory: true)
+        }
+    }
+
+    /// Why `resolve` refused a typed folder, worded for a `[warn]` line.
+    static func refusal(of error: Error) -> String {
+        switch error {
+        case PathError.disallowedAbsolutePath(let url) where isSensitiveAbsolutePath(url):
+            "that folder is reserved by macOS or holds credentials"
+        case PathError.disallowedAbsolutePath:
+            "it is outside the workspace and output.allow_absolute_paths is not true"
+        case PathError.resolutionEscaped:
+            "a relative path must stay inside the workspace"
+        default:
+            "config.yaml could not be read"
+        }
+    }
+
     /// `<output_dir>/archive` by default; honors `output.archive_dir`.
     ///
     /// Matches Python `Config.resolve_path("output", "archive_dir")`: when the user

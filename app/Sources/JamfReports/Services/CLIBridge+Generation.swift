@@ -124,14 +124,16 @@ extension CLIBridge {
                 )
             },
             generateHTML: {
-                let outURL = self.htmlOutputURL(profile: profile, outputDir: outputDir)
+                let outURL = self.reportFileURL(
+                    profile: profile, outputDir: outputDir, pathExtension: "html", onLine: onLine)
                 return try await self.generateHTML(
                     profile: profile, outFile: outURL.path, template: template,
                     aiNarrative: aiNarrative, onLine: onLine
                 )
             },
             generatePDF: {
-                let outURL = self.pdfOutputURL(profile: profile, outputDir: outputDir)
+                let outURL = self.reportFileURL(
+                    profile: profile, outputDir: outputDir, pathExtension: "pdf", onLine: onLine)
                 return try await self.generatePDF(
                     profile: profile, outFile: outURL.path, template: template, onLine: onLine
                 )
@@ -259,50 +261,29 @@ extension CLIBridge {
 
     // MARK: - Private helpers
 
+    /// `jamf_report_<profile>_<time>.<ext>` in the folder the Generate sheet chose, else in the
+    /// folder the workbook goes to (`WorkspacePaths.reportsDir`), so one Generate puts every
+    /// file in one place.
     @MainActor
-    private func htmlOutputURL(profile: String, outputDir: URL?) -> URL {
-        let dir: URL
-        if let outputDir {
-            dir = outputDir
-        } else if let workspace = ProfileService.workspaceURL(for: profile) {
-            dir = workspace.appendingPathComponent(
-                WorkspacePaths.generatedReportsDirName, isDirectory: true)
-        } else {
-            dir = FileManager.default.temporaryDirectory
-        }
+    private func reportFileURL(
+        profile: String, outputDir: URL?, pathExtension: String,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) -> URL {
+        let dir = outputDir
+            ?? WorkspacePaths.reportsDir(for: profile, onLine: onLine)
+            ?? FileManager.default.temporaryDirectory
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             let path = dir.path
             let desc = error.localizedDescription
-            AppLogger.cli.warning(
-                "htmlOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
+            AppLogger.cli.warning("""
+                reportFileURL: could not create \(path, privacy: .private): \
+                \(desc, privacy: .private)
+                """)
         }
         let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
-        return dir.appendingPathComponent("\(stem).html")
-    }
-
-    @MainActor
-    private func pdfOutputURL(profile: String, outputDir: URL?) -> URL {
-        let dir: URL
-        if let outputDir {
-            dir = outputDir
-        } else if let workspace = ProfileService.workspaceURL(for: profile) {
-            dir = workspace.appendingPathComponent(
-                WorkspacePaths.generatedReportsDirName, isDirectory: true)
-        } else {
-            dir = FileManager.default.temporaryDirectory
-        }
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        } catch {
-            let path = dir.path
-            let desc = error.localizedDescription
-            AppLogger.cli.warning(
-                "pdfOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
-        }
-        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
-        return dir.appendingPathComponent("\(stem).pdf")
+        return dir.appendingPathComponent("\(stem).\(pathExtension)")
     }
 
     private nonisolated func htmlTimestamp() -> String {
