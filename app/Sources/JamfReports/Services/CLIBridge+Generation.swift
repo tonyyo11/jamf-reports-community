@@ -125,7 +125,7 @@ extension CLIBridge {
             },
             generateHTML: {
                 let outURL = self.reportFileURL(
-                    profile: profile, outputDir: outputDir, pathExtension: "html", onLine: onLine)
+                    profile: profile, outputDir: outputDir, type: .html, onLine: onLine)
                 return try await self.generateHTML(
                     profile: profile, outFile: outURL.path, template: template,
                     aiNarrative: aiNarrative, onLine: onLine
@@ -133,7 +133,7 @@ extension CLIBridge {
             },
             generatePDF: {
                 let outURL = self.reportFileURL(
-                    profile: profile, outputDir: outputDir, pathExtension: "pdf", onLine: onLine)
+                    profile: profile, outputDir: outputDir, type: .pdf, onLine: onLine)
                 return try await self.generatePDF(
                     profile: profile, outFile: outURL.path, template: template, onLine: onLine
                 )
@@ -261,12 +261,12 @@ extension CLIBridge {
 
     // MARK: - Private helpers
 
-    /// `jamf_report_<profile>_<time>.<ext>` in the folder the Generate sheet chose, else in the
+    /// `<ExportNaming.stem>_<time>.<ext>` in the folder the Generate sheet chose, else in the
     /// folder the workbook goes to (`WorkspacePaths.reportsDir`), so one Generate puts every
     /// file in one place.
     @MainActor
     private func reportFileURL(
-        profile: String, outputDir: URL?, pathExtension: String,
+        profile: String, outputDir: URL?, type: GenerateOutputType,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) -> URL {
         let dir = outputDir
@@ -282,8 +282,9 @@ extension CLIBridge {
                 \(desc, privacy: .private)
                 """)
         }
-        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
-        return dir.appendingPathComponent("\(stem).\(pathExtension)")
+        let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: false)
+        let ext = type.rawValue.lowercased()
+        return dir.appendingPathComponent("\(stem)_\(htmlTimestamp()).\(ext)")
     }
 
     private nonisolated func htmlTimestamp() -> String {

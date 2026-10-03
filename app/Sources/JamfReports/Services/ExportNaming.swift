@@ -21,6 +21,23 @@ enum ExportNaming {
         return "\(kindPart)-\(profilePart)-\(stamp).\(ext)"
     }
 
+    /// What a generated report's file name starts with, before the profile: the one
+    /// definition the writers and the Generate sheet's "What will be written" share.
+    static func reportKind(for type: GenerateOutputType, schoolMode: Bool) -> String {
+        switch type {
+        case .xlsx: schoolMode ? "school-report" : "report"
+        case .html, .pdf: "jamf_report"
+        case .csv: "inventory"
+        }
+    }
+
+    /// A generated report's file name before its timestamp and extension: `report_prod`.
+    static func stem(for type: GenerateOutputType, profile: String, schoolMode: Bool) -> String {
+        let kind = reportKind(for: type, schoolMode: schoolMode)
+        let part = profilePart(profile)
+        return part.isEmpty ? kind : "\(kind)_\(part)"
+    }
+
     /// A profile name inside a file name: kept whole (spaces, dots and accents included) so it
     /// reads back exactly, with only what a file name can't hold encoded (`ProfileName`).
     static func profilePart(_ profile: String) -> String {

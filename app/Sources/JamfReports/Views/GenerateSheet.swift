@@ -123,19 +123,18 @@ final class GenerateSheetState {
     /// True for the School template, whose workbook the School generator writes.
     var schoolMode: Bool { selectedTemplateID == SchoolTemplate().identifier }
 
-    /// What one format writes, as "What will be written" lists it: the generators' stems
-    /// with the profile as `ExportNaming` puts it in a file name.
+    /// What one format writes, as "What will be written" lists it: the stem the generators
+    /// write (`ExportNaming.stem`) and what they write beside it.
     nonisolated static func writtenFiles(
         for type: GenerateOutputType, profile: String, schoolMode: Bool
     ) -> String {
-        let part = ExportNaming.profilePart(profile)
+        let name = ExportNaming.stem(for: type, profile: profile, schoolMode: schoolMode)
+            + "_<date>.\(type.rawValue.lowercased())"
         switch type {
-        case .xlsx where schoolMode:
-            return "school-report_\(part)_<date>.xlsx + integrity sidecar (.sha256)"
-        case .xlsx: return "report_\(part)_<date>.xlsx + integrity sidecar (.sha256, manifest)"
-        case .html: return "jamf_report_\(part)_<date>.html + integrity manifest"
-        case .pdf: return "jamf_report_\(part)_<date>.pdf + integrity manifest"
-        case .csv: return "inventory_\(part)_<date>.csv"
+        case .xlsx where schoolMode: return name + " + integrity sidecar (.sha256)"
+        case .xlsx: return name + " + integrity sidecar (.sha256, manifest)"
+        case .html, .pdf: return name + " + integrity manifest"
+        case .csv: return name
         }
     }
 

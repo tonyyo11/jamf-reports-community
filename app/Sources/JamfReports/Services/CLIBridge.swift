@@ -577,7 +577,8 @@ final class CLIBridge {
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
         let defaultURL = engine.resolveOutputURL(
-            stem: "report", profile: profile, onLine: outputDir == nil ? onLine : nil)
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false), profile: profile,
+            onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
@@ -708,7 +709,8 @@ final class CLIBridge {
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
         let outputURL = engine.resolveOutputURL(
-            stem: "school-report", profile: profile, onLine: onLine)
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true), profile: profile,
+            onLine: onLine)
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -1493,7 +1495,8 @@ final class CLIBridge {
         } else {
             let engine = ReportEngine(config: config, dataDir: workspace)
             outputURL = engine.resolveOutputURL(
-                stem: "inventory", profile: profile, onLine: onLine)
+                stem: ExportNaming.reportKind(for: .csv, schoolMode: false), profile: profile,
+                onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("csv")
         }
         do {

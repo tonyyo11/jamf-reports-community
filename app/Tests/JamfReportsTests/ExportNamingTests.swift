@@ -114,4 +114,35 @@ final class ReportNamingProfileTests: XCTestCase {
             "no-profile callers keep the legacy stem; got '\(url.lastPathComponent)'"
         )
     }
+
+    /// One definition of each report's name, for the writers and the Generate sheet.
+    func testEachFormatHasOneStem() {
+        func stem(_ type: GenerateOutputType, school: Bool = false) -> String {
+            ExportNaming.stem(for: type, profile: "a/b", schoolMode: school)
+        }
+        XCTAssertEqual(stem(.xlsx), "report_a%2Fb")
+        XCTAssertEqual(stem(.xlsx, school: true), "school-report_a%2Fb")
+        XCTAssertEqual(stem(.html), "jamf_report_a%2Fb")
+        XCTAssertEqual(stem(.pdf, school: true), "jamf_report_a%2Fb")
+        XCTAssertEqual(stem(.csv), "inventory_a%2Fb")
+    }
+
+    /// The workbook writers name their file through `resolveOutputURL`, which appends the
+    /// profile itself; that name starts with the format's stem.
+    func testTheEngineNamesAWorkbookWithItsStem() {
+        var config = ReportConfig()
+        config.output = OutputConfig()
+        config.output?.outputDir = "/tmp/reports"
+        let engine = ReportEngine(config: config, dataDir: URL(fileURLWithPath: "/tmp"))
+        for school in [false, true] {
+            let url = inEmptyWorkspacesRoot {
+                engine.resolveOutputURL(
+                    stem: ExportNaming.reportKind(for: .xlsx, schoolMode: school),
+                    profile: "prod")
+            }
+            XCTAssertTrue(url.lastPathComponent.hasPrefix(
+                ExportNaming.stem(for: .xlsx, profile: "prod", schoolMode: school) + "_"),
+                url.lastPathComponent)
+        }
+    }
 }

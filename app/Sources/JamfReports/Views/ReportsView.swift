@@ -417,8 +417,8 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        let part = ExportNaming.profilePart(profile)
-        panel.nameFieldStringValue = "jamf_report_\(part)_\(dateStr).pdf"
+        let stem = ExportNaming.stem(for: .pdf, profile: profile, schoolMode: false)
+        panel.nameFieldStringValue = "\(stem)_\(dateStr).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
@@ -466,7 +466,8 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "inventory_\(ExportNaming.profilePart(profile))_\(dateStr).csv"
+        let stem = ExportNaming.stem(for: .csv, profile: profile, schoolMode: false)
+        panel.nameFieldStringValue = "\(stem)_\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
