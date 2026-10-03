@@ -597,11 +597,7 @@ struct OverviewView: View {
         }
 
         let freshnessDecision = await Task.detached(priority: .utility) {
-            guard ProfileService.isValid(profile),
-                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-                return SnapshotFreshness.Decision.noSnapshots
-            }
-            return SnapshotFreshness.evaluate(dataDir: dataDir)
+            SnapshotFreshness.evaluate(profile: profile)
         }.value
 
         let shouldSkipCollect: Bool

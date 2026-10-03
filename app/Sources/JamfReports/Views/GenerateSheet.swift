@@ -263,7 +263,21 @@ struct GenerateSheet: View {
     let bridge: CLIBridge
     let onGenerated: @MainActor () -> Void
 
-    @State private var state = GenerateSheetState()
+    @State private var state: GenerateSheetState
+
+    /// `freshness`, read by the presenter before the sheet opens, sets Collect fresh from the
+    /// first frame; nil (demo mode) leaves it on.
+    init(
+        profile: String, bridge: CLIBridge, freshness: SnapshotFreshness.Decision?,
+        onGenerated: @escaping @MainActor () -> Void
+    ) {
+        self.profile = profile
+        self.bridge = bridge
+        self.onGenerated = onGenerated
+        let state = GenerateSheetState()
+        if let freshness { state.applySnapshotFreshness(freshness) }
+        _state = State(initialValue: state)
+    }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(WorkspaceStore.self) private var workspace
@@ -303,10 +317,7 @@ struct GenerateSheet: View {
         .frame(minHeight: 440)
         .background(Theme.Surface.raised)
         .interactiveDismissDisabled(!state.canDismiss)
-        .task {
-            await readConfiguredOutputDir()
-            await defaultCollectFreshFromSnapshots()
-        }
+        .task { await readConfiguredOutputDir() }
     }
 
     // MARK: Subviews
@@ -846,19 +857,6 @@ struct GenerateSheet: View {
         }.value
     }
 
-    /// The Overview's freshness check, off the main actor: it walks the data directory.
-    private func defaultCollectFreshFromSnapshots() async {
-        guard !workspace.demoMode else { return }
-        let profile = profile
-        let decision = await Task.detached(priority: .utility) {
-            guard ProfileService.isValid(profile),
-                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-                return SnapshotFreshness.Decision.noSnapshots
-            }
-            return SnapshotFreshness.evaluate(dataDir: dataDir)
-        }.value
-        state.applySnapshotFreshness(decision)
-    }
 
     private func runGenerate() async {
         // A demo profile's name can match a real workspace; the presenter disables Generate too.

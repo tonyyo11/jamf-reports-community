@@ -10,6 +10,8 @@ struct ReportsView: View {
     @State private var reportStats = ReportLibrary.Stats(count: 0, totalBytes: 0, archivedCount: 0)
     @State private var snapshotFamilies: [SnapshotFamily] = []
     @State private var showGenerate = false
+    /// Read before the Generate sheet opens; see `presentGenerate`.
+    @State private var generateFreshness: SnapshotFreshness.Decision?
     @State private var isGeneratingPDF = false
     @State private var isExportingCSV = false
     @State private var reportError: String?
@@ -161,7 +163,9 @@ struct ReportsView: View {
             PeriodReportSheet()
         }
         .sheet(isPresented: $showGenerate) {
-            GenerateSheet(profile: workspace.profile, bridge: bridge, onGenerated: reload)
+            GenerateSheet(
+                profile: workspace.profile, bridge: bridge, freshness: generateFreshness,
+                onGenerated: reload)
         }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
@@ -234,7 +238,7 @@ struct ReportsView: View {
                             ) {
                                 // The sheet runs jamf-cli against the selected profile.
                                 guard !workspace.demoMode else { return }
-                                showGenerate = true
+                                Task { await presentGenerate() }
                             }
                             .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
                             .help(
@@ -410,6 +414,17 @@ struct ReportsView: View {
 
     // The generate and export actions run jamf-cli against the selected
     // profile, a fictional one in demo mode; their buttons are disabled there.
+
+    /// Reads the snapshots' freshness off the main actor before the Generate sheet opens, so
+    /// its Collect fresh default is right from the first frame instead of flipping when a slow
+    /// read lands on a large workspace.
+    private func presentGenerate() async {
+        let profile = workspace.profile
+        generateFreshness = await Task.detached(priority: .userInitiated) {
+            SnapshotFreshness.evaluate(profile: profile)
+        }.value
+        showGenerate = true
+    }
 
     @MainActor
     private func generatePDFReport() {
