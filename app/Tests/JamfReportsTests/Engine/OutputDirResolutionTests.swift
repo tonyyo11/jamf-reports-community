@@ -165,7 +165,7 @@ final class GUIReportFolderTests: XCTestCase {
                        atomically: true, encoding: .utf8)
         let lines = LineBox()
         let result = await CLIBridge().generateAll(
-            types: [.html], collectFresh: false, outputDir: nil,
+            types: [.html], outputDir: nil,
             profile: workspace.lastPathComponent, onLine: { lines.add($0.text) })
         XCTAssertEqual(result.failed.count, 0, "\(lines.all)")
         return lines.all
