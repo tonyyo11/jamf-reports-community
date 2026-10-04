@@ -176,6 +176,23 @@ struct TrendsView: View {
         }
     }
 
+    nonisolated static func snapshotCountText(_ count: Int) -> String {
+        "\(count) snapshot\(count == 1 ? "" : "s")"
+    }
+
+    /// What one point of the line is, from the lower median gap between the snapshots: a
+    /// daily history reads "Daily snapshot", not the weekly one a legacy import had.
+    nonisolated static func snapshotCadenceLabel(_ dates: [Date]) -> String {
+        let sorted = dates.sorted()
+        guard sorted.count > 1 else { return "Snapshot" }
+        let gaps = zip(sorted.dropFirst(), sorted).map { $0.timeIntervalSince($1) }.sorted()
+        let typical = gaps[(gaps.count - 1) / 2]
+        let day: TimeInterval = 24 * 3600
+        if typical < 1.5 * day { return "Daily snapshot" }
+        if (6 * day)...(8 * day) ~= typical { return "Weekly snapshot" }
+        return "Snapshot"
+    }
+
     /// A metric value as the hero shows it. No value is a dash: "0%" would read as measured.
     nonisolated static func metricValueText(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
@@ -190,21 +207,38 @@ struct TrendsView: View {
         return (low, high, values.reduce(0, +) / Double(values.count))
     }
 
-    /// A pill's change over the range; a metric with no points shows a dash, not "±0".
-    nonisolated static func pillDeltaText(series: [Double], unit: String) -> String {
-        guard let first = series.first, let last = series.last else { return "—" }
-        let change = Int((last - first).rounded())
-        if change == 0 { return "±0\(unit)" }
-        return "\(change > 0 ? "+" : "")\(change)\(unit)"
+    /// The change over the range for one metric, nil when it has no points.
+    nonisolated static func trendChange(
+        metric: TrendSeries.Metric, series: [Double]
+    ) -> TrendChange? {
+        guard let first = series.first, let last = series.last else { return nil }
+        return TrendChange(metric: metric, first: first, last: last)
     }
 
-    private var pctDelta: Double? {
-        Self.relativeChangePercent(delta: delta, baseline: startVal)
+    /// A pill's change over the range, in percentage points for a share; a metric with no
+    /// points shows a dash, not "±0".
+    nonisolated static func pillDeltaText(metric: TrendSeries.Metric, series: [Double]) -> String {
+        trendChange(metric: metric, series: series)?.pillText ?? "—"
     }
 
-    /// "good" trend for stale-devices is *down*; everything else is *up*.
-    private var deltaIsPositive: Bool {
-        metric == .stale ? delta < 0 : delta > 0
+    /// The hero's change: a relative percentage only for a count, whose baseline can be a
+    /// different size from its change. A share's change is already in percentage points.
+    private var heroChange: TrendChange {
+        TrendChange(metric: metric, first: startVal, last: endVal)
+    }
+
+    private var heroChangeText: String {
+        let relative = metric.unit == "%" ? nil
+            : Self.relativeChangePercent(delta: delta, baseline: startVal)
+        return heroChange.heroText(relativeChange: relative)
+    }
+
+    private func verdictColor(_ verdict: TrendChange.Verdict) -> Color {
+        switch verdict {
+        case .better: Theme.Colors.ok
+        case .worse: Theme.Colors.danger
+        case .neutral: Theme.Text.tertiary(contrast)
+        }
     }
 
     /// "Apr 1 → Apr 25 · 12 weeks" — used as the hero header date-range pill.
@@ -330,7 +364,7 @@ struct TrendsView: View {
             kicker: "Trends · \(range.rawValue)",
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Historical Trends",
-            subtitle: "Snapshot history from snapshots/summaries · \(trendDates.count) snapshot\(trendDates.count == 1 ? "" : "s")",
+            subtitle: "Snapshot history · \(Self.snapshotCountText(trendDates.count))",
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspaceStore.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
@@ -405,15 +439,11 @@ struct TrendsView: View {
         series = points(for: m).map(\.value)
         sparkValues = Array(series.suffix(8))
 
-        let dl = (series.last ?? 0) - (series.first ?? 0)
-        let deltaInt = Int(dl.rounded())
-        let deltaState: DeltaState = deltaInt > 0 ? .positive : deltaInt < 0 ? .negative : .flat
-
-        // For mSCP band trends, "good" trend is more devices with data (positive)
-        let goodTrend = m == .stale ? deltaState == .negative : deltaState == .positive
+        let change = Self.trendChange(metric: m, series: series)
+        let verdict = change?.verdict ?? .neutral
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
-        let isBadTrend = deltaState == .negative && m != .stale && m != .mscpBandTrend
+        let isBadTrend = verdict == .worse
 
         return Button {
             withAnimation(.snappy(duration: 0.25)) { metric = m }
@@ -424,17 +454,13 @@ struct TrendsView: View {
                 Text(metricLabel(m))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text(Self.pillDeltaText(series: series, unit: m.unit))
+                Text(Self.pillDeltaText(metric: m, series: series))
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
-                    .foregroundStyle(
-                        deltaState == .flat ? Theme.Text.tertiary(contrast)
-                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
-                    )
+                    .foregroundStyle(verdictColor(verdict))
                 if sparkValues.count >= 2 {
                     Sparkline(
                         values: sparkValues,
-                        color: deltaState == .flat ? Theme.Colors.gold
-                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
+                        color: verdict == .neutral ? Theme.Colors.gold : verdictColor(verdict)
                     )
                     .frame(width: 40, height: 18)
                     .opacity(0.85)
@@ -473,7 +499,7 @@ struct TrendsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Self.metricPillAccessibilityLabel(
-            label: metricLabel(m), unit: m.unit, series: series, goodTrend: goodTrend
+            label: metricLabel(m), metric: m, series: series
         ))
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(metricLabel(m)) trend")
@@ -487,24 +513,19 @@ struct TrendsView: View {
 
     // MARK: Hero chart
 
-    private var deltaText: String {
-        let magnitude = "\(abs(Int(delta.rounded())))\(metric.unit)"
-        return pctDelta.map { "\(magnitude) (\(String(format: "%.1f", $0))%)" } ?? magnitude
-    }
-
     /// The delta, plus the range pill when asked.
     @ViewBuilder
     private func heroIdleDetail(showsRange: Bool) -> some View {
         // With no points there is no change to report; the range pill says "No snapshots".
         if !values.isEmpty {
             HStack(spacing: 4) {
-                Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                Image(systemName: heroChange.symbol)
                     .font(.system(size: 11, weight: .bold))
-                Text(deltaText)
+                Text(heroChangeText)
                     .lineLimit(1)
             }
             .font(Theme.Fonts.mono(14, weight: .semibold))
-            .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+            .foregroundStyle(verdictColor(heroChange.verdict))
             .fixedSize(horizontal: true, vertical: false)
         }
         if showsRange {
@@ -753,7 +774,7 @@ struct TrendsView: View {
                 HStack(spacing: 16) {
                     HStack(spacing: 6) {
                         Rectangle().fill(Color(hex: metric.colorHex)).frame(width: 14, height: 2)
-                        Text("Weekly snapshot").font(.caption)
+                        Text(Self.snapshotCadenceLabel(trendDates)).font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     HStack(spacing: 6) {
@@ -1166,21 +1187,24 @@ struct TrendsView: View {
         }
     }
 
-    /// A pill's VoiceOver label; a metric with no points says so rather than "+0% change",
-    /// matching the dash the pill shows.
+    /// A pill's VoiceOver label; a metric with no points says so rather than "+0 pp change",
+    /// matching the dash the pill shows. A metric with no good direction says "up" or "down".
     nonisolated static func metricPillAccessibilityLabel(
         label: String,
-        unit: String,
-        series: [Double],
-        goodTrend: Bool
+        metric: TrendSeries.Metric,
+        series: [Double]
     ) -> String {
-        guard let first = series.first, let last = series.last else {
+        guard let change = trendChange(metric: metric, series: series) else {
             return "\(label), no snapshots in range"
         }
-        let delta = last - first
-        let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
-        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(unit)"
-        return "\(label), \(direction), \(deltaStr) change"
+        if change.direction == .flat { return "\(label), unchanged" }
+        let direction = switch (change.verdict, change.direction) {
+        case (.better, _): "improving"
+        case (.worse, _): "declining"
+        case (.neutral, .up): "up"
+        case (.neutral, _): "down"
+        }
+        return "\(label), \(direction), \(change.pillText) change"
     }
 
     /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
@@ -1271,10 +1295,8 @@ struct TrendsView: View {
                         HStack(spacing: 4) {
                             Text("snapshots/summaries/")
                                 .font(Theme.Fonts.mono(11.5))
-                            Text("· \(trendDates.count) archived summaries · auto-archived from each ")
-                            Text("generate")
-                                .font(Theme.Fonts.mono(11))
-                            Text(" run")
+                            Text("· \(trendDates.count) archived summaries · one per day, "
+                                 + "written by collect")
                         }
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -1508,7 +1530,6 @@ struct TrendsView: View {
 
 // MARK: - Helpers
 
-private enum DeltaState { case positive, negative, flat }
 
 extension Array {
     subscript(safe idx: Int) -> Element? { indices.contains(idx) ? self[idx] : nil }
