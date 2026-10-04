@@ -40,7 +40,6 @@ protect:
   enabled: false
 
 platform:
-  enabled: false
   compliance_benchmarks: []
 
 compliance:

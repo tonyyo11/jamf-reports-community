@@ -1167,15 +1167,12 @@ struct HTMLSectionLimits: Decodable, Sendable {
 // MARK: - platform
 
 struct PlatformConfig: Decodable, Sendable {
-    var enabled: Bool?
     var complianceBenchmarks: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case complianceBenchmarks = "compliance_benchmarks"
     }
 
-    var isEnabled: Bool { enabled ?? false }
     /// Configured titles, trimmed, with blanks and repeats dropped. A title listed twice was
     /// collected twice and its rows saved twice.
     var benchmarkTitles: [String] {

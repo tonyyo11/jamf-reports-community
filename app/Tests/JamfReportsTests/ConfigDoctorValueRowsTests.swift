@@ -444,12 +444,10 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
 
     func testKeysNothingReadsAreSuggestionsWhenTheyDifferFromTheirDefaults() throws {
         let found = try rows("""
-        platform: {enabled: true}
         thresholds: {profile_error_critical: 80}
-        charts:
         """)
         XCTAssertEqual(Set(titles(found)), [
-            "platform.enabled", "thresholds.profile_error_critical",
+            "thresholds.profile_error_critical",
         ])
         XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
         XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
@@ -540,7 +538,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         alerts:
           rules:
             - {metric: patch_pct, when: below, threshold: 90}
-        platform: {enabled: true}
         school_cli: {enabled: true}
         protect: {enabled: true}
         """)

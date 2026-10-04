@@ -91,7 +91,6 @@ retention.archive_dir = string ""
 ai.enabled = bool false
 ai.tier = string "on_device"
 ai.reasoning_level = string "light"
-platform.enabled = bool false
 platform.compliance_benchmarks = null
 compliance.enabled = bool true
 compliance.baseline_label = string "mSCP Compliance"

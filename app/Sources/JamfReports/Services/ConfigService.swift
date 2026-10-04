@@ -48,7 +48,6 @@ struct ConfigState: Equatable, Sendable {
     var baselineLabel: String
     var failuresCountColumn: String
     var failuresListColumn: String
-    var platformEnabled: Bool
     var complianceBenchmarks: [String]
     var outputDir: String
     var archiveDir: String
@@ -144,7 +143,6 @@ struct ConfigState: Equatable, Sendable {
         baselineLabel: "mSCP Compliance",
         failuresCountColumn: "",
         failuresListColumn: "",
-        platformEnabled: false,
         complianceBenchmarks: [],
         outputDir: "Generated Reports",
         archiveDir: "",
@@ -593,7 +591,6 @@ enum ConfigService {
         }
 
         if let platform = root.value(for: "platform")?.mapping {
-            state.platformEnabled = platform.value(for: "enabled")?.boolValue ?? state.platformEnabled
             state.complianceBenchmarks = stringSequence(platform, "compliance_benchmarks")
         }
 
@@ -672,7 +669,6 @@ enum ConfigService {
         root.set("compliance", value: .mapping(compliance))
 
         var platform = root.value(for: "platform")?.mapping ?? .init(entries: [])
-        platform.set("enabled", value: .scalar(.bool(state.platformEnabled)))
         platform.set("compliance_benchmarks", value: .sequence(state.complianceBenchmarks.map { scalar($0) }))
         root.set("platform", value: .mapping(platform))
 

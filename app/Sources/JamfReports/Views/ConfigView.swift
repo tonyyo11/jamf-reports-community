@@ -1197,18 +1197,6 @@ private struct PlatformTab: View {
                     platformSetupCallout
                 }
                 Divider().background(Theme.Hairline.standard)
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Enable Platform API sheets")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(Theme.Text.primary)
-                        Text("Blueprints, DDM Status, Compliance benchmarks")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    Spacer()
-                    PNPToggle(isOn: $ws.configState.platformEnabled)
-                }
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Compliance benchmarks")
                     ForEach(ws.configState.complianceBenchmarks.indices, id: \.self) { i in
@@ -1240,7 +1228,7 @@ private struct PlatformTab: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 Text("Profile \"\(workspace.profile)\" is configured for Platform Gateway auth. "
-                     + "Enable the toggle below to include Platform API sheets in generated reports.")
+                     + "Collect runs the Platform API reports for it.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
             }

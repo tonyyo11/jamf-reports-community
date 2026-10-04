@@ -369,10 +369,9 @@ final class ConfigDoctorServiceTests: XCTestCase {
 
     // MARK: - platform
 
-    func testPlatformEnabledWithoutBenchmarksRaisesNoRow() throws {
+    func testPlatformWithoutBenchmarksRaisesNoRow() throws {
         let yaml = """
         platform:
-          enabled: true
           compliance_benchmarks: []
         """
         let config = try makeConfig(yaml)

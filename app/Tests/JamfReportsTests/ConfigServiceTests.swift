@@ -517,7 +517,6 @@ final class ConfigServiceTests: XCTestCase {
             baselineLabel: "CIS Level 1",
             failuresCountColumn: "Compliance Failures",
             failuresListColumn: "Compliance Failure List",
-            platformEnabled: true,
             complianceBenchmarks: ["CIS", "NIST"],
             outputDir: "Executive Reports",
             archiveDir: "Report Archive",

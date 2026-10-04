@@ -321,8 +321,6 @@ extension ConfigDoctorService {
         }
         let limits = ThresholdsConfig()
         let keys: [(key: String, differs: Bool, note: String?)] = [
-            ("platform.enabled",
-             differs(config.platform?.enabled, from: PlatformConfig().isEnabled), nil),
             ("thresholds.profile_error_critical",
              differs(config.thresholds?.profileErrorCritical,
                      from: limits.resolvedProfileErrorCritical), nil),

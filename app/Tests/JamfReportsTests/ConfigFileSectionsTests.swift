@@ -112,7 +112,6 @@ final class ConfigFileSectionsTests: XCTestCase {
           failures_count_column: Failures
           failures_list_column: Failed Rules
         platform:
-          enabled: true
           compliance_benchmarks:
             - Benchmark One
         output:

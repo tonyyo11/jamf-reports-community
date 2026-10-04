@@ -580,9 +580,6 @@ ai:
 # Compliance Benchmarks screen shows one benchmark at a time.
 
 platform:
-  # Written by the Config screen's "Enable Platform API sheets" switch. Neither
-  # collect nor the reports read it: the profile's auth method decides.
-  enabled: false
   # List of benchmark titles for the Platform compliance sheets.
   # Empty collects every benchmark; listed titles narrow it (exact, case-sensitive).
   compliance_benchmarks:

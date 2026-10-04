@@ -30,7 +30,6 @@ jamf_cli.data_dir = string "../jamf-cli-data"
 jamf_cli.profile = string ""
 jamf_cli.use_cached_data = bool true
 protect.enabled = bool false
-platform.enabled = bool false
 platform.compliance_benchmarks = []
 compliance.enabled = bool false
 compliance.failures_count_column = string ""
