@@ -151,7 +151,10 @@ struct SecurityPostureService: Sendable {
             sipEnabled: summary?.sipEnabled,
             firewallEnabled: summary?.firewallEnabled,
             gatekeeperEnabled: summary?.gatekeeperEnabled,
-            osVersions: osVersions.sorted { $0.osVersion > $1.osVersion },
+            osVersions: OSVersionName.merged(osVersions.map {
+                .init(version: $0.osVersion, count: $0.count, pct: $0.pct)
+            }).map { Snapshot.OSVersion(osVersion: $0.version, count: $0.count, pct: $0.pct) }
+                .sorted { $0.osVersion > $1.osVersion },
             sourceFile: url,
             snapshotDate: mtime,
             sourceDates: sourceDates,

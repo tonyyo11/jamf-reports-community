@@ -303,7 +303,11 @@ enum OverviewLiveDataLoader {
     static func osDistribution(
         counts: [String: Int], latestByMajor: [Int: String], limit: Int
     ) -> (rows: [OSDistribution], currentShare: Double?, total: Int, versions: Int) {
-        let valid = counts.filter { $0.value > 0 && !$0.key.isEmpty }
+        // "26.7" and "26.7.0" are one release (`OSVersionName`).
+        let valid = Dictionary(
+            counts.filter { $0.value > 0 && !$0.key.isEmpty }
+                .map { (OSVersionName.normalized($0.key), $0.value) },
+            uniquingKeysWith: +)
         let total = valid.values.reduce(0, +)
         guard total > 0 else { return ([], nil, 0, 0) }
         let ranked = valid.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }

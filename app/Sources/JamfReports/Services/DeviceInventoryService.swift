@@ -1088,6 +1088,8 @@ private struct DeviceRecordMerger {
     private var nameIndex: [String: Int] = [:]
 
     mutating func upsert(_ record: DeviceInventoryRecord) {
+        var record = record
+        record.osVersion = OSVersionName.normalized(record.osVersion)
         let newJamfIDKey = record.numericJamfID
         let newSerialKey = DeviceInventoryService.normalizedKey(record.serial)
         let newNameKey = DeviceInventoryService.normalizedKey(record.name)

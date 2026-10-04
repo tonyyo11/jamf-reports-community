@@ -247,10 +247,13 @@ struct CoreDashboard: Sendable {
             ws.write("Count", row: row, col: 1, format: .header)
             ws.write("Pct", row: row, col: 2, format: .header)
             row += 1
-            for v in osVersionRows {
-                ws.write(v.osVersion, row: row, col: 0, format: .cell)
+            let combined = OSVersionName.merged(osVersionRows.map {
+                .init(version: $0.osVersion, count: $0.count, pct: OSVersionName.percent($0.pct))
+            })
+            for v in combined {
+                ws.write(v.version, row: row, col: 0, format: .cell)
                 ws.write(v.count, row: row, col: 1, format: .cell)
-                ws.write(v.pct, row: row, col: 2, format: .cell)
+                ws.write(String(format: "%.1f%%", v.pct), row: row, col: 2, format: .cell)
                 row += 1
             }
         }
@@ -2569,7 +2572,7 @@ struct CoreDashboard: Sendable {
             if case .osVersion(let v) = item {
                 let ver = v.osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !ver.isEmpty else { continue }
-                counts[ver, default: 0] += v.count
+                counts[OSVersionName.normalized(ver), default: 0] += v.count
             }
         }
         return counts
