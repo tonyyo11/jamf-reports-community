@@ -91,6 +91,10 @@ compliance is now one figure everywhere.
   report fails, the workbook is kept and the log says so. When older runs are archived, the
   HTML report moves with its workbook; other HTML reports stay where they are. The fleet and
   period workbooks and Jamf School workbooks are not included.
+- The top of every run log says what the run will collect: `[plan]` lines list the sources it will
+  fetch, the ones it leaves alone and why (a `collect_skip` entry, a source that is not due, a
+  tier not selected), and whether the per-device scan runs. This applies to scheduled runs and
+  the command line as well as the app.
 
 ### Changed
 
@@ -280,6 +284,18 @@ compliance is now one figure everywhere.
   push scheduled runs out of the list.
 - "Refresh finished with warnings" and the reminder to allow JamfReports under Login Items after
   setup are amber, not red: nothing failed.
+- The app runs one collect at a time. Starting a second Refresh, Collect now, scan or first
+  collect while one is running used to start it beside the first, which multiplied the load on
+  the Jamf server. It now says "A refresh is already running" and starts nothing; automatic
+  collects wait for the running one.
+- jamf-cli is no longer updated while a collect is running, and no collect starts while it is
+  being updated. Updating from Settings during a refresh or a scheduled run says so and changes
+  nothing.
+- Run History shows a run that has not finished as "Running", not as a warning with no duration,
+  and dates every row at the run's start instead of its last write.
+- The status bar shows a running collect for as long as it runs, including the automatic ones. It
+  no longer goes back to "Ready" when you open Fleet Overview, and Fleet Overview no longer says
+  "Fleet data refreshed" when it only reloads from disk.
 
 ### Security
 
