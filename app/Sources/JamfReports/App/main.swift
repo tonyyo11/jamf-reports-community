@@ -489,15 +489,20 @@ private func scheduledRunSingle(
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.
+        let template = FullInstanceTemplate()
         let failures = try await engine.generate(
             csvURL: resolvedCSV,
             outputURL: outputURL,
+            template: template,
             onLine: onLine
         )
         if !failures.isEmpty {
             let partialMsg = partialRunMarker(sheetFailures: failures.count)
             recorder?.record(partialMsg)
         }
+        // html.with_workbook: a failure is one [warn] line and leaves this run's result alone.
+        let htmlURL = await engine.writeHTMLWithWorkbook(
+            besideWorkbook: outputURL, template: template, onLine: onLine)
         let message = "[ok] scheduled run complete for '\(profile)': \(outputURL.lastPathComponent)"
         print(message)
         recorder?.record(message)
@@ -520,7 +525,9 @@ private func scheduledRunSingle(
             )
         }
         ScheduledRunSignals.recordConfigHealth(profile: profile, recorder: recorder)
-        recorder?.finish(exitCode: 0, sheetFailures: failures.count, artifacts: [outputURL])
+        recorder?.finish(
+            exitCode: 0, sheetFailures: failures.count,
+            artifacts: [outputURL] + (htmlURL.map { [$0] } ?? []))
         return 0
     } catch {
         let errorDesc = error.localizedDescription

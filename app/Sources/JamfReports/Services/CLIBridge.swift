@@ -551,13 +551,15 @@ final class CLIBridge {
 
     /// Fluent helper for the most common CLI flows the GUI surfaces.
     /// `aiNarrative` (F3) is set only by GUI-generate call sites; every other
-    /// caller leaves the nil default.
+    /// caller leaves the nil default. `htmlWithWorkbook: false` is for the one caller that
+    /// writes the HTML report itself in the same run (`generateAll`), so it is written once.
     func generate(
         profile: String,
         csvPath: String?,
         template: any ReportTemplate = FullInstanceTemplate(),
         outputDir: URL? = nil,
         aiNarrative: String? = nil,
+        htmlWithWorkbook: Bool = true,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         try await ensureWorkspace(profile: profile, onLine: onLine)
@@ -613,6 +615,11 @@ final class CLIBridge {
                     onLine(.init(timestamp: Date(), level: .warn,
                                  text: "  failed sheet: \(f.sheet): \(f.error)"))
                 }
+            }
+            if htmlWithWorkbook {
+                await engine.writeHTMLWithWorkbook(
+                    besideWorkbook: outputURL, template: template,
+                    aiNarrative: aiNarrative, onLine: onLine)
             }
             tightenOnSuccess(0, profile: profile)
             return 0
