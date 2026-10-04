@@ -60,13 +60,30 @@ struct BackupsView: View {
         backups.first
     }
 
+    /// What "Diff Latest" compares against: the newest backup that has files. An empty newest
+    /// backup would make every diff meaningless.
+    private var diffTarget: BackupRecord? {
+        backups.first { !$0.isEmpty }
+    }
+
+    private var selectionIncludesEmptyBackup: Bool {
+        backups.contains { selectedBackups.contains($0.id) && $0.isEmpty }
+    }
+
     private var diffSelectionHint: String {
         switch selectedBackups.count {
         case 0: "Command-click to select multiple"
         case 1: "Select 1 more to diff"
-        case 2: "Ready to diff"
+        case 2: selectionIncludesEmptyBackup ? "An empty backup cannot be diffed" : "Ready to diff"
         default: "Select exactly 2 to diff"
         }
+    }
+
+    private func diffLatestHelp(for backup: BackupRecord) -> String {
+        if workspace.demoMode { return DemoData.liveOnlyHelp }
+        if backup.isEmpty { return "This backup has no files, so there is nothing to compare." }
+        if diffTarget?.id == backup.id { return "This is the latest backup with files." }
+        return "Compare this backup with the latest one that has files."
     }
 
     private var shouldShowBackupLogBody: Bool {
@@ -131,7 +148,8 @@ struct BackupsView: View {
                         Mono(
                             text: diffSelectionHint,
                             size: 10.5,
-                            color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
+                            color: selectedBackups.count == 2 && !selectionIncludesEmptyBackup
+                                ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
                         )
                         PNPButton(
                             title: isRunningDiff ? "Diffing..." : "Diff Selected",
@@ -140,7 +158,9 @@ struct BackupsView: View {
                         ) {
                             diffSelected()
                         }
-                        .disabled(workspace.demoMode || isRunningBackup || isRunningDiff || selectedBackups.count != 2)
+                        .disabled(
+                            workspace.demoMode || isRunningBackup || isRunningDiff
+                                || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
                         .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                         PNPButton(
                             title: isRunningBackup ? "Backing Up..." : "New Backup",
@@ -226,10 +246,12 @@ struct BackupsView: View {
                             .disabled(workspace.demoMode)
                             .help(workspace.demoMode ? Self.demoRevealHelp : "")
                             PNPButton(title: "Diff Latest", icon: "arrow.left.arrow.right", size: .sm) {
-                                diff(backup, against: latestBackup)
+                                diff(backup, against: diffTarget)
                             }
-                            .disabled(workspace.demoMode || isRunningDiff || latestBackup?.id == backup.id)
-                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                            .disabled(
+                                workspace.demoMode || isRunningDiff
+                                    || !BackupRecord.canDiff(backup, against: diffTarget))
+                            .help(diffLatestHelp(for: backup))
                             PNPButton(title: "Delete", icon: "trash", style: .danger, size: .sm) {
                                 pendingDelete = backup
                                 showDeleteConfirm = true
@@ -478,7 +500,8 @@ struct BackupsView: View {
     }
 
     private func diff(_ backup: BackupRecord, against latest: BackupRecord?) {
-        guard !workspace.demoMode, let latest, latest.id != backup.id else { return }
+        guard !workspace.demoMode, let latest,
+              BackupRecord.canDiff(backup, against: latest) else { return }
         diffOutput.removeAll()
         diffGroups = []
         diffHeadline = ""
@@ -589,7 +612,7 @@ private struct DiffLineView: View {
     }
 }
 
-private struct BackupLibrary {
+struct BackupLibrary {
     func list(profile: String) -> [BackupRecord] {
         guard let root = WorkspacePathGuard.root(for: profile) else { return [] }
         let backupsRoot = root.appendingPathComponent("backups", isDirectory: true)
@@ -613,9 +636,10 @@ private struct BackupLibrary {
         guard let dir = WorkspacePathGuard.validate(url, under: root) else { return nil }
         let manifest = readManifest(dir.appendingPathComponent("manifest.json"), root: root)
         let stats = directoryStats(dir, root: root)
-        let created = manifest.created
-            ?? (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            ?? .distantPast
+        let modified = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+        let created = BackupRecord.created(
+            manifest: manifest.created, name: dir.lastPathComponent, modified: modified)
         return BackupRecord(
             name: dir.lastPathComponent,
             label: manifest.label,

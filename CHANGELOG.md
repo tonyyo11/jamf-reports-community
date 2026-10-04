@@ -182,6 +182,10 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Backups shows when each backup was made. A backup with no files and no manifest took the date
+  its folder was last touched, so backups from May to August read as early September; it now
+  uses the date in its name. "Diff Latest" and "Diff Selected" are no longer offered on an empty
+  backup, and "Diff Latest" compares with the newest backup that has files.
 - Devices rates each Mac one way. The Risk pill in the list and the detail panel's Priority Risk
   section showed different ratings (a Mac not seen for 90 days read Critical in the list and Low
   beside its risk points). Both, the Priority filter, the CSV export and the inventory order now
