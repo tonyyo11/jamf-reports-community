@@ -1162,14 +1162,15 @@ struct SettingsView: View {
         .accessibilityLabel("Sidebar visibility settings")
     }
 
-    private static let toggleableGroups: [(label: String, tabs: [Tab])] = [
-        ("Reports",       [.fleet, .deviceLookup, .trends, .audit, .reports]),
-        ("Posture",       [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        ("Operations",    [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
-        ("Fleet",         [.mobileFleet, .protectDashboard]),
-        ("Automation",    [.schedules, .runs]),
-        ("Configuration", [.config, .customize, .backups])
-    ]
+    /// The sidebar's own groups less the tabs that cannot be hidden, so a tab added to
+    /// `Tab.navGroups` gets a switch here with no second list to forget (Groups & Searches
+    /// had none). A group left with only core tabs is dropped.
+    nonisolated static var toggleableGroups: [(label: String, tabs: [Tab])] {
+        Tab.navGroups.compactMap { group in
+            let tabs = group.items.filter { !$0.isCoreTab }
+            return tabs.isEmpty ? nil : (label: group.label, tabs: tabs)
+        }
+    }
 
     private func visibilityGroupRow(label: String, tabs: [Tab]) -> some View {
         VStack(alignment: .leading, spacing: 6) {

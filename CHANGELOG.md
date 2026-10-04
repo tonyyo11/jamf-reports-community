@@ -182,6 +182,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Settings > Sidebar Visibility lists Groups & Searches, so it can be hidden like the other
+  screens. The list is built from the sidebar's own groups, so a screen added later gets a switch
+  too.
 - Config > Branding shows the accent colour you typed in its swatch, instead of always gold. A
   value that is not `#RGB` or `#RRGGBB` shows the colour the reports use then, `#2D5EA2`.
 - Data Sources: the snapshot families table has set column widths so it no longer shows a stray
