@@ -20,6 +20,29 @@ struct InsightBullet: Sendable, Equatable {
 struct FleetInsight: Sendable, Equatable {
     var headline: String
     var bullets: [InsightBullet]
+
+    /// The insight with its last bullet cut back to its last complete sentence, or dropped when
+    /// it has none. A model that runs out of room stops mid-sentence without an error, and the
+    /// half sentence would read as a finished finding. Earlier bullets are left alone: the
+    /// model moved on from them.
+    func endingOnSentence() -> FleetInsight {
+        guard let last = bullets.last else { return self }
+        var kept = bullets
+        if let text = Self.completeSentences(of: last.text) {
+            kept[kept.count - 1].text = text
+        } else {
+            kept.removeLast()
+        }
+        return FleetInsight(headline: headline, bullets: kept)
+    }
+
+    /// `text` up to its last full stop, question mark or exclamation mark that ends a
+    /// sentence (a "." inside "98.5%" does not), closing quotes and brackets included.
+    static func completeSentences(of text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let end = trimmed.matches(of: #/[.!?]["')\]”’]*(?=\s|$)/#).last?.range.upperBound
+        return end.map { String(trimmed[..<$0]) }
+    }
 }
 
 // MARK: - Pure input builder (ungated)
@@ -59,9 +82,9 @@ struct FleetInsightInput: Sendable, Equatable {
         var complement: String? = nil
     }
 
-    /// The title, the focus, one line per fact, then the notes. Changes are in
-    /// percentage points for shares, signed integers for counts and one decimal
-    /// for numbers, each followed by "better" or "worse" when nonzero.
+    /// The title, the focus, one line per fact, then the notes. A change reads "up" or
+    /// "down" with its size, in percentage points for shares, whole numbers for counts and
+    /// one decimal for numbers, then "better" or "worse" when it has a good direction.
     ///
     /// `maxApproxTokens` bounds the size: tokens are approximated at 4 chars per
     /// token (the widely-used rough heuristic; the generator additionally caps
@@ -75,6 +98,41 @@ struct FleetInsightInput: Sendable, Equatable {
 
     /// The most characters any one field (title, focus, label, text value, note) sends.
     static let fieldLimit = 200
+
+    /// Sent by a builder whose facts have no earlier value, since the on-device model
+    /// otherwise reads a single snapshot as a trend.
+    static let noEarlierDataNote = "No figure here has an earlier value to compare with, so "
+        + "describe the current state only: do not say anything improved, declined, regressed "
+        + "or is trending."
+
+    /// The session instructions for every insight card. Severity follows the verdict a line
+    /// carries ("better", "worse"), never the direction of a number: fewer stale devices is a
+    /// downward trend and an improvement.
+    static let instructions = """
+    You are a Mac fleet-operations analyst. Given a set of already-collected
+    fleet metrics, produce a concise plain-language insight for an IT admin.
+    Lead with a one-sentence headline on overall fleet health, then 3 to 6
+    prioritized findings, each one or two short, complete sentences ending in
+    a full stop. Base every statement only on the provided numbers; never
+    invent metrics. Name only metrics that appear in the provided lines, and
+    never mention device age, hardware age or warranty: none is provided.
+    A line that says "on N% of devices" gives the share of devices in that
+    state; any other percentage means what its label says. Say which direction
+    is good using the line's own wording; never restate a percentage as its
+    opposite.
+    A line gives a change only as "up", "down" or "unchanged vs prior", and
+    "better" or "worse" after it is the verdict: take it as written. A change
+    with no verdict has no good or bad direction, and a line with no change
+    gives none. Call something a regression, a decline or an improvement only
+    where its line says so; otherwise describe the current figure alone.
+    Use severity "critical" for a failing security control or a security
+    figure marked "worse", "warning" for other gaps and every change marked
+    "worse", and "info" for everything else, including every change marked
+    "better" or "unchanged" and every figure with no good direction.
+    Name macOS releases as the lines do. A higher macOS number is a newer
+    release; "oldest" and "newest" describe this fleet only, and no line says
+    which releases Apple still supports.
+    """
 
     /// T-23: a summary's `date` is free text on synced storage and could carry
     /// prompt-injection text. Round-trip through the strict formatter so only a
@@ -123,7 +181,7 @@ extension FleetInsightInput {
             }
         }
         let proxy = current.complianceIsProxy == true ? " [proxy metric]" : ""
-        let facts: [Fact?] = [
+        let candidates: [Fact?] = [
             Fact(label: "Total managed devices", value: .count(current.totalDevices),
                  prior: nil, polarity: .neutral),
             share("FileVault encrypted", \.fileVaultPct, "not encrypted"),
@@ -142,19 +200,20 @@ extension FleetInsightInput {
                 Fact(label: "Security score", value: .number($0),
                      prior: previous?.securityScore.map(Value.number), polarity: .higherIsBetter)
             },
-            count("Stale devices", \.staleCount),
+            count("Stale devices (no recent check-in)", \.staleCount),
             count("P0 action items", \.actionItemsP0),
             count("P1 action items", \.actionItemsP1),
             count("P2 action items", \.actionItemsP2),
         ]
-        let note = previous.map { "Prior period for deltas: \(safeDate($0.date))." }
-            ?? "No prior period available; deltas omitted."
+        let facts = candidates.compactMap { $0 }
+        var notes = previous.map { ["Prior period for deltas: \(safeDate($0.date))."] } ?? []
+        if !facts.contains(where: { $0.prior != nil }) { notes.append(noEarlierDataNote) }
         return FleetInsightInput(
             title: "Fleet snapshot for \(safeDate(current.date))",
             focus: "overall fleet health, the largest gaps, and what changed since the "
                 + "prior period.",
-            facts: facts.compactMap { $0 },
-            notes: [note]
+            facts: facts,
+            notes: notes
         )
     }
 }
@@ -182,11 +241,6 @@ private func clean(_ field: String) -> String {
     return String(flat.trimmingCharacters(in: .whitespaces).prefix(FleetInsightInput.fieldLimit))
 }
 
-/// One decimal with its sign; never "-0.0".
-private func signed(_ delta: Double) -> String {
-    String(format: "%@%.1f", delta >= 0 ? "+" : "", delta == 0 ? 0 : delta)
-}
-
 extension FleetInsightInput.Fact {
     /// A share with a complement states both sides, so the model never has to
     /// invert "SIP enabled: 1.0%" itself. A neutral fact prints its value only.
@@ -203,24 +257,29 @@ extension FleetInsightInput.Fact {
         return change.map { line + " (\($0))" } ?? line
     }
 
+    /// The change from `prior` as the model reads it: its direction in words, its size, then
+    /// the verdict when the fact has a good direction. It is taken between the rounded
+    /// figures the line prints, so "91.2% (up 0.1 pp)" can never occur.
     private var change: String? {
-        let delta: Double, shown: String
+        let delta: Double, size: String
         switch (value, prior) {
         case (.percent(let now), .percent(let then)?):
-            delta = tenths(now - then)
-            shown = signed(delta) + " pp"
+            delta = tenths(tenths(now) - tenths(then))
+            size = String(format: "%.1f pp", abs(delta))
         case (.number(let now), .number(let then)?):
-            delta = tenths(now - then)
-            shown = signed(delta)
+            delta = tenths(tenths(now) - tenths(then))
+            size = String(format: "%.1f", abs(delta))
         case (.count(let now), .count(let then)?):
             delta = Double(now - then)
-            shown = "\(now >= then ? "+" : "")\(now - then)"
+            size = "\(abs(now - then))"
         default:
             return nil
         }
-        guard delta != 0, polarity != .neutral else { return "\(shown) vs prior" }
+        guard delta != 0 else { return "unchanged vs prior" }
+        let moved = "\(delta > 0 ? "up" : "down") \(size) vs prior"
+        guard polarity != .neutral else { return moved }
         let better = (delta > 0) == (polarity == .higherIsBetter)
-        return "\(shown) vs prior, \(better ? "better" : "worse")"
+        return "\(moved), \(better ? "better" : "worse")"
     }
 }
 
@@ -244,7 +303,8 @@ extension FleetIntelligence {
 
     @Generable
     struct GeneratedBullet {
-        @Guide(description: "A single concrete, actionable finding in plain language.")
+        @Guide(description: "A single concrete, actionable finding in plain language: one or two "
+               + "short sentences under 40 words, ending in a full stop.")
         var text: String
         @Guide(description: "One of: info, warning, critical.")
         var severity: String

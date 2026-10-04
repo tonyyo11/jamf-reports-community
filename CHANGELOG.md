@@ -185,6 +185,21 @@ compliance is now one figure everywhere.
 - Adding a workspace from the sidebar profile menu no longer crashes the app. Setup looked for
   jamf-cli while the screen was still being built; it now looks after the screen is up and shows
   "Checking for jamf-cli" until it has an answer.
+- AI insights no longer call a drop in stale devices a warning, or a 0.1-point FileVault change a
+  regression. Each change reads "up 0.1 pp, better" or "down 2.0 pp, worse", the severity follows
+  better or worse rather than the direction of a number, and a card with nothing earlier to
+  compare with is told not to describe trends at all.
+- AI posture insights state each control once, mention warnings only when a Mac is in a warning
+  state, and label the oldest and newest macOS in the fleet, so Monterey is no longer called the
+  latest. Stale devices are described as devices with no recent check-in, and the model is told
+  the app has no device age to talk about.
+- An AI insight's last bullet no longer stops in the middle of a sentence, and the card's corner
+  label reads "On-device · macOS Golden Gate 27" instead of "MACOS 27".
+- Trends shows a percentage metric's change in percentage points with one decimal ("2.0 pp"), not
+  "2% (-3.7%)", colours it by whether up or down is good for that metric, and shows no arrow or
+  colour when the change rounds to nothing. Device counts with no good direction stay grey. The
+  chart legend names the real snapshot cadence, the page header no longer shows a folder path,
+  and the Snapshot Archive note says summaries are written by collect, not by generate runs.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

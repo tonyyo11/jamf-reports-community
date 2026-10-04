@@ -214,29 +214,28 @@ extension FleetInsightInput {
     /// policy ignores, or the report has no count for, sends nothing. Nil when nothing is left.
     static func posture(_ screen: PostureScreen) -> FleetInsightInput? {
         let macs: Int, rows: [PostureRow], policy: SecurityControlPolicy
-        var more: [Fact] = [], notes = [postureGapNote], byMajor = false
+        var more: [Fact] = [], extraNotes: [String] = [], byMajor = false
         switch screen {
         case .security(let snapshot):
             (macs, policy) = (snapshot.totalDevices, snapshot.policy)
             rows = securityRows(snapshot.fleetCounts, policy: policy)
             more = actionItemFacts(snapshot.fleetCounts)
-            if !more.isEmpty { notes.append(postureActionNote) }
+            if !more.isEmpty { extraNotes.append(postureActionNote) }
         case .compliance(let snapshot, let showsBands):
             (macs, policy) = (snapshot.totalDevices, snapshot.policy)
             rows = complianceRows(snapshot.controlGaps)
-            // The most Macs failing first: the on-device model leans on the first line it reads.
-            let majors = snapshot.perOSMajor
-                .compactMap { bandFact(ComplianceBandingService.osLabel($0.osMajor), $0.bands) }
-                .sorted { $0.failing > $1.failing }.map { $0.fact }
+            let majors = osMajorFacts(snapshot.perOSMajor)
             let fleet = showsBands ? bandFact("All Macs", snapshot.bands)?.fact : nil
             more = [fleet].compactMap { $0 } + majors
             byMajor = !majors.isEmpty
-            if !more.isEmpty { notes.append(postureBandNote) }
+            if !more.isEmpty { extraNotes.append(postureBandNote) }
         }
         // Ordered as the Control Coverage Gaps bars are, most Macs failing first.
         let facts = rows.sorted { $0.failing > $1.failing }
             .flatMap { controlFacts($0, policy: policy) } + more
         guard !facts.isEmpty else { return nil }
+        let notes = [postureGapNote(warnings: rows.contains { $0.warning > 0 }),
+                     FleetInsightInput.noEarlierDataNote] + extraNotes
         let total = Fact(label: "Macs in the security report", value: .count(macs), prior: nil,
                          polarity: .neutral)
         let subject = byMajor
@@ -247,8 +246,16 @@ extension FleetInsightInput {
             facts: [total] + facts, notes: notes)
     }
 
-    private static let postureGapNote = "Failing is a gap under this workspace's security policy. "
-        + "A warning is a Mac with the control off that the policy does not count as a gap."
+    /// The warning sentence goes only where a warning fact does: defined without one, the
+    /// on-device model states each control twice, once as failing and once as a warning.
+    private static func postureGapNote(warnings: Bool) -> String {
+        "Failing is a gap under this workspace's security policy."
+            + (warnings ? " A warning is a Mac with the control off that the policy does not "
+                + "count as a gap." : "")
+            + " A control's share line and its Macs-failing line count the same Macs unless a "
+            + "line says otherwise: report each control once."
+    }
+
     private static let postureActionNote = "P0 and P1 add up each control's gaps, so a Mac "
         + "failing two of their controls counts twice."
     private static let postureBandNote = "Bands count the controls a Mac fails: Pass is none, "
@@ -354,6 +361,27 @@ extension FleetInsightInput {
                               prior: nil, polarity: .lowerIsBetter))
         }
         return facts
+    }
+
+    /// The Per-OS Breakdown rows, most Macs failing first (the on-device model leans on the
+    /// first line it reads). The lowest and highest major say so: a model given only
+    /// "macOS Monterey 12" once called it the latest supported base.
+    private static func osMajorFacts(
+        _ rows: [(osMajor: Int, bands: [ComplianceBand])]
+    ) -> [Fact] {
+        let majors = rows.map(\.osMajor)
+        let (oldest, newest) = (majors.min(), majors.max())
+        return rows.compactMap { row -> (failing: Int, fact: Fact)? in
+            var name = ComplianceBandingService.osLabel(row.osMajor)
+            if majors.count == 1 {
+                name += " (the only macOS in the fleet)"
+            } else if row.osMajor == oldest {
+                name += " (the oldest macOS in the fleet)"
+            } else if row.osMajor == newest {
+                name += " (the newest macOS in the fleet)"
+            }
+            return bandFact(name, row.bands)
+        }.sorted { $0.failing > $1.failing }.map(\.fact)
     }
 
     /// One bands row: its Macs in a band below Pass, out of its Macs, then the bands holding

@@ -1397,6 +1397,7 @@ extension FleetInsightInput {
         }
         if drift == nil {
             notes.append("No previous audit was available, so what changed is unknown.")
+            notes.append(noEarlierDataNote)
         }
         return FleetInsightInput(
             title: "Audit insight",

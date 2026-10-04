@@ -29,6 +29,9 @@ struct AIInsightCard: View {
         self.makeInput = makeInput
     }
 
+    /// The card's corner label. Not a `Kicker`, which upper-cases its text into "MACOS 27".
+    static let badgeText = "On-device · macOS Golden Gate 27"
+
     /// macOS 27 and a live profile. Synchronous, so a screen can leave the
     /// card out of its layout before any config is read.
     static func isOffered(
@@ -61,7 +64,11 @@ struct AIInsightCard: View {
                 HStack {
                     SectionHeader(title: title)
                     Spacer()
-                    Kicker(text: "macOS 27", tone: .muted)
+                    Text(Self.badgeText)
+                        .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                        .tracking(1)
+                        .foregroundStyle(Theme.Colors.fgMuted)
+                        .lineLimit(1)
                 }
                 content
             }
@@ -256,7 +263,10 @@ final class AIInsightCardModel {
                 guard request == generation else { return }
                 insight = partial
             }
-            if request == generation { isGenerating = false }
+            if request == generation {
+                isGenerating = false
+                insight = insight?.endingOnSentence()
+            }
         } catch {
             guard request == generation else { return }
             // An interrupted insight is not trustworthy, and would hide the error.

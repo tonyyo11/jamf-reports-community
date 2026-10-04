@@ -31,37 +31,37 @@ final class TrendsViewNoDataTests: XCTestCase {
     }
 
     func testPillWithNoPointsShowsADash() {
-        XCTAssertEqual(TrendsView.pillDeltaText(series: [], unit: "%"), "—")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: []), "—")
     }
 
+    /// A share's change is in percentage points with one decimal; a count's is a whole number.
     func testPillChangeKeepsItsSignAndFlatForm() {
-        XCTAssertEqual(TrendsView.pillDeltaText(series: [70, 72.4], unit: "%"), "+2%")
-        XCTAssertEqual(TrendsView.pillDeltaText(series: [40, 30], unit: ""), "-10")
-        XCTAssertEqual(TrendsView.pillDeltaText(series: [50, 50.3], unit: "%"), "±0%")
-        XCTAssertEqual(TrendsView.pillDeltaText(series: [50], unit: "%"), "±0%")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [70, 72.4]), "+2.4 pp")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .patch, series: [90, 87]), "-3.0 pp")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .stale, series: [40, 30]), "-10")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50, 50.04]), "±0")
+        XCTAssertEqual(TrendsView.pillDeltaText(metric: .fileVault, series: [50]), "±0")
     }
 
     func testPillWithNoPointsTellsVoiceOverSo() {
         XCTAssertEqual(
             TrendsView.metricPillAccessibilityLabel(
-                label: "Patch Compliance", unit: "%", series: [], goodTrend: false
+                label: "Patch Compliance", metric: .patch, series: []
             ),
             "Patch Compliance, no snapshots in range"
         )
     }
 
-    func testPillAccessibilityLabelKeepsDirectionAndChange() {
-        XCTAssertEqual(
-            TrendsView.metricPillAccessibilityLabel(
-                label: "FileVault", unit: "%", series: [70, 72.4], goodTrend: true
-            ),
-            "FileVault, improving, +2% change"
-        )
-        XCTAssertEqual(
-            TrendsView.metricPillAccessibilityLabel(
-                label: "FileVault", unit: "%", series: [70], goodTrend: false
-            ),
-            "FileVault, unchanged, +0% change"
-        )
+    func testPillAccessibilityLabelNamesDirectionFromThePolarity() {
+        func label(_ metric: TrendSeries.Metric, _ series: [Double]) -> String {
+            TrendsView.metricPillAccessibilityLabel(label: "X", metric: metric, series: series)
+        }
+        XCTAssertEqual(label(.fileVault, [70, 72.4]), "X, improving, +2.4 pp change")
+        XCTAssertEqual(label(.fileVault, [72.4, 70]), "X, declining, -2.4 pp change")
+        XCTAssertEqual(label(.stale, [20, 11]), "X, improving, -9 change")
+        XCTAssertEqual(label(.stale, [11, 20]), "X, declining, +9 change")
+        XCTAssertEqual(label(.activeDevices, [80, 99]), "X, up, +19 change")
+        XCTAssertEqual(label(.activeDevices, [99, 80]), "X, down, -19 change")
+        XCTAssertEqual(label(.fileVault, [70]), "X, unchanged")
     }
 }

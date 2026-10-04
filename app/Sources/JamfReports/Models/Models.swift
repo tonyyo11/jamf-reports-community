@@ -974,6 +974,18 @@ struct TrendSeries: Identifiable, Sendable {
             default: return "%"
             }
         }
+
+        /// Fewer stale devices is better; a device count has no good direction; every other
+        /// metric is a share or score where higher is better. No default, so a new metric
+        /// needs a decision here. Read by the Trends colours and the AI trend input alike.
+        var polarity: FleetInsightInput.Polarity {
+            switch self {
+            case .stale: .lowerIsBetter
+            case .activeDevices, .mscpBandTrend, .managedDevices: .neutral
+            case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .patch,
+                 .securityScore, .sip, .firewall, .gatekeeper: .higherIsBetter
+            }
+        }
         var minY: Double {
             switch self {
             case .activeDevices, .mscpBandTrend, .managedDevices: return 0

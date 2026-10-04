@@ -36,6 +36,9 @@ final class TrendInsightInputTests: XCTestCase {
         metric.displayLabel(benchmarkLabel: "CIS Level 1", edrAgentName: "CrowdStrike Falcon")
     }
 
+    /// "Stale Devices (30d+)" alone read as a statement about how old the devices are.
+    private let stale = "Stale Devices (30d+) — devices with no recent check-in"
+
     private func input(
         _ store: TrendStore, metrics: [TrendSeries.Metric] = TrendSeries.Metric.allCases
     ) -> FleetInsightInput? {
@@ -54,22 +57,22 @@ final class TrendInsightInputTests: XCTestCase {
             "Trend insight",
             "Focus: which metrics moved together or against each other over the period, and "
                 + "which change matters most.",
-            "- Stability Index: 85.2 (+3.2 vs prior, better)",
+            "- Stability Index: 85.2 (up 3.2 vs prior, better)",
             "- Active Devices: 99",
-            "- CIS Level 1: 78.0% (-2.0 pp vs prior, worse)",
+            "- CIS Level 1: 78.0% (down 2.0 pp vs prior, worse)",
             "- FileVault Encryption on 92.0% of devices; not encrypted on 8.0% "
-                + "(+2.0 pp vs prior, better)",
-            "- On Current macOS: 70.0% (+10.0 pp vs prior, better)",
+                + "(up 2.0 pp vs prior, better)",
+            "- On Current macOS: 70.0% (up 10.0 pp vs prior, better)",
             "- CrowdStrike Falcon Installed on 96.0% of devices; not installed on 4.0% "
-                + "(+1.0 pp vs prior, better)",
-            "- Stale Devices (30d+): 11 (-9 vs prior, better)",
-            "- Patch Compliance: 90.0% (+5.0 pp vs prior, better)",
-            "- Security Score (Weighted): 72.5 (+2.5 vs prior, better)",
+                + "(up 1.0 pp vs prior, better)",
+            "- \(stale): 11 (down 9 vs prior, better)",
+            "- Patch Compliance: 90.0% (up 5.0 pp vs prior, better)",
+            "- Security Score (Weighted): 72.5 (up 2.5 vs prior, better)",
             "- Managed Devices: 110",
             "Range: 2026-09-01 to 2026-09-15, 3 snapshots. Each value is the last snapshot in "
                 + "the range and its prior is the first.",
             "Active Devices: 80 at the start, 99 at the end.",
-            "Stale Devices (30d+): 20 at the start, 11 at the end.",
+            "\(stale): 20 at the start, 11 at the end.",
             "Security Score (Weighted): compared from 2026-09-08 to 2026-09-15, its first and "
                 + "last snapshots in the range.",
             "Managed Devices: 100 at the start, 110 at the end.",
@@ -81,7 +84,8 @@ final class TrendInsightInputTests: XCTestCase {
         let store = TrendStore(summaries: threeSummaries(), range: .all)
         let facts = try XCTUnwrap(input(store)).facts
         func fact(_ metric: TrendSeries.Metric) throws -> FleetInsightInput.Fact {
-            try XCTUnwrap(facts.first { $0.label == label(metric) }, "\(metric) missing")
+            let name = metric == .stale ? stale : label(metric)
+            return try XCTUnwrap(facts.first { $0.label == name }, "\(metric) missing")
         }
         XCTAssertEqual(try fact(.stale).polarity, .lowerIsBetter)
         XCTAssertEqual(try fact(.activeDevices).polarity, .neutral)
@@ -101,7 +105,7 @@ final class TrendInsightInputTests: XCTestCase {
     func testOnlyTheMetricsThePickerOffersAreUsed() {
         let store = TrendStore(summaries: threeSummaries(), range: .all)
         let context = input(store, metrics: [.fileVault, .stale])?.facts.map(\.label)
-        XCTAssertEqual(context, ["FileVault Encryption", "Stale Devices (30d+)"])
+        XCTAssertEqual(context, ["FileVault Encryption", stale])
     }
 
     /// Its headline is a count of devices with band data, not a measure of health.
@@ -166,7 +170,7 @@ final class TrendInsightInputTests: XCTestCase {
         XCTAssertNotEqual(month, all)
         XCTAssertTrue(month.notes[0].hasPrefix("Range: 2026-08-29 to 2026-09-12, 3 snapshots."))
         XCTAssertTrue(all.notes[0].hasPrefix("Range: 2026-08-01 to 2026-09-12, 4 snapshots."))
-        XCTAssertTrue(lines(all).contains("- Stale Devices (30d+): 11 (-29 vs prior, better)"))
+        XCTAssertTrue(lines(all).contains("- \(stale): 11 (down 29 vs prior, better)"))
     }
 
     func testRangeHoldingOneSnapshotGivesNoInput() {
