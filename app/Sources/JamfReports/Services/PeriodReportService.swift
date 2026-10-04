@@ -166,8 +166,7 @@ enum PeriodReportService {
     // MARK: - IO
 
     private static func loadSummaries(profile: String) -> [DailySummary] {
-        guard let dir = try? WorkspacePaths.summariesDir(for: profile) else { return [] }
-        return SummaryJSONParser.parseDirectory(dir)
+        TrendStore.readSummaries(profile: profile)
     }
 
     private static func loadConfig(profile: String) -> ReportConfig? {

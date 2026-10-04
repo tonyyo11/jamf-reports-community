@@ -182,6 +182,11 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Patch compliance and Stability read the same on every screen. Overview and Trends showed the
+  patch figure re-derived from each day's patch snapshot while Fleet Overview, its profile view
+  and the AI insight showed the older recorded figure (35.4% against 31.3% on one fleet, with
+  Stability 59.7 against 58.0). The Overview insight, Fleet Overview, the fleet report and
+  workbook, the period report and metric alerts now use the re-derived figure too.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

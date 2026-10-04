@@ -84,7 +84,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
     let crowdstrikePct: Double?
     /// Omitted when source data is absent or fails to decode; nil propagates to
     /// TrendStore so the chart skips the point rather than emitting a misleading 0%.
-    let patchPct: Double?
+    private(set) var patchPct: Double?
     let source: String
     /// Optional run provenance (run-ID, jamf-cli version, tenant URL, operator).
     /// Absent in legacy Python-emitted summaries; present in Swift-emitted ones.
@@ -135,10 +135,19 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// `deviceWeightedPatchBasis` when `patchPct` is `Σ on_latest / Σ total` over the
     /// titles that have devices. Nil on a summary written before 2.9, whose `patchPct`
     /// is the unweighted mean of each title's percentage — the two do not compare.
-    let patchPctBasis: String?
+    private(set) var patchPctBasis: String?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
+
+    /// This day on the device-weighted patch definition, with `patchPct` replaced by the
+    /// figure re-derived from its `patch-status` snapshot (`TrendStore.resolvingPatch`).
+    func withDeviceWeightedPatch(_ pct: Double) -> DailySummary {
+        var resolved = self
+        resolved.patchPct = pct
+        resolved.patchPctBasis = Self.deviceWeightedPatchBasis
+        return resolved
+    }
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast

@@ -39,11 +39,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// summary date. Rebuilt once per load; fills gaps only — a recorded count wins.
     private var mobileCountBackfill: [String: Int] = [:]
 
-    /// Device-weighted patch figures for days whose summary recorded the old per-title
-    /// mean (`recomputePatchPct`), keyed by summary date. Rebuilt once per load; the
-    /// Patch and Stability series read it ahead of the recorded value.
-    private var patchPctRecompute: [String: Double] = [:]
-
     /// The baseline whose series `mscpStackedSeries()` and `.mscpBandTrend`
     /// derivation read. Defaults to the first name; user-settable via
     /// `selectMSCPBaseline`. Nil only when no baseline has band history.
@@ -64,9 +59,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         /// Mobile counts for days summarized before 2.6.0 (`backfillMobileCounts`).
         /// Defaulted so a snapshot built by hand, as tests do, need not pass it.
         var mobileCountBackfill: [String: Int] = [:]
-        /// Device-weighted patch figures for days recorded under the old per-title mean
-        /// (`recomputePatchPct`), keyed by summary date.
-        var patchPctRecompute: [String: Double] = [:]
     }
 
     init(summaries: [DailySummary] = [], range: TrendRange = .w4) {
@@ -111,8 +103,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             hasEverFetchedLive: summaries.contains { $0.source == "jamf-cli" },
             bandSeries: built.series,
             baselineNames: built.names,
-            mobileCountBackfill: loadMobileCountBackfill(profile: profile, summaries: summaries),
-            patchPctRecompute: loadPatchPctRecompute(profile: profile, summaries: summaries)
+            mobileCountBackfill: loadMobileCountBackfill(profile: profile, summaries: summaries)
         )
     }
 
@@ -141,7 +132,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         cachedBandSeries = snapshot.bandSeries
         mscpBaselineNames = snapshot.baselineNames
         mobileCountBackfill = snapshot.mobileCountBackfill
-        patchPctRecompute = snapshot.patchPctRecompute
         // Preserve a still-valid selection across reloads; else default to first.
         let keepSelection = selectedMSCPBaseline.map(snapshot.baselineNames.contains) ?? false
         if !keepSelection { selectedMSCPBaseline = snapshot.baselineNames.first }
@@ -168,7 +158,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         cachedBandSeries = [:]
         mscpBaselineNames = []
         mobileCountBackfill = [:]
-        patchPctRecompute = [:]
         selectedMSCPBaseline = nil
         latestSnapshotDate = nil
         hasEverFetchedLive = false
@@ -188,9 +177,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return CacheSource.from(snapshotDate: latestSnapshotDate, withinHours: 36)
     }
 
-    /// Read summaries from the configured `charts.historical_csv_dir/summaries`
-    /// (or the workspace fallback if config is unavailable). `nonisolated static`
-    /// so it runs off the main actor inside `computeSnapshot`.
+    /// The one loader of a profile's daily summaries for every screen, report and alert
+    /// that shows a patch figure: read from the configured
+    /// `charts.historical_csv_dir/summaries` (or the workspace fallback if config is
+    /// unavailable), with each day's patch figure on the device-weighted definition
+    /// (`resolvingPatch`). `nonisolated static` so it runs off the main actor.
     nonisolated static func readSummaries(profile: String) -> [DailySummary] {
         // Validate at the boundary — string-interpolating an unvalidated profile
         // into a path component is a traversal vector.
@@ -198,7 +189,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             ?? fallbackSummariesDir(for: profile) else {
             return []
         }
-        return SummaryJSONParser.parseDirectory(summariesDir)
+        return resolvingPatch(SummaryJSONParser.parseDirectory(summariesDir), profile: profile)
     }
 
     nonisolated static func fallbackSummariesDir(for profile: String) -> URL? {
@@ -299,10 +290,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     private func value(for metric: TrendSeries.Metric, in summary: DailySummary) -> Double? {
         switch metric {
-        case .stability:
-            return TrendSeries.stabilityIndex(
-                compliancePct: summary.compliancePct, patchPct: patchPct(of: summary),
-                staleCount: summary.staleCount, totalDevices: summary.totalDevices)
+        case .stability:     return summary.stabilityIndex
         // Redefined 2.6: active = totalDevices - staleCount, not totalDevices
         // (was redundant with .managedDevices). Nil when staleness is
         // unmeasured — the point is skipped, never overstated as the total.
@@ -312,7 +300,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .osCurrent:     return summary.osCurrentPct
         case .edrAgent:      return summary.crowdstrikePct
         case .stale:         return summary.staleCount.map(Double.init)
-        case .patch:         return patchPct(of: summary)
+        case .patch:         return summary.patchPct
         case .securityScore: return summary.securityScore
         case .sip:           return summary.sipPct
         case .firewall:      return summary.firewallPct
@@ -343,12 +331,6 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             // is rendered separately by `managedDeviceSeries()`.
             return Double(summary.totalDevices)
         }
-    }
-
-    /// The device-weighted figure for a day recorded under the old per-title mean, else
-    /// what the summary recorded.
-    private func patchPct(of summary: DailySummary) -> Double? {
-        patchPctRecompute[summary.date] ?? summary.patchPct
     }
 
     func dates() -> [Date] {
@@ -652,21 +634,34 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     // MARK: - Patch-compliance history
 
-    /// `recomputePatchPct` for `profile`, resolving its data dir the way
-    /// `loadMobileCountBackfill` does. `nonisolated static` so it runs off the main actor
-    /// inside `computeSnapshot`.
-    nonisolated static func loadPatchPctRecompute(
-        profile: String, summaries: [DailySummary]
-    ) -> [String: Double] {
+    /// `resolvingPatch(_:dataDir:)` for `profile`, resolving its data dir the way
+    /// `loadMobileCountBackfill` does. `nonisolated static` so it runs off the main actor.
+    nonisolated static func resolvingPatch(
+        _ summaries: [DailySummary], profile: String
+    ) -> [DailySummary] {
         // The scan is bounded: one directory listing and at most one successful decode per
         // eligible day (an undecodable file gives way to the next), off the main thread. It
         // is skipped when every recorded figure already carries the device basis (a workspace
         // that began on 2.9).
         guard summaries.contains(where: isRecordedPerTitle),
-              let workspace = ProfileService.workspaceURL(for: profile) else { return [:] }
+              let workspace = ProfileService.workspaceURL(for: profile) else { return summaries }
         let dataDir = (try? WorkspacePaths.dataDir(for: profile))
             ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
-        return recomputePatchPct(dataDir: dataDir, summaries: summaries)
+        return resolvingPatch(summaries, dataDir: dataDir)
+    }
+
+    /// `summaries` with every day recorded under the old per-title mean (`isRecordedPerTitle`)
+    /// moved to the device-weighted figure `recomputePatchPct` finds for it, on the device
+    /// basis. A day it finds nothing for keeps what it recorded, so two screens can only
+    /// disagree about a patch figure by reading a summary this did not pass through.
+    nonisolated static func resolvingPatch(
+        _ summaries: [DailySummary], dataDir: URL
+    ) -> [DailySummary] {
+        let recomputed = recomputePatchPct(dataDir: dataDir, summaries: summaries)
+        guard !recomputed.isEmpty else { return summaries }
+        return summaries.map { summary in
+            recomputed[summary.date].map(summary.withDeviceWeightedPatch) ?? summary
+        }
     }
 
     /// A summary written before `patchPctBasis` recorded the unweighted mean of each
