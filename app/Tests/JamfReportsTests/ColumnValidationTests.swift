@@ -25,14 +25,51 @@ final class ColumnValidationTests: XCTestCase {
         XCTAssertEqual(ColumnValidationText.warningDetail([]), "Run check for details")
     }
 
-    /// The demo's mapping list carries one warning (Bootstrap Token). A live workspace starts
-    /// from that list; after it is rebuilt from the workspace's own columns nothing is flagged,
+    private func loadedStore(columnsYAML: String) async throws -> WorkspaceStore {
+        let manager = FileManager.default
+        let profile = "columns-check"
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("jrc-columns-\(UUID().uuidString)", isDirectory: true)
+        let workspace = root.appendingPathComponent(profile, isDirectory: true)
+        try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try columnsYAML.write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
+        let previousRoot = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        let sentinel = UserDefaults.standard.string(forKey: WorkspaceMigration.sentinelKey)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            if let previousRoot {
+                setenv("JRC_TEST_WORKSPACES_ROOT", previousRoot, 1)
+            } else {
+                unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            }
+            UserDefaults.standard.set(sentinel, forKey: WorkspaceMigration.sentinelKey)
+            try? manager.removeItem(at: root)
+        }
+        let store = WorkspaceStore(
+            demoMode: false, tickerRegistrar: StubTickerRegistrar(),
+            jamfCLIProfileNames: { [] }, discoverProfiles: { [] }, jamfCLIInstallation: { nil })
+        store.profile = profile
+        try await store.loadConfig()
+        return store
+    }
+
+    /// The demo's mapping list carries one warning (Bootstrap Token) and a live workspace
+    /// starts from that list. Once the workspace's own config is loaded, nothing is flagged
     /// and a mapping is mapped or unmapped by its value alone.
-    func testALiveWorkspaceDoesNotInheritTheDemosWarning() {
-        let store = WorkspaceStore(demoMode: false)
-        XCTAssertTrue(store.columnMappings.contains { $0.status == .warn }, "the seed has one")
-        store.revert()
+    func testALiveWorkspaceDoesNotInheritTheDemosWarning() async throws {
+        let store = try await loadedStore(columnsYAML: """
+            columns:
+              computer_name: "Computer Name"
+              serial_number: "Serial Number"
+              bootstrap_token: "Escrow State"
+            """)
         XCTAssertFalse(store.columnMappings.contains { $0.status == .warn })
+        let statuses = Dictionary(
+            uniqueKeysWithValues: store.columnMappings.map { ($0.key, $0.status) })
+        XCTAssertEqual(statuses["bootstrap_token"], .ok)
+        XCTAssertEqual(statuses["computer_name"], .ok)
+        XCTAssertEqual(statuses["manager"], .skip)
         XCTAssertTrue(store.columnMappings.allSatisfy {
             $0.status == ($0.value.isEmpty ? .skip : .ok)
         })
