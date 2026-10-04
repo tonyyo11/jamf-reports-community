@@ -145,7 +145,7 @@ struct RunsView: View {
             HStack {
                 Mono(text: Self.dateFmt.string(from: run.date), size: 10.5)
                 Spacer()
-                statusPill(for: run.status)
+                statusPill(for: run)
             }
             Text(run.name).font(.footnote.weight(.medium))
                 .foregroundStyle(selected ? Theme.Colors.fg : Theme.Colors.fg2)
@@ -196,11 +196,22 @@ struct RunsView: View {
         _ run: RunHistoryService.RunSummary
     ) -> String {
         var label = "\(run.name), \(Self.dateFmt.string(from: run.date)), "
-        label += "status \(run.status.rawValue)"
+        label += "status \(run.isRunning ? "running" : run.status.rawValue)"
         if let duration = run.duration {
             label += ", duration \(duration)"
         }
         return label
+    }
+
+    /// A run that has not ended says "Running"; an ended one shows its outcome.
+    @ViewBuilder
+    private func statusPill(for run: RunHistoryService.RunSummary) -> some View {
+        if run.isRunning {
+            Pill(text: "RUNNING", tone: .gold, icon: "hourglass")
+                .accessibilityLabel("Status: Running")
+        } else {
+            statusPill(for: run.status)
+        }
     }
 
     private func statusPill(for s: Schedule.LastStatus) -> some View {

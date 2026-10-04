@@ -76,6 +76,7 @@ final class ScheduledRunRecorder: @unchecked Sendable {
             return nil
         }
         self.handle = fh
+        Self.markRunInProgress(fh, label: label)
         record("[info] run started \(ISO8601DateFormatter().string(from: now)) for \(label)")
     }
 
@@ -237,14 +238,55 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         }
     }
 
+    // MARK: - In progress
+
+    /// While the recorder has its log open it holds an advisory exclusive lock on it, which the
+    /// kernel drops when the handle closes or the process dies. That is what tells a run that
+    /// is still going from one that was killed: neither has an exit footer. A filesystem
+    /// without `flock` leaves the run unproven, and Run History then reads it as interrupted.
+    private static func markRunInProgress(_ handle: FileHandle, label: String) {
+        guard flock(handle.fileDescriptor, LOCK_EX | LOCK_NB) != 0 else { return }
+        AppLogger.schedule.info(
+            """
+            ScheduledRunRecorder: no run lock for \(label, privacy: .public) \
+            (errno \(errno, privacy: .public)) — Run History cannot show it as running
+            """
+        )
+    }
+
+    /// True while a recorder in any process holds `logURL` open for writing.
+    static func isRunInProgress(logURL: URL) -> Bool {
+        let fd = open(logURL.path, O_RDONLY)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        if flock(fd, LOCK_SH | LOCK_NB) == 0 {
+            flock(fd, LOCK_UN)
+            return false
+        }
+        return errno == EWOULDBLOCK
+    }
+
     // MARK: - Naming + pruning
 
-    static func timestamp(from date: Date) -> String {
+    private static func stampFormatter() -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return formatter.string(from: date)
+        return formatter
+    }
+
+    static func timestamp(from date: Date) -> String {
+        stampFormatter().string(from: date)
+    }
+
+    /// When the run that wrote the log named `name` started, from the stamp in the name;
+    /// nil for a log this recorder did not write.
+    static func startDate(fromLogName name: String) -> Date? {
+        guard let range = name.range(of: #"\.\d{8}-\d{6}\.log$"#, options: .regularExpression)
+        else { return nil }
+        let stamp = name[range].dropFirst().dropLast(".log".count)
+        return stampFormatter().date(from: String(stamp))
     }
 
     /// Matches `<anything>.<yyyyMMdd-HHmmss>.log` — only files this recorder wrote.
