@@ -359,7 +359,8 @@ Trends advanced. A collect that attempted sources but landed none
 at all, with the reason "no source landed this run", rather than dating cached
 numbers today. A later same-day collect
 that lands a source today's summary recorded as `cache` or `absent` rebuilds
-it (`freshSummaryIsBetter`), and `mergedSources` keeps `live` for sources the
+it (`freshSummaryIsBetter`; so does one that can now measure the EDR figure, `crowdstrikePct`, which the day's
+first summary, written by an older build, lacks), and `mergedSources` keeps `live` for sources the
 earlier run collected. `CollectHonestyWatcher.incomplete` is true after any
 `[partial]` line except the stand-down marker, a report's sheet-failure marker
 and a device scan that landed with a few devices missing

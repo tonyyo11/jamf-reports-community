@@ -465,8 +465,9 @@ struct ReportEngine: Sendable {
     /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
     ///   (real mSCP data is now available where before only the 4-control proxy was), OR
     /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`, OR
-    /// - `existing.staleCount`/`mobileDeviceCount` is nil (unmeasured) AND `fresh` measured it,
-    ///   or `existing.staleCount == 0` on a non-empty fleet AND `fresh` measures a real value.
+    /// - `existing.staleCount`/`mobileDeviceCount`/`crowdstrikePct` is nil (unmeasured) AND
+    ///   `fresh` measured it, or `existing.staleCount == 0` on a non-empty fleet AND `fresh`
+    ///   measures a real value.
     ///
     /// Never returns true when the fresh run would downgrade (real→proxy, bands dropped, or a
     /// measured value replaced by nil), preserving the PR-18 protection against a partial
@@ -490,6 +491,10 @@ struct ReportEngine: Sendable {
         // later collect measures it. Upgrade only; a measured count is never
         // replaced by nil.
         if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
+        // The same for the EDR figure: the first collect after an upgrade past the build that
+        // began recording it must not leave that day's summary, and the Overview's EDR score
+        // card reading it, empty. Upgrade only; a recorded figure is never replaced by nil.
+        if existing.crowdstrikePct == nil, fresh.crowdstrikePct != nil { return true }
         // A later run landed a source the existing point took from cache or lacked.
         if let freshSources = fresh.collectionSources,
            freshSources.contains(where: {

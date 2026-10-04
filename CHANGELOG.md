@@ -187,6 +187,9 @@ compliance is now one figure everywhere.
   and the AI insight showed the older recorded figure (35.4% against 31.3% on one fleet, with
   Stability 59.7 against 58.0). The Overview insight, Fleet Overview, the fleet report and
   workbook, the period report and metric alerts now use the re-derived figure too.
+- The Overview's EDR score card fills in on the first collect after an update. A day's summary
+  written by an older build had no EDR figure, and later collects that day kept it, so the card
+  read "No value" next to a Security Agents card showing the coverage.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.
