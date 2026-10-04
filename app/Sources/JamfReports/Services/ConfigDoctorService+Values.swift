@@ -3,8 +3,9 @@ import Foundation
 /// Rows for a value typed into config.yaml that the app replaced, clamped or ignored. Each says
 /// what was typed and what the app uses, so a hand-typed value is never replaced in silence.
 /// Warnings, or suggestions for a key with no effect (`jamf_cli.enabled: false` warns, since
-/// jamf-cli still runs), never failures: a typo must not turn a healthy scheduled run red. Text from the file reaches a row only through `ConfigSchema.displayText`,
-/// and a URL never does.
+/// jamf-cli still runs), never failures: a typo must not turn a healthy scheduled run red.
+/// Text from the file reaches a row only through `ConfigSchema.displayText`, and a URL
+/// never does.
 extension ConfigDoctorService {
 
     /// Reads the file for the one value the decoder drops (`alerts.rules[].lookback_days`).
