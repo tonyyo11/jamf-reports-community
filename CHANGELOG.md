@@ -216,6 +216,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- PDF exports held only the first page of the report. They now hold the whole report, the
+  bars and severity labels keep their colours, and the Compliance and Security Posture
+  templates keep the summary on the first page and start each section on a new one.
 - The HTML report header printed "Profile: —", "jamf-cli: —" and "Enrolled: — devices". It now
   shows the profile, the installed jamf-cli version and the number of Macs, and leaves out a
   fact the app does not have.

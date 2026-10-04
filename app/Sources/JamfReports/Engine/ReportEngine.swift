@@ -3063,14 +3063,15 @@ struct ReportEngine: Sendable {
     /// Generate a self-contained PDF instance report from cached jamf-cli data.
     ///
     /// Builds the same HTML content as `generateHTML`, then converts it to a
-    /// paginated PDF using `PDFExporter` (WKWebView + `createPDF`). The PDF is
+    /// paginated PDF using `PDFExporter` (WebKit's print operation). The PDF is
     /// suitable for compliance evidence files — it is paginated to US Letter and
     /// honors `@media print` CSS overrides in the HTML template.
     ///
     /// PDF pagination follows `template.pdfPagination`:
     /// - `.compact` — minimal page breaks, low page count for NOC/daily ops.
     /// - `.standard` — one page break between major sections (general management).
-    /// - `.sectionPerPage` — explicit break after every section (formal auditor packages).
+    /// - `.sectionPerPage` — the summary on the first page, then each detail group from a
+    ///   new page (formal auditor packages).
     ///
     /// - Parameters:
     ///   - config: Parsed `ReportConfig`.
@@ -3132,12 +3133,13 @@ struct ReportEngine: Sendable {
     /// - `.compact` — No modifications; minimal page count.
     /// - `.standard` — Adds a `<style>` block with `main > section { page-break-after: auto; }`
     ///   so the browser engine places natural breaks between major sections.
-    /// - `.sectionPerPage` — Adds `page-break-after: always` to every top-level section.
+    /// - `.sectionPerPage` — Adds `page-break-before: always` to each detail group (and the
+    ///   audit appendix), so At a glance and Needs attention share the first page.
     ///   This produces one section per page regardless of content height, suitable for formal
     ///   auditor deliverables.
     ///
-    /// Implementation note: CSS `page-break-after` is the CSS2.1 property recognized by
-    /// WKWebView's `createPDF`. The CSS3 `break-after` alias also works but `page-break-after`
+    /// Implementation note: CSS `page-break-after` is the CSS2.1 property WebKit's print
+    /// operation applies. The CSS3 `break-after` alias also works but `page-break-after`
     /// has wider WKWebView support across macOS versions.
     static func applyPagination(html: String, strategy: PaginationStrategy) -> String {
         switch strategy {
@@ -3149,8 +3151,7 @@ struct ReportEngine: Sendable {
         case .sectionPerPage:
             let style = """
             <style>
-            main > section { page-break-after: always; }
-            main > section:last-of-type { page-break-after: avoid; }
+            main > section.group-section:has(> details.group) { page-break-before: always; }
             </style>
             """
             return html.replacingOccurrences(of: "</head>", with: "\(style)\n</head>")
