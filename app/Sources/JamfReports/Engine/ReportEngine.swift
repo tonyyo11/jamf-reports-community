@@ -2996,7 +2996,7 @@ struct ReportEngine: Sendable {
     /// Generate a self-contained HTML instance report from cached jamf-cli data.
     ///
     /// Mirrors the Python `cmd_html` function. Reads cached JSON snapshots from
-    /// `dataDir` and writes a single `.html` file with embedded Chart.js charts.
+    /// `dataDir` and writes a single self-contained `.html` file.
     ///
     /// - Parameters:
     ///   - config: Parsed `ReportConfig`.
@@ -3091,8 +3091,7 @@ struct ReportEngine: Sendable {
         // generation too. PDF is built on top of HTML; the underlying snapshot
         // data must be verified before either artifact is produced.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
-        // Write HTML to a temp file so that WKWebView can resolve relative resource
-        // URLs (Chart.js CDN is network-fetched; baseURL gives it the right origin).
+        // The HTML goes to a temp file first; the PDF is rendered from its text.
         let tmpDir = FileManager.default.temporaryDirectory
         let tmpHTML = tmpDir.appendingPathComponent(
             "jamf_report_pdf_\(UUID().uuidString).html"

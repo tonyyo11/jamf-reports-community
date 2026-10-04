@@ -6,9 +6,7 @@ import XCTest
 /// Tests for PDFExporter HTML-to-PDF conversion via WKWebView.createPDF.
 ///
 /// All tests run on the main actor because WKWebView is main-thread-only.
-/// A 15-second test timeout guards against WKWebView load hangs (e.g., CDN
-/// unreachable in CI — Chart.js is referenced from the full HTML template but
-/// these tests use minimal HTML that loads instantly).
+/// A 15-second test timeout guards against WKWebView load hangs.
 @MainActor
 final class PDFExporterTests: XCTestCase {
 

@@ -133,8 +133,10 @@ final class OSVersionNameTests: XCTestCase {
             ["os_version": "15.7.3", "count": 30],
         ]).html
 
-        XCTAssertTrue(html.contains("[\"26.7\",\"15.7.3\"]"), "one label per release")
-        XCTAssertTrue(html.contains("[70,30]"))
+        XCTAssertEqual(html.components(separatedBy: "cohort-bar-row").count - 1, 2,
+                       "one row per release")
+        XCTAssertTrue(html.contains("26.7: 70 devices"))
+        XCTAssertTrue(html.contains("15.7.3: 30 devices"))
         XCTAssertFalse(html.contains("26.7.0"))
     }
 }

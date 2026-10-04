@@ -16,8 +16,8 @@ enum HtmlSectionFormatters {
     /// Escape a string for safe inclusion in HTML text content or attribute values.
     ///
     /// This is the only approved path for interpolating user-controlled data into
-    /// HTML. Strings destined for a `<script>` block must use `HtmlReport.jsonArray`
-    /// instead — HTML escaping is wrong in JavaScript context.
+    /// HTML. No report data goes into a `<script>` block, where HTML escaping would be
+    /// the wrong escape.
     ///
     /// Rejects strings starting with a URL scheme that can execute script (e.g.
     /// `javascript:`, `vbscript:`, or `data:` variants that load HTML/JS) by
@@ -25,9 +25,6 @@ enum HtmlSectionFormatters {
     /// null-byte bypass `java\0script:`) are stripped before scheme matching, and
     /// embedded tab/CR/LF are removed for that check too (matching how WHATWG URL
     /// parsers read a URL) so `java\tscript:` cannot slip past the prefix check.
-    ///
-    /// Strings destined for a `<script>` block must use `HtmlReport.jsonArray`
-    /// instead — HTML escaping is wrong in JavaScript context.
     nonisolated static func escapeHTML(_ raw: String) -> String {
         // Strip control characters first so null-byte / tab bypasses cannot
         // reorder the scheme check (e.g. "java\0script:alert(1)").
@@ -177,18 +174,50 @@ enum HtmlSectionFormatters {
         expanded: Bool = false
     ) -> String {
         let peak = max(rows.map(\.count).max() ?? 1, 1)
-        func bars(_ slice: ArraySlice<(label: String, count: Int)>) -> String {
+        return renderBarRows(rows.map { row in
+            BarRow(label: row.label, fill: Double(row.count) / Double(peak) * 100,
+                   value: "\(row.count)",
+                   spoken: row.count == 1 ? "1 device" : "\(row.count) devices")
+        }, limit: limit, expanded: expanded)
+    }
+
+    /// Shares as bars on a fixed 0–100% track, so equal shares draw equal lengths whatever
+    /// the other rows hold. A share outside 0–100, or not a number, is held to the track.
+    nonisolated static func renderPercentBars(
+        _ rows: [(label: String, pct: Double)],
+        limit: Int = visibleRowLimit,
+        expanded: Bool = false
+    ) -> String {
+        renderBarRows(rows.map { row in
+            let pct = row.pct.isFinite ? min(max(row.pct, 0), 100) : 0
+            let text = pct == pct.rounded() ? "\(Int(pct))%" : String(format: "%.1f%%", pct)
+            return BarRow(label: row.label, fill: pct, value: text, spoken: text)
+        }, limit: limit, expanded: expanded)
+    }
+
+    private struct BarRow {
+        let label: String
+        /// Bar length, 0–100.
+        let fill: Double
+        let value: String
+        let spoken: String
+    }
+
+    private nonisolated static func renderBarRows(
+        _ rows: [BarRow], limit: Int, expanded: Bool
+    ) -> String {
+        func bars(_ slice: ArraySlice<BarRow>) -> String {
             let html = slice.map { row -> String in
-                let pct = Int((Double(row.count) / Double(peak) * 100).rounded())
+                let width = Int(min(max(row.fill, 0), 100).rounded())
                 let key = escapeHTML(row.label)
                 return """
                 <div class="cohort-bar-row">
                   <span class="cohort-bar-key">\(key)</span>
                   <div class="cohort-bar-bg">
-                    <div class="cohort-bar-fill" style="width:\(pct)%"
-                         aria-label="\(key): \(row.count) devices"></div>
+                    <div class="cohort-bar-fill" style="width:\(width)%"
+                         aria-label="\(key): \(escapeHTML(row.spoken))"></div>
                   </div>
-                  <span class="cohort-bar-n">\(row.count)</span>
+                  <span class="cohort-bar-n">\(escapeHTML(row.value))</span>
                 </div>
                 """
             }.joined(separator: "\n")

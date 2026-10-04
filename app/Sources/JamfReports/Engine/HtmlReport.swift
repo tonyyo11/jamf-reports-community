@@ -370,10 +370,8 @@ struct HtmlReport: Sendable {
 
     // MARK: - Charts
 
-    /// OS version distribution as a donut. "26.7" and "26.7.0" are one release
-    /// (`OSVersionName`). Every label and count goes into the script through `jsonArray`:
-    /// HTML escaping is wrong in a JavaScript context, and JSON encoding is the escape that
-    /// handles backslash, U+2028/U+2029 and `</script>`.
+    /// OS version distribution as bars, most Macs first. "26.7" and "26.7.0" are one
+    /// release (`OSVersionName`).
     func buildOSChart(osVersions: [[String: Any]]) -> HtmlBlock {
         guard !osVersions.isEmpty else {
             return .omitted("the security report has no OS version counts")
@@ -382,72 +380,25 @@ struct HtmlReport: Sendable {
             .init(version: $0["os_version"] as? String ?? "",
                   count: asInt($0["count"]) ?? 0, pct: 0)
         })
-        let labels = jsonArray(osRows.map(\.version))
-        let counts = jsonArray(osRows.map(\.count))
-        let body = """
-        <div class="chart-card">
-          <canvas id="osChart" height="260"></canvas>
-        </div>
-        <script>
-        (function() {
-          const osCtx = document.getElementById('osChart');
-          if (osCtx) {
-            new Chart(osCtx, {
-              type: 'doughnut',
-              data: {
-                labels: \(labels),
-                datasets: [{ data: \(counts), borderWidth: 1 }]
-              },
-              options: { responsive: true, plugins: { legend: { position: 'right' } } }
-            });
-          }
-        })();
-        </script>
-        """
+        let rows = osRows.enumerated()
+            .sorted { ($0.element.count, $1.offset) > ($1.element.count, $0.offset) }
+            .map { (label: $0.element.version, count: $0.element.count) }
         return .shown(HtmlSectionFormatters.block(
-            id: "os-chart", title: "OS version distribution", body: body))
+            id: "os-chart", title: "OS version distribution",
+            body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll)))
     }
 
-    /// Compliance of the first ten patch titles as bars, the same JSON escaping as above.
-    func buildPatchChart(patchStatus: [[String: Any]], accentColor: String) -> HtmlBlock {
+    /// Compliance of the first ten patch titles as bars on a 0–100% track.
+    func buildPatchChart(patchStatus: [[String: Any]]) -> HtmlBlock {
         guard !patchStatus.isEmpty else { return .omitted("no patch-status snapshot") }
-        let titles = patchStatus.prefix(10).map { $0["title"] as? String ?? "" }
-        let pcts = patchStatus.prefix(10).map { item -> Double in
-            let s = item["compliance_pct"] as? String ?? "0"
-            return Double(s.replacingOccurrences(of: "%", with: "")) ?? 0
+        let rows = patchStatus.prefix(10).map { item -> (label: String, pct: Double) in
+            let pct = (item["compliance_pct"] as? String ?? "0")
+                .replacingOccurrences(of: "%", with: "")
+            return (item["title"] as? String ?? "", Double(pct) ?? 0)
         }
-        let labels = jsonArray(Array(titles))
-        let values = jsonArray(Array(pcts))
-        let body = """
-        <div class="chart-card">
-          <canvas id="patchChart" height="260"></canvas>
-        </div>
-        <script>
-        (function() {
-          const patchCtx = document.getElementById('patchChart');
-          if (patchCtx) {
-            new Chart(patchCtx, {
-              type: 'bar',
-              data: {
-                labels: \(labels),
-                datasets: [{
-                  label: 'Compliance %',
-                  data: \(values),
-                  backgroundColor: '\(accentColor)'
-                }]
-              },
-              options: {
-                indexAxis: 'y',
-                responsive: true,
-                scales: { x: { min: 0, max: 100 } }
-              }
-            });
-          }
-        })();
-        </script>
-        """
         return .shown(HtmlSectionFormatters.block(
-            id: "patch-chart", title: "Patch compliance (first 10 titles)", body: body))
+            id: "patch-chart", title: "Patch compliance (first 10 titles)",
+            body: HtmlSectionFormatters.renderPercentBars(rows)))
     }
 
     // MARK: - Policies, profiles and apps
@@ -845,38 +796,6 @@ struct HtmlReport: Sendable {
         case let n as NSNumber: return n.intValue
         default: return nil
         }
-    }
-
-    /// Serialize an array to a JSON literal for injection into a JavaScript context.
-    ///
-    /// This is the ONLY correct escape for user-controlled data inside JS string literals
-    /// or array positions. `HtmlSectionFormatters.escapeHTML()` is wrong in JS context: it does not escape
-    /// backslash, U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR, or `</script>`.
-    /// JSON encoding handles all of these correctly.
-    ///
-    /// - Parameter array: An array of `String`, `Int`, or `Double` values.
-    /// - Returns: A JSON array literal (e.g. `["foo","bar"]`) safe for direct injection
-    ///   into a `<script>` block. Falls back to `[]` on serialization failure.
-    func jsonArray<T>(_ array: [T]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: array, options: []),
-              var result = String(data: data, encoding: .utf8) else {
-            return "[]"
-        }
-        // Foundation's JSONSerialization does not escape U+2028 (LINE SEPARATOR) or
-        // U+2029 (PARAGRAPH SEPARATOR). Both are legal JSON but they are treated as
-        // line terminators inside a JavaScript <script> block, breaking string literals.
-        // Escape them manually so the JSON array is safe in any JS context.
-        result = result
-            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
-            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-            // `<`, `>` and `&` only occur inside JSON strings, where the \u form
-            // decodes to the same character. Escaping every `<` (not just `</`)
-            // also stops `<!--` + `<script` from entering the HTML parser's
-            // double-escaped state, which would hide the rest of the report.
-            .replacingOccurrences(of: "<", with: "\\u003c")
-            .replacingOccurrences(of: ">", with: "\\u003e")
-            .replacingOccurrences(of: "&", with: "\\u0026")
-        return result
     }
 
     func formattedNow() -> String {

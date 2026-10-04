@@ -24,8 +24,7 @@ final class SecurityHardeningTests: XCTestCase {
     func test_sanitizedAccentColor_rejectsCSSInjection() {
         // Classic CSS-injection payload: closes the declaration and inserts a rule.
         XCTAssertEqual(accent("red; } body { display: none; "), "#2D5EA2")
-        // Quotes / parentheses can break the JS string literal in the
-        // Chart.js `backgroundColor: '...'` interpolation.
+        // Quotes and parentheses would end the report's CSS value early.
         XCTAssertEqual(accent("'); alert(1);//"), "#2D5EA2")
         // A quote and an angle bracket would close the workbook's styles XML.
         XCTAssertEqual(accent("#ABC\"/><x"), "#2D5EA2")
@@ -73,25 +72,6 @@ final class SecurityHardeningTests: XCTestCase {
             HtmlSectionFormatters.escapeHTML("hello & <world>"),
             "hello &amp; &lt;world&gt;"
         )
-    }
-
-    // MARK: - P9-A-04 — PDFExporter chart fallback injection
-
-    @MainActor
-    func test_pdfExporter_injectsFallbackBeforeHead() async {
-        let html = "<html><head><title>x</title></head><body>hi</body></html>"
-        let prepared = PDFExporter.preparedHTMLForPDF(html)
-        XCTAssertTrue(prepared.contains("Chart unavailable in PDF"))
-        XCTAssertTrue(prepared.contains(".chart-card canvas"))
-        // Injection must close before </head> so the rule is in scope.
-        XCTAssertTrue(prepared.contains("</head>"))
-    }
-
-    @MainActor
-    func test_pdfExporter_handlesHTMLWithoutHead() async {
-        let html = "<body>just a body</body>"
-        let prepared = PDFExporter.preparedHTMLForPDF(html)
-        XCTAssertTrue(prepared.contains("Chart unavailable in PDF"))
     }
 
     // MARK: - P9-A-06 — WorkspacePaths absolute escape

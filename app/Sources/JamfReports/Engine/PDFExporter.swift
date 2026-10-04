@@ -48,8 +48,7 @@ final class PDFExporter {
         paperSize: CGSize = CGSize(width: 612, height: 792)
     ) async throws {
         let coordinator = Coordinator(paperSize: paperSize)
-        let prepared = preparedHTMLForPDF(htmlString)
-        let data = try await coordinator.render(htmlString: prepared, baseURL: nil)
+        let data = try await coordinator.render(htmlString: htmlString, baseURL: nil)
         try writePDF(data: data, to: outputURL)
     }
 
@@ -70,37 +69,11 @@ final class PDFExporter {
         // does not need to resolve same-origin asset paths from the source file,
         // and a `baseURL` lets the renderer attempt subresource loads (favicon,
         // CSS imports) against the user's filesystem. Fail closed instead.
-        let prepared = preparedHTMLForPDF(html)
-        let data = try await coordinator.render(htmlString: prepared, baseURL: nil)
+        let data = try await coordinator.render(htmlString: html, baseURL: nil)
         try writePDF(data: data, to: outputURL)
     }
 
     // MARK: - Private helpers
-
-    /// P9-A-04: inject a CSS rule that hides Chart.js canvases (which require JS)
-    /// and shows a plain-text fallback in their place. The HTML report still
-    /// renders charts in the browser; only the PDF render replaces them with the
-    /// fallback. Done as a string transform (not a DOM rewrite) so we keep the
-    /// renderer fully synchronous and JS-free.
-    static func preparedHTMLForPDF(_ html: String) -> String {
-        let injection = """
-        <style>
-        /* PDF safety: JavaScript is disabled in the PDF renderer (P9-A-04),
-           so Chart.js canvases stay blank. Replace them with a fallback note. */
-        .chart-container canvas, .chart-card canvas { display: none !important; }
-        .chart-card::after, .chart-container::after {
-          content: "Chart unavailable in PDF — see HTML report.";
-          display: block; padding: 1.5rem 1rem; text-align: center;
-          color: #555; font-style: italic; font-size: 0.9rem;
-        }
-        </style>
-        """
-        if let headEnd = html.range(of: "</head>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: headEnd, with: injection + "</head>")
-        }
-        // No <head>: prepend a minimal head so the rule still applies.
-        return "<head>\(injection)</head>" + html
-    }
 
     private static func writePDF(data: Data, to outputURL: URL) throws {
         let fm = FileManager.default
