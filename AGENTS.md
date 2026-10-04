@@ -460,6 +460,10 @@ security_policy:
     firewall: fail
     gatekeeper: fail
   filevault_off_hardware_encrypted: warning   # optional; omit to use the filevault level
+  on_values:                                  # optional: values that read as on, per control
+    firewall: ["Pass", "Compliant"]
+  off_values:                                 # optional: values that read as off, per control
+    firewall: ["Fail", "Non-Compliant"]
   score_weights:                              # optional; 0-100 each, defaults below
     filevault: 15
     sip: 15
@@ -482,10 +486,12 @@ is `fail` (a gap: P0/P1 action items, per-device gap count, risk points, score, 
 `warning` (amber, not a gap, scores as compliant) or `ignore` (not evaluated; an ignored
 FileVault, SIP or Firewall loses its score weight, and Gatekeeper is not in the score). The
 percentages (FileVault on, SIP on, ...) are facts and never change.
-`SecurityControlPolicy.reading(_:)` is the one reader of a security VALUE (on / off / nil):
-it replaced `SecurityValueState`, `RiskScoringService`'s `looksAffirmative`/`looksNegative`
-and `DeviceInventoryRecord.statusLooksBad`, so Devices, risk, the workbook and the summary
-agree. A value Jamf did not collect (`not collected`, `not available`, `pending`,
+`SecurityControlPolicy.reading(_:for:)` is the one reader of a control's VALUE (on / off /
+nil): it replaced `SecurityValueState`, `RiskScoringService`'s `looksAffirmative`/
+`looksNegative` and `DeviceInventoryRecord.statusLooksBad`, so Devices, risk, the workbook
+and the summary agree. It applies the workspace's `on_values`/`off_values` (below) and then
+the built-in vocabulary, which the static `reading(_:)` holds alone for a value that is not
+one of the four controls (the bootstrap token). A value Jamf did not collect (`not collected`, `not available`, `pending`,
 `some partitions`) or a FileVault state that is mid-transition (ENCRYPTING, OPTIMIZING,
 INELIGIBLE, RESTART_NEEDED) reads nil: never a gap. Off, none, inactive, missing,
 decrypting, decrypted, `encrypting paused` and "No Partitions Encrypted" read off; the CSV's
@@ -494,7 +500,22 @@ firewall's "Block all incoming" read on, `Disconnected`/`Unconnected` off.
 `filevault_off_hardware_encrypted` is the level for FileVault off on a Mac whose internal
 volume is hardware-encrypted (Apple silicon, or a T2 Intel Mac, see `HardwareEncryption`); a
 typed level applies as typed, stricter or not, but is a no-op when it equals FileVault's
-level or FileVault is `ignore` (`usesHardwareRule`). Consumers, all through
+level or FileVault is `ignore` (`usesHardwareRule`).
+`on_values` and `off_values` map a control (`filevault`, `sip`, `firewall`, `gatekeeper`) to
+the values an organization's own EA or CSV column uses for on and off: a list of strings or
+one string. A number, a mapping, a non-string list item or an empty string is not used (a
+quoted `"True"` arrives as a boolean and is kept as its text). The cell and each configured
+value go through `SecurityControlPolicy.normalizedValue` (trim, lowercase, `_` and `-` as
+spaces) and match as a WHOLE value, never a substring, so `Non-Compliant` is not read as
+`Compliant`. Order: `off_values`, then `on_values` (a value in both reads off), then the
+built-in vocabulary; absent keys read as before. The sets are stored normalised and never
+empty, so a blank cell never matches. They apply to every per-device reading of that control:
+Devices (gap count, risk, the FileVault share and hardware-rule count), Overview Recent
+Activity, Compliance Posture's device rows, the FileVault hardware rule in
+`SecurityFleetCounts.build`, and the CSV Security Controls (an `ignore`d control keeps them)
+and Device Security State sheets. They do NOT change the on-counts jamf-cli's own summary
+carries, which `SecurityFleetCounts.build` starts from (jamf-cli's fixed vocabulary), and the
+jamf-cli device row's firewall is already a boolean. Consumers, all through
 `verdict(for:reading:hardwareEncrypted:)`: the daily summary's P0 (FileVault+SIP+Firewall
 fails), P1 (Gatekeeper fails) and score (`SecurityFleetCounts`); Security Posture;
 Compliance Posture and the summary's compliance proxy
@@ -506,9 +527,10 @@ Overview and Trends SIP, Firewall and Gatekeeper score cards
 (`TrendSeries.Metric.isOffered(under:)`, hidden for an `ignore`d control without editing the
 stored selection); the AI posture insight. A policy edit reaches the daily summary only with
 the next day's first collect (a same-day collect rebuilds it only through
-`freshSummaryIsBetter`). `ConfigDoctorService.securityPolicyRows` warns for each typed level
-or weight the app did not use as written, a block of the wrong shape, and a hardware rule
-with no `computers` snapshot yet; a key the app does not read is left to the unknown-key
+`freshSummaryIsBetter`). `ConfigDoctorService.securityPolicyRows` warns for each typed level,
+weight or on/off value the app did not use as written (a value that is not text, an empty
+one, an `on_values` one that `off_values` also lists), a block of the wrong shape, and a
+hardware rule with no `computers` snapshot yet; a key the app does not read is left to the unknown-key
 rows so it is reported once.
 
 ### security_agents format
@@ -614,7 +636,7 @@ the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 | `PeriodReportModel` / `PeriodEAReader` | (2.7.0) Pure aggregation into start/end/change rows carrying real boundary dates. Percentage change is in PERCENTAGE POINTS (`+2.0 pp`); counts are signed integers. A metric unmeasured at a boundary reports no value, never 0. Distributions cap at `maxDistinctValues` (25), keep the most common, and record `omittedValueCount` — a shortened table that does not say so reads as the whole picture. |
 | `PeriodReportEmitter` / `PeriodReportService` | (2.7.0) Four sheets: Summary (paste-ready, no caveats so a rectangular selection copies cleanly), Daily detail, Value distributions (only when an unconfigured EA is selected), About (drift and truncation notes). Filename carries the period via `ExportNaming`. Service is the thin IO shell; `defaultSelection` is fleet-metrics-only, so EAs are opt-in — their values can be usernames or serials and the workbook is meant to be forwarded. `cardinality(period:)` evaluates the identifier advisory at BOTH period boundaries (an attribute can be identifier-shaped at the start of the window and status-shaped at the end, or vice versa), ranking flagged-status first and the distinct/device ratio only as a tiebreak between two readings that agree on flagged-ness; before a period has resolved it falls back to the newest snapshot. `PeriodReportSheet`'s EA section caption names the sync provider when `output_dir` resolves under one, since an unselected EA's values can identify a device. |
 | `ChartsConfigStore` | (2.7.0) Scoped load/save of the two chart options the Customize screen exposes — `charts.save_png` and `charts.os_adoption.per_major_charts`. Same scoped-write pattern as `NotifyConfigLoader`/`Writer`, deliberately outside `ConfigService.managedTopLevelKeys`. `charts:` is a nested block (bands, `historical_csv_dir`, three sub-blocks), so the writer reads the existing mapping and sets individual keys — replacing the block would discard everything the screen does not model. Both options default to true so a workspace with no `charts:` block keeps pre-2.7.0 behaviour. Before 2.7.0 both switches were view state only, and `save_png` had no consumer at all. |
-| `SecurityPolicyConfigLoader` / `SecurityPolicyConfigWriter` | (2.9) `load(profile:)` is the best-effort read behind `WorkspaceStore.securityPolicy` (an undecodable config.yaml logs a warning and yields `.default`); `issues(profile:)` re-reads the file and returns a `SecurityPolicyIssue` for each typed level, weight, block shape or key the decoder did not use as written (`used` comes from the decoded policy, so the two cannot disagree; an empty `used` is a key the app does not read). The writer is a scoped write like `ChartsConfigWriter`, outside `ConfigService.managedTopLevelKeys`, and writes ONE setting (`level(_:for:)`, `hardwareLevel(_:)`, `scoreWeights(_:)`) from what the file holds now, never from the caller's copy, so a stale copy, or one that fell back to `.default` because something else did not decode, cannot overwrite a hand-typed value; `score_weights` writes only the weights the file does not already yield, and a save that changes nothing leaves the file and its comments alone. `ScoringConfig.displayedWeights` shows the workspace's weights, else this Mac's earlier `@AppStorage` preference, else the defaults. |
+| `SecurityPolicyConfigLoader` / `SecurityPolicyConfigWriter` | (2.9) `load(profile:)` is the best-effort read behind `WorkspaceStore.securityPolicy` (an undecodable config.yaml logs a warning and yields `.default`); `issues(profile:)` re-reads the file and returns a `SecurityPolicyIssue` for each typed level, weight, on/off value, block shape or key the decoder did not use as written (`used` comes from the decoded policy, so the two cannot disagree; an empty `used` is a key the app does not read). The writer is a scoped write like `ChartsConfigWriter`, outside `ConfigService.managedTopLevelKeys`, and writes ONE setting (`level(_:for:)`, `hardwareLevel(_:)`, `scoreWeights(_:)`) from what the file holds now, never from the caller's copy, so a stale copy, or one that fell back to `.default` because something else did not decode, cannot overwrite a hand-typed value; `score_weights` writes only the weights the file does not already yield, and a save that changes nothing leaves the file and its comments alone, and a level write keeps `on_values`/`off_values` as typed (a comment inside the rewritten block is dropped, with a backup copy). `ScoringConfig.displayedWeights` shows the workspace's weights, else this Mac's earlier `@AppStorage` preference, else the defaults. |
 | `ScaffoldService` | CSV column detection + config writing. `writeConfig` (full regenerate) is used only for the initial onboarding scaffold; **re-scaffold uses the non-destructive `mergeColumns(existing:detected:csvHeaders:)`** — fills empty mappings, repairs mappings whose CSV column was renamed, keeps valid existing mappings, flags stale-unresolved ones (`ColumnMergeReport`). Per profile, via `ConfigService.save`, so agents/EAs/thresholds survive. |
 | `TrendStore` | Loads `summary.json` snapshots from `snapshots/computers/summaries/`; feeds the Trends screen charts. Summaries written before 2.6.0 carry no `mobileDeviceCount`, so `computeSnapshot` also runs `backfillMobileCounts` off-main: each such day takes the newest dated `mobile-devices-list` snapshot stamped before the day ended and within `jamf_cli.max_cache_age_hours` (the summary writer's own rule; manifest and sync-conflict copies excluded, an undecodable file skipped). A recorded count always wins, and a day with neither is absent from the Managed Devices mobile series, never zero. |
 | `DeviceInventoryService` | Reads cached device inventory JSON from the workspace, merged with an inventory CSV when one is current. A dropped `csv-inbox/` export is **bounded by `thresholds.stale_device_days`**: a CSV cannot report a check-in newer than the day it ran, so past that age it marks live devices stale and resurrects retired ones — it is skipped, with a warning naming the file. The export date comes from the filename ahead of mtime (a sync provider restamps mtime on download). Its private `latestFile` picker also excludes `manifest.json` — `ReportEngine` writes the manifest *after* the snapshot, so it always sorts newest and enabling `jamf_cli.require_manifest` would otherwise resolve every kind to it and read zero devices. Only `DevicesView` and `StaleDeviceService` read this; `ReportEngine`'s csv-assisted generate path is unaffected. **2.7.0:** snapshots are now ordered by the filename stamp with the same sync-conflict filter as `newestJSONFile` (`FileManager.newestSnapshot`) — mtime only tiebreaks files that carry no stamp at all, such as CSVs. A `csv-inbox` file skipped because its name looks like a sync-conflict copy (`… 2.csv`, `… (1).csv`) is named in a warning with the rename remedy, rather than silently ignored. `sourceDates` (the Devices freshness chip row) uses the filename stamp for JSON kinds and the CSV's own export date for the CSV. |

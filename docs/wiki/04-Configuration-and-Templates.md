@@ -115,6 +115,10 @@ security_policy:
     firewall: fail
     gatekeeper: fail
   filevault_off_hardware_encrypted: warning
+  on_values:             # optional: your own words for on, per control
+    firewall: ["Pass", "Compliant"]
+  off_values:            # optional: your own words for off, per control
+    firewall: ["Fail", "Non-Compliant"]
   score_weights:         # 0-100 each; omit for the defaults
     filevault: 15
 ```
@@ -127,6 +131,19 @@ The rule needs the Mac's model details from the latest inventory collect; a Mac 
 record is missing, ambiguous (two records on one serial number) or a virtual machine keeps
 FileVault's own level. On a CSV, map `architecture` ("Architecture Type") and `model`
 ("Model Identifier").
+
+**Your own on and off values.** The app reads values such as `Enabled`, `Encrypted`, `Off`
+and `Not Enabled`. When your organization maps its own extension attribute or CSV column to
+a control and it says something else, such as `Pass` and `Fail` or `Compliant` and
+`Non-Compliant`, the app cannot tell whether a Mac passes and counts it as not measured.
+List your words under `on_values` and `off_values`, per control (`filevault`, `sip`,
+`firewall`, `gatekeeper`), as a list or a single string, and every screen and report reads
+them. A value must match whole, in any case, with `-` and `_` read as spaces, so
+`Non-Compliant` is not read as `Compliant`. `off_values` is checked first, then `on_values`,
+then the built-in words; a value in both lists reads as off. These words apply to each
+Mac's own value. The totals that jamf-cli's security report carries (the counts on the
+Security Posture screen) keep jamf-cli's words. Config → Run check warns about a value that
+is not text, an empty value, and a value listed in both.
 
 **Score weights.** Weights are saved in the workspace (`score_weights`), so the Security
 Posture screen, the Overview, Trends, alerts and reports all score the same way. Weights

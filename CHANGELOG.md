@@ -26,6 +26,13 @@ compliance is now one figure everywhere.
   needs the Mac's hardware details from the latest inventory collect. A Mac is never treated this
   way when its record disagrees with another record for the same serial number, or when it is a
   virtual machine.
+- Your own on and off words. When your organization maps its own extension attribute or CSV
+  column to FileVault, SIP, Firewall or Gatekeeper and it says `Pass` and `Fail`, or `Compliant`
+  and `Non-Compliant`, list those words under `security_policy.on_values` and `off_values` for
+  that control and every screen and report reads them; before, those Macs counted as not
+  measured. A value must match whole, a value in both lists reads as off, and Config > Run check
+  warns about one that is empty, not text or in both. The totals jamf-cli's security report
+  carries keep jamf-cli's words.
 - Security Score weights are saved in the workspace's `security_policy.score_weights`, so the
   Security Posture screen, the Overview, Trends, alerts and reports score with the same weights.
   Weights set on this Mac earlier are shown on the Scoring tab and apply to a workspace once you
