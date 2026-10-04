@@ -176,6 +176,20 @@ final class ConfigFileSectionsTests: XCTestCase {
         ])
     }
 
+    /// The tab has no new place for it: a retired key is listed as not read, with its note.
+    func testARetiredKeyIsListedAsNotReadWithItsNote() throws {
+        let sections = try build("""
+        branding:
+          accent_dark: "#445566"
+        thresholds:
+          stale_device_dayz: 45
+        """)
+        XCTAssertEqual(sections.unknown.map(\.keyPath),
+                       ["branding.accent_dark", "thresholds.stale_device_dayz"])
+        XCTAssertEqual(sections.unknown.map(\.note),
+                       ["No longer read since 2.9.", "Did you mean \"stale_device_days\"?"])
+    }
+
     // MARK: - Values
 
     func testAValueUnderASecretLookingKeyIsNeverShown() throws {

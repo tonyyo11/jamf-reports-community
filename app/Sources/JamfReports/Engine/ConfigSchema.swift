@@ -5,6 +5,15 @@ import Foundation
 struct UnknownKey: Sendable, Equatable {
     let keyPath: String
     let suggestion: String?
+    /// The release that stopped reading this key, for one the app once wrote
+    /// (`ConfigSchema.retiredKeys`). Such a key has no suggestion.
+    var retiredSince: String?
+
+    /// What to say beside the key, or nil when there is nothing to add.
+    var note: String? {
+        if let retiredSince { return "No longer read since \(retiredSince)." }
+        return suggestion.map { "Did you mean \"\($0)\"?" }
+    }
 }
 
 /// The keys the app reads from config.yaml, taken from the decoder's own `CodingKeys`, so a
@@ -31,6 +40,19 @@ enum ConfigSchema {
         collect(root, node: tree, at: [], path: "", into: &found)
         return found
     }
+
+    /// Keys the app wrote or documented and no longer reads, by key path, with the release that
+    /// stopped. Config Doctor words one as retired rather than unknown, and a save that rewrites
+    /// the block holding it removes it (`ConfigService.dropRetiredKeys`). A key whose reader
+    /// returns leaves this list.
+    static let retiredKeys: [String: String] = [
+        "branding.accent_dark": "2.9",
+        "charts.os_adoption.enabled": "2.9",
+        "jamf_cli.allow_live_overview": "2.9",
+        "jamf_cli.enabled": "2.9",
+        "platform.enabled": "2.9",
+        "thresholds.profile_error_critical": "2.9",
+    ]
 
     /// Names people write instead of a real key, copied from CLAUDE.md's "Actual key names"
     /// table and keyed by the schema path of their mapping. Consulted before edit distance.
@@ -83,10 +105,12 @@ enum ConfigSchema {
         for key in mapping.keys.sorted() {
             let keyPath = path.isEmpty ? displayText(key) : "\(path).\(displayText(key))"
             guard node.keys.contains(key) else {
+                let retiredSince = retiredKeys[(schemaPath + [key]).joined(separator: ".")]
                 found.append(UnknownKey(
                     keyPath: keyPath,
-                    suggestion: misnames[schemaPath]?[key]
-                        ?? suggestion(for: key, among: node.keys)))
+                    suggestion: retiredSince != nil ? nil : misnames[schemaPath]?[key]
+                        ?? suggestion(for: key, among: node.keys),
+                    retiredSince: retiredSince))
                 continue
             }
             guard let child = node.children[key] else { continue }

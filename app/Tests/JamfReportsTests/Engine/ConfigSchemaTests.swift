@@ -163,6 +163,51 @@ final class ConfigSchemaTests: XCTestCase {
         ])
     }
 
+    // MARK: - Retired keys
+
+    /// A retired key is one the schema does not read; a key that is read again must leave the list.
+    func testNoRetiredKeyIsOneTheSchemaReads() {
+        XCTAssertFalse(ConfigSchema.retiredKeys.isEmpty)
+        for path in ConfigSchema.retiredKeys.keys {
+            let parts = path.components(separatedBy: ".")
+            let parent = ConfigSchema.knownKeys(at: Array(parts.dropLast()))
+            XCTAssertNotNil(parent, "\(path): the block that held it is still read")
+            XCTAssertFalse(parent?.contains(parts.last ?? "") ?? true, path)
+        }
+    }
+
+    func testARetiredKeyIsMarkedWithItsReleaseAndAnyOtherUnknownKeyIsNot() throws {
+        let keys = try unknownKeys("""
+        branding:
+          accent_dark: "#445566"
+        charts:
+          os_adoption:
+            enabled: false
+        thresholds:
+          profile_error_critical: 80
+          stale_device_dayz: 45
+        """)
+        XCTAssertEqual(keys, [
+            UnknownKey(keyPath: "branding.accent_dark", suggestion: nil, retiredSince: "2.9"),
+            UnknownKey(keyPath: "charts.os_adoption.enabled", suggestion: nil, retiredSince: "2.9"),
+            UnknownKey(keyPath: "thresholds.profile_error_critical", suggestion: nil,
+                       retiredSince: "2.9"),
+            UnknownKey(keyPath: "thresholds.stale_device_dayz", suggestion: "stale_device_days"),
+        ])
+        XCTAssertEqual(keys.map(\.note), [
+            "No longer read since 2.9.", "No longer read since 2.9.",
+            "No longer read since 2.9.", "Did you mean \"stale_device_days\"?",
+        ])
+        XCTAssertNil(UnknownKey(keyPath: "x", suggestion: nil).note)
+    }
+
+    /// The same name under a block where it is not retired is still just unknown.
+    func testARetiredNameElsewhereIsOnlyUnknown() throws {
+        let keys = try unknownKeys("output:\n  enabled: true\nhtml:\n  accent_dark: x\n")
+        XCTAssertEqual(keys.map(\.keyPath), ["html.accent_dark", "output.enabled"])
+        XCTAssertEqual(keys.map(\.retiredSince), [nil, nil])
+    }
+
     // MARK: - Known misnames
 
     /// The wrong names CLAUDE.md's "Actual key names" table lists, each with its right key.

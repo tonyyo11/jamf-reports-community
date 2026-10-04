@@ -86,7 +86,7 @@ struct ConfigFromFileTab: View {
                     trailingValue: Self.count(
                         sections.unknown.count + sections.omittedUnknown, "key"))
                 ForEach(Array(sections.unknown.enumerated()), id: \.offset) { _, key in
-                    row(key.keyPath, key.suggestion.map { "Did you mean \"\($0)\"?" } ?? "")
+                    row(key.keyPath, key.note ?? "")
                 }
                 moreLine(sections.omittedUnknown, "key")
             }

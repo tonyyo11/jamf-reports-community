@@ -179,6 +179,9 @@ struct ConfigSaveReport: Equatable, Sendable {
     var droppedComments = false
     /// A block the save rewrote held a line the reader did not read, which it does not keep.
     var droppedUnreadLines = false
+    /// Key paths of settings the app no longer reads (`ConfigSchema.retiredKeys`) that the
+    /// save removed from a block it rewrote.
+    var removedRetiredKeys: [String] = []
     /// The copy of the file as it was, made before a save that dropped any of it.
     var backupName: String?
 
@@ -188,6 +191,14 @@ struct ConfigSaveReport: Equatable, Sendable {
             "\(key) in config.yaml is not a list, so it was left as typed and nothing was "
                 + "written to it. Write each entry as a \"- name:\" list item so the app can "
                 + "read and edit it."
+        }
+        if !removedRetiredKeys.isEmpty {
+            let named = removedRetiredKeys.map { key in
+                ConfigSchema.retiredKeys[key].map { "\(key) (since \($0))" } ?? key
+            }
+            lines.append("Settings the app no longer reads were removed from config.yaml: "
+                + named.joined(separator: ", ") + "."
+                + (backupName.map { " A copy of the file as it was is at \($0)." } ?? ""))
         }
         guard let copy = backupName else { return lines }
         if droppedComments {
@@ -322,6 +333,10 @@ enum ConfigService {
         var report = ConfigSaveReport(keptBlocks: nonListBlocks(in: document.root))
         let keys = managedTopLevelKeys.subtracting(report.keptBlocks)
         apply(state: state, to: &document)
+        if case .mapping(var root) = document.root {
+            report.removedRetiredKeys = dropRetiredKeys(from: &root, inBlocks: keys)
+            document.root = .mapping(root)
+        }
         try backUpDropped(from: document, rewriting: keys, at: url, into: &report)
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: keys)
         let writtenStamp = try replace(url, with: encoded)
@@ -362,12 +377,13 @@ enum ConfigService {
             throw ConfigError.notASettingsBlock(key)
         }
         apply(&root)
+        let removed = dropRetiredKeys(from: &root, inBlocks: [key])
         let empty = YAMLCodec.YAMLMapping(entries: [])
         guard (root.value(for: key)?.mapping ?? empty) != (before?.mapping ?? empty) else {
             return (stamp, ConfigSaveReport())
         }
         document.root = .mapping(root)
-        var report = ConfigSaveReport()
+        var report = ConfigSaveReport(removedRetiredKeys: removed)
         try backUpDropped(from: document, rewriting: [key], at: url, into: &report)
         let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: [key])
         return (try replace(url, with: encoded), report)
@@ -384,9 +400,58 @@ enum ConfigService {
         report.droppedUnreadLines = document.parseNotes.contains { note in
             note.isUnread && rewritten.contains { $0.contains(note.line) }
         }
-        if report.droppedComments || report.droppedUnreadLines {
+        if report.droppedComments || report.droppedUnreadLines
+            || !report.removedRetiredKeys.isEmpty {
             report.backupName = try backUp(url)?.lastPathComponent
         }
+    }
+
+    /// Removes, from the blocks in `blocks`, every retired key (`ConfigSchema.retiredKeys`) they
+    /// hold, each copy of a repeated key, and returns the key paths removed in sorted order. Only
+    /// a block a writer rewrites is passed in; a retired key anywhere else stays as typed.
+    static func dropRetiredKeys(
+        from root: inout YAMLCodec.YAMLMapping, inBlocks blocks: Set<String>
+    ) -> [String] {
+        var removed: [String] = []
+        for path in ConfigSchema.retiredKeys.keys.sorted() {
+            let parts = path.components(separatedBy: ".")
+            guard let first = parts.first, let last = parts.last, blocks.contains(first),
+                  dropKey(last, at: Array(parts.dropFirst().dropLast()), under: first, in: &root)
+            else { continue }
+            removed.append(path)
+        }
+        if !removed.isEmpty {
+            let named = removed.joined(separator: ", ")
+            AppLogger.collect.notice(
+                "ConfigService: removed retired keys \(named, privacy: .public)")
+        }
+        return removed
+    }
+
+    /// Removes `key` from the mapping reached from `root[top]` through `middle`. True when a
+    /// key was there.
+    private static func dropKey(
+        _ key: String, at middle: [String], under top: String, in root: inout YAMLCodec.YAMLMapping
+    ) -> Bool {
+        func drop(_ mapping: inout YAMLCodec.YAMLMapping, _ rest: ArraySlice<String>) -> Bool {
+            guard let next = rest.first else {
+                let held = mapping.entries.contains { $0.key == key }
+                mapping.entries.removeAll { $0.key == key }
+                return held
+            }
+            guard var child = mapping.value(for: next)?.mapping else { return false }
+            let found = drop(&child, rest.dropFirst())
+            if found { mapping.set(next, value: .mapping(child)) }
+            return found
+        }
+        return drop(&root, ([top] + middle)[...])
+    }
+
+    /// The save that removes a retired key from `block`: "Config save" for the blocks the Config
+    /// screen writes, "Customize Apply" for `charts`, nil for a block no app writer rewrites.
+    static func retiredKeyRemover(inBlock block: String) -> String? {
+        if managedTopLevelKeys.contains(block) { return "Config save" }
+        return block == "charts" ? "Customize Apply" : nil
     }
 
     /// Replaces the file at `url` with `encoded` through a temporary file beside it, and

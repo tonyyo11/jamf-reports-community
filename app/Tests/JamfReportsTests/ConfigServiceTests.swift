@@ -28,11 +28,10 @@ final class ConfigServiceTests: XCTestCase {
               timestamp_outputs: false
               keep_latest_runs: 7
             jamf_cli:
-              enabled: true
               data_dir: existing-data
               profile: tenant-a
               use_cached_data: true
-              allow_live_overview: false
+              max_cache_age_hours: 24
             """,
             profile: profile,
             root: root
@@ -76,23 +75,24 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("use_cached_data: false"))
         XCTAssertTrue(savedText.contains("data_dir: existing-data"))
         XCTAssertTrue(savedText.contains("profile: tenant-a"))
-        // Neither jamf_cli.enabled nor allow_live_overview is read any more; a save still
-        // keeps what the file holds.
-        XCTAssertTrue(savedText.contains("allow_live_overview: false"))
-        let jamfCLI = try XCTUnwrap(
-            YAMLCodec.decode(savedText).root.mapping?.value(for: "jamf_cli")?.mapping)
-        XCTAssertEqual(jamfCLI.value(for: "enabled"), .scalar(.bool(true)))
+        XCTAssertTrue(savedText.contains("max_cache_age_hours: 24"))
     }
 
-    /// Keys the Config screen used to edit and no longer reads stay in the file across a save.
-    func testKeysTheAppNoLongerReadsSurviveASave() throws {
+    /// Earlier builds wrote these keys and nothing reads them now. A save that rewrites the block
+    /// holding one removes it, says so, and copies the file as it was first; every other key and
+    /// the comments outside the rewritten blocks stay.
+    func testASaveRemovesTheRetiredKeysTheAppWroteAndSaysSo() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "retired-keys-\(UUID().uuidString.lowercased())"
         try writeConfig(
             """
+            # kept: a comment outside the blocks a save rewrites
+            html:
+              track_history: false
             thresholds:
               stale_device_days: 45
               profile_error_critical: 80
+              team_note: keep me
             platform:
               enabled: true
               compliance_benchmarks:
@@ -103,28 +103,75 @@ final class ConfigServiceTests: XCTestCase {
               accent_dark: "#445566"
             jamf_cli:
               data_dir: existing-data
+              enabled: true
               allow_live_overview: false
+              max_cache_age_hours: 24
             """,
             profile: profile, root: root)
 
         let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
         var state = loaded.state
         state.staleDeviceDays = "61"
-        state.accentColor = "#778899"
-        _ = try ConfigService.save(
+        let saved = try ConfigService.save(
             profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
 
-        let saved = try XCTUnwrap(
-            YAMLCodec.decode(savedText(profile: profile, root: root)).root.mapping)
-        func value(_ block: String, _ key: String) -> YAMLCodec.YAMLValue? {
-            saved.value(for: block)?.mapping?.value(for: key)
+        XCTAssertEqual(saved.report.removedRetiredKeys, [
+            "branding.accent_dark", "jamf_cli.allow_live_overview", "jamf_cli.enabled",
+            "platform.enabled", "thresholds.profile_error_critical",
+        ])
+        let text = try savedText(profile: profile, root: root)
+        for gone in ["accent_dark", "allow_live_overview", "profile_error_critical"] {
+            XCTAssertFalse(text.contains(gone), gone)
         }
-        XCTAssertEqual(value("branding", "accent_dark"), .scalar(.string("#445566")))
-        XCTAssertEqual(value("thresholds", "profile_error_critical"), .scalar(.int(80)))
-        XCTAssertEqual(value("platform", "enabled"), .scalar(.bool(true)))
-        XCTAssertEqual(value("jamf_cli", "allow_live_overview"), .scalar(.bool(false)))
-        XCTAssertEqual(value("branding", "accent_color"), .scalar(.string("#778899")))
-        XCTAssertEqual(value("thresholds", "stale_device_days"), .scalar(.int(61)))
+        let blocks = try XCTUnwrap(YAMLCodec.decode(text).root.mapping)
+        XCTAssertNil(blocks.value(for: "jamf_cli")?.mapping?.value(for: "enabled"))
+        XCTAssertNil(blocks.value(for: "platform")?.mapping?.value(for: "enabled"))
+        for kept in ["# kept: a comment outside", "track_history: false", "team_note: keep me",
+                     "max_cache_age_hours: 24", "data_dir: existing-data", "- CIS",
+                     "org_name: Example Org", "accent_color", "stale_device_days: 61"] {
+            XCTAssertTrue(text.contains(kept), kept)
+        }
+
+        let copy = try XCTUnwrap(saved.report.backupName, "a removed line is backed up first")
+        let backup = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root)
+                .deletingLastPathComponent().appendingPathComponent(copy),
+            encoding: .utf8)
+        XCTAssertTrue(backup.contains("accent_dark: \"#445566\""), "the copy is the file as it was")
+        XCTAssertEqual(saved.report.notes, [
+            "Settings the app no longer reads were removed from config.yaml: "
+                + "branding.accent_dark (since 2.9), jamf_cli.allow_live_overview (since 2.9), "
+                + "jamf_cli.enabled (since 2.9), platform.enabled (since 2.9), "
+                + "thresholds.profile_error_critical (since 2.9). "
+                + "A copy of the file as it was is at \(copy).",
+        ])
+
+        // Nothing is left to remove, so the next save says nothing about it.
+        let again = try ConfigService.save(
+            profile: profile, state: saved.state, existingDocument: saved.document,
+            workspaceRoot: root)
+        XCTAssertEqual(again.report.removedRetiredKeys, [])
+        XCTAssertEqual(again.report.notes, [])
+        XCTAssertNil(again.report.backupName)
+    }
+
+    /// Only the blocks a writer rewrites lose a retired key, and every copy of a repeated key goes.
+    func testRetiredKeysOutsideTheRewrittenBlocksStay() throws {
+        var mapping = try XCTUnwrap(YAMLCodec.decode("""
+            branding:
+              accent_dark: "#445566"
+            thresholds:
+              profile_error_critical: 80
+              profile_error_critical: 90
+              stale_device_days: 45
+            """).root.mapping)
+        let removed = ConfigService.dropRetiredKeys(from: &mapping, inBlocks: ["thresholds"])
+
+        XCTAssertEqual(removed, ["thresholds.profile_error_critical"])
+        let thresholds = try XCTUnwrap(mapping.value(for: "thresholds")?.mapping)
+        XCTAssertEqual(thresholds.entries.map(\.key), ["stale_device_days"])
+        XCTAssertNotNil(mapping.value(for: "branding")?.mapping?.value(for: "accent_dark"))
+        XCTAssertEqual(ConfigService.dropRetiredKeys(from: &mapping, inBlocks: []), [])
     }
 
     /// The editor models a few keys per entry; any other key typed on an entry rides along with
