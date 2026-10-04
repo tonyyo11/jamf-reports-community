@@ -190,6 +190,11 @@ compliance is now one figure everywhere.
 - The Overview's EDR score card fills in on the first collect after an update. A day's summary
   written by an older build had no EDR figure, and later collects that day kept it, so the card
   read "No value" next to a Security Agents card showing the coverage.
+- Compliance Posture says what each number is out of. The subtitle no longer repeats the first
+  baseline's evaluated count for all of them: it gives the range when baselines evaluate
+  different numbers of Macs (each counts the Macs that report its own column). Each baseline card
+  shows its compliance rate as "465 of 632 evaluated", its evaluated count as "of 664 devices,
+  32 No Data", and the donut legend says its percentages are of all devices, No Data included.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

@@ -72,14 +72,7 @@ struct CompliancePostureView: View {
 
     private var subtitle: String? {
         if !mscpResults.isEmpty {
-            let devicesWithData = mscpResults.first?.devicesWithData ?? 0
-            let baselinesText = mscpResults.count == 1 ? "baseline" : "baselines"
-            if devicesWithData > 0 {
-                return "\(devicesWithData) device\(devicesWithData == 1 ? "" : "s") evaluated across "
-                    + "\(mscpResults.count) mSCP \(baselinesText)."
-            } else {
-                return "No device data matched the configured baseline EA column."
-            }
+            return MSCPComplianceService.evaluatedSummary(mscpResults)
         } else if snapshot.totalDevices > 0 {
             return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") evaluated by control-gap proxy."
         } else {
@@ -237,6 +230,9 @@ struct CompliancePostureView: View {
                                 Text(String(format: "%.1f%%", pct))
                                     .font(.title2.weight(.semibold))
                                     .foregroundStyle(Theme.Colors.fg)
+                                Text(result.complianceRateBasisText)
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Text.tertiary(contrast))
                             }
                         }
                         Spacer()
@@ -247,6 +243,9 @@ struct CompliancePostureView: View {
                             Text("\(result.devicesWithData)")
                                 .font(.title2.weight(.semibold))
                                 .foregroundStyle(Theme.Colors.fg)
+                            Text(result.evaluatedBasisText)
+                                .font(.caption)
+                                .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
                     }
                     // Diagnostic: shown only when every device is No Data, which
@@ -307,6 +306,9 @@ struct CompliancePostureView: View {
     private func mscpLegend(for result: MSCPComplianceService.BaselineResult) -> some View {
         let slices = MSCPChartDataBuilder.toDonutSlices(result: result)
         VStack(alignment: .leading, spacing: 8) {
+            Text(result.shareBasisText)
+                .font(.caption)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
             ForEach(slices, id: \.label) { slice in
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: 3)
@@ -338,7 +340,8 @@ struct CompliancePostureView: View {
         let exportResult = DashboardChartExport.run(
             title: "\(result.name) Compliance Bands",
             subtitle: "Compliance Posture",
-            footnote: "Source: mSCP Extension Attribute · \(result.devicesWithData) devices evaluated",
+            footnote: "Source: mSCP Extension Attribute · \(result.devicesWithData) of "
+                + "\(result.totalDevices) devices evaluated",
             suggestedFilename: filename
         ) {
             MSCPComplianceBandsDonutExport(
