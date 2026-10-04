@@ -681,8 +681,6 @@ final class HtmlReportLayoutTests: XCTestCase {
         let html = try await render(
             Fleet(dashboard: true), sections: ExecutiveTemplate().htmlSections)
         XCTAssertFalse(html.contains("id=\"grp-"))
-        XCTAssertFalse(html.contains("<canvas"))
-        XCTAssertFalse(html.contains("chart.umd"), "no chart, so no 200 KB library")
         XCTAssertTrue(html.contains("id=\"at-a-glance\""))
         XCTAssertTrue(html.contains("id=\"needs-attention\""))
         XCTAssertTrue(html.contains("id=\"jamf-dashboard\""))
@@ -796,10 +794,10 @@ final class HtmlReportLayoutTests: XCTestCase {
 
     // MARK: - Size
 
-    /// The report's own content for the default fleet (20 Macs, 14 of them stale), without
-    /// the vendored Chart.js. Measured on this fixture: 22,186 bytes of content with the
-    /// dashboard and 26,187 bytes for the whole Executive report; the bounds leave about a
-    /// third of headroom, so a table or a repeated section coming back fails here.
+    /// The report's own content for the default fleet (20 Macs, 14 of them stale). Measured
+    /// on this fixture: 24,007 bytes of content with the dashboard and 25,632 bytes for the
+    /// whole Executive report; the bounds leave a quarter to a third of headroom, so a table
+    /// or a repeated section coming back fails here.
     func testTheReportsOwnContentStaysWithinItsMeasuredSize() async throws {
         let full = try await render(Fleet(dashboard: true))
         let content = try main(of: full).utf8.count
@@ -807,6 +805,5 @@ final class HtmlReportLayoutTests: XCTestCase {
         let executive = try await render(
             Fleet(dashboard: true), sections: ExecutiveTemplate().htmlSections)
         XCTAssertLessThan(executive.utf8.count, 35_000, "Executive report: \(executive.utf8.count)")
-        XCTAssertFalse(executive.contains("chart.umd"))
     }
 }

@@ -125,6 +125,32 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("reason &lt;here&gt;"))
     }
 
+    /// Percent bars share one 0–100 track, so equal shares draw equal bars; a share outside
+    /// the track, or not a number, is held to it.
+    func testRenderPercentBarsUseOneTrackAndHoldOddValuesToIt() {
+        let html = HtmlSectionFormatters.renderPercentBars([
+            (label: "A", pct: 40), (label: "B", pct: 40), (label: "C", pct: 83.4),
+            (label: "D", pct: 140), (label: "E", pct: -3), (label: "F", pct: .nan),
+        ])
+        XCTAssertEqual(html.components(separatedBy: "width:40%").count - 1, 2)
+        XCTAssertTrue(html.contains("C: 83.4%"))
+        XCTAssertTrue(html.contains("width:83%"))
+        XCTAssertTrue(html.contains("D: 100%") && html.contains("width:100%"))
+        XCTAssertTrue(html.contains("E: 0%") && html.contains("F: 0%"))
+        XCTAssertFalse(html.contains("width:-"))
+    }
+
+    /// Count bars scale to the largest row and name the unit.
+    func testRenderBarsScaleToTheLargestRow() {
+        let html = HtmlSectionFormatters.renderBars(
+            [(label: "x", count: 8), (label: "y", count: 2)])
+        XCTAssertTrue(html.contains("width:100%"))
+        XCTAssertTrue(html.contains("width:25%"))
+        XCTAssertTrue(html.contains("y: 2 devices"))
+        XCTAssertTrue(HtmlSectionFormatters.renderBars([(label: "z", count: 1)])
+            .contains("z: 1 device\""))
+    }
+
     // MARK: - Fleet counts fixture
 
     /// Counts as the summary tiles read them: 100 Macs, FileVault off on 5, Firewall off on 12.

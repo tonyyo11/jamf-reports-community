@@ -239,9 +239,7 @@ extension HtmlReport {
         case .insightsDrift: return buildInsightsDrift(protectDataDir: protectDir)
         case .auditEvidence: return buildAuditEvidence(auditFindings: inputs.auditFindings)
         case .patchBar:
-            return buildPatchChart(
-                patchStatus: inputs.patchStatus,
-                accentColor: (config.branding ?? BrandingConfig()).sanitizedAccentColor)
+            return buildPatchChart(patchStatus: inputs.patchStatus)
         case .patchQueue: return buildPatchQueue(patchStatus: inputs.patchStatus)
         case .osAdoptionChart:
             return buildOSChart(osVersions: inputs.security.filter {

@@ -1,6 +1,5 @@
 import Foundation
 import XCTest
-import CryptoKit
 import ZIPFoundation
 @testable import JamfReports
 
@@ -15,7 +14,6 @@ import ZIPFoundation
 //   P10-B-04  ReportEngine saveSnapshot timestamp format
 //   P10-B-06  CSV archival only after successful workbook write
 //   P10-B-07  yes/no YAML not coerced to boolean
-//   P10-B-55  ChartJSBundle SHA-256 matches documented constant
 
 final class EngineCorrectnessTests: XCTestCase {
 
@@ -172,20 +170,6 @@ final class EngineCorrectnessTests: XCTestCase {
         let config = try ConfigDecoder.loadFromString(yaml)
         XCTAssertEqual(config.jamfCli?.useCachedData, false,
             "Bare 'false' must decode as boolean false")
-    }
-
-    // MARK: - P10-B-55: ChartJSBundle SHA matches documented constant
-
-    func testChartJSBundleSHAMatchesDocumentedConstant() {
-        let computed = SHA256.hash(data: Data(ChartJSBundle.inlineScript.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-        XCTAssertEqual(
-            computed,
-            ChartJSBundle.sha256,
-            "Computed SHA-256 of ChartJSBundle.inlineScript does not match documented constant. " +
-            "Update ChartJSBundle.sha256 if Chart.js was intentionally upgraded."
-        )
     }
 
     // MARK: - P10-B-06: CSV archival only after successful workbook write

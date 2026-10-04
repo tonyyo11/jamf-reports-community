@@ -7,9 +7,8 @@ import Foundation
 
 extension HtmlReport {
 
-    /// The finished document around `mainBody`. The Chart.js bundle (about 200 KB) goes in
-    /// only when the body draws a chart, so a report without one, such as the Executive
-    /// template's, carries none of it.
+    /// The finished document around `mainBody`. Its charts are HTML and CSS, so the page
+    /// loads no library.
     func buildDocument(
         outputURL: URL,
         mainBody: String,
@@ -21,8 +20,6 @@ extension HtmlReport {
         let title = orgName.isEmpty ? "Jamf Reports" : orgName
         let titleEscaped = HtmlSectionFormatters.escapeHTML(title)
         let accentColor = (config.branding ?? BrandingConfig()).sanitizedAccentColor
-        let chartScript = mainBody.contains("<canvas")
-            ? "<script>\(ChartJSBundle.inlineScript)</script>" : ""
         let verifyFilename = HtmlSectionFormatters.escapeHTML(outputURL.lastPathComponent)
         let placeholder = HTMLReportSHA256Placeholder
         let controls = !expandAll && mainBody.contains("<details")
@@ -34,7 +31,6 @@ extension HtmlReport {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta name="report-sha256" content="\(placeholder)">
         <title>\(titleEscaped) — Jamf Instance Report</title>
-        \(chartScript)
         \(buildCSS(accentColor: accentColor))
         </head>
         <body>
@@ -241,8 +237,6 @@ extension HtmlReport {
         .tile.bad { border-color: var(--red); }
         .tile-value { font-size: 2rem; font-weight: 700; }
         .tile-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.3rem; }
-        .chart-card { background: var(--card); border: 1px solid var(--border);
-                      border-radius: 10px; padding: 1.2rem; max-width: 560px; }
         table th, table td { padding: 0.6rem 1rem; text-align: left;
                              border-bottom: 1px solid var(--border); }
         table th { background: var(--bg2); font-weight: 600; }
@@ -343,24 +337,12 @@ extension HtmlReport {
           const btn = document.querySelector('.theme-toggle');
           if (btn) btn.setAttribute('aria-pressed', next === 'dark' ? 'true' : 'false');
         }
-        // A chart drawn inside a closed group has no size; draw it again once it is shown.
-        function jrResizeCharts() {
-          if (!window.Chart || !Chart.getChart) { return; }
-          document.querySelectorAll('canvas').forEach(function(c) {
-            var chart = Chart.getChart(c);
-            if (chart) { chart.resize(); }
-          });
-        }
-        document.addEventListener('toggle', function(e) {
-          if (e.target.open) { jrResizeCharts(); }
-        }, true);
         // Expand all / Collapse all.
         document.addEventListener('click', function(e) {
           var ctl = e.target.closest('[data-action]');
           if (!ctl) { return; }
           var open = ctl.getAttribute('data-action') === 'expand';
           document.querySelectorAll('details').forEach(function(d) { d.open = open; });
-          jrResizeCharts();
         });
         // A link to something inside a closed group opens the groups around it first.
         document.addEventListener('click', function(e) {
@@ -389,7 +371,6 @@ extension HtmlReport {
             d.open = true;
             jrOpenedForPrint.push(d);
           });
-          jrResizeCharts();
         });
         window.addEventListener('afterprint', function() {
           jrOpenedForPrint.forEach(function(d) { d.open = false; });

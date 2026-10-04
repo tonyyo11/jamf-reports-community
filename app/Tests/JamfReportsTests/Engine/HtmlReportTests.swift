@@ -236,14 +236,28 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertEqual(report.asInt(12.0), 12)
     }
 
-    /// The chart builder reads counts through asInt; a corrupt one must not take the report down.
+    /// The OS bars read counts through asInt; a corrupt one must not take the report down.
     func testOSChartSurvivesCorruptOSCount() {
         let report = makeReport()
         let html = report.buildOSChart(osVersions: [
             ["os_version": "15.1", "count": 1e300],
             ["os_version": "15.2", "count": 4],
         ]).html
-        XCTAssertTrue(html.contains("[0,4]"), "corrupt count reads as 0, valid count survives")
+        XCTAssertTrue(html.contains("15.2: 4 devices"), "a valid count survives")
+        XCTAssertTrue(html.contains("15.1: 0 devices"), "a corrupt count reads as 0")
+    }
+
+    /// Most Macs first, and "26.7" and "26.7.0" are one row.
+    func testOSChartListsTheMostMacsFirstWithEachReleaseOnce() throws {
+        let html = makeReport().buildOSChart(osVersions: [
+            ["os_version": "15.7.3", "count": 6],
+            ["os_version": "26.7", "count": 5],
+            ["os_version": "26.7.0", "count": 4],
+        ]).html
+        let first = try XCTUnwrap(html.range(of: "26.7: 9 devices"))
+        let second = try XCTUnwrap(html.range(of: "15.7.3: 6 devices"))
+        XCTAssertLessThan(first.lowerBound, second.lowerBound)
+        XCTAssertFalse(html.contains("26.7.0"))
     }
 
     // MARK: - Task 1: Compliance tile
@@ -423,7 +437,7 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertEqual(report.daysAgo(from: "not-a-date"), -1)
     }
 
-    // MARK: - Chart.js offline fallback script
+    // MARK: - Charts are HTML
 
     /// A workspace with one patch-status snapshot, which gives the report a chart.
     private func chartDataDir() throws -> URL {
@@ -437,31 +451,19 @@ final class HtmlReportTests: XCTestCase {
         return dir
     }
 
-    func testVendoredChartJsInlinedInOutput() async throws {
+    /// The patch chart is bars in HTML and CSS: no canvas, no chart library, no 200 KB.
+    func testPatchChartIsDrawnInHTMLWithNoLibrary() async throws {
         let dir = try chartDataDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let outputURL = dir.appendingPathComponent("report.html")
         try await makeReport(dataDir: dir).generate(outputURL: outputURL)
         let html = try String(contentsOf: outputURL, encoding: .utf8)
-
-        // The vendored Chart.js UMD build must be inlined. Its window.Chart assignment
-        // is the reliable marker for the UMD export.
-        XCTAssertTrue(
-            html.contains("chart.umd") && html.contains("window.Chart"),
-            "Vendored Chart.js must be inlined — its UMD build must appear in output"
-        )
-        XCTAssertTrue(html.contains("<canvas id=\"patchChart\""))
-    }
-
-    /// The 200 KB library goes in only for a report that draws a chart.
-    func testChartJsIsLeftOutOfAReportWithoutACanvas() async throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let outputURL = dir.appendingPathComponent("report.html")
-        try await makeReport(dataDir: dir).generate(outputURL: outputURL)
-        let html = try String(contentsOf: outputURL, encoding: .utf8)
-        XCTAssertFalse(html.contains("<canvas"))
-        XCTAssertFalse(html.contains("chart.umd"), "the vendored bundle's own header")
+        XCTAssertTrue(html.contains("id=\"patch-chart\""))
+        XCTAssertTrue(html.contains("Zoom: 83%"))
+        XCTAssertTrue(html.contains("width:83%"))
+        for absent in ["<canvas", "new Chart", "chart.umd", "window.Chart"] {
+            XCTAssertFalse(html.contains(absent), absent)
+        }
         XCTAssertLessThan(html.utf8.count, 60_000)
     }
 
@@ -471,106 +473,25 @@ final class HtmlReportTests: XCTestCase {
         let outputURL = dir.appendingPathComponent("report.html")
         try await makeReport(dataDir: dir).generate(outputURL: outputURL)
         let html = try String(contentsOf: outputURL, encoding: .utf8)
-
-        XCTAssertFalse(
-            html.contains("cdn.jsdelivr.net"),
-            "Generated HTML must not reference cdn.jsdelivr.net — Chart.js must be vendored inline"
-        )
+        XCTAssertFalse(html.contains("cdn.jsdelivr.net"), "the report loads nothing from a CDN")
+        XCTAssertFalse(html.contains("<script src"), "and no script from anywhere")
     }
 
-    // MARK: - Section: JS injection safety (Task 2)
-
-    /// The script a chart block carries: from its first `<script>` to its last `</script>`.
-    private func scriptBlock(of html: String) -> String? {
-        guard let open = html.range(of: "<script>"),
-              let close = html.range(of: "</script>", options: .backwards) else { return nil }
-        return String(html[open.upperBound..<close.lowerBound])
-    }
-
-    /// A patch title containing `</script><script>alert('xss')</script>` must not
-    /// break out of the surrounding script block.
-    func testJSInjectionScriptBreakoutSanitized() {
+    /// A chart label is page text: a title holding markup arrives escaped, so it cannot
+    /// open a script or a comment that hides the rest of the report.
+    func testChartLabelsAreEscapedAsHTML() {
         let report = makeReport()
-        let malicious = "</script><script>alert('xss')</script>"
-        let html = report.buildPatchChart(
-            patchStatus: [["title": malicious, "compliance_pct": "100%"]],
-            accentColor: "#2D5EA2"
-        ).html
-        // The raw breakout sequence must not appear verbatim — JSON encoding escapes </
-        XCTAssertFalse(
-            html.contains("</script><script>alert"),
-            "XSS breakout must not appear verbatim in JS block"
-        )
-    }
-
-    /// A label containing U+2028 LINE SEPARATOR must be JSON-encoded, not HTML-escaped.
-    /// U+2028 is a valid JS line terminator that breaks string literals when unescaped.
-    func testJSInjectionLineSeparatorSanitized() {
-        let report = makeReport()
-        let label = "macOS\u{2028}15.7"
-        let html = report.buildOSChart(osVersions: [["os_version": label, "count": 5]]).html
-        // JSON encoding renders U+2028 as   — the raw codepoint must not appear.
-        XCTAssertFalse(
-            html.contains("\u{2028}"),
-            "U+2028 LINE SEPARATOR must be JSON-escaped, not passed raw into JS"
-        )
-    }
-
-    /// A label containing a backslash and double-quote must not break the JS literal.
-    func testJSInjectionBackslashQuoteSanitized() {
-        let report = makeReport()
-        let label = #"\"injected\""#  // produces: \"injected\"
-        let html = report.buildOSChart(osVersions: [["os_version": label, "count": 3]]).html
-        // After JSON encoding the backslash is doubled: \\\"injected\\\"
-        // The resulting JSON array must be present and the raw sequence must not break parsing.
-        XCTAssertTrue(html.contains("<script>"), "Chart block must still contain a script block")
-    }
-
-    /// `<!--` followed by `<script` inside a script block puts the HTML parser in the
-    /// "double escaped" state, where `</script>` no longer ends the block and every
-    /// later section of the report is swallowed. Escaping `</` alone does not stop it.
-    func testJSInjectionCommentOpenerCannotHideLaterSections() throws {
-        let report = makeReport()
-        let osChart = report.buildOSChart(
-            osVersions: [["os_version": "15.1 <!-- <script", "count": 2]]).html
-        let patchChart = report.buildPatchChart(
-            patchStatus: [["title": "Evil <!--<script>&amp;", "compliance_pct": "40%"]],
-            accentColor: "#2D5EA2").html
-        var literals: [String] = []
-        for html in [osChart, patchChart] {
-            let block = try XCTUnwrap(scriptBlock(of: html), "chart block must hold one script")
-            // The sequences that change how the parser reads a script block are absent.
-            for raw in ["<!--", "<script", "</script"] {
-                XCTAssertFalse(block.contains(raw), "script block must not contain raw \(raw)")
-            }
-            // The JSON the report writes holds no raw <, > or &. Scoped to the literals so a
-            // future `&&` or `<` in the chart JavaScript does not fail this test.
-            literals += block.components(separatedBy: "\n").compactMap { line -> String? in
-                guard let range = line.range(of: "labels: ") else { return nil }
-                return String(line[range.upperBound...])
+        let patch = report.buildPatchChart(patchStatus: [
+            ["title": "</script><script>alert('xss')</script>", "compliance_pct": "100%"],
+        ]).html
+        let os = report.buildOSChart(osVersions: [["os_version": "15.1 <!-- <b>", "count": 2]]).html
+        for html in [patch, os] {
+            for raw in ["<script", "</script", "<!--", "<b>"] {
+                XCTAssertFalse(html.contains(raw), "raw \(raw) in \(html)")
             }
         }
-        XCTAssertEqual(literals.count, 2, "one labels literal per chart: \(literals)")
-        for literal in literals {
-            for raw in ["<", ">", "&"] {
-                XCTAssertFalse(literal.contains(raw), "\(raw) must be escaped in \(literal)")
-            }
-        }
-        XCTAssertTrue(
-            try XCTUnwrap(scriptBlock(of: patchChart)).contains(#"\u003c!--"#),
-            "the title must survive as an escape")
-    }
-
-    /// The escaped array must still decode to the original strings.
-    func testJsonArrayEscapesAngleBracketsAndAmpersandAndRoundTrips() throws {
-        let report = makeReport()
-        let labels = ["a<b", "x>y", "p&q", "<!--<script>alert(1)</script>"]
-        let literal = report.jsonArray(labels)
-        for raw in ["<", ">", "&"] {
-            XCTAssertFalse(literal.contains(raw), "\(raw) must be escaped in \(literal)")
-        }
-        let decoded = try JSONSerialization.jsonObject(with: Data(literal.utf8)) as? [String]
-        XCTAssertEqual(decoded, labels)
+        XCTAssertTrue(patch.contains("&lt;/script&gt;&lt;script&gt;alert(&#39;xss&#39;)"))
+        XCTAssertTrue(os.contains("15.1 &lt;!-- &lt;b&gt;"))
     }
 
     // MARK: - Summary tiles under the security policy

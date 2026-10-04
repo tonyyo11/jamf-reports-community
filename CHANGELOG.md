@@ -122,8 +122,9 @@ compliance is now one figure everywhere.
   profiles. The Executive Summary paragraphs are gone; the figures and the attention list replace
   them. The Exception List appears only when `exceptions:` is configured: it used to list custom
   extension attributes under that heading.
-- The Chart.js library (about 200 KB) is included in an HTML report only when the report draws a
-  chart.
+- The HTML report's two charts, patch compliance and OS versions, are now plain bars drawn by the
+  page itself. A report no longer carries the 200 KB Chart.js library, and PDF exports show the
+  charts instead of "Chart unavailable in PDF".
 
 - Patch compliance is now one figure everywhere: the share of devices on the latest version,
   counted over every patch title that has devices. The daily summary, Trends, the workbook's
