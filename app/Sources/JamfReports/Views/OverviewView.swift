@@ -1533,7 +1533,10 @@ struct OverviewView: View {
         let dates = workspace.demoMode ? [] : trendStore.points(metric: metric).map(\.date)
         let current = values.last ?? 0
         let first = values.first ?? current
-        let previous = values.count > 1 ? values[values.count - 2] : current
+        let figures = MetricDetailFigures.make(
+            values: values,
+            value: { metricValueLabel($0, metric: metric) },
+            delta: { metricDeltaLabel($0, metric: metric) })
         // Same reasoning as the Overview tiles: name the day rather than imply
         // a fixed cadence. "Previous" alone gave no way to tell yesterday from
         // three weeks ago after a run of missed collects.
@@ -1543,23 +1546,25 @@ struct OverviewView: View {
         let firstLabel = dates.first.map(Self.comparisonDateFormatter.string(from:))
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
-                kicker: metric.displayLabel,
+                kicker: metricDetailTitle(metric),
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
-                title: metric.displayLabel,
-                subtitle: "\(values.count) summaries · \(workspace.profile)"
+                title: metricDetailTitle(metric),
+                subtitle: MetricDetailFigures.summaryCount(values.count)
+                    + " · \(workspace.profile)"
             )
             HStack(spacing: 12) {
-                StatTile(label: "Current", value: metricValueLabel(current, metric: metric))
-                StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric),
-                         sub: previousLabel)
-                StatTile(label: "Change", value: metricDeltaLabel(current - first, metric: metric),
-                         sub: firstLabel.map { "Since \($0)" } ?? "Since first snapshot")
+                StatTile(label: "Current", value: figures.current)
+                StatTile(label: "Previous", value: figures.previous, sub: previousLabel)
+                StatTile(label: "Change", value: figures.change,
+                         sub: figures.hasChange
+                            ? firstLabel.map { "Since \($0)" } ?? "Since first snapshot"
+                            : nil)
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeader(title: "Snapshot Values")
                     if values.isEmpty {
-                        Text("No trend summaries are available for this metric yet.")
+                        Text("No data yet: no trend summary has a value for this metric.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
@@ -1812,6 +1817,13 @@ struct OverviewView: View {
     }
 
     private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
+    /// The drill-down's title: the tenant's own label, as on the card it was opened from.
+    private func metricDetailTitle(_ metric: TrendSeries.Metric) -> String {
+        metric.displayLabel(
+            benchmarkLabel: workspace.complianceBenchmarkLabel,
+            edrAgentName: workspace.edrAgentName)
+    }
+
         if workspace.demoMode {
             return DemoData.trends[metric] ?? []
         }
@@ -2159,4 +2171,39 @@ func failingRulesSubtitle(baseline: String, macsWithResults: Int) -> String {
 /// profiles dynamically) as long as it hasn't been excluded.
 func scheduleCovered(hasAgent: Bool, policyIsManaged: Bool, excluded: Bool) -> Bool {
     hasAgent || (policyIsManaged && !excluded)
+}
+
+
+/// The Current, Previous and Change tiles of a metric drill-down. A value that does not exist
+/// is not shown as 0: with no values every tile says so, and with one there is a current
+/// figure but no previous one and no change.
+struct MetricDetailFigures: Equatable {
+    let current: String
+    let previous: String
+    let change: String
+    /// Whether `change` is a figure rather than a dash.
+    let hasChange: Bool
+
+    static let noData = "No data yet"
+
+    static func make(
+        values: [Double], value: (Double) -> String, delta: (Double) -> String
+    ) -> MetricDetailFigures {
+        guard let latest = values.last, let first = values.first else {
+            return MetricDetailFigures(
+                current: noData, previous: noData, change: "—", hasChange: false)
+        }
+        guard values.count > 1 else {
+            return MetricDetailFigures(
+                current: value(latest), previous: "—", change: "—", hasChange: false)
+        }
+        return MetricDetailFigures(
+            current: value(latest), previous: value(values[values.count - 2]),
+            change: delta(latest - first), hasChange: true)
+    }
+
+    /// "1 summary", "0 summaries".
+    static func summaryCount(_ count: Int) -> String {
+        count == 1 ? "1 summary" : "\(count) summaries"
+    }
 }

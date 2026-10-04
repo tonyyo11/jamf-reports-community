@@ -232,6 +232,8 @@ compliance is now one figure everywhere.
   after an afternoon collect fetched newer ones. A collect that fetches new data now rebuilds
   the day's summary from the newest snapshots, keeping any value the morning had that the later
   run could not measure; one that fetches nothing leaves it alone.
+- A metric on the Overview with no data says "No data yet" instead of 0.0% current, 0.0%
+  previous and +0.0pp over 0 summaries.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.
