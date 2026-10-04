@@ -625,7 +625,7 @@ struct CoreDashboard: Sendable {
     // Source: `jamf-cli pro report device-compliance --output json`
 
     func writeDeviceCompliance() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
+        let items = try loadDeviceComplianceRows()
         let ws = workbook.addSheet("Device Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Device Compliance"),
@@ -639,30 +639,41 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 10)
         ws.setColumnWidth(4, 4, 18)
 
-        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
 
         let headers = ["Name", "Serial", "Managed", "Stale", "Days Since Check-in"]
         for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         for item in items {
-            let isStale = asBool(item["stale"]) ?? false
-            let daysSince = asInt(item["days_since_checkin"])
+            let isStale = isStaleDevice(item)
             let fmt: CellFormat = isStale ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: fmt)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: fmt)
-            ws.write(asBool(item["managed"]).map { $0 ? "Yes" : "No" } ?? "", row: row, col: 2, format: fmt)
+            ws.write(item.name ?? "", row: row, col: 0, format: fmt)
+            ws.write(item.serial ?? "", row: row, col: 1, format: fmt)
+            ws.write(item.managed.map { $0 ? "Yes" : "No" } ?? "", row: row, col: 2, format: fmt)
             ws.write(isStale ? "Yes" : "No", row: row, col: 3, format: fmt)
-            if let d = daysSince {
-                let daysFmt: CellFormat = d >= staleThreshold ? .yellow : .cell
-                ws.write(d, row: row, col: 4, format: daysFmt)
+            if let d = item.resolvedDaysSinceContact {
+                ws.write(d, row: row, col: 4, format: fmt)
             } else {
                 ws.write("", row: row, col: 4, format: fmt)
             }
             row += 1
         }
+    }
+
+    /// Typed device-compliance rows from the newest snapshot. Throws `noCachedData` when there
+    /// is none and the decode error when the file is corrupt, so a corrupt cache fails the
+    /// sheet ([fail]) instead of skipping it.
+    private func loadDeviceComplianceRows() throws -> [DeviceComplianceRow] {
+        let data = try loadLatestJSONData(names: ["device-compliance", "device_compliance"])
+        return try JSONDecoder().decode([DeviceComplianceRow].self, from: data)
+    }
+
+    /// Whether a Mac has gone more than `thresholds.stale_device_days` without contact, the
+    /// meaning of every "stale" label in the workbook. jamf-cli's own `stale` flag is a
+    /// 14-day cut that the row only falls back to when it carries no day count.
+    private func isStaleDevice(_ row: DeviceComplianceRow) -> Bool {
+        row.isStale(atDays: (config.thresholds?.resolvedStaleDays ?? 30) + 1)
     }
 
     // MARK: - Policy Health
@@ -724,78 +735,113 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Profile Status
-    // Source: `jamf-cli pro classic-macos-profiles list --output json`
+    // Source: `jamf-cli pro report profile-status --output json`, one envelope
+    // `[{summary, failures, device_failures, device_pending}]`. `failures` lists each profile
+    // that errored in the report window; `classic-macos-profiles` only has {id, name}.
 
     func writeProfileStatus() throws {
-        let raw = try loadLatestJSON(
-            names: ["classic-macos-profiles", "macos-profiles", "profiles", "profile-status"]
-        )
+        let names = ["profile-status", "profile_status"]
+        guard let report = try loadFailureReport(names: names, uniqueKey: "unique_profiles") else {
+            throw CoreDashboardError.noCachedData(names: ["profile-status"])
+        }
         let ws = workbook.addSheet("Profile Status")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("Profile Status"),
-                                      subtitle: snapshotSubtitle(
-                                          names: ["classic-macos-profiles", "macos-profiles",
-                                                  "profiles", "profile-status"],
-                                          generated: ts),
-                                      ncols: 5)
-        ws.setColumnWidth(0, 0, 8)
-        ws.setColumnWidth(1, 1, 36)
-        ws.setColumnWidth(2, 2, 18)
-        ws.setColumnWidth(3, 3, 14)
-        ws.setColumnWidth(4, 4, 12)
-
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else { return }
-
-        let hdrs = ["ID", "Name", "Category", "Management Status", "Error Count"]
-        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
-        row += 1
-
-        let errWarn = config.thresholds?.resolvedProfileErrorWarning ?? 10
-        for item in items {
-            let errCount = asInt(item["error_count"]) ?? 0
-            let fmt: CellFormat = errCount >= errWarn ? .yellow : .cell
-            ws.write(item["id"].flatMap { asInt($0) } ?? 0, row: row, col: 0, format: .cell)
-            ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["category"] as? String ?? "", row: row, col: 2, format: .cell)
-            ws.write(item["management_status"] as? String ?? "", row: row, col: 3, format: .cell)
-            ws.write(errCount, row: row, col: 4, format: fmt)
-            row += 1
-        }
+        writeFailureReport(
+            ws, report, title: "Profile Status", subject: "Profiles",
+            subtitle: snapshotSubtitle(names: names, generated: ts),
+            warnAtErrors: config.thresholds?.resolvedProfileErrorWarning ?? 10)
     }
 
     // MARK: - App Status
-    // Source: `jamf-cli pro report app-status --output json`
+    // Source: `jamf-cli pro report app-status --output json`, the same envelope as
+    // profile-status with `unique_apps` in the summary.
 
     func writeAppStatus() throws {
-        let raw = try loadLatestJSON(names: ["app-status", "app_status"])
+        let names = ["app-status", "app_status"]
+        guard let report = try loadFailureReport(names: names, uniqueKey: "unique_apps") else {
+            throw CoreDashboardError.noCachedData(names: ["app-status"])
+        }
         let ws = workbook.addSheet("App Status")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("App Status"),
-                                      subtitle: "Generated: \(ts)", ncols: 6)
-        ws.setColumnWidth(0, 0, 36)
-        ws.setColumnWidth(1, 1, 16)
-        ws.setColumnWidth(2, 2, 12)
-        ws.setColumnWidth(3, 3, 12)
-        ws.setColumnWidth(4, 4, 12)
-        ws.setColumnWidth(5, 5, 10)
+        writeFailureReport(
+            ws, report, title: "App Status", subject: "Apps",
+            subtitle: snapshotSubtitle(names: names, generated: ts), warnAtErrors: 1)
+    }
 
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else { return }
+    /// What `profile-status` and `app-status` carry: the window, the totals and one row per
+    /// profile or app that errored.
+    private struct FailureReport {
+        let days: Int?
+        let totalErrors: Int
+        let uniqueItems: Int
+        let uniqueDevices: Int
+        let failures: [[String: Any]]
+    }
 
-        let hdrs = ["Name", "Version", "Installed", "Managed", "Total", "Errors"]
+    /// Reads the newest snapshot of `names` as a `FailureReport`. Throws `noCachedData` when
+    /// there is none and the parse error when the file is corrupt; nil when it is valid JSON
+    /// that is not the `{summary, failures}` envelope.
+    private func loadFailureReport(names: [String], uniqueKey: String) throws -> FailureReport? {
+        let raw = try loadLatestJSON(names: names)
+        guard let envelope = (raw as? [[String: Any]])?.first,
+              envelope["summary"] != nil || envelope["failures"] != nil else { return nil }
+        let summary = envelope["summary"] as? [String: Any] ?? [:]
+        let failures = (envelope["failures"] as? [[String: Any]]) ?? []
+        return FailureReport(
+            days: asInt(summary["days"]),
+            totalErrors: asInt(summary["total_errors"]) ?? 0,
+            uniqueItems: asInt(summary[uniqueKey]) ?? failures.count,
+            uniqueDevices: asInt(summary["unique_devices"]) ?? 0,
+            failures: failures)
+    }
+
+    /// Summary rows, then one table row per failing profile or app, most errors first. An
+    /// errors cell turns yellow at `warnAtErrors` or more.
+    private func writeFailureReport(
+        _ ws: Worksheet, _ report: FailureReport,
+        title: String, subject: String, subtitle: String, warnAtErrors: Int
+    ) {
+        var row = ws.writeSheetHeader(title: t(title), subtitle: subtitle, ncols: 7)
+        for (col, width) in [8.0, 36, 14, 10, 10, 14, 60].enumerated() {
+            ws.setColumnWidth(col, col, width)
+        }
+        let window = report.days.map { "last \($0) days" } ?? "report window"
+        let summary: [(String, Int)] = [
+            ("\(subject) with errors", report.uniqueItems),
+            ("Devices affected", report.uniqueDevices),
+            ("Total errors", report.totalErrors),
+        ]
+        ws.write("Install errors, \(window)", row: row, col: 0, format: .header)
+        ws.write("", row: row, col: 1, format: .header)
+        row += 1
+        for (label, value) in summary {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(value, row: row, col: 1, format: .cell)
+            row += 1
+        }
+        row += 1
+        guard !report.failures.isEmpty else {
+            ws.write("No \(subject.lowercased()) reported install errors.",
+                     row: row, col: 0, format: .cell)
+            return
+        }
+
+        let hdrs = ["ID", "Name", "Device Type", "Errors", "Devices", "Last Error", "Top Error"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
-
-        for item in items {
+        let ordered = report.failures.sorted {
+            (asInt($0["errors"]) ?? 0) > (asInt($1["errors"]) ?? 0)
+        }
+        for item in ordered {
             let errors = asInt(item["errors"]) ?? 0
-            let fmt: CellFormat = errors > 0 ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["version"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(asInt(item["installed"]) ?? 0, row: row, col: 2, format: .cell)
-            ws.write(asInt(item["managed"]) ?? 0, row: row, col: 3, format: .cell)
-            ws.write(asInt(item["total"]) ?? 0, row: row, col: 4, format: .cell)
-            ws.write(errors, row: row, col: 5, format: fmt)
+            let id = item["id"] as? String ?? asInt(item["id"]).map(String.init) ?? ""
+            ws.write(id, row: row, col: 0, format: .cell)
+            ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(item["device_type"] as? String ?? "", row: row, col: 2, format: .cell)
+            ws.write(errors, row: row, col: 3, format: errors >= warnAtErrors ? .yellow : .cell)
+            ws.write(asInt(item["devices"]) ?? 0, row: row, col: 4, format: .cell)
+            ws.write(item["last_error"] as? String ?? "", row: row, col: 5, format: .cell)
+            ws.write(item["top_error"] as? String ?? "", row: row, col: 6, format: .cell)
             row += 1
         }
     }
@@ -1313,17 +1359,16 @@ struct CoreDashboard: Sendable {
     // Source: device-compliance rows; counts non-stale devices.
 
     func writeActiveDevices() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let items = (raw as? [[String: Any]]) ?? []
+        let items = try loadDeviceComplianceRows()
         guard !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
         let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         let total = items.count
-        let active = items.filter { asBool($0["stale"]) != true }.count
-        let stale = total - active
-        let managed = items.filter { asBool($0["managed"]) == true }.count
+        let stale = items.filter(isStaleDevice).count
+        let active = total - stale
+        let managed = items.filter { $0.managed == true }.count
 
         let ws = workbook.addSheet("Active Devices")
         let ts = ISO8601DateFormatter().string(from: Date())
@@ -1398,7 +1443,9 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Package Lifecycle
     // Source: `jamf-cli pro packages list --output json`
-    // Shape: [{id, packageName, fileName, notes, size?, ...}]
+    // Shape: [{id, packageName, fileName, notes, size?, ...}]. The Jamf Pro packages payload
+    // has no upload date and reports `size` as "" for every package, so the date, age, size
+    // and bucket columns appear only when some package carries the value.
 
     func writePackageLifecycle() throws {
         let raw = try loadLatestJSON(names: ["packages"])
@@ -1424,57 +1471,73 @@ struct CoreDashboard: Sendable {
             let b = firstStringValue($1, keys: ["packageName", "name"]).lowercased()
             return a < b
         }
+        let uploadKeys = ["upload_date", "uploadDate", "dateUploaded", "created", "updated"]
+        let ages = sorted.map { daysSinceDate(firstStringValue($0, keys: uploadKeys)) }
+        let sizes = sorted.map { packageSizeMB($0["size"]) }
+        let showAge = ages.contains { $0 != nil }
+        let showSize = sizes.contains { $0 != nil }
 
-        let summaryPairs: [(String, Any)] = [
+        let summaryPairs: [(String, Int)] = [
             ("Total Packages", sorted.count),
-            ("Known Sizes", sorted.filter { $0["size"] != nil }.count),
+            ("Known Sizes", sizes.filter { $0 != nil }.count),
         ]
         for (idx, (label, value)) in summaryPairs.enumerated() {
             ws.write(label, row: row, col: idx * 2, format: .header)
-            if let i = value as? Int {
-                ws.write(i, row: row, col: idx * 2 + 1, format: .cell)
-            }
+            ws.write(value, row: row, col: idx * 2 + 1, format: .cell)
         }
-        row += 2
+        row += 1
+        if !showAge || !showSize {
+            let missing = [showAge ? nil : "upload date", showSize ? nil : "size"]
+                .compactMap { $0 }.joined(separator: " or ")
+            ws.write("Jamf reports no \(missing) for these packages, so those columns are "
+                     + "left out.", row: row, col: 0, format: .subtitle)
+            row += 1
+        }
+        row += 1
 
-        let headers = ["Package Name", "Filename", "Upload Date", "Age (days)", "Size (MB)", "Age Bucket", "Note"]
+        var headers = ["Package Name", "Filename"]
+        if showAge { headers += ["Upload Date", "Age (days)", "Age Bucket"] }
+        if showSize { headers.append("Size (MB)") }
+        headers.append("Note")
         for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
-        for pkg in sorted {
+        for (index, pkg) in sorted.enumerated() {
             let name = firstStringValue(pkg, keys: ["packageName", "name"])
             let filename = firstStringValue(pkg, keys: ["fileName", "filename"])
-            let uploadDate = firstStringValue(pkg, keys: ["upload_date", "uploadDate", "dateUploaded", "created", "updated"])
             let note = pkg["notes"] as? String ?? ""
-            let sizeMB = packageSizeMB(pkg["size"])
-            let ageDays = daysSinceDate(uploadDate)
+            let (bucket, fmt) = packageAgeBucket(ages[index])
 
-            let (bucket, fmt): (String, CellFormat)
-            if let days = ageDays {
-                if days <= 30 { (bucket, fmt) = ("0-30 days", .green) }
-                else if days <= 90 { (bucket, fmt) = ("31-90 days", .yellow) }
-                else { (bucket, fmt) = ("91+ days", .red) }
-            } else {
-                (bucket, fmt) = ("Unknown", .cell)
+            var col = 0
+            func put(_ value: String) { ws.write(value, row: row, col: col, format: fmt); col += 1 }
+            func put(_ value: Int?) {
+                if let value { ws.write(value, row: row, col: col, format: fmt) }
+                else { ws.write("", row: row, col: col, format: fmt) }
+                col += 1
             }
-
-            ws.write(name, row: row, col: 0, format: fmt)
-            ws.write(filename.isEmpty ? name : filename, row: row, col: 1, format: fmt)
-            ws.write(uploadDate, row: row, col: 2, format: fmt)
-            if let days = ageDays {
-                ws.write(days, row: row, col: 3, format: fmt)
-            } else {
-                ws.write("", row: row, col: 3, format: fmt)
+            put(name)
+            put(filename.isEmpty ? name : filename)
+            if showAge {
+                put(firstStringValue(pkg, keys: uploadKeys))
+                put(ages[index])
+                put(bucket)
             }
-            if let mb = sizeMB {
-                ws.write(mb, row: row, col: 4, format: fmt)
-            } else {
-                ws.write("", row: row, col: 4, format: fmt)
+            if showSize {
+                if let mb = sizes[index] { ws.write(mb, row: row, col: col, format: fmt) }
+                else { ws.write("", row: row, col: col, format: fmt) }
+                col += 1
             }
-            ws.write(bucket, row: row, col: 5, format: fmt)
-            ws.write(note, row: row, col: 6, format: fmt)
+            put(note)
             row += 1
         }
+    }
+
+    /// The Age Bucket label and colour for a package's age in days.
+    private func packageAgeBucket(_ days: Int?) -> (String, CellFormat) {
+        guard let days else { return ("Unknown", .cell) }
+        if days <= 30 { return ("0-30 days", .green) }
+        if days <= 90 { return ("31-90 days", .yellow) }
+        return ("91+ days", .red)
     }
 
     // MARK: - Mobile inventory helpers
@@ -2154,15 +2217,14 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["patch-status"])
         }
 
-        let rawDC = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let dcList = (rawDC as? [[String: Any]]) ?? []
+        let dcList = try loadDeviceComplianceRows()
         guard !dcList.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         let totalEnrolled = dcList.count
-        let activeCount = dcList.filter { !(asBool($0["stale"]) ?? false) }.count
+        let activeCount = dcList.filter { !isStaleDevice($0) }.count
         let inactiveCount = totalEnrolled - activeCount
         let activeRatio = totalEnrolled > 0 ? Double(activeCount) / Double(totalEnrolled) : 0.0
 
@@ -2957,14 +3019,15 @@ struct CoreDashboard: Sendable {
                 + "compliance, and staleness.",
             "Policy Health": "Policy counts and config findings from jamf-cli "
                 + "policy-status.",
-            "Profile Status": "Configuration profiles with management status and "
-                + "error counts.",
+            "Profile Status": "Configuration profiles that reported install errors, with "
+                + "error and device counts.",
             "Mobile Config Profiles": "Mobile configuration profiles with category "
                 + "breakdown.",
-            "App Status": "Managed apps: installed vs. total, errors.",
+            "App Status": "Managed apps that reported install errors, with error and "
+                + "device counts.",
             "Software Installs": "Top software titles and install counts.",
-            "Package Lifecycle": "Packages with upload age and size; highlights "
-                + "stale packages.",
+            "Package Lifecycle": "Packages with upload age and size when Jamf reports "
+                + "them; highlights stale packages.",
             "EA Coverage": "Raw EA result values per device (all EAs, all computers).",
             "EA Definitions": "Extension attribute definitions: name, data type, "
                 + "description.",
@@ -3030,11 +3093,9 @@ struct CoreDashboard: Sendable {
             .flatMap { securityFleet(items: $0) }
 
         // Device compliance snapshot
-        let deviceCompItems = ((try? loadLatestJSON(
-            names: ["device-compliance", "device_compliance"]
-        )) as? [[String: Any]]) ?? []
-        let staleCount = deviceCompItems.filter { asBool($0["stale"]) == true }.count
-        let managedCount = deviceCompItems.filter { asBool($0["managed"]) == true }.count
+        let deviceCompItems = (try? loadDeviceComplianceRows()) ?? []
+        let staleCount = deviceCompItems.filter(isStaleDevice).count
+        let managedCount = deviceCompItems.filter { $0.managed == true }.count
         let deviceTotal = deviceCompItems.count
         let compliancePct: Double = deviceTotal > 0
             ? Double(managedCount) / Double(deviceTotal) * 100 : 0
@@ -3110,14 +3171,17 @@ struct CoreDashboard: Sendable {
     private func writePostureDeviceTable(
         ws: Worksheet,
         row startRow: Int,
-        items: [[String: Any]]
+        items: [DeviceComplianceRow]
     ) {
+        // Longest silence first; a Mac with no day count sorts last, then by name so the
+        // order does not change from run to run.
         let worst = items
-            .filter { asBool($0["stale"]) == true || asBool($0["managed"]) == false }
+            .filter { isStaleDevice($0) || $0.managed == false }
             .sorted {
-                let dA = asInt($0["days_since_checkin"]) ?? 0
-                let dB = asInt($1["days_since_checkin"]) ?? 0
-                return dA > dB
+                let dA = $0.resolvedDaysSinceContact ?? -1
+                let dB = $1.resolvedDaysSinceContact ?? -1
+                if dA != dB { return dA > dB }
+                return ($0.name ?? "", $0.serial ?? "") < ($1.name ?? "", $1.serial ?? "")
             }
             .prefix(20)
 
@@ -3132,18 +3196,17 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in worst {
-            let isStale = asBool(item["stale"]) ?? false
+            let isStale = isStaleDevice(item)
             let fmt: CellFormat = isStale ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: fmt)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: fmt)
-            if let days = asInt(item["days_since_checkin"]) {
+            ws.write(item.name ?? "", row: row, col: 0, format: fmt)
+            ws.write(item.serial ?? "", row: row, col: 1, format: fmt)
+            if let days = item.resolvedDaysSinceContact {
                 ws.write(days, row: row, col: 2, format: fmt)
             } else {
                 ws.write("\u{2014}", row: row, col: 2, format: fmt)
             }
             ws.write(isStale ? "Yes" : "No", row: row, col: 3, format: fmt)
-            ws.write(asBool(item["managed"]).map { $0 ? "Yes" : "No" } ?? "",
-                     row: row, col: 4, format: fmt)
+            ws.write(item.managed.map { $0 ? "Yes" : "No" } ?? "", row: row, col: 4, format: fmt)
             row += 1
         }
     }

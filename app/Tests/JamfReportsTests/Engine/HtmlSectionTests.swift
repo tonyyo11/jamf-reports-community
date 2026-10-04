@@ -127,67 +127,107 @@ final class HtmlSectionTests: XCTestCase {
 
     // MARK: - execSummary
 
+    /// Counts as the summary tiles read them: 100 Macs, FileVault off on 5, Firewall off on 12.
+    private func fleet(
+        fileVaultFail: Int = 5, firewallFail: Int = 12, unreported: Int = 0
+    ) -> SecurityFleetCounts {
+        func control(_ fail: Int, notReported: Int = 0) -> SecurityFleetCounts.Control {
+            .init(level: .fail, on: 100 - fail - notReported, fail: fail, warning: 0,
+                  notReported: notReported)
+        }
+        return SecurityFleetCounts(
+            totalDevices: 100,
+            controls: [.fileVault: control(fileVaultFail),
+                       .sip: control(0, notReported: unreported),
+                       .firewall: control(firewallFail), .gatekeeper: control(0)],
+            fileVaultOffHardwareEncrypted: 0)
+    }
+
     func testExecSummaryWithData() {
         let report = makeReport()
-        let security: [[String: Any]] = [[
-            "section": "summary",
-            "data": ["total_devices": 100, "filevault_encrypted": 95,
-                     "sip_enabled": 100, "firewall_enabled": 88]
-        ]]
-        let compliance: [[String: Any]] = [
-            ["failure_count": 0], ["failure_count": 0], ["failure_count": 2],
-        ]
         let patch: [[String: Any]] = [
             ["title": "Firefox", "compliance_pct": "80%"],
             ["title": "Zoom", "compliance_pct": "100%"],
         ]
-        let secData = security.first?["data"] as? [String: Any] ?? [:]
         let html = report.buildExecSummary(
-            totalDevices: report.asInt(secData["total_devices"]) ?? 0,
-            fileVaultPct: 95,
-            sipPct: 100,
-            firewallPct: 88,
-            deviceCompliance: compliance,
-            patchStatus: patch
+            totalDevices: 100, fileVaultPct: 95, sipPct: 100, firewallPct: 88,
+            fleet: fleet(), patchStatus: patch
         )
         XCTAssertTrue(html.contains("exec-summary"))
         XCTAssertTrue(html.contains("100 managed device"))
         XCTAssertTrue(html.contains("95.0%"))  // fileVault
-        XCTAssertTrue(html.contains("1 device") || html.contains("require"))
+        XCTAssertTrue(html.contains("Security gaps to remediate: FileVault off on 5 Macs, "
+            + "Firewall off on 12 Macs."))
+        XCTAssertFalse(html.contains("meet all compliance requirements"))
     }
 
     func testExecSummaryEmptyState() {
         let report = makeReport()
         let html = report.buildExecSummary(
             totalDevices: 0, fileVaultPct: 0, sipPct: 0, firewallPct: 0,
-            deviceCompliance: [], patchStatus: []
+            fleet: nil, patchStatus: []
         )
         XCTAssertTrue(html.contains("exec-summary"))
         XCTAssertTrue(html.contains("class=\"empty\"") || html.contains("could not be determined"))
+        XCTAssertTrue(html.contains("No security control counts are available"))
     }
 
     func testExecSummaryXSS() {
         let report = makeReport()
         let html = report.buildExecSummary(
             totalDevices: 0, fileVaultPct: 0, sipPct: 0, firewallPct: 0,
-            deviceCompliance: [], patchStatus: []
+            fleet: nil, patchStatus: []
         )
         XCTAssertFalse(html.contains("<script>"))
     }
 
     func testExecSummaryStableOutput() {
         let report = makeReport()
-        let compliance: [[String: Any]] = [["failure_count": 0]]
         let patch: [[String: Any]] = [["title": "T", "compliance_pct": "90%"]]
         let a = report.buildExecSummary(
             totalDevices: 50, fileVaultPct: 80, sipPct: 90, firewallPct: 70,
-            deviceCompliance: compliance, patchStatus: patch
+            fleet: fleet(), patchStatus: patch
         )
         let b = report.buildExecSummary(
             totalDevices: 50, fileVaultPct: 80, sipPct: 90, firewallPct: 70,
-            deviceCompliance: compliance, patchStatus: patch
+            fleet: fleet(), patchStatus: patch
         )
         XCTAssertEqual(a, b)
+    }
+
+    // MARK: - securityGapSentence
+
+    func testSecurityGapSentenceNamesNoGapWhenNoMacFails() {
+        let sentence = HtmlReport.securityGapSentence(fleet(fileVaultFail: 0, firewallFail: 0))
+        XCTAssertEqual(sentence, "No Mac has a gap in FileVault, SIP, Firewall, Gatekeeper.")
+    }
+
+    func testSecurityGapSentenceUsesTheSingularForOneMac() {
+        let sentence = HtmlReport.securityGapSentence(fleet(fileVaultFail: 1, firewallFail: 0))
+        XCTAssertEqual(sentence, "Security gaps to remediate: FileVault off on 1 Mac.")
+    }
+
+    func testSecurityGapSentenceSaysWhatJamfDidNotReport() {
+        let sentence = HtmlReport.securityGapSentence(fleet(unreported: 3))
+        XCTAssertTrue(sentence.hasSuffix(
+            " 3 control values were not reported by Jamf and not counted as gaps."), sentence)
+    }
+
+    func testSecurityGapSentenceSkipsAnIgnoredControl() {
+        let ignored = SecurityFleetCounts(
+            totalDevices: 100,
+            controls: [.fileVault: .init(level: .fail, on: 100, fail: 0, warning: 0),
+                       .firewall: .init(level: .ignore, on: 50, fail: 50, warning: 0)],
+            fileVaultOffHardwareEncrypted: 0)
+        XCTAssertEqual(HtmlReport.securityGapSentence(ignored),
+                       "No Mac has a gap in FileVault.")
+    }
+
+    func testSecurityGapSentenceWithoutACountMakesNoClaim() {
+        XCTAssertEqual(HtmlReport.securityGapSentence(nil),
+                       "No security control counts are available in the current snapshot.")
+        XCTAssertEqual(HtmlReport.securityGapSentence(.empty),
+                       "No security control counts are available in the current snapshot.")
     }
 
     // MARK: - recentFailures
@@ -757,76 +797,76 @@ final class HtmlSectionTests: XCTestCase {
 
     // MARK: - agentHealth
 
+    private static let falconYAML = """
+    security_agents:
+      - name: "Falcon"
+        column: "Falcon State"
+        connected_value: "connected"
+    """
+
+    private func eaRows(_ rows: [(String, String, String)]) throws -> [EAResultRow] {
+        let json = rows.map { id, ea, value in
+            ["computer_id": id, "ea_name": ea, "value": value]
+        }
+        let data = try JSONSerialization.data(withJSONObject: json)
+        return try XCTUnwrap(EAResultRow.decodeSnapshot(data).rows)
+    }
+
     func testAgentHealthNoAgentsConfigured() {
         let report = makeReport()
-        let html = report.buildAgentHealth(computersInventory: [])
+        let html = report.buildAgentHealth(eaRows: [], fleet: 0)
         XCTAssertTrue(html.contains("agent-health"))
         XCTAssertTrue(html.contains("class=\"empty\""))
     }
 
-    func testAgentHealthWithData() throws {
-        let yaml = """
-        security_agents:
-          - name: "CrowdStrike Falcon"
-            column: "CrowdStrike Falcon - Status"
-            connected_value: "Installed"
-        """
-        let config = try ConfigLoader.loadFromString(yaml)
-        let report = makeReport(config: config)
-        let inventory: [[String: Any]] = [
-            ["name": "Mac-A", "CrowdStrike Falcon - Status": "Installed"],
-            ["name": "Mac-B", "CrowdStrike Falcon - Status": "Not Installed"],
-            ["name": "Mac-C"],
-        ]
-        let html = report.buildAgentHealth(computersInventory: inventory)
-        XCTAssertTrue(html.contains("agent-health"))
-        XCTAssertTrue(html.contains("<table"))
-        XCTAssertTrue(html.contains("CrowdStrike Falcon"))
+    /// Four Macs, three report: two connected, one not. The fourth reports nothing.
+    func testAgentHealthCountsFromEAResultsOverTheFleet() throws {
+        let report = makeReport(config: try ConfigLoader.loadFromString(Self.falconYAML))
+        let rows = try eaRows([
+            ("1", "Falcon State", "connected"), ("2", "Falcon State", "Connected (sensor)"),
+            ("3", "Falcon State", "not installed"), ("1", "Other EA", "x"),
+        ])
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 4)
         XCTAssertTrue(html.contains("count-card"))
+        XCTAssertTrue(html.contains("2 of 4 installed"), html)
+        XCTAssertTrue(html.contains("<td>Falcon</td><td>2</td><td>1</td><td>1</td><td>50.0%</td>"),
+                      html)
     }
 
-    func testAgentHealthEmptyInventory() throws {
-        let yaml = """
-        security_agents:
-          - name: "Falcon"
-            column: "Falcon Status"
-            connected_value: "Up"
-        """
-        let config = try ConfigLoader.loadFromString(yaml)
-        let report = makeReport(config: config)
-        let html = report.buildAgentHealth(computersInventory: [])
+    func testAgentHealthColumnNoMacReportsShowsNoCoverage() throws {
+        let report = makeReport(config: try ConfigLoader.loadFromString(Self.falconYAML))
+        let rows = try eaRows([("1", "Unrelated EA", "connected")])
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 10)
+        XCTAssertTrue(html.contains("no Mac reports Falcon State"), html)
+        XCTAssertTrue(html.contains("<td>0</td><td>0</td><td>10</td><td>\u{2014}</td>"), html)
+    }
+
+    func testAgentHealthWithoutEAResultsSaysSoInsteadOfCountingZero() throws {
+        let report = makeReport(config: try ConfigLoader.loadFromString(Self.falconYAML))
+        let html = report.buildAgentHealth(eaRows: nil, fleet: 665)
         XCTAssertTrue(html.contains("class=\"empty\""))
+        XCTAssertFalse(html.contains("<table"))
     }
 
     func testAgentHealthXSS() throws {
         let yaml = """
         security_agents:
-          - name: "Agent"
+          - name: "<script>alert(1)</script>"
             column: "Status"
             connected_value: "Up"
         """
-        let config = try ConfigLoader.loadFromString(yaml)
-        let report = makeReport(config: config)
-        let inventory: [[String: Any]] = [
-            ["name": Self.xssPayload, "Status": "Up"],
-        ]
-        let html = report.buildAgentHealth(computersInventory: inventory)
+        let report = makeReport(config: try ConfigLoader.loadFromString(yaml))
+        let rows = try eaRows([("1", "Status", "Up")])
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 1)
         XCTAssertFalse(html.contains("<script>"))
     }
 
     func testAgentHealthStableOutput() throws {
-        let yaml = """
-        security_agents:
-          - name: "Falcon"
-            column: "S"
-            connected_value: "Up"
-        """
-        let config = try ConfigLoader.loadFromString(yaml)
-        let report = makeReport(config: config)
-        let inv: [[String: Any]] = [["name": "M", "S": "Up"]]
+        let report = makeReport(config: try ConfigLoader.loadFromString(Self.falconYAML))
+        let rows = try eaRows([("1", "Falcon State", "connected")])
         XCTAssertEqual(
-            report.buildAgentHealth(computersInventory: inv),
-            report.buildAgentHealth(computersInventory: inv)
+            report.buildAgentHealth(eaRows: rows, fleet: 2),
+            report.buildAgentHealth(eaRows: rows, fleet: 2)
         )
     }
 

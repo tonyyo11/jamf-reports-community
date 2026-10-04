@@ -336,7 +336,9 @@ struct HtmlReport: Sendable {
             classicPolicies: classicPolicies,
             classicProfiles: profiles,
             packages: packages,
-            scripts: scripts
+            scripts: scripts,
+            buildings: buildings,
+            departments: departments
         )
 
         return baseMap.merging(newEntries) { existing, _ in existing }
@@ -578,9 +580,13 @@ struct HtmlReport: Sendable {
     // MARK: - Task 1: Compliance posture hero tile
 
     /// Renders a prominent compliance score tile from the device-compliance snapshot.
-    /// Omitted gracefully when the snapshot is empty.
+    /// Omitted gracefully when the snapshot is empty, and when its rows carry no failure
+    /// count: jamf-cli's device-compliance rows (name, serial, managed, stale, days since
+    /// contact) do not, and a missing count read as zero failures claimed 100%.
     func buildComplianceTile(deviceCompliance: [[String: Any]]) -> String {
-        guard !deviceCompliance.isEmpty else { return "" }
+        guard deviceCompliance.contains(where: {
+            $0["failure_count"] != nil || $0["failures_count"] != nil
+        }) else { return "" }
         let total = deviceCompliance.count
         let passing = deviceCompliance.filter { item -> Bool in
             let failCount = asInt(item["failure_count"]) ?? asInt(item["failures_count"]) ?? 0
@@ -1674,7 +1680,7 @@ struct HtmlReport: Sendable {
         return try? JSONSerialization.jsonObject(with: data)
     }
 
-    private func loadJSONData(kind: String) -> Data? {
+    func loadJSONData(kind: String) -> Data? {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
@@ -1704,7 +1710,7 @@ struct HtmlReport: Sendable {
 
     /// The `security` snapshot's counts under the workspace's policy: the same fleet the
     /// workbook and summary.json grade by. Nil without a decodable summary section.
-    private func securityFleet() -> SecurityFleetCounts? {
+    func securityFleet() -> SecurityFleetCounts? {
         guard let data = loadJSONData(kind: "security"),
               let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data)
         else { return nil }
@@ -1871,30 +1877,39 @@ struct HtmlReport: Sendable {
         return item["purchase_date"] as? String ?? item["purchaseDate"] as? String ?? ""
     }
 
-    /// Extract a named EA column value from a `computers list` record.
-    ///
-    /// `computers list` stores extension attributes as `extensionAttributes` in `general`
-    /// or as a top-level array. Returns the matched value or `""`.
-    func inventoryEAValue(_ item: [String: Any], column: String) -> String {
-        // Primary: flat string at the column key (legacy / inventory-csv shape)
-        if let v = item[column] as? String { return v }
-        // Search extensionAttributes arrays (both top-level and in general)
-        let sources: [Any?] = [
-            item["extensionAttributes"],
-            (item["general"] as? [String: Any])?["extensionAttributes"],
-        ]
-        for source in sources {
-            guard let arr = source as? [[String: Any]] else { continue }
-            for ea in arr {
-                let name = ea["name"] as? String ?? ""
-                guard name == column else { continue }
-                if let values = ea["values"] as? [String], let first = values.first {
-                    return first
-                }
-                if let value = ea["value"] as? String { return value }
+    /// Fill each record's department and building name from its `departmentId` and
+    /// `buildingId`: `computers list` carries only the ids, the names live in the
+    /// `departments` and `buildings` snapshots (`{id, name}`). A record that already names
+    /// its department or building keeps it, and an id no snapshot lists stays unassigned.
+    func resolvingLocationNames(
+        _ inventory: [[String: Any]],
+        buildings: [[String: Any]],
+        departments: [[String: Any]]
+    ) -> [[String: Any]] {
+        func names(_ rows: [[String: Any]]) -> [String: String] {
+            rows.reduce(into: [:]) { acc, row in
+                guard let id = row["id"].map({ "\($0)" }),
+                      let name = row["name"] as? String, !name.isEmpty else { return }
+                acc[id] = name
             }
         }
-        return ""
+        let buildingNames = names(buildings)
+        let departmentNames = names(departments)
+        guard !buildingNames.isEmpty || !departmentNames.isEmpty else { return inventory }
+        return inventory.map { item in
+            guard var location = item["userAndLocation"] as? [String: Any] else { return item }
+            func fill(_ key: String, id idKey: String, from lookup: [String: String]) {
+                let named = (location[key] as? String) ?? (location[key + "Name"] as? String)
+                guard (named ?? "").isEmpty, let id = location[idKey].map({ "\($0)" }),
+                      let name = lookup[id] else { return }
+                location[key] = name
+            }
+            fill("department", id: "departmentId", from: departmentNames)
+            fill("building", id: "buildingId", from: buildingNames)
+            var resolved = item
+            resolved["userAndLocation"] = location
+            return resolved
+        }
     }
 
     /// Extract a category name from a jamf-cli category field (string or dict).

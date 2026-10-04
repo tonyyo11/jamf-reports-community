@@ -201,6 +201,22 @@ compliance is now one figure everywhere.
   colour when the change rounds to nothing. Device counts with no good direction stay grey. The
   chart legend names the real snapshot cadence, the page header no longer shows a folder path,
   and the Snapshot Archive note says summaries are written by collect, not by generate runs.
+- The workbook's stale-Mac counts match their labels. Active Devices, Compliance Posture, Device
+  Compliance and the Patch Summary Dashboard counted Macs jamf-cli flags after 14 days while
+  saying 30; they now count Macs with no check-in for more than `thresholds.stale_device_days`.
+  The Compliance Posture table lists each Mac's days since check-in, longest first, instead of a
+  dash on every row, and the Device Compliance sheet fills its days column.
+- Profile Status and App Status list the profiles and apps that reported install errors, with
+  error and device counts, instead of one blank row. Profile Status highlights a profile at
+  `thresholds.profile_error_warning` errors or more. Package Lifecycle drops the upload date, age,
+  bucket and size columns when Jamf reports none of them, and says so, instead of showing
+  "Unknown" on every package.
+- The HTML report no longer says "100% of devices meet all compliance requirements" when Macs
+  have security gaps. The summary names the gaps the tiles show, and the compliance score tile
+  appears only when the data has per-device failure counts. Security Agent Health counts each
+  agent from the extension attribute results, so a fleet with agents connected no longer reads 0
+  of N, and the department and building breakdowns and Asset Map show names instead of
+  "(unassigned)" and a dash.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.
