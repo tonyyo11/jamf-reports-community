@@ -49,6 +49,19 @@ enum WorkspacePaths {
         }
     }
 
+    /// The folder the Reports screen lists and Finder actions may open: `reportsDir(for:)` with
+    /// symlinks resolved. A folder `resolve` accepted outside the workspace is already resolved,
+    /// so it passes unchanged; the `Generated Reports` fallback is not, and a symlink there that
+    /// leads out of the workspace is refused (nil) rather than followed.
+    static func readableReportsDir(for profile: String) -> URL? {
+        guard let workspace = workspaceRoot(for: profile),
+              let dir = reportsDir(for: profile, onLine: nil) else { return nil }
+        let resolved = dir.resolvingSymlinksInPath().standardizedFileURL
+        guard isInside(resolved, root: workspace)
+                || resolved.path == dir.standardizedFileURL.path else { return nil }
+        return resolved
+    }
+
     /// Why `resolve` refused a typed folder, worded for a `[warn]` line.
     static func refusal(of error: Error) -> String {
         switch error {
