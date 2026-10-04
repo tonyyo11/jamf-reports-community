@@ -154,6 +154,31 @@ final class StaleDeviceServiceTests: XCTestCase {
         XCTAssertEqual(snapshot30.tierCounts[.dormant], 2)
     }
 
+    // MARK: - Last-contact timestamps
+
+    /// 2.9 visual pass: jamf-cli writes `lastCheckIn` with a millisecond fraction whose
+    /// length varies (trailing zeros are trimmed: `.712`, `.71`, `.7`). Outreach read
+    /// none of them, so Last Contact said "Unknown" on every row beside a real Days Since.
+    func testOutreachReadsJamfTimestampsWithAnyFractionLength() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-04T12:30:00Z"))
+        for stamp in ["2026-10-01T12:00:00.712Z", "2026-10-01T12:00:00.71Z",
+                      "2026-10-01T12:00:00.7Z", "2026-10-01T12:00:00Z"] {
+            XCTAssertEqual(
+                OutreachView.relativeDate(from: stamp, now: now), "3 days ago", stamp)
+        }
+        XCTAssertEqual(OutreachView.relativeDate(from: "", now: now), "Unknown")
+        XCTAssertEqual(OutreachView.relativeDate(from: "not a date", now: now), "Unknown")
+    }
+
+    func testSnapshotDateReadsFractionalLastContact() throws {
+        var record = DeviceInventoryRecord.empty(id: "m", source: "test")
+        record.lastContact = "2026-10-01T12:00:00.71Z"
+        record.daysSinceContact = 3
+        let snapshot = StaleDeviceService.snapshot(from: [record])
+        let expected = try XCTUnwrap(DeviceInventoryService.parseDate("2026-10-01T12:00:00.71Z"))
+        XCTAssertEqual(snapshot.snapshotDate, expected)
+    }
+
     // MARK: - Service logic tests
 
     func testSnapshotFromRecordsPartitionsCorrectly() throws {
