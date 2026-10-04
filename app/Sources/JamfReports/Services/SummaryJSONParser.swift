@@ -60,7 +60,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
              collectedByHost,
              // How `patchPct` was computed. Absent on a summary written before
              // the device-weighted definition (epic #207 C1).
-             patchPctBasis
+             patchPctBasis,
+             // Which inputs `securityScore` was computed from (epic #207 H1).
+             securityScoreBasis
     }
 
     var id: String { date }
@@ -136,6 +138,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// titles that have devices. Nil on a summary written before 2.9, whose `patchPct`
     /// is the unweighted mean of each title's percentage — the two do not compare.
     private(set) var patchPctBasis: String?
+    /// The metrics `securityScore` weighed, by `SecurityScore.Metric` raw value in score
+    /// order, comma-separated (`SecurityScoreInputs.basis`). Nil on a summary written before
+    /// 2.9, which scored FileVault, SIP and Firewall only; two scores compare only when the
+    /// bases are equal.
+    let securityScoreBasis: String?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
@@ -183,7 +190,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         collectionSources: [String: String]? = nil,
         mobileDeviceCount: Int? = nil,
         collectedByHost: String? = nil,
-        patchPctBasis: String? = nil
+        patchPctBasis: String? = nil,
+        securityScoreBasis: String? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -215,6 +223,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.mobileDeviceCount = mobileDeviceCount
         self.collectedByHost = collectedByHost
         self.patchPctBasis = patchPctBasis
+        self.securityScoreBasis = securityScoreBasis
     }
 
     init(from decoder: Decoder) throws {
@@ -252,6 +261,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         mobileDeviceCount = try container.decodeIfPresent(Int.self, forKey: .mobileDeviceCount)
         collectedByHost = try container.decodeIfPresent(String.self, forKey: .collectedByHost)
         patchPctBasis = try container.decodeIfPresent(String.self, forKey: .patchPctBasis)
+        securityScoreBasis = try container.decodeIfPresent(
+            String.self, forKey: .securityScoreBasis)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -286,6 +297,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(mobileDeviceCount, forKey: .mobileDeviceCount)
         try container.encodeIfPresent(collectedByHost, forKey: .collectedByHost)
         try container.encodeIfPresent(patchPctBasis, forKey: .patchPctBasis)
+        try container.encodeIfPresent(securityScoreBasis, forKey: .securityScoreBasis)
     }
 }
 

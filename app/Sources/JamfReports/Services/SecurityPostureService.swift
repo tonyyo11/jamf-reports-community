@@ -32,6 +32,9 @@ struct SecurityPostureService: Sendable {
         /// The counts under the workspace's policy: P0/P1, the score and the tiles' sub-lines.
         var fleetCounts: SecurityFleetCounts = .empty
         var policy: SecurityControlPolicy = .default
+        /// The EDR agent and primary mSCP baseline the score also weighs
+        /// (`SecurityScoreInputs`); `.none` leaves it to the security report's three controls.
+        var scoreExtras: SecurityScoreInputs.Extras = .none
 
         struct OSVersion: Sendable, Equatable, Identifiable {
             let osVersion: String
@@ -87,12 +90,22 @@ struct SecurityPostureService: Sendable {
         let policy = SecurityPolicyConfigLoader.load(profile: profile)
         let hardware = HardwareEncryption.index(dataDir: dir, for: policy)
         do {
-            return try decode(at: newest, policy: policy, hardware: hardware)
+            var snapshot = try decode(at: newest, policy: policy, hardware: hardware)
+            snapshot.scoreExtras = SecurityScoreInputs.load(
+                dataDir: dir, config: reportConfig(profile: profile))
+            return snapshot
         } catch let LoadError.decodeFailed(reason) {
             return .failed("Couldn't read the latest security snapshot — \(reason).")
         } catch {
             return .failed("Couldn't read the latest security snapshot.")
         }
+    }
+
+    /// The workspace's decoded config.yaml; nil when absent or unreadable (the score then
+    /// weighs the security report's controls alone).
+    private static func reportConfig(profile: String) -> ReportConfig? {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
+        return try? ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
     }
 
     /// Test seam: load directly from an arbitrary file URL.

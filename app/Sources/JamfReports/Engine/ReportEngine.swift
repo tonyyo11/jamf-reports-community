@@ -801,9 +801,7 @@ struct ReportEngine: Sendable {
         let eaBaselines = config.compliance?.resolvedBaselines ?? []
         // The EDR score card is labelled with the first named security agent
         // (`WorkspaceStore.edrAgentName`); its value comes from the same agent.
-        let edrAgent = (config.securityAgents ?? []).first {
-            !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
-        }
+        let edrAgent = SecurityScoreInputs.edrAgent(in: config)
         var eaRows: [EAResultRow]? = nil
         if !eaBaselines.isEmpty || edrAgent != nil, let eaData = cachedData(kind: "ea-results") {
             let decoded = EAResultRow.decodeSnapshot(eaData)
@@ -816,8 +814,10 @@ struct ReportEngine: Sendable {
                 )
             }
         }
+        var primaryMSCP: MSCPComplianceService.BaselineResult?
         if !eaBaselines.isEmpty, let eaRows {
             let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+            primaryMSCP = results.first
             if let primary = results.first, let realPct = primary.compliancePct {
                 complianceFinalPct = realPct
                 complianceIsRealData = true
@@ -838,12 +838,14 @@ struct ReportEngine: Sendable {
         // profile. Over the whole fleet, so a Mac that reports no value counts as
         // not connected; nil (unknown, not 0%) when no Mac reports the agent's
         // extension attribute at all — usually a column name that doesn't match.
-        var edrConnectedPct: Double? = nil
-        if let edrAgent, let eaRows,
-           let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: [edrAgent]).first,
-           coverage.reporting > 0 {
-            edrConnectedPct = SecurityAgentCoverage.percent(
-                installed: coverage.installed, fleet: totalDevices)
+        let edrCoverage = edrAgent.flatMap { agent in
+            eaRows.flatMap { SecurityAgentCoverage.compute(rows: $0, agents: [agent]).first }
+        }
+        // The same two figures feed the security score below, through the one function the
+        // Security Posture screen and the workbook use, so a fleet has one score everywhere.
+        let scoreExtras = SecurityScoreInputs.extras(edr: edrCoverage, mscp: primaryMSCP)
+        let edrConnectedPct = scoreExtras.edrConnected.flatMap {
+            SecurityAgentCoverage.percent(installed: $0, fleet: totalDevices)
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -861,8 +863,11 @@ struct ReportEngine: Sendable {
         let fleet = SecurityFleetCounts.build(
             totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
             hardware: hardware, policy: securityPolicy)
+        // Every input that has data this run: FileVault, SIP and Firewall from the security
+        // report, the EDR agent and the primary mSCP baseline from ea-results. A metric
+        // without data drops out of the denominator.
         let score = SecurityScoreCalculator.score(
-            input: fleet.scoreInput(),
+            input: SecurityScoreInputs.input(fleet: fleet, extras: scoreExtras),
             weights: securityPolicy.resolvedScoreWeights
         )
         // Score is only meaningful when at least one metric contributed.
@@ -894,6 +899,8 @@ struct ReportEngine: Sendable {
             sipPct: sipPct.map(round1),
             firewallPct: firewallPct.map(round1),
             gatekeeperPct: gatekeeperPct.map(round1),
+            // Real baseline data only: the proxy is the controls above again.
+            mscpScorePct: complianceIsRealData ? complianceFinalPct.map(round1) : nil,
             securityScore: securityScore.map(round1),
             actionItemsP0: fleet.p0,
             actionItemsP1: fleet.p1,
@@ -906,7 +913,8 @@ struct ReportEngine: Sendable {
             // trivially "this Mac", and writing it into every summary would add
             // a hostname to a file that never needed one.
             collectedByHost: Self.collectingHostLabel(dataDir: dataDir),
-            patchPctBasis: DailySummary.deviceWeightedPatchBasis
+            patchPctBasis: DailySummary.deviceWeightedPatchBasis,
+            securityScoreBasis: securityScore == nil ? nil : SecurityScoreInputs.basis(of: score)
         )
     }
 

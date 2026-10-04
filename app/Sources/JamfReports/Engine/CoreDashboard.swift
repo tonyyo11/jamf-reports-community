@@ -2682,8 +2682,10 @@ struct CoreDashboard: Sendable {
         to m: inout ExecutiveSummaryMetrics,
         fleet: SecurityFleetCounts
     ) {
+        // The same inputs as summary.json's securityScore and the Security Posture screen.
+        let extras = SecurityScoreInputs.load(dataDir: dataDir, config: config)
         let score = SecurityScoreCalculator.score(
-            input: fleet.scoreInput(),
+            input: SecurityScoreInputs.input(fleet: fleet, extras: extras),
             weights: config.resolvedSecurityPolicy.resolvedScoreWeights
         )
         if !score.available.isEmpty {

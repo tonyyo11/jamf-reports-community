@@ -337,6 +337,28 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         filteredSummaries.map { $0.parsedDate }
     }
 
+    /// A note for the Security Score chart when the visible days were scored from different
+    /// inputs (`securityScoreBasis`): the score steps at that date because its definition did,
+    /// not because the fleet did. Nil when every visible day shares one basis.
+    func securityScoreDefinitionNote(edrAgentName: String?) -> String? {
+        Self.securityScoreDefinitionNote(in: filteredSummaries, edrAgentName: edrAgentName)
+    }
+
+    nonisolated static func securityScoreDefinitionNote(
+        in summaries: [DailySummary], edrAgentName: String?
+    ) -> String? {
+        let scored = summaries.filter { $0.securityScore != nil }.sorted { $0.date < $1.date }
+        guard let index = scored.indices.dropFirst().last(where: {
+            scored[$0].securityScoreBasis != scored[$0 - 1].securityScoreBasis
+        }), let basis = scored[index].securityScoreBasis else { return nil }
+        let counted = SecurityScoreInputs.metrics(inBasis: basis)
+            .map { $0.displayLabel(edrAgentName: edrAgentName) }
+            .joined(separator: ", ")
+        return "The security score changed definition on \(scored[index].date): it now weighs "
+            + "\(counted). Earlier days keep the score they were recorded with, so the step "
+            + "there is the definition, not the fleet."
+    }
+
     var isEmpty: Bool {
         allSummaries.isEmpty
     }

@@ -586,6 +586,8 @@ struct TrendsView: View {
                     }
                 }
 
+                scoreDefinitionCaption
+
                 // Swift Charts line + area mark OR stacked area for mSCP bands
                 if let domain = chartDomain {
                     Chart {
@@ -1035,6 +1037,19 @@ struct TrendsView: View {
     /// `.mscpBandTrend` and `.managedDevices` marks use `.foregroundStyle(by:)`
     /// — every other metric styles its mark directly, so the scale is inert
     /// for them and picking the right one here only matters for those two.
+    /// Under the Security Score chart when its inputs changed inside the visible range.
+    @ViewBuilder
+    private var scoreDefinitionCaption: some View {
+        if metric == .securityScore, !workspaceStore.demoMode,
+           let note = trendStore.securityScoreDefinitionNote(
+               edrAgentName: workspaceStore.edrAgentName) {
+            Text(note)
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var heroChartForegroundScale: (labels: [String], colors: [Color]) {
         metric == .managedDevices ? managedDevicesChartScale : mscpBandChartScale
     }

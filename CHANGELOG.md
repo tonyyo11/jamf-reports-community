@@ -219,6 +219,14 @@ compliance is now one figure everywhere.
   Pro's whole history) is replaced by the scan's "Devices with failed MDM commands" (WARNING, 217
   devices), which now mentions the command total, so the same problem is no longer listed twice in
   two units at two severities.
+- The Security Score counts every input that has data. The score recorded each day, and shown on
+  the Overview and Trends, weighed FileVault, SIP and Firewall only, although the Scoring tab
+  lists eight weights. It now also weighs the EDR agent (the first configured security agent's
+  coverage) and the primary mSCP baseline's pass share, and drops XProtect, CVE and Secure Boot,
+  which nothing in the app measures. Security Posture, the workbook and the daily summary compute
+  it the same way. The score steps on the day the new definition starts: earlier days keep their
+  recorded value, Trends and the period report say so, and a "drops more than" alert on the score
+  skips the comparison across that day.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.
