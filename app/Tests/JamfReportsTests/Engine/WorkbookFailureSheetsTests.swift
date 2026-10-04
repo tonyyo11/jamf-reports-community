@@ -162,6 +162,18 @@ final class WorkbookFailureSheetsTests: XCTestCase {
         XCTAssertThrowsError(try dash.writeProfileStatus())
     }
 
+    func testACorruptProfileStatusCacheFailsInsteadOfSkipping() throws {
+        let dash = try dashboard([("profile-status", 0, envelope([]))])
+        let dir = dash.dataDir.appendingPathComponent("profile-status", isDirectory: true)
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(atPath: dir.path).first)
+        try "NOT VALID JSON {{{".write(
+            to: dir.appendingPathComponent(file), atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(try dash.writeProfileStatus()) { error in
+            XCTAssertFalse(error is SheetSkippable, "a corrupt cache is a failure: \(error)")
+        }
+    }
+
     // MARK: - App Status
 
     func testAppStatusListsEachFailingApp() throws {

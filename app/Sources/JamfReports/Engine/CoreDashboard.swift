@@ -625,9 +625,7 @@ struct CoreDashboard: Sendable {
     // Source: `jamf-cli pro report device-compliance --output json`
 
     func writeDeviceCompliance() throws {
-        guard let items = loadDeviceComplianceRows() else {
-            throw CoreDashboardError.noCachedData(names: ["device-compliance"])
-        }
+        let items = try loadDeviceComplianceRows()
         let ws = workbook.addSheet("Device Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Device Compliance"),
@@ -663,10 +661,12 @@ struct CoreDashboard: Sendable {
         }
     }
 
-    /// Typed device-compliance rows from the newest snapshot; nil when there is none.
-    private func loadDeviceComplianceRows() -> [DeviceComplianceRow]? {
-        loadLatestTyped(names: ["device-compliance", "device_compliance"],
-                        as: [DeviceComplianceRow].self)
+    /// Typed device-compliance rows from the newest snapshot. Throws `noCachedData` when there
+    /// is none and the decode error when the file is corrupt, so a corrupt cache fails the
+    /// sheet ([fail]) instead of skipping it.
+    private func loadDeviceComplianceRows() throws -> [DeviceComplianceRow] {
+        let data = try loadLatestJSONData(names: ["device-compliance", "device_compliance"])
+        return try JSONDecoder().decode([DeviceComplianceRow].self, from: data)
     }
 
     /// Whether a Mac has gone more than `thresholds.stale_device_days` without contact, the
@@ -741,7 +741,7 @@ struct CoreDashboard: Sendable {
 
     func writeProfileStatus() throws {
         let names = ["profile-status", "profile_status"]
-        guard let report = loadFailureReport(names: names, uniqueKey: "unique_profiles") else {
+        guard let report = try loadFailureReport(names: names, uniqueKey: "unique_profiles") else {
             throw CoreDashboardError.noCachedData(names: ["profile-status"])
         }
         let ws = workbook.addSheet("Profile Status")
@@ -758,7 +758,7 @@ struct CoreDashboard: Sendable {
 
     func writeAppStatus() throws {
         let names = ["app-status", "app_status"]
-        guard let report = loadFailureReport(names: names, uniqueKey: "unique_apps") else {
+        guard let report = try loadFailureReport(names: names, uniqueKey: "unique_apps") else {
             throw CoreDashboardError.noCachedData(names: ["app-status"])
         }
         let ws = workbook.addSheet("App Status")
@@ -778,11 +778,12 @@ struct CoreDashboard: Sendable {
         let failures: [[String: Any]]
     }
 
-    /// Reads the newest snapshot of `names` as a `FailureReport`; nil when there is none or
-    /// it is not the `{summary, failures}` envelope.
-    private func loadFailureReport(names: [String], uniqueKey: String) -> FailureReport? {
-        guard let raw = try? loadLatestJSON(names: names),
-              let envelope = (raw as? [[String: Any]])?.first,
+    /// Reads the newest snapshot of `names` as a `FailureReport`. Throws `noCachedData` when
+    /// there is none and the parse error when the file is corrupt; nil when it is valid JSON
+    /// that is not the `{summary, failures}` envelope.
+    private func loadFailureReport(names: [String], uniqueKey: String) throws -> FailureReport? {
+        let raw = try loadLatestJSON(names: names)
+        guard let envelope = (raw as? [[String: Any]])?.first,
               envelope["summary"] != nil || envelope["failures"] != nil else { return nil }
         let summary = envelope["summary"] as? [String: Any] ?? [:]
         let failures = (envelope["failures"] as? [[String: Any]]) ?? []
@@ -1358,7 +1359,8 @@ struct CoreDashboard: Sendable {
     // Source: device-compliance rows; counts non-stale devices.
 
     func writeActiveDevices() throws {
-        guard let items = loadDeviceComplianceRows(), !items.isEmpty else {
+        let items = try loadDeviceComplianceRows()
+        guard !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
@@ -2215,7 +2217,8 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["patch-status"])
         }
 
-        guard let dcList = loadDeviceComplianceRows(), !dcList.isEmpty else {
+        let dcList = try loadDeviceComplianceRows()
+        guard !dcList.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
@@ -3090,7 +3093,7 @@ struct CoreDashboard: Sendable {
             .flatMap { securityFleet(items: $0) }
 
         // Device compliance snapshot
-        let deviceCompItems = loadDeviceComplianceRows() ?? []
+        let deviceCompItems = (try? loadDeviceComplianceRows()) ?? []
         let staleCount = deviceCompItems.filter(isStaleDevice).count
         let managedCount = deviceCompItems.filter { $0.managed == true }.count
         let deviceTotal = deviceCompItems.count

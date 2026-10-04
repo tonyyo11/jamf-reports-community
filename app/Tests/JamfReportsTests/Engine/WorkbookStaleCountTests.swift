@@ -107,6 +107,20 @@ final class WorkbookStaleCountTests: XCTestCase {
         XCTAssertEqual(try row(dash, "Active Devices", "Stale Devices")[1], "4")
     }
 
+    func testACorruptDeviceComplianceCacheFailsInsteadOfSkipping() throws {
+        let dash = try dashboard(rows: deviceRows())
+        let dir = dash.dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(atPath: dir.path).first)
+        try "NOT VALID JSON {{{".write(
+            to: dir.appendingPathComponent(file), atomically: true, encoding: .utf8)
+
+        for write in [dash.writeActiveDevices, dash.writeDeviceCompliance] {
+            XCTAssertThrowsError(try write()) { error in
+                XCTAssertFalse(error is SheetSkippable, "a corrupt cache is a failure: \(error)")
+            }
+        }
+    }
+
     // MARK: - Compliance Posture
 
     func testCompliancePostureStaleRowMatchesItsLabel() throws {
