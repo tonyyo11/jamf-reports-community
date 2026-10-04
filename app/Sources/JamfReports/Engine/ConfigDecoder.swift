@@ -1123,10 +1123,30 @@ struct ConfigException: Decodable, Sendable, Equatable {
 /// Configuration for the HTML instance report (`html:` top-level block).
 struct HTMLReportConfig: Decodable, Sendable {
     var sectionLimits: HTMLSectionLimits?
+    /// `with_workbook`: write the HTML report beside every report workbook. Absent or
+    /// anything but a boolean reads as off; Config Doctor names a value that is not one.
+    var withWorkbook: Bool?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case sectionLimits = "section_limits"
+        case withWorkbook = "with_workbook"
     }
+
+    init(sectionLimits: HTMLSectionLimits? = nil, withWorkbook: Bool? = nil) {
+        self.sectionLimits = sectionLimits
+        self.withWorkbook = withWorkbook
+    }
+
+    /// A mistyped `with_workbook` falls back to off rather than failing the whole
+    /// config.yaml decode: it is a switch, and a scheduled run must not stop over it.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sectionLimits = try container.decodeIfPresent(
+            HTMLSectionLimits.self, forKey: .sectionLimits)
+        withWorkbook = try? container.decodeIfPresent(Bool.self, forKey: .withWorkbook)
+    }
+
+    var writesWithWorkbook: Bool { withWorkbook ?? false }
 }
 
 /// Configurable display caps for HTML report sections.

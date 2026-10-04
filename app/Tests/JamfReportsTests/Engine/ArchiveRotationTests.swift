@@ -267,6 +267,76 @@ final class ArchiveRotationTests: XCTestCase {
         XCTAssertEqual(try xlsxNames(in: archiveDir), ["report_acme_2024-01-01_100000.xlsx"])
     }
 
+    // MARK: - Companion HTML (html.with_workbook)
+
+    /// A run is the workbook. Its companion HTML and the HTML's manifest go with it, and the
+    /// kept runs keep theirs.
+    func testAWorkbooksCompanionHTMLAndItsManifestRotateWithIt() throws {
+        let runs = ["report_acme_2024-01-01_100000", "report_acme_2024-01-02_100000",
+                    "report_acme_2024-01-03_100000"]
+        for run in runs {
+            try createFiles(names: ["\(run).xlsx", "\(run).xlsx.sha256", "\(run).html",
+                                    "\(run).html.manifest.txt"], in: outputDir)
+        }
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "report_acme", keep: 2)
+
+        XCTAssertEqual(try names(in: archiveDir), [
+            "\(runs[0]).html", "\(runs[0]).html.manifest.txt", "\(runs[0]).xlsx",
+            "\(runs[0]).xlsx.sha256",
+        ])
+        XCTAssertEqual(try names(in: outputDir).filter { $0.hasPrefix(runs[0]) }, [])
+        for run in runs.dropFirst() {
+            XCTAssertEqual(try names(in: outputDir).filter { $0.hasPrefix(run) }.count, 4, run)
+        }
+    }
+
+    /// `keep` counts runs: with two workbooks and their two HTML reports, keeping two keeps both.
+    func testKeepCountsRunsNotFiles() throws {
+        let runs = ["report_acme_2024-01-01_100000", "report_acme_2024-01-02_100000"]
+        for run in runs { try createFiles(names: ["\(run).xlsx", "\(run).html"], in: outputDir) }
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "report_acme", keep: 2)
+        XCTAssertEqual(try names(in: archiveDir), [])
+        XCTAssertEqual(try names(in: outputDir).count, 4)
+
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "report_acme", keep: 1)
+        XCTAssertEqual(try names(in: archiveDir), ["\(runs[0]).html", "\(runs[0]).xlsx"])
+        XCTAssertEqual(try names(in: outputDir), ["\(runs[1]).html", "\(runs[1]).xlsx"])
+    }
+
+    /// The Generate sheet's HTML format and `jamf-reports html` output have no workbook beside
+    /// them, so rotation leaves them where they are, however old.
+    func testAStandaloneHTMLIsNeverMoved() throws {
+        let standalone = ["jamf_report_acme_2023-01-01_100000.html",
+                          "jamf_report_acme_2023-01-01_100000.html.manifest.txt",
+                          "report_acme_2023-06-01_100000.html"]
+        try createFiles(names: standalone + [
+            "report_acme_2024-01-01_100000.xlsx", "report_acme_2024-01-01_100000.html",
+            "report_acme_2024-01-02_100000.xlsx",
+        ], in: outputDir)
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "report_acme", keep: 1)
+
+        XCTAssertEqual(try names(in: archiveDir), [
+            "report_acme_2024-01-01_100000.html", "report_acme_2024-01-01_100000.xlsx",
+        ])
+        XCTAssertEqual(try names(in: outputDir), standalone.sorted() + [
+            "report_acme_2024-01-02_100000.xlsx",
+        ])
+    }
+
+    /// With rotation switched off nothing moves, and an HTML never makes a run on its own.
+    func testHTMLAloneIsNotARunToKeepOrArchive() throws {
+        try createFiles(names: ["report_acme_2024-01-01_100000.html",
+                                "report_acme_2024-01-02_100000.html"], in: outputDir)
+        engine.archiveOldRuns(
+            outputDir: outputDir, archiveDir: archiveDir, stem: "report_acme", keep: 0)
+        XCTAssertEqual(try names(in: archiveDir), [])
+        XCTAssertEqual(try names(in: outputDir).count, 2)
+    }
+
     func testIsRunAcceptsEachTimestampFormatOnly() {
         let runs = [
             "report_acme", "report_acme_20240101", "report_acme_2024-01-01",
@@ -293,6 +363,11 @@ final class ArchiveRotationTests: XCTestCase {
             let url = dir.appendingPathComponent(name)
             try "placeholder".write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+
+    private func names(in dir: URL) throws -> [String] {
+        guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
+        return try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted()
     }
 
     private func xlsxNames(in dir: URL) throws -> [String] {

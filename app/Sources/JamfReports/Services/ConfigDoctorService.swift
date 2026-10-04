@@ -684,8 +684,10 @@ enum ConfigDoctorService {
         }
     }
 
-    /// true/false keys the decoder does not model. `output.allow_absolute_paths` also takes yes,
-    /// on and 1 (`WorkspacePaths.optIn`); `html.track_history` takes only true and false.
+    /// true/false keys the decoder does not model, and `html.with_workbook`, which it reads
+    /// as off for any other value instead of failing the decode.
+    /// `output.allow_absolute_paths` also takes yes, on and 1 (`WorkspacePaths.optIn`);
+    /// `html.track_history` and `html.with_workbook` take only true and false.
     static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {
         var rows: [DoctorRow] = []
         if let value = typedNonBoolean(at: ["output", "allow_absolute_paths"], in: root) {
@@ -700,8 +702,10 @@ enum ConfigDoctorService {
             case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
             }
         }
-        if let value = typedNonBoolean(at: ["html", "track_history"], in: root) {
-            rows.append(readsAsFalseRow("html.track_history", value))
+        for key in ["track_history", "with_workbook"] {
+            if let value = typedNonBoolean(at: ["html", key], in: root) {
+                rows.append(readsAsFalseRow("html.\(key)", value))
+            }
         }
         return rows
     }

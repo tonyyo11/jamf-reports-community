@@ -350,6 +350,16 @@ branding:
 # =============================================================================
 # HTML REPORT
 # =============================================================================
+# with_workbook: when true, every run that writes a report workbook also writes
+#   that profile's HTML report beside it, with the same name and a .html
+#   extension, from the same report template's sections. That covers the app's
+#   Generate buttons, scheduled runs that generate (jamf-cli-only,
+#   jamf-cli-full and csv-assisted) and `jamf-reports generate`. The fleet and
+#   period workbooks and Jamf School workbooks are not included. A run that
+#   already writes the HTML report as a format of its own writes that one only.
+#   If the HTML report cannot be written the workbook stays, and the log gets one
+#   [warn] line. track_history applies to it as to any HTML report. Default: false.
+#
 # When track_history is true, every `html` run appends an OS-version snapshot
 # to the history file.  Once two or more snapshots exist for an instance URL, a
 # macOS Adoption Timeline chart appears in the HTML report.
@@ -361,6 +371,7 @@ branding:
 #   used. Default (when blank or refused): html_history.json beside the report.
 #
 html:
+  with_workbook: false
   track_history: false
   history_file: ""
 
@@ -833,7 +844,10 @@ output:
 
   # Number of recent timestamped runs to keep in the main output folder for
   # each report family before older runs are moved into archive_dir. A value
-  # below 1 is read as 1.
+  # below 1 is read as 1. A run is a workbook: the HTML report that
+  # html.with_workbook writes beside it (same name, .html) moves with it and is
+  # not counted. An HTML report with no workbook of that name, such as the
+  # Generate sheet's HTML format or `jamf-reports html` output, is never moved.
   keep_latest_runs: 10
 
   # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE

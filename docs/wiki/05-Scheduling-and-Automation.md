@@ -152,6 +152,12 @@ Each run mode is strict — it does exactly one thing:
 `csv-assisted` fails loudly when its inbox has no CSV rather than silently degrading to a
 no-CSV workbook — use `jamf-cli-full` explicitly if you want the no-CSV path.
 
+With `html.with_workbook: true` in the profile's `config.yaml` (the Customize screen's
+**Write the HTML report with every workbook**), the three modes that generate also write the
+profile's HTML report beside the workbook, and the schedule's artifacts list both. If only the HTML
+report fails, the run still succeeds and is not marked Partial; its log has one
+`[warn] HTML report not written` line.
+
 > A legacy schedule imported from before run modes existed omits a mode and defaults to
 > `jamf-cli-only`. The meaning of `jamf-cli-only` later narrowed to "generate from cache,
 > no collect," so a very old imported schedule that used to collect-then-generate now only

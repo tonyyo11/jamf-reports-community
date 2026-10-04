@@ -102,6 +102,8 @@ extension CLIBridge {
     ///   (HTML, PDF) still use their standard paths — school HTML/PDF are not yet wired.
     /// - Parameter aiNarrative: F3 GUI-only AI executive narrative, threaded to the
     ///   XLSX and HTML generators (school/PDF/CSV paths ignore it). Default nil.
+    /// - Note: With `html.with_workbook` on, the XLSX step writes the HTML report too, unless
+    ///   `types` has `.html`: that run's HTML comes from the HTML step, once.
     func generateAll(
         types: Set<GenerateOutputType>,
         outputDir: URL?,
@@ -118,9 +120,12 @@ extension CLIBridge {
                 if schoolMode {
                     return try await self.schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)
                 }
+                // A chosen HTML format is the run's one HTML report; `html.with_workbook`
+                // would write a second.
                 return try await self.generate(
                     profile: profile, csvPath: nil, template: template,
-                    outputDir: outputDir, aiNarrative: aiNarrative, onLine: onLine
+                    outputDir: outputDir, aiNarrative: aiNarrative,
+                    htmlWithWorkbook: !types.contains(.html), onLine: onLine
                 )
             },
             generateHTML: {

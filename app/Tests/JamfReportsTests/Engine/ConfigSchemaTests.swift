@@ -35,6 +35,14 @@ final class ConfigSchemaTests: XCTestCase {
         ], "an unknown top-level key is reported once, not once per key under it")
     }
 
+    func testWithWorkbookIsKnownAndAMisspellingNamesIt() throws {
+        XCTAssertEqual(
+            try unknownKeys("html:\n  with_workbook: true\n  track_history: false\n"), [])
+        XCTAssertEqual(try unknownKeys("html:\n  with_workbok: true\n"), [
+            UnknownKey(keyPath: "html.with_workbok", suggestion: "with_workbook"),
+        ])
+    }
+
     func testACorrectFileHasNoUnknownKeys() throws {
         let keys = try unknownKeys("""
         columns:

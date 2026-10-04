@@ -20,6 +20,19 @@ final class ConfigFileSectionsTests: XCTestCase {
         }
     }
 
+    /// The Customize screen writes `html.with_workbook`, so it is not "file only"; the keys
+    /// beside it that no screen writes still are.
+    func testWithWorkbookIsEditedOnAScreenAndItsNeighboursAreNot() throws {
+        let sections = try build("""
+            html:
+              with_workbook: true
+              track_history: true
+            """)
+        let keys = sections.fileOnly.flatMap(\.settings).map(\.keyPath)
+        XCTAssertEqual(keys, ["html.track_history"])
+        XCTAssertTrue(sections.unknown.isEmpty)
+    }
+
     // MARK: - The three sections
 
     func testBuildsTheThreeSectionsFromAFile() throws {

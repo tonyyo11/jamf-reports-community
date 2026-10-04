@@ -204,6 +204,45 @@ final class ConfigDecoderTests: XCTestCase {
         XCTAssertNotNil(config.thresholds)
     }
 
+    // MARK: - html.with_workbook
+
+    private func withWorkbook(_ yaml: String) throws -> Bool? {
+        try ConfigLoader.loadFromString(yaml).html?.withWorkbook
+    }
+
+    func testWithWorkbookIsOffWhenTheKeyOrTheBlockIsAbsent() throws {
+        XCTAssertNil(try ConfigLoader.loadFromString("columns:\n  computer_name: Name\n").html)
+        XCTAssertFalse(HTMLReportConfig().writesWithWorkbook)
+        let config = try ConfigLoader.loadFromString("html:\n  track_history: true\n")
+        XCTAssertNil(config.html?.withWorkbook)
+        XCTAssertEqual(config.html?.writesWithWorkbook, false)
+    }
+
+    func testWithWorkbookReadsTrueFalseAndTheQuotedForms() throws {
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: true\n"), true)
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: \"true\"\n"), true)
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: False\n"), false)
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: \"false\"\n"), false)
+        XCTAssertEqual(
+            try ConfigLoader.loadFromString("html:\n  with_workbook: true\n")
+                .html?.writesWithWorkbook, true)
+    }
+
+    /// A switch with a wrong shape is off. It must not fail the decode of the whole file, or a
+    /// scheduled run would stop over it; the sibling keys still read.
+    func testAMistypedWithWorkbookReadsAsOffAndLeavesTheRestOfTheBlock() throws {
+        for typed in ["maybe", "yes", "1", "[true]", "{on: true}", "2.5"] {
+            let config = try ConfigLoader.loadFromString("""
+                html:
+                  with_workbook: \(typed)
+                  section_limits:
+                    protect_alerts: 50
+                """)
+            XCTAssertEqual(config.html?.writesWithWorkbook, false, typed)
+            XCTAssertEqual(config.html?.sectionLimits?.protectAlerts, 50, typed)
+        }
+    }
+
     // MARK: - Helper
 
     private var fixturesDir: URL { TestFixtures.root }

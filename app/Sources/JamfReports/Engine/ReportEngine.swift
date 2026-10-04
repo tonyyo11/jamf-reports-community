@@ -247,6 +247,10 @@ struct ReportEngine: Sendable {
     ///   `YYYY-MM-DDTHHMMSS`, `YYYY-MM-DDTHH_MM_SS`, `YYYY-MM-DDTHH-MM-SS`
     /// Falls back to file mtime when no date pattern is found.
     ///
+    /// A run is a workbook: `keep` counts workbooks, and one that moves takes its companion HTML
+    /// (the same name with `.html`, written by `html.with_workbook`) and its sidecars with it.
+    /// An HTML report with no workbook of the same name beside it is never moved.
+    ///
     /// - Parameter onLine: When provided, warnings are emitted here instead of (only) via
     ///   `print`, so live log views (e.g. GenerateSheet) display side-effect failures.
     func archiveOldRuns(
@@ -285,40 +289,51 @@ struct ReportEngine: Sendable {
         }
 
         for file in sorted.dropFirst(keep) {
-            let dest = archiveDir.appendingPathComponent(file.lastPathComponent)
-            do {
-                if fm.fileExists(atPath: dest.path) {
-                    try fm.removeItem(at: dest)
+            // The workbook's companion HTML (`html.with_workbook`) is part of its run. A
+            // `.html` with no workbook beside it, such as the Generate sheet's HTML format or
+            // `jamf-reports html` output, is not a run of this stem and is left where it is.
+            let run = [file, Self.htmlURL(besideWorkbook: file)]
+                .filter { fm.fileExists(atPath: $0.path) }
+            for artifact in run {
+                // Skip sidecars when the move failed: sidecars without their report in the
+                // archive are uninformative.
+                guard Self.moveToArchive(artifact, archiveDir: archiveDir, onLine: onLine) else {
+                    continue
                 }
-                try fm.moveItem(at: file, to: dest)
-            } catch {
-                let msg = "[warn] Could not archive \(file.lastPathComponent): \(error)"
-                AppLogger.report.warning("\(msg, privacy: .private)")
-                print(msg)
-                onLine?(.init(timestamp: Date(), level: .warn, text: msg))
-                // Skip sidecar move when the xlsx move failed — sidecars without
-                // a workbook in the archive are uninformative.
-                continue
-            }
-            // Move sibling sidecar files (sha256 + manifest.txt) alongside the
-            // xlsx so they don't accumulate as orphans in the reports root.
-            // Failures are best-effort: warn and continue rather than block rotation.
-            let sidecarExts = ["sha256", "manifest.txt"]
-            for ext in sidecarExts {
-                let sidecar = file.appendingPathExtension(ext)
-                guard fm.fileExists(atPath: sidecar.path) else { continue }
-                let sidecarDest = archiveDir.appendingPathComponent(sidecar.lastPathComponent)
-                do {
-                    if fm.fileExists(atPath: sidecarDest.path) {
-                        try fm.removeItem(at: sidecarDest)
-                    }
-                    try fm.moveItem(at: sidecar, to: sidecarDest)
-                } catch {
-                    let msg = "[warn] Could not archive sidecar \(sidecar.lastPathComponent): \(error)"
-                    AppLogger.report.warning("\(msg, privacy: .private)")
-                    onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                // Sibling sidecar files (sha256 + manifest.txt) move with their report so
+                // they don't accumulate as orphans in the reports root. Failures are
+                // best-effort: warn and continue rather than block rotation.
+                for ext in ["sha256", "manifest.txt"] {
+                    let sidecar = artifact.appendingPathExtension(ext)
+                    guard fm.fileExists(atPath: sidecar.path) else { continue }
+                    Self.moveToArchive(
+                        sidecar, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
                 }
             }
+        }
+    }
+
+    /// Moves `file` into `archiveDir`, replacing a file of the same name there. A failure is a
+    /// `[warn]` line, and the result is false.
+    @discardableResult
+    private static func moveToArchive(
+        _ file: URL, archiveDir: URL, label: String = "",
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> Bool {
+        let fm = FileManager.default
+        let dest = archiveDir.appendingPathComponent(file.lastPathComponent)
+        do {
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: dest)
+            }
+            try fm.moveItem(at: file, to: dest)
+            return true
+        } catch {
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error)"
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            if label.isEmpty { print(msg) }
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return false
         }
     }
 

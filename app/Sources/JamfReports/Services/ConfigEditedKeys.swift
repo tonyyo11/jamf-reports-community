@@ -2,9 +2,10 @@ import Foundation
 
 /// The key paths the app's screens write to config.yaml, read off the code that writes them:
 /// `ConfigService.apply` for the Config screen's blocks, and the `apply` of each scoped
-/// writer (`ChartsConfigWriter`, `NotifyConfigWriter`, `AIConfigWriter`,
-/// `SecurityPolicyConfigWriter`). A key added to an editor joins the set with no second list
-/// to update. A path leaves out list indices (`custom_eas`, `name`), as `ConfigSchema` does.
+/// writer (`ChartsConfigWriter`, `HTMLReportConfigWriter`, `NotifyConfigWriter`,
+/// `AIConfigWriter`, `SecurityPolicyConfigWriter`). A key added to an editor joins the set
+/// with no second list to update. A path leaves out list indices (`custom_eas`, `name`), as
+/// `ConfigSchema` does.
 enum ConfigEditedKeys {
     static let paths: Set<[String]> = derive()
 
@@ -13,6 +14,7 @@ enum ConfigEditedKeys {
         ConfigService.apply(state: probeState, to: &document)
         var root = document.root.mapping ?? .init(entries: [])
         ChartsConfigWriter.apply(.defaults, to: &root)
+        HTMLReportConfigWriter.apply(withWorkbook: true, to: &root)
         NotifyConfigWriter.apply(
             enabled: false, provider: "teams", url: "", detail: "full", to: &root)
         AIConfigWriter.apply(AIConfig(), to: &root)
