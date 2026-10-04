@@ -302,7 +302,11 @@ The **Customize** screen holds the report options that are not in Config:
   School workbooks, which have no HTML report. Choosing HTML as a format in **Generate…**
   writes that one HTML report, not a second. If the HTML report cannot be written, the
   workbook is kept and the run log gets one `[warn] HTML report not written` line; the run
-  is not marked Partial. It is off by default.
+  is not marked Partial. When older runs are archived (`output.keep_latest_runs`), a
+  workbook's HTML report moves to the archive with it and does not count as a run of its own;
+  an HTML report with no workbook of the same name, such as the one **Generate…** writes
+  when you choose HTML as a format, or `jamf-reports html` output, stays where it is. It is
+  off by default.
 - A button to the Overview's own **Customize** sheet, where you choose which score cards and
   sections the Overview shows.
 - How to get a shorter workbook: choose a template or your own sheets with **Generate…** on

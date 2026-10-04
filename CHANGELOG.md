@@ -76,8 +76,9 @@ compliance is now one figure everywhere.
   workbook** on the Customize screen, or set `html.with_workbook: true`, and each run that
   writes a profile's workbook also writes its HTML report beside it, with the same name: the
   Generate buttons, scheduled runs that generate, and `jamf-reports generate`. If only the HTML
-  report fails, the workbook is kept and the log says so. The fleet and period workbooks and
-  Jamf School workbooks are not included.
+  report fails, the workbook is kept and the log says so. When older runs are archived, the
+  HTML report moves with its workbook; other HTML reports stay where they are. The fleet and
+  period workbooks and Jamf School workbooks are not included.
 
 ### Changed
 

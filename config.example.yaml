@@ -834,7 +834,10 @@ output:
 
   # Number of recent timestamped runs to keep in the main output folder for
   # each report family before older runs are moved into archive_dir. A value
-  # below 1 is read as 1.
+  # below 1 is read as 1. A run is a workbook: the HTML report that
+  # html.with_workbook writes beside it (same name, .html) moves with it and is
+  # not counted. An HTML report with no workbook of that name, such as the
+  # Generate sheet's HTML format or `jamf-reports html` output, is never moved.
   keep_latest_runs: 10
 
   # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE

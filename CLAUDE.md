@@ -227,7 +227,9 @@ and its archive, dropping any file that resolves outside the workspace and that 
 header, its Reveal in Finder button, the PDF and CSV save panels and the Generate sheet's
 "Output folder" name it, and `SystemActions` opens it for the profile (see its row). An
 `archive_dir` set outside both is not listed (open finding). `keep_latest_runs` below 1 is
-read as 1.
+read as 1. `ReportEngine.archiveOldRuns` counts workbooks as runs; a workbook that moves takes
+its companion HTML (the same name with `.html`, from `html.with_workbook`) and the sidecars of
+both with it. An HTML with no workbook of that name is never moved.
 
 ### shared_workspace config (2.7.0 — multi-machine coordination)
 
@@ -488,7 +490,7 @@ Config Doctor names it through `fileReadBooleanRows`, as for `track_history`. Wh
 `ReportEngine.writeHTMLWithWorkbook(besideWorkbook:template:aiNarrative:onLine:)`
 (`ReportEngine+HTMLWithWorkbook.swift`) is the one implementation: it writes the profile's HTML
 report beside a finished workbook, named as the workbook is with `.html`
-(`ReportEngine.htmlURL(besideWorkbook:)`), from the same template's `htmlSections`, through
+(`ReportEngine.htmlURL(besideWorkbook:)`; run rotation moves it with its workbook), from the same template's `htmlSections`, through
 `generateHTML`, so the strict-manifest pre-flight, the manifest, the `[ok] sha256:` line and
 `html.track_history` apply as for any HTML report. Its callers, each straight after
 `engine.generate`: `CLIBridge.generate` (every GUI generate: the Overview, onboarding's first
