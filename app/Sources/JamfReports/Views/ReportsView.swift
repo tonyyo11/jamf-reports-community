@@ -117,19 +117,27 @@ struct ReportsView: View {
                                     .foregroundStyle(Theme.Colors.gold)
                                     .font(.system(size: 11))
                                     .accessibilityHidden(true)
+                                // The date ends the name, so the middle is what gives way.
                                 Mono(text: r.name, color: Theme.Colors.fg)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(r.name)
                             }
-                            .accessibilityLabel(
-                                "\(r.name), \(r.sheets) sheet\(r.sheets == 1 ? "" : "s"), \(r.size)"
-                            )
+                            .accessibilityLabel(r.accessibilityLabel)
                         }
+                        .width(min: 220, ideal: 360)
                         TableColumn("Source schedule") { r in
-                            Text(r.source).font(.footnote)
+                            Text(r.source).font(.footnote).lineLimit(1)
                         }
-                        TableColumn("Sheets") { r in Mono(text: "\(r.sheets)") }
+                        .width(min: 110, ideal: 150)
+                        TableColumn("Sheets") { r in Mono(text: r.sheetsLabel) }
+                            .width(min: 44, ideal: 56, max: 72)
                         TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
+                            .width(min: 52, ideal: 64, max: 84)
                         TableColumn("Size") { r in Mono(text: r.size) }
+                            .width(min: 56, ideal: 68, max: 90)
                         TableColumn("Generated") { r in Mono(text: r.date) }
+                            .width(min: 96, ideal: 112, max: 140)
                     }
                     .frame(minHeight: 360)
                     .scrollContentBackground(.hidden)
@@ -204,76 +212,75 @@ struct ReportsView: View {
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
                 title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
-                subtitle: reportsFolderDisplayPath
+                subtitle: reportsFolderDisplayPath,
+                wrapsTrailing: true
             ) {
                 AnyView(
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            PNPButton(title: "Reveal in Finder", icon: "folder") {
-                                revealReportsFolder()
-                            }
-                            .disabled(workspace.demoMode)
-                            .help(workspace.demoMode
-                                  ? "Demo reports are not on disk. Revealing their folder "
-                                    + "needs a live profile."
-                                  : "Open the Generated Reports folder in Finder")
-                            PNPButton(
-                                title: "Period report",
-                                icon: "calendar.badge.clock",
-                                style: .neutral
-                            ) {
-                                // The sheet reads the workspace's summaries.
-                                guard !workspace.demoMode else { return }
-                                showPeriodReport = true
-                            }
-                            .disabled(workspace.demoMode)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Fleet numbers for a period, with start, end and change"
-                            )
-                            PNPButton(
-                                title: "Generate\u{2026}",
-                                icon: "doc.badge.plus",
-                                style: .gold
-                            ) {
-                                // The sheet runs jamf-cli against the selected profile.
-                                guard !workspace.demoMode else { return }
-                                Task { await presentGenerate() }
-                            }
-                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Choose a template or sheets and the formats, then generate"
-                            )
-                            PNPButton(
-                                title: isGeneratingPDF ? "Generating..." : "Export PDF",
-                                icon: "doc.richtext",
-                                style: .neutral
-                            ) {
-                                generatePDFReport()
-                            }
-                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Render the HTML report to PDF via WKWebView"
-                            )
-                            PNPButton(
-                                title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
-                                icon: "doc.text",
-                                style: .neutral
-                            ) {
-                                runExportInventoryCSV()
-                            }
-                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Export a wide CSV of all computer inventory"
-                            )
+                    WrappingRow {
+                        PNPButton(title: "Reveal in Finder", icon: "folder") {
+                            revealReportsFolder()
                         }
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode
+                              ? "Demo reports are not on disk. Revealing their folder "
+                                + "needs a live profile."
+                              : "Open the Generated Reports folder in Finder")
+                        PNPButton(
+                            title: "Period report",
+                            icon: "calendar.badge.clock",
+                            style: .neutral
+                        ) {
+                            // The sheet reads the workspace's summaries.
+                            guard !workspace.demoMode else { return }
+                            showPeriodReport = true
+                        }
+                        .disabled(workspace.demoMode)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Fleet numbers for a period, with start, end and change"
+                        )
+                        PNPButton(
+                            title: "Generate\u{2026}",
+                            icon: "doc.badge.plus",
+                            style: .gold
+                        ) {
+                            // The sheet runs jamf-cli against the selected profile.
+                            guard !workspace.demoMode else { return }
+                            Task { await presentGenerate() }
+                        }
+                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Choose a template or sheets and the formats, then generate"
+                        )
+                        PNPButton(
+                            title: isGeneratingPDF ? "Generating..." : "Export PDF",
+                            icon: "doc.richtext",
+                            style: .neutral
+                        ) {
+                            generatePDFReport()
+                        }
+                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Render the HTML report to PDF via WKWebView"
+                        )
+                        PNPButton(
+                            title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
+                            icon: "doc.text",
+                            style: .neutral
+                        ) {
+                            runExportInventoryCSV()
+                        }
+                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Export a wide CSV of all computer inventory"
+                        )
                     }
                 )
             }

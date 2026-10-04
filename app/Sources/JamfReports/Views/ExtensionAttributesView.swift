@@ -528,7 +528,8 @@ struct ExtensionAttributesView: View {
                         }
                         .width(min: 60, ideal: 80)
                     }
-                    .frame(minHeight: 200)
+                    .pageTableHeight(
+                        rows: min(snapshot.definitions.count, Self.definitionsDisplayCap))
                     if snapshot.definitions.count > Self.definitionsDisplayCap {
                         Text("Generated reports include every definition.")
                             .font(.caption)

@@ -637,12 +637,15 @@ struct AuditView: View {
                     }
                     if !commandHealth.topFailedCommands.isEmpty {
                         Divider().background(Theme.Colors.hairline)
-                        HStack(spacing: 6) {
+                        // Wraps rather than squeezing the label: the pills do not shrink, so the
+                        // label lost its width and broke one letter to a line.
+                        WrappingRow(spacing: 6, lineSpacing: 6) {
                             Kicker(text: "Most failed")
                             ForEach(commandHealth.topFailedCommands.prefix(3), id: \.name) { c in
                                 Pill(text: "\(c.name) ×\(c.count)", tone: .warn)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                     }
                 }

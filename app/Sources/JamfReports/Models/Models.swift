@@ -289,6 +289,18 @@ struct Report: Identifiable, Sendable, Equatable {
     /// Device count sourced from the matching summary.json. Nil when the summary
     /// is absent, the filename carries no date, or totalDevices is non-numeric.
     let devices: Int?
+
+    /// Only a workbook has sheets; html, pdf and csv reports carry a 0 that is not a count.
+    var hasSheets: Bool { URL(fileURLWithPath: name).pathExtension.lowercased() == "xlsx" }
+
+    /// The Sheets column's text: the count for a workbook, a dash for any other format.
+    var sheetsLabel: String { hasSheets ? "\(sheets)" : "—" }
+
+    /// VoiceOver label for a report row.
+    var accessibilityLabel: String {
+        let sheetText = hasSheets ? "\(sheets) sheet\(sheets == 1 ? "" : "s"), " : ""
+        return "\(name), \(sheetText)\(size)"
+    }
 }
 
 struct BackupRecord: Identifiable, Sendable, Hashable {
@@ -302,6 +314,35 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
 
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
+
+    /// A backup with no files: an interrupted run, or one whose contents were cleared.
+    var isEmpty: Bool { fileCount == 0 }
+
+    /// A diff compares the contents of two backups, so both need files and they must differ.
+    static func canDiff(_ backup: BackupRecord, against other: BackupRecord?) -> Bool {
+        guard let other else { return false }
+        return backup.id != other.id && !backup.isEmpty && !other.isEmpty
+    }
+
+    /// When a backup was made. The manifest's `created_at` is exact; without one (an empty or
+    /// older backup) the date in the folder name is, and the folder's modification date is the
+    /// last resort, because a clean-up or a copy resets it to the day it happened.
+    static func created(manifest: Date?, name: String, modified: Date?) -> Date {
+        manifest ?? dateInName(name) ?? modified ?? .distantPast
+    }
+
+    /// The date in a backup folder's name: `yyyyMMdd'T'HHmmss` in UTC as `CLIBridge.backup`
+    /// writes it (`-2` follows a repeat within one second), or `backup_yyyyMMdd_HHmmss` in local
+    /// time as the older tool wrote it. Nil for any other name.
+    static func dateInName(_ name: String) -> Date? {
+        guard let match = name.wholeMatch(
+            of: #/(backup_)?(\d{8})[T_](\d{6})(?:-\d+)?/#) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = match.output.1 == nil ? TimeZone(identifier: "UTC") : .current
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        return formatter.date(from: String(match.output.2) + String(match.output.3))
+    }
 
     /// VoiceOver label for a backup row: display name, file count, size, date.
     var accessibilityLabel: String {
@@ -398,10 +439,6 @@ struct DeviceOSSummary: Identifiable, Sendable, Hashable {
 }
 
 struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
-    enum Risk: String, Sendable {
-        case ok, attention, critical, unknown
-    }
-
     var id: String
     var jamfID: String?
     var name: String
@@ -455,20 +492,6 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
             hardwareEncrypted: hardwareEncrypted) ?? 0
         let bootstrap = SecurityControlPolicy.reading(bootstrapToken)
         return controls + (bootstrap == false ? 1 : 0)
-    }
-
-    func risk(policy: SecurityControlPolicy) -> Risk {
-        if failedRules > 30 || patchFailureCount > 2 || daysSinceContact ?? 0 > 90 {
-            return .critical
-        }
-        if failedRules > 0 || patchFailureCount > 0 || stale
-            || securityGapCount(policy: policy) > 0 {
-            return .attention
-        }
-        if source.isEmpty {
-            return .unknown
-        }
-        return .ok
     }
 
     var searchableText: String {

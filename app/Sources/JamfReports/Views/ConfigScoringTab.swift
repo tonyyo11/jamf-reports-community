@@ -81,26 +81,26 @@ struct SecurityPolicyCard: View {
         }
     }
 
-    /// Stacked, not beside its label: four segments and the long label do not share a row at
-    /// `PageScaffold.minSupportedWidth`.
+    /// Beside its label like the control rows when the card is wide enough, under it when not
+    /// (the long label and five segments do not share a row at `PageScaffold.minSupportedWidth`).
+    /// Either way the picker ends on the trailing edge, where the control rows' pickers end.
     private func hardwareRow(issue: SecurityPolicyIssue?, fileVaultIgnored: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("FileVault off on a hardware-encrypted Mac")
-                .font(.footnote)
-                .foregroundStyle(Theme.Colors.fg)
-            Picker("FileVault off on a hardware-encrypted Mac", selection: Self.hardwareBinding(
-                in: workspace, failure: $saveFailure)
-            ) {
-                Text("Same as FileVault").tag(SecurityControlLevel?.none)
-                ForEach(SecurityControlLevel.allCases, id: \.self) { level in
-                    Text(level.displayName).tag(SecurityControlLevel?.some(level))
+        let label = Text("FileVault off on a hardware-encrypted Mac")
+            .font(.footnote)
+            .foregroundStyle(Theme.Colors.fg)
+        return VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    label
+                    Spacer(minLength: 12)
+                    hardwarePicker(fileVaultIgnored: fileVaultIgnored)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    label
+                    hardwarePicker(fileVaultIgnored: fileVaultIgnored)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 420)
-            .disabled(fileVaultIgnored)
-            .accessibilityLabel("FileVault off on a hardware-encrypted Mac level")
             Text("Apple silicon Macs and Intel Macs with the T2 chip always encrypt the "
                  + "internal disk; with FileVault off it unlocks without a password.")
                 .font(.caption)
@@ -113,6 +113,22 @@ struct SecurityPolicyCard: View {
                 }
             }
         }
+    }
+
+    private func hardwarePicker(fileVaultIgnored: Bool) -> some View {
+        Picker("FileVault off on a hardware-encrypted Mac", selection: Self.hardwareBinding(
+            in: workspace, failure: $saveFailure)
+        ) {
+            Text("Same as FileVault").tag(SecurityControlLevel?.none)
+            ForEach(SecurityControlLevel.allCases, id: \.self) { level in
+                Text(level.displayName).tag(SecurityControlLevel?.some(level))
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 420)
+        .disabled(fileVaultIgnored)
+        .accessibilityLabel("FileVault off on a hardware-encrypted Mac level")
     }
 
     @ViewBuilder

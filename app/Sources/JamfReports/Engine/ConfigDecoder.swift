@@ -734,6 +734,14 @@ struct BrandingConfig: Decodable, Sendable {
               digits.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return "#2D5EA2" }
         return value
     }
+
+    /// `sanitizedAccentColor` as 0xRRGGBB (`#RGB` spread to six digits), for the Config
+    /// screen's swatch, which shows the colour the reports will use.
+    var sanitizedAccentRGB: UInt32 {
+        var digits = String(sanitizedAccentColor.dropFirst())
+        if digits.count == 3 { digits = digits.map { "\($0)\($0)" }.joined() }
+        return UInt32(digits, radix: 16) ?? 0x2D5EA2
+    }
 }
 
 // MARK: - protect

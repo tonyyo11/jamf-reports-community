@@ -110,7 +110,8 @@ final class DeviceSecurityStateTests: XCTestCase {
         let records = try fixtureComputers()
         XCTAssertEqual(records.map(\.name), ["Lab-Mac-01", "Lab-Mac-02", "Lab-Mac-03"])
         XCTAssertEqual(records.map { $0.securityGapCount(policy: .default) }, [0, 5, 0])
-        XCTAssertEqual(records.map { $0.risk(policy: .default) }, [.ok, .attention, .ok])
+        XCTAssertEqual(records.map { RiskScoringService.risk(for: $0, policy: .default).level },
+                       [.clean, .critical, .clean])
     }
 
     /// Rows 1, 3 and 4; row 2 and the FileVault share change on purpose (below).
@@ -131,6 +132,12 @@ final class DeviceSecurityStateTests: XCTestCase {
         record.gatekeeper = value
         record.bootstrapToken = value
         return record
+    }
+
+    private func scoredLevel(
+        _ policy: SecurityControlPolicy
+    ) -> (DeviceInventoryRecord) -> DeviceRisk.Level {
+        { RiskScoringService.risk(for: $0, policy: policy).level }
     }
 
     /// The records here carry no disk, check-in or rule facts, so every factor is a security one.
@@ -369,13 +376,13 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(mac.hardwareEncrypted, true)
 
         XCTAssertEqual(mac.securityGapCount(policy: .default), 1)
-        XCTAssertEqual(mac.risk(policy: .default), .attention)
+        XCTAssertEqual(RiskScoringService.risk(for: mac, policy: .default).level, .high)
         XCTAssertEqual(riskFactors(mac, .default), [.noFileVault])
         XCTAssertEqual(SecurityControlPolicy.default.fileVaultLabel(
             mac.fileVault, hardwareEncrypted: mac.hardwareEncrypted), "UNENCRYPTED")
 
         XCTAssertEqual(mac.securityGapCount(policy: hardwareWarning), 0)
-        XCTAssertEqual(mac.risk(policy: hardwareWarning), .ok)
+        XCTAssertEqual(RiskScoringService.risk(for: mac, policy: hardwareWarning).level, .clean)
         XCTAssertEqual(riskFactors(mac, hardwareWarning), [])
         XCTAssertEqual(hardwareWarning.fileVaultLabel(
             mac.fileVault, hardwareEncrypted: mac.hardwareEncrypted),
@@ -452,7 +459,7 @@ final class DeviceSecurityStateTests: XCTestCase {
     }
 
     /// The CSV export names FileVault as the screen does, so a Mac the rule lowered does not
-    /// export UNENCRYPTED beside a risk of OK.
+    /// export UNENCRYPTED beside a clean risk.
     func testDevicesCSVExportLabelsHardwareEncryptedFileVaultOff() {
         let macs = [
             DeviceInventoryService.recordFromComputer(
@@ -464,15 +471,17 @@ final class DeviceSecurityStateTests: XCTestCase {
                 source: "computers.json"),
         ]
         let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk"
-        XCTAssertEqual(DevicesView.exportCSV(devices: macs, policy: hardwareWarning), [
+        XCTAssertEqual(DevicesView.exportCSV(
+            devices: macs, policy: hardwareWarning, riskLevel: scoredLevel(hardwareWarning)), [
             header,
-            "Lab-Mac-AS1,AS1,,,,,FileVault off (hardware-encrypted),,ok",
-            "Lab-Mac-IN1,IN1,,,,,UNENCRYPTED,,attention",
+            "Lab-Mac-AS1,AS1,,,,,FileVault off (hardware-encrypted),,clean",
+            "Lab-Mac-IN1,IN1,,,,,UNENCRYPTED,,high",
         ].joined(separator: "\n"))
-        XCTAssertEqual(DevicesView.exportCSV(devices: macs, policy: .default), [
+        XCTAssertEqual(DevicesView.exportCSV(
+            devices: macs, policy: .default, riskLevel: scoredLevel(.default)), [
             header,
-            "Lab-Mac-AS1,AS1,,,,,UNENCRYPTED,,attention",
-            "Lab-Mac-IN1,IN1,,,,,UNENCRYPTED,,attention",
+            "Lab-Mac-AS1,AS1,,,,,UNENCRYPTED,,high",
+            "Lab-Mac-IN1,IN1,,,,,UNENCRYPTED,,high",
         ].joined(separator: "\n"))
     }
 
@@ -489,12 +498,13 @@ final class DeviceSecurityStateTests: XCTestCase {
         mac.email = "@sum"
         mac.department = "\t=1"
         let row = try XCTUnwrap(
-            DevicesView.exportCSV(devices: [mac], policy: .default)
+            DevicesView.exportCSV(
+                devices: [mac], policy: .default, riskLevel: scoredLevel(.default))
                 .components(separatedBy: "\n").dropFirst().first)
         XCTAssertEqual(
             row,
             "\"\t=HYPERLINK(\"\"https://x\"\",\"\"y\"\")\",\t-3,\"\t\r=2\",\t+1,\t@sum,"
-                + "\t\t=1,UNENCRYPTED,,attention")
+                + "\t\t=1,UNENCRYPTED,,high")
     }
 
     func testCSVFieldNeutralisesALeadingTabOrCarriageReturn() {
@@ -526,8 +536,8 @@ final class DeviceSecurityStateTests: XCTestCase {
     }
 
     /// The workspace's policy reaches the snapshot and the risk order: with the rule the
-    /// Apple-silicon Mac is OK and sorts after the Intel Mac; without it both need attention
-    /// and sort by name.
+    /// Apple-silicon Mac is clean and sorts after the Intel Mac; without it both score the
+    /// same and sort by name.
     func testLoadUsesTheWorkspacePolicy() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("jrc-devices-policy-\(UUID().uuidString)", isDirectory: true)

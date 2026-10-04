@@ -241,6 +241,59 @@ compliance is now one figure everywhere.
   Overview agent card, the daily summary, Devices, the workbook and the HTML report use the same
   rule.
 
+- Config > Columns no longer reports a warning that was not there. Every live workspace carried
+  one phantom "Bootstrap Token" warning copied from the demo data, so "Run check" listed three
+  OK lines and nothing about it. A column is now mapped or unmapped by its value alone. Where a
+  warning does show (in demo mode), it names the column it counts, and "1 warning" and "1 column
+  mapped" read correctly in the singular.
+- Settings > Data & Charts names all six per-device commands that "Skip expensive collections"
+  skips (it listed four), and starts with the switch's position ("On: ..." or "Off: ..."), so the
+  text shown with the switch off no longer reads as the opposite of its label. It also says
+  scheduled collects still run them.
+- The Open Source card in Settings no longer says the command-line tool ships independently. It
+  says the app includes its own `jamf-reports` command-line tool, which uses the same config.yaml
+  and report engine, and that jamf-cli is installed separately; the version line is labelled
+  "jamf-cli:".
+- Settings > Sidebar Visibility lists Groups & Searches, so it can be hidden like the other
+  screens. The list is built from the sidebar's own groups, so a screen added later gets a switch
+  too.
+- Config > Branding shows the accent colour you typed in its swatch, instead of always gold. A
+  value that is not `#RGB` or `#RRGGBB` shows the colour the reports use then, `#2D5EA2`.
+- Data Sources: the snapshot families table has set column widths so it no longer shows a stray
+  horizontal scroll bar, and the CSV Inbox folder path and file names shorten in the middle
+  instead of breaking mid-word.
+- Config > Scoring lines up its pickers: the "FileVault off on a hardware-encrypted Mac" picker
+  ends on the same edge as the other four controls' pickers, beside its label when there is room
+  and under it when not, instead of starting at the left edge.
+- A message that appears at the bottom of the window while another is still up now clears after
+  four seconds like the first. Before, it stayed over the page, covering tiles such as Patch on
+  the Overview, until you closed it.
+- The tiles at the top of an Overview drill-down (a security agent, or a metric such as Patch)
+  are all one height, whichever of them carries a caption.
+- Offline Outreach, Patch Compliance titles, Policy findings and Extension Attribute definitions
+  tables use the window's height instead of stopping at about seven rows with empty space below;
+  a short list shows only the rows it has.
+- Health Audit > Command health keeps its "Most failed" label on one line; the command pills wrap
+  to a second line when they do not fit beside it.
+- Devices no longer cuts the Risk pills ("ATTE", "CRIT") or hides the Risk column and the legend
+  under the detail panel. The table's columns have set widths, and in a window too narrow for the
+  table and the panel side by side the panel sits under the table.
+- Backups and Reports headers no longer run their buttons off the window. When the buttons do not
+  fit beside the title they wrap onto a second line under it. In the Backups table, Reveal, Diff
+  Latest and Delete are shown in full on every row, and report file names that are too long to fit
+  shorten in the middle so the date at the end stays visible.
+- Reports shows a dash in the Sheets column for HTML, PDF and CSV reports, which have no sheets,
+  instead of a 0.
+- Backups shows when each backup was made. A backup with no files and no manifest took the date
+  its folder was last touched, so backups from May to August read as early September; it now
+  uses the date in its name. "Diff Latest" and "Diff Selected" are no longer offered on an empty
+  backup, and "Diff Latest" compares with the newest backup that has files.
+- Devices rates each Mac one way. The Risk pill in the list and the detail panel's Priority Risk
+  section showed different ratings (a Mac not seen for 90 days read Critical in the list and Low
+  beside its risk points). Both, the Priority filter, the CSV export and the inventory order now
+  use the risk score's bands: Critical, High, Medium, Low and Clean. Not checking in is still a
+  risk factor, but it is no longer a rating of its own; patch failures keep their own column and
+  filter.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.
