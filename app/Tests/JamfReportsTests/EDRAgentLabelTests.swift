@@ -4,7 +4,7 @@ import XCTest
 /// v2.2.0 EDR genericization: a community app must not hardcode a vendor name.
 /// The metric identifier keeps the legacy "crowdstrike" raw value (persistence
 /// + summary.json schema compatibility); every user-visible label is either the
-/// generic "EDR Agent …" or the tenant's configured security_agents name.
+/// generic "EDR agent coverage" or the tenant's configured security_agents name.
 final class EDRAgentLabelTests: XCTestCase {
 
     // MARK: - Raw-value compatibility
@@ -70,7 +70,7 @@ final class EDRAgentLabelTests: XCTestCase {
     // MARK: - Generic fallback labels (no vendor names)
 
     func testGenericLabelsContainNoVendorName() {
-        XCTAssertEqual(TrendSeries.Metric.edrAgent.displayLabel, "EDR Agent Installed")
+        XCTAssertEqual(TrendSeries.Metric.edrAgent.displayLabel, "EDR agent coverage")
         XCTAssertEqual(SecurityScore.Metric.edrAgent.displayLabel, "EDR Agent Connected")
         for metric in TrendSeries.Metric.allCases {
             XCTAssertFalse(
@@ -93,11 +93,11 @@ final class EDRAgentLabelTests: XCTestCase {
             TrendSeries.Metric.edrAgent.displayLabel(
                 benchmarkLabel: nil, edrAgentName: "CrowdStrike Falcon"
             ),
-            "CrowdStrike Falcon Installed"
+            "CrowdStrike Falcon coverage"
         )
         XCTAssertEqual(
             TrendSeries.Metric.edrAgent.displayLabel(benchmarkLabel: nil, edrAgentName: nil),
-            "EDR Agent Installed"
+            "EDR agent coverage"
         )
         // Other metrics ignore the agent name.
         XCTAssertEqual(

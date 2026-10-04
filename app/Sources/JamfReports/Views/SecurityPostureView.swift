@@ -106,10 +106,12 @@ struct SecurityPostureView: View {
 
     private var score: SecurityScore { Self.score(snapshot) }
 
-    /// The ring's score, under the weights the workspace's policy carries.
+    /// The ring's score, under the weights the workspace's policy carries, from the same inputs
+    /// as summary.json's `securityScore` and the workbook's Executive Summary.
     static func score(_ snapshot: SecurityPostureService.Snapshot) -> SecurityScore {
         SecurityScoreCalculator.score(
-            input: snapshot.fleetCounts.scoreInput(),
+            input: SecurityScoreInputs.input(
+                fleet: snapshot.fleetCounts, extras: snapshot.scoreExtras),
             weights: snapshot.policy.resolvedScoreWeights
         )
     }
@@ -215,10 +217,12 @@ struct SecurityPostureView: View {
             .map { $0.displayLabel(edrAgentName: edrAgentName) }
             .joined(separator: ", ")
         var sentences: [String] = []
-        // The ring scores `pro report security`, which carries FileVault, SIP and the
-        // firewall only. No collect adds the rest here, so the line asks for none.
+        // FileVault, SIP and the firewall come from the security report, the EDR agent and the
+        // mSCP baseline from the extension attributes (when `security_agents` and
+        // `compliance.baselines` name them), and nothing collects XProtect, CVE or Secure Boot.
+        // So the line says what has no data and asks for no collect.
         if !names.isEmpty {
-            sentences.append("Not in the security report, so not scored here: \(names).")
+            sentences.append("No data for \(names), so not scored.")
         }
         if fileVaultNotCounted {
             sentences.append("FileVault is not scored: every Mac with it off is "

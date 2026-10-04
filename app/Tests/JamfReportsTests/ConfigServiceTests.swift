@@ -678,6 +678,55 @@ final class ConfigServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Baseline label
+
+    /// Visual review 2026-10-04: the Overview's compliance card read "mSCP Compliance" until
+    /// config.yaml loaded and the configured baseline name after, because the default state
+    /// carried a benchmark name the workspace never chose.
+    func testDefaultStateNamesNoBenchmark() {
+        XCTAssertEqual(ConfigState.defaultState.baselineLabel, "")
+    }
+
+    func testSavingAWorkspaceWithoutABaselineLabelWritesNoBaselineLabelKey() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "no-label-\(UUID().uuidString.lowercased())"
+        try writeConfig("columns:\n  computer_name: Computer Name", profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.baselineLabel, "", "the file names none, so none is invented")
+        _ = try ConfigService.save(
+            profile: profile, state: loaded.state, existingDocument: loaded.document,
+            workspaceRoot: root)
+
+        XCTAssertFalse(try savedText(profile: profile, root: root).contains("baseline_label"))
+    }
+
+    func testClearingTheBaselineLabelRemovesItsKeyAndSettingOneWritesIt() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "label-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            "compliance:\n  enabled: true\n  baseline_label: Old Name\n",
+            profile: profile, root: root)
+        var loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.baselineLabel, "Old Name")
+
+        var state = loaded.state
+        state.baselineLabel = "  "
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document,
+            workspaceRoot: root)
+        XCTAssertFalse(try savedText(profile: profile, root: root).contains("baseline_label"))
+
+        loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        state = loaded.state
+        state.baselineLabel = "CIS Level 1"
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document,
+            workspaceRoot: root)
+        XCTAssertTrue(
+            try savedText(profile: profile, root: root).contains("baseline_label: CIS Level 1"))
+    }
+
     private func temporaryWorkspaceRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("JamfReportsTests-\(UUID().uuidString)", isDirectory: true)

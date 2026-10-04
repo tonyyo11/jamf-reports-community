@@ -69,6 +69,11 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     var fileVaultOffHardwareEncrypted: SecurityControlLevel?
     /// The Security Score's weights; nil uses `SecurityScoreWeights.defaultWeights`.
     var scoreWeights: SecurityScoreWeights?
+    /// The name of the `security_agents` entry the score counts as the EDR agent
+    /// (`security_policy.edr_agent`), trimmed. Nil, and a name that matches no agent, count the
+    /// first named agent (`SecurityScoreInputs.edrAgent(in:)`); the other agents are shown and
+    /// tracked but do not change the score.
+    var edrAgent: String?
     /// The values an organization's own export uses for on and off, per control
     /// (`security_policy.on_values` / `off_values`), normalised by `normalizedValue` and never
     /// empty. A control with no entry reads by the built-in vocabulary alone.
@@ -85,6 +90,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         gatekeeper: SecurityControlLevel = .fail,
         fileVaultOffHardwareEncrypted: SecurityControlLevel? = nil,
         scoreWeights: SecurityScoreWeights? = nil,
+        edrAgent: String? = nil,
         onValues: [SecurityControl: [String]] = [:],
         offValues: [SecurityControl: [String]] = [:]
     ) {
@@ -94,6 +100,8 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         self.gatekeeper = gatekeeper
         self.fileVaultOffHardwareEncrypted = fileVaultOffHardwareEncrypted
         self.scoreWeights = scoreWeights
+        let agent = edrAgent?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.edrAgent = agent?.isEmpty == false ? agent : nil
         self.onValues = Self.vocabulary(onValues)
         self.offValues = Self.vocabulary(offValues)
     }
@@ -102,6 +110,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         case controls
         case fileVaultOffHardwareEncrypted = "filevault_off_hardware_encrypted"
         case scoreWeights = "score_weights"
+        case edrAgent = "edr_agent"
         case onValues = "on_values"
         case offValues = "off_values"
     }
@@ -167,13 +176,14 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         }
         let hardware = Self.decodedLevel(c, .fileVaultOffHardwareEncrypted)
         let weights = Self.decodedWeights(c)
+        let agent = try? c.decodeIfPresent(String.self, forKey: .edrAgent)
         let on = Self.decodedVocabulary(c, .onValues)
         let off = Self.decodedVocabulary(c, .offValues)
         guard let controls = try? c.nestedContainer(keyedBy: ControlKeys.self, forKey: .controls)
         else {
             self.init(
                 fileVaultOffHardwareEncrypted: hardware, scoreWeights: weights,
-                onValues: on, offValues: off)
+                edrAgent: agent, onValues: on, offValues: off)
             return
         }
         self.init(
@@ -183,6 +193,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
             gatekeeper: Self.decodedLevel(controls, .gatekeeper) ?? .fail,
             fileVaultOffHardwareEncrypted: hardware,
             scoreWeights: weights,
+            edrAgent: agent,
             onValues: on, offValues: off
         )
     }

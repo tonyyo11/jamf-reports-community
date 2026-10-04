@@ -39,6 +39,19 @@ struct PeriodReportModel: Sendable {
     static let patchDefinitionNote = "Patch compliance changed definition during this period "
         + "(device-weighted from 2.9); the change is not shown."
 
+    static let securityScoreDefinitionNote = "The security score changed definition during this "
+        + "period (it weighs a different set of inputs at the two ends, such as the EDR agent "
+        + "and mSCP compliance); the change is not shown."
+
+    /// The About-sheet note for a metric whose ends were recorded under different definitions.
+    static func definitionNote(for metricID: String) -> String? {
+        switch metricID {
+        case "patchPct": return patchDefinitionNote
+        case "securityScore": return securityScoreDefinitionNote
+        default: return nil
+        }
+    }
+
     struct DayPoint: Sendable, Equatable {
         let date: Date
         let values: [String: Double]
@@ -79,8 +92,8 @@ struct PeriodReportModel: Sendable {
                 // nil is not zero: without both ends there is no defensible change.
                 // A patch figure from before `patchPctBasis` is a per-title mean, so its
                 // gap to a device-weighted end is the definition, not the fleet.
-                let changedDefinition = metric.id == "patchPct" && s != nil && e != nil
-                    && startSummary?.patchPctBasis != endSummary?.patchPctBasis
+                let changedDefinition = s != nil && e != nil
+                    && Self.definitionDiffers(metric.id, startSummary, endSummary)
                 var change: Double?
                 if let s, let e, !changedDefinition { change = e - s }
                 return Row(metricID: metric.id, label: metric.label, unit: metric.unit,
@@ -103,6 +116,19 @@ struct PeriodReportModel: Sendable {
 
         return PeriodReportModel(period: period, profile: profile,
                                  generatedAt: generatedAt, rows: rows, days: days)
+    }
+
+    /// Whether the two summaries recorded `metricID` under different definitions: patch
+    /// compliance by `patchPctBasis`, the security score by `securityScoreBasis` (the metrics
+    /// it weighs).
+    private static func definitionDiffers(
+        _ metricID: String, _ start: DailySummary?, _ end: DailySummary?
+    ) -> Bool {
+        switch metricID {
+        case "patchPct": return start?.patchPctBasis != end?.patchPctBasis
+        case "securityScore": return start?.securityScoreBasis != end?.securityScoreBasis
+        default: return false
+        }
     }
 
     static func fleetValue(_ id: String, _ s: DailySummary) -> Double? {

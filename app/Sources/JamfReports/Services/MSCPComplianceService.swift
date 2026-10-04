@@ -180,6 +180,49 @@ struct MSCPComplianceService: Sendable {
     }
 }
 
+// MARK: - Denominators
+
+extension MSCPComplianceService.BaselineResult {
+    /// Devices with zero failures — the numerator of `compliancePct`.
+    var passCount: Int {
+        bands.first { $0.label == ComplianceBandingService.Band.pass.label }?.count ?? 0
+    }
+
+    /// What `compliancePct` divides: "465 of 632 evaluated". The donut's shares divide by
+    /// `totalDevices` instead (`shareBasisText`), so the two never read as one denominator.
+    var complianceRateBasisText: String {
+        "\(passCount) of \(devicesWithData) evaluated"
+    }
+
+    /// The evaluated devices against all devices in the snapshot: "of 664 devices, 32 No Data".
+    var evaluatedBasisText: String {
+        "of \(totalDevices) device\(totalDevices == 1 ? "" : "s"), \(noDataCount) No Data"
+    }
+
+    /// What the donut legend's percentages divide: every device in the snapshot, No Data included.
+    var shareBasisText: String {
+        "Share of all \(totalDevices) device\(totalDevices == 1 ? "" : "s"), No Data included"
+    }
+}
+
+extension MSCPComplianceService {
+    /// The screen subtitle for the configured baselines. Every baseline sees the same devices,
+    /// but each evaluates only those that report its own column, so the evaluated count is the
+    /// first baseline's alone only when they all agree; otherwise the range is given.
+    static func evaluatedSummary(_ results: [BaselineResult]) -> String {
+        let counts = results.map(\.devicesWithData)
+        guard let low = counts.min(), let high = counts.max(), high > 0,
+              let total = results.first?.totalDevices else {
+            return "No device data matched the configured baseline EA column."
+        }
+        let baselines = "\(results.count) mSCP baseline\(results.count == 1 ? "" : "s")"
+        let devices = "\(total) device\(total == 1 ? "" : "s")"
+        if low == high { return "\(low) of \(devices) evaluated across \(baselines)." }
+        return "\(devices) across \(baselines); each evaluates the devices that report its "
+            + "column (\(low) to \(high))."
+    }
+}
+
 // MARK: - Count-vs-list cross-check
 
 extension MSCPComplianceService {
@@ -187,8 +230,9 @@ extension MSCPComplianceService {
     /// Per-baseline agreement between the failure count EA and the failure list EA.
     ///
     /// A device disagrees when its parsed integer count differs from the number
-    /// of non-empty pipe-separated segments in its list cell. Devices lacking a
-    /// parseable count or a list row are skipped, not counted as disagreements.
+    /// of rule IDs in its list cell (`FailedRuleList`). Devices lacking a parseable
+    /// count or a list (a status such as "No Baseline Set" is not one) are skipped,
+    /// not counted as disagreements.
     struct CrossCheckResult: Sendable, Equatable {
         /// The configured baseline name.
         let baselineName: String
@@ -235,7 +279,10 @@ extension MSCPComplianceService {
                     countByDevice[key] = count
                 }
             } else if eaName.caseInsensitiveCompare(listColumn) == .orderedSame {
-                listLenByDevice[key] = listEntryCount(row.value?.stringValue)
+                // A status in place of a list ("No Baseline Set") has no length to compare.
+                if let rules = FailedRuleList.rules(in: row.value?.stringValue) {
+                    listLenByDevice[key] = rules.count
+                }
             }
         }
 
@@ -252,15 +299,5 @@ extension MSCPComplianceService {
             devicesCompared: compared,
             disagreements: disagreements
         )
-    }
-
-    /// Number of non-empty pipe-separated segments in a list cell. A blank/nil
-    /// cell has 0 entries (should agree with a count of 0).
-    private static func listEntryCount(_ cell: String?) -> Int {
-        guard let cell else { return 0 }
-        return cell
-            .split(separator: "|")
-            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            .count
     }
 }

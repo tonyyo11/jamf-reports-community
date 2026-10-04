@@ -358,6 +358,7 @@ struct OverviewView: View {
             TrendStore.computeSnapshot(profile: profile)
         }.value
         trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
+        await trendStore.backfillAgentCoverage(profile: profile)
     }
 
     /// First-load overlay: shown only while the initial scan runs with no cached
@@ -710,7 +711,7 @@ struct OverviewView: View {
         } catch {
             workspace.globalStatus = nil
             // The bridge logs a refusal itself, as a notice.
-            if (error as? CLIBridgeError) != .tickLockHeld {
+            if !CLIBridgeError.isCollectRefusal(error) {
                 AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
             }
             workspace.toast = Self.generateFailureToast(error)
@@ -718,7 +719,8 @@ struct OverviewView: View {
         }
     }
 
-    /// A scheduled run holding the tick lock is a refusal, shown as information.
+    /// A scheduled run holding the tick lock, or another collect running, is a refusal, shown
+    /// as information.
     nonisolated static func generateFailureToast(_ error: Error) -> Toast {
         WorkspaceStore.collectFailureToast(error, operation: "Generate")
     }
@@ -963,7 +965,9 @@ struct OverviewView: View {
 
     private var agents: [SecurityAgent] {
         guard !workspace.demoMode else { return DemoData.securityAgents }
-        return OverviewLiveDataLoader.agents(live.agents, overFleet: overviewFleetCount)
+        return OverviewLiveDataLoader.agents(
+            live.agents, overFleet: overviewFleetCount, edrAgentName: workspace.edrAgentName,
+            edrSeries: trendStore.values(metric: .edrAgent))
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -1056,7 +1060,7 @@ struct OverviewView: View {
     /// The selection without the cards whose control the security policy does not
     /// count. The stored selection is not edited, so a card returns with its control.
     private var offeredScoreCards: [TrendSeries.Metric] {
-        workspace.selectedScoreCards.filter { $0.isOffered(under: workspace.securityPolicy) }
+        workspace.selectedScoreCards.filter { workspace.isOffered($0) }
     }
 
     private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
@@ -1151,11 +1155,12 @@ struct OverviewView: View {
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
 
+        let title = metric.displayLabel(
+            benchmarkLabel: workspace.complianceBenchmarkLabel,
+            edrAgentName: workspace.edrAgentName
+        )
         return StatTile(
-            label: metric.displayLabel(
-                benchmarkLabel: workspace.complianceBenchmarkLabel,
-                edrAgentName: workspace.edrAgentName
-            ),
+            label: title,
             value: valueStr,
             sub: subText,
             delta: values.count >= 2 ? deltaStr : nil,
@@ -1165,15 +1170,25 @@ struct OverviewView: View {
             fillsHeight: true,
             // Two lines hold "Security Score (Weighted)" or "CrowdStrike Falcon
             // Installed" at 220 pt and the default text size; the row shares its
-            // tallest tile's height, so a wrapped title stays aligned.
-            labelLineLimit: 2
+            // tallest tile's height, so a wrapped title stays aligned. The compliance
+            // title is the operator's baseline label, often one long audit-plist file name
+            // with no break to wrap at; it takes one line so its figure stays level with
+            // its neighbours, and the tooltip carries the whole name.
+            labelLineLimit: Self.scoreCardLabelLineLimit(for: metric)
         )
+        .help(title)
         // The label can be an operator-configured string (compliance baseline
         // name, EDR agent name) with no length guarantee — in the field these
         // are sometimes a raw audit-plist filename — so past two lines it elides
         // rather than growing the row. The caption keeps to one line.
         .lineLimit(1)
         .truncationMode(.tail)
+    }
+
+    /// Lines a score card's title may take: two for the fixed titles, one for the compliance
+    /// card, whose title is whatever the operator named the baseline.
+    static func scoreCardLabelLineLimit(for metric: TrendSeries.Metric) -> Int {
+        metric == .compliance ? 1 : 2
     }
 
     // MARK: macOS distribution + Top failing rules
@@ -1236,7 +1251,7 @@ struct OverviewView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             SectionHeader(title: "Top Failing Rules")
                             Text(failingRulesSubtitle(
-                                baseline: failingRulesLabel, fleetCount: failingRulesMacCount))
+                                baseline: failingRulesLabel, macsWithResults: failingRulesMacCount))
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
@@ -1520,7 +1535,10 @@ struct OverviewView: View {
         let dates = workspace.demoMode ? [] : trendStore.points(metric: metric).map(\.date)
         let current = values.last ?? 0
         let first = values.first ?? current
-        let previous = values.count > 1 ? values[values.count - 2] : current
+        let figures = MetricDetailFigures.make(
+            values: values,
+            value: { metricValueLabel($0, metric: metric) },
+            delta: { metricDeltaLabel($0, metric: metric) })
         // Same reasoning as the Overview tiles: name the day rather than imply
         // a fixed cadence. "Previous" alone gave no way to tell yesterday from
         // three weeks ago after a run of missed collects.
@@ -1530,23 +1548,29 @@ struct OverviewView: View {
         let firstLabel = dates.first.map(Self.comparisonDateFormatter.string(from:))
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
-                kicker: metric.displayLabel,
+                kicker: metricDetailTitle(metric),
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
-                title: metric.displayLabel,
-                subtitle: "\(values.count) summaries · \(workspace.profile)"
+                title: metricDetailTitle(metric),
+                subtitle: MetricDetailFigures.summaryCount(values.count)
+                    + " · \(workspace.profile)"
             )
-            HStack(spacing: 12) {
-                StatTile(label: "Current", value: metricValueLabel(current, metric: metric))
-                StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric),
-                         sub: previousLabel)
-                StatTile(label: "Change", value: metricDeltaLabel(current - first, metric: metric),
-                         sub: firstLabel.map { "Since \($0)" } ?? "Since first snapshot")
+            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth; same fix as
+            // the security-agent drill-down: one height for the row.
+            EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
+                StatTile(label: "Current", value: figures.current, fillsHeight: true)
+                StatTile(label: "Previous", value: figures.previous, sub: previousLabel,
+                         fillsHeight: true)
+                StatTile(label: "Change", value: figures.change,
+                         sub: figures.hasChange
+                            ? firstLabel.map { "Since \($0)" } ?? "Since first snapshot"
+                            : nil,
+                         fillsHeight: true)
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeader(title: "Snapshot Values")
                     if values.isEmpty {
-                        Text("No trend summaries are available for this metric yet.")
+                        Text("No data yet: no trend summary has a value for this metric.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
@@ -1656,11 +1680,19 @@ struct OverviewView: View {
                 title: agent.name,
                 subtitle: "\(agent.installed) installed · mapped from \(agent.column)"
             )
-            HStack(spacing: 12) {
-                StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
+            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth. An HStack
+            // left the tile without a caption shorter than its neighbour; the grid gives
+            // the row one height, three across at the minimum width (3 x 180 + 2 x 12).
+            EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
+                StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%",
+                         fillsHeight: true)
                 StatTile(label: "Installed", value: "\(agent.installed)",
-                         sub: fleet > 0 ? "of \(fleet) tracked devices" : "tracked devices")
-                StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
+                         sub: fleet > 0 ? "of \(fleet) managed Macs" : "managed Macs",
+                         fillsHeight: true)
+                if let trend = agent.trend {
+                    StatTile(label: "Trend", value: trend.rawValue.capitalized,
+                             sub: "vs the previous snapshot", fillsHeight: true)
+                }
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1758,7 +1790,7 @@ struct OverviewView: View {
             "Open Devices to inspect FileVault state on individual Macs."
         case .osCurrent:
             "Open Devices to inspect macOS versions and filter inventory."
-        case .edrAgent:
+        case .edrAgent, .agent:
             "Open Devices or Config to review security-agent tracking."
         case .stale:
             "Open Devices to focus on stale inventory records."
@@ -1786,13 +1818,20 @@ struct OverviewView: View {
             return [.devices]
         case .compliance, .securityScore, .mscpBandTrend:
             return [.securityPosture, .compliancePosture]
-        case .edrAgent:
+        case .edrAgent, .agent:
             return [.devices, .config]
         case .managedDevices:
             return [.devices, .mobileFleet]
         case .sip, .firewall, .gatekeeper:
             return [.securityPosture, .devices]
         }
+    }
+
+    /// The drill-down's title: the tenant's own label, as on the card it was opened from.
+    private func metricDetailTitle(_ metric: TrendSeries.Metric) -> String {
+        metric.displayLabel(
+            benchmarkLabel: workspace.complianceBenchmarkLabel,
+            edrAgentName: workspace.edrAgentName)
     }
 
     private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
@@ -2128,12 +2167,14 @@ func agentNotInstalledLabel(installed: Int, fleetCount: Int) -> String? {
     return "\(gap) not installed"
 }
 
-/// "Top Failing Rules" card subtitle — "<baseline> · across <N> active devices".
-/// `fleetCount <= 0` falls back to the baseline alone rather than
-/// "across 0 active devices".
-func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return baseline }
-    return "\(baseline) · across \(fleetCount) active devices"
+/// "Top Failing Rules" card subtitle — "<baseline> · across <N> Macs with results".
+/// N is the Macs whose results the card read, not the managed or the active count, so it
+/// differs from the other tiles. `macsWithResults <= 0` falls back to the baseline alone
+/// rather than "across 0 Macs with results".
+func failingRulesSubtitle(baseline: String, macsWithResults: Int) -> String {
+    guard macsWithResults > 0 else { return baseline }
+    let macs = "\(macsWithResults) Mac\(macsWithResults == 1 ? "" : "s")"
+    return "\(baseline) · across \(macs) with results"
 }
 
 /// Pure "set up a schedule" coverage rule for `reloadChecklist`. A profile is
@@ -2141,4 +2182,39 @@ func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
 /// profiles dynamically) as long as it hasn't been excluded.
 func scheduleCovered(hasAgent: Bool, policyIsManaged: Bool, excluded: Bool) -> Bool {
     hasAgent || (policyIsManaged && !excluded)
+}
+
+
+/// The Current, Previous and Change tiles of a metric drill-down. A value that does not exist
+/// is not shown as 0: with no values every tile says so, and with one there is a current
+/// figure but no previous one and no change.
+struct MetricDetailFigures: Equatable {
+    let current: String
+    let previous: String
+    let change: String
+    /// Whether `change` is a figure rather than a dash.
+    let hasChange: Bool
+
+    static let noData = "No data yet"
+
+    static func make(
+        values: [Double], value: (Double) -> String, delta: (Double) -> String
+    ) -> MetricDetailFigures {
+        guard let latest = values.last, let first = values.first else {
+            return MetricDetailFigures(
+                current: noData, previous: noData, change: "—", hasChange: false)
+        }
+        guard values.count > 1 else {
+            return MetricDetailFigures(
+                current: value(latest), previous: "—", change: "—", hasChange: false)
+        }
+        return MetricDetailFigures(
+            current: value(latest), previous: value(values[values.count - 2]),
+            change: delta(latest - first), hasChange: true)
+    }
+
+    /// "1 summary", "0 summaries".
+    static func summaryCount(_ count: Int) -> String {
+        count == 1 ? "1 summary" : "\(count) summaries"
+    }
 }

@@ -81,26 +81,26 @@ struct SecurityPolicyCard: View {
         }
     }
 
-    /// Stacked, not beside its label: four segments and the long label do not share a row at
-    /// `PageScaffold.minSupportedWidth`.
+    /// Beside its label like the control rows when the card is wide enough, under it when not
+    /// (the long label and five segments do not share a row at `PageScaffold.minSupportedWidth`).
+    /// Either way the picker ends on the trailing edge, where the control rows' pickers end.
     private func hardwareRow(issue: SecurityPolicyIssue?, fileVaultIgnored: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("FileVault off on a hardware-encrypted Mac")
-                .font(.footnote)
-                .foregroundStyle(Theme.Colors.fg)
-            Picker("FileVault off on a hardware-encrypted Mac", selection: Self.hardwareBinding(
-                in: workspace, failure: $saveFailure)
-            ) {
-                Text("Same as FileVault").tag(SecurityControlLevel?.none)
-                ForEach(SecurityControlLevel.allCases, id: \.self) { level in
-                    Text(level.displayName).tag(SecurityControlLevel?.some(level))
+        let label = Text("FileVault off on a hardware-encrypted Mac")
+            .font(.footnote)
+            .foregroundStyle(Theme.Colors.fg)
+        return VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    label
+                    Spacer(minLength: 12)
+                    hardwarePicker(fileVaultIgnored: fileVaultIgnored)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    label
+                    hardwarePicker(fileVaultIgnored: fileVaultIgnored)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 420)
-            .disabled(fileVaultIgnored)
-            .accessibilityLabel("FileVault off on a hardware-encrypted Mac level")
             Text("Apple silicon Macs and Intel Macs with the T2 chip always encrypt the "
                  + "internal disk; with FileVault off it unlocks without a password.")
                 .font(.caption)
@@ -113,6 +113,22 @@ struct SecurityPolicyCard: View {
                 }
             }
         }
+    }
+
+    private func hardwarePicker(fileVaultIgnored: Bool) -> some View {
+        Picker("FileVault off on a hardware-encrypted Mac", selection: Self.hardwareBinding(
+            in: workspace, failure: $saveFailure)
+        ) {
+            Text("Same as FileVault").tag(SecurityControlLevel?.none)
+            ForEach(SecurityControlLevel.allCases, id: \.self) { level in
+                Text(level.displayName).tag(SecurityControlLevel?.some(level))
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(maxWidth: 420)
+        .disabled(fileVaultIgnored)
+        .accessibilityLabel("FileVault off on a hardware-encrypted Mac level")
     }
 
     @ViewBuilder
@@ -370,11 +386,50 @@ struct ScoringTab: View {
             weightRow("System Integrity Protection", value: binding(\.sip, weights))
             weightRow("Firewall Enabled", value: binding(\.firewall, weights))
             weightRow(edrLabel, value: binding(\.edrAgent, weights))
+            edrAgentPicker
             weightRow("mSCP Compliance", value: binding(\.mscp, weights))
             weightRow("XProtect Current", value: binding(\.xprotect, weights))
             weightRow("CVE Clean", value: binding(\.cve, weights))
             weightRow("Secure Boot (Full)", value: binding(\.secureBoot, weights))
         }
+    }
+
+    /// Which `security_agents` entry the EDR weight and the EDR score card follow. Offered with
+    /// two or more agents; the others are shown and tracked but do not change the score.
+    @ViewBuilder
+    private var edrAgentPicker: some View {
+        let names = workspace.configState.securityAgents.map(\.name)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if names.count > 1 {
+            HStack {
+                Text("Agent counted as EDR")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Colors.fg)
+                Spacer()
+                Picker("Agent counted as EDR", selection: edrAgentBinding) {
+                    ForEach(names, id: \.self) { Text($0).tag(Optional($0)) }
+                }
+                .labelsHidden()
+                .frame(width: 260)
+                .disabled(workspace.demoMode)
+            }
+            .padding(.leading, 12)
+        }
+    }
+
+    /// The picker shows the agent that counts, so the default reads as the first agent's name
+    /// and choosing it writes that name.
+    private var edrAgentBinding: Binding<String?> {
+        Binding(
+            get: { workspace.edrAgentName },
+            set: { name in
+                do {
+                    try workspace.saveEDRAgent(name)
+                    saveFailure = nil
+                } catch {
+                    saveFailure = "Couldn't save the EDR agent: \(error.localizedDescription)"
+                }
+            })
     }
 
     private var edrLabel: String {

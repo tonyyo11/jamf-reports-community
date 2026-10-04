@@ -244,7 +244,7 @@ struct OutreachView: View {
                         }
                         .width(min: 100, ideal: 120)
                     }
-                    .frame(minHeight: 200)
+                    .pageTableHeight(rows: devices.count)
                 } else {
                     Text("No devices in the \(selectedTier.label.lowercased()) tier.")
                         .font(.footnote)
@@ -340,25 +340,19 @@ struct OutreachView: View {
     }
 
     private func relativeDate(from dateString: String) -> String {
-        guard let date = parseDate(dateString) else { return "Unknown" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
         // Demo ages are measured from the demo's own "now", not today's date.
         let now = workspace.demoMode ? DemoData.referenceDate : Date()
-        return formatter.localizedString(for: date, relativeTo: now)
+        return Self.relativeDate(from: dateString, now: now)
     }
 
-    private func parseDate(_ text: String) -> Date? {
-        guard !text.isEmpty else { return nil }
-        if let date = ISO8601DateFormatter().date(from: text) { return date }
-        let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
-        for format in formats {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = format
-            if let date = formatter.date(from: text) { return date }
-        }
-        return nil
+    /// Jamf timestamps carry millisecond fractions of varying length; the one
+    /// inventory parser reads them, so Last Contact never says "Unknown" for a
+    /// Mac whose Days Since has a value.
+    static func relativeDate(from dateString: String, now: Date) -> String {
+        guard let date = DeviceInventoryService.parseDate(dateString) else { return "Unknown" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 
 }

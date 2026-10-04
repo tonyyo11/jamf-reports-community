@@ -274,6 +274,9 @@ struct SecurityAgentConfig: Decodable, Sendable {
     let column: String
     let connectedValue: String  // key is `connected_value`, NOT `installed_value`
 
+    /// The column as `SecurityAgentCoverage` reads it, trimmed.
+    var trimmedColumn: String { column.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     enum CodingKeys: String, CodingKey, CaseIterable {
         case name, column
         case connectedValue = "connected_value"
@@ -393,8 +396,8 @@ enum ComplianceFramework: String, CaseIterable, Codable, Sendable {
 /// failure count for this baseline. Must match the `ea_name` field in
 /// `ea-results` snapshots exactly (case-sensitive).
 ///
-/// `failuresListColumn` is the optional EA name carrying the pipe-delimited list
-/// of failed rule IDs; when set it enables the count-vs-list accuracy cross-check.
+/// `failuresListColumn` is the optional EA name carrying the list of failed rule IDs
+/// (`FailedRuleList` reads it); when set it enables the count-vs-list accuracy cross-check.
 ///
 /// `ruleCount`, when a positive Int, is the validity bound for the failure count:
 /// a parsed count greater than the baseline's total rule count is a garbage EA
@@ -733,6 +736,14 @@ struct BrandingConfig: Decodable, Sendable {
         guard value.first == "#", [3, 6].contains(digits.count),
               digits.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return "#2D5EA2" }
         return value
+    }
+
+    /// `sanitizedAccentColor` as 0xRRGGBB (`#RGB` spread to six digits), for the Config
+    /// screen's swatch, which shows the colour the reports will use.
+    var sanitizedAccentRGB: UInt32 {
+        var digits = String(sanitizedAccentColor.dropFirst())
+        if digits.count == 3 { digits = digits.map { "\($0)\($0)" }.joined() }
+        return UInt32(digits, radix: 16) ?? 0x2D5EA2
     }
 }
 

@@ -27,6 +27,7 @@ enum SecurityPolicyConfigLoader {
     static let controlsPath = "security_policy.controls"
     static let hardwarePath = "security_policy.filevault_off_hardware_encrypted"
     private static let weightsPath = "security_policy.score_weights"
+    static let edrAgentPath = "security_policy.edr_agent"
     static let onValuesPath = "security_policy.on_values"
     static let offValuesPath = "security_policy.off_values"
 
@@ -81,6 +82,8 @@ enum SecurityPolicyConfigLoader {
                 levelIssues(hardwarePath, node, used: hardwareUsed)
             case "score_weights":
                 weightsIssues(node, applied: applied)
+            case "edr_agent":
+                edrAgentIssues(node)
             case "on_values":
                 vocabularyIssues(
                     onValuesPath, node, kept: applied.onValues, overriddenBy: applied.offValues)
@@ -89,6 +92,19 @@ enum SecurityPolicyConfigLoader {
             default:
                 unknownKeyIssues("\(blockPath).\(ConfigSchema.displayText(key))")
             }
+        }
+    }
+
+    /// A name is text; anything else is read as no choice, so the first agent counts. A name
+    /// that matches no agent needs the agent list, so `ConfigDoctorService` reports it.
+    private static func edrAgentIssues(_ node: YAMLCodec.YAMLValue) -> [SecurityPolicyIssue] {
+        switch node {
+        case .scalar(.null): return []
+        case .scalar(.string): return []
+        default:
+            return [SecurityPolicyIssue(
+                keyPath: edrAgentPath, value: ConfigSchema.displayText(typedText(node)),
+                used: "the first agent")]
         }
     }
 
@@ -254,6 +270,8 @@ enum SecurityPolicyConfigWriter {
         case hardwareLevel(SecurityControlLevel?)
         /// Nil removes the block, so the default weights apply.
         case scoreWeights(SecurityScoreWeights?)
+        /// The agent counted as EDR; nil removes the key, so the first agent counts.
+        case edrAgent(String?)
     }
 
     enum WriteError: Error, LocalizedError {
@@ -270,6 +288,7 @@ enum SecurityPolicyConfigWriter {
     private static let controlsKey = "controls"
     private static let hardwareKey = "filevault_off_hardware_encrypted"
     private static let weightsKey = "score_weights"
+    private static let edrAgentKey = "edr_agent"
 
     @discardableResult
     static func save(
@@ -299,6 +318,12 @@ enum SecurityPolicyConfigWriter {
             }
         case .scoreWeights(let weights):
             applyWeights(weights, to: &block)
+        case .edrAgent(let name):
+            if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+                assign(.scalar(.string(name)), to: edrAgentKey, in: &block)
+            } else {
+                block.entries.removeAll { $0.key == edrAgentKey }
+            }
         }
     }
 

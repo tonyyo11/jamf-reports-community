@@ -141,11 +141,12 @@ final class RefreshCoordinator {
             exitCode = try await bridge.collect(
                 profile: profile, tiers: [tier], force: true, onLine: CLIBridge.noOpOnLine
             )
-        } catch CLIBridgeError.tickLockHeld {
-            // A tick is collecting. Nothing was attempted, so nothing counts toward backoff.
+        } catch let refusal as CLIBridgeError where refusal.isCollectRefusal {
+            // A tick, or another collect in this app, is collecting. Nothing was attempted, so
+            // nothing counts toward backoff.
             lastAttempts[key] = previousAttempt
             AppLogger.event(.collect, .info,
-                            "Background refresh deferred: a scheduled run is in progress")
+                            "Background refresh deferred: \(refusal.localizedDescription)")
             return
         } catch {
             failureCounts[key, default: 0] += 1

@@ -139,7 +139,10 @@ struct ConfigState: Equatable, Sendable {
         certWarningDays: "90",
         profileErrorWarning: "10",
         complianceEnabled: false,
-        baselineLabel: "mSCP Compliance",
+        // Blank, not a benchmark name: before config.yaml loads (and for a workspace that never
+        // set one) the Overview shows its generic "Compliance Benchmark" title, not a name the
+        // workspace did not choose.
+        baselineLabel: "",
         failuresCountColumn: "",
         failuresListColumn: "",
         complianceBenchmarks: [],
@@ -725,7 +728,11 @@ enum ConfigService {
 
         var compliance = root.value(for: "compliance")?.mapping ?? .init(entries: [])
         compliance.set("enabled", value: .scalar(.bool(state.complianceEnabled)))
-        compliance.set("baseline_label", value: scalar(state.baselineLabel))
+        if state.baselineLabel.trimmingCharacters(in: .whitespaces).isEmpty {
+            compliance.entries.removeAll { $0.key == "baseline_label" }
+        } else {
+            compliance.set("baseline_label", value: scalar(state.baselineLabel))
+        }
         compliance.set("failures_count_column", value: scalar(state.failuresCountColumn))
         compliance.set("failures_list_column", value: scalar(state.failuresListColumn))
         root.set("compliance", value: .mapping(compliance))

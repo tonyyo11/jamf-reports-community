@@ -252,7 +252,7 @@ enum OverviewLiveDataLoader {
             SecurityAgent(
                 name: $0.name, installed: $0.installed,
                 pct: SecurityAgentCoverage.percent(installed: $0.installed, fleet: known) ?? 0,
-                column: $0.column, trend: .flat)
+                column: $0.column, trend: nil)
         }
         data.agentsWithoutValues = coverage.filter { $0.reporting == 0 }.map(\.name)
     }
@@ -286,16 +286,33 @@ enum OverviewLiveDataLoader {
 
     /// Agent cards as a share of `fleet`, the latest summary's device count —
     /// the denominator the daily summary's EDR figure uses, so a Mac with no
-    /// value counts as not connected. Unchanged while the fleet is unknown.
-    static func agents(_ agents: [SecurityAgent], overFleet fleet: Int) -> [SecurityAgent] {
-        guard fleet > 0 else { return agents }
-        return agents.map { agent in
+    /// value counts as not connected. The share is unchanged while the fleet is unknown.
+    ///
+    /// The daily summary records coverage day by day for one agent only, the first configured
+    /// (`edrAgentName`), so `edrSeries`, its values oldest first, gives that agent a trend and
+    /// every other agent none: no series, no direction.
+    static func agents(
+        _ agents: [SecurityAgent], overFleet fleet: Int,
+        edrAgentName: String? = nil, edrSeries: [Double] = []
+    ) -> [SecurityAgent] {
+        agents.map { agent in
             SecurityAgent(
                 name: agent.name, installed: agent.installed,
                 pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
                     ?? agent.pct,
-                column: agent.column, trend: agent.trend)
+                column: agent.column,
+                trend: agent.name == edrAgentName ? trend(of: edrSeries) : nil)
         }
+    }
+
+    /// Direction of the last two values of a coverage series, compared at the precision the
+    /// card prints (a tenth of a point). Nil with fewer than two values.
+    static func trend(of series: [Double]) -> SecurityAgent.Trend? {
+        guard series.count >= 2 else { return nil }
+        let latest = (series[series.count - 1] * 10).rounded()
+        let previous = (series[series.count - 2] * 10).rounded()
+        if latest > previous { return .up }
+        return latest < previous ? .down : .flat
     }
 
     /// Versions by device count, the rest rolled into "Other" past `limit`.
@@ -303,7 +320,11 @@ enum OverviewLiveDataLoader {
     static func osDistribution(
         counts: [String: Int], latestByMajor: [Int: String], limit: Int
     ) -> (rows: [OSDistribution], currentShare: Double?, total: Int, versions: Int) {
-        let valid = counts.filter { $0.value > 0 && !$0.key.isEmpty }
+        // "26.7" and "26.7.0" are one release (`OSVersionName`).
+        let valid = Dictionary(
+            counts.filter { $0.value > 0 && !$0.key.isEmpty }
+                .map { (OSVersionName.normalized($0.key), $0.value) },
+            uniquingKeysWith: +)
         let total = valid.values.reduce(0, +)
         guard total > 0 else { return ([], nil, 0, 0) }
         let ranked = valid.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
@@ -355,9 +376,9 @@ enum OverviewLiveDataLoader {
         return (ranked(rules), label, scoped.rules.map(\.devices).max() ?? 0)
     }
 
-    /// Failing rules from the failures-list extension attribute: a pipe-separated
-    /// list of rule IDs per Mac, each rule counted once per Mac.
-    /// `reportingMacs` is how many Macs have a row for the column at all.
+    /// Failing rules from the failures-list extension attribute: a list of rule IDs per Mac
+    /// (`FailedRuleList`), each rule counted once per Mac. `reportingMacs` is how many Macs
+    /// have a list in the column, an empty one included.
     static func failingRules(
         rows: [EAResultRow], listColumn: String, baseline: String
     ) -> (rules: [FailingRule], reportingMacs: Int) {
@@ -368,11 +389,11 @@ enum OverviewLiveDataLoader {
                   eaName.caseInsensitiveCompare(listColumn) == .orderedSame,
                   let id = MSCPComplianceService.primaryIdentifier(for: row)?.lowercased()
             else { continue }
+            // A status in place of a list ("No Baseline Set") is a Mac the audit did not
+            // evaluate: not a failing rule, and not a reporting Mac.
+            guard let rules = FailedRuleList.rules(in: row.value?.stringValue) else { continue }
             reporting.insert(id)
-            for part in (row.value?.stringValue ?? "").split(separator: "|") {
-                let rule = part.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !rule.isEmpty { macsPerRule[rule, default: []].insert(id) }
-            }
+            for rule in rules { macsPerRule[rule, default: []].insert(id) }
         }
         let rules = macsPerRule.map {
             FailingRule(ruleID: $0.key, fails: $0.value.count, baseline: baseline)

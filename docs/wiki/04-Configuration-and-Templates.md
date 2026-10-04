@@ -67,7 +67,9 @@ file changed on disk after the screen loaded it. See
 [A hand-edited config.yaml](#a-hand-edited-configyaml).
 
 - **`security_agents`** — a list of third-party agents. Each entry drives a row in the
-  Security Agents sheet. `connected_value` is a case-insensitive substring match.
+  Security Agents sheet. `connected_value` is a case-insensitive substring match; a value
+  that says the agent is absent or off ("Not Installed", "not running", "Disconnected") never
+  matches, and a blank `connected_value` counts any non-empty value.
 - **`sheets`** — `only`, `skip` and `order`, by tab name (case-insensitive), shape every
   report workbook: the Jamf Pro tabs, the CSV tabs, the Charts tab and Jamf School
   workbooks. The report template picks its sheets first, so `only` never adds a tab; a
@@ -82,8 +84,10 @@ file changed on disk after the screen loaded it. See
 
 `compliance.failures_count_column` and `compliance.failures_list_column` are the
 single-baseline shorthand: an EA column carrying the integer failed-rule count, and an
-optional pipe-delimited EA column carrying the failed rule IDs, for mSCP/STIG
-reporting.
+optional EA column carrying the failed rule IDs, for mSCP/STIG reporting. The IDs are
+one per line; a comma, semicolon or pipe also separates them, and a status in place of
+a list ("No Baseline Set", "Multiple Baselines Found") marks a Mac that was not
+evaluated.
 
 For more than one baseline (an enforced baseline and an audit baseline, or separate
 baselines per department), use `compliance.baselines` — a list of
@@ -428,6 +432,56 @@ use Automation for that.
 To change a template's sheet selection permanently, edit its file under
 `app/Sources/JamfReports/Engine/Templates/` and rebuild — that is a code change, not a
 config change.
+
+### The HTML report
+
+The HTML report is written to be read from the top and to stop reading wherever you have
+enough. From the top it has:
+
+1. **A header** with the profile, when the data was collected, the jamf-cli version, how
+   many Macs, the template and the reporting week. A fact the app does not have is left
+   out, not printed as a dash.
+2. **At a glance**: six figures (security score, P0 security gaps, patch compliance, Macs on
+   the current macOS, stale Macs and compliance), each with its change since the daily
+   summary about a week earlier, worded as the Trends screen words it: percentage points for
+   a share, a signed whole number for a count, "better" or "worse" by which way is good, and
+   "No change" when it rounds to nothing. A figure the earlier summary measured another way
+   (patch compliance before 2.9, or a compliance proxy against a benchmark) says so instead
+   of showing a change.
+3. **Needs attention**: one sentence for each of Macs that have not checked in for
+   `thresholds.stale_device_days`, P0 gaps, patch titles under 50%, failing configuration
+   profiles and apps, failed patch or update runs, and security agents not on every Mac. A
+   sentence appears only while its count is above zero and links to the part of the report
+   that lists it; opening a link opens the group around it.
+4. **The jamf-cli dashboard**, open, when one was collected (jamf-cli 1.31.0 or later). With it
+   in the report, the report leaves out the three sections it repeats: the OS version
+   distribution, the audit findings and the catalog counts. Without it, those are in the
+   report.
+5. **Detail groups, collapsed**: Security and compliance, Patching, Devices needing
+   intervention, Policies and profiles, Trends, Recent failures and Breakdowns. Each group's
+   one-line heading carries its numbers ("Patching — 118 titles behind · 12 under 50%").
+   Lists show ten rows; the rest are behind "Show all". Healthy profiles are counted, not
+   listed. **Expand all** and **Collapse all** (top right) open and close everything. A
+   section with nothing to show is not drawn.
+6. **The audit appendix**, collapsed: each data source with its snapshot date, what every
+   figure means, the `security_policy` in force (levels other than Fail, the hardware rule
+   and the score weights) and a list of what the report leaves out and why: empty, not
+   configured, shown in the dashboard, or the device inventory.
+
+Printing opens every group first, and the PDF export is written with every group open. The
+report carries no full device list, because a report is forwarded; the workbook has the
+inventory. The lists it does carry are action lists: Macs past the check-in threshold,
+recent failures and the devices with the most compliance failures.
+
+The template decides how much of that you get and what starts open:
+
+| Template | In the HTML report | Starts open |
+|---|---|---|
+| Executive | Header, figures, attention list, dashboard, appendix; no detail groups | n/a |
+| Operational | Everything it lists | Devices needing intervention, Patching, Recent failures |
+| Compliance | Everything it lists | Security and compliance |
+| Security Posture | Everything it lists | Security and compliance |
+| Full Instance | Every section | Nothing |
 
 ## Platform API
 

@@ -782,7 +782,8 @@ final class CLIBridge {
     /// pass `force: false` (the default).
     ///
     /// Holds the tick lock throughout (`holdingTickLock`), and throws
-    /// `CLIBridgeError.tickLockHeld` before the auth probe when a tick holds it.
+    /// `CLIBridgeError.tickLockHeld` before the auth probe when a tick holds it, or
+    /// `CLIBridgeError.collectInProgress` when another collect is running in this app.
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
@@ -969,7 +970,7 @@ final class CLIBridge {
     /// anything else falls back to the localized description.
     nonisolated static func explainOperationError(_ error: Error, operation: String) -> String {
         // A refusal, not a failure: the operation never started.
-        if let refused = error as? CLIBridgeError, refused == .tickLockHeld {
+        if let refused = error as? CLIBridgeError, refused.isCollectRefusal {
             return refused.localizedDescription
         }
         if case let ReportEngineError.collectFailed(_, exitCode) = error {
@@ -1525,6 +1526,26 @@ final class CLIBridge {
         }
     }
 
+    /// `thresholds.stale_device_days` for the audit's `--days`: 30, the app's default, when the
+    /// workspace has no config.yaml or it does not parse (logged; the audit still runs).
+    nonisolated static func auditStaleDays(profile: String) -> Int {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return 30 }
+        let url = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: url.path) else { return 30 }
+        do {
+            return try ConfigLoader.load(from: url).thresholds?.resolvedStaleDays ?? 30
+        } catch {
+            let reason = error.localizedDescription
+            AppLogger.cli.warning(
+                """
+                audit: config.yaml unreadable (\(reason, privacy: .private)); \
+                using the default 30-day stale threshold
+                """
+            )
+            return 30
+        }
+    }
+
     func audit(
         profile: String,
         category: String?,
@@ -1550,10 +1571,9 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
-        var args = ["-p", profile, "pro", "audit", "--output", "json", "--no-input"]
-        if let category, !category.isEmpty {
-            args.append(contentsOf: ["--checks", category])
-        }
+        let args = ReportEngine.auditArguments(
+            profile: profile, staleDays: Self.auditStaleDays(profile: profile),
+            category: category)
 
         let (code, data) = try await runAndCapture(
             executable: bin,

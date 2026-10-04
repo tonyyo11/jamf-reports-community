@@ -214,7 +214,7 @@ final class ExistingCLISetupFlow {
         collect: @escaping (String, @escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32 = {
             profile, onLine in
             // A refusal is not a run: say so before a Run History record exists.
-            guard !CLIBridge.tickLockHeldElsewhere() else { throw CLIBridgeError.tickLockHeld }
+            if let refusal = CLIBridge.collectRefusal() { throw refusal }
             // Recorded so `collectFailureReason`'s "see Run History" points at
             // a log that actually exists for this run.
             let recorder = ProfileService.workspaceURL(for: profile).flatMap {

@@ -152,7 +152,7 @@ struct StaleDeviceService: Sendable {
         // Find most recent lastContact date for snapshotDate
         let contactDates = records.compactMap { record -> Date? in
             guard !record.lastContact.isEmpty else { return nil }
-            return parseDate(record.lastContact)
+            return DeviceInventoryService.parseDate(record.lastContact)
         }
         let mostRecentContact = contactDates.max()
 
@@ -206,20 +206,5 @@ struct StaleDeviceService: Sendable {
         }
         guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
-    }
-
-    // MARK: - Helpers
-
-    private static func parseDate(_ text: String) -> Date? {
-        guard !text.isEmpty else { return nil }
-        if let date = ISO8601DateFormatter().date(from: text) { return date }
-        let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
-        for format in formats {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = format
-            if let date = formatter.date(from: text) { return date }
-        }
-        return nil
     }
 }

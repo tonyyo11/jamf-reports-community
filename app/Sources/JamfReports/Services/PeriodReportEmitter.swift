@@ -144,10 +144,14 @@ enum PeriodReportEmitter {
                      row: r, col: 0, format: .cell)
             r += 1
         }
-        if m.rows.contains(where: \.definitionChanged) {
+        let notes = m.rows.filter(\.definitionChanged)
+            .compactMap { PeriodReportModel.definitionNote(for: $0.metricID) }
+        if !notes.isEmpty {
             r += 1
             ws.write("Definitions", row: r, col: 0, format: .title); r += 1
-            ws.write(PeriodReportModel.patchDefinitionNote, row: r, col: 0, format: .cell)
+            for note in notes {
+                ws.write(note, row: r, col: 0, format: .cell); r += 1
+            }
         }
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 52)

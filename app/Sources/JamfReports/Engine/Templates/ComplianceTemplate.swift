@@ -39,13 +39,22 @@ struct ComplianceTemplate: ReportTemplate {
 
     var htmlSections: [SectionID] {
         [
-            .kpiTiles,
+            .atAGlance,
+            .needsAttention,
+            .jamfDashboard,
+            .securityTiles,
             .complianceBands,
             .auditEvidence,
             .exceptionList,
             .osAdoptionChart,
             .profileTable,
+            .auditAppendix,
         ]
+    }
+
+    /// The security and compliance group starts open.
+    var htmlOpenSections: [SectionID] {
+        [.securityTiles, .complianceBands, .auditEvidence, .exceptionList]
     }
 
     let pdfPagination: PaginationStrategy = .sectionPerPage

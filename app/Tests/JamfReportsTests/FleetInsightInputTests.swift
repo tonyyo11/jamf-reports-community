@@ -43,7 +43,7 @@ final class FleetInsightInputTests: XCTestCase {
             "- Total managed devices: 100",
             "- OS current on 0.0% of devices; not on the newest release of its macOS version, "
                 + "or version not listed, on 100.0%",
-            "No prior period available; deltas omitted.",
+            FleetInsightInput.noEarlierDataNote,
         ])
     }
 
@@ -56,8 +56,8 @@ final class FleetInsightInputTests: XCTestCase {
         )
         XCTAssertEqual(Array(lines(input).dropFirst(3)), [
             "- System Integrity Protection (SIP) enabled on 1.0% of devices; "
-                + "not enabled on 99.0% (-2.0 pp vs prior, worse)",
-            "- Firewall enabled on 0.0% of devices; not enabled on 100.0% (+0.0 pp vs prior)",
+                + "not enabled on 99.0% (down 2.0 pp vs prior, worse)",
+            "- Firewall enabled on 0.0% of devices; not enabled on 100.0% (unchanged vs prior)",
             "Prior period for deltas: 2026-06-05.",
         ])
     }
@@ -68,10 +68,26 @@ final class FleetInsightInputTests: XCTestCase {
         XCTAssertEqual(fact.line, "- SIP enabled on 99.0% of devices; not enabled on 1.0%")
     }
 
-    func testSmallNegativeChangeNeverPrintsMinusZero() {
+    func testSmallChangeThatRoundsToNothingIsUnchanged() {
         let fact = Fact(label: "SIP enabled", value: .percent(50), prior: .percent(50.04),
                         polarity: .higherIsBetter)
-        XCTAssertEqual(fact.line, "- SIP enabled: 50.0% (+0.0 pp vs prior)")
+        XCTAssertEqual(fact.line, "- SIP enabled: 50.0% (unchanged vs prior)")
+    }
+
+    /// Live: "+0.1pp" FileVault was called a regression. The change is taken between the
+    /// figures the line prints, so 91.2% against 91.2% is unchanged, never "up 0.1 pp", and
+    /// a real rise says "up ... better" in words rather than a bare sign.
+    func testChangeIsTakenBetweenThePrintedFiguresAndSaysItsDirectionInWords() {
+        func line(_ now: Double, _ then: Double) -> String {
+            Fact(label: "FileVault encrypted", value: .percent(now), prior: .percent(then),
+                 polarity: .higherIsBetter).line
+        }
+        XCTAssertEqual(line(91.24, 91.16),
+                       "- FileVault encrypted: 91.2% (unchanged vs prior)")
+        XCTAssertEqual(line(91.3, 91.2),
+                       "- FileVault encrypted: 91.3% (up 0.1 pp vs prior, better)")
+        XCTAssertEqual(line(91.2, 91.3),
+                       "- FileVault encrypted: 91.2% (down 0.1 pp vs prior, worse)")
     }
 
     // MARK: - Fact rendering
@@ -87,14 +103,14 @@ final class FleetInsightInputTests: XCTestCase {
                         polarity: .lowerIsBetter)
         let same = Fact(label: "P1 action items", value: .count(7), prior: .count(7),
                         polarity: .lowerIsBetter)
-        XCTAssertEqual(down.line, "- Stale devices: 12 (-8 vs prior, better)")
-        XCTAssertEqual(same.line, "- P1 action items: 7 (+0 vs prior)")
+        XCTAssertEqual(down.line, "- Stale devices: 12 (down 8 vs prior, better)")
+        XCTAssertEqual(same.line, "- P1 action items: 7 (unchanged vs prior)")
     }
 
     func testNumbersChangeWithOneDecimal() {
         let fact = Fact(label: "Stability index", value: .number(72.44), prior: .number(70),
                         polarity: .higherIsBetter)
-        XCTAssertEqual(fact.line, "- Stability index: 72.4 (+2.4 vs prior, better)")
+        XCTAssertEqual(fact.line, "- Stability index: 72.4 (up 2.4 vs prior, better)")
     }
 
     /// A nonzero change says whether it is good, from the fact's polarity, so the
@@ -105,13 +121,15 @@ final class FleetInsightInputTests: XCTestCase {
             Fact(label: "X", value: value, prior: prior, polarity: polarity).line
         }
         XCTAssertEqual(line(.percent(90), .percent(95), .higherIsBetter),
-                       "- X: 90.0% (-5.0 pp vs prior, worse)")
+                       "- X: 90.0% (down 5.0 pp vs prior, worse)")
         XCTAssertEqual(line(.percent(4), .percent(6), .lowerIsBetter),
-                       "- X: 4.0% (-2.0 pp vs prior, better)")
-        XCTAssertEqual(line(.count(9), .count(7), .higherIsBetter), "- X: 9 (+2 vs prior, better)")
-        XCTAssertEqual(line(.count(9), .count(7), .lowerIsBetter), "- X: 9 (+2 vs prior, worse)")
+                       "- X: 4.0% (down 2.0 pp vs prior, better)")
+        XCTAssertEqual(line(.count(9), .count(7), .higherIsBetter),
+                       "- X: 9 (up 2 vs prior, better)")
+        XCTAssertEqual(line(.count(9), .count(7), .lowerIsBetter),
+                       "- X: 9 (up 2 vs prior, worse)")
         XCTAssertEqual(line(.number(3), .number(4), .higherIsBetter),
-                       "- X: 3.0 (-1.0 vs prior, worse)")
+                       "- X: 3.0 (down 1.0 vs prior, worse)")
     }
 
     func testPriorOfAnotherCasePrintsNoChange() {
@@ -153,6 +171,49 @@ final class FleetInsightInputTests: XCTestCase {
         ])
     }
 
+    // MARK: - Earlier data and instructions
+
+    /// Live: a card with nothing to compare against still spoke of regressions and trends.
+    func testNoteForbidsTrendWordsOnlyWhenNoFactHasAPrior() {
+        let without = FleetInsightInput.fleet(
+            current: summary(date: "2026-06-06", fileVault: 98), previous: nil)
+        XCTAssertTrue(without.notes.contains(FleetInsightInput.noEarlierDataNote))
+        XCTAssertTrue(FleetInsightInput.noEarlierDataNote.contains("regressed"))
+        XCTAssertTrue(FleetInsightInput.noEarlierDataNote.contains("trending"))
+
+        let with = FleetInsightInput.fleet(
+            current: summary(date: "2026-06-06", fileVault: 98),
+            previous: summary(date: "2026-06-05", fileVault: 97))
+        XCTAssertFalse(with.notes.contains(FleetInsightInput.noEarlierDataNote))
+        XCTAssertEqual(with.notes, ["Prior period for deltas: 2026-06-05."])
+    }
+
+    /// A previous summary that holds none of the current metrics gives no fact a prior.
+    func testPreviousSummaryWithNoMatchingMetricStillGetsTheNote() {
+        let input = FleetInsightInput.fleet(
+            current: summary(date: "2026-06-06", fileVault: 98),
+            previous: summary(date: "2026-06-05"))
+        XCTAssertEqual(input.notes, ["Prior period for deltas: 2026-06-05.",
+                                     FleetInsightInput.noEarlierDataNote])
+    }
+
+    /// Live: fewer stale devices was called a "warning improvement" and more active devices a
+    /// "warning". Severity follows the line's own verdict, not the direction of a number.
+    func testInstructionsTieSeverityToTheVerdictNotTheDirection() {
+        let text = FleetInsightInput.instructions
+        XCTAssertFalse(text.contains("downward trends"))
+        XCTAssertTrue(text.contains(#""worse""#))
+        XCTAssertTrue(text.contains(#""better""#))
+        XCTAssertTrue(text.contains("no good direction"))
+        XCTAssertTrue(text.contains("device age"), "the model is told none is provided")
+        XCTAssertTrue(text.contains("on N% of devices"), "the share wording stays")
+    }
+
+    /// Live: the last bullet ended mid-sentence.
+    func testInstructionsAskForWholeSentences() {
+        XCTAssertTrue(FleetInsightInput.instructions.contains("full stop"))
+    }
+
     // MARK: - Fleet factory
 
     /// The same metrics, values and priors the pre-generic prompt printed, in
@@ -189,8 +250,8 @@ final class FleetInsightInputTests: XCTestCase {
                  polarity: .higherIsBetter),
             Fact(label: "Security score", value: .number(87.3), prior: .number(86),
                  polarity: .higherIsBetter),
-            Fact(label: "Stale devices", value: .count(12), prior: .count(15),
-                 polarity: .lowerIsBetter),
+            Fact(label: "Stale devices (no recent check-in)", value: .count(12),
+                 prior: .count(15), polarity: .lowerIsBetter),
             Fact(label: "P0 action items", value: .count(3), prior: .count(4),
                  polarity: .lowerIsBetter),
             Fact(label: "P1 action items", value: .count(7), prior: .count(7),
@@ -199,7 +260,7 @@ final class FleetInsightInputTests: XCTestCase {
                  polarity: .lowerIsBetter),
         ])
         XCTAssertEqual(input.notes, ["Prior period for deltas: 2026-06-05."])
-        XCTAssertTrue(lines(input).contains("- Security score: 87.3 (+1.3 vs prior, better)"))
+        XCTAssertTrue(lines(input).contains("- Security score: 87.3 (up 1.3 vs prior, better)"))
     }
 
     func testFleetFactoryLeavesAbsentMetricsOut() {
@@ -207,7 +268,7 @@ final class FleetInsightInputTests: XCTestCase {
             current: summary(date: "2026-06-06", fileVault: 98), previous: nil)
         XCTAssertEqual(input.facts.map(\.label), ["Total managed devices", "FileVault encrypted"])
         XCTAssertNil(input.facts[1].prior, "no previous summary, no change")
-        XCTAssertEqual(input.notes, ["No prior period available; deltas omitted."])
+        XCTAssertEqual(input.notes, [FleetInsightInput.noEarlierDataNote])
     }
 
     func testFleetFactoryDropsATamperedDate() {

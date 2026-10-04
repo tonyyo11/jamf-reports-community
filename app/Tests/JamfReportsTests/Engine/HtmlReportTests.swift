@@ -44,143 +44,6 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertEqual(result.first?["name"] as? String, "Firefox.pkg")
     }
 
-    // MARK: - Section: buildPoliciesTable
-
-    func testBuildPoliciesTableEmptyData() {
-        let report = makeReport()
-        let html = report.buildPoliciesTable([])
-        // Empty data now produces an empty-section placeholder, not an empty string.
-        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
-        XCTAssertTrue(html.contains("empty-section"))
-    }
-
-    func testBuildPoliciesTableRendersRows() {
-        let report = makeReport()
-        let policies: [[String: Any]] = [
-            ["name": "Install Software", "category": "Maintenance", "enabled": true],
-            ["name": "Disabled Policy", "category": "Testing", "enabled": false],
-        ]
-        let html = report.buildPoliciesTable(policies)
-        XCTAssertTrue(html.contains("Policies (2)"))
-        XCTAssertTrue(html.contains("Install Software"))
-        XCTAssertTrue(html.contains("Disabled Policy"))
-        XCTAssertTrue(html.contains("row-warn")) // disabled row gets warn class
-    }
-
-    func testBuildPoliciesTableEscapesHTML() {
-        let report = makeReport()
-        let policies: [[String: Any]] = [
-            ["name": "<script>alert('xss')</script>", "category": "Bad&Category", "enabled": true],
-        ]
-        let html = report.buildPoliciesTable(policies)
-        XCTAssertFalse(html.contains("<script>"))
-        XCTAssertTrue(html.contains("&lt;script&gt;"))
-        XCTAssertTrue(html.contains("Bad&amp;Category"))
-    }
-
-    // MARK: - Section: buildSmartGroupsTable
-
-    func testBuildSmartGroupsTableEmptyData() {
-        let report = makeReport()
-        let html = report.buildSmartGroupsTable([])
-        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
-        XCTAssertTrue(html.contains("empty-section"))
-    }
-
-    func testBuildSmartGroupsTableRendersRows() {
-        let report = makeReport()
-        let groups: [[String: Any]] = [
-            ["name": "All Managed Macs", "criteria": [["name": "OS"], ["name": "Managed"]]],
-            ["name": "Stale Devices", "criteria_count": 3],
-        ]
-        let html = report.buildSmartGroupsTable(groups)
-        XCTAssertTrue(html.contains("Smart Groups (2)"))
-        XCTAssertTrue(html.contains("All Managed Macs"))
-        XCTAssertTrue(html.contains(">2<")) // 2 criteria from array count
-        XCTAssertTrue(html.contains("Stale Devices"))
-    }
-
-    // MARK: - Section: buildScriptsTable
-
-    func testBuildScriptsTableEmptyData() {
-        let report = makeReport()
-        let html = report.buildScriptsTable([])
-        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
-        XCTAssertTrue(html.contains("empty-section"))
-    }
-
-    func testBuildScriptsTableRendersRows() {
-        let report = makeReport()
-        let scripts: [[String: Any]] = [
-            ["name": "FileVault Check", "category": "Security"],
-            ["displayName": "Recon Trigger", "category": ""],
-        ]
-        let html = report.buildScriptsTable(scripts)
-        XCTAssertTrue(html.contains("Scripts (2)"))
-        XCTAssertTrue(html.contains("FileVault Check"))
-        XCTAssertTrue(html.contains("Recon Trigger"))
-    }
-
-    // MARK: - Section: buildPackagesTable
-
-    func testBuildPackagesTableEmptyData() {
-        let report = makeReport()
-        let html = report.buildPackagesTable([])
-        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
-        XCTAssertTrue(html.contains("empty-section"))
-    }
-
-    func testBuildPackagesTableRendersRows() {
-        let report = makeReport()
-        let packages: [[String: Any]] = [
-            ["name": "Firefox 130.0.pkg", "category": "Browsers"],
-            ["fileName": "CrowdStrike.pkg", "category": ["name": "Security"]],
-        ]
-        let html = report.buildPackagesTable(packages)
-        XCTAssertTrue(html.contains("Packages (2)"))
-        XCTAssertTrue(html.contains("Firefox 130.0.pkg"))
-        XCTAssertTrue(html.contains("CrowdStrike.pkg"))
-        XCTAssertTrue(html.contains("Security"))
-    }
-
-    // MARK: - Section: buildCategoriesTable
-
-    func testBuildCategoriesTableEmptyData() {
-        let report = makeReport()
-        let html = report.buildCategoriesTable([])
-        XCTAssertFalse(html.isEmpty, "Empty data should produce an empty-section placeholder")
-        XCTAssertTrue(html.contains("empty-section"))
-    }
-
-    func testBuildCategoriesTableRendersRows() {
-        let report = makeReport()
-        let categories: [[String: Any]] = [
-            ["name": "Security", "priority": 1],
-            ["name": "Maintenance", "priority": 5],
-        ]
-        let html = report.buildCategoriesTable(categories)
-        XCTAssertTrue(html.contains("Categories (2)"))
-        XCTAssertTrue(html.contains("Security"))
-        XCTAssertTrue(html.contains("Maintenance"))
-    }
-
-    // MARK: - Helper: categoryName
-
-    func testCategoryNameFromString() {
-        let report = makeReport()
-        XCTAssertEqual(report.categoryName(from: "Security"), "Security")
-    }
-
-    func testCategoryNameFromDict() {
-        let report = makeReport()
-        XCTAssertEqual(report.categoryName(from: ["name": "Browsers"] as [String: Any]), "Browsers")
-    }
-
-    func testCategoryNameFromNilReturnsEmpty() {
-        let report = makeReport()
-        XCTAssertEqual(report.categoryName(from: nil), "")
-    }
-
     // MARK: - History: resolvedHistoryPath
 
     func testResolvedHistoryPathDefaultsNextToOutput() throws {
@@ -374,16 +237,12 @@ final class HtmlReportTests: XCTestCase {
     }
 
     /// The chart builder reads counts through asInt; a corrupt one must not take the report down.
-    func testChartsSectionSurvivesCorruptOSCount() {
+    func testOSChartSurvivesCorruptOSCount() {
         let report = makeReport()
-        let html = report.buildChartsSection(
-            osVersions: [
-                ["os_version": "15.1", "count": 1e300],
-                ["os_version": "15.2", "count": 4],
-            ],
-            patchStatus: [],
-            accentColor: "#2D5EA2"
-        )
+        let html = report.buildOSChart(osVersions: [
+            ["os_version": "15.1", "count": 1e300],
+            ["os_version": "15.2", "count": 4],
+        ]).html
         XCTAssertTrue(html.contains("[0,4]"), "corrupt count reads as 0, valid count survives")
     }
 
@@ -398,6 +257,17 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertTrue(html.contains("compliance-hero"), "Should render hero tile")
         XCTAssertTrue(html.contains("87%"), "Should show 87% pass rate")
         XCTAssertTrue(html.contains("13 of 100"), "Should show 13 of 100 failing")
+    }
+
+    /// jamf-cli's device-compliance rows carry no failure count. Reading the missing count
+    /// as zero put "100% Device Compliance" on a fleet with security gaps.
+    func testComplianceTileAbsentWhenRowsCarryNoFailureCount() {
+        let report = makeReport()
+        let rows: [[String: Any]] = (0..<5).map {
+            ["name": "Test-Mac-\($0)", "serial": "S\($0)", "managed": true, "stale": false,
+             "days_since_contact": "3"]
+        }
+        XCTAssertTrue(report.buildComplianceTile(deviceCompliance: rows).isEmpty)
     }
 
     func testComplianceTileAbsentWhenSnapshotMissing() {
@@ -459,11 +329,14 @@ final class HtmlReportTests: XCTestCase {
             deviceCompliance: devices,
             computersInventory: []
         )
-        XCTAssertTrue(html.contains("Top Non-Compliant Devices"))
+        XCTAssertTrue(html.contains("Top non-compliant devices (15)"))
+        let (shown, rest) = HtmlSectionTests.splitAtShowAll(html)
         // Mac-15 has the highest failure count and should appear first
-        XCTAssertTrue(html.contains("Mac-15"))
-        // Mac-1 has the lowest and should not appear (only top 10 shown from 15 failing)
-        XCTAssertFalse(html.contains("Mac-1\""), "Mac-1 (lowest count) should not appear in top 10")
+        XCTAssertTrue(shown.contains("Mac-15"))
+        // Mac-1 has the lowest: it is not among the top ten shown, but stays behind Show all.
+        XCTAssertFalse(shown.contains("<td>Mac-1</td>"),
+                       "Mac-1 (lowest count) is not in the top 10")
+        XCTAssertTrue(rest.contains("<td>Mac-1</td>"))
         // Table should have the 5 required columns
         XCTAssertTrue(html.contains("Device Name"))
         XCTAssertTrue(html.contains("Serial"))
@@ -481,12 +354,9 @@ final class HtmlReportTests: XCTestCase {
             deviceCompliance: devices,
             computersInventory: []
         )
-        // Count <tr> rows in tbody — there should be at most 10 data rows
-        // Each row has a <tr> — count them minus the header row
-        // Total <tr> count includes the thead row (1) plus data rows. Subtract 1
-        // for components-split mechanics and 1 more for the header.
-        let dataRowCount = html.components(separatedBy: "<tr>").count - 2
-        XCTAssertLessThanOrEqual(dataRowCount, 10, "Should render at most 10 data rows")
+        let (shown, rest) = HtmlSectionTests.splitAtShowAll(html)
+        XCTAssertEqual(HtmlSectionTests.bodyRows(shown), 10, "ten rows show")
+        XCTAssertEqual(HtmlSectionTests.bodyRows(rest), 10, "the other ten sit behind Show all")
     }
 
     // MARK: - Task 3: Light mode default + print CSS
@@ -531,237 +401,6 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertTrue(html.contains("localStorage"), "Theme toggle must persist via localStorage")
     }
 
-    // MARK: - Task 4: Data provenance block
-
-    func testProvenanceBlockContainsFourFields() {
-        let report = makeReport()
-        let overview: [[String: Any]] = []
-        let html = report.buildProvenanceBlock(overview: overview, profileName: "acme-prod")
-        XCTAssertTrue(html.contains("Data collected:"), "Must contain collection timestamp")
-        XCTAssertTrue(html.contains("Profile:"), "Must contain profile name")
-        XCTAssertTrue(html.contains("jamf-cli:"), "Must contain jamf-cli version")
-        XCTAssertTrue(html.contains("Enrolled:"), "Must contain enrolled count")
-        XCTAssertTrue(html.contains("acme-prod"), "Profile name must appear in output")
-    }
-
-    func testProvenanceBlockEscapesProfileName() {
-        let report = makeReport()
-        let html = report.buildProvenanceBlock(overview: [], profileName: "<bad>&profile")
-        XCTAssertFalse(html.contains("<bad>"))
-        XCTAssertTrue(html.contains("&lt;bad&gt;"))
-    }
-
-    func testProvenanceBlockShowsDashWhenProfileEmpty() {
-        let report = makeReport()
-        let html = report.buildProvenanceBlock(overview: [], profileName: "")
-        XCTAssertTrue(html.contains("Profile: —") || html.contains("Profile:</span>\n          <span>&middot;"))
-    }
-
-    // MARK: - Task 4 (extended): Provenance struct fields in provenance block
-
-    func testProvenanceBlockRendersRunIDWhenProvenance() {
-        let report = makeReport()
-        let prov = Provenance(
-            runID: "test-run-id-1234",
-            generatedAt: Date(),
-            profile: "acme-prod",
-            jamfCLIVersion: "1.14.0",
-            jamfTenantURL: "https://jamf.example.com",
-            operatorUserHost: "user@host"
-        )
-        let html = report.buildProvenanceBlock(
-            overview: [], profileName: "acme-prod", provenance: prov
-        )
-        XCTAssertTrue(html.contains("Run ID:"), "Must contain Run ID: label")
-        XCTAssertTrue(html.contains("test-run-id-1234"), "Must contain the run ID value")
-    }
-
-    func testProvenanceBlockRendersTenantURLWhenPresent() {
-        let report = makeReport()
-        let prov = Provenance(
-            runID: UUID().uuidString,
-            generatedAt: Date(),
-            profile: "acme",
-            jamfCLIVersion: nil,
-            jamfTenantURL: "https://jamf.example.com",
-            operatorUserHost: "user@host"
-        )
-        let html = report.buildProvenanceBlock(
-            overview: [], profileName: "acme", provenance: prov
-        )
-        XCTAssertTrue(html.contains("Tenant URL:"), "Must render Tenant URL: label")
-        XCTAssertTrue(html.contains("https://jamf.example.com"))
-    }
-
-    func testProvenanceBlockOmitsTenantURLWhenAbsent() {
-        let report = makeReport()
-        let prov = Provenance(
-            runID: UUID().uuidString,
-            generatedAt: Date(),
-            profile: "acme",
-            jamfCLIVersion: nil,
-            jamfTenantURL: nil,
-            operatorUserHost: "user@host"
-        )
-        let html = report.buildProvenanceBlock(
-            overview: [], profileName: "acme", provenance: prov
-        )
-        XCTAssertFalse(html.contains("Tenant URL:"),
-                       "Must not render Tenant URL when jamfTenantURL is nil")
-    }
-
-    func testProvenanceBlockRendersOperatorWhenProvenance() {
-        let report = makeReport()
-        let prov = Provenance(
-            runID: UUID().uuidString,
-            generatedAt: Date(),
-            profile: "acme",
-            jamfCLIVersion: nil,
-            jamfTenantURL: nil,
-            operatorUserHost: "operator@example-host"
-        )
-        let html = report.buildProvenanceBlock(
-            overview: [], profileName: "acme", provenance: prov
-        )
-        XCTAssertTrue(html.contains("Operator:"), "Must contain Operator: label")
-        XCTAssertTrue(html.contains("operator@example-host"))
-    }
-
-    func testProvenanceBlockUsesProvenanceCLIVersionOverOverview() {
-        let report = makeReport()
-        let prov = Provenance(
-            runID: UUID().uuidString,
-            generatedAt: Date(),
-            profile: "test",
-            jamfCLIVersion: "1.14.5-prov",
-            jamfTenantURL: nil,
-            operatorUserHost: "user@host"
-        )
-        // Overview also has a version — provenance version should win
-        let overview: [[String: Any]] = [["jamf_cli_version": "0.0.1-stale"]]
-        let html = report.buildProvenanceBlock(
-            overview: overview, profileName: "test", provenance: prov
-        )
-        XCTAssertTrue(html.contains("1.14.5-prov"),
-                      "Provenance CLI version must override overview version")
-        XCTAssertFalse(html.contains("0.0.1-stale"))
-    }
-
-    func testProvenanceBlockNoProvenanceStructShowsOriginalFourFields() {
-        let report = makeReport()
-        let html = report.buildProvenanceBlock(
-            overview: [], profileName: "test", provenance: nil
-        )
-        XCTAssertTrue(html.contains("Data collected:"))
-        XCTAssertTrue(html.contains("Profile:"))
-        XCTAssertTrue(html.contains("jamf-cli:"))
-        XCTAssertTrue(html.contains("Enrolled:"))
-        XCTAssertFalse(html.contains("Run ID:"),
-                       "Run ID must not appear when provenance is nil")
-        XCTAssertFalse(html.contains("Operator:"),
-                       "Operator must not appear when provenance is nil")
-    }
-
-    // MARK: - Task 5: Month-over-month section
-
-    func testMomSectionShowsInsufficientWhenHistoryEmpty() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let report = makeReport(dataDir: dir)
-        let historyURL = dir.appendingPathComponent("html_history.json")
-        let html = report.buildMonthOverMonthSection(
-            historyURL: historyURL,
-            currentSecurity: [],
-            deviceCompliance: [],
-            totalDevices: 500,
-            fileVaultPct: 92.0
-        )
-        // No history file at all → empty string
-        XCTAssertTrue(html.isEmpty, "Empty history should produce empty output")
-    }
-
-    func testMomSectionShowsInsufficientWhenTooRecent() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let report = makeReport(dataDir: dir)
-        let historyURL = dir.appendingPathComponent("html_history.json")
-
-        // Write a single entry from 5 days ago (too recent for 30-day comparison)
-        let recentDate = Calendar.current.date(byAdding: .day, value: -5, to: Date())!
-        let iso = ISO8601DateFormatter()
-        let entry: [[String: Any]] = [
-            ["ts": iso.string(from: recentDate), "versions": [["v": "15.4", "c": 480]]],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: entry)
-        try data.write(to: historyURL)
-
-        let html = report.buildMonthOverMonthSection(
-            historyURL: historyURL,
-            currentSecurity: [],
-            deviceCompliance: [],
-            totalDevices: 500,
-            fileVaultPct: 92.0
-        )
-        XCTAssertTrue(html.contains("Insufficient history"))
-    }
-
-    func testMomSectionRendersWhenHistoryHas30DayEntry() throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let report = makeReport(dataDir: dir)
-        let historyURL = dir.appendingPathComponent("html_history.json")
-
-        let pastDate = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-        let iso = ISO8601DateFormatter()
-        let entry: [[String: Any]] = [
-            ["ts": iso.string(from: pastDate), "versions": [["v": "15.4", "c": 480]]],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: entry)
-        try data.write(to: historyURL)
-
-        let html = report.buildMonthOverMonthSection(
-            historyURL: historyURL,
-            currentSecurity: [],
-            deviceCompliance: [],
-            totalDevices: 500,
-            fileVaultPct: 92.0
-        )
-        XCTAssertTrue(html.contains("What Changed Since Last Month"))
-        XCTAssertTrue(html.contains("Total Devices"))
-        XCTAssertFalse(html.contains("Insufficient history"))
-    }
-
-    // MARK: - Task 6: Catalog in appendix after policy section
-
-    func testCatalogAppearsAfterPolicySection() async throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let report = makeReport(dataDir: dir)
-        let outputURL = dir.appendingPathComponent("report.html")
-        try await report.generate(outputURL: outputURL)
-        let html = try String(contentsOf: outputURL, encoding: .utf8)
-
-        // Catalog Inventory appendix header is always rendered (template-level)
-        XCTAssertTrue(html.contains("Appendix: Jamf Pro Catalog Inventory"),
-                      "Catalog appendix header must be present")
-        // The appendix div should appear after the main content sections in DOM order.
-        // We use the closing </main> tag's predecessor as the structural anchor:
-        // the appendix block is rendered inside <main> immediately before </main>.
-        let mainOpen = html.range(of: "<main id=\"main-content\">")
-        // Anchor on the rendered <div class=\"appendix-section\"> (not the CSS class
-        // definition that also contains the substring \"appendix-section\").
-        let appendixRange = html.range(of: "<div class=\"appendix-section\">")
-        let mainClose = html.range(of: "</main>")
-        guard let mainOpen, let appendixRange, let mainClose else {
-            XCTFail("Expected <main>, appendix div, and </main> in the rendered HTML")
-            return
-        }
-        XCTAssertGreaterThan(appendixRange.lowerBound, mainOpen.upperBound,
-                             "Appendix must be inside <main>")
-        XCTAssertLessThan(appendixRange.lowerBound, mainClose.lowerBound,
-                          "Appendix must precede </main>")
-    }
-
     // MARK: - daysAgo helper
 
     func testDaysAgoFromISODate() {
@@ -786,28 +425,51 @@ final class HtmlReportTests: XCTestCase {
 
     // MARK: - Chart.js offline fallback script
 
-    func testVendoredChartJsInlinedInOutput() async throws {
+    /// A workspace with one patch-status snapshot, which gives the report a chart.
+    private func chartDataDir() throws -> URL {
         let dir = try makeTempDir()
+        let kind = dir.appendingPathComponent("patch-status", isDirectory: true)
+        try FileManager.default.createDirectory(at: kind, withIntermediateDirectories: true)
+        let rows: [[String: Any]] = [["title": "Zoom", "on_latest": 5, "on_other": 1,
+                                      "total": 6, "compliance_pct": "83%", "latest": "6.0"]]
+        try JSONSerialization.data(withJSONObject: rows)
+            .write(to: kind.appendingPathComponent("patch-status_20260401T000000.json"))
+        return dir
+    }
+
+    func testVendoredChartJsInlinedInOutput() async throws {
+        let dir = try chartDataDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let report = makeReport(dataDir: dir)
         let outputURL = dir.appendingPathComponent("report.html")
-        try await report.generate(outputURL: outputURL)
+        try await makeReport(dataDir: dir).generate(outputURL: outputURL)
         let html = try String(contentsOf: outputURL, encoding: .utf8)
 
         // The vendored Chart.js UMD build must be inlined. Its window.Chart assignment
         // is the reliable marker for the UMD export.
         XCTAssertTrue(
-            html.contains("window.Chart"),
-            "Vendored Chart.js must be inlined — window.Chart assignment must appear in output"
+            html.contains("chart.umd") && html.contains("window.Chart"),
+            "Vendored Chart.js must be inlined — its UMD build must appear in output"
         )
+        XCTAssertTrue(html.contains("<canvas id=\"patchChart\""))
+    }
+
+    /// The 200 KB library goes in only for a report that draws a chart.
+    func testChartJsIsLeftOutOfAReportWithoutACanvas() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let outputURL = dir.appendingPathComponent("report.html")
+        try await makeReport(dataDir: dir).generate(outputURL: outputURL)
+        let html = try String(contentsOf: outputURL, encoding: .utf8)
+        XCTAssertFalse(html.contains("<canvas"))
+        XCTAssertFalse(html.contains("chart.umd"), "the vendored bundle's own header")
+        XCTAssertLessThan(html.utf8.count, 60_000)
     }
 
     func testNoCDNReferenceInOutput() async throws {
-        let dir = try makeTempDir()
+        let dir = try chartDataDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let report = makeReport(dataDir: dir)
         let outputURL = dir.appendingPathComponent("report.html")
-        try await report.generate(outputURL: outputURL)
+        try await makeReport(dataDir: dir).generate(outputURL: outputURL)
         let html = try String(contentsOf: outputURL, encoding: .utf8)
 
         XCTAssertFalse(
@@ -818,16 +480,22 @@ final class HtmlReportTests: XCTestCase {
 
     // MARK: - Section: JS injection safety (Task 2)
 
+    /// The script a chart block carries: from its first `<script>` to its last `</script>`.
+    private func scriptBlock(of html: String) -> String? {
+        guard let open = html.range(of: "<script>"),
+              let close = html.range(of: "</script>", options: .backwards) else { return nil }
+        return String(html[open.upperBound..<close.lowerBound])
+    }
+
     /// A patch title containing `</script><script>alert('xss')</script>` must not
     /// break out of the surrounding script block.
     func testJSInjectionScriptBreakoutSanitized() {
         let report = makeReport()
         let malicious = "</script><script>alert('xss')</script>"
-        let html = report.buildChartsSection(
-            osVersions: [],
+        let html = report.buildPatchChart(
             patchStatus: [["title": malicious, "compliance_pct": "100%"]],
             accentColor: "#2D5EA2"
-        )
+        ).html
         // The raw breakout sequence must not appear verbatim — JSON encoding escapes </
         XCTAssertFalse(
             html.contains("</script><script>alert"),
@@ -840,11 +508,7 @@ final class HtmlReportTests: XCTestCase {
     func testJSInjectionLineSeparatorSanitized() {
         let report = makeReport()
         let label = "macOS\u{2028}15.7"
-        let html = report.buildChartsSection(
-            osVersions: [["os_version": label, "count": 5]],
-            patchStatus: [],
-            accentColor: "#2D5EA2"
-        )
+        let html = report.buildOSChart(osVersions: [["os_version": label, "count": 5]]).html
         // JSON encoding renders U+2028 as   — the raw codepoint must not appear.
         XCTAssertFalse(
             html.contains("\u{2028}"),
@@ -856,49 +520,45 @@ final class HtmlReportTests: XCTestCase {
     func testJSInjectionBackslashQuoteSanitized() {
         let report = makeReport()
         let label = #"\"injected\""#  // produces: \"injected\"
-        let html = report.buildChartsSection(
-            osVersions: [["os_version": label, "count": 3]],
-            patchStatus: [],
-            accentColor: "#2D5EA2"
-        )
+        let html = report.buildOSChart(osVersions: [["os_version": label, "count": 3]]).html
         // After JSON encoding the backslash is doubled: \\\"injected\\\"
         // The resulting JSON array must be present and the raw sequence must not break parsing.
-        XCTAssertTrue(html.contains("<script>"), "Chart section must still contain a script block")
+        XCTAssertTrue(html.contains("<script>"), "Chart block must still contain a script block")
     }
 
     /// `<!--` followed by `<script` inside a script block puts the HTML parser in the
     /// "double escaped" state, where `</script>` no longer ends the block and every
     /// later section of the report is swallowed. Escaping `</` alone does not stop it.
-    func testJSInjectionCommentOpenerCannotHideLaterSections() {
+    func testJSInjectionCommentOpenerCannotHideLaterSections() throws {
         let report = makeReport()
-        let html = report.buildChartsSection(
-            osVersions: [["os_version": "15.1 <!-- <script", "count": 2]],
+        let osChart = report.buildOSChart(
+            osVersions: [["os_version": "15.1 <!-- <script", "count": 2]]).html
+        let patchChart = report.buildPatchChart(
             patchStatus: [["title": "Evil <!--<script>&amp;", "compliance_pct": "40%"]],
-            accentColor: "#2D5EA2"
-        )
-        guard let open = html.range(of: "<script>"),
-              let close = html.range(of: "</script>", options: .backwards) else {
-            return XCTFail("Chart section must contain one script block")
-        }
-        let block = String(html[open.upperBound..<close.lowerBound])
-        // The sequences that change how the parser reads a script block are absent everywhere.
-        for raw in ["<!--", "<script", "</script"] {
-            XCTAssertFalse(block.contains(raw), "script block must not contain raw \(raw)")
-        }
-        // The JSON the report writes holds no raw <, > or &. Scoped to the literals so a
-        // future `&&` or `<` in the chart JavaScript does not fail this test.
-        let literals = block.components(separatedBy: "\n")
-            .compactMap { line -> String? in
+            accentColor: "#2D5EA2").html
+        var literals: [String] = []
+        for html in [osChart, patchChart] {
+            let block = try XCTUnwrap(scriptBlock(of: html), "chart block must hold one script")
+            // The sequences that change how the parser reads a script block are absent.
+            for raw in ["<!--", "<script", "</script"] {
+                XCTAssertFalse(block.contains(raw), "script block must not contain raw \(raw)")
+            }
+            // The JSON the report writes holds no raw <, > or &. Scoped to the literals so a
+            // future `&&` or `<` in the chart JavaScript does not fail this test.
+            literals += block.components(separatedBy: "\n").compactMap { line -> String? in
                 guard let range = line.range(of: "labels: ") else { return nil }
                 return String(line[range.upperBound...])
             }
+        }
         XCTAssertEqual(literals.count, 2, "one labels literal per chart: \(literals)")
         for literal in literals {
             for raw in ["<", ">", "&"] {
                 XCTAssertFalse(literal.contains(raw), "\(raw) must be escaped in \(literal)")
             }
         }
-        XCTAssertTrue(block.contains(#"\u003c!--"#), "the title must survive as an escape")
+        XCTAssertTrue(
+            try XCTUnwrap(scriptBlock(of: patchChart)).contains(#"\u003c!--"#),
+            "the title must survive as an escape")
     }
 
     /// The escaped array must still decode to the original strings.
@@ -911,58 +571,6 @@ final class HtmlReportTests: XCTestCase {
         }
         let decoded = try JSONSerialization.jsonObject(with: Data(literal.utf8)) as? [String]
         XCTAssertEqual(decoded, labels)
-    }
-
-    // MARK: - emptySection placeholder
-
-    func testEmptySectionHelperRendersTitle() {
-        let html = HtmlSectionFormatters.emptySection(
-            title: "Policy Health", dataKind: "policy-status"
-        )
-        XCTAssertTrue(html.contains("Policy Health"), "Section title must appear in placeholder")
-        XCTAssertTrue(html.contains("policy-status"), "dataKind must appear in placeholder")
-        XCTAssertTrue(html.contains("empty-section"), "Must use empty-section CSS class")
-        XCTAssertTrue(html.contains("empty-note"), "Must use empty-note CSS class")
-    }
-
-    func testEmptySectionHelperEscapesInputs() {
-        let html = HtmlSectionFormatters.emptySection(
-            title: "<script>XSS</script>",
-            dataKind: "kind&value"
-        )
-        XCTAssertFalse(html.contains("<script>"), "Title must be HTML-escaped")
-        XCTAssertTrue(html.contains("&lt;script&gt;"), "Title must be HTML-escaped")
-        XCTAssertTrue(html.contains("kind&amp;value"), "dataKind must be HTML-escaped")
-    }
-
-    func testPoliciesTableEmptyReturnsEmptySectionPlaceholder() {
-        let report = makeReport()
-        let html = report.buildPoliciesTable([])
-        XCTAssertTrue(html.contains("empty-section"),
-                      "Empty policies should render an empty-section placeholder, not an empty string")
-        XCTAssertTrue(html.contains("policies"), "Placeholder must reference the snapshot kind")
-    }
-
-    func testSmartGroupsTableEmptyReturnsEmptySectionPlaceholder() {
-        let report = makeReport()
-        let html = report.buildSmartGroupsTable([])
-        XCTAssertTrue(html.contains("empty-section"))
-    }
-
-    /// When generated HTML contains a policyStatus snapshot that is empty, the
-    /// Policy Health section placeholder (not an empty string) must appear in the output.
-    func testGeneratedHtmlContainsEmptySectionForMissingPolicyStatus() async throws {
-        let dir = try makeTempDir()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let report = makeReport(dataDir: dir)
-        let outputURL = dir.appendingPathComponent("report.html")
-        try await report.generate(outputURL: outputURL)
-        let html = try String(contentsOf: outputURL, encoding: .utf8)
-        // With no snapshot data, Policy Health should render a placeholder, not vanish.
-        XCTAssertTrue(
-            html.contains("empty-section"),
-            "Report must contain at least one empty-section placeholder when no snapshots exist"
-        )
     }
 
     // MARK: - Summary tiles under the security policy
@@ -995,15 +603,15 @@ final class HtmlReportTests: XCTestCase {
         return dir
     }
 
-    /// Both callers of `buildSummaryTiles`: the full legacy layout (`sections: nil`) and a
-    /// templated one that renders the tiles block.
+    /// Both callers of the tiles: the full report (`sections: nil`) and a template that lists
+    /// only the security controls.
     private func renderedTiles(
         yaml: String = "", dataDir: URL, templated: Bool
     ) async throws -> [RenderedTile] {
         let config = try ConfigLoader.loadFromString(yaml).withDefaults()
         let outputURL = dataDir.appendingPathComponent("report-\(UUID().uuidString).html")
         try await HtmlReport(config: config, dataDir: dataDir).generate(
-            outputURL: outputURL, sections: templated ? [.kpiTiles] : nil)
+            outputURL: outputURL, sections: templated ? [.securityTiles] : nil)
         let html = try String(contentsOf: outputURL, encoding: .utf8)
         let start = try XCTUnwrap(html.range(of: "<section class=\"tiles-row\">"))
         let end = try XCTUnwrap(html.range(

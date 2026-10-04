@@ -74,6 +74,13 @@ final class WorkspaceStore {
     private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
+    /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
+    /// which any screen sets and clears for its own work, so another screen finishing cannot
+    /// wipe the line a collect still owns.
+    private(set) var collectStatus: String? = nil
+    /// The line the status bar shows: a screen's own message while it has one, else the
+    /// running collect's, else nil ("Ready").
+    var statusLine: String? { globalStatus ?? collectStatus }
     var toast: Toast? = nil
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
@@ -82,11 +89,13 @@ final class WorkspaceStore {
     /// Per-profile run-in-progress flags to prevent concurrent collection/generation.
     /// Checked by `generateAll`/`collectThenGenerate` before starting.
     /// Note: these keep two GUI runs for one profile apart; a `--tick` run is kept
-    /// apart by the tick lock `CLIBridge.collect` holds for every GUI collect.
+    /// apart by the tick lock `CLIBridge.collect` holds for every GUI collect, and two
+    /// collects in this app by the same hold.
     private var runInProgressFlags: [String: Bool] = [:]
     /// Profiles with a collect in flight in THIS process — Collect now,
-    /// Initialize, Refresh, or an automatic one. A count, not a flag: two
-    /// overlapping manual actions must not clear each other's mark on exit.
+    /// Initialize, Refresh, or an automatic one. Only one runs at a time
+    /// (`isAnyCollectInFlight`); a count, not a flag, still keeps one action's
+    /// exit from clearing another's mark.
     private var collectsInFlight: [String: Int] = [:]
     /// The profile's jamf-cli auth method, for the freshness re-probes. Injectable
     /// so a test runs no `jamf-cli config list`.
@@ -140,6 +149,34 @@ final class WorkspaceStore {
             TrendSeries.Metric(rawValue: String($0))
         }
         return metrics.isEmpty ? nil : metrics
+    }
+
+    /// One metric per configured `security_agents` entry other than the one the score counts
+    /// as EDR (that one is `.edrAgent`), in config order, for the Overview's score cards and
+    /// the Trends picker. None in demo mode, whose history has no per-agent series.
+    var agentMetrics: [TrendSeries.Metric] {
+        guard !demoMode else { return [] }
+        let names = configState.securityAgents.map(\.name)
+        let edr = SecurityScoreInputs.edrAgentIndex(among: names, chosen: securityPolicy.edrAgent)
+            .map { SecurityScoreInputs.agentKey(names[$0]).lowercased() }
+        var seen = Set<String>()
+        return names.map(SecurityScoreInputs.agentKey).compactMap { name in
+            let key = name.lowercased()
+            guard !name.isEmpty, key != edr, seen.insert(key).inserted else { return nil }
+            return .agent(name)
+        }
+    }
+
+    /// Every metric a score card or the Trends picker can show for this workspace.
+    var availableMetrics: [TrendSeries.Metric] { TrendSeries.Metric.allCases + agentMetrics }
+
+    /// Whether the Overview shows `metric` as a score card: an agent metric needs its agent
+    /// configured (and not counted as EDR), a control card needs its control counted by the
+    /// security policy. A stored selection naming one that is not offered is kept, and shows
+    /// again when it is.
+    func isOffered(_ metric: TrendSeries.Metric) -> Bool {
+        if case .agent = metric { return agentMetrics.contains(metric) }
+        return metric.isOffered(under: securityPolicy)
     }
 
     /// True when the active profile has a `config.yaml` on disk under
@@ -202,13 +239,14 @@ final class WorkspaceStore {
         return configState.complianceBenchmarks.first(where: { !$0.isEmpty })
     }
 
-    /// The first configured security agent's name (e.g. "CrowdStrike Falcon"),
-    /// used to label the EDR metric across the UI. Nil when no security_agents
-    /// are configured — surfaces fall back to the generic "EDR Agent" label.
+    /// The name of the security agent the score counts as EDR (e.g. "CrowdStrike Falcon"),
+    /// used to label the EDR metric across the UI: `security_policy.edr_agent` when it names a
+    /// configured agent, else the first. Nil when no security_agents are configured —
+    /// surfaces fall back to the generic "EDR Agent" label.
     var edrAgentName: String? {
-        configState.securityAgents
-            .first { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }?
-            .name
+        let names = configState.securityAgents.map(\.name)
+        return SecurityScoreInputs.edrAgentIndex(among: names, chosen: securityPolicy.edrAgent)
+            .map { names[$0] }
     }
 
     // MARK: Column label / required metadata
@@ -679,7 +717,7 @@ final class WorkspaceStore {
         jamfCLIUpdateMessage = "Updating jamf-cli..."
         let result = await JamfCLIInstaller().update()
         jamfCLIUpdateMessage = result.message
-        jamfCLIUpdateAvailable = false
+        if !result.refused { jamfCLIUpdateAvailable = false }
         isUpdatingJamfCLI = false
         refreshToolStatus()
     }
@@ -780,6 +818,13 @@ final class WorkspaceStore {
     /// Nil removes the block, so the default weights apply.
     func saveScoreWeights(_ weights: SecurityScoreWeights?) throws {
         try saveSecuritySetting(.scoreWeights(weights)) { $0.scoreWeights = weights }
+    }
+
+    /// The agent the score counts as EDR; nil removes the key, so the first agent counts.
+    func saveEDRAgent(_ name: String?) throws {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chosen = trimmed?.isEmpty == false ? trimmed : nil
+        try saveSecuritySetting(.edrAgent(chosen)) { $0.edrAgent = chosen }
     }
 
     private func saveSecuritySetting(
@@ -890,9 +935,14 @@ final class WorkspaceStore {
         }
     }
 
-    /// Rebuild [ColumnMapping] from configState.columns, preserving existing status badges.
+    /// Rebuild [ColumnMapping] from configState.columns. A live workspace's status is read
+    /// off its value (empty is unmapped, else mapped): `columnMappings` starts as the demo's
+    /// list, and carrying its badges over put the demo's one warning on every live workspace.
+    /// Demo mode keeps its own badges.
     private func rebuildColumnMappings() {
-        let statusByKey = Dictionary(columnMappings.map { ($0.key, $0.status) }, uniquingKeysWith: { $1 })
+        let statusByKey: [String: ColumnMapping.Status] = demoMode
+            ? Dictionary(columnMappings.map { ($0.key, $0.status) }, uniquingKeysWith: { $1 })
+            : [:]
         columnMappings = ConfigState.columnKeys.map { key in
             let value = configState.columns[key] ?? ""
             return ColumnMapping(
@@ -1130,12 +1180,24 @@ final class WorkspaceStore {
             || coordinatorIsCollecting(for: profile)
     }
 
-    func beginCollect(for profile: String) {
+    /// True while any collect runs in this process, for any profile: one this store marked
+    /// (`beginCollect`, including the automatic ones) or one holding the bridge's lock, as a
+    /// jamf-cli update does too. A manual collect does not start while it is true; a generate
+    /// run that has not reached its collect does not count.
+    var isAnyCollectInFlight: Bool {
+        collectsInFlight.values.contains { $0 > 0 } || CLIBridge.holdPurpose != nil
+    }
+
+    /// Marks a collect for `profile` as running; `status` is what the status bar shows for it
+    /// until the last mark ends.
+    func beginCollect(for profile: String, status: String? = nil) {
         collectsInFlight[profile, default: 0] += 1
+        if let status { collectStatus = status }
     }
 
     func endCollect(for profile: String) {
         collectsInFlight[profile] = max(0, (collectsInFlight[profile] ?? 0) - 1)
+        if !collectsInFlight.values.contains(where: { $0 > 0 }) { collectStatus = nil }
     }
 }
 
@@ -1374,7 +1436,17 @@ enum SidebarMode: String, CaseIterable {
 
 struct Toast: Identifiable, Sendable {
     enum Style: Sendable { case info, success, warning, danger }
+    /// How long a toast stays up before it clears itself.
+    static let displaySeconds: Double = 4
     let id: UUID = UUID()
     let message: String
     let style: Style
+}
+
+extension WorkspaceStore {
+    /// Clears the toast only if it is still the one that was shown, so a timer that outlives
+    /// its toast never takes down the toast that replaced it.
+    func dismissToast(ifShowing id: UUID) {
+        if toast?.id == id { toast = nil }
+    }
 }

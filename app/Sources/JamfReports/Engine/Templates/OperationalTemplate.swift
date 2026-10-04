@@ -34,15 +34,24 @@ struct OperationalTemplate: ReportTemplate {
 
     var htmlSections: [SectionID] {
         [
-            .kpiTiles,
+            .atAGlance,
+            .needsAttention,
+            .jamfDashboard,
             .recentFailures,
             .interventionList,
             .patchQueue,
             .patchBar,
             .policyTable,
             .profileTable,
+            .appTable,
             .agentHealth,
+            .auditAppendix,
         ]
+    }
+
+    /// The action lists start open; the rest of the report starts collapsed.
+    var htmlOpenSections: [SectionID] {
+        [.recentFailures, .interventionList, .patchQueue]
     }
 
     let pdfPagination: PaginationStrategy = .compact

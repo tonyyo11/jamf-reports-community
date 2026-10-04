@@ -88,6 +88,9 @@ final class JamfCLIInstaller {
         let succeeded: Bool
         let message: String
         var updateAvailable: Bool = false
+        /// The update did not start because a collect or a scheduled run was in the way:
+        /// nothing changed, so an available update is still available.
+        var refused: Bool = false
     }
 
     private struct CommandResult: Sendable {
@@ -264,26 +267,11 @@ final class JamfCLIInstaller {
         }
     }
 
-    private var versionChecked = false
-    private var cachedVersion: String?
-
-    var isInstalled: Bool {
-        Self.currentInstallation() != nil
-    }
-
-    var installedVersion: String? {
-        if versionChecked { return cachedVersion }
-        versionChecked = true
-
-        cachedVersion = Self.currentInstallation()?.version
-        return cachedVersion
-    }
-
-    static func installedVersion() -> String? {
-        currentInstallation()?.version
-    }
-
-    static func currentInstallation() -> Installation? {
+    /// Finds jamf-cli and reads its version. Launches `--version` and `version -o json`
+    /// (and `brew --prefix` when jamf-cli is not on a standard path) and blocks on each,
+    /// so it is `nonisolated`: a caller on the main actor must hop off it first, never
+    /// inside a view update, where the wait spins the run loop and re-enters layout.
+    nonisolated static func currentInstallation() -> Installation? {
         let brew = locateBrew()
         if let located = ExecutableLocator.locate("jamf-cli") {
             let source = installSource(for: located)
@@ -374,7 +362,7 @@ final class JamfCLIInstaller {
     /// Kept synchronous (matching `installedVersion(at:)`) so call sites in
     /// `currentInstallation()` do not need an async context. Safe on any thread;
     /// `Process` spawns a child process and `waitUntilExit` blocks the caller thread.
-    static func specProVersion(at binary: URL) -> String? {
+    nonisolated static func specProVersion(at binary: URL) -> String? {
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
@@ -432,7 +420,45 @@ final class JamfCLIInstaller {
         }
     }
 
+    /// Updates jamf-cli, holding the tick lock (`CLIBridge.holdingTickLock`) so the binary
+    /// never changes under a collect and no collect or tick starts under the install.
+    /// Refused, with the reason in the message, while either is running.
     func update() async -> UpdateResult {
+        await Self.refusingWhileBusy { await self.performUpdate() }
+    }
+
+    /// `perform` under the tick lock; a collect, a scheduled run or another update in the
+    /// way gives a refused result instead.
+    static func refusingWhileBusy(
+        _ perform: @escaping @Sendable () async -> UpdateResult
+    ) async -> UpdateResult {
+        do {
+            return try await CLIBridge.holdingTickLock(purpose: .toolUpdate, perform)
+        } catch let blocker as CLIBridgeError where blocker.isCollectRefusal {
+            AppLogger.event(.collect, .notice, "jamf-cli update not started: \(blocker)")
+            return UpdateResult(
+                succeeded: false, message: Self.refusalMessage(blocker), refused: true)
+        } catch {
+            return UpdateResult(
+                succeeded: false,
+                message: "jamf-cli was not updated: \(error.localizedDescription)", refused: true)
+        }
+    }
+
+    static func refusalMessage(_ blocker: CLIBridgeError) -> String {
+        switch blocker {
+        case .toolUpdateInProgress:
+            return "jamf-cli is already being updated."
+        case .tickLockHeld:
+            return "jamf-cli was not updated: a scheduled run is in progress. "
+                + "Update it again when the run finishes."
+        default:
+            return "jamf-cli was not updated: a refresh is running. "
+                + "Update it again when the refresh finishes."
+        }
+    }
+
+    private func performUpdate() async -> UpdateResult {
         guard let installation = Self.currentInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
         }
@@ -454,7 +480,7 @@ final class JamfCLIInstaller {
         "brew install Jamf-Concepts/tap/jamf-cli"
     }
 
-    private static func installSource(for binary: URL) -> InstallSource {
+    private nonisolated static func installSource(for binary: URL) -> InstallSource {
         let path = binary.path
         let resolved = binary.resolvingSymlinksInPath().path
         if isHomebrewManaged(path) || isHomebrewManaged(resolved) {
@@ -466,13 +492,13 @@ final class JamfCLIInstaller {
         return .unknown
     }
 
-    private static func isHomebrewManaged(_ path: String) -> Bool {
+    private nonisolated static func isHomebrewManaged(_ path: String) -> Bool {
         path.contains("/Cellar/jamf-cli/")
             || path.contains("/opt/homebrew/opt/jamf-cli/")
             || path.contains("/usr/local/opt/jamf-cli/")
     }
 
-    private static func locateBrew() -> URL? {
+    private nonisolated static func locateBrew() -> URL? {
         for path in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"] {
             if FileManager.default.isExecutableFile(atPath: path) {
                 return URL(fileURLWithPath: path)
@@ -481,7 +507,7 @@ final class JamfCLIInstaller {
         return nil
     }
 
-    private static func homebrewLinkedJamfCLI(using brew: URL) -> URL? {
+    private nonisolated static func homebrewLinkedJamfCLI(using brew: URL) -> URL? {
         let result = runProcessSync(
             executable: brew, arguments: ["--prefix", "jamf-cli"],
             environment: environmentForBrew()
@@ -1091,7 +1117,7 @@ final class JamfCLIInstaller {
     /// and allow-lists all HOMEBREW_*-prefixed variables so users with non-default
     /// Homebrew configurations (e.g. custom HOMEBREW_CELLAR, HOMEBREW_REPOSITORY,
     /// HOMEBREW_NO_AUTO_UPDATE) are not broken. No other parent env keys are passed.
-    private static func environmentForBrew() -> [String: String] {
+    private nonisolated static func environmentForBrew() -> [String: String] {
         let parent = ProcessInfo.processInfo.environment
         var env: [String: String] = [
             "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
@@ -1122,7 +1148,7 @@ final class JamfCLIInstaller {
     /// `CLIBridge.environmentForJamfCLI()` for jamf-cli invocations,
     /// `environmentForBrew()` for Homebrew, `environmentForArchiveTool()` for
     /// tar/unzip. Leave nil only when a caller genuinely needs the full parent env.
-    private static func runProcessSync(
+    private nonisolated static func runProcessSync(
         executable: URL,
         arguments: [String],
         environment: [String: String]? = nil

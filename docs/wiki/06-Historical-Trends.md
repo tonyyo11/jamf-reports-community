@@ -79,5 +79,8 @@ not the historical record.
 
 ## HTML report timeline
 
-The self-contained HTML report renders a macOS adoption timeline once two or more
-OS-version snapshots exist for the same instance.
+The self-contained HTML report has a **Trends** group: a chart of FileVault, SIP and
+compliance from the daily summaries, with the daily values in a block of their own under
+"Daily values". With `html.track_history: true` the group also appends each run's OS-version
+snapshot to the history file and draws the OS adoption trend once two or more snapshots
+exist for the same instance.

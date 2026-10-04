@@ -65,6 +65,9 @@ struct PageHeader: View {
     let title: String
     var subtitle: String?
     var lastModified: Date? = nil
+    /// True when `trailing` is a `WrappingRow` of controls: they sit beside the title when
+    /// they fit and under it, wrapping, when they do not. False keeps one row.
+    var wrapsTrailing = false
     @ViewBuilder var trailing: () -> AnyView
 
     init(
@@ -74,6 +77,7 @@ struct PageHeader: View {
         title: String,
         subtitle: String? = nil,
         lastModified: Date? = nil,
+        wrapsTrailing: Bool = false,
         @ViewBuilder trailing: @escaping () -> AnyView = { AnyView(EmptyView()) }
     ) {
         self.kicker = kicker
@@ -82,35 +86,56 @@ struct PageHeader: View {
         self.title = title
         self.subtitle = subtitle
         self.lastModified = lastModified
+        self.wrapsTrailing = wrapsTrailing
         self.trailing = trailing
     }
 
     var body: some View {
-        HStack(alignment: .bottom) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs)
-                    if let ageLabel = stalenessLabel {
-                        Text("·")
-                            .font(Theme.Fonts.mono(10.5, weight: .bold))
-                            .foregroundStyle(Theme.Colors.hairlineStrong)
-                        Text(ageLabel.uppercased())
-                            .font(Theme.Fonts.mono(10.5, weight: .semibold))
-                            .tracking(1.5)
-                            .foregroundStyle(effectiveKickerTone == .gold ? Theme.Colors.fgMuted : color(for: effectiveKickerTone))
-                    }
+        if wrapsTrailing {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .bottom) {
+                    titleBlock
+                    Spacer()
+                    trailing()
                 }
-                Text(title)
-                    .font(Theme.Fonts.serif(26, weight: .bold))
-                    .foregroundStyle(Theme.Colors.fg)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.callout)
-                        .foregroundStyle(Theme.Colors.fgMuted)
+                VStack(alignment: .leading, spacing: 12) {
+                    titleBlock
+                    trailing()
                 }
             }
-            Spacer()
-            trailing()
+        } else {
+            HStack(alignment: .bottom) {
+                titleBlock
+                Spacer()
+                trailing()
+            }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Kicker(text: effectiveKicker, tone: effectiveKickerTone, breadcrumbs: breadcrumbs)
+                if let ageLabel = stalenessLabel {
+                    Text("·")
+                        .font(Theme.Fonts.mono(10.5, weight: .bold))
+                        .foregroundStyle(Theme.Colors.hairlineStrong)
+                    Text(ageLabel.uppercased())
+                        .font(Theme.Fonts.mono(10.5, weight: .semibold))
+                        .tracking(1.5)
+                        .foregroundStyle(
+                            effectiveKickerTone == .gold
+                                ? Theme.Colors.fgMuted : color(for: effectiveKickerTone))
+                }
+            }
+            Text(title)
+                .font(Theme.Fonts.serif(26, weight: .bold))
+                .foregroundStyle(Theme.Colors.fg)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(Theme.Colors.fgMuted)
+            }
         }
     }
 

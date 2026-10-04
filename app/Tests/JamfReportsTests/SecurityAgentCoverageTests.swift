@@ -30,6 +30,25 @@ final class SecurityAgentCoverageTests: XCTestCase {
         ], "Mac 1 counts once; an empty value is not reporting; other EAs are ignored")
     }
 
+    /// The Overview card and the summary's EDR figure read "Not Installed" as connected
+    /// when `connected_value` was "Installed": 665 of 665 on prod, which had four Macs without it.
+    func testANegatedValueIsNotConnected() throws {
+        let nessus = SecurityAgentConfig(
+            name: "Nessus", column: "Nessus Status", connectedValue: "Installed")
+        let data = try rows("""
+        [
+          {"computer_id": "1", "ea_name": "Nessus Status", "value": "Installed"},
+          {"computer_id": "2", "ea_name": "Nessus Status", "value": "Installed"},
+          {"computer_id": "3", "ea_name": "Nessus Status", "value": "Not Installed"}
+        ]
+        """)
+
+        let result = SecurityAgentCoverage.compute(rows: data, agents: [nessus])
+
+        XCTAssertEqual(result.map(\.installed), [2])
+        XCTAssertEqual(result.map(\.reporting), [3], "a Mac with the value still reported")
+    }
+
     func testAnAgentWithoutAColumnIsSkipped() throws {
         let data = try rows(
             #"[{"device": "mac-1", "ea_name": "Falcon - Status", "value": "Running"}]"#)

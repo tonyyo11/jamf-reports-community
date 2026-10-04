@@ -558,12 +558,10 @@ struct FleetOverviewView: View {
     }
 
     private func load() async {
+        // A reload from disk: nothing is collected, so it neither writes the shared status
+        // line (a running collect owns it) nor claims the data was refreshed.
         isLoading = true
-        workspace.globalStatus = "Aggregating multi-profile summaries..."
-        defer { 
-            isLoading = false
-            workspace.globalStatus = nil
-        }
+        defer { isLoading = false }
 
         if workspace.demoMode {
             rows = demoRows()
@@ -574,8 +572,7 @@ struct FleetOverviewView: View {
         let profiles = workspace.initializedProfiles
         rows = await Task.detached(priority: .utility) {
             profiles.map { profile in
-                let summaries = (try? WorkspacePaths.summariesDir(for: profile.name))
-                    .map { SummaryJSONParser.parseDirectory($0) } ?? []
+                let summaries = TrendStore.readSummaries(profile: profile.name)
                 return FleetProfileOverview(
                     profile: profile.name,
                     summary: summaries.last,
@@ -584,9 +581,6 @@ struct FleetOverviewView: View {
             }
         }.value
 
-        if !rows.isEmpty {
-            workspace.toast = Toast(message: "Fleet data refreshed", style: .success)
-        }
         clearDrillDownIfProfileMissing()
     }
 

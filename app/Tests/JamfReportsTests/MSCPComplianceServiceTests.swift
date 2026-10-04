@@ -474,6 +474,41 @@ final class MSCPComplianceServiceTests: XCTestCase {
         XCTAssertEqual(r.disagreementRate, 1.0)
     }
 
+    /// Prod: the list EA is newline-separated, so a pipe-only split read every Mac's list as
+    /// one entry and the check reported ~100% disagreement.
+    func testCrossCheckReadsNewlineSeparatedLists() {
+        let rows: [EAResultRow] = [
+            .init(device: "mac-001", eaName: stig, value: 3),
+            .init(device: "mac-001", eaName: stigList, stringValue: "os_a\nos_b\nos_c"),
+            .init(device: "mac-002", eaName: stig, value: 1),
+            .init(device: "mac-002", eaName: stigList, stringValue: "os_a\n"),
+        ]
+        let results = MSCPComplianceService.crossCheck(
+            rows: rows, baselines: [crossCheckBaseline()])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.devicesCompared, 2)
+        XCTAssertEqual(r.disagreements, 0)
+    }
+
+    /// A Mac the audit could not score has count -1 and a status in the list column. Neither
+    /// side is a measurement, so it is not compared (and never counts as a disagreement).
+    func testCrossCheckSkipsMacsWithAStatusInsteadOfAList() {
+        let rows: [EAResultRow] = [
+            .init(device: "mac-001", eaName: stig, value: 2),
+            .init(device: "mac-001", eaName: stigList, stringValue: "os_a\nos_b"),
+            .init(device: "mac-002", eaName: stig, value: -1),
+            .init(device: "mac-002", eaName: stigList, stringValue: "No Baseline Set"),
+            // Status with a (stale) valid-looking count: still no list to compare.
+            .init(device: "mac-003", eaName: stig, value: 4),
+            .init(device: "mac-003", eaName: stigList, stringValue: "Multiple Baselines Found"),
+        ]
+        let results = MSCPComplianceService.crossCheck(
+            rows: rows, baselines: [crossCheckBaseline()])
+        let r = try! XCTUnwrap(results.first)
+        XCTAssertEqual(r.devicesCompared, 1)
+        XCTAssertEqual(r.disagreements, 0)
+    }
+
     func testCrossCheckBlankListCellAgreesWithCountZero() {
         let rows: [EAResultRow] = [
             .init(device: "mac-001", eaName: stig, value: 0),

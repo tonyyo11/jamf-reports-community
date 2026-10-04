@@ -160,13 +160,17 @@ enum MetricAlertEvaluator {
     /// real mSCP failure count (~67%) are different scales, so enabling
     /// compliance.baselines would fabricate a huge false drop. Likewise a patch_pct drop
     /// across the per-title mean and the device-weighted figure (`patchPctBasis`, epic
-    /// #207 C1). Absent (nil) basis on both sides is treated as unchanged and still fires.
+    /// #207 C1), and a security_score drop across a change in the metrics it weighs
+    /// (`securityScoreBasis`, epic #207 H1): adding EDR coverage to a score moves it without
+    /// the fleet changing. Absent (nil) basis on both sides is treated as unchanged and
+    /// still fires.
     private static func sameBasis(
         _ metric: AlertMetric, _ current: DailySummary, _ prior: DailySummary
     ) -> Bool {
         switch metric {
         case .compliancePct: return current.complianceIsProxy == prior.complianceIsProxy
         case .patchPct: return current.patchPctBasis == prior.patchPctBasis
+        case .securityScore: return current.securityScoreBasis == prior.securityScoreBasis
         default: return true
         }
     }

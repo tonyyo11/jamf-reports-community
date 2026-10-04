@@ -313,7 +313,7 @@ final class SnapshotPickerParityTests: XCTestCase {
                   modified: now)
 
         let html = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
-            .buildInsightsDrift(protectDataDir: protectDir)
+            .buildInsightsDrift(protectDataDir: protectDir).html
 
         XCTAssertFalse(html.contains("9999"), "a sync conflict copy is never a snapshot")
         let older = try XCTUnwrap(html.range(of: "4242"))

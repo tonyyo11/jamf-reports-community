@@ -138,9 +138,7 @@ struct AuditView: View {
         findings.filter { $0.severity.uppercased() == "WARNING" }.count
     }
 
-    private var affectedTotal: Int {
-        findings.reduce(0) { $0 + $1.affected }
-    }
+    private var openFindingCount: Int { findings.openCount }
 
     private var categoryCount: Int {
         Set(findings.map { $0.category.lowercased() }).count
@@ -637,12 +635,15 @@ struct AuditView: View {
                     }
                     if !commandHealth.topFailedCommands.isEmpty {
                         Divider().background(Theme.Colors.hairline)
-                        HStack(spacing: 6) {
+                        // Wraps rather than squeezing the label: the pills do not shrink, so the
+                        // label lost its width and broke one letter to a line.
+                        WrappingRow(spacing: 6, lineSpacing: 6) {
                             Kicker(text: "Most failed")
                             ForEach(commandHealth.topFailedCommands.prefix(3), id: \.name) { c in
                                 Pill(text: "\(c.name) ×\(c.count)", tone: .warn)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                     }
                 }
@@ -702,7 +703,7 @@ struct AuditView: View {
         HStack(spacing: 10) {
             CompactMetricTile(label: "Critical", value: "\(criticalCount)", tone: .danger)
             CompactMetricTile(label: "Warnings", value: "\(warningCount)", tone: .warn)
-            CompactMetricTile(label: "Affected", value: "\(affectedTotal)", tone: .gold)
+            CompactMetricTile(label: "Findings", value: "\(openFindingCount)", tone: .gold)
             CompactMetricTile(label: "Categories", value: "\(categoryCount)", tone: .teal)
         }
     }
@@ -1028,19 +1029,26 @@ struct AuditView: View {
         await loadIntegritySummary()
         duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
         commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
-        commandFindings = commandHealthFindings(commandHealth)
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
+        let scanned = commandHealth.isDetected
+        var failedCommandTotal: Int?
         if let current = auditSnapshots.first,
-           let decoded = try? decoder.decode([AuditFinding].self, from: current.data) {
+           let decodedAll = try? decoder.decode([AuditFinding].self, from: current.data) {
+            let split = withoutSupersededRows(decodedAll, commandHealthDetected: scanned)
+            let decoded = split.shown
+            failedCommandTotal = split.failedCommandTotal
             findings = decoded
             lastAuditDate = current.modified
 
             let currentKeys = Set(decoded.map(\.driftKey))
             if let previousSnapshot = auditSnapshots.dropFirst().first {
                 do {
-                    let previous = try decoder.decode([AuditFinding].self, from: previousSnapshot.data)
+                    let previousAll = try decoder.decode(
+                        [AuditFinding].self, from: previousSnapshot.data)
+                    let previous = withoutSupersededRows(
+                        previousAll, commandHealthDetected: scanned).shown
                     let previousKeys = Set(previous.map(\.driftKey))
                     newFindingKeys = currentKeys.subtracting(previousKeys)
                     resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
@@ -1054,6 +1062,9 @@ struct AuditView: View {
                 }
             }
         }
+
+        commandFindings = commandHealthFindings(
+            commandHealth, failedCommandTotal: failedCommandTotal)
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
             profile: workspace.profile,
@@ -1327,15 +1338,48 @@ private struct FindingDetailPopover: View {
     }
 }
 
+extension Array where Element == AuditFinding {
+    /// Findings that need a look (anything not OK): one unit. The summary tile used to add up
+    /// each finding's `affected`, which counts commands, policies, groups and devices alike.
+    var openCount: Int { filter { $0.severity.uppercased() != "OK" }.count }
+}
+
+/// `pro audit`'s "Failed MDM commands" check counts every command in Jamf Pro's history with
+/// an Error status and grades it CRITICAL above 100. The per-device scan counts the devices
+/// with a failure and grades it WARNING. Both rows for one condition, in two units and two
+/// severities, disagreed, so once a scan exists the audit row is dropped from the findings
+/// table and its count moves into the scan's finding (`commandHealthFindings`).
+///
+/// - Returns: the findings to show, and the dropped row's command count (nil when no row was
+///   dropped). Without a scan nothing is dropped.
+func withoutSupersededRows(
+    _ findings: [AuditFinding], commandHealthDetected: Bool
+) -> (shown: [AuditFinding], failedCommandTotal: Int?) {
+    guard commandHealthDetected else { return (findings, nil) }
+    func isFailedCommands(_ finding: AuditFinding) -> Bool {
+        finding.name.trimmingCharacters(in: .whitespaces).lowercased() == "failed mdm commands"
+    }
+    let total = findings.first(where: isFailedCommands)?.affected
+    return (findings.filter { !isFailedCommands($0) }, total)
+}
+
 /// The two "Command health" findings, derived from the per-device scan snapshot
 /// rather than `pro audit`. OK when the fleet is clean, WARNING otherwise, so
-/// they sort like every other finding. Internal for tests.
-func commandHealthFindings(_ snapshot: MDMCommandHealthService.Snapshot) -> [AuditFinding] {
+/// they sort like every other finding. `failedCommandTotal` is the command count of the
+/// `pro audit` row this replaces (`withoutSupersededRows`). Internal for tests.
+func commandHealthFindings(
+    _ snapshot: MDMCommandHealthService.Snapshot, failedCommandTotal: Int? = nil
+) -> [AuditFinding] {
     guard snapshot.isDetected else { return [] }
     let failed = snapshot.devicesWithFailures.count
     let stale = snapshot.devicesWithStalePending.count
     let staleDays = DeviceScanBuilders.pendingAgeThresholdDays
-    let failedRecommendation = "Open the device's Jamf Pro record → Management → "
+    let commandNote = failedCommandTotal.map {
+        "Jamf Pro holds \($0) failed command\($0 == 1 ? "" : "s") in total, across these "
+            + "devices and any no longer enrolled. "
+    } ?? ""
+    let failedRecommendation = commandNote
+        + "Open the device's Jamf Pro record → Management → "
         + "Management Commands, read the failure text, then clear the failed "
         + "command there. The app never flushes commands."
     let staleRecommendation = "A command pending this long usually means the Mac "
@@ -1397,6 +1441,7 @@ extension FleetInsightInput {
         }
         if drift == nil {
             notes.append("No previous audit was available, so what changed is unknown.")
+            notes.append(noEarlierDataNote)
         }
         return FleetInsightInput(
             title: "Audit insight",

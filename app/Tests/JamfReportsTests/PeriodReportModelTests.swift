@@ -64,6 +64,36 @@ final class PeriodReportModelTests: XCTestCase {
         XCTAssertFalse(m.rows.contains { $0.definitionChanged })
     }
 
+    private func scoreSummary(_ date: String, score: Double?, basis: String?) -> DailySummary {
+        DailySummary(date: date, totalDevices: 600, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: nil,
+            source: "test", securityScore: score, securityScoreBasis: basis)
+    }
+
+    /// The security score weighs a different set of inputs once the EDR agent is counted
+    /// (epic #207 H1), so its change across that date is the definition, not the fleet.
+    func testScoreChangeIsWithheldAcrossAnInputChange() throws {
+        let m = model([scoreSummary("2026-04-01", score: 90, basis: nil),
+                       scoreSummary("2026-06-30", score: 79.3, basis: "fileVault,crowdstrike")])
+        let row = try XCTUnwrap(m.rows.first { $0.metricID == "securityScore" })
+        XCTAssertEqual(row.startValue, 90)
+        XCTAssertEqual(row.endValue, 79.3)
+        XCTAssertNil(row.change)
+        XCTAssertTrue(row.definitionChanged)
+        XCTAssertEqual(PeriodReportModel.definitionNote(for: row.metricID),
+                       PeriodReportModel.securityScoreDefinitionNote)
+    }
+
+    func testScoreChangeIsKeptWhenBothEndsWeighTheSameInputs() throws {
+        for basis in [nil, "fileVault,sip,firewall"] {
+            let m = model([scoreSummary("2026-04-01", score: 90, basis: basis),
+                           scoreSummary("2026-06-30", score: 92, basis: basis)])
+            let row = try XCTUnwrap(m.rows.first { $0.metricID == "securityScore" })
+            XCTAssertEqual(try XCTUnwrap(row.change), 2.0, accuracy: 0.001)
+            XCTAssertFalse(row.definitionChanged)
+        }
+    }
+
     func testStartAndEndComeFromTheBoundarySummaries() throws {
         let m = model([summary("2026-04-01", total: 600, fv: 90),
                        summary("2026-05-15", total: 630, fv: 95),

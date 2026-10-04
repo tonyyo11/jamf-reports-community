@@ -101,8 +101,8 @@ final class PostureViewsRenderTests: XCTestCase {
     /// over, so the hero card gives it its own reason instead of calling it missing.
     func testMissingTextSaysWhyFileVaultIsNotScored() {
         typealias Control = SecurityFleetCounts.Control
-        let notInReport = "Not in the security report, so not scored here: EDR Agent Connected, "
-            + "mSCP Compliance, XProtect Current, CVE Clean, Secure Boot (Full)."
+        let notInReport = "No data for EDR Agent Connected, "
+            + "mSCP Compliance, XProtect Current, CVE Clean, Secure Boot (Full), so not scored."
         let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
         let on = Control(level: .fail, on: 2, fail: 0, warning: 0)
         let allDropped = SecurityFleetCounts(
@@ -123,8 +123,8 @@ final class PostureViewsRenderTests: XCTestCase {
         let absent = SecurityScoreCalculator.score(input: noFileVault.scoreInput())
         XCTAssertEqual(
             SecurityPostureView.missingText(absent, fleet: noFileVault, edrAgentName: nil),
-            "Not in the security report, so not scored here: FileVault Encryption, EDR Agent "
-                + "Connected, mSCP Compliance, XProtect Current, CVE Clean, Secure Boot (Full).")
+            "No data for FileVault Encryption, EDR Agent Connected, mSCP Compliance, "
+                + "XProtect Current, CVE Clean, Secure Boot (Full), so not scored.")
     }
 
     // MARK: - Reading off the main actor

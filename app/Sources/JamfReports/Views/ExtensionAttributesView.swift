@@ -53,7 +53,7 @@ struct ExtensionAttributesView: View {
                     expectedKinds: ["ea-results", "computer-extension-attributes"]
                 )
             }
-            if snapshot.totalEAs == 0 {
+            if snapshot.definedEAs == 0 && snapshot.reportingEAs == 0 {
                 emptyState
             } else {
                 kpiGrid
@@ -81,8 +81,19 @@ struct ExtensionAttributesView: View {
     private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
     private var subtitle: String? {
-        guard snapshot.totalEAs > 0 else { return nil }
-        return "\(snapshot.totalEAs) Extension Attribute\(snapshot.totalEAs == 1 ? "" : "s") across \(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s")."
+        Self.subtitle(for: snapshot)
+    }
+
+    /// What the header counts, by the same two figures as the tiles.
+    static func subtitle(for snapshot: ExtensionAttributeService.Snapshot) -> String? {
+        let defined = snapshot.definedEAs
+        let reporting = snapshot.reportingEAs
+        guard defined > 0 || reporting > 0 else { return nil }
+        let devices = "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s")"
+        let noun = { (count: Int) in "Extension Attribute\(count == 1 ? "" : "s")" }
+        if defined == 0 { return "\(reporting) \(noun(reporting)) across \(devices)." }
+        if reporting == 0 { return "\(defined) \(noun(defined)) defined; no results yet." }
+        return "\(defined) \(noun(defined)) defined, \(reporting) with results across \(devices)."
     }
 
     // MARK: - Data loading
@@ -148,7 +159,6 @@ struct ExtensionAttributesView: View {
                     populatedDevices: entry.devices, totalDevices: fleet)
             },
             totalDevices: fleet,
-            totalEAs: definitions.count,
             // One row per Mac for each attribute, as `pro report ea-results --all` writes.
             totalRowCount: fleet * definitions.count,
             valueDistributions: [
@@ -247,9 +257,14 @@ struct ExtensionAttributesView: View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Total EAs",
-                value: "\(snapshot.totalEAs)",
-                sub: "Across definitions and results"
+                label: "Defined EAs",
+                value: snapshot.definedEAs > 0 ? "\(snapshot.definedEAs)" : "--",
+                sub: snapshot.definedEAs > 0 ? "In Jamf Pro" : "Definitions not collected"
+            )
+            StatTile(
+                label: "EAs With Results",
+                value: "\(snapshot.reportingEAs)",
+                sub: "In the latest results"
             )
             StatTile(
                 label: "Total Devices",
@@ -528,7 +543,8 @@ struct ExtensionAttributesView: View {
                         }
                         .width(min: 60, ideal: 80)
                     }
-                    .frame(minHeight: 200)
+                    .pageTableHeight(
+                        rows: min(snapshot.definitions.count, Self.definitionsDisplayCap))
                     if snapshot.definitions.count > Self.definitionsDisplayCap {
                         Text("Generated reports include every definition.")
                             .font(.caption)

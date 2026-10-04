@@ -596,8 +596,9 @@ struct CSVDashboard: Sendable {
             guard columns.contains(agent.column) else { continue }
             var installed = 0
             for csvRow in activeRows {
-                let val = (csvRow[agent.column] ?? "").lowercased()
-                if val.contains(agent.connectedValue.lowercased()) { installed += 1 }
+                let check = RiskScoringService.SecurityAgentCheck(
+                    value: csvRow[agent.column] ?? "", connectedValue: agent.connectedValue)
+                if check.isConnected == true { installed += 1 }
             }
             let notInstalled = total - installed
             let pct = total > 0 ? Double(installed) / Double(total) : 0

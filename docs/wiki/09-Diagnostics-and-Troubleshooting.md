@@ -182,6 +182,28 @@ the day's summary could not be written. The line names which.
 every collect it starts. Wait for it to finish, then try again; the app starts nothing
 while the lock is held.
 
+**"A refresh is already running".** The app runs one collect at a time, for every profile, so
+a second Refresh, Collect now, scan prompt, Generate with fresh data or first collect is turned
+away rather than started beside the first, which would double the load on the Jamf server. The
+status bar names the collect that is running. Wait for it to finish, then try again; nothing is
+queued, and the click leaves no Run History entry.
+
+**"jamf-cli is being updated".** An update of jamf-cli holds the same lock as a collect, so
+neither starts while the other runs and the binary never changes under a collect. Updating from
+Settings while a refresh or a scheduled run is going says so and changes nothing; update again
+when it finishes.
+
+**The top of a run log says what it will collect.** Every run log starts with `[plan]` lines:
+the sources it will fetch (`[plan] profile <name> — collecting N sources: …`), the ones it
+leaves alone grouped by reason (`jamf_cli.collect_skip`, a Platform API profile required, tier
+not selected, not due, and so on), and whether the per-device scan runs. Each skipped source
+still has its own `[skip]` line with the detail, such as when it last ran.
+
+**A run in Run History says Running.** A run whose log has no exit line yet and is still being
+written shows a RUNNING pill; press Refresh to update it. A run with no exit line that nothing
+is writing any more (the Mac slept through it, or the app was quit) shows WARN, as before. Rows
+are dated at the run's start.
+
 **"Refresh finished with warnings".** The collect exited 0 but a source did not land. The toast is
 amber, not red, and Run History has the `[partial]` line under "Manual collect"; if the run
 could not be recorded the toast says Settings → Logging instead.

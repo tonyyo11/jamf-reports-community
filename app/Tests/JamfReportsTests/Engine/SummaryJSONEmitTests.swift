@@ -674,6 +674,57 @@ final class SummaryJSONEmitTests: XCTestCase {
                        "nil → nil mobileDeviceCount is not an upgrade")
     }
 
+    // MARK: - freshSummaryIsBetter EDR upgrade rules
+
+    /// The prod symptom: the day's first summary came from a build that did not record the
+    /// EDR figure, every later collect that day was told "already exists", and the Overview's
+    /// EDR card read "No value" beside an agents card showing 95.6%.
+    func testFreshSummaryIsBetter_edrNilToMeasured_returnsTrue() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true)
+        let fresh = makeSummary(complianceIsProxy: false, hasBands: true, crowdstrikePct: 95.6)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
+    }
+
+    func testFreshSummaryIsBetter_edrMeasuredToNilOrMeasured_returnsFalse() {
+        let existing = makeSummary(complianceIsProxy: false, hasBands: true, crowdstrikePct: 90)
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(
+            existing: existing,
+            fresh: makeSummary(complianceIsProxy: false, hasBands: true)),
+            "measured → nil is a downgrade")
+        XCTAssertFalse(ReportEngine.freshSummaryIsBetter(
+            existing: existing,
+            fresh: makeSummary(complianceIsProxy: false, hasBands: true, crowdstrikePct: 95.6)),
+            "the first same-day measurement stands")
+    }
+
+    func testSameDaySummaryWithoutTheEDRFigureIsRebuiltOnceItCanBeMeasured() throws {
+        let column = "Crowdstrike State"
+        var cfg = ReportConfig()
+        cfg.securityAgents = [
+            SecurityAgentConfig(name: "Crowdstrike State", column: column,
+                                connectedValue: "connected")
+        ]
+        let dataDir = tmpDir.appendingPathComponent("edr-frozen-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeAgentEAResults(to: dataDir, column: column,
+                                values: ["connected", "connected", "connected", "error"])
+        let localSummaries = tmpDir.appendingPathComponent("edr-frozen", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: localSummaries, withIntermediateDirectories: true)
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        // Today's summary as an earlier build wrote it: no EDR figure.
+        let earlier = makeSummary(
+            complianceIsProxy: nil, hasBands: false, date: today, totalDevices: 5)
+        try JSONEncoder().encode(earlier)
+            .write(to: localSummaries.appendingPathComponent("summary_\(today).json"))
+
+        XCTAssertEqual(localEngine.emitSummaryJSON(summariesDir: localSummaries), .wrote)
+
+        let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
+        XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
+    }
+
     // MARK: - freshSummaryIsBetter source upgrade rules
 
     func testFreshSummaryIsBetter_sourceCacheToLive_returnsTrue() {
@@ -686,10 +737,21 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
     }
 
-    func testFreshSummaryIsBetter_sameLiveSources_returnsFalse() {
+    /// Any run that landed a source rebuilds the day, even one that landed the same sources
+    /// as the morning's: its numbers are newer.
+    func testFreshSummaryIsBetter_sameLiveSources_returnsTrue() {
         let sources = ["security": "live", "patch-status": "cache"]
         let existing = makeSummary(
             complianceIsProxy: false, hasBands: true, collectionSources: sources)
+        let fresh = makeSummary(
+            complianceIsProxy: false, hasBands: true, collectionSources: sources)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
+    }
+
+    func testFreshSummaryIsBetter_nothingLanded_returnsFalse() {
+        let sources = ["security": "cache", "patch-status": "absent"]
+        let existing = makeSummary(
+            complianceIsProxy: false, hasBands: true, collectionSources: ["security": "live"])
         let fresh = makeSummary(
             complianceIsProxy: false, hasBands: true, collectionSources: sources)
         XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
@@ -859,7 +921,8 @@ final class SummaryJSONEmitTests: XCTestCase {
         totalDevices: Int = 100,
         staleCount: Int? = 5,
         mobileDeviceCount: Int? = nil,
-        collectionSources: [String: String]? = nil
+        collectionSources: [String: String]? = nil,
+        crowdstrikePct: Double? = nil
     ) -> DailySummary {
         let bands: [String: MSCPBandCounts]? = hasBands
             ? ["NIST": MSCPBandCounts(pass: 80, low: 10, medLow: 5, medium: 3, high: 2, noData: 0)]
@@ -871,7 +934,7 @@ final class SummaryJSONEmitTests: XCTestCase {
             compliancePct: 80.0,
             staleCount: staleCount,
             osCurrentPct: 70.0,
-            crowdstrikePct: nil,
+            crowdstrikePct: crowdstrikePct,
             patchPct: 85.0,
             source: "jamf-cli",
             complianceIsProxy: complianceIsProxy,

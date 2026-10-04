@@ -274,7 +274,12 @@ struct SourcesView: View {
                     Spacer()
                     Pill(text: "\(csvFiles.count) FILES", tone: .muted)
                 }
+                // One line, shortened in the middle: a path has no spaces to wrap at, so it
+                // broke wherever the card ran out of width.
                 Mono(text: workspaceDisplayPath(subpath: "csv-inbox") + "/")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(workspaceDisplayPath(subpath: "csv-inbox") + "/")
 
                 if csvFiles.isEmpty {
                     emptyCSVState
@@ -291,12 +296,16 @@ struct SourcesView: View {
                                     .font(.system(size: 12))
                                 VStack(alignment: .leading, spacing: 1) {
                                     Mono(text: f.name, color: Theme.Text.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .help(f.name)
                                     Mono(
                                         text: "\(FileDisplay.date(f.mtime)) · \(f.size)",
                                         size: 10.5
                                     )
+                                    .lineLimit(1)
                                 }
-                                Spacer()
+                                Spacer(minLength: 8)
                                 Pill(text: f.status.rawValue, tone: tone(for: f.status))
                                 Menu {
                                     Button(role: .destructive) {
@@ -626,25 +635,39 @@ struct SourcesView: View {
                             Text(f.name)
                                 .font(Theme.Fonts.mono(12, weight: .semibold))
                                 .foregroundStyle(Theme.Colors.goldBright)
+                                .lineLimit(1)
                         }
-                        TableColumn("Globs") { f in Mono(text: f.glob) }
+                        .width(min: 110, ideal: 150, max: 220)
+                        TableColumn("Globs") { f in
+                            Mono(text: f.glob).lineLimit(1).truncationMode(.middle)
+                        }
+                        .width(min: 120, ideal: 170, max: 260)
                         TableColumn("Snapshots") { f in Mono(text: "\(f.snapshotCount)") }
+                            .width(min: 70, ideal: 80, max: 96)
                         TableColumn("Latest") { f in
                             Mono(text: f.latestDate.map(FileDisplay.date) ?? "—")
                         }
+                        .width(min: 96, ideal: 110, max: 140)
                         TableColumn("Storage") { f in Mono(text: FileDisplay.size(f.totalBytes)) }
+                            .width(min: 64, ideal: 76, max: 96)
+                        // The one flexible column, so the row's width is always filled and
+                        // never overruns into a horizontal scroll bar.
                         TableColumn("Used By") { f in
                             Text(f.usedBy.isEmpty ? "—" : f.usedBy)
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
+                        .width(min: 120)
                     }
                     // Sized to the actual rows — a tall fixed frame renders
                     // empty filler rows that read as missing data.
                     .frame(height: min(CGFloat(families.count) * 28 + 34, 200))
                     .scrollContentBackground(.hidden)
                     Text("Families appear as snapshot types are archived: summaries "
-                        + "(daily trend data, written by every collect) plus dated computers, "
+                        + "(daily trend data: a day's first collect writes it, and each later "
+                        + "collect that fetches new data rebuilds it) plus dated computers, "
                         + "mobile, compliance, and patching archives created when CSV exports "
                         + "are snapshotted. A jamf-cli-only workspace typically shows only "
                         + "summaries.")
@@ -677,7 +700,7 @@ struct SourcesView: View {
             systemImage: "archivebox",
             title: "No snapshot families yet",
             message: "Families appear after collection or CSV archival runs: "
-                + "summaries (written by every collect), plus dated computers, "
+                + "summaries (written by a collect that fetches data), plus dated computers, "
                 + "mobile, compliance, and patching archives."
         )
         .frame(maxWidth: .infinity, minHeight: 160)

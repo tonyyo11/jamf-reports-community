@@ -281,7 +281,7 @@ struct PatchView: View {
                     }
                     .width(min: 80, ideal: 90)
                 }
-                .frame(minHeight: 200)
+                .pageTableHeight(rows: min(sortedTitles.count, Self.titlesDisplayCap))
                 if sortedTitles.count > Self.titlesDisplayCap {
                     Text("Generated reports include every patch title.")
                         .font(.caption)

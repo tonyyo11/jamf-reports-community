@@ -305,6 +305,46 @@ final class CSVDashboardTests: XCTestCase {
                        "Stale devices must remain sorted most-stale-first")
     }
 
+    // MARK: - Security Agents sheet
+
+    /// The sheet counted "Not Installed" as installed when `connected_value` was "Installed".
+    func testSecurityAgentsSheetDoesNotCountANegatedValueAsInstalled() throws {
+        let today = DateFormatter()
+        today.locale = Locale(identifier: "en_US_POSIX")
+        today.dateFormat = "yyyy-MM-dd"
+        let now = today.string(from: Date())
+        let csv = """
+        Computer Name,Last Check-in,Nessus Status
+        Mac-A,\(now),Installed
+        Mac-B,\(now),Installed
+        Mac-C,\(now),Not Installed
+        Mac-D,\(now),Not Installed
+        """
+        var config = ReportConfig()
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        cols.lastCheckin = "Last Check-in"
+        config.columns = cols
+        config.securityAgents = [
+            SecurityAgentConfig(
+                name: "Nessus", column: "Nessus Status", connectedValue: "Installed"),
+        ]
+        let wb = Workbook()
+        let dashboard = try XCTUnwrap(
+            CSVDashboard(config: config, csvData: Data(csv.utf8), workbook: wb))
+        dashboard.writeSecurityAgents()
+
+        let cells = try XCTUnwrap(wb.sheet(named: "Security Agents")).dedupedCells
+        let agentRow = try XCTUnwrap(cells.first { cell in
+            if case .string("Nessus") = cell.value { return cell.col == 0 }
+            return false
+        }).row
+        let installed = cells.first { $0.row == agentRow && $0.col == 1 }
+        guard case .int(2)? = installed?.value else {
+            return XCTFail("2 of 4 are installed, got \(String(describing: installed?.value))")
+        }
+    }
+
     // MARK: - Security Controls sheet
 
     private struct ControlRow: Equatable {

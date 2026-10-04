@@ -192,7 +192,11 @@ mobile_columns:
 #   name            - Display label in the report
 #   column          - Exact EA column name in your CSV
 #   connected_value - The string that means "installed / running"
-#                     (case-insensitive substring match)
+#                     (case-insensitive substring match). A value that says the
+#                     agent is absent or off never matches, even when it contains
+#                     this text: "Not Installed", "Uninstalled", "not running",
+#                     "Disconnected", "Inactive". Leave it blank and any
+#                     non-empty value counts as connected.
 #
 # Comment out any agents your org does not deploy.
 
@@ -361,8 +365,8 @@ branding:
 #   [warn] line. track_history applies to it as to any HTML report. Default: false.
 #
 # When track_history is true, every `html` run appends an OS-version snapshot
-# to the history file.  Once two or more snapshots exist for an instance URL, a
-# macOS Adoption Timeline chart appears in the HTML report.
+# to the history file.  Once two or more snapshots exist for an instance URL, an
+# OS adoption trend appears in the HTML report's Trends group.
 #
 # history_file: path to the JSON file that persists snapshots across runs.
 #   Relative paths resolve from this config file's directory and must stay
@@ -485,6 +489,11 @@ security_policy:
   # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
   # silicon, or Intel with the T2 chip). Omit to use the filevault level.
   # filevault_off_hardware_encrypted: warning
+  # The security_agents entry the Security Score counts as the EDR agent (its name, as
+  # written under security_agents). Omit to use the first agent. A name that matches no
+  # agent also uses the first, and Config Doctor warns. The other agents are tracked and
+  # shown (an Overview card and a Trends series each) but do not change the score.
+  # edr_agent: "CrowdStrike Falcon"
   # Your own words for on and off, for an extension attribute or CSV column mapped
   # to filevault, sip, firewall or gatekeeper: a list, or one string, per control.
   # Checked in order: off_values, on_values (a value in both reads off), then the
@@ -618,8 +627,8 @@ platform:
 # Tracks mSCP (macOS Security Compliance Project) audit results or any other
 # compliance framework your org reports on.
 #
-# The mSCP EA scripts write a failed-rules count and a pipe-delimited list of
-# failed rule IDs to two separate EAs. Configure both below.
+# The mSCP EA scripts write a failed-rules count and a list of failed rule IDs
+# (one per line) to two separate EAs. Configure both below.
 #
 # Set enabled: false to skip the Compliance sheet entirely.
 
@@ -638,8 +647,11 @@ compliance:
   # EA column containing the integer count of failed rules.
   # Used as the single-baseline shorthand when `baselines` is absent.
   failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5"
-  # EA column containing the pipe-delimited list of failed rule IDs.
+  # EA column containing the list of failed rule IDs. One rule ID per line; a
+  # comma, semicolon or pipe between IDs also works.
   # Example cell value: "os_filevault_enable|os_screensaver_timeout|..."
+  # A status such as "No Baseline Set" or "Multiple Baselines Found" in this
+  # column means the Mac was not evaluated: it is not read as a rule.
   failures_list_column: "Compliance - Failed mSCP Result List - NIST 800-53r5"
 
   # Per-baseline list for multi-baseline mSCP/STIG tracking.
@@ -662,7 +674,7 @@ compliance:
   #   rule_count           - optional; total rules in the baseline. When set, a
   #                          failure count above it is rejected as a garbage EA
   #                          value (No Data) instead of banding the device High.
-  #   failures_list_column - optional; the pipe-delimited failed-rule-ID EA.
+  #   failures_list_column - optional; the failed-rule-ID list EA.
   #                          Enables the count-vs-list accuracy cross-check.
   # baselines:
   #   - name: "NIST 800-53r5"

@@ -33,10 +33,11 @@ struct SchoolTemplate: ReportTemplate {
 
     var htmlSections: [SectionID] {
         [
-            .kpiTiles,
-            .fleetSummary,
+            .atAGlance,
+            .needsAttention,
             .osAdoptionChart,
             .orgInfo,
+            .auditAppendix,
         ]
     }
 

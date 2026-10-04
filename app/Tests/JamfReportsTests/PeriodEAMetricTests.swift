@@ -42,6 +42,15 @@ final class PeriodEAMetricTests: XCTestCase {
         XCTAssertEqual(row.startValue, 1)
     }
 
+    /// A configured agent match refuses a value that says the agent is absent or off.
+    func testMatchRefusesANegatedValue() {
+        let row = PeriodReportModel.eaRow(
+            metric: metric(match: "Installed"), name: "Widget Status", match: "Installed",
+            period: period(),
+            snapshots: [snap("2026-04-01", ["a": "Installed", "b": "Not Installed", "c": ""])])
+        XCTAssertEqual(row.startValue, 1)
+    }
+
     // MARK: - Unconfigured EA: a distribution
 
     func testUnconfiguredEAYieldsDistributionsAndNoScalar() {

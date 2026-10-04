@@ -92,10 +92,13 @@ final class OverviewViewFleetCountTests: XCTestCase {
     // MARK: - Failing-rules subtitle
 
     func testFailingRulesSubtitleUsesProvidedFleetCount() {
-        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", fleetCount: 100)
-        XCTAssertEqual(subtitle, "Compliance Benchmark · across 100 active devices")
+        let subtitle = failingRulesSubtitle(
+            baseline: "Compliance Benchmark", macsWithResults: 100)
+        XCTAssertEqual(subtitle, "Compliance Benchmark · across 100 Macs with results")
         XCTAssertFalse(subtitle.contains("502"),
-                       "Subtitle must reflect the live fleet count, not a stale 502")
+                       "Subtitle must reflect the live count, not a stale 502")
+        XCTAssertFalse(subtitle.contains("active"),
+                       "The count is the Macs that reported results, not the active Macs")
     }
 
     // MARK: - Unknown-fleet placeholder behavior
@@ -138,8 +141,11 @@ final class OverviewViewFleetCountTests: XCTestCase {
     }
 
     func testFailingRulesSubtitleDropsAcrossClauseWhenFleetUnknown() {
-        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", fleetCount: 0)
+        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", macsWithResults: 0)
         XCTAssertEqual(subtitle, "Compliance Benchmark",
-                       "fleetCount=0 must render the baseline alone, not 'across 0 active devices'")
+                       "0 must render the baseline alone, not 'across 0 Macs with results'")
+        XCTAssertEqual(
+            failingRulesSubtitle(baseline: "Compliance Benchmark", macsWithResults: 1),
+            "Compliance Benchmark · across 1 Mac with results")
     }
 }

@@ -489,10 +489,10 @@ struct DeviceLookupView: View {
         }
     }
 
-    /// A refresh refused because a scheduled run holds the tick lock says so; any other
-    /// failure stays in the log, as before.
+    /// A refresh refused because a scheduled run holds the tick lock, or another collect is
+    /// running, says so; any other failure stays in the log, as before.
     nonisolated static func refreshRefusalToast(for error: Error) -> Toast? {
-        guard (error as? CLIBridgeError) == .tickLockHeld else { return nil }
+        guard CLIBridgeError.isCollectRefusal(error) else { return nil }
         return WorkspaceStore.collectFailureToast(error, operation: "Refresh")
     }
 
