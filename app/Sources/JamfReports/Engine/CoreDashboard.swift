@@ -625,7 +625,9 @@ struct CoreDashboard: Sendable {
     // Source: `jamf-cli pro report device-compliance --output json`
 
     func writeDeviceCompliance() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
+        guard let items = loadDeviceComplianceRows() else {
+            throw CoreDashboardError.noCachedData(names: ["device-compliance"])
+        }
         let ws = workbook.addSheet("Device Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Device Compliance"),
@@ -639,30 +641,39 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 10)
         ws.setColumnWidth(4, 4, 18)
 
-        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
 
         let headers = ["Name", "Serial", "Managed", "Stale", "Days Since Check-in"]
         for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         for item in items {
-            let isStale = asBool(item["stale"]) ?? false
-            let daysSince = asInt(item["days_since_checkin"])
+            let isStale = isStaleDevice(item)
             let fmt: CellFormat = isStale ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: fmt)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: fmt)
-            ws.write(asBool(item["managed"]).map { $0 ? "Yes" : "No" } ?? "", row: row, col: 2, format: fmt)
+            ws.write(item.name ?? "", row: row, col: 0, format: fmt)
+            ws.write(item.serial ?? "", row: row, col: 1, format: fmt)
+            ws.write(item.managed.map { $0 ? "Yes" : "No" } ?? "", row: row, col: 2, format: fmt)
             ws.write(isStale ? "Yes" : "No", row: row, col: 3, format: fmt)
-            if let d = daysSince {
-                let daysFmt: CellFormat = d >= staleThreshold ? .yellow : .cell
-                ws.write(d, row: row, col: 4, format: daysFmt)
+            if let d = item.resolvedDaysSinceContact {
+                ws.write(d, row: row, col: 4, format: fmt)
             } else {
                 ws.write("", row: row, col: 4, format: fmt)
             }
             row += 1
         }
+    }
+
+    /// Typed device-compliance rows from the newest snapshot; nil when there is none.
+    private func loadDeviceComplianceRows() -> [DeviceComplianceRow]? {
+        loadLatestTyped(names: ["device-compliance", "device_compliance"],
+                        as: [DeviceComplianceRow].self)
+    }
+
+    /// Whether a Mac has gone more than `thresholds.stale_device_days` without contact, the
+    /// meaning of every "stale" label in the workbook. jamf-cli's own `stale` flag is a
+    /// 14-day cut that the row only falls back to when it carries no day count.
+    private func isStaleDevice(_ row: DeviceComplianceRow) -> Bool {
+        row.isStale(atDays: (config.thresholds?.resolvedStaleDays ?? 30) + 1)
     }
 
     // MARK: - Policy Health
@@ -1313,17 +1324,15 @@ struct CoreDashboard: Sendable {
     // Source: device-compliance rows; counts non-stale devices.
 
     func writeActiveDevices() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else {
+        guard let items = loadDeviceComplianceRows(), !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
         let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         let total = items.count
-        let active = items.filter { asBool($0["stale"]) != true }.count
-        let stale = total - active
-        let managed = items.filter { asBool($0["managed"]) == true }.count
+        let stale = items.filter(isStaleDevice).count
+        let active = total - stale
+        let managed = items.filter { $0.managed == true }.count
 
         let ws = workbook.addSheet("Active Devices")
         let ts = ISO8601DateFormatter().string(from: Date())
@@ -2154,15 +2163,13 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["patch-status"])
         }
 
-        let rawDC = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let dcList = (rawDC as? [[String: Any]]) ?? []
-        guard !dcList.isEmpty else {
+        guard let dcList = loadDeviceComplianceRows(), !dcList.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         let totalEnrolled = dcList.count
-        let activeCount = dcList.filter { !(asBool($0["stale"]) ?? false) }.count
+        let activeCount = dcList.filter { !isStaleDevice($0) }.count
         let inactiveCount = totalEnrolled - activeCount
         let activeRatio = totalEnrolled > 0 ? Double(activeCount) / Double(totalEnrolled) : 0.0
 
@@ -3030,11 +3037,9 @@ struct CoreDashboard: Sendable {
             .flatMap { securityFleet(items: $0) }
 
         // Device compliance snapshot
-        let deviceCompItems = ((try? loadLatestJSON(
-            names: ["device-compliance", "device_compliance"]
-        )) as? [[String: Any]]) ?? []
-        let staleCount = deviceCompItems.filter { asBool($0["stale"]) == true }.count
-        let managedCount = deviceCompItems.filter { asBool($0["managed"]) == true }.count
+        let deviceCompItems = loadDeviceComplianceRows() ?? []
+        let staleCount = deviceCompItems.filter(isStaleDevice).count
+        let managedCount = deviceCompItems.filter { $0.managed == true }.count
         let deviceTotal = deviceCompItems.count
         let compliancePct: Double = deviceTotal > 0
             ? Double(managedCount) / Double(deviceTotal) * 100 : 0
@@ -3110,14 +3115,17 @@ struct CoreDashboard: Sendable {
     private func writePostureDeviceTable(
         ws: Worksheet,
         row startRow: Int,
-        items: [[String: Any]]
+        items: [DeviceComplianceRow]
     ) {
+        // Longest silence first; a Mac with no day count sorts last, then by name so the
+        // order does not change from run to run.
         let worst = items
-            .filter { asBool($0["stale"]) == true || asBool($0["managed"]) == false }
+            .filter { isStaleDevice($0) || $0.managed == false }
             .sorted {
-                let dA = asInt($0["days_since_checkin"]) ?? 0
-                let dB = asInt($1["days_since_checkin"]) ?? 0
-                return dA > dB
+                let dA = $0.resolvedDaysSinceContact ?? -1
+                let dB = $1.resolvedDaysSinceContact ?? -1
+                if dA != dB { return dA > dB }
+                return ($0.name ?? "", $0.serial ?? "") < ($1.name ?? "", $1.serial ?? "")
             }
             .prefix(20)
 
@@ -3132,18 +3140,17 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in worst {
-            let isStale = asBool(item["stale"]) ?? false
+            let isStale = isStaleDevice(item)
             let fmt: CellFormat = isStale ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: fmt)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: fmt)
-            if let days = asInt(item["days_since_checkin"]) {
+            ws.write(item.name ?? "", row: row, col: 0, format: fmt)
+            ws.write(item.serial ?? "", row: row, col: 1, format: fmt)
+            if let days = item.resolvedDaysSinceContact {
                 ws.write(days, row: row, col: 2, format: fmt)
             } else {
                 ws.write("\u{2014}", row: row, col: 2, format: fmt)
             }
             ws.write(isStale ? "Yes" : "No", row: row, col: 3, format: fmt)
-            ws.write(asBool(item["managed"]).map { $0 ? "Yes" : "No" } ?? "",
-                     row: row, col: 4, format: fmt)
+            ws.write(item.managed.map { $0 ? "Yes" : "No" } ?? "", row: row, col: 4, format: fmt)
             row += 1
         }
     }
