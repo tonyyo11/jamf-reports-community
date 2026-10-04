@@ -319,7 +319,8 @@ final class CSVDashboardTests: XCTestCase {
     /// The columns of the real-shape built-in export (`jamf1128_computers_builtin.csv`), mapped
     /// as `config.example.yaml` does except where `filevault` or the hardware columns are given.
     private func securityColumns(
-        fileVault: String = "FileVault 2 Status", model: String? = nil, architecture: String? = nil
+        fileVault: String = "FileVault 2 Status", modelIdentifier: String? = nil,
+        architecture: String? = nil
     ) -> ColumnConfig {
         var cols = ColumnConfig()
         cols.computerName = "Computer Name"
@@ -330,7 +331,7 @@ final class CSVDashboardTests: XCTestCase {
         cols.gatekeeper = "Gatekeeper"
         cols.secureBoot = "Secure Boot Level"
         cols.bootstrapToken = "Bootstrap Token Escrowed"
-        cols.model = model
+        cols.modelIdentifier = modelIdentifier
         cols.architecture = architecture
         return cols
     }
@@ -428,7 +429,7 @@ final class CSVDashboardTests: XCTestCase {
         cols.secureBoot = "SB"
         cols.bootstrapToken = "BT"
         if hardware {
-            cols.model = "Model Identifier"
+            cols.modelIdentifier = "Model Identifier"
             cols.architecture = "Architecture"
         }
         return cols
@@ -536,6 +537,63 @@ final class CSVDashboardTests: XCTestCase {
             csv: csv, columns: inlineColumns(hardware: true),
             policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning))
         XCTAssertEqual(counts(sheet.rows["FileVault"]), ["1", "1", "0", "1"])
+    }
+
+    /// An export shaped like Jamf Pro's: "Model" is the marketing name, "Model Identifier" the
+    /// hardware identifier, "Architecture Type" the processor architecture. Each row is
+    /// FileVault, Model, Model Identifier and Architecture Type.
+    private func jamfHardwareCSV(_ rows: [[String]]) -> Data {
+        let header = "Computer Name,Last Check-in,FV,SIP,FW,GK,SB,BT,Model,Model Identifier,"
+            + "Architecture Type"
+        let lines = rows.enumerated().map { index, values in
+            let cells = [values[0], "", "", "", "", ""] + values[1...].map { "\"\($0)\"" }
+            return (["Mac\(index)", "2026-05-01 09:00:00"] + cells).joined(separator: ",")
+        }
+        return Data(([header] + lines).joined(separator: "\n").utf8)
+    }
+
+    private func jamfHardwareColumns(modelIdentifier: String?) -> ColumnConfig {
+        var cols = inlineColumns()
+        cols.model = "Model"
+        cols.modelIdentifier = modelIdentifier
+        cols.architecture = "Architecture Type"
+        return cols
+    }
+
+    private let t2Row = ["No Partitions Encrypted", "MacBook Pro (16-inch, 2019)",
+                         "MacBookPro16,1", "x86_64"]
+    private let intelRow = ["No Partitions Encrypted", "MacBook Pro (13-inch, 2017)",
+                            "MacBookPro14,1", "x86_64"]
+    private let siliconRow = ["No Partitions Encrypted", "MacBook Pro (14-inch, 2023)",
+                              "Mac15,3", "arm64"]
+
+    /// With `model` (the marketing name) and `model_identifier` both mapped, the identifier
+    /// finds the T2 Mac and the marketing name plays no part: a T2 Mac with FileVault off warns,
+    /// a non-T2 Intel Mac with FileVault off fails, and an Apple silicon Mac warns.
+    func testHardwareRuleReadsTheModelIdentifierColumnNotTheModelName() throws {
+        let csv = jamfHardwareCSV([
+            t2Row, intelRow, siliconRow,
+            ["Encrypted", "MacBook Pro (14-inch, 2023)", "Mac15,3", "arm64"],
+        ])
+        let sheet = try securityControls(
+            csv: csv, columns: jamfHardwareColumns(modelIdentifier: "Model Identifier"),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning))
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["1", "1", "0", "2"])
+    }
+
+    /// A config that maps `model` but not `model_identifier` gets no T2 detection, even when
+    /// the mapped column holds identifier-looking text: `model` is never read as the
+    /// identifier. Architecture still finds the Apple silicon Mac.
+    func testHardwareRuleNeverReadsTheModelColumnAsTheIdentifier() throws {
+        let asIdentifier: ([String]) -> [String] = { [$0[0], $0[2], $0[2], $0[3]] }
+        let csv = jamfHardwareCSV([
+            asIdentifier(t2Row), asIdentifier(intelRow), asIdentifier(siliconRow),
+            ["Encrypted", "Mac15,3", "Mac15,3", "arm64"],
+        ])
+        let sheet = try securityControls(
+            csv: csv, columns: jamfHardwareColumns(modelIdentifier: nil),
+            policy: SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning))
+        XCTAssertEqual(counts(sheet.rows["FileVault"]), ["1", "2", "0", "1"])
     }
 
     func testControlAtWarningIsCountedInTheWarningColumn() throws {
