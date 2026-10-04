@@ -1368,8 +1368,12 @@ private struct OutputTab: View {
                             FieldLabel(label: "Logo path")
                             PNPTextField(value: $ws.configState.logoPath, mono: true)
                         }
-                        colorField(label: "Accent color", value: $ws.configState.accentColor,
-                                   hexColor: Theme.Colors.gold)
+                        // The swatch is the colour the reports will use: a value that is not
+                        // #RGB or #RRGGBB reads as the default, as it does in the reports.
+                        colorField(
+                            label: "Accent color", value: $ws.configState.accentColor,
+                            hexColor: Color(hex: BrandingConfig(
+                                accentColor: ws.configState.accentColor).sanitizedAccentRGB))
                     }
                 }
             }

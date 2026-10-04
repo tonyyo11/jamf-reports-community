@@ -182,6 +182,8 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Config > Branding shows the accent colour you typed in its swatch, instead of always gold. A
+  value that is not `#RGB` or `#RRGGBB` shows the colour the reports use then, `#2D5EA2`.
 - Data Sources: the snapshot families table has set column widths so it no longer shows a stray
   horizontal scroll bar, and the CSV Inbox folder path and file names shorten in the middle
   instead of breaking mid-word.
