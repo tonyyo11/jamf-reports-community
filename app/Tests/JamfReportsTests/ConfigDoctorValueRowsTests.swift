@@ -446,7 +446,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let found = try rows("""
         jamf_cli: {allow_live_overview: false}
         platform: {enabled: true}
-        thresholds: {checkin_overdue_days: 14, profile_error_critical: 80}
+        thresholds: {profile_error_critical: 80}
         charts:
           os_adoption: {enabled: false}
           compliance_trend: {enabled: false}
@@ -454,7 +454,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         """)
         XCTAssertEqual(Set(titles(found)), [
             "jamf_cli.allow_live_overview", "platform.enabled",
-            "thresholds.checkin_overdue_days", "thresholds.profile_error_critical",
+            "thresholds.profile_error_critical",
             "charts.os_adoption.enabled", "charts.compliance_trend.enabled",
             "branding.accent_dark",
         ])
@@ -518,7 +518,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")
         let targets: [(section: String, key: String, child: String?)] = [
             ("jamf_cli:", "enabled:", nil), ("jamf_cli:", "allow_live_overview:", nil),
-            ("thresholds:", "checkin_overdue_days:", nil),
             ("thresholds:", "profile_error_critical:", nil),
             ("charts:", "os_adoption:", "enabled:"), ("charts:", "compliance_trend:", "enabled:"),
             ("branding:", "accent_dark:", nil),

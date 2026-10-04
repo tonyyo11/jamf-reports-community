@@ -788,8 +788,9 @@ thresholds:
   # report over a longer window.
   stale_device_days: 30
 
-  # Currently has no effect: nothing reads this key. The Check-in Health sheet
-  # uses stale_device_days.
+  # The Check-in Health sheet counts a Mac as overdue when it last checked in
+  # more than this many days ago. A Mac with no check-in date is overdue only
+  # when jamf-cli flags it stale.
   checkin_overdue_days: 7
 
   # Default disk usage thresholds used when not set per-EA.

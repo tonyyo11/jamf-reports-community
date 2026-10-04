@@ -1083,7 +1083,7 @@ private struct ThresholdsTab: View {
                     thresholdField(
                         label: "Check-in overdue", key: "checkin_overdue_days",
                         value: $ws.configState.checkinOverdueDays, unit: "days",
-                        help: "Yellow highlight on Check-in Health sheet"
+                        help: "Check-in Health counts a Mac overdue after this many days"
                     )
                     thresholdField(
                         label: "Cert expiry warning", key: "cert_warning_days",
