@@ -132,6 +132,13 @@ record is missing, ambiguous (two records on one serial number) or a virtual mac
 FileVault's own level. On a CSV, map `architecture` ("Architecture Type") and `model`
 ("Model Identifier").
 
+**Macs that did not report a control.** A Mac whose value Jamf did not collect for a control
+(`NOT_COLLECTED`, a blank, FileVault still encrypting) is not counted as failing it. The Security
+Posture, Compliance Posture and Executive Summary figures, the score, the HTML report and the
+daily summary count only the Macs measured off, leave the unreported ones out of that control's
+share, and say how many there were ("not reported: N", shown only when N is above zero). The
+percentages themselves, such as SIP on 1%, still count every Mac.
+
 **Your own on and off values.** The app reads values such as `Enabled`, `Encrypted`, `Off`
 and `Not Enabled`. When your organization maps its own extension attribute or CSV column to
 a control and it says something else, such as `Pass` and `Fail` or `Compliant` and

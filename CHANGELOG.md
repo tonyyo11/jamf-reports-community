@@ -26,6 +26,11 @@ compliance is now one figure everywhere.
   needs the Mac's hardware details from the latest inventory collect. A Mac is never treated this
   way when its record disagrees with another record for the same serial number, or when it is a
   virtual machine.
+- Macs that did not report a security setting are no longer counted as failing it. FileVault, SIP,
+  Firewall and Gatekeeper figures, the security score and the P0 and P1 action items count the
+  Macs measured off, and the Security Posture screen, the workbook and the HTML report show "not
+  reported: N" where some Macs did not report. A tenant where Jamf collects every value sees no
+  change.
 - Your own on and off words. When your organization maps its own extension attribute or CSV
   column to FileVault, SIP, Firewall or Gatekeeper and it says `Pass` and `Fail`, or `Compliant`
   and `Non-Compliant`, list those words under `security_policy.on_values` and `off_values` for
