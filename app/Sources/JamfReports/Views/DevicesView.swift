@@ -72,9 +72,17 @@ struct DevicesView: View {
         }
     }
 
-    /// True when the page width is too narrow to show every inventory column at
-    /// full fidelity. Drives the responsive Device + User column behavior.
-    private var isCompact: Bool { pageWidth < 1200 }
+    /// True when the table sits beside the detail panel at a width too narrow to show every
+    /// inventory column at full fidelity. Drives the responsive Device + User column behavior.
+    /// Under the panel the table has the whole page, so it is never compact.
+    private var isCompact: Bool {
+        pageWidth < 1200 && Self.detailFitsBeside(pageWidth: pageWidth)
+    }
+
+    /// The User column's widths: a sliver when compact (the column is empty then), else flexible.
+    private var userColumnWidth: (min: CGFloat, ideal: CGFloat, max: CGFloat?) {
+        isCompact ? (8, 8, 8) : (90, 130, nil)
+    }
 
     /// One label column for every detail-panel section. Fixed rather than a minimum,
     /// so LAST INVENTORY (the widest label, about 102 pt) no longer pushes its value
@@ -186,15 +194,7 @@ struct DevicesView: View {
                 } else {
                     controls
                     summary
-                    HStack(alignment: .top, spacing: 14) {
-                        inventoryTable
-                        VStack(spacing: 14) {
-                            detailPanel(selectedDevice)
-                            osDistributionCard
-                            sourceCard
-                        }
-                        .frame(width: 360)
-                    }
+                    inventoryAndDetail
                 }
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -230,6 +230,42 @@ struct DevicesView: View {
             isSearchFocused = true
         }
         .searchable(text: $query, placement: .toolbar, prompt: "Search devices")
+    }
+
+    /// The table with the detail panel beside it when the page is wide enough for both, and
+    /// the panel under it when not. Squeezed beside a 360 pt panel the table was narrower than
+    /// its columns and ran underneath it, hiding the Risk column and the legend.
+    @ViewBuilder
+    private var inventoryAndDetail: some View {
+        let sidePanels = VStack(spacing: 14) {
+            detailPanel(selectedDevice)
+            osDistributionCard
+            sourceCard
+        }
+        if Self.detailFitsBeside(pageWidth: pageWidth) {
+            HStack(alignment: .top, spacing: 14) {
+                inventoryTable
+                sidePanels.frame(width: Self.detailPanelWidth)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                inventoryTable
+                sidePanels
+            }
+        }
+    }
+
+    nonisolated static let detailPanelWidth: CGFloat = 360
+    private nonisolated static let panelGap: CGFloat = 14
+    /// The widths of the inventory table's columns at their minimums, plus room for the
+    /// cell padding between them.
+    nonisolated static let minInventoryTableWidth: CGFloat = 700
+
+    /// Whether the table keeps `minInventoryTableWidth` with the panel beside it. `pageWidth`
+    /// includes the page padding, as the width the view measures does.
+    nonisolated static func detailFitsBeside(pageWidth: CGFloat) -> Bool {
+        let content = pageWidth - 2 * Theme.Metrics.pagePadH
+        return content - panelGap - detailPanelWidth >= minInventoryTableWidth
     }
 
     private var header: some View {
@@ -438,14 +474,18 @@ struct DevicesView: View {
                             }
                         }
                     }
+                    .width(min: 140, ideal: 200)
                     TableColumn("Serial", value: \.serial) { device in
                         Mono(text: device.displaySerial)
                             .textSelection(.enabled)
                     }
+                    .width(min: 100, ideal: 112, max: 140)
                     TableColumn("macOS", value: \.osVersion) { device in
                         Mono(text: device.osVersion.isEmpty ? "Unknown" : device.osVersion)
                     }
-                    TableColumn("User", value: \.user) { device in
+                    .width(min: 64, ideal: 72, max: 96)
+                    // Empty when compact, so it keeps a sliver rather than a share of the row.
+                    TableColumn(isCompact ? "" : "User", value: \.user) { device in
                         if !isCompact {
                             Text(device.user.isEmpty ? "Unassigned" : device.user)
                                 .font(.footnote)
@@ -453,6 +493,9 @@ struct DevicesView: View {
                                 .lineLimit(1)
                         }
                     }
+                    .width(
+                        min: userColumnWidth.min, ideal: userColumnWidth.ideal,
+                        max: userColumnWidth.max)
                     TableColumn("Last Contact") { device in
                         HStack(spacing: 4) {
                             if isStale(device) {
@@ -465,12 +508,16 @@ struct DevicesView: View {
                                  color: isStale(device) ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                         }
                     }
+                    .width(min: 90, ideal: 110, max: 160)
                     TableColumn("Patch") { device in patchPill(device) }
+                        .width(min: 60, ideal: 66, max: 90)
                     TableColumn("Security") { device in securityIndicators(for: device) }
                         .width(min: 70, ideal: 78, max: 90)
+                    // Wide enough for the longest band, Critical.
                     TableColumn("Risk") { device in
                         riskPill(priorityRisk(for: device).level)
                     }
+                    .width(min: 84, ideal: 92, max: 110)
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)

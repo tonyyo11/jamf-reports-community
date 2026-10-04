@@ -914,7 +914,10 @@ Utilities: `AppToolbar`, `WhatsNewBanner`, `DashboardChartExport`,
 `GenerateSheet`, `SecureSecretField`, `WorkspaceView`, `HealthCheckView`.
 
 DevicesView gains a `.priorityAction` filter + per-device "Priority Risk"
-section in the detail panel — driven by `RiskScoringService`.
+section in the detail panel — driven by `RiskScoringService`, which also rates the list's Risk
+pill. The detail panel sits beside the table only when the page leaves the table
+`minInventoryTableWidth` (`DevicesView.detailFitsBeside`, a 1130 pt page, about a 1360 pt window
+with the expanded sidebar); narrower, it sits under the table.
 
 TrendsView's metric picker auto-includes `.securityScore` once any summary
 file (legacy import or live run) populates that field.

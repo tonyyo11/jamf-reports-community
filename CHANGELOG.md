@@ -182,6 +182,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Devices no longer cuts the Risk pills ("ATTE", "CRIT") or hides the Risk column and the legend
+  under the detail panel. The table's columns have set widths, and in a window too narrow for the
+  table and the panel side by side the panel sits under the table.
 - Backups and Reports headers no longer run their buttons off the window. When the buttons do not
   fit beside the title they wrap onto a second line under it. In the Backups table, Reveal, Diff
   Latest and Delete are shown in full on every row, and report file names that are too long to fit
