@@ -33,6 +33,9 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.Colors.winBG)
+        // The jamf-cli probe waits on child processes, so it starts here and runs off the main
+        // actor, never from `OnboardingFlow.init()` while this view is being built.
+        .task { await flow.refreshJamfCLIStatus() }
         .fileImporter(isPresented: $showingCSVImporter, allowedContentTypes: csvTypes) { result in
             switch result {
             case .success(let url):
@@ -300,9 +303,9 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 14) {
             Card(padding: 20) {
                 HStack(alignment: .center, spacing: 14) {
-                    statusIcon(ok: flow.jamfCLIInstalled)
+                    cliStatusIcon
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(flow.jamfCLIInstalled ? "jamf-cli detected" : "jamf-cli not detected")
+                        Text(cliStatusTitle)
                             .font(.headline)
                             .foregroundStyle(Theme.Colors.fg)
                         Mono(
@@ -312,8 +315,9 @@ struct OnboardingView: View {
                     }
                     Spacer()
                     PNPButton(title: "Re-check", icon: "arrow.clockwise") {
-                        flow.refreshJamfCLIStatus()
+                        Task { await flow.refreshJamfCLIStatus() }
                     }
+                    .disabled(flow.isCheckingJamfCLI)
                 }
             }
 
@@ -349,6 +353,22 @@ struct OnboardingView: View {
                     .font(.caption)
             }
         }
+    }
+
+    @ViewBuilder
+    private var cliStatusIcon: some View {
+        if flow.isCheckingJamfCLI {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 34)
+        } else {
+            statusIcon(ok: flow.jamfCLIInstalled)
+        }
+    }
+
+    private var cliStatusTitle: String {
+        if flow.isCheckingJamfCLI { return "Checking for jamf-cli\u{2026}" }
+        return flow.jamfCLIInstalled ? "jamf-cli detected" : "jamf-cli not detected"
     }
 
     private var workspaceStep: some View {
@@ -512,7 +532,7 @@ struct OnboardingView: View {
                         SegmentedControl(
                             selection: Binding(
                                 get: { flow.platformScope },
-                                set: { flow.platformScope = $0 }
+                                set: { flow.choosePlatformScope($0) }
                             ),
                             options: OnboardingFlow.PlatformScope.allCases.map {
                                 ($0, $0.label, nil)

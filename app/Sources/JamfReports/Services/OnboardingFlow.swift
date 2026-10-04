@@ -71,6 +71,19 @@ final class OnboardingFlow {
         }
     }
 
+    /// What setup knows about the installed jamf-cli. It starts at `.checking` and leaves it
+    /// only when the probe answers, so the install step never says "not detected" about a
+    /// probe that is still running.
+    enum JamfCLIStatus: Equatable, Sendable {
+        case checking
+        case installed(version: String?)
+        case missing
+    }
+
+    /// Finds jamf-cli and reads its version. It launches child processes and waits on them,
+    /// so the flow only calls it off the main actor, never during a SwiftUI update.
+    typealias InstallationProbe = @Sendable () -> JamfCLIInstaller.Installation?
+
     enum FlowError: LocalizedError {
         case invalidProfile
         case profileCaseConflict(existing: String)
@@ -149,6 +162,8 @@ final class OnboardingFlow {
     // Platform Gateway additional fields
     var gatewayURL = "https://us.api.jamfcloud.com"
     var platformScope: PlatformScope = .environment
+    /// True once the user picked a scope, so a probe that finishes later keeps their choice.
+    private(set) var platformScopeChosen = false
     var platformScopeID = ""
     var platformClientID = ""
     var platformClientSecret = ""
@@ -180,8 +195,7 @@ final class OnboardingFlow {
 
     // MARK: - State flags
 
-    var jamfCLIInstalled = false
-    var jamfCLIVersion: String?
+    private(set) var jamfCLIStatus: JamfCLIStatus = .checking
     var workspaceCreated = false
     var profileRegistered = false
     var connectionValidated = false
@@ -205,7 +219,8 @@ final class OnboardingFlow {
     var csvOutput: [CLIBridge.LogLine] = []
     var firstReportOutput: [CLIBridge.LogLine] = []
 
-    private var installer = JamfCLIInstaller()
+    private let installer = JamfCLIInstaller()
+    private let installationProbe: InstallationProbe
 
     // User data zones accepted by policy for the first CSV export.
     private var allowedCSVRoots: [URL] {
@@ -217,14 +232,30 @@ final class OnboardingFlow {
         ]
     }
 
-    init() {
+    /// Runs no subprocess: `@State` builds this during a view update, and a child-process wait
+    /// there spins the main run loop into a nested layout that aborts AttributeGraph. The
+    /// jamf-cli probe is `refreshJamfCLIStatus()`, which a view starts from `.task`.
+    init(
+        installationProbe: @escaping InstallationProbe = { JamfCLIInstaller.currentInstallation() }
+    ) {
+        self.installationProbe = installationProbe
         if let pending = Self.pendingProductPath {
             productPath = pending
             Self.pendingProductPath = nil
         }
-        refreshJamfCLIStatus()
-        platformScope = PlatformScope.defaultScope(forCLIVersion: jamfCLIVersion)
     }
+
+    var jamfCLIInstalled: Bool {
+        if case .installed = jamfCLIStatus { return true }
+        return false
+    }
+
+    var jamfCLIVersion: String? {
+        if case .installed(let version) = jamfCLIStatus { return version }
+        return nil
+    }
+
+    var isCheckingJamfCLI: Bool { jamfCLIStatus == .checking }
 
     /// The ordered steps for the active `productPath`.
     ///
@@ -335,10 +366,25 @@ final class OnboardingFlow {
         installer.brewInstallCommand()
     }
 
-    func refreshJamfCLIStatus() {
-        installer = JamfCLIInstaller()
-        jamfCLIInstalled = installer.isInstalled
-        jamfCLIVersion = installer.installedVersion
+    /// Looks for jamf-cli off the main actor, then publishes the answer and, unless the user
+    /// already picked one, the Platform API scope that version defaults to.
+    func refreshJamfCLIStatus() async {
+        jamfCLIStatus = .checking
+        let probe = installationProbe
+        let installation = await Task.detached(priority: .userInitiated) { probe() }.value
+        if let installation {
+            jamfCLIStatus = .installed(version: installation.version)
+        } else {
+            jamfCLIStatus = .missing
+        }
+        if !platformScopeChosen {
+            platformScope = PlatformScope.defaultScope(forCLIVersion: installation?.version)
+        }
+    }
+
+    func choosePlatformScope(_ scope: PlatformScope) {
+        platformScope = scope
+        platformScopeChosen = true
     }
 
     func nextStep() {
@@ -474,11 +520,11 @@ final class OnboardingFlow {
             clearClientSecret()
         }
 
+        let noVerify = await noVerifyFlag(binary: binary)
         let result = try await Self.runWithPTY(
             executable: binary,
             arguments: Self.proOAuth2Arguments(
-                profile: profileName.trimmed, url: url.absoluteString,
-                noVerify: noVerifyFlag(binary: binary)
+                profile: profileName.trimmed, url: url.absoluteString, noVerify: noVerify
             ),
             stdin: stdinData
         )
@@ -514,6 +560,7 @@ final class OnboardingFlow {
             clearPlatformSecrets()
         }
 
+        let noVerify = await noVerifyFlag(binary: binary)
         let result = try await Self.runWithPTY(
             executable: binary,
             arguments: Self.platformGatewayArguments(
@@ -521,7 +568,7 @@ final class OnboardingFlow {
                 gatewayURL: gatewayURL.trimmed,
                 scope: platformScope,
                 scopeID: platformScopeID.trimmed,
-                noVerify: noVerifyFlag(binary: binary)
+                noVerify: noVerify
             ),
             stdin: stdinData
         )
@@ -700,10 +747,17 @@ final class OnboardingFlow {
     /// writing it. `--no-verify` keeps Save a local write on every version, so the
     /// Validate step stays the connection check and a placeholder pair still
     /// registers. The flag is unknown before 1.29 (exit 2), hence the gate.
-    private func noVerifyFlag(binary: URL) -> Bool {
-        JamfCLIInstaller.supportsSpecDerivedNames(
-            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
-        )
+    private func noVerifyFlag(binary: URL) async -> Bool {
+        JamfCLIInstaller.supportsSpecDerivedNames(await installedCLIVersion(binary: binary))
+    }
+
+    /// The probe's version when it has one. Otherwise a fresh read, off the main actor, because
+    /// a registration can start before the probe returns or after it found no version.
+    private func installedCLIVersion(binary: URL) async -> String? {
+        if let jamfCLIVersion { return jamfCLIVersion }
+        return await Task.detached(priority: .userInitiated) {
+            JamfCLIInstaller.installedVersion(at: binary)
+        }.value
     }
 
     // MARK: - Pure argument builders (testable without PTY)
@@ -858,7 +912,7 @@ final class OnboardingFlow {
             return .undecided(exitCode: nil)
         }
         let specNames = JamfCLIInstaller.supportsSpecDerivedNames(
-            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
+            await installedCLIVersion(binary: binary)
         )
         return await ConnectionCheck.run(profile: profile, specNames: specNames, runner: runner)
     }

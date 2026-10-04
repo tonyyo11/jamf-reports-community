@@ -182,6 +182,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Adding a workspace from the sidebar profile menu no longer crashes the app. Setup looked for
+  jamf-cli while the screen was still being built; it now looks after the screen is up and shows
+  "Checking for jamf-cli" until it has an answer.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.
