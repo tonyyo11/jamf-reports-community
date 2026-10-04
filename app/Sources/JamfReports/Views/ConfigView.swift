@@ -1441,7 +1441,8 @@ enum ColumnValidationText {
         let flagged = mappings.filter { $0.status == .warn }.map { mapping in
             mapping.value.isEmpty ? mapping.label : "\(mapping.label) (\(mapping.value))"
         }
-        return flagged.isEmpty ? "Run check for details" : "Flagged: " + flagged.joined(separator: ", ")
+        guard !flagged.isEmpty else { return "Run check for details" }
+        return "Flagged: " + flagged.joined(separator: ", ")
     }
 }
 

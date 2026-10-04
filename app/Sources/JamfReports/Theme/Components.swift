@@ -123,7 +123,9 @@ struct PageHeader: View {
                     Text(ageLabel.uppercased())
                         .font(Theme.Fonts.mono(10.5, weight: .semibold))
                         .tracking(1.5)
-                        .foregroundStyle(effectiveKickerTone == .gold ? Theme.Colors.fgMuted : color(for: effectiveKickerTone))
+                        .foregroundStyle(
+                            effectiveKickerTone == .gold
+                                ? Theme.Colors.fgMuted : color(for: effectiveKickerTone))
                 }
             }
             Text(title)

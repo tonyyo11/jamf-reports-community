@@ -35,8 +35,11 @@ final class WrappingRowMetricsTests: XCTestCase {
     /// (584) they take two.
     func testTheReportsHeaderButtonsWrapAtTheMinimumSupportedWidth() {
         let buttons: [CGFloat] = [140, 130, 120, 120, 190]
-        XCTAssertEqual(WrappingRowMetrics.lines(widths: buttons, spacing: 8, maxWidth: 812).count, 1)
-        let narrow = PageScaffold<EmptyView>.minSupportedWidth - 2 * Theme.Metrics.pagePadH
-        XCTAssertEqual(WrappingRowMetrics.lines(widths: buttons, spacing: 8, maxWidth: narrow).count, 2)
+        func lineCount(_ width: CGFloat) -> Int {
+            WrappingRowMetrics.lines(widths: buttons, spacing: 8, maxWidth: width).count
+        }
+        XCTAssertEqual(lineCount(812), 1)
+        XCTAssertEqual(
+            lineCount(PageScaffold<EmptyView>.minSupportedWidth - 2 * Theme.Metrics.pagePadH), 2)
     }
 }
