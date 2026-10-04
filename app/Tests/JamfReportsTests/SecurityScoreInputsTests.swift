@@ -10,9 +10,10 @@ import XCTest
 /// count for all ten, zero failures on 6. With the default weights (15, 15, 15, EDR 10,
 /// mSCP 20): (90 x 15 + 100 x 15 + 80 x 15 + 70 x 10 + 60 x 20) / 75 = 79.3. Without the EDR
 /// and mSCP inputs it is (90 + 100 + 80) / 3 = 90.0.
+@MainActor
 final class SecurityScoreInputsTests: XCTestCase {
 
-    private var root: URL!
+    private nonisolated(unsafe) var root: URL!
     private let profile = "scoreinputs"
 
     private static let yaml = """

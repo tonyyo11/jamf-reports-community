@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class AgentCoverageTests: XCTestCase {
 
-    private var root: URL!
+    private nonisolated(unsafe) var root: URL!
     /// Unique per test: the backfill remembers a decoded snapshot by profile, day and file name.
     private let profile = "agentcov-" + String(UUID().uuidString.lowercased().prefix(8))
 
