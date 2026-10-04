@@ -85,7 +85,7 @@ final class OneCollectAtATimeTests: XCTestCase {
             }
         }
         try await waitUntil { started.isSet }
-        let status = store.globalStatus
+        let status = store.statusLine
         let runsBefore = try recordedRuns()
         store.toast = nil
 
@@ -97,7 +97,7 @@ final class OneCollectAtATimeTests: XCTestCase {
         XCTAssertEqual(store.toast?.message, running)
         XCTAssertEqual(store.toast?.style, .info)
         XCTAssertEqual(seen.values, ["first"], "the second collect never ran")
-        XCTAssertEqual(store.globalStatus, status)
+        XCTAssertEqual(store.statusLine, status)
         XCTAssertNotNil(status, "precondition: the first collect owns the status line")
         XCTAssertTrue(store.isCollectInFlight(for: profile), "the first collect keeps its mark")
         XCTAssertEqual(try recordedRuns(), runsBefore, "a refusal leaves no Run History entry")
@@ -105,7 +105,7 @@ final class OneCollectAtATimeTests: XCTestCase {
         finish.set()
         await first.value
         XCTAssertFalse(store.isCollectInFlight(for: profile))
-        XCTAssertNil(store.globalStatus)
+        XCTAssertNil(store.statusLine)
         store.toast = nil
         await store.runTierRefresh([.inventory]) { _, _, _ in
             seen.record("second, after")
@@ -148,7 +148,7 @@ final class OneCollectAtATimeTests: XCTestCase {
             XCTAssertFalse(AutomationHealthModel.shared.isRemediating)
         }
         XCTAssertEqual(seen.values, [])
-        XCTAssertNil(store.globalStatus)
+        XCTAssertNil(store.statusLine)
         XCTAssertFalse(store.isCollectInFlight(for: profile))
     }
 

@@ -128,7 +128,7 @@ final class JamfCLIUpdateGuardTests: XCTestCase {
         XCTAssertFalse(collected.isSet)
         XCTAssertEqual(store.toast?.message, updating)
         XCTAssertEqual(store.toast?.style, .info)
-        XCTAssertNil(store.globalStatus)
+        XCTAssertNil(store.statusLine)
         XCTAssertFalse(store.isCollectInFlight(for: profile))
 
         // The bridge: every GUI collect passes here.

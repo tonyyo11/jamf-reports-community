@@ -258,7 +258,7 @@ final class ManualCollectTickLockTests: XCTestCase {
             XCTAssertEqual(store.toast?.message, busy)
         }
         XCTAssertEqual(collected.values, [])
-        XCTAssertNil(store.globalStatus)
+        XCTAssertNil(store.statusLine)
         XCTAssertFalse(store.isCollectInFlight(for: profile))
         XCTAssertEqual(TickRunner.pendingRunNowLabels(), [], "nothing is queued")
     }
