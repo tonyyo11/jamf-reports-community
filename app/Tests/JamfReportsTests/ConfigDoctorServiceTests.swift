@@ -1028,6 +1028,72 @@ final class ConfigDoctorServiceTests: XCTestCase {
                        [], "FileVault is ignored, so the rule is not in use")
     }
 
+    // MARK: CSV hardware columns
+
+    private let hardwareRule = "security_policy:\n  filevault_off_hardware_encrypted: warning\n"
+    private let jamfHeaders = ["Computer Name", "Model", "Model Identifier", "Architecture Type"]
+
+    private func csvHardwareRows(
+        _ yaml: String, headers: [String]? = nil, family: CSVFamily? = .computers
+    ) throws -> [DoctorRow] {
+        ConfigDoctorService.csvHardwareColumnRows(
+            config: try makeConfig(yaml), csvHeaders: headers ?? jamfHeaders, csvFamily: family)
+    }
+
+    /// `columns.model` is the marketing name, so mapping it does not satisfy the rule.
+    func testTheHardwareRuleOnACSVNamesTheUnmappedModelIdentifier() throws {
+        let rows = try csvHardwareRows(hardwareRule
+            + "columns:\n  model: Model\n  architecture: Architecture Type\n")
+        XCTAssertEqual(rows.count, 1)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.severity, .warn)
+        XCTAssertEqual(row.id, "security_policy.csv_hardware_columns")
+        XCTAssertEqual(row.title, "security_policy.filevault_off_hardware_encrypted")
+        XCTAssertEqual(row.detail, "columns.model_identifier is not mapped, so a CSV report "
+            + "cannot tell which Macs are hardware-encrypted. FileVault off counts at the "
+            + "FileVault level for them.")
+        XCTAssertEqual(row.hint, "Map it in Config, or re-run scaffold, to the export's "
+            + "'Model Identifier' column.")
+    }
+
+    func testTheHardwareRuleOnACSVNamesEveryUnmappedHardwareColumn() throws {
+        let rows = try csvHardwareRows(hardwareRule + "columns:\n  computer_name: Computer Name\n")
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertTrue(rows[0].detail.hasPrefix(
+            "columns.model_identifier and columns.architecture are not mapped"))
+        XCTAssertTrue(rows[0].hint?.contains("'Model Identifier' and 'Architecture Type'") ?? false)
+        XCTAssertEqual(try csvHardwareRows(hardwareRule).count, 1, "no columns block at all")
+    }
+
+    func testNoCSVHardwareRowWhenBothColumnsAreMappedOrTheRuleIsNotInUse() throws {
+        let mapped = "columns:\n  model_identifier: Model Identifier\n"
+            + "  architecture: Architecture Type\n"
+        XCTAssertEqual(try csvHardwareRows(hardwareRule + mapped), [], "both mapped")
+        XCTAssertEqual(try csvHardwareRows("columns:\n  model: Model\n"), [], "no rule")
+        XCTAssertEqual(try csvHardwareRows(
+            "security_policy:\n  controls:\n    filevault: ignore\n"
+                + "  filevault_off_hardware_encrypted: warning\n"), [], "FileVault is ignored")
+    }
+
+    func testNoCSVHardwareRowWithoutAComputerCSV() throws {
+        XCTAssertEqual(ConfigDoctorService.csvHardwareColumnRows(
+            config: try makeConfig(hardwareRule), csvHeaders: nil, csvFamily: nil), [],
+            "no CSV: the computers snapshot decides, and its own row covers that")
+        XCTAssertEqual(try csvHardwareRows(hardwareRule, family: .mobile), [], "mobile export")
+    }
+
+    /// `run` passes the newest CSV's headers and family through.
+    func testRunReportsTheUnmappedHardwareColumnsOfTheWorkspaceCSV() throws {
+        let yaml = hardwareRule + "columns:\n  computer_name: Computer Name\n"
+        try withWorkspace(yaml) { profile, workspace in
+            try (jamfHeaders.joined(separator: ",") + "\nMac-1,Model,Mac1,arm64\n")
+                .write(to: workspace.appendingPathComponent("export.csv"),
+                       atomically: true, encoding: .utf8)
+            let ids = ConfigDoctorService.run(profile: profile).rows.map(\.id)
+            XCTAssertEqual(ids.filter { $0 == "security_policy.csv_hardware_columns" }.count, 1)
+        }
+    }
+
     // MARK: Security policy rows read from a workspace
 
     private func withWorkspace(_ yaml: String, body: (String, URL) throws -> Void) throws {
