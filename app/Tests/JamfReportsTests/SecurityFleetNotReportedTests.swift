@@ -286,7 +286,9 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         }
     }
 
-    private func rowCells(_ workbook: Workbook, _ sheet: String, _ label: String) -> [Int: String]? {
+    private func rowCells(
+        _ workbook: Workbook, _ sheet: String, _ label: String
+    ) -> [Int: String]? {
         guard let cells = workbook.sheet(named: sheet)?.dedupedCells,
               let first = cells.first(where: { $0.col == 0 && text($0.value) == label })
         else { return nil }
@@ -392,7 +394,8 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         let withNote = blocks.filter { $0.contains(note) }
         XCTAssertEqual(withNote.count, 1, "only the SIP tile")
         XCTAssertTrue(withNote.first?.contains(">SIP<") == true)
-        XCTAssertTrue(withNote.first?.hasPrefix("ok") == true, "graded on the one Mac that reported")
+        XCTAssertTrue(withNote.first?.hasPrefix("ok") == true,
+                      "graded on the one Mac that reported")
     }
 
     /// A fully measured fleet adds no line anywhere.
