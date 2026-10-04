@@ -149,6 +149,17 @@ struct RiskScoringService: Sendable {
         )
     }
 
+    /// The one rating of a Mac. The Devices list pill, the detail panel, the Priority filter,
+    /// the CSV export and the inventory sort all read this, so no screen rates a Mac by a
+    /// rule of its own. Staleness is one of its factors (`staleOffline`).
+    static func risk(
+        for record: DeviceInventoryRecord,
+        agentCheck: SecurityAgentCheck? = nil,
+        policy: SecurityControlPolicy
+    ) -> DeviceRisk {
+        score(input: .from(record: record, agentCheck: agentCheck, policy: policy))
+    }
+
     // MARK: - Security-agent EA lookup
 
     /// Per-device value lookup for `eaColumn` from the cached ea-results

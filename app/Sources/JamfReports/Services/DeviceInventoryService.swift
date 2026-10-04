@@ -86,11 +86,12 @@ enum DeviceInventoryService {
         )
 
         let policy = SecurityPolicyConfigLoader.load(profile: profile)
-        // Ranked once per device: risk reads five values, and the sort compares many times.
+        // Scored once per device: scoring reads several values, and the sort compares many
+        // times. The Devices screen re-scores with the security agent's status.
         let devices = merger.records
-            .map { (record: $0, rank: riskRank($0.risk(policy: policy))) }
+            .map { (record: $0, score: RiskScoringService.risk(for: $0, policy: policy).score) }
             .sorted { lhs, rhs in
-                if lhs.rank != rhs.rank { return lhs.rank > rhs.rank }
+                if lhs.score != rhs.score { return lhs.score > rhs.score }
                 return lhs.record.displayName
                     .localizedStandardCompare(rhs.record.displayName) == .orderedAscending
             }
@@ -1060,15 +1061,6 @@ fileprivate extension DeviceInventoryService {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
-    }
-
-    static func riskRank(_ risk: DeviceInventoryRecord.Risk) -> Int {
-        switch risk {
-        case .critical: 3
-        case .attention: 2
-        case .unknown: 1
-        case .ok: 0
-        }
     }
 }
 

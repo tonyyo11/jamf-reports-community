@@ -100,23 +100,20 @@ struct DevicesView: View {
                 return device.securityGapCount(policy: activeSnapshot.securityPolicy) > 0
                     || device.failedRules > 0
             case .priorityAction:
-                // Devices that score in the v3.5 Critical or High band
-                // via the configurable RiskScoringService. Note: the inline
-                // `device.risk(policy:)` enum is a legacy heuristic; this is the
-                // authoritative scorer used by the new Priority Action List.
-                let risk = priorityRisk(for: device)
-                return risk.level >= .high
+                // The Critical or High band of the same score the Risk pill shows.
+                return priorityRisk(for: device).level >= .high
             }
         }.sorted(using: sortOrder)
     }
 
-    /// Authoritative per-device risk via `RiskScoringService`. Memoizing
-    /// would help if the filter cost showed up in profiling, but the live
-    /// table re-renders on selection change rather than per filter pass.
+    /// The one rating of a Mac, from `RiskScoringService`: the Risk pill, the detail panel,
+    /// the Priority filter and the CSV all read it. Memoizing would help if the filter cost
+    /// showed up in profiling, but the live table re-renders on selection change rather
+    /// than per filter pass.
     private func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
-        RiskScoringService.score(input: .from(
-            record: device, agentCheck: agentCheck(for: device),
-            policy: activeSnapshot.securityPolicy))
+        RiskScoringService.risk(
+            for: device, agentCheck: agentCheck(for: device),
+            policy: activeSnapshot.securityPolicy)
     }
 
     /// The device's status against the tenant's configured security agent, or
@@ -472,7 +469,7 @@ struct DevicesView: View {
                     TableColumn("Security") { device in securityIndicators(for: device) }
                         .width(min: 70, ideal: 78, max: 90)
                     TableColumn("Risk") { device in
-                        riskPill(device.risk(policy: activeSnapshot.securityPolicy))
+                        riskPill(priorityRisk(for: device).level)
                     }
                 }
                 .frame(minHeight: 430)
@@ -511,9 +508,11 @@ struct DevicesView: View {
 
     private var riskLegend: some View {
         HStack(spacing: 8) {
-            legendDot(color: Theme.Colors.danger, label: "Critical")
-            legendDot(color: Theme.Colors.warn, label: "Attention")
-            legendDot(color: Theme.Colors.ok, label: "OK")
+            legendDot(color: Theme.Colors.danger, label: DeviceRisk.Level.critical.displayLabel)
+            legendDot(color: Theme.Colors.warn, label: DeviceRisk.Level.high.displayLabel)
+            legendDot(color: Theme.Colors.gold, label: DeviceRisk.Level.medium.displayLabel)
+            legendDot(color: Theme.Colors.fgMuted, label: DeviceRisk.Level.low.displayLabel)
+            legendDot(color: Theme.Colors.ok, label: DeviceRisk.Level.clean.displayLabel)
         }
         .fixedSize()
     }
@@ -529,7 +528,7 @@ struct DevicesView: View {
                                 .textSelection(.enabled)
                         }
                         Spacer()
-                        riskPill(device.risk(policy: activeSnapshot.securityPolicy))
+                        riskPill(priorityRisk(for: device).level)
                     }
 
                     detailSection("Inventory", rows: [
@@ -899,8 +898,8 @@ struct DevicesView: View {
                     SectionHeader(title: "Priority Risk")
                     Spacer()
                     Pill(
-                        text: "\(risk.level.displayLabel) · \(risk.score)",
-                        tone: priorityRiskTone(for: risk.level)
+                        text: Self.priorityRiskBadgeText(risk),
+                        tone: Self.riskTone(for: risk.level)
                     )
                 }
                 VStack(alignment: .leading, spacing: 6) {
@@ -1018,13 +1017,24 @@ struct DevicesView: View {
         }
     }
 
-    private func priorityRiskTone(for level: DeviceRisk.Level) -> Pill.Tone {
+    /// The band's colour on the Risk pill, the panel's Priority Risk badge and the legend.
+    nonisolated static func riskTone(for level: DeviceRisk.Level) -> Pill.Tone {
         switch level {
-        case .clean, .low: return .muted
-        case .medium:      return .gold
-        case .high:        return .warn
-        case .critical:    return .danger
+        case .clean:    return .teal
+        case .low:      return .muted
+        case .medium:   return .gold
+        case .high:     return .warn
+        case .critical: return .danger
         }
+    }
+
+    /// The Risk pill's text: the band alone. The panel's badge adds the score.
+    nonisolated static func riskPillText(_ level: DeviceRisk.Level) -> String {
+        level.displayLabel
+    }
+
+    nonisolated static func priorityRiskBadgeText(_ risk: DeviceRisk) -> String {
+        "\(riskPillText(risk.level)) · \(risk.score)"
     }
 
     @ViewBuilder
@@ -1122,13 +1132,8 @@ struct DevicesView: View {
             .accessibilityLabel("\(label) \(display)")
     }
 
-    private func riskPill(_ risk: DeviceInventoryRecord.Risk) -> Pill {
-        switch risk {
-        case .critical:  Pill(text: "Critical", tone: .danger)
-        case .attention: Pill(text: "Attention", tone: .warn)
-        case .ok:        Pill(text: "OK", tone: .teal)
-        case .unknown:   Pill(text: "Unknown", tone: .muted)
-        }
+    private func riskPill(_ level: DeviceRisk.Level) -> Pill {
+        Pill(text: Self.riskPillText(level), tone: Self.riskTone(for: level))
     }
 
     private func patchPill(_ device: DeviceInventoryRecord) -> Pill {
@@ -1270,7 +1275,9 @@ struct DevicesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isExportingCSV = true
         defer { isExportingCSV = false }
-        let text = Self.exportCSV(devices: filteredDevices, policy: activeSnapshot.securityPolicy)
+        let text = Self.exportCSV(
+            devices: filteredDevices, policy: activeSnapshot.securityPolicy,
+            riskLevel: { priorityRisk(for: $0).level })
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             // Path is user-confirmed via NSSavePanel — safe to reveal directly.
@@ -1283,15 +1290,16 @@ struct DevicesView: View {
     /// The filtered list as CSV, one row per device, each field through
     /// `StaleDeviceService.csvField` so a typed formula opens as text. FileVault is labelled
     /// as on screen, so a Mac the hardware rule lowered does not read UNENCRYPTED beside its
-    /// risk.
+    /// risk. `riskLevel` is the screen's own rating, so the Risk column matches the pill.
     nonisolated static func exportCSV(
-        devices: [DeviceInventoryRecord], policy: SecurityControlPolicy
+        devices: [DeviceInventoryRecord], policy: SecurityControlPolicy,
+        riskLevel: (DeviceInventoryRecord) -> DeviceRisk.Level
     ) -> String {
         let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
         let body = devices.map { d in
             [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
              policy.fileVaultLabel(d.fileVault, hardwareEncrypted: d.hardwareEncrypted),
-             d.lastContact, d.risk(policy: policy).rawValue]
+             d.lastContact, riskLevel(d).rawValue]
                 .map(StaleDeviceService.csvField)
                 .joined(separator: ",")
         }.joined(separator: "\n")

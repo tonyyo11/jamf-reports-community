@@ -182,6 +182,12 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Devices rates each Mac one way. The Risk pill in the list and the detail panel's Priority Risk
+  section showed different ratings (a Mac not seen for 90 days read Critical in the list and Low
+  beside its risk points). Both, the Priority filter, the CSV export and the inventory order now
+  use the risk score's bands: Critical, High, Medium, Low and Clean. Not checking in is still a
+  risk factor, but it is no longer a rating of its own; patch failures keep their own column and
+  filter.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

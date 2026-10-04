@@ -398,10 +398,6 @@ struct DeviceOSSummary: Identifiable, Sendable, Hashable {
 }
 
 struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
-    enum Risk: String, Sendable {
-        case ok, attention, critical, unknown
-    }
-
     var id: String
     var jamfID: String?
     var name: String
@@ -455,20 +451,6 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
             hardwareEncrypted: hardwareEncrypted) ?? 0
         let bootstrap = SecurityControlPolicy.reading(bootstrapToken)
         return controls + (bootstrap == false ? 1 : 0)
-    }
-
-    func risk(policy: SecurityControlPolicy) -> Risk {
-        if failedRules > 30 || patchFailureCount > 2 || daysSinceContact ?? 0 > 90 {
-            return .critical
-        }
-        if failedRules > 0 || patchFailureCount > 0 || stale
-            || securityGapCount(policy: policy) > 0 {
-            return .attention
-        }
-        if source.isEmpty {
-            return .unknown
-        }
-        return .ok
     }
 
     var searchableText: String {
