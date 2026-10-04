@@ -332,12 +332,12 @@ struct ContentView: View {
                 .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
         )
         .padding(.bottom, 40)
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                if workspace.toast?.id == toast.id {
-                    workspace.toast = nil
-                }
-            }
+        // One timer per toast: onAppear ran once, when the first toast appeared, so a toast
+        // that replaced another while it was up never cleared and sat over the page.
+        .task(id: toast.id) {
+            try? await Task.sleep(for: .seconds(Toast.displaySeconds))
+            guard !Task.isCancelled else { return }
+            workspace.dismissToast(ifShowing: toast.id)
         }
     }
 

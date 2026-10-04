@@ -182,6 +182,11 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- A message that appears at the bottom of the window while another is still up now clears after
+  four seconds like the first. Before, it stayed over the page, covering tiles such as Patch on
+  the Overview, until you closed it.
+- The tiles at the top of an Overview drill-down (a security agent, or a metric such as Patch)
+  are all one height, whichever of them carries a caption.
 - Offline Outreach, Patch Compliance titles, Policy findings and Extension Attribute definitions
   tables use the window's height instead of stopping at about seven rows with empty space below;
   a short list shows only the rows it has.

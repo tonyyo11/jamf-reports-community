@@ -1374,7 +1374,17 @@ enum SidebarMode: String, CaseIterable {
 
 struct Toast: Identifiable, Sendable {
     enum Style: Sendable { case info, success, warning, danger }
+    /// How long a toast stays up before it clears itself.
+    static let displaySeconds: Double = 4
     let id: UUID = UUID()
     let message: String
     let style: Style
+}
+
+extension WorkspaceStore {
+    /// Clears the toast only if it is still the one that was shown, so a timer that outlives
+    /// its toast never takes down the toast that replaced it.
+    func dismissToast(ifShowing id: UUID) {
+        if toast?.id == id { toast = nil }
+    }
 }
