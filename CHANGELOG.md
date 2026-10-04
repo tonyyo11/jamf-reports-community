@@ -182,6 +182,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Data Sources: the snapshot families table has set column widths so it no longer shows a stray
+  horizontal scroll bar, and the CSV Inbox folder path and file names shorten in the middle
+  instead of breaking mid-word.
 - Config > Scoring lines up its pickers: the "FileVault off on a hardware-encrypted Mac" picker
   ends on the same edge as the other four controls' pickers, beside its label when there is room
   and under it when not, instead of starting at the left edge.
