@@ -57,7 +57,7 @@ name as `%2C` and a percent sign as `%25`.
 |---------|--------------|-------------|
 | `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`) | `--profile`, `--output <path>`, `--template <id>` |
 | `collect` | Collect fresh `jamf-cli` snapshots | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
-| `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
+| `html` | Generate the self-contained HTML report (the Full Instance layout: figures and attention list first, collapsed detail groups, audit appendix) | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
 | `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export, or a minimal jamf-cli-only config with no CSV | `--csv <path>` (optional), `--out <path>` |
 | `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile`, `--json` |
