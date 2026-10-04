@@ -17,7 +17,13 @@ struct TrendChange: Equatable, Sendable {
     let size: String
 
     init(metric: TrendSeries.Metric, first: Double, last: Double) {
-        let isShare = metric.unit == "%"
+        self.init(unit: metric.unit, polarity: metric.polarity, first: first, last: last)
+    }
+
+    /// For a figure that is not a trend metric (the HTML report's P0 count): `unit` is "%" for
+    /// a share or score, whose change is in percentage points, and "" for a count.
+    init(unit: String, polarity: FleetInsightInput.Polarity, first: Double, last: Double) {
+        let isShare = unit == "%"
         let delta = isShare ? Self.tenths(Self.tenths(last) - Self.tenths(first))
             : (last - first).rounded()
         let moved: Direction = delta == 0 ? .flat : (delta > 0 ? .up : .down)
@@ -26,7 +32,7 @@ struct TrendChange: Equatable, Sendable {
         case .flat: ""
         default: isShare ? String(format: "%.1f pp", abs(delta)) : "\(Int(abs(delta)))"
         }
-        verdict = switch (moved, metric.polarity) {
+        verdict = switch (moved, polarity) {
         case (.flat, _), (_, .neutral): .neutral
         case (.up, .higherIsBetter), (.down, .lowerIsBetter): .better
         default: .worse
