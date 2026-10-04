@@ -62,16 +62,28 @@ enum HtmlSectionFormatters {
             .replacingOccurrences(of: "'", with: "&#39;")
     }
 
+    // MARK: - Counts
+
+    /// "1 title", "2 titles": a count with its noun, regular plural.
+    nonisolated static func plural(_ count: Int, _ noun: String) -> String {
+        "\(count) \(noun)\(count == 1 ? "" : "s")"
+    }
+
     // MARK: - Table
 
     /// Render a standard `data-table` with a `<thead>` row and zero or more body rows.
     ///
-    /// All header and cell values are escaped through `escapeHTML`.
-    nonisolated static func renderTable(headers: [String], rows: [[String]]) -> String {
+    /// All header and cell values are escaped through `escapeHTML`. `rowClasses`, when given,
+    /// holds one CSS class (or nil) per row.
+    nonisolated static func renderTable(
+        headers: [String], rows: [[String]], rowClasses: [String?]? = nil
+    ) -> String {
         let thCells = headers.map { "<th>\(escapeHTML($0))</th>" }.joined()
-        let bodyRows = rows.map { cells -> String in
+        let bodyRows = rows.enumerated().map { index, cells -> String in
             let tds = cells.map { "<td>\(escapeHTML($0))</td>" }.joined()
-            return "<tr>\(tds)</tr>"
+            let cls = rowClasses.flatMap { index < $0.count ? $0[index] : nil }
+                .map { " class=\"\(escapeHTML($0))\"" } ?? ""
+            return "<tr\(cls)>\(tds)</tr>"
         }.joined(separator: "\n")
         return """
         <table class="data-table">
@@ -79,6 +91,112 @@ enum HtmlSectionFormatters {
           <tbody>\(bodyRows)</tbody>
         </table>
         """
+    }
+
+    /// Rows a list shows before the rest go behind "Show all".
+    nonisolated static let visibleRowLimit = 10
+
+    /// Rows a "Show all" block holds at most. A list longer than this says how many more
+    /// the workbook has, so one report cannot swell without bound.
+    nonisolated static let maxTableRows = 500
+
+    /// A table of the first `limit` rows and, when there are more, the rest inside a nested
+    /// `<details>` headed "Show all N" (N is the full count). Every row up to `maxTableRows`
+    /// stays in the file.
+    nonisolated static func renderCappedTable(
+        headers: [String],
+        rows: [[String]],
+        rowClasses: [String?]? = nil,
+        limit: Int = visibleRowLimit,
+        expanded: Bool = false
+    ) -> String {
+        let kept = Array(rows.prefix(maxTableRows))
+        let classes = rowClasses.map { Array($0.prefix(kept.count)) }
+        guard kept.count > limit else {
+            return renderTable(headers: headers, rows: kept, rowClasses: classes)
+        }
+        let head = renderTable(
+            headers: headers, rows: Array(kept.prefix(limit)),
+            rowClasses: classes.map { Array($0.prefix(limit)) })
+        let rest = renderTable(
+            headers: headers, rows: Array(kept.dropFirst(limit)),
+            rowClasses: classes.map { Array($0.dropFirst(limit)) })
+        let more = rows.count > maxTableRows
+            ? "<p class=\"empty\">\(rows.count - maxTableRows) more rows are in the workbook.</p>"
+            : ""
+        return head + showAll(count: rows.count, body: rest + more, expanded: expanded)
+    }
+
+    /// Rows that are already markup (a `<tr>` each), capped like `renderCappedTable`.
+    nonisolated static func renderCappedRows(
+        headers: [String], rowHTML: [String], limit: Int = visibleRowLimit,
+        expanded: Bool = false
+    ) -> String {
+        func table(_ rows: ArraySlice<String>) -> String {
+            let th = headers.map { "<th>\(escapeHTML($0))</th>" }.joined()
+            return "<table class=\"data-table\"><thead><tr>\(th)</tr></thead>"
+                + "<tbody>\(rows.joined(separator: "\n"))</tbody></table>"
+        }
+        guard rowHTML.count > limit else { return table(rowHTML[...]) }
+        return table(rowHTML.prefix(limit))
+            + showAll(count: rowHTML.count, body: table(rowHTML.dropFirst(limit)),
+                      expanded: expanded)
+    }
+
+    /// The nested block that holds a list's remaining rows.
+    nonisolated static func showAll(count: Int, body: String, expanded: Bool) -> String {
+        disclosure(label: "Show all \(count)", body: body, expanded: expanded)
+    }
+
+    /// A collapsed block inside a detail group, opened by its label. `expanded` renders it
+    /// open, for the PDF export, whose renderer runs no script.
+    nonisolated static func disclosure(label: String, body: String, expanded: Bool) -> String {
+        """
+        <details class="show-all"\(expanded ? " open" : "")>
+          <summary>\(escapeHTML(label))</summary>
+          \(body)
+        </details>
+        """
+    }
+
+    /// A titled block inside a detail group. `id` is the anchor "Needs attention" links to.
+    nonisolated static func block(id: String, title: String, body: String) -> String {
+        """
+        <div class="block" id="\(escapeHTML(id))">
+          <h3>\(escapeHTML(title))</h3>
+          \(body)
+        </div>
+        """
+    }
+
+    /// Proportional bars, a label, a track and a count per row. The first `limit` show; the
+    /// rest sit behind "Show all N".
+    nonisolated static func renderBars(
+        _ rows: [(label: String, count: Int)],
+        limit: Int = visibleRowLimit,
+        expanded: Bool = false
+    ) -> String {
+        let peak = max(rows.map(\.count).max() ?? 1, 1)
+        func bars(_ slice: ArraySlice<(label: String, count: Int)>) -> String {
+            let html = slice.map { row -> String in
+                let pct = Int((Double(row.count) / Double(peak) * 100).rounded())
+                let key = escapeHTML(row.label)
+                return """
+                <div class="cohort-bar-row">
+                  <span class="cohort-bar-key">\(key)</span>
+                  <div class="cohort-bar-bg">
+                    <div class="cohort-bar-fill" style="width:\(pct)%"
+                         aria-label="\(key): \(row.count) devices"></div>
+                  </div>
+                  <span class="cohort-bar-n">\(row.count)</span>
+                </div>
+                """
+            }.joined(separator: "\n")
+            return "<div class=\"cohort-bar-section\">\(html)</div>"
+        }
+        guard rows.count > limit else { return bars(rows[...]) }
+        return bars(rows.prefix(limit))
+            + showAll(count: rows.count, body: bars(rows.dropFirst(limit)), expanded: expanded)
     }
 
     // MARK: - Card grid
@@ -146,6 +264,16 @@ enum HtmlSectionFormatters {
         return "<ul class=\"section-list\">\n\(lis)\n</ul>"
     }
 
+    /// A list of the first `limit` items and, when there are more, the rest behind "Show all N".
+    nonisolated static func renderCappedList(
+        items: [String], limit: Int = visibleRowLimit, expanded: Bool = false
+    ) -> String {
+        guard items.count > limit else { return renderList(items: items) }
+        return renderList(items: Array(items.prefix(limit)))
+            + showAll(count: items.count, body: renderList(items: Array(items.dropFirst(limit))),
+                      expanded: expanded)
+    }
+
     // MARK: - Empty state
 
     /// Render the canonical empty-state paragraph for a section.
@@ -154,24 +282,6 @@ enum HtmlSectionFormatters {
     /// The paragraph uses class `empty` matching the spec.
     nonisolated static func emptyState(_ reason: String) -> String {
         "<p class=\"empty\">\(escapeHTML(reason))</p>"
-    }
-
-    /// Render a placeholder `<section>` block for sections whose required snapshot
-    /// is absent. Used as the return value from section builders when data is missing,
-    /// so the generated report always shows every requested section rather than
-    /// silently omitting it.
-    ///
-    /// - Parameters:
-    ///   - title: Human-readable section heading (HTML-escaped before output).
-    ///   - dataKind: The snapshot kind name the section needs, e.g. `"patch-device-failures"`.
-    nonisolated static func emptySection(title: String, dataKind: String) -> String {
-        """
-        <section class="content-section empty-section">
-          <h2>\(escapeHTML(title))</h2>
-          <p class="empty-note">No data available — run Collect to fetch \
-        '\(escapeHTML(dataKind))' from Jamf Pro.</p>
-        </section>
-        """
     }
 
     // MARK: - CSS additions

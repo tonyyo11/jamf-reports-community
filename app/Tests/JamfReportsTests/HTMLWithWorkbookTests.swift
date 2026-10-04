@@ -144,7 +144,8 @@ final class HTMLWithWorkbookTests: XCTestCase {
         }
     }
 
-    /// The HTML takes the workbook's template: the Executive sections, not the Operational ones.
+    /// The HTML takes the workbook's template: the Executive framing without detail groups,
+    /// the Operational patch queue (named in the appendix when there is no data to draw).
     func testTheHTMLHasTheSectionsOfTheTemplateTheWorkbookUsed() async throws {
         try await withHTMLWorkbookFixture { fixture in
             let engine = try fixture.engine(config: withWorkbookOn)
@@ -159,10 +160,14 @@ final class HTMLWithWorkbookTests: XCTestCase {
             }
             let executive = try XCTUnwrap(pages["executive"])
             let operational = try XCTUnwrap(pages["operational"])
-            XCTAssertTrue(executive.contains("id=\"exec-summary\""))
-            XCTAssertFalse(executive.contains("id=\"patch-queue\""))
-            XCTAssertTrue(operational.contains("id=\"patch-queue\""))
-            XCTAssertFalse(operational.contains("id=\"exec-summary\""))
+            XCTAssertTrue(executive.contains("id=\"needs-attention\""))
+            XCTAssertFalse(executive.contains("id=\"grp-"),
+                           "the Executive report has no detail group")
+            // This workspace has no patch data, so the Operational report cannot draw the patch
+            // queue; its appendix still names the section the template asked for.
+            XCTAssertFalse(executive.contains("Patch titles behind"))
+            XCTAssertTrue(operational.contains(
+                "Patch titles behind — no patch-status snapshot"))
         }
     }
 

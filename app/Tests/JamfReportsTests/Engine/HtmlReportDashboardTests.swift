@@ -23,6 +23,14 @@ final class HtmlReportDashboardTests: XCTestCase {
         HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
     }
 
+    /// The dashboard section's markup and, when there is none to show, why not.
+    private func section() -> (html: String, omission: String?) {
+        switch report().dashboardState() {
+        case .embedded(let html), .notEmbedded(let html): return (html, nil)
+        case .absent(let reason): return ("", reason)
+        }
+    }
+
     private func writePage(_ html: String, stamp: String, modified: Date? = nil) throws {
         let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -34,10 +42,11 @@ final class HtmlReportDashboardTests: XCTestCase {
         }
     }
 
-    func testWithoutASnapshotTheSectionSaysSo() {
-        let html = report().buildJamfDashboardSection()
-        XCTAssertTrue(html.contains("Not collected yet"), html)
-        XCTAssertFalse(html.contains("<iframe"))
+    /// No page, no section: the appendix carries the reason instead of an empty box.
+    func testWithoutASnapshotTheSectionIsLeftOutWithItsReason() {
+        let block = section()
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertTrue(block.omission?.hasPrefix("not collected yet") == true, block.omission ?? "")
     }
 
     /// File dates disagree with the filename stamps on purpose, as a sync provider's
@@ -64,7 +73,7 @@ final class HtmlReportDashboardTests: XCTestCase {
         }
         XCTAssertEqual(dates, dates.sorted(), "file dates run opposite to the stamps")
         XCTAssertEqual(Set(dates).count, 3)
-        let html = report().buildJamfDashboardSection()
+        let html = section().html
         XCTAssertTrue(html.contains("sandbox=\"allow-scripts\""), html)
         XCTAssertFalse(html.contains("allow-same-origin"), "the page must not reach the report")
         XCTAssertFalse(html.contains("OLDPAGE"), "the newest stamp wins, not the newest file")
@@ -76,9 +85,9 @@ final class HtmlReportDashboardTests: XCTestCase {
     func testAloneASyncConflictCopyIsNotEmbedded() throws {
         try writePage("<!DOCTYPE html><html><head></head><body>CONFLICT</body></html>",
                       stamp: "20260925T060000 2")
-        let html = report().buildJamfDashboardSection()
-        XCTAssertTrue(html.contains("Not collected yet"), String(html.prefix(400)))
-        XCTAssertFalse(html.contains("<iframe"))
+        let block = section()
+        XCTAssertTrue(block.omission?.hasPrefix("not collected yet") == true)
+        XCTAssertFalse(block.html.contains("<iframe"))
     }
 
     func testTheAdditionsGoAtTheEndOfTheHead() throws {
@@ -107,7 +116,7 @@ final class HtmlReportDashboardTests: XCTestCase {
 
         try writePage("<!DOCTYPE html><html><head></head><body></body></html>",
                       stamp: "20260925T060000")
-        let html = report().buildJamfDashboardSection()
+        let html = section().html
         XCTAssertTrue(html.contains("frame.addEventListener(\"load\", sendTheme)"), html)
         XCTAssertTrue(html.contains("new MutationObserver(sendTheme)"))
         XCTAssertTrue(html.contains("attributeFilter: [\"data-theme\"]"))
@@ -159,7 +168,7 @@ final class HtmlReportDashboardTests: XCTestCase {
     func testTheEmbeddedFrameCarriesThePolicy() throws {
         try writePage("<!DOCTYPE html><html><head></head><body></body></html>",
                       stamp: "20260925T060000")
-        let html = report().buildJamfDashboardSection()
+        let html = section().html
         XCTAssertTrue(html.contains(
             "srcdoc=\"&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;"
                 + "&lt;meta http-equiv=&quot;Content-Security-Policy&quot;"), html)
@@ -169,7 +178,7 @@ final class HtmlReportDashboardTests: XCTestCase {
         let filler = String(repeating: "a", count: HtmlReport.maxEmbeddedDashboardBytes)
         try writePage("<!DOCTYPE html><html><body>\(filler)</body></html>",
                       stamp: "20260925T060000")
-        let html = report().buildJamfDashboardSection()
+        let html = section().html
         XCTAssertTrue(html.contains("too large to embed"), String(html.prefix(400)))
         XCTAssertTrue(html.contains("dashboard_20260925T060000.html"))
         XCTAssertFalse(html.contains("<iframe"))
@@ -178,7 +187,7 @@ final class HtmlReportDashboardTests: XCTestCase {
     func testPrintingShowsANoteAndTheFrameTrustsOnlyItself() throws {
         try writePage("<!DOCTYPE html><html><head></head><body></body></html>",
                       stamp: "20260925T060000")
-        let html = report().buildJamfDashboardSection()
+        let html = section().html
         XCTAssertTrue(html.contains("@media print"))
         XCTAssertTrue(html.contains("jrc-dashboard-print-note"))
         XCTAssertTrue(html.contains(
@@ -200,7 +209,7 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertTrue(script.contains("ResizeObserver"), "a collapsed section must shrink it")
         try writePage("<!DOCTYPE html><html><head></head><body></body></html>",
                       stamp: "20260925T060000")
-        let html = report().buildJamfDashboardSection()
+        let html = section().html
         XCTAssertTrue(html.contains("Math.max(400, Math.min(Math.ceil(height), 40000))"), html)
         XCTAssertTrue(html.contains("Math.abs(frame.clientHeight - clamped) > 2"))
         XCTAssertTrue(html.contains("border: 0;"), "the border sits on the wrapper")

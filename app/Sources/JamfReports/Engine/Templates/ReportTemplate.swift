@@ -67,15 +67,26 @@ enum SheetID: String, Sendable, CaseIterable {
 }
 
 /// Logical HTML section identifiers.
+///
+/// A report has a fixed shape: the framing sections (`aiNarrative`, `atAGlance`,
+/// `needsAttention`, `jamfDashboard`, `auditAppendix`) and, between the dashboard and the
+/// appendix, the detail sections, which `HtmlDetailGroup` gathers into collapsed groups. A
+/// template lists the sections it wants; the order of the list does not change the order of
+/// the page.
 enum SectionID: String, Sendable, CaseIterable {
-    case kpiTiles        = "kpi_tiles"
-    case fleetSummary    = "fleet_summary"
+    /// Six figures with their change over about a week.
+    case atAGlance       = "at_a_glance"
+    /// A sentence per rule that fires, each linking to the part that lists it.
+    case needsAttention  = "needs_attention"
+    /// Data sources, metric definitions, the security policy and what the report leaves out.
+    case auditAppendix   = "audit_appendix"
     case securityTiles   = "security_tiles"
     case osAdoptionChart = "os_adoption_chart"
     case patchBar        = "patch_bar"
     case policyTable     = "policy_table"
     case profileTable    = "profile_table"
-    case assetMap        = "asset_map"
+    /// Apps that failed to install, from `app-status`; the profile table's twin.
+    case appTable        = "app_table"
     case complianceBands = "compliance_bands"
     case auditEvidence   = "audit_evidence"
     case exceptionList   = "exception_list"
@@ -89,7 +100,6 @@ enum SectionID: String, Sendable, CaseIterable {
     case purchaseCohorts = "purchase_cohorts"
     case buildingBreakdown = "building_breakdown"
     case departmentBreakdown = "department_breakdown"
-    case execSummary     = "exec_summary"
     // AI executive narrative (F3) — renders only when a narrative was passed
     // into the engine (GUI-generate only); omitted entirely otherwise.
     case aiNarrative     = "ai_narrative"
@@ -162,12 +172,21 @@ protocol ReportTemplate: Sendable {
     /// unless the user has applied a custom `sheets.order` override.
     var includedSheets: [SheetID] { get }
 
-    /// Ordered list of HTML section IDs to render in the instance report.
+    /// HTML section IDs to render in the instance report. Membership only: the page's order
+    /// is fixed (see `SectionID`).
     var htmlSections: [SectionID] { get }
+
+    /// Sections whose detail group starts open in the HTML report. A group holding any of
+    /// them is open; every other group starts collapsed. Empty by default.
+    var htmlOpenSections: [SectionID] { get }
 
     /// PDF pagination hint. Passed to `PDFExporter` as a page-break strategy.
     var pdfPagination: PaginationStrategy { get }
 
     /// Minimum data-collection tier required for a complete render.
     var recommendedSchedule: TemplateDataTier { get }
+}
+
+extension ReportTemplate {
+    var htmlOpenSections: [SectionID] { [] }
 }

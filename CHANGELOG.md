@@ -98,6 +98,33 @@ compliance is now one figure everywhere.
 
 ### Changed
 
+- The HTML report is shorter to read. It now opens with a header (profile, when the data was
+  collected, jamf-cli version, how many Macs, template, reporting week), six figures with their
+  change since about a week earlier, and a short "Needs attention" list whose lines link to the
+  part of the report that lists them. The jamf-cli dashboard follows, open. Everything else sits
+  in collapsed groups (Security and compliance, Patching, Devices needing intervention, Policies
+  and profiles, Trends, Recent failures) whose headings carry their numbers, and an audit
+  appendix lists the data sources and their dates, what each figure means, the security policy in
+  force and what the report leaves out. Lists show ten rows with the rest under "Show all".
+  Expand all and Collapse all are at the top right; printing and the PDF export show everything.
+- Templates set how much of the HTML report you get. Executive is the header, the figures, the
+  attention list, the dashboard and the appendix. Operational starts with the failure, patch and
+  intervention lists open, Compliance and Security Posture start with Security and compliance
+  open, and Full Instance starts with everything closed.
+- With the jamf-cli dashboard in the report, the report no longer repeats the OS version
+  distribution, the audit findings or the catalog counts. Sections with nothing to show (empty,
+  not configured) are left out and listed in the appendix instead of drawn as empty boxes.
+- The HTML report has no Asset Map or other full device list. A report is forwarded, and the
+  workbook has the inventory. The Asset template's HTML now shows purchase-date cohorts and
+  building and department breakdowns.
+- Policies and profiles list only what is failing: policy findings with errors first,
+  configuration profiles and apps that reported install errors, and a count of the healthy
+  profiles. The Executive Summary paragraphs are gone; the figures and the attention list replace
+  them. The Exception List appears only when `exceptions:` is configured: it used to list custom
+  extension attributes under that heading.
+- The Chart.js library (about 200 KB) is included in an HTML report only when the report draws a
+  chart.
+
 - Patch compliance is now one figure everywhere: the share of devices on the latest version,
   counted over every patch title that has devices. The daily summary, Trends, the workbook's
   Compliance Posture sheet, the Executive Summary and the Patch screen used three different
@@ -188,6 +215,17 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- The HTML report header printed "Profile: —", "jamf-cli: —" and "Enrolled: — devices". It now
+  shows the profile, the installed jamf-cli version and the number of Macs, and leaves out a
+  fact the app does not have.
+- The HTML report's profile list was every configuration profile with zero errors, so a failing
+  profile never showed. It now reads the profile and app install-error reports.
+- Audit findings in the HTML report had blank check, policy and detail columns. They now show the
+  finding's name, category, recommendation and affected count.
+- Severity labels, bar charts and the Cleanup Analysis tabs in the HTML report had no styling.
+  They do now.
+- `html.track_history` did nothing in any report the app produced. With it on, the Trends group
+  now adds the OS adoption trend and keeps the history file.
 - Adding a workspace from the sidebar profile menu no longer crashes the app. Setup looked for
   jamf-cli while the screen was still being built; it now looks after the screen is up and shows
   "Checking for jamf-cli" until it has an answer.

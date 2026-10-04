@@ -125,7 +125,7 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("reason &lt;here&gt;"))
     }
 
-    // MARK: - execSummary
+    // MARK: - Fleet counts fixture
 
     /// Counts as the summary tiles read them: 100 Macs, FileVault off on 5, Firewall off on 12.
     private func fleet(
@@ -141,58 +141,6 @@ final class HtmlSectionTests: XCTestCase {
                        .sip: control(0, notReported: unreported),
                        .firewall: control(firewallFail), .gatekeeper: control(0)],
             fileVaultOffHardwareEncrypted: 0)
-    }
-
-    func testExecSummaryWithData() {
-        let report = makeReport()
-        let patch: [[String: Any]] = [
-            ["title": "Firefox", "compliance_pct": "80%"],
-            ["title": "Zoom", "compliance_pct": "100%"],
-        ]
-        let html = report.buildExecSummary(
-            totalDevices: 100, fileVaultPct: 95, sipPct: 100, firewallPct: 88,
-            fleet: fleet(), patchStatus: patch
-        )
-        XCTAssertTrue(html.contains("exec-summary"))
-        XCTAssertTrue(html.contains("100 managed device"))
-        XCTAssertTrue(html.contains("95.0%"))  // fileVault
-        XCTAssertTrue(html.contains("Security gaps to remediate: FileVault off on 5 Macs, "
-            + "Firewall off on 12 Macs."))
-        XCTAssertFalse(html.contains("meet all compliance requirements"))
-    }
-
-    func testExecSummaryEmptyState() {
-        let report = makeReport()
-        let html = report.buildExecSummary(
-            totalDevices: 0, fileVaultPct: 0, sipPct: 0, firewallPct: 0,
-            fleet: nil, patchStatus: []
-        )
-        XCTAssertTrue(html.contains("exec-summary"))
-        XCTAssertTrue(html.contains("class=\"empty\"") || html.contains("could not be determined"))
-        XCTAssertTrue(html.contains("No security control counts are available"))
-    }
-
-    func testExecSummaryXSS() {
-        let report = makeReport()
-        let html = report.buildExecSummary(
-            totalDevices: 0, fileVaultPct: 0, sipPct: 0, firewallPct: 0,
-            fleet: nil, patchStatus: []
-        )
-        XCTAssertFalse(html.contains("<script>"))
-    }
-
-    func testExecSummaryStableOutput() {
-        let report = makeReport()
-        let patch: [[String: Any]] = [["title": "T", "compliance_pct": "90%"]]
-        let a = report.buildExecSummary(
-            totalDevices: 50, fileVaultPct: 80, sipPct: 90, firewallPct: 70,
-            fleet: fleet(), patchStatus: patch
-        )
-        let b = report.buildExecSummary(
-            totalDevices: 50, fileVaultPct: 80, sipPct: 90, firewallPct: 70,
-            fleet: fleet(), patchStatus: patch
-        )
-        XCTAssertEqual(a, b)
     }
 
     // MARK: - securityGapSentence
@@ -238,7 +186,7 @@ final class HtmlSectionTests: XCTestCase {
             ["device": "Mac-001", "serial": "ABC123", "policy": "Firefox 130",
              "status_date": "2026-04-15"],
         ]
-        let html = report.buildRecentFailures(patchFailures: patch, updateFailures: [])
+        let html = report.buildRecentFailures(patchFailures: patch, updateFailures: []).html
         XCTAssertTrue(html.contains("recent-failures"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("Mac-001"))
@@ -259,7 +207,7 @@ final class HtmlSectionTests: XCTestCase {
         let rows = HtmlReport.updateFailureRows(from: envelope)
         XCTAssertEqual(rows.compactMap { $0["name"] as? String }, ["Mac-1", "Mac-2"])
 
-        let html = makeReport().buildRecentFailures(patchFailures: [], updateFailures: rows)
+        let html = makeReport().buildRecentFailures(patchFailures: [], updateFailures: rows).html
         XCTAssertTrue(html.contains("Mac-1"))
         XCTAssertTrue(html.contains("LATEST_MAJOR"))
     }
@@ -285,7 +233,8 @@ final class HtmlSectionTests: XCTestCase {
             ["name": "Undated-Mac-\($0)", "serial": "U\($0)", "version": "LATEST_MINOR",
              "last_event": "PlanFailed"]
         }
-        let html = makeReport().buildRecentFailures(patchFailures: patch, updateFailures: update)
+        let html = makeReport().buildRecentFailures(
+            patchFailures: patch, updateFailures: update).html
         let dated = html.range(of: "Dated-Patch-Mac")
         XCTAssertNotNil(dated)
         XCTAssertTrue(html.contains("Undated-Mac-0"))
@@ -295,10 +244,34 @@ final class HtmlSectionTests: XCTestCase {
         }
     }
 
-    func testRecentFailuresEmptyState() {
-        let report = makeReport()
-        let html = report.buildRecentFailures(patchFailures: [], updateFailures: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testRecentFailuresAreLeftOutWhenThereAreNone() {
+        let block = makeReport().buildRecentFailures(patchFailures: [], updateFailures: [])
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no patch or update failures in the snapshots")
+    }
+
+    /// Thirty failures: ten rows show, the other twenty sit behind "Show all 30".
+    func testRecentFailuresShowTenAndKeepTheRestBehindShowAll() {
+        let patch: [[String: Any]] = (0..<30).map {
+            ["device": "Mac-\($0)", "serial": "S\($0)", "policy": "Zoom",
+             "status_date": "2026-03-\(String(format: "%02d", $0 % 28 + 1))"]
+        }
+        let html = makeReport().buildRecentFailures(patchFailures: patch, updateFailures: []).html
+        let (shown, rest) = Self.splitAtShowAll(html)
+        XCTAssertEqual(Self.bodyRows(shown), 10)
+        XCTAssertTrue(html.contains("<summary>Show all 30</summary>"))
+        XCTAssertEqual(Self.bodyRows(rest), 20)
+    }
+
+    /// Body rows in `html`: every row `renderTable` closes after its last cell.
+    static func bodyRows(_ html: String) -> Int {
+        html.components(separatedBy: "</td></tr>").count - 1
+    }
+
+    /// The markup before and after the "Show all" disclosure.
+    static func splitAtShowAll(_ html: String) -> (shown: String, rest: String) {
+        guard let range = html.range(of: "<details class=\"show-all\"") else { return (html, "") }
+        return (String(html[..<range.lowerBound]), String(html[range.lowerBound...]))
     }
 
     func testRecentFailuresXSS() {
@@ -307,7 +280,7 @@ final class HtmlSectionTests: XCTestCase {
             ["device": Self.xssPayload, "serial": "", "policy": "Firefox",
              "status_date": "2026-04-15"],
         ]
-        let html = report.buildRecentFailures(patchFailures: patch, updateFailures: [])
+        let html = report.buildRecentFailures(patchFailures: patch, updateFailures: []).html
         XCTAssertFalse(html.contains("<script>"))
         XCTAssertTrue(html.contains("&lt;script&gt;"))
     }
@@ -318,8 +291,8 @@ final class HtmlSectionTests: XCTestCase {
             ["device": "Mac-A", "serial": "X1", "policy": "Zoom", "status_date": "2026-03-01"],
         ]
         XCTAssertEqual(
-            report.buildRecentFailures(patchFailures: patch, updateFailures: []),
-            report.buildRecentFailures(patchFailures: patch, updateFailures: [])
+            report.buildRecentFailures(patchFailures: patch, updateFailures: []).html,
+            report.buildRecentFailures(patchFailures: patch, updateFailures: []).html
         )
     }
 
@@ -332,16 +305,35 @@ final class HtmlSectionTests: XCTestCase {
             ["name": "Stale-Mac", "serial_number": "S001",
              "last_check_in": "2020-01-01", "username": "jdoe"],
         ]
-        let html = report.buildInterventionList(computersInventory: inventory)
+        let html = report.buildInterventionList(computersInventory: inventory).html
         XCTAssertTrue(html.contains("intervention-list"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("Stale-Mac"))
     }
 
-    func testInterventionListEmptyState() {
-        let report = makeReport()
-        let html = report.buildInterventionList(computersInventory: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testInterventionListIsLeftOutWithoutAComputersSnapshot() {
+        let block = makeReport().buildInterventionList(computersInventory: [])
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no computers snapshot")
+    }
+
+    func testInterventionListIsLeftOutWhenNoMacIsPastTheThreshold() {
+        let recent: [[String: Any]] = [["name": "Fresh", "last_check_in": "2999-01-01"]]
+        let block = makeReport().buildInterventionList(computersInventory: recent)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no Mac has gone 30 days or more without a check-in")
+    }
+
+    /// A hundred and five stale Macs: ten show, the other ninety-five sit behind "Show all".
+    func testInterventionListKeepsEveryRowBehindShowAll() {
+        let inventory: [[String: Any]] = (0..<105).map {
+            ["name": "Stale-\($0)", "serial_number": "S\($0)", "last_check_in": "2020-01-01"]
+        }
+        let html = makeReport().buildInterventionList(computersInventory: inventory).html
+        let (shown, rest) = Self.splitAtShowAll(html)
+        XCTAssertEqual(Self.bodyRows(shown), 10)
+        XCTAssertEqual(Self.bodyRows(rest), 95)
+        XCTAssertTrue(html.contains("<summary>Show all 105</summary>"))
     }
 
     func testInterventionListXSS() {
@@ -350,7 +342,7 @@ final class HtmlSectionTests: XCTestCase {
             ["name": Self.xssPayload, "serial_number": "",
              "last_check_in": "2020-01-01", "username": ""],
         ]
-        let html = report.buildInterventionList(computersInventory: inventory)
+        let html = report.buildInterventionList(computersInventory: inventory).html
         XCTAssertFalse(html.contains("<script>"))
     }
 
@@ -364,7 +356,7 @@ final class HtmlSectionTests: XCTestCase {
             ["title": "Zoom", "latest": "6.0", "on_other": 0, "total": 50,
              "compliance_pct": "100%"],
         ]
-        let html = report.buildPatchQueue(patchStatus: patch)
+        let html = report.buildPatchQueue(patchStatus: patch).html
         XCTAssertTrue(html.contains("patch-queue"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("Firefox"))
@@ -372,10 +364,17 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertFalse(html.contains("Zoom"))
     }
 
-    func testPatchQueueEmptyState() {
-        let report = makeReport()
-        let html = report.buildPatchQueue(patchStatus: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testPatchQueueIsLeftOutWithoutASnapshot() {
+        let block = makeReport().buildPatchQueue(patchStatus: [])
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no patch-status snapshot")
+    }
+
+    func testPatchQueueIsLeftOutWhenEveryTitleIsCurrent() {
+        let patch: [[String: Any]] = [["title": "Zoom", "on_other": 0, "total": 50]]
+        let block = makeReport().buildPatchQueue(patchStatus: patch)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "every tracked patch title is on its latest version")
     }
 
     func testPatchQueueXSS() {
@@ -384,7 +383,7 @@ final class HtmlSectionTests: XCTestCase {
             ["title": Self.xssPayload, "latest": "1.0", "on_other": 5,
              "total": 10, "compliance_pct": "50%"],
         ]
-        let html = report.buildPatchQueue(patchStatus: patch)
+        let html = report.buildPatchQueue(patchStatus: patch).html
         XCTAssertFalse(html.contains("<script>"))
     }
 
@@ -394,8 +393,8 @@ final class HtmlSectionTests: XCTestCase {
             ["title": "T", "latest": "1", "on_other": 3, "total": 10, "compliance_pct": "70%"],
         ]
         XCTAssertEqual(
-            report.buildPatchQueue(patchStatus: patch),
-            report.buildPatchQueue(patchStatus: patch)
+            report.buildPatchQueue(patchStatus: patch).html,
+            report.buildPatchQueue(patchStatus: patch).html
         )
     }
 
@@ -409,17 +408,32 @@ final class HtmlSectionTests: XCTestCase {
             ["severity": "medium", "check": "sip", "policy": "Config",
              "detail": "SIP disabled"],
         ]
-        let html = report.buildAuditEvidence(auditFindings: findings)
+        let html = report.buildAuditEvidence(auditFindings: findings).html
         XCTAssertTrue(html.contains("audit-evidence"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("filevault"))
         XCTAssertTrue(html.contains("sev-high"))
     }
 
-    func testAuditEvidenceEmptyState() {
-        let report = makeReport()
-        let html = report.buildAuditEvidence(auditFindings: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    /// `pro audit` writes `{name, category, severity, affected, recommendation}`; the section
+    /// used to read other keys and print blank columns.
+    func testAuditEvidenceReadsTheRowsProAuditWrites() {
+        let findings: [[String: Any]] = [
+            ["name": "Stale check-in (>14 days)", "category": "compliance", "severity": "WARNING",
+             "affected": 101, "recommendation": "Investigate devices not checking in"],
+        ]
+        let html = makeReport().buildAuditEvidence(auditFindings: findings).html
+        XCTAssertTrue(html.contains("<td>Stale check-in (&gt;14 days)</td>"), html)
+        XCTAssertTrue(html.contains("<td>compliance</td>"))
+        XCTAssertTrue(html.contains("<td>Investigate devices not checking in</td>"))
+        XCTAssertTrue(html.contains("<th>Affected</th>"))
+        XCTAssertTrue(html.contains("<td>101</td>"))
+    }
+
+    func testAuditEvidenceIsLeftOutWithoutFindings() {
+        let block = makeReport().buildAuditEvidence(auditFindings: [])
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no audit findings in the snapshot")
     }
 
     func testAuditEvidenceXSS() {
@@ -427,7 +441,7 @@ final class HtmlSectionTests: XCTestCase {
         let findings: [[String: Any]] = [
             ["severity": "high", "check": Self.xssPayload, "policy": "", "detail": ""],
         ]
-        let html = report.buildAuditEvidence(auditFindings: findings)
+        let html = report.buildAuditEvidence(auditFindings: findings).html
         XCTAssertFalse(html.contains("<script>"))
         XCTAssertTrue(html.contains("&lt;script&gt;"))
     }
@@ -438,8 +452,8 @@ final class HtmlSectionTests: XCTestCase {
             ["severity": "high", "check": "A", "policy": "B", "detail": "C"],
         ]
         XCTAssertEqual(
-            report.buildAuditEvidence(auditFindings: findings),
-            report.buildAuditEvidence(auditFindings: findings)
+            report.buildAuditEvidence(auditFindings: findings).html,
+            report.buildAuditEvidence(auditFindings: findings).html
         )
     }
 
@@ -447,80 +461,36 @@ final class HtmlSectionTests: XCTestCase {
 
     func testExceptionListWithData() throws {
         let yaml = """
-        custom_eas:
-          - name: "FileVault Status"
-            column: "FileVault 2 - Status"
-            type: boolean
-            true_value: "Encrypted"
+        exceptions:
+          - id: "EX-001"
+            description: "Waived for the lab fleet"
+            signed_off_by: "A. Reviewer"
+            signed_off_date: "2026-01-02"
         """
         let config = try ConfigLoader.loadFromString(yaml)
-        let report = makeReport(config: config)
-        let html = report.buildExceptionList()
+        let html = makeReport(config: config).buildExceptionList().html
         XCTAssertTrue(html.contains("exception-list"))
         XCTAssertTrue(html.contains("<table"))
-        XCTAssertTrue(html.contains("FileVault Status"))
+        XCTAssertTrue(html.contains("EX-001"))
     }
 
-    func testExceptionListEmptyState() {
-        let report = makeReport()
-        let html = report.buildExceptionList()
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testExceptionListIsLeftOutWhenNotConfigured() {
+        let block = makeReport().buildExceptionList()
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "not configured: no exceptions: block in config.yaml")
     }
 
     func testExceptionListXSS() throws {
         let yaml = """
-        custom_eas:
-          - name: "<script>x</script>"
-            column: "Col"
-            type: text
+        exceptions:
+          - id: "<script>x</script>"
+            description: "d"
+            signed_off_by: "s"
+            signed_off_date: "2026-01-02"
         """
         let config = try ConfigLoader.loadFromString(yaml)
-        let report = makeReport(config: config)
-        let html = report.buildExceptionList()
+        let html = makeReport(config: config).buildExceptionList().html
         XCTAssertFalse(html.contains("<script>"))
-    }
-
-    // MARK: - assetMap
-
-    func testAssetMapWithData() {
-        let report = makeReport()
-        let inventory: [[String: Any]] = [
-            ["name": "Mac-001", "serial_number": "X001", "asset_tag": "IT-001",
-             "department": "Engineering", "building": "HQ"],
-        ]
-        let html = report.buildAssetMap(computersInventory: inventory)
-        XCTAssertTrue(html.contains("asset-map"))
-        XCTAssertTrue(html.contains("<table"))
-        XCTAssertTrue(html.contains("Mac-001"))
-        XCTAssertTrue(html.contains("IT-001"))
-    }
-
-    func testAssetMapEmptyState() {
-        let report = makeReport()
-        let html = report.buildAssetMap(computersInventory: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
-    }
-
-    func testAssetMapXSS() {
-        let report = makeReport()
-        let inventory: [[String: Any]] = [
-            ["name": Self.xssPayload, "serial_number": "", "asset_tag": "",
-             "department": "", "building": ""],
-        ]
-        let html = report.buildAssetMap(computersInventory: inventory)
-        XCTAssertFalse(html.contains("<script>"))
-    }
-
-    func testAssetMapStableOutput() {
-        let report = makeReport()
-        let inv: [[String: Any]] = [
-            ["name": "M1", "serial_number": "S1", "asset_tag": "A1",
-             "department": "D", "building": "B"],
-        ]
-        XCTAssertEqual(
-            report.buildAssetMap(computersInventory: inv),
-            report.buildAssetMap(computersInventory: inv)
-        )
     }
 
     // MARK: - purchaseCohorts
@@ -532,24 +502,21 @@ final class HtmlSectionTests: XCTestCase {
             ["name": "Mac-B", "purchase_date": "2022-11-15"],
             ["name": "Mac-C", "purchase_date": "2023-02-01"],
         ]
-        let html = report.buildPurchaseCohorts(computersInventory: inventory)
+        let html = report.buildPurchaseCohorts(computersInventory: inventory).html
         XCTAssertTrue(html.contains("purchase-cohorts"))
-        XCTAssertTrue(html.contains("<table"))
+        XCTAssertTrue(html.contains("cohort-bar-row"))
+        XCTAssertFalse(html.contains("<table"), "the bars carry the counts; no second table")
         XCTAssertTrue(html.contains("2022"))
         XCTAssertTrue(html.contains("2023"))
+        XCTAssertFalse(html.contains("Mac-A"), "a year's count, not the Macs in it")
     }
 
-    func testPurchaseCohortsEmptyState() {
-        let report = makeReport()
-        let html = report.buildPurchaseCohorts(computersInventory: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
-    }
-
-    func testPurchaseCohortsNoPurchaseDateEmptyState() {
-        let report = makeReport()
-        let inventory: [[String: Any]] = [["name": "Mac"]]
-        let html = report.buildPurchaseCohorts(computersInventory: inventory)
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testPurchaseCohortsAreLeftOutWithoutPurchaseDates() {
+        let none = makeReport().buildPurchaseCohorts(computersInventory: [])
+        XCTAssertTrue(none.html.isEmpty)
+        XCTAssertEqual(none.omission, "no purchase dates in the inventory")
+        let undated = makeReport().buildPurchaseCohorts(computersInventory: [["name": "Mac"]])
+        XCTAssertEqual(undated.omission, "no purchase dates in the inventory")
     }
 
     func testPurchaseCohortsXSS() {
@@ -557,7 +524,7 @@ final class HtmlSectionTests: XCTestCase {
         let inventory: [[String: Any]] = [
             ["name": Self.xssPayload, "purchase_date": "2024-01-01"],
         ]
-        let html = report.buildPurchaseCohorts(computersInventory: inventory)
+        let html = report.buildPurchaseCohorts(computersInventory: inventory).html
         XCTAssertFalse(html.contains("<script>"))
     }
 
@@ -570,17 +537,35 @@ final class HtmlSectionTests: XCTestCase {
             ["name": "M2", "building": "HQ"],
             ["name": "M3", "building": "Remote"],
         ]
-        let html = report.buildBuildingBreakdown(computersInventory: inventory)
+        let html = report.buildBuildingBreakdown(computersInventory: inventory).html
         XCTAssertTrue(html.contains("building-breakdown"))
-        XCTAssertTrue(html.contains("<table"))
+        XCTAssertTrue(html.contains("cohort-bar-row"))
         XCTAssertTrue(html.contains("HQ"))
         XCTAssertTrue(html.contains("Remote"))
     }
 
-    func testBuildingBreakdownEmptyState() {
-        let report = makeReport()
-        let html = report.buildBuildingBreakdown(computersInventory: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testBuildingBreakdownIsLeftOutWithoutComputers() {
+        let block = makeReport().buildBuildingBreakdown(computersInventory: [])
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no computers snapshot")
+    }
+
+    /// One "(unassigned)" bar for the whole fleet says nothing, so the section is left out.
+    func testBreakdownsAreLeftOutWhenEveryMacIsUnassigned() {
+        let inventory: [[String: Any]] = [["name": "M1"], ["name": "M2"]]
+        let buildings = makeReport().buildBuildingBreakdown(computersInventory: inventory)
+        XCTAssertTrue(buildings.html.isEmpty)
+        XCTAssertEqual(buildings.omission, "every Mac is unassigned")
+        XCTAssertEqual(
+            makeReport().buildDepartmentBreakdown(computersInventory: inventory).omission,
+            "every Mac is unassigned")
+    }
+
+    func testBuildingBreakdownKeepsUnassignedBesideRealBuildings() {
+        let inventory: [[String: Any]] = [["name": "M1", "building": "HQ"], ["name": "M2"]]
+        let html = makeReport().buildBuildingBreakdown(computersInventory: inventory).html
+        XCTAssertTrue(html.contains("(unassigned)"))
+        XCTAssertTrue(html.contains("HQ"))
     }
 
     func testBuildingBreakdownXSS() {
@@ -588,7 +573,7 @@ final class HtmlSectionTests: XCTestCase {
         let inventory: [[String: Any]] = [
             ["name": "M1", "building": Self.xssPayload],
         ]
-        let html = report.buildBuildingBreakdown(computersInventory: inventory)
+        let html = report.buildBuildingBreakdown(computersInventory: inventory).html
         XCTAssertFalse(html.contains("<script>"))
     }
 
@@ -596,9 +581,19 @@ final class HtmlSectionTests: XCTestCase {
         let report = makeReport()
         let inv: [[String: Any]] = [["name": "M", "building": "B"]]
         XCTAssertEqual(
-            report.buildBuildingBreakdown(computersInventory: inv),
-            report.buildBuildingBreakdown(computersInventory: inv)
+            report.buildBuildingBreakdown(computersInventory: inv).html,
+            report.buildBuildingBreakdown(computersInventory: inv).html
         )
+    }
+
+    /// Twelve buildings: ten bars show, the other two sit behind "Show all 12".
+    func testBreakdownBarsShowTenAndKeepTheRestBehindShowAll() {
+        let inventory: [[String: Any]] = (0..<12).map { ["name": "M\($0)", "building": "B\($0)"] }
+        let html = makeReport().buildBuildingBreakdown(computersInventory: inventory).html
+        let (shown, rest) = Self.splitAtShowAll(html)
+        XCTAssertEqual(shown.components(separatedBy: "cohort-bar-row").count - 1, 10)
+        XCTAssertEqual(rest.components(separatedBy: "cohort-bar-row").count - 1, 2)
+        XCTAssertTrue(html.contains("<summary>Show all 12</summary>"))
     }
 
     // MARK: - departmentBreakdown
@@ -610,17 +605,11 @@ final class HtmlSectionTests: XCTestCase {
             ["name": "M2", "department": "Engineering"],
             ["name": "M3", "department": "Finance"],
         ]
-        let html = report.buildDepartmentBreakdown(computersInventory: inventory)
+        let html = report.buildDepartmentBreakdown(computersInventory: inventory).html
         XCTAssertTrue(html.contains("department-breakdown"))
-        XCTAssertTrue(html.contains("<table"))
+        XCTAssertTrue(html.contains("cohort-bar-row"))
         XCTAssertTrue(html.contains("Engineering"))
         XCTAssertTrue(html.contains("Finance"))
-    }
-
-    func testDepartmentBreakdownEmptyState() {
-        let report = makeReport()
-        let html = report.buildDepartmentBreakdown(computersInventory: [])
-        XCTAssertTrue(html.contains("class=\"empty\""))
     }
 
     func testDepartmentBreakdownXSS() {
@@ -628,17 +617,16 @@ final class HtmlSectionTests: XCTestCase {
         let inventory: [[String: Any]] = [
             ["name": "M1", "department": Self.xssPayload],
         ]
-        let html = report.buildDepartmentBreakdown(computersInventory: inventory)
+        let html = report.buildDepartmentBreakdown(computersInventory: inventory).html
         XCTAssertFalse(html.contains("<script>"))
     }
 
     // MARK: - protectAlerts
 
-    func testProtectAlertsNoProtectConfig() {
-        let report = makeReport()
-        let html = report.buildProtectAlerts(protectDataDir: nil)
-        XCTAssertTrue(html.contains("protect-alerts"))
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testProtectAlertsAreLeftOutWhenProtectIsNotConfigured() {
+        let block = makeReport().buildProtectAlerts(protectDataDir: nil)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "not configured: protect.enabled is off in config.yaml")
     }
 
     func testProtectAlertsEmptyCache() throws {
@@ -647,11 +635,11 @@ final class HtmlSectionTests: XCTestCase {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let report = makeReport()
-        let html = report.buildProtectAlerts(protectDataDir: tmp)
-        XCTAssertTrue(html.contains("class=\"empty\""))
-        XCTAssertFalse(html.contains("jamf-cli protect collect"),
-            "the empty state must not name a command jamf-cli does not have")
+        let block = makeReport().buildProtectAlerts(protectDataDir: tmp)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no Protect alerts in the snapshot")
+        XCTAssertFalse(block.omission?.contains("jamf-cli protect collect") == true,
+            "the reason must not name a command jamf-cli does not have")
     }
 
     /// Jamf Protect's severity enum is High, Medium, Low, Informational — there
@@ -675,7 +663,7 @@ final class HtmlSectionTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: alerts)
             .write(to: alertsDir.appendingPathComponent("protect-alerts_20260401T000000.json"))
 
-        let html = makeReport().buildProtectAlerts(protectDataDir: tmp)
+        let html = makeReport().buildProtectAlerts(protectDataDir: tmp).html
 
         XCTAssertTrue(html.contains("sev-pill sev-info\">informational"),
             "Informational is a Protect severity, not an unknown one")
@@ -690,7 +678,8 @@ final class HtmlSectionTests: XCTestCase {
         let report = makeReport()
         let a = report.buildProtectAlerts(protectDataDir: nil)
         let b = report.buildProtectAlerts(protectDataDir: nil)
-        XCTAssertEqual(a, b)
+        XCTAssertEqual(a.html, b.html)
+        XCTAssertEqual(a.omission, b.omission)
     }
 
     /// jamf-cli's real flattened alert row shape (v1.29.0): `computer` is the
@@ -716,7 +705,7 @@ final class HtmlSectionTests: XCTestCase {
         try data.write(to: alertsDir.appendingPathComponent("protect-alerts_20260402T000000.json"))
 
         let report = makeReport()
-        let html = report.buildProtectAlerts(protectDataDir: tmp)
+        let html = report.buildProtectAlerts(protectDataDir: tmp).html
 
         XCTAssertTrue(html.contains("Mac-Dev-01"), "Should render the computer host name")
         XCTAssertTrue(html.contains("Malware Detected"), "Should render eventType as the alert")
@@ -729,11 +718,10 @@ final class HtmlSectionTests: XCTestCase {
 
     // MARK: - insightsDrift
 
-    func testInsightsDriftNoProtectConfig() {
-        let report = makeReport()
-        let html = report.buildInsightsDrift(protectDataDir: nil)
-        XCTAssertTrue(html.contains("insights-drift"))
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testInsightsDriftIsLeftOutWhenProtectIsNotConfigured() {
+        let block = makeReport().buildInsightsDrift(protectDataDir: nil)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "not configured: protect.enabled is off in config.yaml")
     }
 
     func testInsightsDriftInsufficientSnapshots() throws {
@@ -752,10 +740,10 @@ final class HtmlSectionTests: XCTestCase {
         let name = "protect-insights_20260101T000000.json"
         try data.write(to: insightsDir.appendingPathComponent(name))
 
-        let report = makeReport()
-        let html = report.buildInsightsDrift(protectDataDir: tmp)
-        XCTAssertTrue(html.contains("class=\"empty\""))
-        XCTAssertTrue(html.contains("N≥2") || html.contains("snapshot"))
+        let block = makeReport().buildInsightsDrift(protectDataDir: tmp)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission,
+                       "needs two or more Protect insights snapshots; 1 found")
     }
 
     func testInsightsDriftWithTwoSnapshots() throws {
@@ -782,7 +770,7 @@ final class HtmlSectionTests: XCTestCase {
         try d2.write(to: url2)
 
         let report = makeReport()
-        let html = report.buildInsightsDrift(protectDataDir: tmp)
+        let html = report.buildInsightsDrift(protectDataDir: tmp).html
         XCTAssertTrue(html.contains("insights-drift"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("FileVault Enabled"))
@@ -813,7 +801,7 @@ final class HtmlSectionTests: XCTestCase {
         try JSONSerialization.data(withJSONObject: day2).write(to: url2)
 
         let report = makeReport()
-        let html = report.buildInsightsDrift(protectDataDir: tmp)
+        let html = report.buildInsightsDrift(protectDataDir: tmp).html
 
         XCTAssertTrue(html.contains("Unsigned Kernel Extension"))
         XCTAssertTrue(html.contains("failing-device counts"),
@@ -838,7 +826,7 @@ final class HtmlSectionTests: XCTestCase {
                 to: insightsDir.appendingPathComponent("protect-insights_\(stamp).json"))
         }
 
-        let html = makeReport().buildInsightsDrift(protectDataDir: tmp)
+        let html = makeReport().buildInsightsDrift(protectDataDir: tmp).html
 
         XCTAssertTrue(html.contains("Gatekeeper &amp; XProtect &lt;script&gt;"), html)
         XCTAssertFalse(html.contains("&amp;amp;"), "the label was escaped twice")
@@ -862,11 +850,10 @@ final class HtmlSectionTests: XCTestCase {
         return try XCTUnwrap(EAResultRow.decodeSnapshot(data).rows)
     }
 
-    func testAgentHealthNoAgentsConfigured() {
-        let report = makeReport()
-        let html = report.buildAgentHealth(eaRows: [], fleet: 0)
-        XCTAssertTrue(html.contains("agent-health"))
-        XCTAssertTrue(html.contains("class=\"empty\""))
+    func testAgentHealthIsLeftOutWhenNoAgentIsConfigured() {
+        let block = makeReport().buildAgentHealth(eaRows: [], fleet: 0)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "not configured: no security_agents in config.yaml")
     }
 
     /// Four Macs, three report: two connected, one not. The fourth reports nothing.
@@ -876,7 +863,7 @@ final class HtmlSectionTests: XCTestCase {
             ("1", "Falcon State", "connected"), ("2", "Falcon State", "Connected (sensor)"),
             ("3", "Falcon State", "not installed"), ("1", "Other EA", "x"),
         ])
-        let html = report.buildAgentHealth(eaRows: rows, fleet: 4)
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 4).html
         XCTAssertTrue(html.contains("count-card"))
         XCTAssertTrue(html.contains("2 of 4 installed"), html)
         XCTAssertTrue(html.contains("<td>Falcon</td><td>2</td><td>1</td><td>1</td><td>50.0%</td>"),
@@ -897,24 +884,44 @@ final class HtmlSectionTests: XCTestCase {
             ("3", "Nessus Status", "Not Installed"), ("4", "Nessus Status", "Not Installed"),
             ("5", "Nessus Status", "Not Installed"),
         ])
-        let html = report.buildAgentHealth(eaRows: rows, fleet: 5)
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 5).html
         XCTAssertTrue(html.contains("40.0%"), html)
         XCTAssertFalse(html.contains("100.0%"))
     }
 
-    func testAgentHealthColumnNoMacReportsShowsNoCoverage() throws {
+    /// No Mac reports the configured column (usually a mistyped name): nothing to chart, so
+    /// the section is left out and the appendix names the column that matched nothing.
+    func testAgentHealthIsLeftOutWhenNoMacReportsTheColumn() throws {
         let report = makeReport(config: try ConfigLoader.loadFromString(Self.falconYAML))
         let rows = try eaRows([("1", "Unrelated EA", "connected")])
-        let html = report.buildAgentHealth(eaRows: rows, fleet: 10)
-        XCTAssertTrue(html.contains("no Mac reports Falcon State"), html)
-        XCTAssertTrue(html.contains("<td>0</td><td>0</td><td>10</td><td>\u{2014}</td>"), html)
+        let block = report.buildAgentHealth(eaRows: rows, fleet: 10)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(
+            block.omission,
+            "no Mac reports the extension attribute of any configured agent (Falcon State)")
+    }
+
+    /// One agent reports and one does not: the section stays and says which has no coverage.
+    func testAgentHealthKeepsAnAgentNoMacReportsBesideOneThatDoes() throws {
+        let yaml = Self.falconYAML + """
+
+          - name: "Nessus"
+            column: "Nessus Status"
+            connected_value: "Installed"
+        """
+        let report = makeReport(config: try ConfigLoader.loadFromString(yaml))
+        let rows = try eaRows([("1", "Falcon State", "connected")])
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 10).html
+        XCTAssertTrue(html.contains("no Mac reports Nessus Status"), html)
+        XCTAssertTrue(
+            html.contains("<td>Nessus</td><td>0</td><td>0</td><td>10</td><td>\u{2014}</td>"), html)
     }
 
     func testAgentHealthWithoutEAResultsSaysSoInsteadOfCountingZero() throws {
         let report = makeReport(config: try ConfigLoader.loadFromString(Self.falconYAML))
-        let html = report.buildAgentHealth(eaRows: nil, fleet: 665)
-        XCTAssertTrue(html.contains("class=\"empty\""))
-        XCTAssertFalse(html.contains("<table"))
+        let block = report.buildAgentHealth(eaRows: nil, fleet: 665)
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no extension attribute results in the snapshot")
     }
 
     func testAgentHealthXSS() throws {
@@ -926,7 +933,7 @@ final class HtmlSectionTests: XCTestCase {
         """
         let report = makeReport(config: try ConfigLoader.loadFromString(yaml))
         let rows = try eaRows([("1", "Status", "Up")])
-        let html = report.buildAgentHealth(eaRows: rows, fleet: 1)
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 1).html
         XCTAssertFalse(html.contains("<script>"))
     }
 
@@ -934,8 +941,8 @@ final class HtmlSectionTests: XCTestCase {
         let report = makeReport(config: try ConfigLoader.loadFromString(Self.falconYAML))
         let rows = try eaRows([("1", "Falcon State", "connected")])
         XCTAssertEqual(
-            report.buildAgentHealth(eaRows: rows, fleet: 2),
-            report.buildAgentHealth(eaRows: rows, fleet: 2)
+            report.buildAgentHealth(eaRows: rows, fleet: 2).html,
+            report.buildAgentHealth(eaRows: rows, fleet: 2).html
         )
     }
 

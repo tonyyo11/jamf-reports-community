@@ -214,6 +214,66 @@ final class ReportTemplateTests: XCTestCase {
         XCTAssertTrue(SecurityPostureTemplate().htmlSections.contains(.insightsDrift))
     }
 
+    // MARK: - Report depth
+
+    /// Every template that lists the framing sections is a report that opens with the
+    /// figures and the attention list and closes with the appendix.
+    func testEveryTemplateOpensWithTheFiguresAndClosesWithTheAppendix() {
+        for template in allTemplates {
+            let sections = template.htmlSections
+            XCTAssertTrue(sections.contains(.atAGlance), "\(type(of: template))")
+            XCTAssertTrue(sections.contains(.needsAttention), "\(type(of: template))")
+            XCTAssertTrue(sections.contains(.auditAppendix), "\(type(of: template))")
+        }
+    }
+
+    /// The Executive report is the framing only: no detail group can be built from its list.
+    func testExecutiveTemplateListsNoDetailSection() {
+        let framing: Set<SectionID> = [
+            .aiNarrative, .atAGlance, .needsAttention, .jamfDashboard, .auditAppendix,
+        ]
+        XCTAssertEqual(Set(ExecutiveTemplate().htmlSections), framing)
+        let detail = Set(HtmlDetailGroup.allCases.flatMap(\.members))
+        XCTAssertTrue(Set(ExecutiveTemplate().htmlSections).isDisjoint(with: detail))
+    }
+
+    func testOperationalOpensTheActionLists() {
+        let open = Set(OperationalTemplate().htmlOpenSections)
+        XCTAssertEqual(open, [.recentFailures, .interventionList, .patchQueue])
+        XCTAssertTrue(open.isSubset(of: Set(OperationalTemplate().htmlSections)))
+    }
+
+    func testComplianceOpensSecurityAndCompliance() {
+        let open = Set(ComplianceTemplate().htmlOpenSections)
+        XCTAssertFalse(open.isEmpty)
+        XCTAssertTrue(open.isSubset(of: Set(HtmlDetailGroup.security.members)))
+        XCTAssertTrue(open.isSubset(of: Set(ComplianceTemplate().htmlSections)))
+    }
+
+    func testFullInstanceStartsEverythingCollapsed() {
+        XCTAssertTrue(FullInstanceTemplate().htmlOpenSections.isEmpty)
+    }
+
+    /// An open section a template does not list would open nothing.
+    func testNoTemplateOpensASectionItDoesNotList() {
+        for template in allTemplates {
+            XCTAssertTrue(
+                Set(template.htmlOpenSections).isSubset(of: Set(template.htmlSections)),
+                "\(type(of: template))")
+        }
+    }
+
+    /// Every detail section sits in exactly one group, so a template's list is enough to
+    /// say what the report holds.
+    func testEveryDetailSectionBelongsToOneGroup() {
+        let members = HtmlDetailGroup.allCases.flatMap(\.members)
+        XCTAssertEqual(members.count, Set(members).count)
+        let framing: Set<SectionID> = [
+            .aiNarrative, .atAGlance, .needsAttention, .jamfDashboard, .auditAppendix,
+        ]
+        XCTAssertEqual(Set(members).union(framing), Set(SectionID.allCases))
+    }
+
     // MARK: - SheetID coverage sanity
 
     func testAllSheetIDsHaveNonEmptyRawValue() {
@@ -294,9 +354,10 @@ final class ReportTemplateTests: XCTestCase {
         XCTAssertTrue(template.includedSheets.isEmpty)
     }
 
-    func testCustomTemplateHtmlSectionsIncludesKpiTiles() {
+    func testCustomTemplateHtmlSectionsIncludesTheFigures() {
         let template = CustomTemplate(includedSheets: [.executiveSummary])
-        XCTAssertTrue(template.htmlSections.contains(.kpiTiles))
+        XCTAssertTrue(template.htmlSections.contains(.atAGlance))
+        XCTAssertTrue(template.htmlSections.contains(.needsAttention))
     }
 
     func testCustomTemplateHtmlSectionsIncludesOrgInfo() {
@@ -317,14 +378,15 @@ final class ReportTemplateTests: XCTestCase {
     func testCustomTemplateHtmlSectionsSheetMappings() {
         // (triggerSheet, expectedSections) — based on the switch in CustomTemplate.htmlSections
         let cases: [(SheetID, [SectionID])] = [
-            (.executiveSummary,   [.execSummary]),
+            (.executiveSummary,   [.aiNarrative]),
             (.securityPosture,    [.securityTiles]),
             (.compliancePosture,  [.complianceBands]),
             (.patchCompliance,    [.patchBar, .patchQueue]),
             (.patchFailures,      [.patchBar, .patchQueue]),
             (.auditSummary,       [.auditEvidence]),
-            (.inventorySummary,   [.assetMap]),
-            (.hardwareModels,     [.assetMap]),
+            (.inventorySummary,   [.purchaseCohorts, .buildingBreakdown, .departmentBreakdown]),
+            (.hardwareModels,     [.purchaseCohorts, .buildingBreakdown, .departmentBreakdown]),
+            (.appStatus,          [.appTable]),
             (.osCurrency,         [.osAdoptionChart, .osCurrency]),
             (.policyHealth,       [.policyTable]),
             (.profileStatus,      [.profileTable]),
@@ -348,17 +410,15 @@ final class ReportTemplateTests: XCTestCase {
     }
 
     /// A sheet with no specific HTML mapping (the `default` arm) should yield
-    /// only the always-on sections: kpiTiles, fleetSummary, and orgInfo.
+    /// only the always-on sections: the figures, the attention list, the catalog and the
+    /// audit appendix.
     func testCustomTemplateHtmlSectionsDefaultArmYieldsOnlyAlwaysOnSections() {
         // .cover has no HTML mapping (hits the default arm)
         let template = CustomTemplate(includedSheets: [.cover])
         let sections = Set(template.htmlSections)
-        XCTAssertTrue(sections.contains(.kpiTiles))
-        XCTAssertTrue(sections.contains(.fleetSummary))
-        XCTAssertTrue(sections.contains(.orgInfo))
-        // No other sections should be added for a default-arm sheet
-        XCTAssertEqual(sections.count, 3,
-            "Default-arm sheet should produce exactly 3 always-on sections, got \(sections.count): "
+        XCTAssertEqual(
+            sections, [.atAGlance, .needsAttention, .orgInfo, .auditAppendix],
+            "Default-arm sheet should produce exactly the 4 always-on sections, got "
             + sections.map(\.rawValue).sorted().joined(separator: ", "))
     }
 

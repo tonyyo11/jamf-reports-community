@@ -23,6 +23,22 @@ import Foundation
 /// across printed pages.
 extension HtmlReport {
 
+    /// What the report can do with the newest `dashboard` snapshot.
+    enum DashboardState {
+        /// The frame's section markup.
+        case embedded(String)
+        /// A note's markup: a page is collected but too large to embed.
+        case notEmbedded(String)
+        /// No page to show. The reason goes in the appendix; nil when the template has none.
+        case absent(String?)
+
+        /// True when the page itself is in the report, so the sections it repeats can leave.
+        var isEmbedded: Bool {
+            if case .embedded = self { return true }
+            return false
+        }
+    }
+
     /// Largest page embedded. A fast-tier page is tens of kilobytes, so this only
     /// stops an unusual page from swelling every report generated from the workspace.
     static let maxEmbeddedDashboardBytes = 4_000_000
@@ -65,22 +81,22 @@ extension HtmlReport {
         + "if(e.source!==parent||!e.data){return;}var t=e.data.jrcTheme;"
         + "if(t===\"light\"||t===\"dark\"){d.setAttribute(\"data-theme\",t);}});})();"
 
-    func buildJamfDashboardSection() -> String {
+    /// The newest dashboard snapshot, as the report can use it.
+    func dashboardState() -> DashboardState {
         let dir = dataDir.appendingPathComponent(ReportEngine.dashboardKind, isDirectory: true)
         guard let url = FileManager.newestHTMLSnapshot(in: dir),
               let data = try? Data(contentsOf: url) else {
-            return Self.dashboardNoteSection(
-                "Not collected yet. With jamf-cli 1.31.0 or later, collect saves jamf-cli's "
-                    + "dashboard every two days.")
+            return .absent("not collected yet; with jamf-cli 1.31.0 or later, collect saves "
+                + "jamf-cli's dashboard every two days")
         }
         let collected = FileManager.snapshotDate(of: url).map(Self.dashboardDateText)
             ?? "on an unknown date"
         guard data.count <= Self.maxEmbeddedDashboardBytes else {
             let size = ByteCountFormatter.string(
                 fromByteCount: Int64(data.count), countStyle: .file)
-            return Self.dashboardNoteSection(
+            return .notEmbedded(Self.dashboardNoteSection(
                 "The dashboard collected \(collected) is \(size), too large to embed. Open "
-                    + "\(url.lastPathComponent) from the jamf-cli-data/dashboard folder.")
+                    + "\(url.lastPathComponent) from the jamf-cli-data/dashboard folder."))
         }
         let page = Self.dashboardPageForEmbedding(String(decoding: data, as: UTF8.self))
         let srcdoc = HtmlSectionFormatters.escapeHTML(page)
@@ -90,9 +106,10 @@ extension HtmlReport {
                 + "Jamf Security Cloud.")
         // The border sits on a wrapper so the frame's height is all page under any box
         // model, and nothing is styled inline, so the print rule can hide the frame.
-        return """
-        <div class="section" id="jamf-dashboard">
-          <h2>Jamf Fleet Dashboard</h2>
+        return .embedded("""
+        <details class="group dashboard" id="jamf-dashboard" open>
+          <summary><span class="grp-title">Jamf Fleet Dashboard</span></summary>
+          <div class="group-body">
           <style>
             #jamf-dashboard .jrc-dashboard-wrap {
               border: 1px solid rgba(127,127,127,0.35); border-radius: 8px; overflow: hidden;
@@ -136,8 +153,9 @@ extension HtmlReport {
             }
           })();
           </script>
-        </div>
-        """
+          </div>
+        </details>
+        """)
     }
 
     /// `page` with the content-security policy right after its opening `<head>` tag (a
@@ -164,8 +182,14 @@ extension HtmlReport {
     }
 
     private static func dashboardNoteSection(_ note: String) -> String {
-        "<div class=\"section\" id=\"jamf-dashboard\"><h2>Jamf Fleet Dashboard</h2>"
-            + "<p class=\"note\">\(HtmlSectionFormatters.escapeHTML(note))</p></div>"
+        """
+        <details class="group dashboard" id="jamf-dashboard" open>
+          <summary><span class="grp-title">Jamf Fleet Dashboard</span></summary>
+          <div class="group-body">
+            <p class="note">\(HtmlSectionFormatters.escapeHTML(note))</p>
+          </div>
+        </details>
+        """
     }
 
     private static func dashboardDateText(_ date: Date) -> String {

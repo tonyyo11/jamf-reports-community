@@ -300,19 +300,15 @@ final class TemplatedEngineTests: XCTestCase {
         }
         let mainBody = String(content[mainStart.upperBound..<mainEnd.lowerBound])
 
-        // Within <main>, ComplianceTemplate puts kpiTiles BEFORE complianceBands.
-        // kpiTiles renders "tiles-row"; complianceBands renders "compliance-hero-value".
-        // Check their relative positions only when both are present (no-data = not rendered).
+        // Within <main>, the security controls come BEFORE the compliance posture, as the
+        // security group lists them. The controls render "tiles-row"; the posture renders
+        // "compliance-hero-value". Check their positions only when both are present.
         let tilesRange = mainBody.range(of: "tiles-row")
         let heroRange = mainBody.range(of: "compliance-hero-value")
 
         if let tiles = tilesRange, let hero = heroRange {
-            let kpiIndex = template.htmlSections.firstIndex(of: .kpiTiles)!
-            let compIndex = template.htmlSections.firstIndex(of: .complianceBands)!
-            if kpiIndex < compIndex {
-                XCTAssertLessThan(tiles.lowerBound, hero.lowerBound,
-                                  "kpiTiles must appear before complianceBands in <main>")
-            }
+            XCTAssertLessThan(tiles.lowerBound, hero.lowerBound,
+                              "securityTiles must appear before complianceBands in <main>")
         }
     }
 
