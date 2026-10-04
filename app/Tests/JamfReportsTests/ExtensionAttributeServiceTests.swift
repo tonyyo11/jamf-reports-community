@@ -368,10 +368,10 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         """
         let definitionsJSON = """
         [
-          {"id": "1", "name": "Reports A", "dataType": "STRING", "inputType": "SCRIPT", "enabled": true},
-          {"id": "2", "name": "Reports B", "dataType": "STRING", "inputType": "SCRIPT", "enabled": true},
-          {"id": "3", "name": "Never reports", "dataType": "STRING", "inputType": "SCRIPT", "enabled": true},
-          {"id": "4", "name": "Also silent", "dataType": "STRING", "inputType": "SCRIPT", "enabled": false}
+          {"id": "1", "name": "Reports A", "dataType": "STRING", "enabled": true},
+          {"id": "2", "name": "Reports B", "dataType": "STRING", "enabled": true},
+          {"id": "3", "name": "Never reports", "dataType": "STRING", "enabled": true},
+          {"id": "4", "name": "Also silent", "dataType": "STRING", "enabled": false}
         ]
         """
         let resultsURL = writeTempFile(content: resultsJSON, suffix: "ea-results.json")
@@ -397,7 +397,7 @@ final class ExtensionAttributeServiceTests: XCTestCase {
 
         let definitionsURL = writeTempFile(
             content: """
-            [{"id": "1", "name": "Solo", "dataType": "STRING", "inputType": "SCRIPT", "enabled": true}]
+            [{"id": "1", "name": "Solo", "dataType": "STRING", "enabled": true}]
             """,
             suffix: "ea-definitions.json")
         defer { try? FileManager.default.removeItem(at: definitionsURL) }
