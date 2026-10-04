@@ -125,8 +125,10 @@ encrypts its internal disk; with FileVault off the disk simply unlocks without a
 on the card). Those Macs are named "FileVault off (hardware-encrypted)" and counted apart.
 The rule needs the Mac's model details from the latest inventory collect; a Mac whose
 record is missing, ambiguous (two records on one serial number) or a virtual machine keeps
-FileVault's own level. On a CSV, map `architecture` ("Architecture Type") and `model`
-("Model Identifier").
+FileVault's own level. On a CSV, map `architecture` ("Architecture Type") and
+`model_identifier` ("Model Identifier"); `model` is the marketing name ("Model") and does not
+identify a T2 Mac. Config Doctor warns when the rule is set, a CSV is present and either
+key is unmapped.
 
 **Score weights.** Weights are saved in the workspace (`score_weights`), so the Security
 Posture screen, the Overview, Trends, alerts and reports all score the same way. Weights

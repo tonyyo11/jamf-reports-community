@@ -214,7 +214,7 @@ final class DeviceInventoryRecordTests: XCTestCase {
         XCTAssertEqual(encrypted(["Apple Silicon": "FALSE", "Model Identifier": "iMac19,1"]), false)
         XCTAssertNil(encrypted(["Apple Silicon": "No"]), "an Intel Mac could still have a T2")
         XCTAssertEqual(encrypted(["Apple Silicon": "", "Architecture Type": "arm64"]), true)
-        // The app's default `columns.architecture` header.
+        // The short header older exports and the app's earlier `columns.architecture` default use.
         XCTAssertEqual(encrypted(["Architecture": "x86_64", "Model Identifier": "MacBookPro14,1"]),
                        false)
         XCTAssertNil(encrypted(["Apple Silicon": "Unknown"]))

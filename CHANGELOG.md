@@ -26,6 +26,11 @@ compliance is now one figure everywhere.
   needs the Mac's hardware details from the latest inventory collect. A Mac is never treated this
   way when its record disagrees with another record for the same serial number, or when it is a
   virtual machine.
+- CSV reports can tell a T2 Mac from other Intel Macs. A new `columns.model_identifier` key maps
+  the export's "Model Identifier" column (`columns.model` stays the marketing name), and the
+  default `columns.architecture` is now "Architecture Type", the header Jamf Pro's computer export
+  uses. Scaffold and re-scaffold fill both, and Config Doctor warns when the hardware rule is set,
+  a CSV is present and either one is unmapped.
 - Security Score weights are saved in the workspace's `security_policy.score_weights`, so the
   Security Posture screen, the Overview, Trends, alerts and reports score with the same weights.
   Weights set on this Mac earlier are shown on the Scoring tab and apply to a workspace once you

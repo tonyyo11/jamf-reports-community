@@ -89,15 +89,19 @@ columns:
 
   # --- Hardware info (optional) ---
 
-  # security_policy's hardware rule on a CSV needs architecture (Apple silicon) and a "Model
-  # Identifier" column as model (T2 Macs); without them hardware is unknown and FileVault off
-  # keeps the control's own level.
+  # security_policy's hardware rule on a CSV needs architecture (Apple silicon) and
+  # model_identifier (T2 Macs); without them hardware is unknown and FileVault off keeps the
+  # control's own level.
 
   # Processor architecture, as Jamf exports it. Typical values: "arm64", "x86_64".
   architecture: "Architecture Type"
 
   # The human-readable model name (e.g., "MacBook Pro (16-inch, 2021)").
   model: "Model"
+
+  # The hardware model identifier (e.g., "Mac16,6", "MacBookPro16,1"). Used with architecture
+  # to tell Apple silicon and T2 Macs apart for security_policy.filevault_off_hardware_encrypted.
+  model_identifier: "Model Identifier"
 
   # --- Enrollment / MDM (optional) ---
 

@@ -559,11 +559,12 @@ struct CSVDashboard: Sendable {
         }
     }
 
-    /// Whether the row's Mac is hardware-encrypted, from the mapped model and architecture
-    /// columns; nil when they are not mapped or say nothing.
+    /// Whether the row's Mac is hardware-encrypted, from the mapped model identifier and
+    /// architecture columns; nil when they are not mapped or say nothing. `model` is the
+    /// marketing name and cannot identify a T2 Mac.
     private func hardwareEncrypted(_ csvRow: CSVRow) -> Bool? {
         HardwareEncryption.isHardwareEncrypted(
-            appleSilicon: nil, modelIdentifier: value(csvRow, .model),
+            appleSilicon: nil, modelIdentifier: value(csvRow, .modelIdentifier),
             architecture: value(csvRow, .architecture))
     }
 

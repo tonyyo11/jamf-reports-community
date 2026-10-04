@@ -119,8 +119,9 @@ enum ScaffoldService {
         "secure_boot":      ["secure boot level", "secure boot"],
         "bootstrap_token":  ["bootstrap token escrowed", "bootstrap token is escrowed"],
         "disk_percent_full": ["boot drive percentage full", "percentage full", "disk percent full"],
-        "architecture":     ["architecture", "arch", "cpu type"],
+        "architecture":     ["architecture type", "architecture", "arch", "cpu type"],
         "model":            ["model", "hardware model", "device model"],
+        "model_identifier": ["model identifier", "model id"],
         "last_enrollment":  ["last enrollment", "enrollment date", "enrolled"],
         "mdm_expiry":       ["mdm profile expiration date", "mdm expiry", "profile expiration date"],
         // Optional inventory columns; hints come from the retired ReportEngine scaffold.
@@ -136,6 +137,8 @@ enum ScaffoldService {
 
     private static let columnExcludes: [String: [String]] = [
         "manager":          ["managed", "unmanaged"],
+        // "Model Identifier" is model_identifier's column; `model` is the marketing name.
+        "model":            ["identifier"],
         "secure_boot":      ["external boot"],
         "bootstrap_token":  ["allowed"],
         "disk_percent_full": ["available mb", "capacity mb", "free mb"],
@@ -521,7 +524,8 @@ enum ScaffoldService {
         "computer_name", "serial_number", "operating_system", "last_checkin",
         "department", "manager", "email",
         "filevault", "sip", "firewall", "gatekeeper", "secure_boot", "bootstrap_token",
-        "disk_percent_full", "architecture", "model", "last_enrollment", "mdm_expiry",
+        "disk_percent_full", "architecture", "model", "model_identifier", "last_enrollment",
+        "mdm_expiry",
     ]
 
     // Mobile column key order matches Python DEFAULT_CONFIG["mobile_columns"].
@@ -654,7 +658,8 @@ enum ScaffoldService {
         "computer name", "device name", "display name", "hostname", "name",
         "serial number", "serial", "udid", "jss computer id", "jss mobile device id",
         "device id", "asset tag", "model", "model identifier", "processor type",
-        "apple silicon", "architecture", "operating system version", "os version",
+        "apple silicon", "architecture", "architecture type", "operating system version",
+        "os version",
         "build", "last inventory update", "last check-in", "last checkin",
         "last contact", "last enrollment", "enrollment date", "managed", "supervised",
         "ip address", "last reported ip address", "mac address", "wi-fi mac address",

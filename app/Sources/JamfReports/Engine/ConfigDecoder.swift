@@ -97,6 +97,9 @@ struct ColumnConfig: Decodable, Sendable {
     var diskPercentFull: String?
     var architecture: String?
     var model: String?
+    /// Hardware model identifier column (`Mac16,6`), as opposed to `model`'s marketing name.
+    /// YAML key: `model_identifier`.
+    var modelIdentifier: String?
     var lastEnrollment: String?
     var mdmExpiry: String?
     var fullName: String?
@@ -127,6 +130,7 @@ struct ColumnConfig: Decodable, Sendable {
         case diskPercentFull = "disk_percent_full"
         case architecture
         case model
+        case modelIdentifier = "model_identifier"
         case lastEnrollment = "last_enrollment"
         case mdmExpiry = "mdm_expiry"
         case fullName = "full_name"
@@ -160,6 +164,7 @@ struct ColumnConfig: Decodable, Sendable {
         case .diskPercentFull: value = diskPercentFull
         case .architecture: value = architecture
         case .model: value = model
+        case .modelIdentifier: value = modelIdentifier
         case .lastEnrollment: value = lastEnrollment
         case .mdmExpiry: value = mdmExpiry
         case .fullName: value = fullName
@@ -195,7 +200,7 @@ enum ColumnField: String, CaseIterable, Sendable {
     case computerName, serialNumber, operatingSystem, lastCheckin
     case department, manager, email
     case filevault, sip, firewall, gatekeeper, secureBoot, bootstrapToken
-    case diskPercentFull, architecture, model, lastEnrollment, mdmExpiry
+    case diskPercentFull, architecture, model, modelIdentifier, lastEnrollment, mdmExpiry
     case fullName, assetTag, building, position
     case lastLoggedInUser, recoveryLock, batteryHealth, entraSSOStatus
     /// Device purchase or acquisition date. YAML key: `purchase_date`.
@@ -221,6 +226,7 @@ enum ColumnField: String, CaseIterable, Sendable {
         case .diskPercentFull: .diskPercentFull
         case .architecture: .architecture
         case .model: .model
+        case .modelIdentifier: .modelIdentifier
         case .lastEnrollment: .lastEnrollment
         case .mdmExpiry: .mdmExpiry
         case .fullName: .fullName

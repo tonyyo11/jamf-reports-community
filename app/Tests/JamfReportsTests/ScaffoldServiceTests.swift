@@ -485,6 +485,86 @@ final class ScaffoldServiceTests: XCTestCase {
         XCTAssertTrue(written.contains("computer_name: \"\""))
     }
 
+    // MARK: - Hardware columns: model name, model identifier, architecture
+
+    /// Jamf Pro's computer export names the marketing model "Model" and the hardware
+    /// identifier (`Mac16,6`) "Model Identifier"; the architecture column is "Architecture Type".
+    func test_matchColumns_separatesModelFromModelIdentifier() throws {
+        let url = try csvURL(headers: [
+            "Computer Name", "Model", "Model Identifier", "Architecture Type", "Serial Number",
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.columns["model"], "Model")
+        XCTAssertEqual(result.columns["model_identifier"], "Model Identifier")
+        XCTAssertEqual(result.columns["architecture"], "Architecture Type")
+    }
+
+    /// An export that carries only the identifier leaves `model` unmapped rather than
+    /// reading the identifier as a marketing name.
+    func test_matchColumns_modelNeverMapsToModelIdentifier() throws {
+        let url = try csvURL(headers: ["Computer Name", "Model Identifier"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertNil(result.columns["model"])
+        XCTAssertEqual(result.columns["model_identifier"], "Model Identifier")
+    }
+
+    /// `matchColumns` hands a header to its best field, which already keeps "Model Identifier"
+    /// from `model`. The per-field scorer (Config Doctor, the EA walkthrough) has no such
+    /// exclusivity, so `model` carries an exclude of its own.
+    func test_bestColumnMatch_modelIgnoresTheIdentifierHeader() {
+        let headers = ["Computer Name", "Model Identifier"]
+        XCTAssertNil(ScaffoldService.bestColumnMatch(
+            headers: headers, logical: "model", family: .computers))
+        XCTAssertEqual(
+            ScaffoldService.bestColumnMatch(
+                headers: headers, logical: "model_identifier", family: .computers)?.header,
+            "Model Identifier")
+        XCTAssertEqual(
+            ScaffoldService.bestColumnMatch(
+                headers: headers + ["Model"], logical: "model", family: .computers)?.header,
+            "Model")
+    }
+
+    /// Older exports and hand-built reports call the architecture column "Architecture".
+    func test_matchColumns_architectureStillMapsTheShortHeader() throws {
+        let url = try csvURL(headers: ["Computer Name", "Architecture"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.columns["architecture"], "Architecture")
+    }
+
+    /// Both headers present: the one Jamf exports wins, whatever order they appear in.
+    func test_matchColumns_architectureTypeBeatsArchitecture() throws {
+        let url = try csvURL(headers: ["Architecture", "Architecture Type", "Computer Name"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        XCTAssertEqual(result.columns["architecture"], "Architecture Type")
+    }
+
+    func test_writeConfig_writesModelIdentifier() throws {
+        let url = try csvURL(headers: ["Computer Name", "Model", "Model Identifier"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        let dest = tempURL(name: "model-identifier")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        try ScaffoldService.writeConfig(to: dest, result: result, profile: "test")
+        let written = try String(contentsOf: dest, encoding: .utf8)
+        XCTAssertTrue(written.contains("  model: \"Model\""))
+        XCTAssertTrue(written.contains("  model_identifier: \"Model Identifier\""))
+        XCTAssertEqual(
+            try ConfigLoader.load(from: dest).columns?.modelIdentifier, "Model Identifier")
+    }
+
+    func test_writeMinimalConfig_writesAnEmptyModelIdentifier() throws {
+        let dest = tempURL(name: "minimal-model-identifier")
+        defer { try? FileManager.default.removeItem(at: dest) }
+        try ScaffoldService.writeMinimalConfig(to: dest, profile: "test-profile")
+        let written = try String(contentsOf: dest, encoding: .utf8)
+        XCTAssertTrue(written.contains("  model_identifier: \"\""))
+    }
+
     func test_mergeColumns_keepsUserMappingForExtraInventoryColumn() {
         let (merged, report) = ScaffoldService.mergeColumns(
             existing: ["building": "Site Code"],

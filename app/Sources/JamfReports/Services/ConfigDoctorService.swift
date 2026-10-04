@@ -90,6 +90,8 @@ enum ConfigDoctorService {
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
             rows += securityPolicyRows(profile: profile, config: config)
+            rows += csvHardwareColumnRows(
+                config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
@@ -743,6 +745,35 @@ enum ConfigDoctorService {
             ))
         }
         return rows
+    }
+
+    /// On a CSV the hardware rule reads Apple silicon from `columns.architecture` and T2 Macs
+    /// from `columns.model_identifier` (`columns.model` is the marketing name). A mapped column
+    /// the export lacks already gets a `columns.<key>` row; this names one that is not mapped.
+    static func csvHardwareColumnRows(
+        config: ReportConfig, csvHeaders: [String]?, csvFamily: CSVFamily?
+    ) -> [DoctorRow] {
+        guard config.resolvedSecurityPolicy.usesHardwareRule, csvHeaders != nil,
+              csvFamily != .mobile else { return [] }
+        let candidates: [(field: ColumnField, header: String)] = [
+            (field: .modelIdentifier, header: "Model Identifier"),
+            (field: .architecture, header: "Architecture Type"),
+        ]
+        let unmapped = candidates.filter { config.columns?.columnName(for: $0.field) == nil }
+        guard !unmapped.isEmpty else { return [] }
+        let keys = unmapped.map { "columns.\($0.field.configKey)" }
+        let headers = unmapped.map { "'\($0.header)'" }
+        return [DoctorRow(
+            id: "security_policy.csv_hardware_columns", severity: .warn,
+            title: "security_policy.filevault_off_hardware_encrypted",
+            detail: "\(keys.joined(separator: " and ")) "
+                + "\(keys.count == 1 ? "is" : "are") not mapped, so a CSV report cannot tell "
+                + "which Macs are hardware-encrypted. FileVault off counts at the FileVault "
+                + "level for them.",
+            hint: "Map \(keys.count == 1 ? "it" : "them") in Config, or re-run scaffold, "
+                + "to the export's \(headers.joined(separator: " and ")) "
+                + "\(headers.count == 1 ? "column" : "columns")."
+        )]
     }
 
     private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {

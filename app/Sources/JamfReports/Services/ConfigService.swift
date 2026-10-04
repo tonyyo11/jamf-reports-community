@@ -67,8 +67,8 @@ struct ConfigState: Equatable, Sendable {
     static let baseColumnKeys = [
         "computer_name", "serial_number", "operating_system", "last_checkin", "department",
         "manager", "email", "filevault", "sip", "firewall", "gatekeeper", "secure_boot",
-        "bootstrap_token", "disk_percent_full", "architecture", "model", "last_enrollment",
-        "mdm_expiry",
+        "bootstrap_token", "disk_percent_full", "architecture", "model", "model_identifier",
+        "last_enrollment", "mdm_expiry",
     ]
 
     /// The rest of the `columns` keys the report engine reads (`ColumnConfig`). Written only
@@ -104,8 +104,9 @@ struct ConfigState: Equatable, Sendable {
             "secure_boot": "Secure Boot Level",
             "bootstrap_token": "Bootstrap Token Escrowed",
             "disk_percent_full": "Boot Drive Percentage Full",
-            "architecture": "Architecture",
+            "architecture": "Architecture Type",
             "model": "Model",
+            "model_identifier": "Model Identifier",
             "last_enrollment": "Last Enrollment",
             "mdm_expiry": "MDM Profile Expiration Date",
             "full_name": "",
