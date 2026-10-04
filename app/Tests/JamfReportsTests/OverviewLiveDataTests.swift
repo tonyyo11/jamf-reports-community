@@ -231,7 +231,7 @@ final class OverviewLiveDataTests: XCTestCase {
     func testRecentRowShowsUnknownsAsUnknown() {
         var mac = record("mac-1", days: 1)
         mac.user = "jdoe"
-        let row = RecentDeviceRow(record: mac, failedRules: nil)
+        let row = RecentDeviceRow(record: mac, failedRules: nil, policy: .default)
 
         XCTAssertNil(row.department)
         XCTAssertNil(row.fileVault, "No FileVault value is not a failed check")
@@ -240,9 +240,23 @@ final class OverviewLiveDataTests: XCTestCase {
 
         mac.email = "jdoe@example.org"
         mac.fileVault = "ENCRYPTED"
-        let withEmail = RecentDeviceRow(record: mac, failedRules: 0)
+        let withEmail = RecentDeviceRow(record: mac, failedRules: 0, policy: .default)
         XCTAssertEqual(withEmail.user, "jdoe@example.org")
         XCTAssertEqual(withEmail.fileVault, true)
+    }
+
+    func testRecentRowReadsFileVaultByTheWorkspaceVocabulary() {
+        var mac = record("mac-1", days: 1)
+        mac.fileVault = "Wrapped"
+        let words = SecurityControlPolicy(
+            onValues: [.fileVault: ["Wrapped"]], offValues: [.fileVault: ["Bare"]])
+        func shown(_ policy: SecurityControlPolicy) -> Bool? {
+            RecentDeviceRow(record: mac, failedRules: nil, policy: policy).fileVault
+        }
+        XCTAssertEqual(shown(words), true)
+        XCTAssertNil(shown(.default))
+        mac.fileVault = "Bare"
+        XCTAssertEqual(shown(words), false)
     }
 
     /// jamf-cli fills `fileVault` from `partitionFileVault2State`. A Mac still encrypting, or
@@ -256,7 +270,8 @@ final class OverviewLiveDataTests: XCTestCase {
         ]
         for (state, expected) in cases {
             mac.fileVault = state
-            XCTAssertEqual(RecentDeviceRow(record: mac, failedRules: nil).fileVault, expected, state)
+            let row = RecentDeviceRow(record: mac, failedRules: nil, policy: .default)
+            XCTAssertEqual(row.fileVault, expected, state)
         }
     }
 }

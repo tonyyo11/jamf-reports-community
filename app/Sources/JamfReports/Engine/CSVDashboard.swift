@@ -487,9 +487,11 @@ struct CSVDashboard: Sendable {
         for (label, field, logical) in controls {
             guard let colName = col(field), columns.contains(colName) else { continue }
             let control = SecurityControl(rawValue: logical)
-            // An ignored control is not graded, but what the export says about it still counts.
+            // An ignored control is not graded, but what the export says about it still counts,
+            // read by the workspace's own on and off values.
             let ignored = control.map { policy.level(for: $0) == .ignore } ?? false
-            let verdictPolicy = ignored ? SecurityControlPolicy.default : policy
+            var verdictPolicy = policy
+            if ignored, let control { verdictPolicy = policy.setting(.fail, for: control) }
             var compliant = 0, nonCompliant = 0, unknown = 0, warning = 0, notCounted = 0
             for csvRow in activeRows {
                 let hardware = control == .fileVault && policy.usesHardwareRule

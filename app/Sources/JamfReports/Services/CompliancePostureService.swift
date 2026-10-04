@@ -157,10 +157,10 @@ struct CompliancePostureService: Sendable {
         _ device: SecurityDevice, policy: SecurityControlPolicy, hardwareEncrypted: Bool?
     ) -> Int? {
         policy.gapCount(
-            fileVault: reading(.fileVault, of: device),
-            sip: reading(.sip, of: device),
-            firewall: reading(.firewall, of: device),
-            gatekeeper: reading(.gatekeeper, of: device),
+            fileVault: reading(.fileVault, of: device, policy: policy),
+            sip: reading(.sip, of: device, policy: policy),
+            firewall: reading(.firewall, of: device, policy: policy),
+            gatekeeper: reading(.gatekeeper, of: device, policy: policy),
             hardwareEncrypted: hardwareEncrypted
         )
     }
@@ -175,7 +175,7 @@ struct CompliancePostureService: Sendable {
             .map { control in
                 let verdicts = zip(devices, hardwareEncrypted).map {
                     policy.verdict(
-                        for: control, reading: reading(control, of: $0),
+                        for: control, reading: reading(control, of: $0, policy: policy),
                         hardwareEncrypted: $1)
                 }
                 return Snapshot.ControlGap(
@@ -188,12 +188,16 @@ struct CompliancePostureService: Sendable {
             .sorted { $0.failingDevices > $1.failingDevices }
     }
 
-    private static func reading(_ control: SecurityControl, of device: SecurityDevice) -> Bool? {
+    /// The report's firewall is already a boolean, so only the text controls read through
+    /// the policy's vocabulary.
+    private static func reading(
+        _ control: SecurityControl, of device: SecurityDevice, policy: SecurityControlPolicy
+    ) -> Bool? {
         switch control {
-        case .fileVault: SecurityControlPolicy.reading(device.fileVault)
-        case .sip: SecurityControlPolicy.reading(device.sip)
+        case .fileVault: policy.reading(device.fileVault, for: control)
+        case .sip: policy.reading(device.sip, for: control)
         case .firewall: device.firewall
-        case .gatekeeper: SecurityControlPolicy.reading(device.gatekeeper)
+        case .gatekeeper: policy.reading(device.gatekeeper, for: control)
         }
     }
 

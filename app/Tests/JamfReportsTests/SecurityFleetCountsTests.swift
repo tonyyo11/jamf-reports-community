@@ -245,17 +245,19 @@ final class SecurityFleetCountsTests: XCTestCase {
 
     /// Four Macs, FileVault on one: Apple silicon and a T2 Mac (hardware-encrypted), an
     /// Intel Mac without T2, and one with no serial matched by its unique name.
-    private func hardwareFleetJSON(fileVaultOn: Int = 1) throws -> Data {
+    private func hardwareFleetJSON(
+        fileVaultOn: Int = 1, offValue: String = "UNENCRYPTED"
+    ) throws -> Data {
         let summary: [String: Any] = ["section": "summary", "data": [
             "total_devices": 5, "filevault_encrypted": fileVaultOn, "sip_enabled": 5,
             "firewall_enabled": 5, "gatekeeper_enabled": 5,
         ]]
         return try JSONSerialization.data(withJSONObject: [summary,
             row("on-mac", serial: "ON1", fileVault: "ENCRYPTED"),
-            row("as-mac", serial: "AS1", fileVault: "UNENCRYPTED"),
-            row("t2-mac", serial: "T21", fileVault: "UNENCRYPTED"),
-            row("intel-mac", serial: "IN1", fileVault: "UNENCRYPTED"),
-            row("lab-mac", serial: "", fileVault: "UNENCRYPTED"),
+            row("as-mac", serial: "AS1", fileVault: offValue),
+            row("t2-mac", serial: "T21", fileVault: offValue),
+            row("intel-mac", serial: "IN1", fileVault: offValue),
+            row("lab-mac", serial: "", fileVault: offValue),
         ])
     }
 
@@ -270,10 +272,11 @@ final class SecurityFleetCountsTests: XCTestCase {
     ]
 
     private func hardwareCounts(
-        _ policy: SecurityControlPolicy, fileVaultOn: Int = 1
+        _ policy: SecurityControlPolicy, fileVaultOn: Int = 1, offValue: String = "UNENCRYPTED"
     ) throws -> SecurityFleetCounts {
         let items = try JSONDecoder().decode(
-            [SecurityReportItem].self, from: hardwareFleetJSON(fileVaultOn: fileVaultOn))
+            [SecurityReportItem].self,
+            from: hardwareFleetJSON(fileVaultOn: fileVaultOn, offValue: offValue))
         return try XCTUnwrap(SecurityFleetCounts.build(
             items: items, hardware: HardwareEncryption.index(computers: computers),
             policy: policy))
@@ -289,6 +292,23 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(fleet.p0, 1)
         XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 4)
         XCTAssertEqual(fleet.scoreInput().metricTotals, [:], "a share of the whole fleet")
+    }
+
+    /// The rule finds the Macs whose FileVault is off by the workspace's own off values; the
+    /// summary's on count still comes from jamf-cli.
+    func testHardwareRuleFollowsTheWorkspaceFileVaultVocabulary() throws {
+        let withWords = SecurityControlPolicy(
+            fileVaultOffHardwareEncrypted: .warning, offValues: [.fileVault: ["Bare"]])
+        let fleet = try hardwareCounts(withWords, offValue: "Bare")
+        XCTAssertEqual(fleet.controls[.fileVault],
+                       Control(level: .fail, on: 1, fail: 1, warning: 3))
+        XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 3)
+
+        let without = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+        let unread = try hardwareCounts(without, offValue: "Bare")
+        XCTAssertEqual(unread.controls[.fileVault],
+                       Control(level: .fail, on: 1, fail: 4, warning: 0))
+        XCTAssertEqual(unread.fileVaultOffHardwareEncrypted, 0)
     }
 
     func testHardwareRuleAtIgnoreDropsHardwareEncryptedMacs() throws {

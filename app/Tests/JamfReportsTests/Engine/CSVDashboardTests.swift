@@ -596,6 +596,45 @@ final class CSVDashboardTests: XCTestCase {
         XCTAssertEqual(sheet.header.last, "Warning")
     }
 
+    /// The workspace's own words for on and off count: a column of Pass and Fail reads as
+    /// compliant and non-compliant instead of unknown, whole values only.
+    func testSecurityControlsReadTheWorkspaceVocabulary() throws {
+        let csv = vocabularyCSV()
+        let policy = SecurityControlPolicy(
+            onValues: [.firewall: ["Pass", "Compliant"]],
+            offValues: [.firewall: ["Fail", "Non-Compliant"]])
+        let sheet = try securityControls(csv: csv, columns: inlineColumns(), policy: policy)
+        XCTAssertEqual(counts(sheet.rows["Firewall"]), ["1", "2", "1"])
+        XCTAssertEqual(counts(sheet.rows["SIP"]), ["4", "0", "0"])
+        let plain = try securityControls(csv: csv, columns: inlineColumns())
+        XCTAssertEqual(counts(plain.rows["Firewall"]), ["0", "0", "4"])
+    }
+
+    /// An ignored control is not graded, but its counts are still read by the same words.
+    func testAnIgnoredControlStillReadsByTheVocabulary() throws {
+        let policy = SecurityControlPolicy(
+            firewall: .ignore, onValues: [.firewall: ["Pass"]],
+            offValues: [.firewall: ["Fail", "Non-Compliant"]])
+        let sheet = try securityControls(
+            csv: vocabularyCSV(), columns: inlineColumns(), policy: policy)
+        let firewall = try XCTUnwrap(sheet.rows["Firewall (not counted)"])
+        XCTAssertEqual(firewall.compliant, "1")
+        XCTAssertEqual(firewall.unknown, "1")
+        XCTAssertEqual(firewall.nonCompliant, "\u{2014}")
+        let withoutWords = try securityControls(
+            csv: vocabularyCSV(), columns: inlineColumns(),
+            policy: SecurityControlPolicy(firewall: .ignore))
+        XCTAssertEqual(withoutWords.rows["Firewall (not counted)"]?.compliant, "0")
+        XCTAssertEqual(withoutWords.rows["Firewall (not counted)"]?.unknown, "4")
+    }
+
+    /// Four Macs whose firewall column holds an organization's own words.
+    private func vocabularyCSV() -> Data {
+        inlineCSV(["Pass", "Fail", "Non-Compliant", "Pending review"].map {
+            ["Encrypted", "Enabled", $0, "Enabled", "", "", "", ""]
+        })
+    }
+
     /// With the rule at `ignore` the FileVault row sums to the Macs counted, not the Macs in
     /// the table, so one line under the table says how many were left out.
     func testHardwareIgnoredMacsAreNamedUnderTheTable() throws {

@@ -102,7 +102,7 @@ struct SecurityFleetCounts: Sendable, Equatable {
            let fileVault = controls[.fileVault] {
             let applies = devices.filter {
                 policy.hardwareRuleApplies(
-                    fileVaultReading: SecurityControlPolicy.reading($0.fileVault),
+                    fileVaultReading: policy.reading($0.fileVault, for: .fileVault),
                     hardwareEncrypted: HardwareEncryption.lookup(
                         serial: $0.serial, name: $0.name, in: hardware))
             }.count
