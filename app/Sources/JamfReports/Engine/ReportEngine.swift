@@ -3070,7 +3070,8 @@ struct ReportEngine: Sendable {
     /// PDF pagination follows `template.pdfPagination`:
     /// - `.compact` — minimal page breaks, low page count for NOC/daily ops.
     /// - `.standard` — one page break between major sections (general management).
-    /// - `.sectionPerPage` — explicit break after every section (formal auditor packages).
+    /// - `.sectionPerPage` — the summary on the first page, then each detail group from a
+    ///   new page (formal auditor packages).
     ///
     /// - Parameters:
     ///   - config: Parsed `ReportConfig`.
@@ -3132,7 +3133,8 @@ struct ReportEngine: Sendable {
     /// - `.compact` — No modifications; minimal page count.
     /// - `.standard` — Adds a `<style>` block with `main > section { page-break-after: auto; }`
     ///   so the browser engine places natural breaks between major sections.
-    /// - `.sectionPerPage` — Adds `page-break-after: always` to every top-level section.
+    /// - `.sectionPerPage` — Adds `page-break-before: always` to each detail group (and the
+    ///   audit appendix), so At a glance and Needs attention share the first page.
     ///   This produces one section per page regardless of content height, suitable for formal
     ///   auditor deliverables.
     ///
@@ -3149,8 +3151,7 @@ struct ReportEngine: Sendable {
         case .sectionPerPage:
             let style = """
             <style>
-            main > section { page-break-after: always; }
-            main > section:last-of-type { page-break-after: avoid; }
+            main > section.group-section:has(> details.group) { page-break-before: always; }
             </style>
             """
             return html.replacingOccurrences(of: "</head>", with: "\(style)\n</head>")

@@ -258,10 +258,11 @@ final class TemplatedEngineTests: XCTestCase {
     func testSectionPerPagePaginationInjectsAlwaysBreak() {
         let html = "<html><head></head><body><section>C</section></body></html>"
         let result = ReportEngine.applyPagination(html: html, strategy: .sectionPerPage)
-        XCTAssertTrue(result.contains("page-break-after: always"),
-                      ".sectionPerPage must inject page-break-after: always")
-        XCTAssertTrue(result.contains("page-break-after: avoid"),
-                      ".sectionPerPage must suppress break on last section")
+        XCTAssertTrue(result.contains(
+            "main > section.group-section:has(> details.group) { page-break-before: always; }"),
+            ".sectionPerPage starts each detail group on a new page")
+        XCTAssertFalse(result.contains("page-break-after"),
+                       "a break before each group leaves no empty page after the last one")
     }
 
     func testPaginationPreservesHTMLStructure() {

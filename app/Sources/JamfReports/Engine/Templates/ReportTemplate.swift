@@ -112,7 +112,8 @@ enum SectionID: String, Sendable, CaseIterable {
 
 /// PDF pagination strategy hint.
 enum PaginationStrategy: String, Sendable {
-    /// One section per page — appropriate for formal auditor deliverables.
+    /// The summary on one page, then a page per detail group — for formal auditor
+    /// deliverables.
     case sectionPerPage  = "section_per_page"
     /// Compact flow — minimize page count for NOC/daily ops brevity.
     case compact         = "compact"

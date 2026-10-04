@@ -134,6 +134,28 @@ final class PDFExporterTests: XCTestCase {
         XCTAssertTrue(doc.page(at: 1)?.string?.contains("Second section") == true)
     }
 
+    /// One section per page: the summary blocks share the first page and each detail group
+    /// starts its own, with no empty page after the last.
+    func testSectionPerPageKeepsTheSummaryTogetherAndGivesEachGroupAPage() async throws {
+        func group(_ name: String) -> String {
+            "<section class=\"group-section\"><details class=\"group\" open>" +
+                "<summary>\(name)</summary><p>\(name) body</p></details></section>"
+        }
+        let html = ReportEngine.applyPagination(html: """
+            <html><head></head><body><main>
+            <section class="summary-block"><p>At a glance</p></section>
+            <section class="summary-block"><p>Needs attention</p></section>
+            \(group("Security group"))\(group("Patching group"))
+            </main></body></html>
+            """, strategy: .sectionPerPage)
+        let doc = try await exportedDocument(html, name: "section-per-page.pdf")
+        XCTAssertEqual(doc.pageCount, 3)
+        let first = doc.page(at: 0)?.string ?? ""
+        XCTAssertTrue(first.contains("At a glance") && first.contains("Needs attention"))
+        XCTAssertTrue(doc.page(at: 1)?.string?.contains("Security group body") == true)
+        XCTAssertTrue(doc.page(at: 2)?.string?.contains("Patching group body") == true)
+    }
+
     /// Backgrounds print: the report's bars and severity pills are background colours.
     func testBackgroundColoursPrint() async throws {
         let html = """
