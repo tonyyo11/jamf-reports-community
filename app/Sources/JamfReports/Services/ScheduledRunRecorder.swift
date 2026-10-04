@@ -156,6 +156,26 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         Self.pruneRunLogs(in: logURL.deletingLastPathComponent(), keep: Self.maxRunLogs)
     }
 
+    /// Close the log and delete it, leaving the previous status file as it was. For a run
+    /// that never began, such as a collect the tick lock refused: nothing ran, so Run
+    /// History should not list it.
+    func discard() {
+        lock.lock()
+        try? handle?.close()
+        handle = nil
+        lock.unlock()
+        do {
+            try FileManager.default.removeItem(at: logURL)
+        } catch {
+            AppLogger.schedule.warning(
+                """
+                ScheduledRunRecorder: could not discard \(self.label, privacy: .public): \
+                \(error.localizedDescription, privacy: .public)
+                """
+            )
+        }
+    }
+
     // MARK: - Status JSON
 
     private func writeStatusJSON(exitCode: Int32, sheetFailures: Int, artifacts: [URL]) {

@@ -153,6 +153,7 @@ enum RunHistoryService {
         let unstamped = label.replacingOccurrences(
             of: #"\.\d{8}-\d{6}$"#, with: "", options: .regularExpression)
         if unstamped == AutomationHealth.tickerLabel { return "Background item" }
+        if unstamped == WorkspaceStore.appCollectRunLabel { return "Manual collect" }
         let prefix = "\(LaunchAgentWriter.labelPrefix)."
         guard label.hasPrefix(prefix) else { return label }
         let tail = String(label.dropFirst(prefix.count))

@@ -92,8 +92,8 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
         CLIBridge.LogLine(timestamp: Date(), level: .warn, text: text)
     }
 
-    /// No Run History record for a tier refresh, so the toast points at the in-app log, and
-    /// the `[partial]` line must actually be there.
+    /// A tier refresh records its run, so the toast points at Run History, and the recorded
+    /// log must hold the `[partial]` line (and the in-app log still gets it).
     func testRunTierRefreshWarnsWhenASourceDidNotLand() async throws {
         let (store, dataDir) = try await makeStaleWorkspace()
         let unlanded = Self.unlandedLine()
@@ -102,9 +102,13 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
             onLine(Self.line(unlanded))
             return 0
         }
-        XCTAssertEqual(store.toast?.message, Self.warningsInLogging)
+        XCTAssertEqual(store.toast?.message, Self.warningsInRunHistory)
         XCTAssertEqual(store.toast?.style, .danger)
-        XCTAssertTrue(isInLogBuffer(unlanded), "the toast names Settings › Logging")
+        let run = try XCTUnwrap(RunHistoryService.list(profile: store.profile).first)
+        XCTAssertTrue(
+            RunHistoryService.loadLog(run.logURL).contains { $0.text == unlanded },
+            "the toast names Run History, so the run's log must hold the line")
+        XCTAssertTrue(isInLogBuffer(unlanded), "the in-app log still gets the line")
     }
 
     func testRunTierRefreshKeepsItsTextForAStandDown() async throws {
@@ -126,13 +130,15 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
             onLine(Self.line(unlanded))
             return 0
         }
-        XCTAssertEqual(store.toast?.message, Self.warningsInLogging)
+        XCTAssertEqual(store.toast?.message, Self.warningsInRunHistory)
         XCTAssertEqual(store.toast?.style, .danger)
-        XCTAssertTrue(isInLogBuffer(unlanded), "the toast names Settings › Logging")
+        let run = try XCTUnwrap(RunHistoryService.list(profile: store.profile).first)
+        XCTAssertTrue(
+            RunHistoryService.loadLog(run.logURL).contains { $0.text == unlanded },
+            "the toast names Run History, so the run's log must hold the line")
     }
 
-    /// First collect is the one path with a Run History record, so it points there; the
-    /// recorded log must hold the `[partial]` line.
+    /// First collect points at Run History too; the recorded log must hold the `[partial]` line.
     func testRunFirstCollectWarnsWhenASourceDidNotLand() async throws {
         let (store, dataDir) = try await makeStaleWorkspace()
         let unlanded = Self.unlandedLine()
