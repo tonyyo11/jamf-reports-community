@@ -1535,12 +1535,16 @@ struct OverviewView: View {
                 title: metric.displayLabel,
                 subtitle: "\(values.count) summaries · \(workspace.profile)"
             )
-            HStack(spacing: 12) {
-                StatTile(label: "Current", value: metricValueLabel(current, metric: metric))
+            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth; same fix as
+            // the security-agent drill-down: one height for the row.
+            EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
+                StatTile(label: "Current", value: metricValueLabel(current, metric: metric),
+                         fillsHeight: true)
                 StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric),
-                         sub: previousLabel)
+                         sub: previousLabel, fillsHeight: true)
                 StatTile(label: "Change", value: metricDeltaLabel(current - first, metric: metric),
-                         sub: firstLabel.map { "Since \($0)" } ?? "Since first snapshot")
+                         sub: firstLabel.map { "Since \($0)" } ?? "Since first snapshot",
+                         fillsHeight: true)
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1656,11 +1660,17 @@ struct OverviewView: View {
                 title: agent.name,
                 subtitle: "\(agent.installed) installed · mapped from \(agent.column)"
             )
-            HStack(spacing: 12) {
-                StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
+            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth. An HStack
+            // left the tile without a caption shorter than its neighbour; the grid gives
+            // the row one height, three across at the minimum width (3 x 180 + 2 x 12).
+            EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
+                StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%",
+                         fillsHeight: true)
                 StatTile(label: "Installed", value: "\(agent.installed)",
-                         sub: fleet > 0 ? "of \(fleet) tracked devices" : "tracked devices")
-                StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
+                         sub: fleet > 0 ? "of \(fleet) tracked devices" : "tracked devices",
+                         fillsHeight: true)
+                StatTile(label: "Trend", value: agent.trend.rawValue.capitalized,
+                         fillsHeight: true)
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
