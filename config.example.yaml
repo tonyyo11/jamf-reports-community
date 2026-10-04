@@ -192,7 +192,11 @@ mobile_columns:
 #   name            - Display label in the report
 #   column          - Exact EA column name in your CSV
 #   connected_value - The string that means "installed / running"
-#                     (case-insensitive substring match)
+#                     (case-insensitive substring match). A value that says the
+#                     agent is absent or off never matches, even when it contains
+#                     this text: "Not Installed", "Uninstalled", "not running",
+#                     "Disconnected", "Inactive". Leave it blank and any
+#                     non-empty value counts as connected.
 #
 # Comment out any agents your org does not deploy.
 

@@ -835,6 +835,26 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("count-card"))
     }
 
+    func testAgentHealthDoesNotCountANegatedValueAsInstalled() throws {
+        let yaml = """
+        security_agents:
+          - name: "Nessus"
+            column: "Nessus Status"
+            connected_value: "Installed"
+        """
+        let report = makeReport(config: try ConfigLoader.loadFromString(yaml))
+        let inventory: [[String: Any]] = [
+            ["name": "A", "Nessus Status": "Installed"],
+            ["name": "B", "Nessus Status": "Installed"],
+            ["name": "C", "Nessus Status": "Not Installed"],
+            ["name": "D", "Nessus Status": "Not Installed"],
+            ["name": "E", "Nessus Status": "Not Installed"],
+        ]
+        let html = report.buildAgentHealth(computersInventory: inventory)
+        XCTAssertTrue(html.contains("40.0%"), "2 of 5 installed")
+        XCTAssertFalse(html.contains("100.0%"))
+    }
+
     func testAgentHealthEmptyInventory() throws {
         let yaml = """
         security_agents:

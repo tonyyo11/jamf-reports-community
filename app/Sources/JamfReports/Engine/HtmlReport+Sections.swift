@@ -900,13 +900,13 @@ extension HtmlReport {
             var unknown = 0
 
             for device in computersInventory {
-                let raw = inventoryEAValue(device, column: agent.column)
-                if raw.isEmpty {
-                    unknown += 1
-                } else if raw.lowercased().contains(agent.connectedValue.lowercased()) {
-                    installed += 1
-                } else {
-                    missing += 1
+                let check = RiskScoringService.SecurityAgentCheck(
+                    value: inventoryEAValue(device, column: agent.column),
+                    connectedValue: agent.connectedValue)
+                switch check.isConnected {
+                case nil: unknown += 1
+                case true?: installed += 1
+                case false?: missing += 1
                 }
             }
 

@@ -116,6 +116,45 @@ final class RiskScoringServiceTests: XCTestCase {
         ).isConnected, true)
     }
 
+    /// 2.9 visual pass: prod's Nessus column holds "Not Installed" for four Macs, and a
+    /// substring match on "Installed" counted them connected (665 of 665).
+    func testSecurityAgentCheckRefusesAValueThatSaysTheAgentIsAbsentOrOff() {
+        func connected(_ value: String, _ expected: String) -> Bool? {
+            RiskScoringService.SecurityAgentCheck(
+                value: value, connectedValue: expected).isConnected
+        }
+        XCTAssertEqual(connected("Not Installed", "Installed"), false)
+        XCTAssertEqual(connected("not installed", "installed"), false)
+        XCTAssertEqual(connected("NotInstalled", "Installed"), false)
+        XCTAssertEqual(connected("Uninstalled", "Installed"), false)
+        XCTAssertEqual(connected("not running", "running"), false)
+        XCTAssertEqual(connected("Disconnected", "connected"), false)
+        XCTAssertEqual(connected("Inactive", "active"), false)
+        XCTAssertEqual(connected("Installed, not running", "Installed"), false)
+    }
+
+    func testSecurityAgentCheckStillMatchesPositiveAndNeutralValues() {
+        func connected(_ value: String, _ expected: String) -> Bool? {
+            RiskScoringService.SecurityAgentCheck(
+                value: value, connectedValue: expected).isConnected
+        }
+        XCTAssertEqual(connected("Installed", "Installed"), true)
+        XCTAssertEqual(connected("Running (7.4.1)", "running"), true)
+        XCTAssertEqual(connected("7.4.1", "7."), true)
+        XCTAssertEqual(connected("Unknown", "Installed"), false, "no match, as before")
+    }
+
+    /// An operator who writes the negative as the connected value meant it.
+    func testSecurityAgentCheckHonoursAConnectedValueThatIsItselfNegative() {
+        XCTAssertEqual(RiskScoringService.SecurityAgentCheck(
+            value: "Not Required", connectedValue: "Not Required").isConnected, true)
+    }
+
+    func testABlankConnectedValueStillCountsAnyValueEvenANegativeOne() {
+        XCTAssertEqual(RiskScoringService.SecurityAgentCheck(
+            value: "Not Installed", connectedValue: "").isConnected, true)
+    }
+
     func testAdapterFeedsAgentCheckIntoScore() {
         let record = DeviceInventoryRecord(
             id: "JSS-200", jamfID: "200", name: "Mac-200", serial: "DEF456",

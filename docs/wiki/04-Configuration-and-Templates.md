@@ -67,7 +67,9 @@ file changed on disk after the screen loaded it. See
 [A hand-edited config.yaml](#a-hand-edited-configyaml).
 
 - **`security_agents`** — a list of third-party agents. Each entry drives a row in the
-  Security Agents sheet. `connected_value` is a case-insensitive substring match.
+  Security Agents sheet. `connected_value` is a case-insensitive substring match; a value
+  that says the agent is absent or off ("Not Installed", "not running", "Disconnected") never
+  matches, and a blank `connected_value` counts any non-empty value.
 - **`sheets`** — `only`, `skip` and `order`, by tab name (case-insensitive), shape every
   report workbook: the Jamf Pro tabs, the CSV tabs, the Charts tab and Jamf School
   workbooks. The report template picks its sheets first, so `only` never adds a tab; a
