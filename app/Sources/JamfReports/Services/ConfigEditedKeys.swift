@@ -41,6 +41,8 @@ enum ConfigEditedKeys {
     private static var probeState: ConfigState {
         var state = ConfigState.defaultState
         for key in ConfigState.optionalColumnKeys { state.columns[key] = "x" }
+        // Written only when set, since the default is blank (the Overview's generic title).
+        state.baselineLabel = "x"
         state.securityAgents = [
             ConfigSecurityAgent(name: "x", column: "x", connectedValue: "x"),
         ]
