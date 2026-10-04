@@ -444,31 +444,16 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
 
     func testKeysNothingReadsAreSuggestionsWhenTheyDifferFromTheirDefaults() throws {
         let found = try rows("""
-        jamf_cli: {allow_live_overview: false}
         platform: {enabled: true}
         thresholds: {profile_error_critical: 80}
         charts:
-          os_adoption: {enabled: false}
         branding: {accent_dark: "#112233"}
         """)
         XCTAssertEqual(Set(titles(found)), [
-            "jamf_cli.allow_live_overview", "platform.enabled",
-            "thresholds.profile_error_critical",
-            "charts.os_adoption.enabled",
-            "branding.accent_dark",
+            "platform.enabled", "thresholds.profile_error_critical", "branding.accent_dark",
         ])
         XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
         XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
-    }
-
-    func testJamfCLIEnabledFalseIsAWarningBecauseJamfCLIIsStillUsed() throws {
-        let found = try rows("jamf_cli: {enabled: false}\n")
-        XCTAssertEqual(titles(found), ["jamf_cli.enabled"])
-        XCTAssertEqual(found.first?.severity, .warn, "someone who typed false expects it off")
-        XCTAssertEqual(found.first?.detail,
-                       "This key currently has no effect. Collect still runs jamf-cli and "
-                       + "generate still reads its data.")
-        XCTAssertEqual(try rows("jamf_cli: {enabled: true}\n"), [])
     }
 
     /// The app writes these keys itself, so a file it wrote must say nothing about them.
@@ -516,9 +501,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let url = try XCTUnwrap(example, "config.example.yaml not found above \(#filePath)")
         let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")
         let targets: [(section: String, key: String, child: String?)] = [
-            ("jamf_cli:", "enabled:", nil), ("jamf_cli:", "allow_live_overview:", nil),
             ("thresholds:", "profile_error_critical:", nil),
-            ("charts:", "os_adoption:", "enabled:"),
             ("branding:", "accent_dark:", nil),
         ]
         func line(_ prefix: String, after start: Int) throws -> Int {

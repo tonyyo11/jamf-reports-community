@@ -171,9 +171,10 @@ final class ConfigFileSectionsTests: XCTestCase {
     func testAKeyNextToAnEditedOneIsStillListed() throws {
         let sections = try build(
             "charts:\n  save_png: true\n  historical_csv_dir: snaps\n"
-                + "  os_adoption:\n    per_major_charts: true\n    enabled: false\n")
+                + "  os_adoption:\n    per_major_charts: true\n"
+                + "  device_state_trend:\n    enabled: false\n")
         XCTAssertEqual(summary(sections), [
-            "charts: charts.historical_csv_dir=snaps, charts.os_adoption.enabled=false",
+            "charts: charts.historical_csv_dir=snaps, charts.device_state_trend.enabled=false",
         ])
     }
 

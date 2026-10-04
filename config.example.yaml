@@ -242,9 +242,6 @@ security_agents:
 # Relative paths here resolve from the folder containing config.yaml.
 
 jamf_cli:
-  # Currently has no effect: collect and generate always use jamf-cli, and
-  # false does not make a CSV-only run.
-  enabled: true
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
   # Optional jamf-cli profile name, equivalent to passing -p/--profile to
@@ -262,8 +259,6 @@ jamf_cli:
   # ancient cache surfaces as "no data" instead of rendering stale-forever.
   # Set 0 (or any value <= 0) to keep cache forever (legacy behavior).
   max_cache_age_hours: 168
-  # Currently has no effect: nothing reads this key.
-  allow_live_overview: true
   # Hard-fail on snapshot integrity violations (SHA-256 mismatch or corrupt
   # manifest). When true, every collected snapshot is also recorded in a
   # per-kind manifest.json (2.6), so tamper detection works end-to-end:
@@ -905,8 +900,6 @@ charts:
   # Uses CSV snapshots when available and falls back to jamf-cli
   # inventory-summary snapshot history for jamf-cli-only workflows.
   os_adoption:
-    # Currently has no effect: nothing reads this key.
-    enabled: true
     # Draw the OS adoption by major version chart on the Charts tab. A missing
     # key means true, as the Customize screen shows it; set false to leave it out.
     per_major_charts: true

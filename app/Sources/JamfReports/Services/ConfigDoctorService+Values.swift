@@ -319,19 +319,13 @@ extension ConfigDoctorService {
         func differs<Value: Equatable>(_ typed: Value?, from fallback: Value) -> Bool {
             typed.map { $0 != fallback } ?? false
         }
-        let cli = JamfCLIConfig(), limits = ThresholdsConfig()
+        let limits = ThresholdsConfig()
         let keys: [(key: String, differs: Bool, note: String?)] = [
-            ("jamf_cli.enabled", differs(config.jamfCli?.enabled, from: cli.isEnabled),
-             " Collect still runs jamf-cli and generate still reads its data."),
-            ("jamf_cli.allow_live_overview",
-             differs(config.jamfCli?.allowLiveOverview, from: cli.isLiveOverviewAllowed), nil),
             ("platform.enabled",
              differs(config.platform?.enabled, from: PlatformConfig().isEnabled), nil),
             ("thresholds.profile_error_critical",
              differs(config.thresholds?.profileErrorCritical,
                      from: limits.resolvedProfileErrorCritical), nil),
-            ("charts.os_adoption.enabled",
-             differs(config.charts?.osAdoption?.enabled, from: OSAdoptionConfig().isEnabled), nil),
             ("branding.accent_dark",
              differs(config.branding?.accentDark, from: ConfigState.defaultState.accentDark), nil),
         ]

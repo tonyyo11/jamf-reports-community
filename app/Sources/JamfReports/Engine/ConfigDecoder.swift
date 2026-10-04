@@ -277,11 +277,9 @@ struct SecurityAgentConfig: Decodable, Sendable {
 // MARK: - jamf_cli
 
 struct JamfCLIConfig: Decodable, Sendable {
-    var enabled: Bool?
     var dataDir: String?
     var profile: String?             // key is `profile`, NOT `jamf_profile`
     var useCachedData: Bool?
-    var allowLiveOverview: Bool?
     var requireManifest: Bool?       // PR-10 / threat-model T-11
     /// Age limit (hours) past which a cached jamf-cli snapshot is treated as
     /// ABSENT rather than silently served as current. `nil` → default 168h
@@ -293,11 +291,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     var collectSkip: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case dataDir = "data_dir"
         case profile
         case useCachedData = "use_cached_data"
-        case allowLiveOverview = "allow_live_overview"
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
@@ -306,8 +302,6 @@ struct JamfCLIConfig: Decodable, Sendable {
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data" }
     var isCachedDataEnabled: Bool { useCachedData ?? true }
-    var isLiveOverviewAllowed: Bool { allowLiveOverview ?? true }
-    var isEnabled: Bool { enabled ?? true }
 
     /// PR-10 / threat-model T-11: when true, the Swift engine aborts on
     /// snapshot integrity violations (`.mismatch` / `.corrupt`) rather than
@@ -670,15 +664,9 @@ struct ChartsConfig: Decodable, Sendable {
 }
 
 struct OSAdoptionConfig: Decodable, Sendable {
-    var enabled: Bool?
     var perMajorCharts: Bool?
 
-    /// What config.example.yaml documents; nothing reads `enabled`, so this only tells the
-    /// Config Doctor which value is the default.
-    var isEnabled: Bool { enabled ?? true }
-
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case perMajorCharts = "per_major_charts"
     }
 }

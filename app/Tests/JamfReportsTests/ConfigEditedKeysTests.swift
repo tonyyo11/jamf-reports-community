@@ -34,7 +34,7 @@ final class ConfigEditedKeysTests: XCTestCase {
         let typedOnly: [[String]] = [
             ["jamf_cli", "data_dir"], ["jamf_cli", "profile"], ["output", "allow_absolute_paths"],
             ["compliance", "baselines"], ["charts", "historical_csv_dir"],
-            ["charts", "os_adoption", "enabled"], ["retention", "enabled"], ["sheets", "only"],
+            ["charts", "embed_in_xlsx"], ["retention", "enabled"], ["sheets", "only"],
         ]
         for path in typedOnly {
             XCTAssertFalse(paths.contains(path), path.joined(separator: "."))

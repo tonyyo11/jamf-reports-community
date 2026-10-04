@@ -39,7 +39,7 @@ enum ConfigSchema {
             "os_version": "operating_system", "last_contact": "last_checkin",
             "assigned_user_email": "email",
         ],
-        ["jamf_cli"]: ["jamf_profile": "profile", "live_overview": "allow_live_overview"],
+        ["jamf_cli"]: ["jamf_profile": "profile"],
         ["security_agents"]: ["installed_value": "connected_value"],
         ["compliance"]: [
             "failed_count_column": "failures_count_column",

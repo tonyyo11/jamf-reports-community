@@ -88,7 +88,8 @@ final class ChartsConfigStoreTests: XCTestCase {
         }
     }
 
-    /// Same hazard one level deeper: os_adoption has its own sibling keys.
+    /// Same hazard one level deeper: a hand-typed sibling of per_major_charts (os_adoption.enabled
+    /// is no longer read) stays in the file.
     func testSavingPreservesSiblingKeysInsideOSAdoption() throws {
         try write("""
         charts:

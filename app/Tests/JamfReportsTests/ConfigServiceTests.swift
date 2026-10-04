@@ -76,7 +76,12 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("use_cached_data: false"))
         XCTAssertTrue(savedText.contains("data_dir: existing-data"))
         XCTAssertTrue(savedText.contains("profile: tenant-a"))
+        // Neither jamf_cli.enabled nor allow_live_overview is read any more; a save still
+        // keeps what the file holds.
         XCTAssertTrue(savedText.contains("allow_live_overview: false"))
+        let jamfCLI = try XCTUnwrap(
+            YAMLCodec.decode(savedText).root.mapping?.value(for: "jamf_cli")?.mapping)
+        XCTAssertEqual(jamfCLI.value(for: "enabled"), .scalar(.bool(true)))
     }
 
     /// The editor models a few keys per entry; any other key typed on an entry rides along with

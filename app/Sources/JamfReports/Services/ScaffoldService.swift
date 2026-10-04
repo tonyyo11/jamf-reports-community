@@ -540,7 +540,6 @@ enum ScaffoldService {
             "  data_dir: \"jamf-cli-data\"",
             "  profile: \"\(yamlEscape(profile))\"",
             "  use_cached_data: true",
-            "  allow_live_overview: true",
             "",
             "columns:",
         ]
@@ -607,7 +606,6 @@ enum ScaffoldService {
             "  data_dir: \"jamf-cli-data\"",
             "  profile: \"\(yamlEscape(profile))\"",
             "  use_cached_data: true",
-            "  allow_live_overview: true",
             "",
             "columns:",
         ]

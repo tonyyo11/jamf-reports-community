@@ -174,7 +174,6 @@ final class ConfigSchemaTests: XCTestCase {
           assigned_user_email: "Email"
         jamf_cli:
           jamf_profile: "example"
-          live_overview: true
         security_agents:
           - name: "Agent"
             column: "Agent Status"
@@ -206,12 +205,11 @@ final class ConfigSchemaTests: XCTestCase {
           auto_archive: true
         """)
         let suggested = Dictionary(uniqueKeysWithValues: keys.map { ($0.keyPath, $0.suggestion) })
-        XCTAssertEqual(keys.count, 17)
+        XCTAssertEqual(keys.count, 16)
         XCTAssertEqual(suggested["columns.os_version"], "operating_system")
         XCTAssertEqual(suggested["columns.last_contact"], "last_checkin")
         XCTAssertEqual(suggested["columns.assigned_user_email"], "email")
         XCTAssertEqual(suggested["jamf_cli.jamf_profile"], "profile")
-        XCTAssertEqual(suggested["jamf_cli.live_overview"], "allow_live_overview")
         XCTAssertEqual(suggested["security_agents[0].installed_value"], "connected_value")
         XCTAssertEqual(suggested["compliance.failed_count_column"], "failures_count_column")
         XCTAssertEqual(suggested["compliance.failed_list_column"], "failures_list_column")

@@ -32,11 +32,9 @@ mobile_columns:
 security_agents: []
 
 jamf_cli:
-  enabled: true
   data_dir: ../jamf-cli-data
   profile: dummy
   use_cached_data: true
-  allow_live_overview: false
 
 protect:
   enabled: false
@@ -73,7 +71,6 @@ charts:
   historical_csv_dir: ../snapshots/computers
   archive_current_csv: false
   os_adoption:
-    enabled: true
     per_major_charts: true
   compliance_trend:
     enabled: true
