@@ -145,6 +145,80 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
         }
     }
 
+    /// A level write names one key, so the on and off values an operator typed stay as typed,
+    /// in their order and spelling, and keep working. A comment inside the rewritten block
+    /// does not survive a save: the writer says so and keeps a copy of the file.
+    func testALevelWriteKeepsTheOnAndOffValues() throws {
+        try withWorkspacesRoot {
+            let typed = """
+            # Fleet notes, above the block
+            security_policy:
+              # org words, written by the compliance team
+              on_values:
+                firewall: ["Pass", "Compliant"]
+                sip: Protected
+              controls:
+                firewall: warning
+              off_values:
+                firewall:
+                  - Fail
+                  - Non-Compliant
+            """
+            try write(typed)
+
+            let saved = try SecurityPolicyConfigWriter.save(
+                .level(.ignore, for: .sip), profile: profile)
+
+            let text = try readBack()
+            XCTAssertTrue(text.hasPrefix("# Fleet notes, above the block\n"))
+            for kept in ["on_values:\n    firewall:", "- Pass", "- Compliant", "sip: Protected",
+                         "off_values:\n    firewall:", "- Fail", "- Non-Compliant",
+                         "firewall: warning"] {
+                XCTAssertTrue(text.contains(kept), "a save dropped or rewrote \(kept)")
+            }
+            let policy = SecurityPolicyConfigLoader.load(profile: profile)
+            XCTAssertEqual(policy.sip, .ignore)
+            XCTAssertEqual(policy.firewall, .warning)
+            XCTAssertEqual(policy.onValues, [.firewall: ["pass", "compliant"], .sip: ["protected"]])
+            XCTAssertEqual(policy.offValues, [.firewall: ["fail", "non compliant"]])
+            XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile), [])
+            XCTAssertTrue(saved.report.droppedComments)
+            let name = try XCTUnwrap(saved.report.backupName)
+            let copy = try configURL().deletingLastPathComponent().appendingPathComponent(name)
+            XCTAssertTrue(try String(contentsOf: copy, encoding: .utf8)
+                .contains("# org words, written by the compliance team"))
+        }
+    }
+
+    /// With no comment inside the block a save says nothing and keeps the values.
+    func testALevelWriteWithoutCommentsLeavesTheVocabularyBlocksAlone() throws {
+        try withWorkspacesRoot {
+            try write("""
+            security_policy:
+              controls:
+                sip: fail
+              on_values:
+                firewall: [Pass, Compliant]
+              off_values:
+                firewall: Fail
+            """)
+
+            let saved = try SecurityPolicyConfigWriter.save(
+                .level(.warning, for: .sip), profile: profile)
+
+            XCTAssertFalse(saved.report.droppedComments)
+            XCTAssertNil(saved.report.backupName)
+            XCTAssertTrue(try readBack().contains(
+                "  on_values:\n    firewall:\n      - Pass\n      - Compliant\n"
+                    + "  off_values:\n    firewall: Fail"),
+                "the same values in the same order; the writer spells a list as a block")
+            let policy = SecurityPolicyConfigLoader.load(profile: profile)
+            XCTAssertEqual(policy.sip, .warning)
+            XCTAssertEqual(policy.onValues, [.firewall: ["pass", "compliant"]])
+            XCTAssertEqual(policy.offValues, [.firewall: ["fail"]])
+        }
+    }
+
     func testANilHardwareLevelRemovesTheKey() throws {
         try withWorkspacesRoot {
             try write("""

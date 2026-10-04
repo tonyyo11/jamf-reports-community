@@ -31,6 +31,18 @@ compliance is now one figure everywhere.
   default `columns.architecture` is now "Architecture Type", the header Jamf Pro's computer export
   uses. Scaffold and re-scaffold fill both, and Config Doctor warns when the hardware rule is set,
   a CSV is present and either one is unmapped.
+- Macs that did not report a security setting are no longer counted as failing it. FileVault, SIP,
+  Firewall and Gatekeeper figures, the security score and the P0 and P1 action items count the
+  Macs measured off, and the Security Posture screen, the workbook and the HTML report show "not
+  reported: N" where some Macs did not report. A tenant where Jamf collects every value sees no
+  change.
+- Your own on and off words. When your organization maps its own extension attribute or CSV
+  column to FileVault, SIP, Firewall or Gatekeeper and it says `Pass` and `Fail`, or `Compliant`
+  and `Non-Compliant`, list those words under `security_policy.on_values` and `off_values` for
+  that control and every screen and report reads them; before, those Macs counted as not
+  measured. A value must match whole, a value in both lists reads as off, and Config > Run check
+  warns about one that is empty, not text or in both. The totals jamf-cli's security report
+  carries keep jamf-cli's words.
 - Security Score weights are saved in the workspace's `security_policy.score_weights`, so the
   Security Posture screen, the Overview, Trends, alerts and reports score with the same weights.
   Weights set on this Mac earlier are shown on the Scoring tab and apply to a workspace once you

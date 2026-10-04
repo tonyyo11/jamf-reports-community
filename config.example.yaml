@@ -474,6 +474,16 @@ security_policy:
   # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
   # silicon, or Intel with the T2 chip). Omit to use the filevault level.
   # filevault_off_hardware_encrypted: warning
+  # Your own words for on and off, for an extension attribute or CSV column mapped
+  # to filevault, sip, firewall or gatekeeper: a list, or one string, per control.
+  # Checked in order: off_values, on_values (a value in both reads off), then the
+  # built-in words. A whole value must match, in any case, with - and _ read as
+  # spaces. They apply to each Mac's own value; the totals jamf-cli's security
+  # report carries keep jamf-cli's words.
+  # on_values:
+  #   firewall: ["Pass", "Compliant"]
+  # off_values:
+  #   firewall: ["Fail", "Non-Compliant"]
   # Security Score weights, 0-100 each. Omit for these defaults.
   # score_weights:
   #   filevault: 15

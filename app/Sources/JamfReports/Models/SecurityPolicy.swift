@@ -69,16 +69,24 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     var fileVaultOffHardwareEncrypted: SecurityControlLevel?
     /// The Security Score's weights; nil uses `SecurityScoreWeights.defaultWeights`.
     var scoreWeights: SecurityScoreWeights?
+    /// The values an organization's own export uses for on and off, per control
+    /// (`security_policy.on_values` / `off_values`), normalised by `normalizedValue` and never
+    /// empty. A control with no entry reads by the built-in vocabulary alone.
+    private(set) var onValues: [SecurityControl: Set<String>]
+    private(set) var offValues: [SecurityControl: Set<String>]
 
     static let `default` = SecurityControlPolicy()
 
+    /// `onValues` and `offValues` take the values as typed; they are stored normalised.
     init(
         fileVault: SecurityControlLevel = .fail,
         sip: SecurityControlLevel = .fail,
         firewall: SecurityControlLevel = .fail,
         gatekeeper: SecurityControlLevel = .fail,
         fileVaultOffHardwareEncrypted: SecurityControlLevel? = nil,
-        scoreWeights: SecurityScoreWeights? = nil
+        scoreWeights: SecurityScoreWeights? = nil,
+        onValues: [SecurityControl: [String]] = [:],
+        offValues: [SecurityControl: [String]] = [:]
     ) {
         self.fileVault = fileVault
         self.sip = sip
@@ -86,12 +94,16 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         self.gatekeeper = gatekeeper
         self.fileVaultOffHardwareEncrypted = fileVaultOffHardwareEncrypted
         self.scoreWeights = scoreWeights
+        self.onValues = Self.vocabulary(onValues)
+        self.offValues = Self.vocabulary(offValues)
     }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case controls
         case fileVaultOffHardwareEncrypted = "filevault_off_hardware_encrypted"
         case scoreWeights = "score_weights"
+        case onValues = "on_values"
+        case offValues = "off_values"
     }
 
     enum ControlKeys: String, CodingKey, CaseIterable {
@@ -106,6 +118,46 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         init?(intValue: Int) { nil }
     }
 
+    /// The words under one `on_values` / `off_values` key: a string, or a list of them. A
+    /// boolean reads as its text, because a quoted "True" arrives as one. An item of any other
+    /// type is left out here; `SecurityPolicyConfigLoader.issues` reports it.
+    private struct VocabularyWords: Decodable {
+        let words: [String]
+
+        init(from decoder: Decoder) throws {
+            if let single = Self.word(in: decoder) {
+                words = [single]
+                return
+            }
+            guard var items = try? decoder.unkeyedContainer() else {
+                words = []
+                return
+            }
+            var found: [String] = []
+            // `decode` always moves past the item, so this ends; a throwing one would not.
+            while !items.isAtEnd {
+                if let item = try? items.decode(Item.self), let word = item.word {
+                    found.append(word)
+                }
+            }
+            words = found
+        }
+
+        private struct Item: Decodable {
+            let word: String?
+
+            init(from decoder: Decoder) throws {
+                word = VocabularyWords.word(in: decoder)
+            }
+        }
+
+        private static func word(in decoder: Decoder) -> String? {
+            guard let single = try? decoder.singleValueContainer() else { return nil }
+            if let text = try? single.decode(String.self) { return text }
+            return (try? single.decode(Bool.self)).map { $0 ? "true" : "false" }
+        }
+    }
+
     /// Never throws (the `AlertRule` pattern): a thrown error would fail the whole
     /// config.yaml decode, so a wrong shape or value falls back to the default part.
     init(from decoder: Decoder) throws {
@@ -115,9 +167,13 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         }
         let hardware = Self.decodedLevel(c, .fileVaultOffHardwareEncrypted)
         let weights = Self.decodedWeights(c)
+        let on = Self.decodedVocabulary(c, .onValues)
+        let off = Self.decodedVocabulary(c, .offValues)
         guard let controls = try? c.nestedContainer(keyedBy: ControlKeys.self, forKey: .controls)
         else {
-            self.init(fileVaultOffHardwareEncrypted: hardware, scoreWeights: weights)
+            self.init(
+                fileVaultOffHardwareEncrypted: hardware, scoreWeights: weights,
+                onValues: on, offValues: off)
             return
         }
         self.init(
@@ -126,8 +182,36 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
             firewall: Self.decodedLevel(controls, .firewall) ?? .fail,
             gatekeeper: Self.decodedLevel(controls, .gatekeeper) ?? .fail,
             fileVaultOffHardwareEncrypted: hardware,
-            scoreWeights: weights
+            scoreWeights: weights,
+            onValues: on, offValues: off
         )
+    }
+
+    /// The values typed under each control of `on_values` or `off_values`; empty for a block
+    /// that is absent or not a mapping, and for a control whose value is of the wrong shape.
+    private static func decodedVocabulary(
+        _ container: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> [SecurityControl: [String]] {
+        guard let block = try? container.nestedContainer(keyedBy: ControlKeys.self, forKey: key)
+        else { return [:] }
+        var typed: [SecurityControl: [String]] = [:]
+        for control in SecurityControl.allCases {
+            if let controlKey = ControlKeys(rawValue: control.rawValue),
+               let words = try? block.decodeIfPresent(VocabularyWords.self, forKey: controlKey) {
+                typed[control] = words.words
+            }
+        }
+        return typed
+    }
+
+    /// Normalised and without empty values, so an empty string can never match a blank cell.
+    private static func vocabulary(
+        _ typed: [SecurityControl: [String]]
+    ) -> [SecurityControl: Set<String>] {
+        typed.compactMapValues { words in
+            let kept = Set(words.map { normalizedValue($0) }.filter { !$0.isEmpty })
+            return kept.isEmpty ? nil : kept
+        }
     }
 
     /// Nil for a block that is absent or not a mapping; otherwise every key the app reads,
@@ -223,7 +307,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     /// rule lowers this Mac, so its amber or grey tone is explained; else the value itself.
     func fileVaultLabel(_ value: String, hardwareEncrypted: Bool?, short: Bool = false) -> String {
         let lowers = hardwareRuleLowers(
-            fileVaultReading: Self.reading(value), hardwareEncrypted: hardwareEncrypted)
+            fileVaultReading: reading(value, for: .fileVault), hardwareEncrypted: hardwareEncrypted)
         guard lowers else { return value }
         return short ? Self.hardwareEncryptedFileVaultOffShortLabel
             : Self.hardwareEncryptedFileVaultOffLabel
@@ -255,14 +339,35 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     ]
     private static let trueValues: Set<String> = ["true", "yes", "1", "on"]
 
-    /// Whether a security value reads as on (true), off (false) or unmeasured (nil).
-    /// FileVault mid-transition (ENCRYPTING, OPTIMIZING) or unable to report
-    /// (INELIGIBLE, RESTART_NEEDED) reads nil. `-` and `_` read as spaces.
-    static func reading(_ raw: String?) -> Bool? {
-        let text = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    /// How a value is compared with a configured on or off value, and with the built-in
+    /// vocabulary: trimmed, lowercase, `-` and `_` read as spaces.
+    static func normalizedValue(_ raw: String?) -> String {
+        (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
+    }
+
+    /// Whether a security value reads as on (true), off (false) or unmeasured (nil), by the
+    /// built-in vocabulary alone: for a value that is not one of the four controls, such as the
+    /// bootstrap token. A control's own value reads through `reading(_:for:)`.
+    /// FileVault mid-transition (ENCRYPTING, OPTIMIZING) or unable to report
+    /// (INELIGIBLE, RESTART_NEEDED) reads nil. `-` and `_` read as spaces.
+    static func reading(_ raw: String?) -> Bool? {
+        builtInReading(normalizedValue(raw))
+    }
+
+    /// A control's value as on, off or unmeasured. The workspace's own `off_values` come first,
+    /// then its `on_values` (so a value in both reads off), then the built-in vocabulary. A
+    /// configured value matches the whole value, never part of it.
+    func reading(_ raw: String?, for control: SecurityControl) -> Bool? {
+        let text = Self.normalizedValue(raw)
+        if offValues[control]?.contains(text) == true { return false }
+        if onValues[control]?.contains(text) == true { return true }
+        return Self.builtInReading(text)
+    }
+
+    private static func builtInReading(_ text: String) -> Bool? {
         if text.isEmpty || unknownMarkers.contains(where: { text.contains($0) }) { return nil }
         if let partitions = partitionReading(text) { return partitions }
         if falseValues.contains(text) || falseMarkers.contains(where: { text.contains($0) })
@@ -311,7 +416,9 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     func verdict(
         for control: SecurityControl, value: String?, hardwareEncrypted: Bool?
     ) -> SecurityVerdict {
-        verdict(for: control, reading: Self.reading(value), hardwareEncrypted: hardwareEncrypted)
+        verdict(
+            for: control, reading: reading(value, for: control),
+            hardwareEncrypted: hardwareEncrypted)
     }
 
     private static func offVerdict(at level: SecurityControlLevel) -> SecurityVerdict {

@@ -800,7 +800,21 @@ enum ConfigDoctorService {
         if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
             return "\"\(issue.value)\" is not a number from 0 to 100 — using \(issue.used)"
         }
+        if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
+            return securityVocabularyDetail(issue)
+        }
         return "\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)"
+    }
+
+    private static func securityVocabularyDetail(_ issue: SecurityPolicyIssue) -> String {
+        let list = issue.keyPath.hasPrefix(SecurityPolicyConfigLoader.onValuesPath)
+            ? "on_values" : "off_values"
+        if issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff {
+            return "\"\(issue.value)\" is listed in both on_values and off_values — "
+                + "reading it as off"
+        }
+        if issue.value.isEmpty { return "An empty value in \(list) is skipped" }
+        return "\"\(issue.value)\" in \(list) is not text — skipped"
     }
 
     private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
@@ -809,6 +823,11 @@ enum ConfigDoctorService {
         }
         if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
             return "Set it to a number from 0 to 100 in config.yaml, or remove the line."
+        }
+        if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
+            return issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff
+                ? "Remove it from on_values, or from off_values, in config.yaml."
+                : "Write each value as text, such as \"Pass\" (quote a number), or remove it."
         }
         return "Set it to fail, warning or ignore in config.yaml, or remove the line."
     }

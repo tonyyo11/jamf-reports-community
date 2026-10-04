@@ -46,13 +46,16 @@ final class SecurityFleetCountsTests: XCTestCase {
         return try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first)
     }
 
-    /// The fixture's summary: 101 Macs, FileVault 100, SIP 1, Firewall 0, Gatekeeper 100.
-    /// P0 = 1 + 100 + 101; P1 = 1; score = mean of 99.0, 1.0 and 0.0 percent.
-    func testSecurityFixtureThroughTheSummaryWriterKeepsTodaysNumbers() throws {
+    /// The fixture is the dummy tenant: 101 Macs, FileVault 100, SIP 1, Firewall 0, Gatekeeper
+    /// 100 in the summary; its rows say SIP is NOT_COLLECTED on 100 Macs (not reported, so not
+    /// failing) and Gatekeeper is DISABLED on one. P0 = 1 + 0 + 101; P1 = 1; score = mean of
+    /// 99.0, 100 (the one Mac that reported SIP) and 0.0 percent. Before 2.9 counted only Macs
+    /// measured off, P0 was 202 and the score 33.3.
+    func testSecurityFixtureThroughTheSummaryWriterCountsOnlyMeasuredMacs() throws {
         let summary = try writtenSummary()
-        XCTAssertEqual(summary.actionItemsP0, 202)
+        XCTAssertEqual(summary.actionItemsP0, 102)
         XCTAssertEqual(summary.actionItemsP1, 1)
-        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 33.3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 66.3, accuracy: 0.001)
     }
 
     /// A security summary with the counts only, in the `pro report security` shape.
@@ -114,8 +117,15 @@ final class SecurityFleetCountsTests: XCTestCase {
 
     // MARK: - Default policy
 
+    /// Without device rows the summary is the whole count: a Mac that is not on is off.
     func testDefaultPolicyIsTodaysArithmetic() throws {
-        let fleet = try fixtureCounts(.default)
+        let summary = try XCTUnwrap(fixtureItems().lazy.compactMap { item -> SecuritySummaryData? in
+            if case .summary(let section) = item { return section.data }
+            return nil
+        }.first)
+        let fleet = SecurityFleetCounts.build(
+            totalDevices: 101, onCounts: SecurityFleetCounts.onCounts(summary), devices: [],
+            hardware: [:], policy: .default)
         XCTAssertEqual(fleet.totalDevices, 101)
         XCTAssertEqual(fleet.controls, [
             .fileVault: Control(level: .fail, on: 100, fail: 1, warning: 0),
@@ -124,6 +134,7 @@ final class SecurityFleetCountsTests: XCTestCase {
             .gatekeeper: Control(level: .fail, on: 100, fail: 1, warning: 0),
         ])
         XCTAssertEqual(fleet.p0, 202)
+        XCTAssertEqual(fleet.p0NotReported, 0)
         XCTAssertEqual(fleet.p1, 1)
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 0)
         XCTAssertEqual(fleet.scoreInput(), SecurityScoreCalculator.Input(
@@ -190,9 +201,13 @@ final class SecurityFleetCountsTests: XCTestCase {
     func testSIPAtWarningLeavesP0AndScoresAsCompliant() throws {
         let policy = try controls("security_policy:\n  controls:\n    sip: warning\n")
         let fleet = try fixtureCounts(policy)
-        XCTAssertEqual(fleet.controls[.sip], Control(level: .warning, on: 1, fail: 0, warning: 100))
+        XCTAssertEqual(
+            fleet.controls[.sip],
+            Control(level: .warning, on: 1, fail: 0, warning: 0, notReported: 100),
+            "the 100 Macs that did not report SIP are not warnings either")
         XCTAssertEqual(fleet.p0, 1 + 101, "FileVault and Firewall only")
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.sip], 101, "every Mac")
+        XCTAssertEqual(fleet.scoreInput().compliantCounts[.sip], 1, "the one Mac that reported")
+        XCTAssertEqual(fleet.scoreInput().metricTotals[.sip], 1)
         // (99.01 + 100 + 0) / 3
         XCTAssertEqual(score(fleet, policy).value, 66.3, accuracy: 0.001)
     }
@@ -202,7 +217,7 @@ final class SecurityFleetCountsTests: XCTestCase {
         let fleet = try fixtureCounts(policy)
         XCTAssertEqual(fleet.controls[.firewall],
                        Control(level: .ignore, on: 0, fail: 0, warning: 0))
-        XCTAssertEqual(fleet.p0, 1 + 100)
+        XCTAssertEqual(fleet.p0, 1, "FileVault only: SIP's 100 Macs did not report")
         let weights = policy.effectiveScoreWeights(.defaultWeights)
         XCTAssertEqual(weights.firewall, 0)
         var others = weights
@@ -211,7 +226,8 @@ final class SecurityFleetCountsTests: XCTestCase {
         let result = score(fleet, policy)
         XCTAssertFalse(result.missing.contains(.firewall))
         XCTAssertEqual(result.available, [.fileVault, .sip])
-        XCTAssertEqual(result.value, 50.0, accuracy: 0.001)
+        // (99.01 + 100) / 2
+        XCTAssertEqual(result.value, 99.5, accuracy: 0.001)
     }
 
     func testEachIgnoredScoredControlLosesItsWeight() {
@@ -245,17 +261,19 @@ final class SecurityFleetCountsTests: XCTestCase {
 
     /// Four Macs, FileVault on one: Apple silicon and a T2 Mac (hardware-encrypted), an
     /// Intel Mac without T2, and one with no serial matched by its unique name.
-    private func hardwareFleetJSON(fileVaultOn: Int = 1) throws -> Data {
+    private func hardwareFleetJSON(
+        fileVaultOn: Int = 1, offValue: String = "UNENCRYPTED"
+    ) throws -> Data {
         let summary: [String: Any] = ["section": "summary", "data": [
             "total_devices": 5, "filevault_encrypted": fileVaultOn, "sip_enabled": 5,
             "firewall_enabled": 5, "gatekeeper_enabled": 5,
         ]]
         return try JSONSerialization.data(withJSONObject: [summary,
             row("on-mac", serial: "ON1", fileVault: "ENCRYPTED"),
-            row("as-mac", serial: "AS1", fileVault: "UNENCRYPTED"),
-            row("t2-mac", serial: "T21", fileVault: "UNENCRYPTED"),
-            row("intel-mac", serial: "IN1", fileVault: "UNENCRYPTED"),
-            row("lab-mac", serial: "", fileVault: "UNENCRYPTED"),
+            row("as-mac", serial: "AS1", fileVault: offValue),
+            row("t2-mac", serial: "T21", fileVault: offValue),
+            row("intel-mac", serial: "IN1", fileVault: offValue),
+            row("lab-mac", serial: "", fileVault: offValue),
         ])
     }
 
@@ -270,10 +288,11 @@ final class SecurityFleetCountsTests: XCTestCase {
     ]
 
     private func hardwareCounts(
-        _ policy: SecurityControlPolicy, fileVaultOn: Int = 1
+        _ policy: SecurityControlPolicy, fileVaultOn: Int = 1, offValue: String = "UNENCRYPTED"
     ) throws -> SecurityFleetCounts {
         let items = try JSONDecoder().decode(
-            [SecurityReportItem].self, from: hardwareFleetJSON(fileVaultOn: fileVaultOn))
+            [SecurityReportItem].self,
+            from: hardwareFleetJSON(fileVaultOn: fileVaultOn, offValue: offValue))
         return try XCTUnwrap(SecurityFleetCounts.build(
             items: items, hardware: HardwareEncryption.index(computers: computers),
             policy: policy))
@@ -289,6 +308,24 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(fleet.p0, 1)
         XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 4)
         XCTAssertEqual(fleet.scoreInput().metricTotals, [:], "a share of the whole fleet")
+    }
+
+    /// The rule finds the Macs whose FileVault is off by the workspace's own off values; the
+    /// summary's on count still comes from jamf-cli.
+    func testHardwareRuleFollowsTheWorkspaceFileVaultVocabulary() throws {
+        let withWords = SecurityControlPolicy(
+            fileVaultOffHardwareEncrypted: .warning, offValues: [.fileVault: ["Bare"]])
+        let fleet = try hardwareCounts(withWords, offValue: "Bare")
+        XCTAssertEqual(fleet.controls[.fileVault],
+                       Control(level: .fail, on: 1, fail: 1, warning: 3))
+        XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 3)
+
+        let without = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+        let unread = try hardwareCounts(without, offValue: "Bare")
+        XCTAssertEqual(unread.controls[.fileVault],
+                       Control(level: .fail, on: 1, fail: 0, warning: 0, notReported: 4),
+                       "words the policy cannot read are not reported, not failures")
+        XCTAssertEqual(unread.fileVaultOffHardwareEncrypted, 0)
     }
 
     func testHardwareRuleAtIgnoreDropsHardwareEncryptedMacs() throws {
@@ -395,16 +432,16 @@ final class SecurityFleetCountsTests: XCTestCase {
             gatekeeper: ignore
         """)
         let summary = try writtenSummary(config: config)
-        XCTAssertEqual(summary.actionItemsP0, 1 + 101)
+        XCTAssertEqual(summary.actionItemsP0, 1 + 101, "FileVault and Firewall; SIP is a warning")
         XCTAssertEqual(summary.actionItemsP1, 0)
         XCTAssertEqual(try XCTUnwrap(summary.securityScore), 66.3, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(summary.sipPct), 1.0, accuracy: 0.05, "facts stay facts")
 
         let ignored = try writtenSummary(config: ConfigLoader.loadFromString(
             "security_policy:\n  controls:\n    firewall: ignore\n"))
-        XCTAssertEqual(ignored.actionItemsP0, 1 + 100)
-        // Firewall carries no weight: (99.01 + 0.99) / 2.
-        XCTAssertEqual(try XCTUnwrap(ignored.securityScore), 50.0, accuracy: 0.001)
+        XCTAssertEqual(ignored.actionItemsP0, 1, "SIP's 100 Macs did not report")
+        // Firewall carries no weight: (99.01 + 100) / 2.
+        XCTAssertEqual(try XCTUnwrap(ignored.securityScore), 99.5, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(ignored.firewallPct), 0, accuracy: 0.001)
     }
 

@@ -80,8 +80,9 @@ these interactive dashboards either — it produces a separate generated workboo
 - **Security Posture** — a weighted Security Score ring, per-control KPIs (FileVault,
   SIP, firewall, Gatekeeper), prioritized action items, and an OS-version donut, all
   following the workspace's security policy (Config → Scoring): a control set to warning
-  is not a P0 or P1 gap, an ignored one is left out, and hardware-encrypted Macs with
-  FileVault off are counted apart. On macOS 27 an AI Posture Insight card says which
+  is not a P0 or P1 gap, an ignored one is left out, hardware-encrypted Macs with
+  FileVault off are counted apart, and Macs that did not report a control are left out
+  of its counts with a "not reported: N" note. On macOS 27 an AI Posture Insight card says which
   control to work first. Freshness chips show the age of the underlying data source.
   Data source: `pro report security` (tier 2) aggregates, device inventory and, for the
   hardware rule, the `computers` snapshot (tier 1).

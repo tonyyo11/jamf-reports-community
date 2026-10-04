@@ -120,6 +120,30 @@ final class ConfigSchemaTests: XCTestCase {
         XCTAssertEqual(keys.last?.suggestion, "filevault")
     }
 
+    func testTheVocabularyBlocksAreKnownAndTheirUnknownKeysAreReported() throws {
+        let keys = try unknownKeys("""
+        security_policy:
+          on_values:
+            firewall: [Pass]
+            sip: Protected
+            antivirus: [Clean]
+          off_values:
+            filevault: Bare
+            firewal: [Fail]
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), [
+            "security_policy.off_values.firewal",
+            "security_policy.on_values.antivirus",
+        ])
+        XCTAssertEqual(keys.first?.suggestion, "firewall")
+        let policyKeys = ConfigSchema.knownKeys(at: ["security_policy"]) ?? []
+        XCTAssertTrue(policyKeys.isSuperset(of: ["on_values", "off_values"]))
+        for block in ["on_values", "off_values"] {
+            XCTAssertEqual(ConfigSchema.knownKeys(at: ["security_policy", block]),
+                           ["filevault", "sip", "firewall", "gatekeeper"], block)
+        }
+    }
+
     func testABlockOfTheWrongShapeIsLeftToTheDecoderError() throws {
         let keys = try unknownKeys("""
         custom_eas:
@@ -382,6 +406,8 @@ final class ConfigSchemaTests: XCTestCase {
             (["html", "section_limits"], keys(HTMLSectionLimits.CodingKeys.self)),
             (["security_policy"], keys(SecurityControlPolicy.CodingKeys.self)),
             (["security_policy", "controls"], keys(SecurityControlPolicy.ControlKeys.self)),
+            (["security_policy", "on_values"], keys(SecurityControlPolicy.ControlKeys.self)),
+            (["security_policy", "off_values"], keys(SecurityControlPolicy.ControlKeys.self)),
         ]
         for (path, expected) in decoded {
             let label = path.isEmpty ? "<root>" : path.joined(separator: ".")

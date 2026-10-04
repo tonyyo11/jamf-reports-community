@@ -1031,13 +1031,14 @@ final class HtmlReportTests: XCTestCase {
             XCTAssertEqual(tiles.map(\.label),
                            ["Total Devices", "FileVault", "SIP", "Firewall", "Gatekeeper"])
             XCTAssertEqual(tiles.map(\.value), ["101", "99.0%", "1.0%", "0.0%", "99.0%"])
-            XCTAssertEqual(tiles.map(\.cssClass), ["", "ok", "bad", "bad", "ok"],
+            // SIP is NOT_COLLECTED on 100 of the 101 rows: the one Mac that reported it is on.
+            XCTAssertEqual(tiles.map(\.cssClass), ["", "ok", "ok", "bad", "ok"],
                            "templated: \(templated)")
         }
     }
 
-    /// Every control but FileVault on everywhere; a warning is amber, an ignored control gets
-    /// no colour and says so. The tile values stay the facts.
+    /// An ignored control gets no colour and says so. SIP at warning has no Mac to warn about on
+    /// this fixture: the 100 that did not report it are neither. The tile values stay the facts.
     func testSummaryTilesFollowThePolicy() async throws {
         let dir = try securityDataDir()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -1052,8 +1053,7 @@ final class HtmlReportTests: XCTestCase {
                 "Total Devices", "FileVault", "SIP", "Firewall (not counted)", "Gatekeeper",
             ])
             XCTAssertEqual(tiles.map(\.value), ["101", "99.0%", "1.0%", "0.0%", "99.0%"])
-            // SIP: no Mac fails it, but 100 only warn.
-            XCTAssertEqual(tiles.map(\.cssClass), ["", "ok", "warn", "", "ok"],
+            XCTAssertEqual(tiles.map(\.cssClass), ["", "ok", "ok", "", "ok"],
                            "templated: \(templated)")
         }
     }

@@ -1061,6 +1061,56 @@ final class ConfigDoctorServiceTests: XCTestCase {
             + "— using fail for every control")
     }
 
+    func testAVocabularyValueThatIsNotTextWarnsAndIsSkipped() {
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [
+                SecurityPolicyIssue(keyPath: "security_policy.on_values.firewall", value: "7",
+                                    used: "skipped"),
+                SecurityPolicyIssue(keyPath: "security_policy.off_values.sip", value: "{…}",
+                                    used: "skipped"),
+            ], policy: .default, hardware: [:])
+        XCTAssertEqual(rows.map(\.severity), [.warn, .warn])
+        XCTAssertEqual(rows.map(\.title), [
+            "security_policy.on_values.firewall", "security_policy.off_values.sip",
+        ])
+        XCTAssertEqual(rows[0].detail, "\"7\" in on_values is not text — skipped")
+        XCTAssertEqual(rows[1].detail, "\"{…}\" in off_values is not text — skipped")
+        XCTAssertEqual(rows[0].hint,
+                       "Write each value as text, such as \"Pass\" (quote a number), or remove it.")
+        XCTAssertEqual(Set(rows.map(\.id)).count, 2)
+    }
+
+    func testAnEmptyVocabularyValueWarnsAndIsSkipped() {
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [SecurityPolicyIssue(
+                keyPath: "security_policy.on_values.gatekeeper", value: "", used: "skipped")],
+            policy: .default, hardware: [:])
+        XCTAssertEqual(rows.first?.severity, .warn)
+        XCTAssertEqual(rows.first?.detail, "An empty value in on_values is skipped")
+    }
+
+    func testAValueInBothVocabularyListsWarnsThatItReadsOff() {
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [SecurityPolicyIssue(
+                keyPath: "security_policy.on_values.firewall", value: "Pass", used: "off")],
+            policy: .default, hardware: [:])
+        XCTAssertEqual(rows.first?.severity, .warn)
+        XCTAssertEqual(rows.first?.detail,
+                       "\"Pass\" is listed in both on_values and off_values — reading it as off")
+        XCTAssertEqual(rows.first?.hint,
+                       "Remove it from on_values, or from off_values, in config.yaml.")
+    }
+
+    func testAVocabularyBlockOfTheWrongShapeIsNotCalledAValue() {
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [SecurityPolicyIssue(
+                keyPath: "security_policy.off_values", value: "Fail",
+                used: "the built-in values only")],
+            policy: .default, hardware: [:])
+        XCTAssertEqual(rows.first?.detail, "Expected a block of settings, found \"Fail\" "
+            + "— using the built-in values only")
+    }
+
     func testNoSecurityPolicyIssuesEmitNoRows() {
         XCTAssertEqual(ConfigDoctorService.securityPolicyRows(
             issues: [], policy: .default, hardware: [:]), [])
@@ -1194,6 +1244,57 @@ final class ConfigDoctorServiceTests: XCTestCase {
             let doctor = rows + ConfigDoctorService.unknownKeyRows(profile: profile)
             XCTAssertEqual(doctor.filter { $0.title == "security_policy.antivirus" }.count, 1,
                            "an unknown key is reported once")
+        }
+    }
+
+    /// Every kind of vocabulary issue in one file reaches the Doctor from the loader, as
+    /// warnings: a number, an empty value, a value in both lists, and an unknown control that
+    /// is left to the unknown-key rows.
+    func testSecurityPolicyRowsReportTheVocabularyIssuesInTheFile() throws {
+        let yaml = """
+        security_policy:
+          on_values:
+            firewall:
+              - Pass
+              - 7
+              - ""
+            sip: Protected
+            bootstrap_token: Escrowed
+          off_values:
+            firewall: [Fail, pass]
+            sip: Open
+        """
+        try withWorkspace(yaml) { profile, _ in
+            let rows = ConfigDoctorService.securityPolicyRows(
+                profile: profile, config: try makeConfig(yaml))
+            XCTAssertEqual(rows.map(\.severity), [.warn, .warn, .warn])
+            XCTAssertEqual(rows.map(\.title), [
+                "security_policy.on_values.firewall", "security_policy.on_values.firewall",
+                "security_policy.on_values.firewall",
+            ])
+            XCTAssertEqual(rows.map(\.detail), [
+                "\"Pass\" is listed in both on_values and off_values — reading it as off",
+                "\"7\" in on_values is not text — skipped",
+                "An empty value in on_values is skipped",
+            ])
+            XCTAssertEqual(Set(rows.map(\.id)).count, 3)
+            let unknown = ConfigDoctorService.unknownKeyRows(profile: profile)
+            XCTAssertEqual(unknown.map(\.title), ["security_policy.on_values.bootstrap_token"])
+        }
+    }
+
+    func testSecurityPolicyRowsAreSilentForAReadableVocabulary() throws {
+        let yaml = """
+        security_policy:
+          on_values:
+            firewall: ["Pass", "Compliant"]
+          off_values:
+            firewall: ["Fail", "Non-Compliant"]
+        """
+        try withWorkspace(yaml) { profile, _ in
+            XCTAssertEqual(ConfigDoctorService.securityPolicyRows(
+                profile: profile, config: try makeConfig(yaml)), [])
+            XCTAssertEqual(ConfigDoctorService.unknownKeyRows(profile: profile), [])
         }
     }
 

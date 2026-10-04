@@ -447,11 +447,14 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     /// Controls the policy counts as failing, plus a bootstrap token that is not escrowed,
     /// which the policy does not govern.
     func securityGapCount(policy: SecurityControlPolicy) -> Int {
-        let read = SecurityControlPolicy.reading
         let controls = policy.gapCount(
-            fileVault: read(fileVault), sip: read(sip), firewall: read(firewall),
-            gatekeeper: read(gatekeeper), hardwareEncrypted: hardwareEncrypted) ?? 0
-        return controls + (read(bootstrapToken) == false ? 1 : 0)
+            fileVault: fileVaultEnabled(policy: policy),
+            sip: policy.reading(sip, for: .sip),
+            firewall: policy.reading(firewall, for: .firewall),
+            gatekeeper: policy.reading(gatekeeper, for: .gatekeeper),
+            hardwareEncrypted: hardwareEncrypted) ?? 0
+        let bootstrap = SecurityControlPolicy.reading(bootstrapToken)
+        return controls + (bootstrap == false ? 1 : 0)
     }
 
     func risk(policy: SecurityControlPolicy) -> Risk {
@@ -578,7 +581,8 @@ struct DeviceInventorySnapshot: Sendable {
     var fileVaultOffHardwareEncryptedCount: Int {
         devices.filter {
             securityPolicy.hardwareRuleLowers(
-                fileVaultReading: $0.fileVaultEnabled, hardwareEncrypted: $0.hardwareEncrypted)
+                fileVaultReading: $0.fileVaultEnabled(policy: securityPolicy),
+                hardwareEncrypted: $0.hardwareEncrypted)
         }.count
     }
 
@@ -594,7 +598,7 @@ struct DeviceInventorySnapshot: Sendable {
     /// The share of Macs whose FileVault value reads as on, over those whose value reads as
     /// on or off; nil when none does, so no reading shows as unknown rather than 0%.
     var fileVaultPercent: Double? {
-        let readings = devices.compactMap(\.fileVaultEnabled)
+        let readings = devices.compactMap { $0.fileVaultEnabled(policy: securityPolicy) }
         guard !readings.isEmpty else { return nil }
         return Double(readings.filter { $0 }.count) / Double(readings.count) * 100
     }
@@ -839,10 +843,13 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
 }
 
 extension DeviceInventoryRecord {
-    /// FileVault as on or off (`SecurityControlPolicy.reading`); nil when the inventory
-    /// carried no value or neither answer, such as ENCRYPTING or UNKNOWN, so the Overview's
-    /// Recent Activity shows "—" instead of a guess.
-    var fileVaultEnabled: Bool? { SecurityControlPolicy.reading(fileVault) }
+    /// FileVault as on or off under the workspace's vocabulary
+    /// (`SecurityControlPolicy.reading(_:for:)`); nil when the inventory carried no value or
+    /// neither answer, such as ENCRYPTING or UNKNOWN, so the Overview's Recent Activity shows
+    /// "—" instead of a guess.
+    func fileVaultEnabled(policy: SecurityControlPolicy) -> Bool? {
+        policy.reading(fileVault, for: .fileVault)
+    }
 }
 
 // MARK: - Token status
