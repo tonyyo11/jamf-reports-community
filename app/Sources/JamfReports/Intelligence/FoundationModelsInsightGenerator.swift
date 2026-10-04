@@ -29,19 +29,6 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         self.config = config
     }
 
-    private static let instructions = """
-    You are a Mac fleet-operations analyst. Given a set of already-collected
-    fleet metrics, produce a concise plain-language insight for an IT admin.
-    Lead with a one-sentence headline on overall fleet health, then 3 to 6
-    prioritized findings. Base every statement only on the provided numbers;
-    never invent metrics. Use severity "critical" for security regressions or
-    failing controls, "warning" for downward trends or gaps, "info" otherwise.
-    A line that says "on N% of devices" gives the share of devices in that
-    state; any other percentage means what its label says. Say which direction
-    is good using the line's own wording; never restate a percentage as its
-    opposite.
-    """
-
     // MARK: - Prewarm (session ownership)
 
     /// Construct and prewarm the session ahead of the first request. Same
@@ -54,8 +41,9 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     }
 
     private func storePrewarmedSession(model: some LanguageModel) {
-        let session = LanguageModelSession(model: model, instructions: Self.instructions)
-        session.prewarm(promptPrefix: Prompt(Self.instructions))
+        let session = LanguageModelSession(
+            model: model, instructions: FleetInsightInput.instructions)
+        session.prewarm(promptPrefix: Prompt(FleetInsightInput.instructions))
         sessionLock.lock()
         prewarmedSession = session
         sessionLock.unlock()
@@ -72,7 +60,8 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     }
 
     private func makeSession(for model: some LanguageModel) -> LanguageModelSession {
-        takePrewarmedSession() ?? LanguageModelSession(model: model, instructions: Self.instructions)
+        takePrewarmedSession()
+            ?? LanguageModelSession(model: model, instructions: FleetInsightInput.instructions)
     }
 
     // MARK: - Prompt budgeting

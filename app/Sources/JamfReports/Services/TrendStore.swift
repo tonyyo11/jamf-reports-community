@@ -734,9 +734,9 @@ extension FleetInsightInput {
                 continue
             }
             facts.append(Fact(
-                label: label(metric), value: metric.insightValue(last.value),
-                prior: metric.insightValue(first.value), polarity: metric.insightPolarity,
-                complement: metric.insightComplement))
+                label: metric.insightLabel(label(metric)),
+                value: metric.insightValue(last.value), prior: metric.insightValue(first.value),
+                polarity: metric.polarity, complement: metric.insightComplement))
             spans.append((first.date, last.date))
             snapshots.formUnion(series.map(\.date))
         }
@@ -780,24 +780,18 @@ extension FleetInsightInput {
 }
 
 private extension TrendSeries.Metric {
+    /// The screen's label, with what a count of "stale" devices means: "Stale Devices (30d+)"
+    /// alone read as a statement about how old the devices are.
+    func insightLabel(_ screenLabel: String) -> String {
+        self == .stale ? screenLabel + " — devices with no recent check-in" : screenLabel
+    }
+
     /// A percentage where the screen shows one, a count where it shows none, and the two
     /// composite scores as numbers, so a metric added later is described by its unit.
     func insightValue(_ value: Double) -> FleetInsightInput.Value {
         switch self {
         case .stability, .securityScore: return .number(value)
         default: return unit == "%" ? .percent(value) : .count(Int(value.rounded()))
-        }
-    }
-
-    /// Fewer stale devices is better; a device count has no good direction; every other
-    /// metric is a share or score where higher is better. No default, so a new metric needs
-    /// a decision here.
-    var insightPolarity: FleetInsightInput.Polarity {
-        switch self {
-        case .stale: .lowerIsBetter
-        case .activeDevices, .mscpBandTrend, .managedDevices: .neutral
-        case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .patch,
-             .securityScore, .sip, .firewall, .gatekeeper: .higherIsBetter
         }
     }
 

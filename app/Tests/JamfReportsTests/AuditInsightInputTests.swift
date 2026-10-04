@@ -69,6 +69,8 @@ final class AuditInsightInputTests: XCTestCase {
         XCTAssertFalse(context.contains("resolved since"))
         XCTAssertTrue(context.contains(
             "No previous audit was available, so what changed is unknown."))
+        XCTAssertTrue(context.contains(FleetInsightInput.noEarlierDataNote),
+                      "no trend claims where nothing is compared")
         XCTAssertEqual(input?.facts.count, 5)
     }
 
@@ -79,6 +81,8 @@ final class AuditInsightInputTests: XCTestCase {
         XCTAssertTrue(context.contains("- Findings new since the previous audit: 0"))
         XCTAssertTrue(context.contains("- Findings resolved since the previous audit: 0"))
         XCTAssertFalse(context.contains("No previous audit"))
+        XCTAssertFalse(context.contains(FleetInsightInput.noEarlierDataNote),
+                       "new and resolved counts are the audit's changes")
     }
 
     func testPolarityIsTruthful() throws {

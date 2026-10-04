@@ -7,8 +7,12 @@ import XCTest
 @MainActor
 final class PostureInsightInputTests: XCTestCase {
 
-    private let gapNote = "Failing is a gap under this workspace's security policy. A warning "
-        + "is a Mac with the control off that the policy does not count as a gap."
+    private let gapNote = "Failing is a gap under this workspace's security policy. A control's "
+        + "share line and its Macs-failing line count the same Macs unless a line says "
+        + "otherwise: report each control once."
+    private let warningSentence = "A warning is a Mac with the control off that the policy "
+        + "does not count as a gap."
+    private let noEarlierNote = FleetInsightInput.noEarlierDataNote
     private let actionNote = "P0 and P1 add up each control's gaps, so a Mac failing two of "
         + "their controls counts twice."
     private let bandNote = "Bands count the controls a Mac fails: Pass is none, Low and above "
@@ -87,6 +91,7 @@ final class PostureInsightInputTests: XCTestCase {
             "- P0 action items (FileVault, SIP and Firewall gaps): 6",
             "- P1 action items (Gatekeeper gaps): 4",
             gapNote,
+            noEarlierNote,
             actionNote,
         ])
         XCTAssertEqual(SecurityPostureView.p0TileCount(security.fleetCounts), 6,
@@ -220,6 +225,11 @@ final class PostureInsightInputTests: XCTestCase {
                 sip: "DISABLED", firewall: false, gatekeeper: "DISABLED")]
     }
 
+    private var fourMacsSummary: [String: Any] {
+        summary(["total_devices": 4, "filevault_encrypted": 2, "sip_enabled": 2,
+                 "firewall_enabled": 2, "gatekeeper_enabled": 3])
+    }
+
     func testComplianceFactsUnderTheDefaultPolicyAreTheScreensCounts() throws {
         let compliance = try snapshots(fourMacs).compliance
         let input = FleetInsightInput.posture(.compliance(compliance, showsBands: true))
@@ -238,9 +248,12 @@ final class PostureInsightInputTests: XCTestCase {
             "- Macs failing Gatekeeper: 1",
             "- All Macs: 3 of 4 Macs fail at least one control (Pass 1, Low 3)",
             // The screen lists macOS 15 first; the major with more Macs failing leads here.
-            "- macOS Sonoma 14: 2 of 2 Macs fail at least one control (Low 2)",
-            "- macOS Sequoia 15: 1 of 2 Macs fail at least one control (Pass 1, Low 1)",
+            "- macOS Sonoma 14 (the oldest macOS in the fleet): 2 of 2 Macs fail at least one "
+                + "control (Low 2)",
+            "- macOS Sequoia 15 (the newest macOS in the fleet): 1 of 2 Macs fail at least one "
+                + "control (Pass 1, Low 1)",
             gapNote,
+            noEarlierNote,
             bandNote,
         ])
     }
@@ -269,8 +282,73 @@ final class PostureInsightInputTests: XCTestCase {
         let context = lines(FleetInsightInput.posture(.compliance(compliance, showsBands: false)))
         XCTAssertFalse(context.contains { $0.hasPrefix("- All Macs:") })
         XCTAssertTrue(
-            context.contains("- macOS Sonoma 14: 2 of 2 Macs fail at least one control (Low 2)"),
+            context.contains("- macOS Sonoma 14 (the oldest macOS in the fleet): 2 of 2 Macs "
+                             + "fail at least one control (Low 2)"),
             "the per-OS card shows under mSCP donuts too")
+    }
+
+    // MARK: - Warning wording, earlier data, macOS names
+
+    /// Live: with no Mac in a warning state the model still stated each control as failing
+    /// and again as a warning. The warning definition goes only with a warning fact.
+    func testWarningIsDefinedOnlyWhereAWarningFactIsSent() throws {
+        let plain = try snapshots([fourMacsSummary] + fourMacs)
+        for input in [FleetInsightInput.posture(.security(plain.security)),
+                      FleetInsightInput.posture(.compliance(plain.compliance, showsBands: true))] {
+            let context = try XCTUnwrap(input).promptContext()
+            XCTAssertFalse(context.contains("warning"), "no Mac is in a warning state")
+            XCTAssertFalse(context.contains(warningSentence))
+        }
+
+        let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+        let warned = try snapshots([
+            summary(["total_devices": 2, "filevault_encrypted": 1, "sip_enabled": 2,
+                     "firewall_enabled": 2, "gatekeeper_enabled": 2]),
+            device("as-mac", serial: "AS1", fileVault: "UNENCRYPTED"),
+            device("other-mac", serial: "OT1"),
+        ], policy: policy, hardware: HardwareEncryption.index(computers: computers()))
+        for input in [FleetInsightInput.posture(.security(warned.security)),
+                      FleetInsightInput.posture(.compliance(warned.compliance, showsBands: true))] {
+            let context = try XCTUnwrap(input).promptContext()
+            XCTAssertTrue(context.contains("(a warning, not failing)"))
+            XCTAssertTrue(context.contains(warningSentence))
+        }
+    }
+
+    /// A posture screen is one snapshot: no fact has an earlier value, so no trend words.
+    func testPostureNeverClaimsATrend() throws {
+        let both = try snapshots([fourMacsSummary] + fourMacs)
+        for input in [FleetInsightInput.posture(.security(both.security)),
+                      FleetInsightInput.posture(.compliance(both.compliance, showsBands: true))] {
+            let built = try XCTUnwrap(input)
+            XCTAssertTrue(built.facts.allSatisfy { $0.prior == nil })
+            XCTAssertTrue(built.notes.contains(FleetInsightInput.noEarlierDataNote))
+        }
+    }
+
+    /// Live: Monterey 12 was "the latest supported base". The lowest and highest major in the
+    /// fleet say so; one in between carries no rank.
+    func testOSMajorsNameTheOldestAndNewestInTheFleet() throws {
+        let compliance = try snapshots([
+            device("a", serial: "A1", os: "12.7.6", fileVault: "NOT_ENCRYPTED"),
+            device("b", serial: "B1", os: "15.4.1"),
+            device("c", serial: "C1", os: "26.1"),
+        ]).compliance
+        let context = lines(FleetInsightInput.posture(.compliance(compliance, showsBands: false)))
+        func row(_ name: String) -> String? { context.first { $0.hasPrefix("- \(name)") } }
+        XCTAssertTrue(row("macOS Monterey 12")?.hasPrefix(
+            "- macOS Monterey 12 (the oldest macOS in the fleet):") == true)
+        XCTAssertTrue(row("macOS Tahoe 26")?.hasPrefix(
+            "- macOS Tahoe 26 (the newest macOS in the fleet):") == true)
+        XCTAssertTrue(row("macOS Sequoia 15")?.hasPrefix("- macOS Sequoia 15:") == true)
+    }
+
+    func testASingleOSMajorIsTheOnlyOne() throws {
+        let compliance = try snapshots([device("a", serial: "A1", os: "15.4.1")]).compliance
+        let context = lines(FleetInsightInput.posture(.compliance(compliance, showsBands: false)))
+        XCTAssertTrue(context.contains {
+            $0.hasPrefix("- macOS Sequoia 15 (the only macOS in the fleet):")
+        })
     }
 
     func testComplianceWithNothingToSendIsNil() {
