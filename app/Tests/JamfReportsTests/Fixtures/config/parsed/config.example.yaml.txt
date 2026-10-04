@@ -67,6 +67,7 @@ sheets.order = []
 branding.org_name = string ""
 branding.logo_path = string ""
 branding.accent_color = string "#2D5EA2"
+html.with_workbook = bool false
 html.track_history = bool false
 html.history_file = string ""
 html.section_limits.protect_alerts = int 25
