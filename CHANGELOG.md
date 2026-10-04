@@ -125,9 +125,11 @@ compliance is now one figure everywhere.
   `ai.lock_on_device`, `protect.data_dir`, `school_columns`, and six that earlier builds of the
   Config screen or the scaffold wrote: `jamf_cli.enabled`, `jamf_cli.allow_live_overview`,
   `charts.os_adoption.enabled`, `branding.accent_dark`, `platform.enabled` and
-  `thresholds.profile_error_critical`. A config.yaml that still holds them works as before and a
-  Config screen save keeps them; delete them by hand to clear the notes. New configs no longer
-  get `allow_live_overview`.
+  `thresholds.profile_error_critical`. Config Doctor lists them as "No longer read since 2.9"
+  suggestions, not warnings, and a config.yaml that still holds them works as before. A Config
+  save removes settings the app no longer reads, and says so on the screen (a Customize Apply
+  does the same for `charts.os_adoption.enabled`); the file is copied to
+  `config.yaml.bak-<date-time>` first. New configs no longer get `allow_live_overview`.
 - The Config screen no longer has the "Accent dark" colour field, the "Enable Platform API sheets"
   switch or the "Profile error critical" threshold. None of them changed a report.
 - The Check-in Health sheet counts a Mac as overdue when its last contact is more than
