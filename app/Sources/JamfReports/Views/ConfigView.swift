@@ -1136,11 +1136,6 @@ private struct ThresholdsTab: View {
                     VStack(alignment: .leading, spacing: 12) {
                         SectionHeader(title: "jamf-cli Errors").padding(.bottom, 2)
                         thresholdField(
-                            label: "Profile error critical", key: "profile_error_critical",
-                            value: $ws.configState.profileErrorCritical, unit: "errors",
-                            help: "Red highlight on Profile Status sheet"
-                        )
-                        thresholdField(
                             label: "Profile error warning", key: "profile_error_warning",
                             value: $ws.configState.profileErrorWarning, unit: "errors",
                             help: "Yellow highlight on Profile Status sheet"

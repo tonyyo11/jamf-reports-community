@@ -133,7 +133,6 @@ thresholds.checkin_overdue_days = int 7
 thresholds.warning_disk_percent = int 80
 thresholds.critical_disk_percent = int 90
 thresholds.cert_warning_days = int 90
-thresholds.profile_error_critical = int 50
 thresholds.profile_error_warning = int 10
 output.output_dir = string "Generated Reports"
 output.timestamp_outputs = bool true

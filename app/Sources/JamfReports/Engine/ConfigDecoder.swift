@@ -590,7 +590,6 @@ struct ThresholdsConfig: Decodable, Sendable {
     var criticalDiskPercent: Int?
     var warningDiskPercent: Int?
     var certWarningDays: Int?
-    var profileErrorCritical: Int?
     var profileErrorWarning: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -599,7 +598,6 @@ struct ThresholdsConfig: Decodable, Sendable {
         case criticalDiskPercent = "critical_disk_percent"
         case warningDiskPercent = "warning_disk_percent"
         case certWarningDays = "cert_warning_days"
-        case profileErrorCritical = "profile_error_critical"
         case profileErrorWarning = "profile_error_warning"
     }
 
@@ -608,7 +606,6 @@ struct ThresholdsConfig: Decodable, Sendable {
     var resolvedCriticalDisk: Int { criticalDiskPercent ?? 90 }
     var resolvedWarningDisk: Int { warningDiskPercent ?? 80 }
     var resolvedCertWarningDays: Int { certWarningDays ?? 90 }
-    var resolvedProfileErrorCritical: Int { profileErrorCritical ?? 50 }
     var resolvedProfileErrorWarning: Int { profileErrorWarning ?? 10 }
 }
 

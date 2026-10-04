@@ -42,7 +42,6 @@ struct ConfigState: Equatable, Sendable {
     var warningDiskPercent: String
     var criticalDiskPercent: String
     var certWarningDays: String
-    var profileErrorCritical: String
     var profileErrorWarning: String
     var complianceEnabled: Bool
     var baselineLabel: String
@@ -137,7 +136,6 @@ struct ConfigState: Equatable, Sendable {
         warningDiskPercent: "80",
         criticalDiskPercent: "90",
         certWarningDays: "90",
-        profileErrorCritical: "50",
         profileErrorWarning: "10",
         complianceEnabled: false,
         baselineLabel: "mSCP Compliance",
@@ -579,7 +577,6 @@ enum ConfigService {
                 fallback: state.criticalDiskPercent
             )
             state.certWarningDays = string(thresholds, "cert_warning_days", fallback: state.certWarningDays)
-            state.profileErrorCritical = string(thresholds, "profile_error_critical", fallback: state.profileErrorCritical)
             state.profileErrorWarning = string(thresholds, "profile_error_warning", fallback: state.profileErrorWarning)
         }
 
@@ -657,7 +654,6 @@ enum ConfigService {
         thresholds.set("warning_disk_percent", value: intScalar(state.warningDiskPercent))
         thresholds.set("critical_disk_percent", value: intScalar(state.criticalDiskPercent))
         thresholds.set("cert_warning_days", value: intScalar(state.certWarningDays))
-        thresholds.set("profile_error_critical", value: intScalar(state.profileErrorCritical))
         thresholds.set("profile_error_warning", value: intScalar(state.profileErrorWarning))
         root.set("thresholds", value: .mapping(thresholds))
 

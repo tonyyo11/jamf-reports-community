@@ -2,8 +2,7 @@ import Foundation
 
 /// Rows for a value typed into config.yaml that the app replaced, clamped or ignored. Each says
 /// what was typed and what the app uses, so a hand-typed value is never replaced in silence.
-/// Warnings, or suggestions for a key with no effect (`jamf_cli.enabled: false` warns, since
-/// jamf-cli still runs), never failures: a typo must not turn a healthy scheduled run red.
+/// Warnings, never failures: a typo must not turn a healthy scheduled run red.
 /// Text from the file reaches a row only through `ConfigSchema.displayText`, and a URL
 /// never does.
 extension ConfigDoctorService {
@@ -31,7 +30,6 @@ extension ConfigDoctorService {
         rows += thresholdValueRows(config)
         rows += customEAValueRows(config)
         rows += alertValueRows(config.alerts, raw: raw)
-        rows += noEffectValueRows(config)
         rows += productValueRows(config)
         return rows
     }
@@ -312,26 +310,6 @@ extension ConfigDoctorService {
         return rows
     }
 
-    /// Keys the decoder reads that nothing else does (`ConfigService` and the Config screen only
-    /// edit them). A key at its default says nothing: the app writes those itself, and the
-    /// defaults are the decoder's own.
-    private static func noEffectValueRows(_ config: ReportConfig) -> [DoctorRow] {
-        func differs<Value: Equatable>(_ typed: Value?, from fallback: Value) -> Bool {
-            typed.map { $0 != fallback } ?? false
-        }
-        let limits = ThresholdsConfig()
-        let keys: [(key: String, differs: Bool, note: String?)] = [
-            ("thresholds.profile_error_critical",
-             differs(config.thresholds?.profileErrorCritical,
-                     from: limits.resolvedProfileErrorCritical), nil),
-        ]
-        return keys.filter(\.differs).map { key, _, note in
-            valueRow(key, "This key currently has no effect." + (note ?? ""),
-                     "Nothing reads it, so changing it changes nothing.",
-                     severity: note == nil ? .suggest : .warn)
-        }
-    }
-
     private static func productValueRows(_ config: ReportConfig) -> [DoctorRow] {
         guard config.schoolCli?.isEnabled == true, config.protect?.isEnabled == true else {
             return []
@@ -346,10 +324,9 @@ extension ConfigDoctorService {
     // MARK: - Row builders
 
     private static func valueRow(
-        _ key: String, _ detail: String, _ hint: String, tag: String = "",
-        severity: DoctorSeverity = .warn
+        _ key: String, _ detail: String, _ hint: String, tag: String = ""
     ) -> DoctorRow {
-        DoctorRow(id: "config.value.\(key)\(tag)", severity: severity, title: key,
+        DoctorRow(id: "config.value.\(key)\(tag)", severity: .warn, title: key,
                   detail: detail, hint: hint)
     }
 

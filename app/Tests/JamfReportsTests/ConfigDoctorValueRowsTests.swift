@@ -442,17 +442,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        ["alerts.rules[0].lookback_days"], "an explicit false is a choice")
     }
 
-    func testKeysNothingReadsAreSuggestionsWhenTheyDifferFromTheirDefaults() throws {
-        let found = try rows("""
-        thresholds: {profile_error_critical: 80}
-        """)
-        XCTAssertEqual(Set(titles(found)), [
-            "thresholds.profile_error_critical",
-        ])
-        XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
-        XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
-    }
-
     /// The app writes these keys itself, so a file it wrote must say nothing about them.
     func testTheConfigScreensOwnSaveOfTheDefaultStateStatesNothing() throws {
         try withWorkspacesRoot { root, _ in
@@ -483,39 +472,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                     ConfigDoctorService.valueRows(profile: "values", config: config,
                                                   workspaceRoot: root), [])
             }
-        }
-    }
-
-    /// The example's comments for the keys nothing reads must say so, not promise behaviour.
-    func testTheExampleSaysEachKeyNothingReadsHasNoEffect() throws {
-        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        var example: URL?
-        for _ in 0..<8 {
-            let candidate = dir.appendingPathComponent("config.example.yaml")
-            if FileManager.default.fileExists(atPath: candidate.path) { example = candidate; break }
-            dir = dir.deletingLastPathComponent()
-        }
-        let url = try XCTUnwrap(example, "config.example.yaml not found above \(#filePath)")
-        let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")
-        let targets: [(section: String, key: String, child: String?)] = [
-            ("thresholds:", "profile_error_critical:", nil),
-        ]
-        func line(_ prefix: String, after start: Int) throws -> Int {
-            try XCTUnwrap(lines[(start + 1)...].firstIndex {
-                $0.trimmingCharacters(in: .whitespaces).hasPrefix(prefix) }, prefix)
-        }
-        for target in targets {
-            let section = try XCTUnwrap(lines.firstIndex { $0 == target.section }, target.section)
-            var at = try line(target.key, after: section)
-            if let child = target.child { at = try line(child, after: at) }
-            var comment: [String] = []
-            var index = at - 1
-            while index >= 0, lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("#") {
-                comment.append(lines[index])
-                index -= 1
-            }
-            XCTAssertTrue(comment.joined(separator: " ").contains("no effect"),
-                          "\(target.section) \(target.key): the comment must say it has no effect")
         }
     }
 

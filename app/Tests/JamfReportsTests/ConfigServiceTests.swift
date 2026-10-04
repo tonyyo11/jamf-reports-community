@@ -511,7 +511,6 @@ final class ConfigServiceTests: XCTestCase {
             warningDiskPercent: "75",
             criticalDiskPercent: "92",
             certWarningDays: "120",
-            profileErrorCritical: "25",
             profileErrorWarning: "5",
             complianceEnabled: true,
             baselineLabel: "CIS Level 1",

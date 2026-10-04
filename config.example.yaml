@@ -790,8 +790,6 @@ thresholds:
 
   # Error count thresholds for the jamf-cli Profile Status sheet. Rows with
   # error counts at or above profile_error_warning are highlighted yellow.
-  # profile_error_critical currently has no effect: nothing reads it.
-  profile_error_critical: 50
   profile_error_warning: 10
 
 
