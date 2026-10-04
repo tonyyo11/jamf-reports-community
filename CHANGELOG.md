@@ -182,6 +182,14 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Settings > Data & Charts names all six per-device commands that "Skip expensive collections"
+  skips (it listed four), and starts with the switch's position ("On: ..." or "Off: ..."), so the
+  text shown with the switch off no longer reads as the opposite of its label. It also says
+  scheduled collects still run them.
+- The Open Source card in Settings no longer says the command-line tool ships independently. It
+  says the app includes its own `jamf-reports` command-line tool, which uses the same config.yaml
+  and report engine, and that jamf-cli is installed separately; the version line is labelled
+  "jamf-cli:".
 - Settings > Sidebar Visibility lists Groups & Searches, so it can be hidden like the other
   screens. The list is built from the sidebar's own groups, so a screen added later gets a switch
   too.
