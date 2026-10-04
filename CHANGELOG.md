@@ -198,6 +198,10 @@ compliance is now one figure everywhere.
 - Extension Attributes counts match their labels. The "Total EAs" tile counted the attributes
   that had results (89) under a caption about definitions, next to a definitions table listing
   147. It is now two tiles, "Defined EAs" and "EAs With Results", and the header gives both.
+- The Overview says what each device count is. The Top Failing Rules card read "across 664 active
+  devices" next to an Active tile of 537; that 664 is the Macs whose compliance results the card
+  read, and it now says "across 664 Macs with results". The security agent detail says "of 665
+  managed Macs".
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

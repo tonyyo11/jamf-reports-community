@@ -1236,7 +1236,7 @@ struct OverviewView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             SectionHeader(title: "Top Failing Rules")
                             Text(failingRulesSubtitle(
-                                baseline: failingRulesLabel, fleetCount: failingRulesMacCount))
+                                baseline: failingRulesLabel, macsWithResults: failingRulesMacCount))
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
@@ -1659,7 +1659,7 @@ struct OverviewView: View {
             HStack(spacing: 12) {
                 StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
                 StatTile(label: "Installed", value: "\(agent.installed)",
-                         sub: fleet > 0 ? "of \(fleet) tracked devices" : "tracked devices")
+                         sub: fleet > 0 ? "of \(fleet) managed Macs" : "managed Macs")
                 StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
             }
             Card(padding: 18) {
@@ -2128,12 +2128,14 @@ func agentNotInstalledLabel(installed: Int, fleetCount: Int) -> String? {
     return "\(gap) not installed"
 }
 
-/// "Top Failing Rules" card subtitle — "<baseline> · across <N> active devices".
-/// `fleetCount <= 0` falls back to the baseline alone rather than
-/// "across 0 active devices".
-func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return baseline }
-    return "\(baseline) · across \(fleetCount) active devices"
+/// "Top Failing Rules" card subtitle — "<baseline> · across <N> Macs with results".
+/// N is the Macs whose results the card read, not the managed or the active count, so it
+/// differs from the other tiles. `macsWithResults <= 0` falls back to the baseline alone
+/// rather than "across 0 Macs with results".
+func failingRulesSubtitle(baseline: String, macsWithResults: Int) -> String {
+    guard macsWithResults > 0 else { return baseline }
+    let macs = "\(macsWithResults) Mac\(macsWithResults == 1 ? "" : "s")"
+    return "\(baseline) · across \(macs) with results"
 }
 
 /// Pure "set up a schedule" coverage rule for `reloadChecklist`. A profile is
