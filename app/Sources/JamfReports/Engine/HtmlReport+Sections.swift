@@ -35,18 +35,10 @@ extension HtmlReport {
         fileVaultPct: Double,
         sipPct: Double,
         firewallPct: Double,
-        deviceCompliance: [[String: Any]],
+        fleet: SecurityFleetCounts?,
         patchStatus: [[String: Any]]
     ) -> String {
         let f = HtmlSectionFormatters.self
-
-        // Compliance summary
-        let complianceTotal = deviceCompliance.count
-        let compliancePassing = deviceCompliance.filter {
-            (asInt($0["failure_count"]) ?? asInt($0["failures_count"]) ?? 0) == 0
-        }.count
-        let compliancePct = complianceTotal > 0
-            ? Double(compliancePassing) / Double(complianceTotal) * 100 : -1.0
 
         // Patch summary: titles below 100%
         let belowFullPatch = patchStatus.filter { item -> Bool in
@@ -67,17 +59,7 @@ extension HtmlReport {
             fleetP = "Fleet device count could not be determined from available snapshots."
         }
 
-        let complianceP: String
-        if complianceTotal > 0 {
-            let pctStr = String(format: "%.0f", compliancePct)
-            complianceP = "\(pctStr)% of devices (\(compliancePassing) of \(complianceTotal)) " +
-                "meet all compliance requirements. " +
-                "\(complianceTotal - compliancePassing) device\(complianceTotal - compliancePassing == 1 ? "" : "s") " +
-                "require remediation."
-        } else {
-            complianceP = "No device compliance data is available in the current snapshot. " +
-                "Run <code>jamf-cli pro collect</code> to populate compliance records."
-        }
+        let complianceP = Self.securityGapSentence(fleet)
 
         let patchP: String
         if !patchStatus.isEmpty {
@@ -96,6 +78,39 @@ extension HtmlReport {
           <p>\(f.escapeHTML(patchP))</p>
         </section>
         """
+    }
+
+    /// The executive summary's security sentence, worded from the counts the summary tiles
+    /// show (`SecurityFleetCounts`, under the workspace's security policy). A gap is a Mac
+    /// measured off for a control at the `fail` level; the counts are per control, so a Mac
+    /// missing two controls appears in both. device-compliance rows carry no failure count,
+    /// so they cannot say how many Macs meet a requirement.
+    static func securityGapSentence(_ fleet: SecurityFleetCounts?) -> String {
+        guard let fleet, fleet.totalDevices > 0 else {
+            return "No security control counts are available in the current snapshot."
+        }
+        let evaluated = SecurityControl.allCases.filter {
+            guard let control = fleet.controls[$0] else { return false }
+            return control.level != .ignore
+        }
+        guard !evaluated.isEmpty else {
+            return "No security control is counted under this workspace's security policy."
+        }
+        let gaps = evaluated.compactMap { control -> String? in
+            let n = fleet.controls[control]?.fail ?? 0
+            guard n > 0 else { return nil }
+            return "\(CompliancePostureService.label(control)) off on \(n) Mac\(n == 1 ? "" : "s")"
+        }
+        var sentence = gaps.isEmpty
+            ? "No Mac has a gap in " + evaluated.map(CompliancePostureService.label)
+                .joined(separator: ", ") + "."
+            : "Security gaps to remediate: " + gaps.joined(separator: ", ") + "."
+        let unreported = evaluated.reduce(0) { $0 + (fleet.controls[$1]?.notReported ?? 0) }
+        if unreported > 0 {
+            sentence += " \(unreported) control value\(unreported == 1 ? " was" : "s were") not "
+                + "reported by Jamf and not counted as gaps."
+        }
+        return sentence
     }
 
     // MARK: - 2. recentFailures
@@ -848,77 +863,62 @@ extension HtmlReport {
 
     // MARK: - 14. agentHealth
 
-    /// Per-security-agent (CrowdStrike, etc.) installed/missing/unknown counts
-    /// from the computers inventory cross-referenced with config.security_agents.
-    func buildAgentHealth(computersInventory: [[String: Any]]) -> String {
+    /// Per-security-agent (CrowdStrike, etc.) installed/missing/unknown counts from the
+    /// `ea-results` snapshot, through `SecurityAgentCoverage` like the Overview card and the
+    /// daily summary's EDR figure. Coverage is over `fleet` Macs, so a Mac with no value
+    /// counts as unknown; `fleet` falls back to the Macs ea-results knows when it is 0.
+    func buildAgentHealth(eaRows: [EAResultRow]?, fleet: Int) -> String {
         let f = HtmlSectionFormatters.self
         let agents = config.securityAgents ?? []
 
+        func section(_ body: String) -> String {
+            """
+            <section class="content-section" id="agent-health">
+              <h2>Security Agent Health</h2>
+              \(body)
+            </section>
+            """
+        }
+
         guard !agents.isEmpty else {
-            return """
-            <section class="content-section" id="agent-health">
-              <h2>Security Agent Health</h2>
-              \(f.emptyState("No security agents configured. Add entries under " +
+            return section(f.emptyState("No security agents configured. Add entries under " +
                 "security_agents in config.yaml to track CrowdStrike Falcon and other agents."))
-            </section>
-            """
+        }
+        guard let eaRows, !eaRows.isEmpty else {
+            return section(f.emptyState("No extension attribute results are available. " +
+                "A collect writes them."))
         }
 
-        guard !computersInventory.isEmpty else {
-            return """
-            <section class="content-section" id="agent-health">
-              <h2>Security Agent Health</h2>
-              \(f.emptyState("No inventory data available. Run jamf-cli pro collect to " +
-                "populate device inventory."))
-            </section>
-            """
-        }
-
+        let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: agents)
+        let total = fleet > 0 ? fleet : MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
         var tableRows: [[String]] = []
         var barCards: [HtmlSectionFormatters.SectionCard] = []
-
-        for agent in agents {
-            var installed = 0
-            var missing = 0
-            var unknown = 0
-
-            for device in computersInventory {
-                let raw = inventoryEAValue(device, column: agent.column)
-                if raw.isEmpty {
-                    unknown += 1
-                } else if raw.lowercased().contains(agent.connectedValue.lowercased()) {
-                    installed += 1
-                } else {
-                    missing += 1
-                }
-            }
-
-            let total = installed + missing + unknown
-            let pct = total > 0 ? Double(installed) / Double(total) * 100 : 0
+        for agent in coverage {
+            // An agent no Mac reports (a column that matches no EA) has no coverage to state.
+            let pct = agent.reporting > 0
+                ? SecurityAgentCoverage.percent(installed: agent.installed, fleet: total) : nil
             tableRows.append([
                 agent.name,
-                "\(installed)",
-                "\(missing)",
-                "\(unknown)",
-                String(format: "%.1f%%", pct),
+                "\(agent.installed)",
+                "\(max(agent.reporting - agent.installed, 0))",
+                "\(max(total - agent.reporting, 0))",
+                pct.map { String(format: "%.1f%%", $0) } ?? "\u{2014}",
             ])
             barCards.append(HtmlSectionFormatters.SectionCard(
                 name: agent.name,
-                value: String(format: "%.0f%%", pct),
-                sublabel: "\(installed) of \(total) installed"
+                value: pct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",
+                sublabel: agent.reporting > 0
+                    ? "\(agent.installed) of \(total) installed"
+                    : "no Mac reports \(agent.column)"
             ))
         }
-
-        return """
-        <section class="content-section" id="agent-health">
-          <h2>Security Agent Health</h2>
-          \(f.renderCardGrid(cards: barCards))
-          \(f.renderTable(
-              headers: ["Agent", "Installed", "Missing", "Unknown", "Coverage"],
-              rows: tableRows
-          ))
-        </section>
-        """
+        return section("""
+            \(f.renderCardGrid(cards: barCards))
+            \(f.renderTable(
+                headers: ["Agent", "Installed", "Missing", "Unknown", "Coverage"],
+                rows: tableRows
+            ))
+            """)
     }
 
     // MARK: - Protect helpers
@@ -1596,7 +1596,9 @@ extension HtmlReport {
         classicPolicies: [[String: Any]] = [],
         classicProfiles: [[String: Any]] = [],
         packages: [[String: Any]] = [],
-        scripts: [[String: Any]] = []
+        scripts: [[String: Any]] = [],
+        buildings: [[String: Any]] = [],
+        departments: [[String: Any]] = []
     ) -> [SectionID: String] {
         let secSummary = security.first { $0["section"] as? String == "summary" }
         let secData = secSummary?["data"] as? [String: Any] ?? [:]
@@ -1606,6 +1608,14 @@ extension HtmlReport {
         let sipPct = computePct(asInt(secData["sip_enabled"]), total: totalDevices)
         let firewallPct = computePct(asInt(secData["firewall_enabled"]),
                                      total: totalDevices)
+
+        // `computers list` carries only buildingId and departmentId; the names come from the
+        // buildings and departments snapshots.
+        let computersInventory = resolvingLocationNames(
+            computersInventory, buildings: buildings, departments: departments)
+        let fleet = securityFleet()
+        let eaRows = (config.securityAgents ?? []).isEmpty ? nil
+            : loadJSONData(kind: "ea-results").flatMap { EAResultRow.decodeSnapshot($0).rows }
 
         // Protect kind dirs (protect-alerts, protect-insights) live under the
         // same jamf-cli data dir every other snapshot uses.
@@ -1617,7 +1627,7 @@ extension HtmlReport {
                 fileVaultPct: fileVaultPct,
                 sipPct: sipPct,
                 firewallPct: firewallPct,
-                deviceCompliance: deviceCompliance,
+                fleet: fleet,
                 patchStatus: patchStatus
             ),
             .recentFailures: buildRecentFailures(
@@ -1642,7 +1652,7 @@ extension HtmlReport {
             ),
             .protectAlerts: buildProtectAlerts(protectDataDir: protectDir),
             .insightsDrift: buildInsightsDrift(protectDataDir: protectDir),
-            .agentHealth: buildAgentHealth(computersInventory: computersInventory),
+            .agentHealth: buildAgentHealth(eaRows: eaRows, fleet: totalDevices),
             .cleanupAnalysis: buildCleanupAnalysis(
                 classicPolicies: classicPolicies,
                 classicProfiles: classicProfiles,

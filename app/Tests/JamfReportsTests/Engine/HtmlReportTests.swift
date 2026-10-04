@@ -400,6 +400,17 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertTrue(html.contains("13 of 100"), "Should show 13 of 100 failing")
     }
 
+    /// jamf-cli's device-compliance rows carry no failure count. Reading the missing count
+    /// as zero put "100% Device Compliance" on a fleet with security gaps.
+    func testComplianceTileAbsentWhenRowsCarryNoFailureCount() {
+        let report = makeReport()
+        let rows: [[String: Any]] = (0..<5).map {
+            ["name": "Test-Mac-\($0)", "serial": "S\($0)", "managed": true, "stale": false,
+             "days_since_contact": "3"]
+        }
+        XCTAssertTrue(report.buildComplianceTile(deviceCompliance: rows).isEmpty)
+    }
+
     func testComplianceTileAbsentWhenSnapshotMissing() {
         let report = makeReport()
         let html = report.buildComplianceTile(deviceCompliance: [])
