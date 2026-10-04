@@ -82,11 +82,13 @@ final class WorkspaceStore {
     /// Per-profile run-in-progress flags to prevent concurrent collection/generation.
     /// Checked by `generateAll`/`collectThenGenerate` before starting.
     /// Note: these keep two GUI runs for one profile apart; a `--tick` run is kept
-    /// apart by the tick lock `CLIBridge.collect` holds for every GUI collect.
+    /// apart by the tick lock `CLIBridge.collect` holds for every GUI collect, and two
+    /// collects in this app by the same hold.
     private var runInProgressFlags: [String: Bool] = [:]
     /// Profiles with a collect in flight in THIS process — Collect now,
-    /// Initialize, Refresh, or an automatic one. A count, not a flag: two
-    /// overlapping manual actions must not clear each other's mark on exit.
+    /// Initialize, Refresh, or an automatic one. Only one runs at a time
+    /// (`isAnyCollectInFlight`); a count, not a flag, still keeps one action's
+    /// exit from clearing another's mark.
     private var collectsInFlight: [String: Int] = [:]
     /// The profile's jamf-cli auth method, for the freshness re-probes. Injectable
     /// so a test runs no `jamf-cli config list`.
@@ -1128,6 +1130,14 @@ final class WorkspaceStore {
     func isCollectInFlight(for profile: String) -> Bool {
         (collectsInFlight[profile] ?? 0) > 0 || isRunInProgress(for: profile)
             || coordinatorIsCollecting(for: profile)
+    }
+
+    /// True while any collect runs in this process, for any profile: one this store marked
+    /// (`beginCollect`, including the automatic ones) or one holding the bridge's lock.
+    /// A manual collect does not start while it is true; a generate run that has not reached
+    /// its collect does not count.
+    var isAnyCollectInFlight: Bool {
+        collectsInFlight.values.contains { $0 > 0 } || CLIBridge.collectRunning
     }
 
     func beginCollect(for profile: String) {

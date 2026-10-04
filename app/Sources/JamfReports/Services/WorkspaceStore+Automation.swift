@@ -545,10 +545,11 @@ extension WorkspaceStore {
         return true
     }
 
-    /// The two overlaps an automatic collect must yield to: (a) a collect
-    /// already running in this process for one of `profiles`, (b) a `--tick`
-    /// process mid-run, which holds the tick lock. Logged, because a deferred
-    /// pass otherwise looks identical to one that never fired.
+    /// The overlaps an automatic collect must yield to: (a) a collect or generate run already
+    /// in progress in this process for one of `profiles`, (b) any other collect running in
+    /// this process, since the bridge runs one at a time and would refuse this one after the
+    /// hour or day was claimed, (c) a `--tick` process mid-run, which holds the tick lock.
+    /// Logged, because a deferred pass otherwise looks identical to one that never fired.
     func automaticCollectMustWait(for profiles: [String]) -> Bool {
         if let busy = profiles.first(where: { isCollectInFlight(for: $0) }) {
             AppLogger.collect.info(
@@ -557,6 +558,11 @@ extension WorkspaceStore {
                 \(busy, privacy: .public)
                 """
             )
+            return true
+        }
+        if isAnyCollectInFlight {
+            AppLogger.collect.info(
+                "Automatic collect deferred: a collect is already running for another profile")
             return true
         }
         if CLIBridge.tickLockHeldElsewhere() {

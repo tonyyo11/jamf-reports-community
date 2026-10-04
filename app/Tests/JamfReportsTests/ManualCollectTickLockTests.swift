@@ -37,6 +37,12 @@ final class ManualCollectTickLockTests: XCTestCase {
         return (store, lock)
     }
 
+    /// Neither the collect nor the lock file is held by this process.
+    private func assertNoHold(file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertFalse(CLIBridge.collectRunning, file: file, line: line)
+        XCTAssertFalse(CLIBridge.holdsTickLock, file: file, line: line)
+    }
+
     private func lockExists(_ lock: TickLock) -> Bool {
         FileManager.default.fileExists(atPath: lock.url.path)
     }
@@ -103,7 +109,7 @@ final class ManualCollectTickLockTests: XCTestCase {
         }
         XCTAssertEqual(seen, "\(getpid()) beat=true")
         XCTAssertFalse(lockExists(lock))
-        XCTAssertEqual(CLIBridge.tickLockHolds, 0)
+        assertNoHold()
         try await assertNoBeatOutlivesTheHold(lock)
     }
 
@@ -118,7 +124,7 @@ final class ManualCollectTickLockTests: XCTestCase {
             XCTAssertEqual(error as? CLIBridgeError, .executableNotFound)
         }
         XCTAssertFalse(lockExists(lock))
-        XCTAssertEqual(CLIBridge.tickLockHolds, 0)
+        assertNoHold()
     }
 
     func testTheLockAndItsBeatEndWhenTheCollectIsCancelled() async throws {
@@ -136,13 +142,14 @@ final class ManualCollectTickLockTests: XCTestCase {
         collect.cancel()
         _ = await collect.result
         XCTAssertFalse(lockExists(lock))
-        XCTAssertEqual(CLIBridge.tickLockHolds, 0)
+        assertNoHold()
         try await assertNoBeatOutlivesTheHold(lock)
     }
 
-    /// Collect now during a running Refresh all: the first to finish must not remove the
-    /// file under the other, or a tick could start beside the one still running.
-    func testOverlappingHoldsShareTheLockUntilTheLastEnds() async throws {
+    /// Collect now during a running Refresh all used to share the lock; two fan-outs against
+    /// one server are what the owner reported, so the second is refused and the first keeps
+    /// its lock and its beat.
+    func testASecondHoldWhileOneRunsIsRefusedAndLeavesTheFirstAlone() async throws {
         let (_, lock) = try makeStore()
         let started = Flag()
         let finish = Flag()
@@ -155,13 +162,24 @@ final class ManualCollectTickLockTests: XCTestCase {
             }
         }
         try await waitUntil { started.isSet }
-        _ = try await CLIBridge.holdingTickLock { () -> Int32 in 0 }
+        let secondRan = Flag()
+        do {
+            _ = try await CLIBridge.holdingTickLock { () -> Int32 in
+                secondRan.set()
+                return 0
+            }
+            XCTFail("the second hold must be refused")
+        } catch {
+            XCTAssertEqual(error as? CLIBridgeError, .collectInProgress)
+        }
+        XCTAssertFalse(secondRan.isSet)
         XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), String(getpid()),
                        "the collect still running keeps the lock")
+        XCTAssertTrue(CLIBridge.collectRunning)
         finish.set()
         _ = await first.result
         XCTAssertFalse(lockExists(lock))
-        XCTAssertEqual(CLIBridge.tickLockHolds, 0)
+        assertNoHold()
     }
 
     /// The tick needs the same file, so when it cannot be written no tick can start beside
@@ -171,13 +189,25 @@ final class ManualCollectTickLockTests: XCTestCase {
         let unwritable = TickLock(url: lock.url.deletingLastPathComponent()
             .appendingPathComponent("missing-\(UUID().uuidString)/tick.lock"))
         CLIBridge.tickLock = { unwritable }
-        let ran = try await CLIBridge.holdingTickLock { () -> Bool in true }
+        let ran = try await CLIBridge.holdingTickLock { () -> Bool in
+            let ranInside = await CLIBridge.collectRunning
+            let lockHeld = await CLIBridge.holdsTickLock
+            XCTAssertFalse(lockHeld, "there is no lock file to hold")
+            do {
+                _ = try await CLIBridge.holdingTickLock { () -> Bool in true }
+                XCTFail("a second collect must be refused without the file too")
+            } catch {
+                XCTAssertEqual(error as? CLIBridgeError, .collectInProgress)
+            }
+            return ranInside
+        }
         XCTAssertTrue(ran)
-        XCTAssertEqual(CLIBridge.tickLockHolds, 0)
+        assertNoHold()
     }
 
     /// While a GUI collect holds the lock, the app's own automatic collects must not read it
-    /// as another process: only `isCollectInFlight` stands them down.
+    /// as another process: `isCollectInFlight` and `isAnyCollectInFlight` stand them down, and
+    /// the bridge runs one collect at a time, so a profile that is not collecting waits too.
     func testThisProcesssHoldIsNotAnotherProcesss() async throws {
         let (store, _) = try makeStore()
         let seen = Recorder()
@@ -193,7 +223,7 @@ final class ManualCollectTickLockTests: XCTestCase {
             }
         }
         XCTAssertEqual(seen.values, [
-            "elsewhere=false", "other profile waits=false", "own profile waits=true",
+            "elsewhere=false", "other profile waits=true", "own profile waits=true",
         ])
     }
 
@@ -280,7 +310,7 @@ final class ManualCollectTickLockTests: XCTestCase {
             }
         }
         XCTAssertEqual(lines.values, [])
-        XCTAssertEqual(CLIBridge.tickLockHolds, 0)
+        assertNoHold()
     }
 
     /// Overview's Generate and Trends' Archive now: the error they toast is the refusal.

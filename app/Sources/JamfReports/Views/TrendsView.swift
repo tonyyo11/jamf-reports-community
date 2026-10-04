@@ -1445,14 +1445,15 @@ struct TrendsView: View {
             isArchiving = false
             workspaceStore.globalStatus = nil
             // The bridge logs a refusal itself, as a notice.
-            if (error as? CLIBridgeError) != .tickLockHeld {
+            if !CLIBridgeError.isCollectRefusal(error) {
                 AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
             }
             workspaceStore.toast = Self.archiveFailureToast(error)
         }
     }
 
-    /// A scheduled run holding the tick lock is a refusal, shown as information.
+    /// A scheduled run holding the tick lock, or another collect running, is a refusal, shown
+    /// as information.
     nonisolated static func archiveFailureToast(_ error: Error) -> Toast {
         WorkspaceStore.collectFailureToast(error, operation: "Archive")
     }
