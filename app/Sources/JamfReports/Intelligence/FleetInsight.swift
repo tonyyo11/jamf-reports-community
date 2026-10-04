@@ -20,6 +20,29 @@ struct InsightBullet: Sendable, Equatable {
 struct FleetInsight: Sendable, Equatable {
     var headline: String
     var bullets: [InsightBullet]
+
+    /// The insight with its last bullet cut back to its last complete sentence, or dropped when
+    /// it has none. A model that runs out of room stops mid-sentence without an error, and the
+    /// half sentence would read as a finished finding. Earlier bullets are left alone: the
+    /// model moved on from them.
+    func endingOnSentence() -> FleetInsight {
+        guard let last = bullets.last else { return self }
+        var kept = bullets
+        if let text = Self.completeSentences(of: last.text) {
+            kept[kept.count - 1].text = text
+        } else {
+            kept.removeLast()
+        }
+        return FleetInsight(headline: headline, bullets: kept)
+    }
+
+    /// `text` up to its last full stop, question mark or exclamation mark that ends a
+    /// sentence (a "." inside "98.5%" does not), closing quotes and brackets included.
+    static func completeSentences(of text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let end = trimmed.matches(of: #/[.!?]["')\]”’]*(?=\s|$)/#).last?.range.upperBound
+        return end.map { String(trimmed[..<$0]) }
+    }
 }
 
 // MARK: - Pure input builder (ungated)
