@@ -934,6 +934,46 @@ final class ConfigDoctorServiceTests: XCTestCase {
         }
     }
 
+    /// Keys 2.9 stopped reading: an older build wrote some of them itself. The file still loads,
+    /// each shows up once as a warning (never a failure), and no value is shown.
+    func testKeysTheAppNoLongerReadsLoadAndAreReportedAsUnknownWarnings() throws {
+        let yaml = """
+        jamf_cli:
+          enabled: false
+          data_dir: jamf-cli-data
+          allow_live_overview: false
+        platform:
+          enabled: true
+          compliance_benchmarks: [CIS]
+        thresholds:
+          checkin_overdue_days: 14
+          profile_error_critical: 80
+        charts:
+          os_adoption:
+            enabled: false
+            per_major_charts: true
+        branding:
+          accent_color: "#112233"
+          accent_dark: "#445566"
+        """
+        let config = try makeConfig(yaml)
+        XCTAssertEqual(config.thresholds?.resolvedCheckinOverdueDays, 14)
+        XCTAssertEqual(config.branding?.accentColor, "#112233")
+        XCTAssertEqual(config.platform?.benchmarkTitles, ["CIS"])
+
+        try withWorkspace(yaml) { profile, _ in
+            let rows = ConfigDoctorService.unknownKeyRows(profile: profile)
+            XCTAssertEqual(rows.map(\.title), [
+                "branding.accent_dark", "charts.os_adoption.enabled",
+                "jamf_cli.allow_live_overview", "jamf_cli.enabled", "platform.enabled",
+                "thresholds.profile_error_critical",
+            ])
+            XCTAssertEqual(Set(rows.map(\.severity)), [.warn])
+            XCTAssertEqual(Set(rows.map(\.detail)), ["The app does not read this key."])
+            XCTAssertFalse(rows.map(\.detail).joined().contains("445566"))
+        }
+    }
+
     func testUnknownKeyRowsStillNameTheTypoWhenTheFileDoesNotDecode() throws {
         let yaml = """
         custom_eas:

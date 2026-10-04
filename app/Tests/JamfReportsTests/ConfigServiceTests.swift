@@ -84,6 +84,49 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertEqual(jamfCLI.value(for: "enabled"), .scalar(.bool(true)))
     }
 
+    /// Keys the Config screen used to edit and no longer reads stay in the file across a save.
+    func testKeysTheAppNoLongerReadsSurviveASave() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "retired-keys-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            thresholds:
+              stale_device_days: 45
+              profile_error_critical: 80
+            platform:
+              enabled: true
+              compliance_benchmarks:
+                - CIS
+            branding:
+              org_name: Example Org
+              accent_color: "#112233"
+              accent_dark: "#445566"
+            jamf_cli:
+              data_dir: existing-data
+              allow_live_overview: false
+            """,
+            profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        var state = loaded.state
+        state.staleDeviceDays = "61"
+        state.accentColor = "#778899"
+        _ = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
+
+        let saved = try XCTUnwrap(
+            YAMLCodec.decode(savedText(profile: profile, root: root)).root.mapping)
+        func value(_ block: String, _ key: String) -> YAMLCodec.YAMLValue? {
+            saved.value(for: block)?.mapping?.value(for: key)
+        }
+        XCTAssertEqual(value("branding", "accent_dark"), .scalar(.string("#445566")))
+        XCTAssertEqual(value("thresholds", "profile_error_critical"), .scalar(.int(80)))
+        XCTAssertEqual(value("platform", "enabled"), .scalar(.bool(true)))
+        XCTAssertEqual(value("jamf_cli", "allow_live_overview"), .scalar(.bool(false)))
+        XCTAssertEqual(value("branding", "accent_color"), .scalar(.string("#778899")))
+        XCTAssertEqual(value("thresholds", "stale_device_days"), .scalar(.int(61)))
+    }
+
     /// The editor models a few keys per entry; any other key typed on an entry rides along with
     /// it. A deleted entry takes its keys with it, and a new one has none.
     func testEntryKeysTheEditorDoesNotModelSurviveASave() throws {
