@@ -227,6 +227,11 @@ compliance is now one figure everywhere.
   it the same way. The score steps on the day the new definition starts: earlier days keep their
   recorded value, Trends and the period report say so, and a "drops more than" alert on the score
   skips the comparison across that day.
+- A second collect on the same day updates that day's trend point. Before, the day's first
+  summary stood for the rest of the day, so Overview and Trends showed the morning's numbers
+  after an afternoon collect fetched newer ones. A collect that fetches new data now rebuilds
+  the day's summary from the newest snapshots, keeping any value the morning had that the later
+  run could not measure; one that fetches nothing leaves it alone.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

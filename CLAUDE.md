@@ -358,10 +358,14 @@ Trends advanced. A collect that attempted sources but landed none
 (`nothingLanded`, judged before the device scan adds its kinds) writes no summary
 at all, with the reason "no source landed this run", rather than dating cached
 numbers today. A later same-day collect
-that lands a source today's summary recorded as `cache` or `absent` rebuilds
-it (`freshSummaryIsBetter`; so does one that can now measure the EDR figure, `crowdstrikePct`, which the day's
-first summary, written by an older build, lacks), and `mergedSources` keeps `live` for sources the
-earlier run collected. `CollectHonestyWatcher.incomplete` is true after any
+that lands at least one of the digest's input sources (`collectionSources` has a `live`
+entry) rebuilds today's summary from the newest snapshots (`freshSummaryIsBetter`); one that
+lands none leaves the file untouched unless it offers a data upgrade (real mSCP for the proxy,
+bands, a measured stale or mobile count, the EDR figure). The rebuild keeps every value the
+earlier summary had that this run cannot measure (`DailySummary.filling(from:)`: a figure moves
+with its basis, and real mSCP compliance is never replaced by the proxy), and `mergedSources`
+keeps `live` for sources the earlier run collected, and the earlier status for a source this
+run cannot read. `CollectHonestyWatcher.incomplete` is true after any
 `[partial]` line except the stand-down marker, a report's sheet-failure marker
 and a device scan that landed with a few devices missing
 (`deviceScanGapsMarkerSuffix`, whose kind landed and whose retry would find the
@@ -855,11 +859,12 @@ Re-save the schedule from the GUI to migrate.
 
 `ReportEngine.collect` (static) now emits `summary.json` at the end of the
 collection loop in addition to `ReportEngine.generate` — that's how
-`.snapshotOnly` updates Trends without producing a workbook. The
-first-run-of-day skip from PR-18 (ReportEngine.swift:287-299) still
-applies: if `summary_<today>.json` already exists with the three required
-keys, it's left in place and subsequent collects log
-`[info] summary_<today>.json already exists`.
+`.snapshotOnly` updates Trends without producing a workbook. If
+`summary_<today>.json` already exists with the three required keys, a collect that landed
+none of the digest's input sources leaves it in place and logs
+`[info] summary_<today>.json already exists`; one that landed at least one rebuilds it and
+logs `[info] summary_<today>.json rebuilt with fresher data` (see `freshSummaryIsBetter`,
+"Collect honesty").
 
 #### jamf-cli exit codes
 

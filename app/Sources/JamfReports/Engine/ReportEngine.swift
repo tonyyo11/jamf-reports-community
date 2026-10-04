@@ -379,10 +379,12 @@ struct ReportEngine: Sendable {
 
     /// Write `summary_YYYY-MM-DD.json` to `summariesDir` from cached jamf-cli snapshots.
     ///
-    /// Skips if a valid same-day file already exists (first run of day wins, matching Python
-    /// default non-force behavior). compliancePct is the control-gap proxy (flagged via
-    /// complianceIsProxy) when per-device security data exists; crowdstrikePct still requires
-    /// CSV/EA data and is omitted so TrendStore skips it rather than rendering a flat 0% line.
+    /// With a valid same-day file already on disk, a run that landed none of the digest's input
+    /// sources leaves it untouched; one that landed at least one rebuilds it from the newest
+    /// snapshots, keeping any value this run cannot measure (`freshSummaryIsBetter`,
+    /// `DailySummary.filling`). compliancePct is the control-gap proxy (flagged via
+    /// complianceIsProxy) when per-device security data exists, and the primary baseline's
+    /// real pass share when `compliance.baselines` is configured.
     ///
     /// - Parameters:
     ///   - summariesDir: Directory to write the summary file into.
@@ -417,15 +419,17 @@ struct ReportEngine: Sendable {
            let existingData = try? Data(contentsOf: summaryFile),
            let obj = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
            obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-            // Same-day summary is valid. Check whether a fresh build would be strictly
-            // better (proxy→real mSCP upgrade, or mscpBands newly populated). If not,
-            // keep the existing file so its mtime reflects the first run.
-            if var fresh = buildSummaryFromCLI(
+            // Same-day summary is valid. A run that landed a source today rebuilds it from the
+            // newest snapshots; a run that landed nothing, and had no upgrade to offer, keeps
+            // the existing file. The rebuild keeps every value the existing summary had that
+            // this run cannot measure, so nothing goes from known to nil.
+            if let built = buildSummaryFromCLI(
                 date: today, provenance: provenance, liveKinds: liveKinds),
                let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
-               Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
+               Self.freshSummaryIsBetter(existing: existing, fresh: built) {
+                var fresh = built.filling(from: existing)
                 fresh.collectionSources = Self.mergedSources(
-                    existing: existing.collectionSources, fresh: fresh.collectionSources)
+                    existing: existing.collectionSources, fresh: built.collectionSources)
                 let upgradeMsg = "[info] summary_\(today).json rebuilt with fresher data"
                 AppLogger.collect.info("\(upgradeMsg, privacy: .public)")
                 onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
@@ -458,10 +462,13 @@ struct ReportEngine: Sendable {
 
     // MARK: - Summary upgrade helpers
 
-    /// Returns true when `fresh` is strictly better than `existing` — meaning it
-    /// should overwrite a same-day summary that would otherwise be kept.
+    /// Returns true when `fresh` should overwrite a same-day summary that would otherwise be
+    /// kept.
     ///
-    /// "Better" means at least one of:
+    /// Any run that landed at least one of the digest's input sources (`fresh.collectionSources`
+    /// has a `live` entry) rebuilds today's summary: its numbers are newer than the morning's.
+    /// A run that landed none keeps the file unless it offers a data upgrade, meaning at least
+    /// one of:
     /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
     ///   (real mSCP data is now available where before only the 4-control proxy was), OR
     /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`, OR
@@ -495,25 +502,26 @@ struct ReportEngine: Sendable {
         // began recording it must not leave that day's summary, and the Overview's EDR score
         // card reading it, empty. Upgrade only; a recorded figure is never replaced by nil.
         if existing.crowdstrikePct == nil, fresh.crowdstrikePct != nil { return true }
-        // A later run landed a source the existing point took from cache or lacked.
-        if let freshSources = fresh.collectionSources,
-           freshSources.contains(where: {
-               $0.value == "live" && existing.collectionSources?[$0.key] != "live"
-           }) {
-            return true
-        }
+        // A later run landed a source: its numbers are newer, whatever the morning's said.
+        if fresh.collectionSources?.values.contains("live") == true { return true }
         return false
     }
 
     /// A rebuilt same-day point keeps "live" for a source an earlier run landed and this run
-    /// read back from cache.
+    /// read back from cache, and keeps an earlier run's status for a source this run cannot
+    /// read at all, since the summary's values from that source come from the earlier run
+    /// (`DailySummary.filling`).
     static func mergedSources(
         existing: [String: String]?, fresh: [String: String]?
     ) -> [String: String]? {
         guard let fresh else { return existing }
         guard let existing else { return fresh }
         return fresh.merging(existing) { freshValue, existingValue in
-            freshValue == "cache" && existingValue == "live" ? "live" : freshValue
+            switch (freshValue, existingValue) {
+            case ("cache", "live"): return "live"
+            case ("absent", "live"), ("absent", "cache"): return existingValue
+            default: return freshValue
+            }
         }
     }
 

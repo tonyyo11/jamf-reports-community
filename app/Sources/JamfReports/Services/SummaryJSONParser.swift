@@ -160,6 +160,56 @@ struct DailySummary: Codable, Identifiable, Sendable {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
     }
 
+    /// This summary with every value it lacks taken from `older`, the same day's earlier
+    /// summary: a rebuild from the newest snapshots must not turn a value known this morning
+    /// into nil because this run did not fetch its source. Values that belong together move
+    /// together (a figure and its basis; the compliance figure, its bands and its proxy flag),
+    /// and real mSCP compliance is never replaced by the control-gap proxy. A value this
+    /// summary has always wins, and so do `date`, `totalDevices` and `source`;
+    /// `collectionSources` is left to the caller (`ReportEngine.mergedSources`).
+    func filling(from older: DailySummary) -> DailySummary {
+        let olderIsReal = older.complianceIsProxy == false && complianceIsProxy != false
+        let olderComplianceWins = older.compliancePct != nil
+            && (compliancePct == nil || olderIsReal)
+        let patchFromOlder = patchPct == nil
+        let scoreFromOlder = securityScore == nil
+        return DailySummary(
+            date: date,
+            totalDevices: totalDevices,
+            fileVaultPct: fileVaultPct ?? older.fileVaultPct,
+            compliancePct: olderComplianceWins ? older.compliancePct : compliancePct,
+            staleCount: staleCount ?? older.staleCount,
+            osCurrentPct: osCurrentPct ?? older.osCurrentPct,
+            crowdstrikePct: crowdstrikePct ?? older.crowdstrikePct,
+            patchPct: patchFromOlder ? older.patchPct : patchPct,
+            source: source,
+            provenance: provenance ?? older.provenance,
+            sipPct: sipPct ?? older.sipPct,
+            firewallPct: firewallPct ?? older.firewallPct,
+            gatekeeperPct: gatekeeperPct ?? older.gatekeeperPct,
+            secureBootPct: secureBootPct ?? older.secureBootPct,
+            bootstrapPct: bootstrapPct ?? older.bootstrapPct,
+            xprotectPct: xprotectPct ?? older.xprotectPct,
+            cvePct: cvePct ?? older.cvePct,
+            mscpScorePct: olderComplianceWins
+                ? older.mscpScorePct : mscpScorePct ?? older.mscpScorePct,
+            securityScore: scoreFromOlder ? older.securityScore : securityScore,
+            actionItemsP0: actionItemsP0 ?? older.actionItemsP0,
+            actionItemsP1: actionItemsP1 ?? older.actionItemsP1,
+            actionItemsP2: actionItemsP2 ?? older.actionItemsP2,
+            noBaselineActive: noBaselineActive ?? older.noBaselineActive,
+            complianceIsProxy: olderComplianceWins ? older.complianceIsProxy : complianceIsProxy,
+            mscpBands: olderComplianceWins ? older.mscpBands : mscpBands ?? older.mscpBands,
+            mscpBandColumns: olderComplianceWins
+                ? older.mscpBandColumns : mscpBandColumns ?? older.mscpBandColumns,
+            collectionSources: collectionSources,
+            mobileDeviceCount: mobileDeviceCount ?? older.mobileDeviceCount,
+            collectedByHost: collectedByHost ?? older.collectedByHost,
+            patchPctBasis: patchFromOlder ? older.patchPctBasis : patchPctBasis,
+            securityScoreBasis: scoreFromOlder ? older.securityScoreBasis : securityScoreBasis
+        )
+    }
+
     init(
         date: String,
         totalDevices: Int,

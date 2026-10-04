@@ -737,10 +737,21 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
     }
 
-    func testFreshSummaryIsBetter_sameLiveSources_returnsFalse() {
+    /// Any run that landed a source rebuilds the day, even one that landed the same sources
+    /// as the morning's: its numbers are newer.
+    func testFreshSummaryIsBetter_sameLiveSources_returnsTrue() {
         let sources = ["security": "live", "patch-status": "cache"]
         let existing = makeSummary(
             complianceIsProxy: false, hasBands: true, collectionSources: sources)
+        let fresh = makeSummary(
+            complianceIsProxy: false, hasBands: true, collectionSources: sources)
+        XCTAssertTrue(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
+    }
+
+    func testFreshSummaryIsBetter_nothingLanded_returnsFalse() {
+        let sources = ["security": "cache", "patch-status": "absent"]
+        let existing = makeSummary(
+            complianceIsProxy: false, hasBands: true, collectionSources: ["security": "live"])
         let fresh = makeSummary(
             complianceIsProxy: false, hasBands: true, collectionSources: sources)
         XCTAssertFalse(ReportEngine.freshSummaryIsBetter(existing: existing, fresh: fresh))
