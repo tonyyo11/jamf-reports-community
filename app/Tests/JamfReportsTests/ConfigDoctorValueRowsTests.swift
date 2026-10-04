@@ -449,13 +449,12 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         thresholds: {profile_error_critical: 80}
         charts:
           os_adoption: {enabled: false}
-          compliance_trend: {enabled: false}
         branding: {accent_dark: "#112233"}
         """)
         XCTAssertEqual(Set(titles(found)), [
             "jamf_cli.allow_live_overview", "platform.enabled",
             "thresholds.profile_error_critical",
-            "charts.os_adoption.enabled", "charts.compliance_trend.enabled",
+            "charts.os_adoption.enabled",
             "branding.accent_dark",
         ])
         XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
@@ -519,7 +518,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let targets: [(section: String, key: String, child: String?)] = [
             ("jamf_cli:", "enabled:", nil), ("jamf_cli:", "allow_live_overview:", nil),
             ("thresholds:", "profile_error_critical:", nil),
-            ("charts:", "os_adoption:", "enabled:"), ("charts:", "compliance_trend:", "enabled:"),
+            ("charts:", "os_adoption:", "enabled:"),
             ("branding:", "accent_dark:", nil),
         ]
         func line(_ prefix: String, after start: Int) throws -> Int {

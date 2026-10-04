@@ -1027,7 +1027,8 @@ struct ReportEngine: Sendable {
     /// Respects:
     /// - `charts.os_adoption.per_major_charts` — adds one series per major OS version
     ///   (using `ChartPalette.majorVersionColors`).
-    /// - `charts.compliance_trend.bands` — uses band labels/colors for compliance stacked area.
+    /// - `charts.compliance_trend.bands` — uses band labels/colors for compliance stacked area;
+    ///   `charts.compliance_trend.enabled: false` turns the chart off.
     /// - `charts.device_state_trend.enabled` — renders managed/stale trend line chart.
     /// - `compliance.baselines` — when configured, appends mSCP/STIG compliance donut(s) and
     ///   a band trend stackplot even when the summaries dir is empty (first-run case).
@@ -1134,7 +1135,8 @@ struct ReportEngine: Sendable {
             }
 
             // --- Compliance trend (stacked area with configurable bands) ---
-            if let bands = config.charts?.complianceTrend?.bands, !bands.isEmpty {
+            if let trend = config.charts?.complianceTrend, trend.isEnabled,
+               let bands = trend.bands, !bands.isEmpty {
                 let bandSeries: [ChartSeries] = bands.enumerated().compactMap { (idx, band) in
                     let color = cgColorFromHex(band.color) ?? ChartPalette.color(for: idx)
                     let pts = summaries.compactMap { s -> (date: Date, value: Double)? in

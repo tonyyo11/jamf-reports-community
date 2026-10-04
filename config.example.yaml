@@ -913,7 +913,8 @@ charts:
   # Compliance trend: stacked area chart bucketing devices by failure count.
   # Requires compliance.failures_count_column to be configured.
   compliance_trend:
-    # Currently has no effect: nothing reads this key. Only the bands below are read.
+    # Set to false to leave this chart out of the Charts tab. The bands below
+    # are read either way.
     enabled: true
     # Failure count bands — labels, thresholds, and colors.
     bands:

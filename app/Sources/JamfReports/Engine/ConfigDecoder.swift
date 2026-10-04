@@ -687,7 +687,7 @@ struct ComplianceTrendConfig: Decodable, Sendable {
     var enabled: Bool?
     var bands: [ComplianceBandConfig]?
 
-    /// As `OSAdoptionConfig.isEnabled`: the documented default, read by nothing else.
+    /// Absent means on, as `config.example.yaml` documents; `false` turns the chart off.
     var isEnabled: Bool { enabled ?? true }
 
     enum CodingKeys: String, CodingKey, CaseIterable {

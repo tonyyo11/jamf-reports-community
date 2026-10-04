@@ -160,6 +160,46 @@ final class ChartWiringTests: XCTestCase {
         engine.renderChartSheet(workbook: Workbook(), summariesDir: tmp)
     }
 
+    // MARK: - complianceTrend.enabled
+
+    func testComplianceTrendIsDrawnWhenEnabledIsTrueOrAbsent() throws {
+        for enabled in [true, nil] as [Bool?] {
+            XCTAssertTrue(
+                try chartImages(complianceTrendEnabled: enabled).contains("compliance_bands.png"),
+                "enabled: \(String(describing: enabled)) must draw the compliance trend")
+        }
+    }
+
+    func testComplianceTrendIsLeftOutWhenEnabledIsFalse() throws {
+        let images = try chartImages(complianceTrendEnabled: false)
+        XCTAssertFalse(images.contains("compliance_bands.png"))
+        XCTAssertTrue(images.contains("fleet_trend.png"), "the rest of the Charts tab stays")
+    }
+
+    /// File names of the images `renderChartSheet` embeds for two summaries whose compliance
+    /// percentage falls in the one configured band.
+    private func chartImages(complianceTrendEnabled: Bool?) throws -> [String] {
+        let tmp = try tempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        try writeSummary(makeSummary(date: "2026-01-01", compliancePct: 0), to: tmp)
+        try writeSummary(makeSummary(date: "2026-02-01", compliancePct: 0), to: tmp)
+
+        var config = ReportConfig()
+        var charts = ChartsConfig()
+        charts.complianceTrend = ComplianceTrendConfig(
+            enabled: complianceTrendEnabled,
+            bands: [ComplianceBandConfig(label: "Pass", minFailures: 0, maxFailures: 0,
+                                          color: "#4472C4")]
+        )
+        config.charts = charts
+
+        let workbook = Workbook()
+        ReportEngine(config: config, dataDir: tmp)
+            .renderChartSheet(workbook: workbook, summariesDir: tmp)
+        let sheet = try XCTUnwrap(workbook.sheet(named: ReportEngine.chartsSheetName))
+        return sheet.imageEmbeds.map(\.filename)
+    }
+
     // MARK: - complianceTrend.bands skipped when summaries have no compliancePct
 
     func testComplianceBandsSkippedWhenNoCompliancePct() throws {

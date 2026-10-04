@@ -332,9 +332,6 @@ extension ConfigDoctorService {
                      from: limits.resolvedProfileErrorCritical), nil),
             ("charts.os_adoption.enabled",
              differs(config.charts?.osAdoption?.enabled, from: OSAdoptionConfig().isEnabled), nil),
-            ("charts.compliance_trend.enabled",
-             differs(config.charts?.complianceTrend?.enabled,
-                     from: ComplianceTrendConfig().isEnabled), nil),
             ("branding.accent_dark",
              differs(config.branding?.accentDark, from: ConfigState.defaultState.accentDark), nil),
         ]
