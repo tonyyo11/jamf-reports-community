@@ -232,19 +232,19 @@ final class EngineCorrectnessTests: XCTestCase {
     // MARK: - Sanitized accent color helpers
 
     func testSanitizedAccentColorAcceptsValidHex() {
-        let config = makeBrandingConfig(accentColor: "#2D5EA2", accentDark: "#4A7EC8")
+        let config = makeBrandingConfig(accentColor: "#2D5EA2")
         XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2")
     }
 
     func testSanitizedAccentColorFallsBackOnInvalidInput() {
         for typed in ["not-a-color", "#12345", "#2D5EA2FF", "#GGHHII", "2D5EA2"] {
-            let config = makeBrandingConfig(accentColor: typed, accentDark: nil)
+            let config = makeBrandingConfig(accentColor: typed)
             XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2", typed)
         }
     }
 
     func testSanitizedAccentColorAcceptsShortHex() {
-        let config = makeBrandingConfig(accentColor: "#ABC", accentDark: "#123")
+        let config = makeBrandingConfig(accentColor: "#ABC")
         XCTAssertEqual(config.sanitizedAccentColor, "#ABC")
     }
 
@@ -280,11 +280,10 @@ final class EngineCorrectnessTests: XCTestCase {
         return data
     }
 
-    private func makeBrandingConfig(accentColor: String?, accentDark: String?) -> BrandingConfig {
+    private func makeBrandingConfig(accentColor: String?) -> BrandingConfig {
         // Decode from YAML to exercise the real Decodable path.
         var yaml = "branding:\n"
         if let c = accentColor { yaml += "  accent_color: \"\(c)\"\n" }
-        if let d = accentDark { yaml += "  accent_dark: \"\(d)\"\n" }
         let config = try? ConfigDecoder.loadFromString(yaml)
         return config?.branding ?? BrandingConfig()
     }

@@ -128,7 +128,6 @@ final class ConfigFileSectionsTests: XCTestCase {
           org_name: Example Org
           logo_path: logo.png
           accent_color: "#112233"
-          accent_dark: "#001122"
         charts:
           save_png: true
           os_adoption:

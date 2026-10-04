@@ -342,10 +342,6 @@ branding:
   # Write it as #RRGGBB or #RGB; both reports use the default for anything else.
   accent_color: "#2D5EA2"
 
-  # This key currently has no effect: no report reads it. The Config screen
-  # still edits it.  Default: #004165
-  accent_dark:  "#004165"
-
 
 # =============================================================================
 # HTML REPORT

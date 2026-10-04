@@ -711,13 +711,11 @@ struct BrandingConfig: Decodable, Sendable {
     var orgName: String?
     var logoPath: String?
     var accentColor: String?
-    var accentDark: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case orgName = "org_name"
         case logoPath = "logo_path"
         case accentColor = "accent_color"
-        case accentDark = "accent_dark"
     }
 
     var resolvedOrgName: String { orgName?.trimmingCharacters(in: .whitespaces) ?? "" }

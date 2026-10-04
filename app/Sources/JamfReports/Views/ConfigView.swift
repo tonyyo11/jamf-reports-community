@@ -1385,12 +1385,8 @@ private struct OutputTab: View {
                             FieldLabel(label: "Logo path")
                             PNPTextField(value: $ws.configState.logoPath, mono: true)
                         }
-                        HStack(spacing: 8) {
-                            colorField(label: "Accent color", value: $ws.configState.accentColor,
-                                       hexColor: Theme.Colors.gold)
-                            colorField(label: "Accent dark", value: $ws.configState.accentDark,
-                                       hexColor: Theme.Colors.goldDim)
-                        }
+                        colorField(label: "Accent color", value: $ws.configState.accentColor,
+                                   hexColor: Theme.Colors.gold)
                     }
                 }
             }

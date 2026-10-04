@@ -16,7 +16,7 @@ final class ConfigEditedKeysTests: XCTestCase {
             ["custom_eas", "current_versions"], ["custom_eas", "warning_days"],
             ["thresholds", "stale_device_days"], ["compliance", "baseline_label"],
             ["platform", "compliance_benchmarks"], ["output", "keep_latest_runs"],
-            ["jamf_cli", "require_manifest"], ["branding", "accent_dark"],
+            ["jamf_cli", "require_manifest"], ["branding", "accent_color"],
             ["charts", "save_png"], ["charts", "os_adoption", "per_major_charts"],
             ["notify", "enabled"], ["notify", "url"], ["notify", "detail"],
             ["ai", "enabled"], ["ai", "tier"], ["ai", "reasoning_level"],

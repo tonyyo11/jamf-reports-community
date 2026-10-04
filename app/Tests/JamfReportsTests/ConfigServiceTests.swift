@@ -528,8 +528,7 @@ final class ConfigServiceTests: XCTestCase {
             jamfCLIRequireManifest: true,
             orgName: "Example Org",
             logoPath: "/tmp/example-logo.png",
-            accentColor: "#112233",
-            accentDark: "#445566"
+            accentColor: "#112233"
         )
     }
 

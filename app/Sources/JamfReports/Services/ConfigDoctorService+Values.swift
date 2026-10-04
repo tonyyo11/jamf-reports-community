@@ -326,8 +326,6 @@ extension ConfigDoctorService {
             ("thresholds.profile_error_critical",
              differs(config.thresholds?.profileErrorCritical,
                      from: limits.resolvedProfileErrorCritical), nil),
-            ("branding.accent_dark",
-             differs(config.branding?.accentDark, from: ConfigState.defaultState.accentDark), nil),
         ]
         return keys.filter(\.differs).map { key, _, note in
             valueRow(key, "This key currently has no effect." + (note ?? ""),

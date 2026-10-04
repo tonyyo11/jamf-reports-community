@@ -447,10 +447,9 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         platform: {enabled: true}
         thresholds: {profile_error_critical: 80}
         charts:
-        branding: {accent_dark: "#112233"}
         """)
         XCTAssertEqual(Set(titles(found)), [
-            "platform.enabled", "thresholds.profile_error_critical", "branding.accent_dark",
+            "platform.enabled", "thresholds.profile_error_critical",
         ])
         XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
         XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
@@ -502,7 +501,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")
         let targets: [(section: String, key: String, child: String?)] = [
             ("thresholds:", "profile_error_critical:", nil),
-            ("branding:", "accent_dark:", nil),
         ]
         func line(_ prefix: String, after start: Int) throws -> Int {
             try XCTUnwrap(lines[(start + 1)...].firstIndex {

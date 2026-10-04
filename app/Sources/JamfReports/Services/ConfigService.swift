@@ -60,7 +60,6 @@ struct ConfigState: Equatable, Sendable {
     var orgName: String
     var logoPath: String
     var accentColor: String
-    var accentDark: String
 
     /// The columns the Config screen has always listed. Each is written to config.yaml on
     /// every save, an empty one as `key: ""`.
@@ -156,8 +155,7 @@ struct ConfigState: Equatable, Sendable {
         jamfCLIRequireManifest: false,
         orgName: "",
         logoPath: "",
-        accentColor: "#2D5EA2",
-        accentDark: "#004165"
+        accentColor: "#2D5EA2"
     )
 }
 
@@ -618,7 +616,6 @@ enum ConfigService {
             state.orgName = string(branding, "org_name")
             state.logoPath = string(branding, "logo_path")
             state.accentColor = string(branding, "accent_color", fallback: state.accentColor)
-            state.accentDark = string(branding, "accent_dark", fallback: state.accentDark)
         }
 
         return state
@@ -696,7 +693,6 @@ enum ConfigService {
         branding.set("org_name", value: scalar(state.orgName))
         branding.set("logo_path", value: scalar(state.logoPath))
         branding.set("accent_color", value: scalar(state.accentColor))
-        branding.set("accent_dark", value: scalar(state.accentDark))
         root.set("branding", value: .mapping(branding))
 
         document.root = .mapping(root)
