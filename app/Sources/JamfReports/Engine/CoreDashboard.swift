@@ -1159,13 +1159,12 @@ struct CoreDashboard: Sendable {
     // Source: device-compliance rows (fallback path; no native checkin-status in fixtures).
 
     func writeCheckinHealth() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else {
+        guard let items = loadLatestTyped(names: ["device-compliance", "device_compliance"],
+                                          as: [DeviceComplianceRow].self), !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
-        let threshold = config.thresholds?.resolvedStaleDays ?? 7
+        let threshold = config.thresholds?.resolvedCheckinOverdueDays ?? 7
         let ws = workbook.addSheet("Check-in Health")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Check-in Health"),
@@ -1177,7 +1176,10 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 18)
 
         let total = items.count
-        let overdue = items.filter { asBool($0["stale"]) == true }.count
+        // "Overdue (>N days)": isStale(atDays:) is >=, so a Mac at exactly N days is still
+        // current. A row with no day count falls back to jamf-cli's own `stale` flag, as
+        // this sheet did for every row before `checkin_overdue_days` was read.
+        let overdue = items.filter { $0.isStale(atDays: threshold + 1) }.count
         let current = total - overdue
         let pctCurrent = total > 0 ? Double(current) / Double(total) * 100 : 0.0
         let pctOverdue = total > 0 ? Double(overdue) / Double(total) * 100 : 0.0

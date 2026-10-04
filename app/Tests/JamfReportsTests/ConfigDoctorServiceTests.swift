@@ -369,10 +369,9 @@ final class ConfigDoctorServiceTests: XCTestCase {
 
     // MARK: - platform
 
-    func testPlatformEnabledWithoutBenchmarksRaisesNoRow() throws {
+    func testPlatformWithoutBenchmarksRaisesNoRow() throws {
         let yaml = """
         platform:
-          enabled: true
           compliance_benchmarks: []
         """
         let config = try makeConfig(yaml)
@@ -933,6 +932,72 @@ final class ConfigDoctorServiceTests: XCTestCase {
             XCTAssertFalse(shown.contains("hooks.example.com"))
             XCTAssertFalse(shown.contains("45"))
         }
+    }
+
+    /// Keys 2.9 stopped reading: an older build wrote some of them itself. The file still loads
+    /// and each shows up once, as a suggestion of its own (never a warning or failure), apart
+    /// from a genuinely unknown key, which stays a warning. No value is shown.
+    func testRetiredKeysGetTheirOwnSuggestionAndAreNotAlsoReportedAsUnknown() throws {
+        let yaml = """
+        jamf_cli:
+          enabled: false
+          data_dir: jamf-cli-data
+          allow_live_overview: false
+        platform:
+          enabled: true
+          compliance_benchmarks: [CIS]
+        thresholds:
+          checkin_overdue_days: 14
+          profile_error_critical: 80
+          stale_device_dayz: 45
+        charts:
+          os_adoption:
+            enabled: false
+            per_major_charts: true
+        branding:
+          accent_color: "#112233"
+          accent_dark: "#445566"
+        """
+        let config = try makeConfig(yaml)
+        XCTAssertEqual(config.thresholds?.resolvedCheckinOverdueDays, 14)
+        XCTAssertEqual(config.branding?.accentColor, "#112233")
+        XCTAssertEqual(config.platform?.benchmarkTitles, ["CIS"])
+
+        try withWorkspace(yaml) { profile, _ in
+            let rows = ConfigDoctorService.unknownKeyRows(profile: profile)
+            let unknown = rows.filter { $0.id.hasPrefix("config.unknown_key.") }
+            XCTAssertEqual(unknown.map(\.title), ["thresholds.stale_device_dayz"])
+            XCTAssertEqual(unknown.first?.id, "config.unknown_key.0")
+            XCTAssertEqual(unknown.first?.severity, .warn)
+            XCTAssertEqual(unknown.first?.detail,
+                           "The app does not read this key. Did you mean \"stale_device_days\"?")
+
+            let retired = rows.filter { $0.id.hasPrefix("config.retired_key.") }
+            XCTAssertEqual(retired.map(\.title), [
+                "branding.accent_dark", "charts.os_adoption.enabled",
+                "jamf_cli.allow_live_overview", "jamf_cli.enabled", "platform.enabled",
+                "thresholds.profile_error_critical",
+            ])
+            XCTAssertEqual(retired.map(\.id), (0..<6).map { "config.retired_key.\($0)" })
+            XCTAssertEqual(Set(retired.map(\.severity)), [.suggest])
+            XCTAssertEqual(Set(retired.map(\.detail)), ["No longer read since 2.9."])
+            XCTAssertEqual(retired.map(\.hint), [
+                "The next Config save removes it.", "The next Customize Apply removes it.",
+                "The next Config save removes it.", "The next Config save removes it.",
+                "The next Config save removes it.", "The next Config save removes it.",
+            ])
+            XCTAssertEqual(rows.count, unknown.count + retired.count, "each key is reported once")
+            XCTAssertFalse(rows.map(\.detail).joined().contains("445566"))
+        }
+    }
+
+    /// A retired key in a block no app writer rewrites is the user's to delete.
+    func testARetiredKeyNoSaveRemovesTellsTheUserToDeleteTheLine() {
+        let rows = ConfigDoctorService.unknownKeyRows([
+            UnknownKey(keyPath: "html.old_switch", suggestion: nil, retiredSince: "2.9"),
+        ])
+        XCTAssertEqual(rows.map(\.hint), ["Delete the line from config.yaml."])
+        XCTAssertEqual(rows.map(\.severity), [.suggest])
     }
 
     func testUnknownKeyRowsStillNameTheTypoWhenTheFileDoesNotDecode() throws {

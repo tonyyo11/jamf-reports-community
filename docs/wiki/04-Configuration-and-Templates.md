@@ -303,10 +303,13 @@ The **Customize** screen holds the report options that are not in Config:
 Before 2.8.1 the screen also had a grid of sheet toggles, an Executive preset and three more
 chart switches. Nothing saved them or read them when generating, so they are gone. The
 stale-device trend (`charts.device_state_trend.enabled`) and the compliance bands
-(`charts.compliance_trend.bands`) are set in `config.yaml`.
+(`charts.compliance_trend.bands`, with `charts.compliance_trend.enabled: false` to leave the
+chart out) are set in `config.yaml`.
 
-Both chart switches default to on, so a workspace with no `charts:` block behaves as it
-always has. `save_png: false` now genuinely stops standalone PNG files being written
+Both chart switches default to on, and the report reads a missing key the same way, so a
+workspace with no `charts:` block gets the OS adoption chart and the PNG files. A workspace
+that wants no OS adoption chart sets `charts.os_adoption.per_major_charts: false`.
+`save_png: false` now genuinely stops standalone PNG files being written
 beside the workbook — before 2.7.0 the setting was read by nothing and PNGs were always
 written. Charts *embedded in* the workbook are governed separately by
 `charts.embed_in_xlsx`.
@@ -400,6 +403,7 @@ the sheets whenever those snapshots exist.
 The Compliance Benchmarks and DDM Blueprints screens are also behind **Settings →
 Experimental Features → Platform API**.
 
-Those are the only gates. `platform.enabled` (the Config screen's "Enable Platform API
-sheets" switch) is not read, and `experimental.platform_features_enabled`, which earlier
-versions of this page listed, does not exist.
+Those are the only gates. There is no `platform.enabled` setting (a Config screen switch of
+that name changed nothing and was removed in 2.9), and
+`experimental.platform_features_enabled`, which earlier versions of this page listed, does
+not exist.

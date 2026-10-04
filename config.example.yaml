@@ -246,9 +246,6 @@ security_agents:
 # Relative paths here resolve from the folder containing config.yaml.
 
 jamf_cli:
-  # Currently has no effect: collect and generate always use jamf-cli, and
-  # false does not make a CSV-only run.
-  enabled: true
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
   # Optional jamf-cli profile name, equivalent to passing -p/--profile to
@@ -266,8 +263,6 @@ jamf_cli:
   # ancient cache surfaces as "no data" instead of rendering stale-forever.
   # Set 0 (or any value <= 0) to keep cache forever (legacy behavior).
   max_cache_age_hours: 168
-  # Currently has no effect: nothing reads this key.
-  allow_live_overview: true
   # Hard-fail on snapshot integrity violations (SHA-256 mismatch or corrupt
   # manifest). When true, every collected snapshot is also recorded in a
   # per-kind manifest.json (2.6), so tamper detection works end-to-end:
@@ -350,10 +345,6 @@ branding:
   # accent colour (topbar, links, stat-card values).  Default: #2D5EA2
   # Write it as #RRGGBB or #RGB; both reports use the default for anything else.
   accent_color: "#2D5EA2"
-
-  # This key currently has no effect: no report reads it. The Config screen
-  # still edits it.  Default: #004165
-  accent_dark:  "#004165"
 
 
 # =============================================================================
@@ -593,9 +584,6 @@ ai:
 # Compliance Benchmarks screen shows one benchmark at a time.
 
 platform:
-  # Written by the Config screen's "Enable Platform API sheets" switch. Neither
-  # collect nor the reports read it: the profile's auth method decides.
-  enabled: false
   # List of benchmark titles for the Platform compliance sheets.
   # Empty collects every benchmark; listed titles narrow it (exact, case-sensitive).
   compliance_benchmarks:
@@ -792,8 +780,9 @@ thresholds:
   # report over a longer window.
   stale_device_days: 30
 
-  # Currently has no effect: nothing reads this key. The Check-in Health sheet
-  # uses stale_device_days.
+  # The Check-in Health sheet counts a Mac as overdue when it last checked in
+  # more than this many days ago. A Mac with no check-in date is overdue only
+  # when jamf-cli flags it stale.
   checkin_overdue_days: 7
 
   # Default disk usage thresholds used when not set per-EA.
@@ -805,8 +794,6 @@ thresholds:
 
   # Error count thresholds for the jamf-cli Profile Status sheet. Rows with
   # error counts at or above profile_error_warning are highlighted yellow.
-  # profile_error_critical currently has no effect: nothing reads it.
-  profile_error_critical: 50
   profile_error_warning: 10
 
 
@@ -908,15 +895,15 @@ charts:
   # Uses CSV snapshots when available and falls back to jamf-cli
   # inventory-summary snapshot history for jamf-cli-only workflows.
   os_adoption:
-    # Currently has no effect: nothing reads this key.
-    enabled: true
-    # Also generate one chart per major macOS version (drilldown to minor/patch).
+    # Draw the OS adoption by major version chart on the Charts tab. A missing
+    # key means true, as the Customize screen shows it; set false to leave it out.
     per_major_charts: true
 
   # Compliance trend: stacked area chart bucketing devices by failure count.
   # Requires compliance.failures_count_column to be configured.
   compliance_trend:
-    # Currently has no effect: nothing reads this key. Only the bands below are read.
+    # Set to false to leave this chart out of the Charts tab. The bands below
+    # are read either way.
     enabled: true
     # Failure count bands — labels, thresholds, and colors.
     bands:

@@ -442,36 +442,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                        ["alerts.rules[0].lookback_days"], "an explicit false is a choice")
     }
 
-    func testKeysNothingReadsAreSuggestionsWhenTheyDifferFromTheirDefaults() throws {
-        let found = try rows("""
-        jamf_cli: {allow_live_overview: false}
-        platform: {enabled: true}
-        thresholds: {checkin_overdue_days: 14, profile_error_critical: 80}
-        charts:
-          os_adoption: {enabled: false}
-          compliance_trend: {enabled: false}
-        branding: {accent_dark: "#112233"}
-        """)
-        XCTAssertEqual(Set(titles(found)), [
-            "jamf_cli.allow_live_overview", "platform.enabled",
-            "thresholds.checkin_overdue_days", "thresholds.profile_error_critical",
-            "charts.os_adoption.enabled", "charts.compliance_trend.enabled",
-            "branding.accent_dark",
-        ])
-        XCTAssertEqual(Set(found.map(\.severity)), [.suggest])
-        XCTAssertEqual(Set(found.map(\.detail)), ["This key currently has no effect."])
-    }
-
-    func testJamfCLIEnabledFalseIsAWarningBecauseJamfCLIIsStillUsed() throws {
-        let found = try rows("jamf_cli: {enabled: false}\n")
-        XCTAssertEqual(titles(found), ["jamf_cli.enabled"])
-        XCTAssertEqual(found.first?.severity, .warn, "someone who typed false expects it off")
-        XCTAssertEqual(found.first?.detail,
-                       "This key currently has no effect. Collect still runs jamf-cli and "
-                       + "generate still reads its data.")
-        XCTAssertEqual(try rows("jamf_cli: {enabled: true}\n"), [])
-    }
-
     /// The app writes these keys itself, so a file it wrote must say nothing about them.
     func testTheConfigScreensOwnSaveOfTheDefaultStateStatesNothing() throws {
         try withWorkspacesRoot { root, _ in
@@ -505,43 +475,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         }
     }
 
-    /// The example's comments for the keys nothing reads must say so, not promise behaviour.
-    func testTheExampleSaysEachKeyNothingReadsHasNoEffect() throws {
-        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        var example: URL?
-        for _ in 0..<8 {
-            let candidate = dir.appendingPathComponent("config.example.yaml")
-            if FileManager.default.fileExists(atPath: candidate.path) { example = candidate; break }
-            dir = dir.deletingLastPathComponent()
-        }
-        let url = try XCTUnwrap(example, "config.example.yaml not found above \(#filePath)")
-        let lines = try String(contentsOf: url, encoding: .utf8).components(separatedBy: "\n")
-        let targets: [(section: String, key: String, child: String?)] = [
-            ("jamf_cli:", "enabled:", nil), ("jamf_cli:", "allow_live_overview:", nil),
-            ("thresholds:", "checkin_overdue_days:", nil),
-            ("thresholds:", "profile_error_critical:", nil),
-            ("charts:", "os_adoption:", "enabled:"), ("charts:", "compliance_trend:", "enabled:"),
-            ("branding:", "accent_dark:", nil),
-        ]
-        func line(_ prefix: String, after start: Int) throws -> Int {
-            try XCTUnwrap(lines[(start + 1)...].firstIndex {
-                $0.trimmingCharacters(in: .whitespaces).hasPrefix(prefix) }, prefix)
-        }
-        for target in targets {
-            let section = try XCTUnwrap(lines.firstIndex { $0 == target.section }, target.section)
-            var at = try line(target.key, after: section)
-            if let child = target.child { at = try line(child, after: at) }
-            var comment: [String] = []
-            var index = at - 1
-            while index >= 0, lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("#") {
-                comment.append(lines[index])
-                index -= 1
-            }
-            XCTAssertTrue(comment.joined(separator: " ").contains("no effect"),
-                          "\(target.section) \(target.key): the comment must say it has no effect")
-        }
-    }
-
     func testSchoolAndProtectBothEnabledStateWhichOneTheCollectUses() throws {
         let found = try rows("school_cli: {enabled: true}\nprotect: {enabled: true}\n")
         XCTAssertEqual(titles(found), ["school_cli.enabled"])
@@ -561,7 +494,6 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         alerts:
           rules:
             - {metric: patch_pct, when: below, threshold: 90}
-        platform: {enabled: true}
         school_cli: {enabled: true}
         protect: {enabled: true}
         """)

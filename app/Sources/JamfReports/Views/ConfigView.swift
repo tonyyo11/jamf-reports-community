@@ -1083,7 +1083,7 @@ private struct ThresholdsTab: View {
                     thresholdField(
                         label: "Check-in overdue", key: "checkin_overdue_days",
                         value: $ws.configState.checkinOverdueDays, unit: "days",
-                        help: "Yellow highlight on Check-in Health sheet"
+                        help: "Check-in Health counts a Mac overdue after this many days"
                     )
                     thresholdField(
                         label: "Cert expiry warning", key: "cert_warning_days",
@@ -1135,11 +1135,6 @@ private struct ThresholdsTab: View {
                 Card(padding: 18) {
                     VStack(alignment: .leading, spacing: 12) {
                         SectionHeader(title: "jamf-cli Errors").padding(.bottom, 2)
-                        thresholdField(
-                            label: "Profile error critical", key: "profile_error_critical",
-                            value: $ws.configState.profileErrorCritical, unit: "errors",
-                            help: "Red highlight on Profile Status sheet"
-                        )
                         thresholdField(
                             label: "Profile error warning", key: "profile_error_warning",
                             value: $ws.configState.profileErrorWarning, unit: "errors",
@@ -1197,18 +1192,6 @@ private struct PlatformTab: View {
                     platformSetupCallout
                 }
                 Divider().background(Theme.Hairline.standard)
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Enable Platform API sheets")
-                            .font(.callout.weight(.medium))
-                            .foregroundStyle(Theme.Text.primary)
-                        Text("Blueprints, DDM Status, Compliance benchmarks")
-                            .font(.caption)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                    }
-                    Spacer()
-                    PNPToggle(isOn: $ws.configState.platformEnabled)
-                }
                 VStack(alignment: .leading, spacing: 8) {
                     FieldLabel(label: "Compliance benchmarks")
                     ForEach(ws.configState.complianceBenchmarks.indices, id: \.self) { i in
@@ -1240,7 +1223,7 @@ private struct PlatformTab: View {
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Text.primary)
                 Text("Profile \"\(workspace.profile)\" is configured for Platform Gateway auth. "
-                     + "Enable the toggle below to include Platform API sheets in generated reports.")
+                     + "Collect runs the Platform API reports for it.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
             }
@@ -1385,12 +1368,8 @@ private struct OutputTab: View {
                             FieldLabel(label: "Logo path")
                             PNPTextField(value: $ws.configState.logoPath, mono: true)
                         }
-                        HStack(spacing: 8) {
-                            colorField(label: "Accent color", value: $ws.configState.accentColor,
-                                       hexColor: Theme.Colors.gold)
-                            colorField(label: "Accent dark", value: $ws.configState.accentDark,
-                                       hexColor: Theme.Colors.goldDim)
-                        }
+                        colorField(label: "Accent color", value: $ws.configState.accentColor,
+                                   hexColor: Theme.Colors.gold)
                     }
                 }
             }

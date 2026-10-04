@@ -112,7 +112,6 @@ final class ConfigFileSectionsTests: XCTestCase {
           failures_count_column: Failures
           failures_list_column: Failed Rules
         platform:
-          enabled: true
           compliance_benchmarks:
             - Benchmark One
         output:
@@ -128,7 +127,6 @@ final class ConfigFileSectionsTests: XCTestCase {
           org_name: Example Org
           logo_path: logo.png
           accent_color: "#112233"
-          accent_dark: "#001122"
         charts:
           save_png: true
           os_adoption:
@@ -171,10 +169,25 @@ final class ConfigFileSectionsTests: XCTestCase {
     func testAKeyNextToAnEditedOneIsStillListed() throws {
         let sections = try build(
             "charts:\n  save_png: true\n  historical_csv_dir: snaps\n"
-                + "  os_adoption:\n    per_major_charts: true\n    enabled: false\n")
+                + "  os_adoption:\n    per_major_charts: true\n"
+                + "  device_state_trend:\n    enabled: false\n")
         XCTAssertEqual(summary(sections), [
-            "charts: charts.historical_csv_dir=snaps, charts.os_adoption.enabled=false",
+            "charts: charts.historical_csv_dir=snaps, charts.device_state_trend.enabled=false",
         ])
+    }
+
+    /// The tab has no new place for it: a retired key is listed as not read, with its note.
+    func testARetiredKeyIsListedAsNotReadWithItsNote() throws {
+        let sections = try build("""
+        branding:
+          accent_dark: "#445566"
+        thresholds:
+          stale_device_dayz: 45
+        """)
+        XCTAssertEqual(sections.unknown.map(\.keyPath),
+                       ["branding.accent_dark", "thresholds.stale_device_dayz"])
+        XCTAssertEqual(sections.unknown.map(\.note),
+                       ["No longer read since 2.9.", "Did you mean \"stale_device_days\"?"])
     }
 
     // MARK: - Values

@@ -42,8 +42,7 @@ compliance is now one figure everywhere.
   typed was not used as written: an unrecognised provider or detail, a webhook that cannot send, a
   retention setting that would never remove anything, limits that were clamped, sheet names that
   match no sheet, dates that are not `yyyy-MM-dd`, thresholds out of order, colours that are not
-  hex, settings that do not fit their type. It lists keys the app reads but nothing uses as
-  suggestions. Config Doctor also warns about a security policy level it could not read, and which
+  hex, settings that do not fit their type. Config Doctor also warns about a security policy level it could not read, and which
   level it used instead.
 - The Config screen and the Config Doctor list each line of config.yaml the app did not read as
   written, by line number: a line indented differently from its neighbours, a line with no
@@ -128,10 +127,27 @@ compliance is now one figure everywhere.
 - A `notify.detail` that is neither `full` nor `minimal` now sends the minimal digest. It sent the
   full one before.
 - Keys older builds wrote that nothing reads now get a "does not read this key" note:
-  `ai.lock_on_device`, `protect.data_dir`, `school_columns`. Six more keys are documented as
-  currently having no effect: `jamf_cli.enabled`, `jamf_cli.allow_live_overview`,
-  `thresholds.checkin_overdue_days`, `thresholds.profile_error_critical`,
-  `charts.os_adoption.enabled` and `charts.compliance_trend.enabled`.
+  `ai.lock_on_device`, `protect.data_dir`, `school_columns`, and six that earlier builds of the
+  Config screen or the scaffold wrote: `jamf_cli.enabled`, `jamf_cli.allow_live_overview`,
+  `charts.os_adoption.enabled`, `branding.accent_dark`, `platform.enabled` and
+  `thresholds.profile_error_critical`. Config Doctor lists them as "No longer read since 2.9"
+  suggestions, not warnings, and a config.yaml that still holds them works as before. A Config
+  save removes settings the app no longer reads, and says so on the screen (a Customize Apply
+  does the same for `charts.os_adoption.enabled`); the file is copied to
+  `config.yaml.bak-<date-time>` first. New configs no longer get `allow_live_overview`.
+- The Config screen no longer has the "Accent dark" colour field, the "Enable Platform API sheets"
+  switch or the "Profile error critical" threshold. None of them changed a report.
+- The Check-in Health sheet counts a Mac as overdue when its last contact is more than
+  `thresholds.checkin_overdue_days` days ago (default 7), and its header states that number. It
+  used jamf-cli's own stale flag under a header showing the stale-device threshold, so the two
+  could disagree. The Config screen's "Check-in overdue" field now does what it says. A Mac with
+  no contact date is still counted from jamf-cli's flag.
+- `charts.compliance_trend.enabled: false` now leaves the compliance band chart out of the Charts
+  tab. The key was read by nothing before.
+- The OS adoption chart is drawn on the Charts tab unless `charts.os_adoption.per_major_charts`
+  is `false`. A workspace with no `charts:` block now gets it, which is what the Customize screen
+  already showed for the switch. `charts.device_state_trend.enabled` is unchanged: that chart
+  still needs an explicit `true`.
 - The AI Insights settings no longer mention Private Cloud Compute, and the never-built
   `ai.tier: external` option and its `external:` block are removed. A config.yaml that still names
   `external` (or `pcc`) keeps working and runs on-device; the next save from Settings drops the

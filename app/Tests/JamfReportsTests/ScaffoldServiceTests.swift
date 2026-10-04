@@ -565,6 +565,27 @@ final class ScaffoldServiceTests: XCTestCase {
         XCTAssertTrue(written.contains("  model_identifier: \"\""))
     }
 
+    /// jamf_cli.allow_live_overview was written into every new config and read by nothing.
+    func test_scaffoldedConfigsDoNotWriteAKeyNothingReads() throws {
+        let url = try csvURL(headers: ["Computer Name"])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = try ScaffoldService.matchColumns(from: url, profile: "test")
+        let full = tempURL(name: "no-dead-keys-full")
+        let minimal = tempURL(name: "no-dead-keys-minimal")
+        defer {
+            try? FileManager.default.removeItem(at: full)
+            try? FileManager.default.removeItem(at: minimal)
+        }
+        try ScaffoldService.writeConfig(to: full, result: result, profile: "test")
+        try ScaffoldService.writeMinimalConfig(to: minimal, profile: "test")
+
+        for dest in [full, minimal] {
+            let written = try String(contentsOf: dest, encoding: .utf8)
+            XCTAssertTrue(written.contains("use_cached_data: true"), "the jamf_cli block is there")
+            XCTAssertFalse(written.contains("allow_live_overview"), dest.lastPathComponent)
+        }
+    }
+
     func test_mergeColumns_keepsUserMappingForExtraInventoryColumn() {
         let (merged, report) = ScaffoldService.mergeColumns(
             existing: ["building": "Site Code"],

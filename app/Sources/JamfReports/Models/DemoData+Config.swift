@@ -32,7 +32,6 @@ extension DemoData {
         state.baselineLabel = complianceBaseline
         state.failuresCountColumn = "mSCP - Failed Rules Count"
         state.failuresListColumn = "mSCP - Failed Rules List"
-        state.platformEnabled = true
         state.complianceBenchmarks = [complianceBaseline]
         state.orgName = org.name
         return state

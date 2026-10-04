@@ -592,8 +592,10 @@ enum ConfigDoctorService {
     }
 
     /// One warning per unknown key, titled with its key path. The value is never shown: it can
-    /// be a webhook URL under a misspelled key.
-    static func unknownKeyRows(_ keys: [UnknownKey]) -> [DoctorRow] {
+    /// be a webhook URL under a misspelled key. A key the app once wrote and no longer reads
+    /// gets a suggestion of its own instead (`retiredKeyRows`), so it is reported once.
+    static func unknownKeyRows(_ allKeys: [UnknownKey]) -> [DoctorRow] {
+        let keys = allKeys.filter { $0.retiredSince == nil }
         var rows = keys.prefix(unknownKeyCap).enumerated().map { index, key in
             DoctorRow(
                 id: "config.unknown_key.\(index)", severity: .warn, title: key.keyPath,
@@ -612,7 +614,22 @@ enum ConfigDoctorService {
                 hint: "Fix the keys above, then run the check again to see the rest."
             ))
         }
-        return rows
+        return rows + retiredKeyRows(allKeys.compactMap { key in
+            key.retiredSince.map { (key.keyPath, $0) }
+        })
+    }
+
+    /// One suggestion per retired key (path, release): nothing is broken, the app just stopped
+    /// reading it, and only `.fail` rows reach the run log. The hint says what removes it.
+    private static func retiredKeyRows(_ keys: [(path: String, since: String)]) -> [DoctorRow] {
+        keys.enumerated().map { index, key in
+            let block = key.path.components(separatedBy: ".").first ?? ""
+            let hint = ConfigService.retiredKeyRemover(inBlock: block)
+                .map { "The next \($0) removes it." } ?? "Delete the line from config.yaml."
+            return DoctorRow(
+                id: "config.retired_key.\(index)", severity: .suggest, title: key.path,
+                detail: "No longer read since \(key.since).", hint: hint)
+        }
     }
 
     // MARK: - What the reader did not take as written

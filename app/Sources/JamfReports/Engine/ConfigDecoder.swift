@@ -283,11 +283,9 @@ struct SecurityAgentConfig: Decodable, Sendable {
 // MARK: - jamf_cli
 
 struct JamfCLIConfig: Decodable, Sendable {
-    var enabled: Bool?
     var dataDir: String?
     var profile: String?             // key is `profile`, NOT `jamf_profile`
     var useCachedData: Bool?
-    var allowLiveOverview: Bool?
     var requireManifest: Bool?       // PR-10 / threat-model T-11
     /// Age limit (hours) past which a cached jamf-cli snapshot is treated as
     /// ABSENT rather than silently served as current. `nil` → default 168h
@@ -299,11 +297,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     var collectSkip: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case dataDir = "data_dir"
         case profile
         case useCachedData = "use_cached_data"
-        case allowLiveOverview = "allow_live_overview"
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
@@ -312,8 +308,6 @@ struct JamfCLIConfig: Decodable, Sendable {
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data" }
     var isCachedDataEnabled: Bool { useCachedData ?? true }
-    var isLiveOverviewAllowed: Bool { allowLiveOverview ?? true }
-    var isEnabled: Bool { enabled ?? true }
 
     /// PR-10 / threat-model T-11: when true, the Swift engine aborts on
     /// snapshot integrity violations (`.mismatch` / `.corrupt`) rather than
@@ -602,7 +596,6 @@ struct ThresholdsConfig: Decodable, Sendable {
     var criticalDiskPercent: Int?
     var warningDiskPercent: Int?
     var certWarningDays: Int?
-    var profileErrorCritical: Int?
     var profileErrorWarning: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -611,7 +604,6 @@ struct ThresholdsConfig: Decodable, Sendable {
         case criticalDiskPercent = "critical_disk_percent"
         case warningDiskPercent = "warning_disk_percent"
         case certWarningDays = "cert_warning_days"
-        case profileErrorCritical = "profile_error_critical"
         case profileErrorWarning = "profile_error_warning"
     }
 
@@ -620,7 +612,6 @@ struct ThresholdsConfig: Decodable, Sendable {
     var resolvedCriticalDisk: Int { criticalDiskPercent ?? 90 }
     var resolvedWarningDisk: Int { warningDiskPercent ?? 80 }
     var resolvedCertWarningDays: Int { certWarningDays ?? 90 }
-    var resolvedProfileErrorCritical: Int { profileErrorCritical ?? 50 }
     var resolvedProfileErrorWarning: Int { profileErrorWarning ?? 10 }
 }
 
@@ -676,15 +667,9 @@ struct ChartsConfig: Decodable, Sendable {
 }
 
 struct OSAdoptionConfig: Decodable, Sendable {
-    var enabled: Bool?
     var perMajorCharts: Bool?
 
-    /// What config.example.yaml documents; nothing reads `enabled`, so this only tells the
-    /// Config Doctor which value is the default.
-    var isEnabled: Bool { enabled ?? true }
-
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case perMajorCharts = "per_major_charts"
     }
 }
@@ -693,7 +678,7 @@ struct ComplianceTrendConfig: Decodable, Sendable {
     var enabled: Bool?
     var bands: [ComplianceBandConfig]?
 
-    /// As `OSAdoptionConfig.isEnabled`: the documented default, read by nothing else.
+    /// Absent means on, as `config.example.yaml` documents; `false` turns the chart off.
     var isEnabled: Bool { enabled ?? true }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -729,13 +714,11 @@ struct BrandingConfig: Decodable, Sendable {
     var orgName: String?
     var logoPath: String?
     var accentColor: String?
-    var accentDark: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case orgName = "org_name"
         case logoPath = "logo_path"
         case accentColor = "accent_color"
-        case accentDark = "accent_dark"
     }
 
     var resolvedOrgName: String { orgName?.trimmingCharacters(in: .whitespaces) ?? "" }
@@ -1187,15 +1170,12 @@ struct HTMLSectionLimits: Decodable, Sendable {
 // MARK: - platform
 
 struct PlatformConfig: Decodable, Sendable {
-    var enabled: Bool?
     var complianceBenchmarks: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case complianceBenchmarks = "compliance_benchmarks"
     }
 
-    var isEnabled: Bool { enabled ?? false }
     /// Configured titles, trimmed, with blanks and repeats dropped. A title listed twice was
     /// collected twice and its rows saved twice.
     var benchmarkTitles: [String] {
