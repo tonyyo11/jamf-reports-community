@@ -21,7 +21,7 @@ final class CollectPlanTests: XCTestCase {
     }
 
     private var matrix: [(args: [String], kind: String)] {
-        ReportEngine.collectCommandMatrix(profile: profile, specNames: true)
+        ReportEngine.collectCommandMatrix(profile: profile, specNames: true, staleDays: 30)
     }
 
     private func skip(
@@ -311,7 +311,8 @@ final class CollectPlanTests: XCTestCase {
         XCTAssertTrue(skippedByTheRun.contains("computers"))
 
         XCTAssertTrue(planLines.contains("[plan] device scan: due"), "\(planLines)")
-        let matrix = ReportEngine.collectCommandMatrix(profile: profile, specNames: false)
+        let matrix = ReportEngine.collectCommandMatrix(
+            profile: profile, specNames: false, staleDays: 30)
         let asked = ((try? String(contentsOf: calls, encoding: .utf8)) ?? "")
             .split(separator: "\n").map(String.init)
         // jamf-cli is given the matrix's arguments, then `--no-hints --no-version-check`.
