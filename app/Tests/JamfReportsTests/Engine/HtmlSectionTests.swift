@@ -883,7 +883,7 @@ final class HtmlSectionTests: XCTestCase {
                       html)
     }
 
-    /// A value that reads as off ("Not Installed") is not connected, though it contains "Installed".
+    /// "Not Installed" reads as off, so it is not connected though it contains "Installed".
     func testAgentHealthDoesNotCountANegatedValueAsInstalled() throws {
         let yaml = """
         security_agents:
