@@ -182,6 +182,8 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Reports shows a dash in the Sheets column for HTML, PDF and CSV reports, which have no sheets,
+  instead of a 0.
 - Backups shows when each backup was made. A backup with no files and no manifest took the date
   its folder was last touched, so backups from May to August read as early September; it now
   uses the date in its name. "Diff Latest" and "Diff Selected" are no longer offered on an empty

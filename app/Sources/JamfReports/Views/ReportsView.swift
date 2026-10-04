@@ -119,14 +119,12 @@ struct ReportsView: View {
                                     .accessibilityHidden(true)
                                 Mono(text: r.name, color: Theme.Colors.fg)
                             }
-                            .accessibilityLabel(
-                                "\(r.name), \(r.sheets) sheet\(r.sheets == 1 ? "" : "s"), \(r.size)"
-                            )
+                            .accessibilityLabel(r.accessibilityLabel)
                         }
                         TableColumn("Source schedule") { r in
                             Text(r.source).font(.footnote)
                         }
-                        TableColumn("Sheets") { r in Mono(text: "\(r.sheets)") }
+                        TableColumn("Sheets") { r in Mono(text: r.sheetsLabel) }
                         TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
                         TableColumn("Size") { r in Mono(text: r.size) }
                         TableColumn("Generated") { r in Mono(text: r.date) }

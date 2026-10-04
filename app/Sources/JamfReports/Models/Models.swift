@@ -289,6 +289,18 @@ struct Report: Identifiable, Sendable, Equatable {
     /// Device count sourced from the matching summary.json. Nil when the summary
     /// is absent, the filename carries no date, or totalDevices is non-numeric.
     let devices: Int?
+
+    /// Only a workbook has sheets; html, pdf and csv reports carry a 0 that is not a count.
+    var hasSheets: Bool { URL(fileURLWithPath: name).pathExtension.lowercased() == "xlsx" }
+
+    /// The Sheets column's text: the count for a workbook, a dash for any other format.
+    var sheetsLabel: String { hasSheets ? "\(sheets)" : "—" }
+
+    /// VoiceOver label for a report row.
+    var accessibilityLabel: String {
+        let sheetText = hasSheets ? "\(sheets) sheet\(sheets == 1 ? "" : "s"), " : ""
+        return "\(name), \(sheetText)\(size)"
+    }
 }
 
 struct BackupRecord: Identifiable, Sendable, Hashable {
