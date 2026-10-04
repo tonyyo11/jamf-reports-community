@@ -572,8 +572,7 @@ struct FleetOverviewView: View {
         let profiles = workspace.initializedProfiles
         rows = await Task.detached(priority: .utility) {
             profiles.map { profile in
-                let summaries = (try? WorkspacePaths.summariesDir(for: profile.name))
-                    .map { SummaryJSONParser.parseDirectory($0) } ?? []
+                let summaries = TrendStore.readSummaries(profile: profile.name)
                 return FleetProfileOverview(
                     profile: profile.name,
                     summary: summaries.last,

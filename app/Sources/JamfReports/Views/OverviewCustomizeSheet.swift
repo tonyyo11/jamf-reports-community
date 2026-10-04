@@ -158,10 +158,15 @@ struct OverviewCustomizeSheet: View {
     /// Selected cards in their display order, then the rest; a card the policy
     /// does not offer is left out of both.
     static func scoreCardRows(
-        selected: [TrendSeries.Metric], policy: SecurityControlPolicy
+        selected: [TrendSeries.Metric], policy: SecurityControlPolicy,
+        agents: [TrendSeries.Metric] = []
     ) -> [TrendSeries.Metric] {
-        let rows = selected + TrendSeries.Metric.allCases.filter { !selected.contains($0) }
-        return rows.filter { $0.isOffered(under: policy) }
+        let all = TrendSeries.Metric.allCases + agents
+        let rows = selected + all.filter { !selected.contains($0) }
+        return rows.filter { metric in
+            if case .agent = metric { return agents.contains(metric) }
+            return metric.isOffered(under: policy)
+        }
     }
 
     private var scoreCardsCard: some View {
@@ -176,7 +181,8 @@ struct OverviewCustomizeSheet: View {
                     .padding(.top, 2)
                     .padding(.bottom, 8)
                 let rows = Self.scoreCardRows(
-                    selected: workspace.selectedScoreCards, policy: workspace.securityPolicy)
+                    selected: workspace.selectedScoreCards, policy: workspace.securityPolicy,
+                    agents: workspace.agentMetrics)
                 ForEach(Array(rows.enumerated()), id: \.element) { index, metric in
                     scoreCardRow(metric)
                     if index < rows.count - 1 {
@@ -190,7 +196,7 @@ struct OverviewCustomizeSheet: View {
     private func scoreCardRow(_ metric: TrendSeries.Metric) -> some View {
         let selected = workspace.selectedScoreCards
         // Positions follow the listed cards; the selection keeps the hidden ones.
-        let shown = selected.filter { $0.isOffered(under: workspace.securityPolicy) }
+        let shown = selected.filter { workspace.isOffered($0) }
         let position = shown.firstIndex(of: metric)
         let label = metric.displayLabel(
             benchmarkLabel: workspace.complianceBenchmarkLabel,

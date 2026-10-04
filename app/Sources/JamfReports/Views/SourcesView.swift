@@ -666,7 +666,8 @@ struct SourcesView: View {
                     .frame(height: min(CGFloat(families.count) * 28 + 34, 200))
                     .scrollContentBackground(.hidden)
                     Text("Families appear as snapshot types are archived: summaries "
-                        + "(daily trend data, written by every collect) plus dated computers, "
+                        + "(daily trend data: a day's first collect writes it, and each later "
+                        + "collect that fetches new data rebuilds it) plus dated computers, "
                         + "mobile, compliance, and patching archives created when CSV exports "
                         + "are snapshotted. A jamf-cli-only workspace typically shows only "
                         + "summaries.")
@@ -699,7 +700,7 @@ struct SourcesView: View {
             systemImage: "archivebox",
             title: "No snapshot families yet",
             message: "Families appear after collection or CSV archival runs: "
-                + "summaries (written by every collect), plus dated computers, "
+                + "summaries (written by a collect that fetches data), plus dated computers, "
                 + "mobile, compliance, and patching archives."
         )
         .frame(maxWidth: .infinity, minHeight: 160)

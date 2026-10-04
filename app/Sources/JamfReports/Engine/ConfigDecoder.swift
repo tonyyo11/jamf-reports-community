@@ -274,6 +274,9 @@ struct SecurityAgentConfig: Decodable, Sendable {
     let column: String
     let connectedValue: String  // key is `connected_value`, NOT `installed_value`
 
+    /// The column as `SecurityAgentCoverage` reads it, trimmed.
+    var trimmedColumn: String { column.trimmingCharacters(in: .whitespacesAndNewlines) }
+
     enum CodingKeys: String, CodingKey, CaseIterable {
         case name, column
         case connectedValue = "connected_value"

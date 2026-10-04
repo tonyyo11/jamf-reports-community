@@ -12,7 +12,7 @@ final class CollectionTierLookupTests: XCTestCase {
     /// stops working after 2027-03-09, so both spellings must be reachable.
     func testMatrixUsesSpecDerivedNamesOnlyWhenSupported() {
         func argv(_ kind: String, specNames: Bool) -> [String]? {
-            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
+            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames, staleDays: 30)
                 .first { $0.kind == kind }?.args
         }
         XCTAssertEqual(argv("device-enrollment-instances", specNames: true),
@@ -21,7 +21,8 @@ final class CollectionTierLookupTests: XCTestCase {
                        ["-p", "p", "pro", "device-enrollment-instances", "list",
                         "--output", "json"])
         let kinds = { (specNames: Bool) in
-            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames).map(\.kind)
+            ReportEngine.collectCommandMatrix(
+                profile: "p", specNames: specNames, staleDays: 30).map(\.kind)
         }
         XCTAssertEqual(kinds(true), kinds(false), "the flag changes argv, never a kind name")
     }
@@ -34,7 +35,7 @@ final class CollectionTierLookupTests: XCTestCase {
         let sections = ["--section", "GENERAL", "--section", "HARDWARE",
                         "--section", "SECURITY", "--section", "USER_AND_LOCATION"]
         let argv = { (specNames: Bool) -> [String]? in
-            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
+            ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames, staleDays: 30)
                 .first { $0.kind == "mobile-devices-list" }?.args
         }
         let expected = ["-p", "p", "pro", "mobile-devices", "list"] + sections
@@ -44,7 +45,8 @@ final class CollectionTierLookupTests: XCTestCase {
         XCTAssertEqual(ReportEngine.mobileInventorySections,
                        ["GENERAL", "HARDWARE", "SECURITY", "USER_AND_LOCATION"])
         for specNames in [true, false] {
-            let mobileRows = ReportEngine.collectCommandMatrix(profile: "p", specNames: specNames)
+            let mobileRows = ReportEngine.collectCommandMatrix(
+                profile: "p", specNames: specNames, staleDays: 30)
                 .filter { $0.args.contains("mobile-devices")
                     || $0.args.contains("mobile-device-inventory-details") }
             XCTAssertEqual(mobileRows.map(\.kind), ["mobile-devices-list"],
@@ -65,7 +67,7 @@ final class CollectionTierLookupTests: XCTestCase {
     }
 
     func testComputersListAsksForTheSectionsTheDevicesScreenReads() {
-        let argv = ReportEngine.collectCommandMatrix(profile: "p", specNames: true)
+        let argv = ReportEngine.collectCommandMatrix(profile: "p", specNames: true, staleDays: 30)
             .first { $0.kind == "computers" }?.args ?? []
         XCTAssertEqual(argv, ["-p", "p", "pro", "computers", "list", "--section",
                               ReportEngine.computerInventorySections, "--output", "json"])

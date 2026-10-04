@@ -741,6 +741,30 @@ enum ConfigDoctorService {
         return securityPolicyRows(
             issues: SecurityPolicyConfigLoader.issues(profile: profile),
             policy: policy, hardware: hardware)
+            + edrAgentRows(policy: policy, agents: config.securityAgents ?? [])
+    }
+
+    /// `security_policy.edr_agent` names an agent the score would count as EDR; a name that
+    /// matches no `security_agents` entry leaves the first agent counting.
+    static func edrAgentRows(
+        policy: SecurityControlPolicy, agents: [SecurityAgentConfig]
+    ) -> [DoctorRow] {
+        guard let chosen = policy.edrAgent,
+              SecurityScoreInputs.edrAgent(among: agents, chosen: chosen)?.name
+                  .trimmingCharacters(in: .whitespacesAndNewlines)
+                  .caseInsensitiveCompare(chosen) != .orderedSame
+        else { return [] }
+        let counted = SecurityScoreInputs.edrAgent(among: agents, chosen: nil)?.name
+        return [DoctorRow(
+            id: "security_policy.edr_agent", severity: .warn,
+            title: SecurityPolicyConfigLoader.edrAgentPath,
+            detail: "\"\(ConfigSchema.displayText(chosen))\" matches no security_agents entry, so "
+                + (counted.map { "\"\(ConfigSchema.displayText($0))\" counts as the EDR agent" }
+                    ?? "no agent counts as the EDR agent")
+                + ".",
+            hint: "Write the agent's name exactly as under security_agents, or pick it in "
+                + "Config > Scoring."
+        )]
     }
 
     /// One warning per value the app did not use as written, titled with its key path, plus
@@ -798,6 +822,10 @@ enum ConfigDoctorService {
     }
 
     private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
+        if issue.keyPath == SecurityPolicyConfigLoader.edrAgentPath {
+            return "Expected the name of a security agent, found \"\(issue.value)\" — "
+                + "using \(issue.used)"
+        }
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
         }
@@ -822,6 +850,9 @@ enum ConfigDoctorService {
     }
 
     private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
+        if issue.keyPath == SecurityPolicyConfigLoader.edrAgentPath {
+            return "Write the agent's name as text, or remove the line."
+        }
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Write it as indented key: value lines in config.yaml, or remove it."
         }

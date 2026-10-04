@@ -254,7 +254,9 @@ struct SecurityAgent: Identifiable, Sendable {
     let installed: Int
     let pct: Double
     let column: String
-    let trend: Trend
+    /// Direction of the agent's coverage over the summary series; nil when no series exists
+    /// to say (only the first configured agent's coverage is recorded day by day).
+    let trend: Trend?
 }
 
 // MARK: - Compliance bands
@@ -939,13 +941,13 @@ struct TokenStatus: Sendable, Codable {
 // MARK: - Trend metric
 
 struct TrendSeries: Identifiable, Sendable {
-    enum Metric: String, CaseIterable, Identifiable, Sendable {
+    enum Metric: CaseIterable, Identifiable, Hashable, Sendable, RawRepresentable {
         // .edrAgent keeps the legacy "crowdstrike" raw value so persisted
         // score-card selections and the summary.json field name stay valid.
-        // The user-visible name is config-driven (security_agents → first
-        // entry's name); the generic fallback is "EDR Agent Installed".
+        // The user-visible name is config-driven (`security_policy.edr_agent`, else the
+        // first security_agents entry); the generic fallback is "EDR agent coverage".
         case stability, activeDevices, compliance, fileVault, osCurrent
-        case edrAgent = "crowdstrike"
+        case edrAgent
         case stale, patch
         /// Weighted security score (0–100), read from summary.json.
         case securityScore
@@ -962,7 +964,69 @@ struct TrendSeries: Identifiable, Sendable {
         /// Share of Macs with each control on, read from the summary's own shares.
         /// Appended last so `allCases` keeps every older position.
         case sip, firewall, gatekeeper
+        /// Coverage of one configured security agent, read from the summary's
+        /// `securityAgentCoverage`. The agent the score counts as EDR is `.edrAgent`, so a
+        /// workspace offers `.agent` only for the others. Its raw value is `agent:<name>`.
+        case agent(String)
+
+        /// Every metric that does not depend on the workspace, in their original order. The
+        /// agent metrics come from `security_agents`, so they are not listed here.
+        static let allCases: [Metric] = [
+            .stability, .activeDevices, .compliance, .fileVault, .osCurrent, .edrAgent, .stale,
+            .patch, .securityScore, .mscpBandTrend, .managedDevices, .sip, .firewall,
+            .gatekeeper,
+        ]
+
+        static let agentPrefix = "agent:"
+
         var id: String { rawValue }
+
+        var rawValue: String {
+            switch self {
+            case .stability: return "stability"
+            case .activeDevices: return "activeDevices"
+            case .compliance: return "compliance"
+            case .fileVault: return "fileVault"
+            case .osCurrent: return "osCurrent"
+            case .edrAgent: return "crowdstrike"
+            case .stale: return "stale"
+            case .patch: return "patch"
+            case .securityScore: return "securityScore"
+            case .mscpBandTrend: return "mscpBandTrend"
+            case .managedDevices: return "managedDevices"
+            case .sip: return "sip"
+            case .firewall: return "firewall"
+            case .gatekeeper: return "gatekeeper"
+            case .agent(let name): return Self.agentPrefix + Self.encoded(name)
+            }
+        }
+
+        /// A saved value: a fixed metric by its raw value, or `agent:<name>`. Anything else is
+        /// nil, so a selection from a newer or older build drops the key and keeps the rest.
+        init?(rawValue: String) {
+            if rawValue.hasPrefix(Self.agentPrefix) {
+                let name = Self.decoded(String(rawValue.dropFirst(Self.agentPrefix.count)))
+                guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+                self = .agent(name)
+                return
+            }
+            guard let match = Self.allCases.first(where: { $0.rawValue == rawValue }) else {
+                return nil
+            }
+            self = match
+        }
+
+        /// A saved list is comma-separated, so a name's `%` and `,` are escaped.
+        private static func encoded(_ name: String) -> String {
+            name.replacingOccurrences(of: "%", with: "%25")
+                .replacingOccurrences(of: ",", with: "%2C")
+        }
+
+        private static func decoded(_ text: String) -> String {
+            text.replacingOccurrences(of: "%2C", with: ",")
+                .replacingOccurrences(of: "%25", with: "%")
+        }
+
         var displayLabel: String {
             switch self {
             case .stability:     return "Stability Index"
@@ -970,7 +1034,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .compliance:    return "Compliance Benchmark"
             case .fileVault:     return "FileVault Encryption"
             case .osCurrent:     return "On Current macOS"
-            case .edrAgent:      return "EDR Agent Installed"
+            case .edrAgent:      return "EDR agent coverage"
             case .stale:         return "Stale Devices (30d+)"
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
@@ -979,16 +1043,17 @@ struct TrendSeries: Identifiable, Sendable {
             case .sip:           return "System Integrity Protection"
             case .firewall:      return "Firewall Enabled"
             case .gatekeeper:    return "Gatekeeper Enabled"
+            case .agent(let name): return "\(name) coverage"
             }
         }
 
         /// Returns the tenant-specific label when one is configured; otherwise
         /// the metric's static `displayLabel`. `.compliance` follows
-        /// `compliance.baseline_label`; `.edrAgent` follows the first
-        /// `security_agents` entry's name (e.g. "CrowdStrike Falcon Installed").
+        /// `compliance.baseline_label`; `.edrAgent` follows the agent the score counts as EDR
+        /// (e.g. "CrowdStrike Falcon coverage").
         func displayLabel(benchmarkLabel: String?, edrAgentName: String? = nil) -> String {
             if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
-            if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) Installed" }
+            if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) coverage" }
             return displayLabel
         }
         var unit: String {
@@ -1005,7 +1070,7 @@ struct TrendSeries: Identifiable, Sendable {
             switch self {
             case .stale: .lowerIsBetter
             case .activeDevices, .mscpBandTrend, .managedDevices: .neutral
-            case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .patch,
+            case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
                  .securityScore, .sip, .firewall, .gatekeeper: .higherIsBetter
             }
         }
@@ -1017,6 +1082,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .fileVault, .sip, .firewall, .gatekeeper: return 60
             case .osCurrent:     return 30
             case .edrAgent:      return 70
+            case .agent:         return 50
             case .stale:         return 0
             case .patch:         return 40
             case .securityScore: return 60
@@ -1046,7 +1112,16 @@ struct TrendSeries: Identifiable, Sendable {
             case .sip:           return 0x64D2FF
             case .firewall:      return 0x5E5CE6
             case .gatekeeper:    return 0xAC8E68
+            case .agent(let name): return Self.agentColor(name)
             }
+        }
+
+        /// One of a few agent colours, chosen from the name alone so an agent keeps its
+        /// colour on every screen and run.
+        private static func agentColor(_ name: String) -> UInt32 {
+            let palette: [UInt32] = [0x2AA198, 0x6C71C4, 0xCB4B16, 0x859900, 0xD33682, 0x268BD2]
+            let sum = name.utf8.reduce(0) { ($0 &* 31 &+ Int($1)) % 9973 }
+            return palette[sum % palette.count]
         }
     }
 

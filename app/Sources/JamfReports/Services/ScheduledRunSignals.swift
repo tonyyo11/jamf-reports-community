@@ -223,8 +223,7 @@ enum ScheduledRunSignals {
             return
         }
         guard !rules.isEmpty else { return }
-        guard let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else { return }
-        let summaries = SummaryJSONParser.parseDirectory(summariesDir)
+        let summaries = TrendStore.readSummaries(profile: profile)
         guard let current = summaries.last else { return }
         // Only evaluate a summary this run actually wrote today. A day that
         // produced no fresh summary (e.g. totalDevices == 0) leaves an older

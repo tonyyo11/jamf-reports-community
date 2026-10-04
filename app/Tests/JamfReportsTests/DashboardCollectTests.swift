@@ -48,7 +48,7 @@ final class DashboardCollectTests: XCTestCase {
     }
 
     func testMatrixRowAndTier() {
-        let row = ReportEngine.collectCommandMatrix(profile: "p", specNames: true)
+        let row = ReportEngine.collectCommandMatrix(profile: "p", specNames: true, staleDays: 30)
             .first { $0.kind == ReportEngine.dashboardKind }
         XCTAssertEqual(row?.args, ["-p", "p", "dashboard", "--output", "json"])
         XCTAssertEqual(CollectionTier.tier(forReport: "dashboard"), .inventory)

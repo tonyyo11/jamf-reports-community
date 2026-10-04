@@ -294,6 +294,66 @@ compliance is now one figure everywhere.
   use the risk score's bands: Critical, High, Medium, Low and Clean. Not checking in is still a
   risk factor, but it is no longer a rating of its own; patch failures keep their own column and
   filter.
+- Patch compliance and Stability read the same on every screen. Overview and Trends showed the
+  patch figure re-derived from each day's patch snapshot while Fleet Overview, its profile view
+  and the AI insight showed the older recorded figure (35.4% against 31.3% on one fleet, with
+  Stability 59.7 against 58.0). The Overview insight, Fleet Overview, the fleet report and
+  workbook, the period report and metric alerts now use the re-derived figure too.
+- The Overview's EDR score card fills in on the first collect after an update. A day's summary
+  written by an older build had no EDR figure, and later collects that day kept it, so the card
+  read "No value" next to a Security Agents card showing the coverage.
+- Compliance Posture says what each number is out of. The subtitle no longer repeats the first
+  baseline's evaluated count for all of them: it gives the range when baselines evaluate
+  different numbers of Macs (each counts the Macs that report its own column). Each baseline card
+  shows its compliance rate as "465 of 632 evaluated", its evaluated count as "of 664 devices,
+  32 No Data", and the donut legend says its percentages are of all devices, No Data included.
+- Extension Attributes counts match their labels. The "Total EAs" tile counted the attributes
+  that had results (89) under a caption about definitions, next to a definitions table listing
+  147. It is now two tiles, "Defined EAs" and "EAs With Results", and the header gives both.
+- The Overview says what each device count is. The Top Failing Rules card read "across 664 active
+  devices" next to an Active tile of 537; that 664 is the Macs whose compliance results the card
+  read, and it now says "across 664 Macs with results". The security agent detail says "of 665
+  managed Macs".
+- The Overview's security agent detail no longer says "Trend: Flat" for every agent. The first
+  configured agent shows its real direction against the previous snapshot, and the other agents,
+  which have no daily history, show no Trend tile.
+- The Overview's compliance score card keeps one title. It read "mSCP Compliance" until
+  config.yaml loaded and your baseline name after; it now shows the generic "Compliance
+  Benchmark" until a baseline label (or Compliance Benchmarks title) is configured. A long
+  baseline name is held to one line with the full name in a tooltip, so the card's figure stays
+  level with its neighbours. Saving the Config screen no longer writes a baseline label you did
+  not set.
+- Health Audit numbers agree. The summary's "Affected" tile added commands, policies, groups and
+  devices into one figure; it is now "Findings", a count of findings that need a look. The audit
+  counts a stale check-in against your Stale device days setting (30 by default) instead of
+  jamf-cli's own 14, so its finding name and count change on the next audit. When the Command
+  health scan has run, the audit's "Failed MDM commands" row (CRITICAL, 6359 commands in Jamf
+  Pro's whole history) is replaced by the scan's "Devices with failed MDM commands" (WARNING, 217
+  devices), which now mentions the command total, so the same problem is no longer listed twice in
+  two units at two severities.
+- The Security Score counts every input that has data. The score recorded each day, and shown on
+  the Overview and Trends, weighed FileVault, SIP and Firewall only, although the Scoring tab
+  lists eight weights. It now also weighs the EDR agent (the first configured security agent's
+  coverage) and the primary mSCP baseline's pass share, and drops XProtect, CVE and Secure Boot,
+  which nothing in the app measures. Security Posture, the workbook and the daily summary compute
+  it the same way. The score steps on the day the new definition starts: earlier days keep their
+  recorded value, Trends and the period report say so, and a "drops more than" alert on the score
+  skips the comparison across that day.
+- A second collect on the same day updates that day's trend point. Before, the day's first
+  summary stood for the rest of the day, so Overview and Trends showed the morning's numbers
+  after an afternoon collect fetched newer ones. A collect that fetches new data now rebuilds
+  the day's summary from the newest snapshots, keeping any value the morning had that the later
+  run could not measure; one that fetches nothing leaves it alone.
+- Every configured security agent is tracked, not only the first. The daily summary records
+  each agent's coverage (CrowdStrike, Nessus, Splunk and any others you list under Security
+  Agents), the Overview offers a score card per agent in Customize, and Trends lists each one,
+  labelled "<agent> coverage". History for days recorded before this is rebuilt from the dated
+  extension-attribute snapshots of the last 21 days that have one, after the screen has drawn. In
+  Config > Scoring, "Agent counted as EDR" (or `security_policy.edr_agent`) chooses which agent
+  the Security Score and the EDR card follow; the others are shown but do not change the score.
+  A name that matches no agent counts the first, and Config Doctor says so.
+- A metric on the Overview with no data says "No data yet" instead of 0.0% current, 0.0%
+  previous and +0.0pp over 0 summaries.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

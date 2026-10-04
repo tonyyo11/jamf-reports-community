@@ -84,8 +84,7 @@ enum FleetReportEmitter {
 
     /// Default loader: read `<profile>/…/summaries/summary_*.json`.
     static func defaultSummaries(_ profile: String) -> [DailySummary] {
-        guard let dir = try? WorkspacePaths.summariesDir(for: profile) else { return [] }
-        return SummaryJSONParser.parseDirectory(dir)
+        TrendStore.readSummaries(profile: profile)
     }
 
     // MARK: - Formatting

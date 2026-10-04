@@ -90,6 +90,27 @@ final class ComplianceBenchmarkLabelTests: XCTestCase {
         XCTAssertNil(store.complianceBenchmarkLabel)
     }
 
+    /// Before config.yaml loads, the store is on its default state. The compliance card must
+    /// then read the generic title an unconfigured workspace gets, not a benchmark name that
+    /// the loaded config would replace.
+    func testBeforeConfigLoadsTheComplianceTitleIsTheGenericOne() {
+        let store = WorkspaceStore(demoMode: false)
+        XCTAssertNil(store.complianceBenchmarkLabel)
+        XCTAssertEqual(
+            TrendSeries.Metric.compliance.displayLabel(
+                benchmarkLabel: store.complianceBenchmarkLabel, edrAgentName: nil),
+            "Compliance Benchmark")
+    }
+
+    /// The configured baseline name is the operator's text, often a file name with no break to
+    /// wrap at: its card keeps to one line so its figure stays level with the others.
+    func testOnlyTheComplianceScoreCardIsHeldToOneTitleLine() {
+        XCTAssertEqual(OverviewView.scoreCardLabelLineLimit(for: .compliance), 1)
+        for metric in TrendSeries.Metric.allCases where metric != .compliance {
+            XCTAssertEqual(OverviewView.scoreCardLabelLineLimit(for: metric), 2, "\(metric)")
+        }
+    }
+
     func testStoreTrimsWhitespaceFromBaselineLabel() {
         let store = WorkspaceStore(demoMode: false)
         store.configState.baselineLabel = "  NIST 800-53r5  "

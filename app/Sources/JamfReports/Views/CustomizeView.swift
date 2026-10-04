@@ -198,8 +198,7 @@ struct CustomizeView: View {
 
     /// The selected cards the Overview shows: one whose control the policy ignores is not.
     private var offeredScoreCardCount: Int {
-        workspace.selectedScoreCards.filter { $0.isOffered(under: workspace.securityPolicy) }
-            .count
+        workspace.selectedScoreCards.filter { workspace.isOffered($0) }.count
     }
 
     /// The Overview's score cards and sections are chosen in one editor on the

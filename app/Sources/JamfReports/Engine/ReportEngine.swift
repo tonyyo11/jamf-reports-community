@@ -379,10 +379,12 @@ struct ReportEngine: Sendable {
 
     /// Write `summary_YYYY-MM-DD.json` to `summariesDir` from cached jamf-cli snapshots.
     ///
-    /// Skips if a valid same-day file already exists (first run of day wins, matching Python
-    /// default non-force behavior). compliancePct is the control-gap proxy (flagged via
-    /// complianceIsProxy) when per-device security data exists; crowdstrikePct still requires
-    /// CSV/EA data and is omitted so TrendStore skips it rather than rendering a flat 0% line.
+    /// With a valid same-day file already on disk, a run that landed none of the digest's input
+    /// sources leaves it untouched; one that landed at least one rebuilds it from the newest
+    /// snapshots, keeping any value this run cannot measure (`freshSummaryIsBetter`,
+    /// `DailySummary.filling`). compliancePct is the control-gap proxy (flagged via
+    /// complianceIsProxy) when per-device security data exists, and the primary baseline's
+    /// real pass share when `compliance.baselines` is configured.
     ///
     /// - Parameters:
     ///   - summariesDir: Directory to write the summary file into.
@@ -417,15 +419,17 @@ struct ReportEngine: Sendable {
            let existingData = try? Data(contentsOf: summaryFile),
            let obj = try? JSONSerialization.jsonObject(with: existingData) as? [String: Any],
            obj["date"] != nil, obj["totalDevices"] != nil, obj["source"] != nil {
-            // Same-day summary is valid. Check whether a fresh build would be strictly
-            // better (proxy→real mSCP upgrade, or mscpBands newly populated). If not,
-            // keep the existing file so its mtime reflects the first run.
-            if var fresh = buildSummaryFromCLI(
+            // Same-day summary is valid. A run that landed a source today rebuilds it from the
+            // newest snapshots; a run that landed nothing, and had no upgrade to offer, keeps
+            // the existing file. The rebuild keeps every value the existing summary had that
+            // this run cannot measure, so nothing goes from known to nil.
+            if let built = buildSummaryFromCLI(
                 date: today, provenance: provenance, liveKinds: liveKinds),
                let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
-               Self.freshSummaryIsBetter(existing: existing, fresh: fresh) {
+               Self.freshSummaryIsBetter(existing: existing, fresh: built) {
+                var fresh = built.filling(from: existing)
                 fresh.collectionSources = Self.mergedSources(
-                    existing: existing.collectionSources, fresh: fresh.collectionSources)
+                    existing: existing.collectionSources, fresh: built.collectionSources)
                 let upgradeMsg = "[info] summary_\(today).json rebuilt with fresher data"
                 AppLogger.collect.info("\(upgradeMsg, privacy: .public)")
                 onLine?(.init(timestamp: Date(), level: .info, text: upgradeMsg))
@@ -458,15 +462,19 @@ struct ReportEngine: Sendable {
 
     // MARK: - Summary upgrade helpers
 
-    /// Returns true when `fresh` is strictly better than `existing` — meaning it
-    /// should overwrite a same-day summary that would otherwise be kept.
+    /// Returns true when `fresh` should overwrite a same-day summary that would otherwise be
+    /// kept.
     ///
-    /// "Better" means at least one of:
+    /// Any run that landed at least one of the digest's input sources (`fresh.collectionSources`
+    /// has a `live` entry) rebuilds today's summary: its numbers are newer than the morning's.
+    /// A run that landed none keeps the file unless it offers a data upgrade, meaning at least
+    /// one of:
     /// - `existing.complianceIsProxy == true` AND `fresh.complianceIsProxy == false`
     ///   (real mSCP data is now available where before only the 4-control proxy was), OR
     /// - `existing` has no `mscpBands` (or empty) AND `fresh` has non-empty `mscpBands`, OR
-    /// - `existing.staleCount`/`mobileDeviceCount` is nil (unmeasured) AND `fresh` measured it,
-    ///   or `existing.staleCount == 0` on a non-empty fleet AND `fresh` measures a real value.
+    /// - `existing.staleCount`/`mobileDeviceCount`/`crowdstrikePct` is nil (unmeasured) AND
+    ///   `fresh` measured it, or `existing.staleCount == 0` on a non-empty fleet AND `fresh`
+    ///   measures a real value.
     ///
     /// Never returns true when the fresh run would downgrade (real→proxy, bands dropped, or a
     /// measured value replaced by nil), preserving the PR-18 protection against a partial
@@ -490,25 +498,30 @@ struct ReportEngine: Sendable {
         // later collect measures it. Upgrade only; a measured count is never
         // replaced by nil.
         if existing.mobileDeviceCount == nil, fresh.mobileDeviceCount != nil { return true }
-        // A later run landed a source the existing point took from cache or lacked.
-        if let freshSources = fresh.collectionSources,
-           freshSources.contains(where: {
-               $0.value == "live" && existing.collectionSources?[$0.key] != "live"
-           }) {
-            return true
-        }
+        // The same for the EDR figure: the first collect after an upgrade past the build that
+        // began recording it must not leave that day's summary, and the Overview's EDR score
+        // card reading it, empty. Upgrade only; a recorded figure is never replaced by nil.
+        if existing.crowdstrikePct == nil, fresh.crowdstrikePct != nil { return true }
+        // A later run landed a source: its numbers are newer, whatever the morning's said.
+        if fresh.collectionSources?.values.contains("live") == true { return true }
         return false
     }
 
     /// A rebuilt same-day point keeps "live" for a source an earlier run landed and this run
-    /// read back from cache.
+    /// read back from cache, and keeps an earlier run's status for a source this run cannot
+    /// read at all, since the summary's values from that source come from the earlier run
+    /// (`DailySummary.filling`).
     static func mergedSources(
         existing: [String: String]?, fresh: [String: String]?
     ) -> [String: String]? {
         guard let fresh else { return existing }
         guard let existing else { return fresh }
         return fresh.merging(existing) { freshValue, existingValue in
-            freshValue == "cache" && existingValue == "live" ? "live" : freshValue
+            switch (freshValue, existingValue) {
+            case ("cache", "live"): return "live"
+            case ("absent", "live"), ("absent", "cache"): return existingValue
+            default: return freshValue
+            }
         }
     }
 
@@ -796,9 +809,7 @@ struct ReportEngine: Sendable {
         let eaBaselines = config.compliance?.resolvedBaselines ?? []
         // The EDR score card is labelled with the first named security agent
         // (`WorkspaceStore.edrAgentName`); its value comes from the same agent.
-        let edrAgent = (config.securityAgents ?? []).first {
-            !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
-        }
+        let edrAgent = SecurityScoreInputs.edrAgent(in: config)
         var eaRows: [EAResultRow]? = nil
         if !eaBaselines.isEmpty || edrAgent != nil, let eaData = cachedData(kind: "ea-results") {
             let decoded = EAResultRow.decodeSnapshot(eaData)
@@ -811,8 +822,10 @@ struct ReportEngine: Sendable {
                 )
             }
         }
+        var primaryMSCP: MSCPComplianceService.BaselineResult?
         if !eaBaselines.isEmpty, let eaRows {
             let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
+            primaryMSCP = results.first
             if let primary = results.first, let realPct = primary.compliancePct {
                 complianceFinalPct = realPct
                 complianceIsRealData = true
@@ -833,12 +846,27 @@ struct ReportEngine: Sendable {
         // profile. Over the whole fleet, so a Mac that reports no value counts as
         // not connected; nil (unknown, not 0%) when no Mac reports the agent's
         // extension attribute at all — usually a column name that doesn't match.
-        var edrConnectedPct: Double? = nil
-        if let edrAgent, let eaRows,
-           let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: [edrAgent]).first,
-           coverage.reporting > 0 {
-            edrConnectedPct = SecurityAgentCoverage.percent(
-                installed: coverage.installed, fleet: totalDevices)
+        // Every named agent's coverage, one pass over the rows; the EDR agent's is the one
+        // `crowdstrikePct` and the score read.
+        let agentCoverages = eaRows.map {
+            SecurityAgentCoverage.compute(
+                rows: $0, agents: SecurityScoreInputs.namedAgents(in: config))
+        } ?? []
+        let edrCoverage = edrAgent.flatMap { edr in
+            agentCoverages.first { $0.name == edr.name && $0.column == edr.trimmedColumn }
+        }
+        var agentCoveragePct: [String: Double] = [:]
+        for coverage in agentCoverages where coverage.reporting > 0 {
+            if let pct = SecurityAgentCoverage.percent(
+                installed: coverage.installed, fleet: totalDevices) {
+                agentCoveragePct[SecurityScoreInputs.agentKey(coverage.name)] = pct
+            }
+        }
+        // The same two figures feed the security score below, through the one function the
+        // Security Posture screen and the workbook use, so a fleet has one score everywhere.
+        let scoreExtras = SecurityScoreInputs.extras(edr: edrCoverage, mscp: primaryMSCP)
+        let edrConnectedPct = scoreExtras.edrConnected.flatMap {
+            SecurityAgentCoverage.percent(installed: $0, fleet: totalDevices)
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -856,8 +884,11 @@ struct ReportEngine: Sendable {
         let fleet = SecurityFleetCounts.build(
             totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
             hardware: hardware, policy: securityPolicy)
+        // Every input that has data this run: FileVault, SIP and Firewall from the security
+        // report, the EDR agent and the primary mSCP baseline from ea-results. A metric
+        // without data drops out of the denominator.
         let score = SecurityScoreCalculator.score(
-            input: fleet.scoreInput(),
+            input: SecurityScoreInputs.input(fleet: fleet, extras: scoreExtras),
             weights: securityPolicy.resolvedScoreWeights
         )
         // Score is only meaningful when at least one metric contributed.
@@ -889,6 +920,8 @@ struct ReportEngine: Sendable {
             sipPct: sipPct.map(round1),
             firewallPct: firewallPct.map(round1),
             gatekeeperPct: gatekeeperPct.map(round1),
+            // Real baseline data only: the proxy is the controls above again.
+            mscpScorePct: complianceIsRealData ? complianceFinalPct.map(round1) : nil,
             securityScore: securityScore.map(round1),
             actionItemsP0: fleet.p0,
             actionItemsP1: fleet.p1,
@@ -901,7 +934,9 @@ struct ReportEngine: Sendable {
             // trivially "this Mac", and writing it into every summary would add
             // a hostname to a file that never needed one.
             collectedByHost: Self.collectingHostLabel(dataDir: dataDir),
-            patchPctBasis: DailySummary.deviceWeightedPatchBasis
+            patchPctBasis: DailySummary.deviceWeightedPatchBasis,
+            securityScoreBasis: securityScore == nil ? nil : SecurityScoreInputs.basis(of: score),
+            securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct
         )
     }
 
@@ -1020,20 +1055,6 @@ struct ReportEngine: Sendable {
 
     // MARK: - Chart sheet rendering
 
-    /// The Charts tab's Patch % line. A summary recorded under the per-title mean takes the
-    /// device-weighted figure recomputed from that day's `patch-status` snapshot, as the
-    /// Trends screen does (`TrendStore.recomputePatchPct`), so the line does not step at
-    /// the upgrade; a day with no snapshot keeps its recorded figure.
-    static func patchTrendPoints(
-        _ summaries: [DailySummary], dataDir: URL
-    ) -> [(date: Date, value: Double)] {
-        let recomputed = TrendStore.recomputePatchPct(dataDir: dataDir, summaries: summaries)
-        return summaries.compactMap { s in
-            guard let pct = recomputed[s.date] ?? s.patchPct else { return nil }
-            return (s.parsedDate, pct)
-        }
-    }
-
     /// Render trend charts from daily summary snapshots and embed in a "Charts" worksheet.
     ///
     /// Reads `DailySummary` JSON files from `summariesDir`. With 2+ data points produces
@@ -1061,7 +1082,11 @@ struct ReportEngine: Sendable {
         pngOutputDir: URL? = nil,
         profile: String = ""
     ) {
-        let summaries = SummaryJSONParser.parseDirectory(summariesDir)
+        // The Trends screen's patch figure: a day recorded under the per-title mean takes the
+        // device-weighted figure from that day's snapshot, so the line does not step at the
+        // upgrade.
+        let summaries = TrendStore.resolvingPatch(
+            SummaryJSONParser.parseDirectory(summariesDir), dataDir: dataDir)
             .sorted { $0.parsedDate < $1.parsedDate }
         let baselines = config.compliance?.resolvedBaselines ?? []
 
@@ -1111,7 +1136,10 @@ struct ReportEngine: Sendable {
                 guard let pct = s.fileVaultPct else { return nil }
                 return (s.parsedDate, pct)
             }
-            let patchPoints = Self.patchTrendPoints(summaries, dataDir: dataDir)
+            let patchPoints = summaries.compactMap { s -> (date: Date, value: Double)? in
+                guard let pct = s.patchPct else { return nil }
+                return (s.parsedDate, pct)
+            }
             var secSeries: [ChartSeries] = []
             if !fvPoints.isEmpty {
                 secSeries.append(ChartSeries(label: "FileVault %",
@@ -1897,7 +1925,9 @@ struct ReportEngine: Sendable {
         let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
         let specNames = JamfCLIInstaller.supportsSpecDerivedNames(detectedVersion)
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
-        let commands = Self.collectCommandMatrix(profile: profile, specNames: specNames)
+        let commands = Self.collectCommandMatrix(
+            profile: profile, specNames: specNames,
+            staleDays: loadedConfig?.thresholds?.resolvedStaleDays ?? 30)
 
         // Cadence state store: persists per-kind last-success timestamps so
         // the cadence filter skips reports that aren't due yet.
@@ -2259,12 +2289,25 @@ struct ReportEngine: Sendable {
         "GENERAL", "HARDWARE", "SECURITY", "USER_AND_LOCATION",
     ]
 
+    /// `pro audit`'s arguments. `--days` is the stale check-in threshold (jamf-cli's own default
+    /// is 14); the app passes `thresholds.stale_device_days` so the audit's stale finding, the
+    /// Stale tiles and Offline Outreach all use one threshold. Below 1 it reads as 1, as the
+    /// check would otherwise flag every Mac.
+    static func auditArguments(
+        profile: String, staleDays: Int, category: String? = nil
+    ) -> [String] {
+        var args = ["-p", profile, "pro", "audit", "--output", "json", "--no-input",
+                    "--days", String(max(staleDays, 1))]
+        if let category, !category.isEmpty { args += ["--checks", category] }
+        return args
+    }
+
     /// The jamf-cli commands `collect` fetches and the snapshot kind each
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
     /// `knownCollectKinds` — `CollectionTierLookupTests` enforces that in CI.
     static func collectCommandMatrix(
-        profile: String, specNames: Bool
+        profile: String, specNames: Bool, staleDays: Int
     ) -> [(args: [String], kind: String)] {
         // jamf-cli 1.29.0 named this resource after its OpenAPI tag. The old name warns
         // on stderr until 2027-03-09; the new one exits 2 before 1.29. `mobile-devices`
@@ -2340,7 +2383,7 @@ struct ReportEngine: Sendable {
             // Health audit — single cheap server call; matches CLIBridge.audit() shape that
             // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
-            (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
+            (auditArguments(profile: profile, staleDays: staleDays), "audit"),
             // v1.23.0+ only. Observed behavior on jamf-cli 1.21.1 (production, 2026-07):
             // an older binary exits 2 (usage — unrecognized subcommand), NOT Cobra's
             // exit-0-with-parent-help; exit 2 falls through the exit-0/exit-7 success
