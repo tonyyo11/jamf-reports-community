@@ -63,7 +63,7 @@ final class TrendInsightInputTests: XCTestCase {
             "- FileVault Encryption on 92.0% of devices; not encrypted on 8.0% "
                 + "(up 2.0 pp vs prior, better)",
             "- On Current macOS: 70.0% (up 10.0 pp vs prior, better)",
-            "- CrowdStrike Falcon Installed on 96.0% of devices; not installed on 4.0% "
+            "- CrowdStrike Falcon coverage on 96.0% of devices; not installed on 4.0% "
                 + "(up 1.0 pp vs prior, better)",
             "- \(stale): 11 (down 9 vs prior, better)",
             "- Patch Compliance: 90.0% (up 5.0 pp vs prior, better)",
