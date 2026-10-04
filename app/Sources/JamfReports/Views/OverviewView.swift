@@ -1153,11 +1153,12 @@ struct OverviewView: View {
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
 
+        let title = metric.displayLabel(
+            benchmarkLabel: workspace.complianceBenchmarkLabel,
+            edrAgentName: workspace.edrAgentName
+        )
         return StatTile(
-            label: metric.displayLabel(
-                benchmarkLabel: workspace.complianceBenchmarkLabel,
-                edrAgentName: workspace.edrAgentName
-            ),
+            label: title,
             value: valueStr,
             sub: subText,
             delta: values.count >= 2 ? deltaStr : nil,
@@ -1167,15 +1168,25 @@ struct OverviewView: View {
             fillsHeight: true,
             // Two lines hold "Security Score (Weighted)" or "CrowdStrike Falcon
             // Installed" at 220 pt and the default text size; the row shares its
-            // tallest tile's height, so a wrapped title stays aligned.
-            labelLineLimit: 2
+            // tallest tile's height, so a wrapped title stays aligned. The compliance
+            // title is the operator's baseline label, often one long audit-plist file name
+            // with no break to wrap at; it takes one line so its figure stays level with
+            // its neighbours, and the tooltip carries the whole name.
+            labelLineLimit: Self.scoreCardLabelLineLimit(for: metric)
         )
+        .help(title)
         // The label can be an operator-configured string (compliance baseline
         // name, EDR agent name) with no length guarantee — in the field these
         // are sometimes a raw audit-plist filename — so past two lines it elides
         // rather than growing the row. The caption keeps to one line.
         .lineLimit(1)
         .truncationMode(.tail)
+    }
+
+    /// Lines a score card's title may take: two for the fixed titles, one for the compliance
+    /// card, whose title is whatever the operator named the baseline.
+    static func scoreCardLabelLineLimit(for metric: TrendSeries.Metric) -> Int {
+        metric == .compliance ? 1 : 2
     }
 
     // MARK: macOS distribution + Top failing rules

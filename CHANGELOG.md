@@ -205,6 +205,12 @@ compliance is now one figure everywhere.
 - The Overview's security agent detail no longer says "Trend: Flat" for every agent. The first
   configured agent shows its real direction against the previous snapshot, and the other agents,
   which have no daily history, show no Trend tile.
+- The Overview's compliance score card keeps one title. It read "mSCP Compliance" until
+  config.yaml loaded and your baseline name after; it now shows the generic "Compliance
+  Benchmark" until a baseline label (or Compliance Benchmarks title) is configured. A long
+  baseline name is held to one line with the full name in a tooltip, so the card's figure stays
+  level with its neighbours. Saving the Config screen no longer writes a baseline label you did
+  not set.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.
