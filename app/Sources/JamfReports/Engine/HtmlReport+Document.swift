@@ -309,9 +309,15 @@ extension HtmlReport {
           .compliance-hero-amber { background: #fff3e0 !important; }
           .compliance-hero-red   { background: #ffebee !important; }
           .theme-toggle, .controls, .skip-link { display: none !important; }
+          /* Bars and severity pills are backgrounds, which print leaves out by default. */
+          .cohort-bar-bg, .cohort-bar-fill, .sev-pill {
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          }
           details.group > summary::before { content: ""; margin: 0; }
           details > summary { page-break-after: avoid; }
           a { color: #000 !important; text-decoration: none; }
+          /* Its bottom padding alone could start an empty last page. */
+          footer { padding-bottom: 0; }
         }
         </style>
         """
