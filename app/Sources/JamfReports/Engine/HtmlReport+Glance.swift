@@ -40,7 +40,7 @@ extension HtmlReport {
         return [
             FigureSpec(label: "Security score", unit: "%", polarity: .higherIsBetter,
                        read: { $0.securityScore }, format: { String(format: "%.1f", $0) },
-                       comparable: always),
+                       comparable: { $0.securityScoreBasis == $1.securityScoreBasis }),
             FigureSpec(label: "P0 security gaps", unit: "", polarity: .lowerIsBetter,
                        read: { $0.actionItemsP0.map(Double.init) },
                        format: { String(format: "%.0f", $0) }, comparable: always),

@@ -142,11 +142,12 @@ extension HtmlReport {
             failures: failures)
     }
 
-    /// The daily summaries beside the data directory, oldest first.
+    /// The daily summaries beside the data directory, oldest first, each patch figure on the
+    /// device-weighted definition (`TrendStore.resolvingPatch`), as every other surface reads it.
     func loadDailySummaries() -> [DailySummary] {
         let dir = dataDir.deletingLastPathComponent()
             .appendingPathComponent("snapshots/summaries", isDirectory: true)
-        return SummaryJSONParser.parseDirectory(dir)
+        return TrendStore.resolvingPatch(SummaryJSONParser.parseDirectory(dir), dataDir: dataDir)
     }
 
     /// Object counts for the catalog: software titles, EAs, policies, groups and the rest,

@@ -392,6 +392,26 @@ final class HtmlReportLayoutTests: XCTestCase {
         XCTAssertEqual(patch.cls, "none")
     }
 
+    /// A score built from different inputs (`securityScoreBasis`) is not compared either.
+    func testAScoreFromDifferentInputsShowsNoChange() async throws {
+        let (config, dataDir) = try workspace()
+        let dir = dataDir.deletingLastPathComponent()
+            .appendingPathComponent("snapshots/summaries", isDirectory: true)
+        let earlier = GoldenFleetClock.daySummaryString(
+            Calendar.current.date(byAdding: .day, value: -8, to: Self.anchor)!)
+        let url = dir.appendingPathComponent("summary_\(earlier).json")
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: Data(contentsOf: url)) as? [String: Any])
+        json["securityScoreBasis"] = "fileVault,sip,firewall,edrAgent,mscp"
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
+        let out = dir.appendingPathComponent("report.html")
+        try await HtmlReport(config: config, dataDir: dataDir).generate(outputURL: out)
+        let html = try String(contentsOf: out, encoding: .utf8)
+        let score = try tile("Security score", in: html)
+        XCTAssertEqual(score.change, "Not comparable with the earlier figure")
+        XCTAssertEqual(score.cls, "none")
+    }
+
     func testWithoutADailySummaryTheFiguresAreLeftOutAndListed() async throws {
         let html = try await render(Fleet(summaries: false))
         XCTAssertFalse(html.contains("id=\"at-a-glance\""))
