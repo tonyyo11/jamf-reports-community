@@ -132,46 +132,45 @@ struct BackupsView: View {
         PageHeader(
             kicker: "Configuration Backups",
             title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
-            subtitle: backupsFolderDisplayPath
+            subtitle: backupsFolderDisplayPath,
+            wrapsTrailing: true
         ) {
             AnyView(
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        backupLabelField
-                        PNPButton(title: "Reveal in Finder", icon: "folder") {
-                            revealBackupsFolder()
-                        }
-                        .disabled(workspace.demoMode)
-                        .help(workspace.demoMode
-                              ? Self.demoRevealHelp
-                              : "Open the backups directory for this workspace in Finder.")
-                        Mono(
-                            text: diffSelectionHint,
-                            size: 10.5,
-                            color: selectedBackups.count == 2 && !selectionIncludesEmptyBackup
-                                ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
-                        )
-                        PNPButton(
-                            title: isRunningDiff ? "Diffing..." : "Diff Selected",
-                            icon: "arrow.left.arrow.right",
-                            style: .neutral
-                        ) {
-                            diffSelected()
-                        }
-                        .disabled(
-                            workspace.demoMode || isRunningBackup || isRunningDiff
-                                || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-                        PNPButton(
-                            title: isRunningBackup ? "Backing Up..." : "New Backup",
-                            icon: "externaldrive.badge.plus",
-                            style: .gold
-                        ) {
-                            runBackup()
-                        }
-                        .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                WrappingRow {
+                    backupLabelField
+                    PNPButton(title: "Reveal in Finder", icon: "folder") {
+                        revealBackupsFolder()
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? Self.demoRevealHelp
+                          : "Open the backups directory for this workspace in Finder.")
+                    Mono(
+                        text: diffSelectionHint,
+                        size: 10.5,
+                        color: selectedBackups.count == 2 && !selectionIncludesEmptyBackup
+                            ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
+                    )
+                    PNPButton(
+                        title: isRunningDiff ? "Diffing..." : "Diff Selected",
+                        icon: "arrow.left.arrow.right",
+                        style: .neutral
+                    ) {
+                        diffSelected()
+                    }
+                    .disabled(
+                        workspace.demoMode || isRunningBackup || isRunningDiff
+                            || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                    PNPButton(
+                        title: isRunningBackup ? "Backing Up..." : "New Backup",
+                        icon: "externaldrive.badge.plus",
+                        style: .gold
+                    ) {
+                        runBackup()
+                    }
+                    .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             )
         }
@@ -226,18 +225,24 @@ struct BackupsView: View {
                                 Mono(text: backup.name, size: 10.5)
                             }
                         }
+                        .lineLimit(1)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(backup.accessibilityLabel)
                     }
+                    .width(min: 130, ideal: 200)
                     TableColumn("Created") { backup in
                         Mono(text: backup.createdLabel)
                     }
+                    .width(min: 92, ideal: 104, max: 130)
                     TableColumn("Files") { backup in
                         Mono(text: "\(backup.fileCount)")
                     }
+                    .width(min: 40, ideal: 52, max: 70)
                     TableColumn("Size") { backup in
                         Mono(text: backup.sizeLabel)
                     }
+                    .width(min: 60, ideal: 70, max: 90)
+                    // Reveal, Diff Latest and Delete at their natural widths, so none is cut off.
                     TableColumn("") { backup in
                         HStack(spacing: 6) {
                             PNPButton(title: "Reveal", icon: "folder", size: .sm) {
@@ -273,6 +278,7 @@ struct BackupsView: View {
                             .disabled(workspace.demoMode || isRunningBackup)
                         }
                     }
+                    .width(min: 284, ideal: 290, max: 320)
                 }
                 .frame(minHeight: 390)
                 .scrollContentBackground(.hidden)

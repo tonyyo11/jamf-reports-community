@@ -182,6 +182,10 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Backups and Reports headers no longer run their buttons off the window. When the buttons do not
+  fit beside the title they wrap onto a second line under it. In the Backups table, Reveal, Diff
+  Latest and Delete are shown in full on every row, and report file names that are too long to fit
+  shorten in the middle so the date at the end stays visible.
 - Reports shows a dash in the Sheets column for HTML, PDF and CSV reports, which have no sheets,
   instead of a 0.
 - Backups shows when each backup was made. A backup with no files and no manifest took the date
