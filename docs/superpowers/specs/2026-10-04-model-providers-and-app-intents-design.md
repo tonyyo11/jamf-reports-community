@@ -79,52 +79,101 @@ An insight is roughly 2 K input tokens and 300 output tokens. That is well under
 at $4/$20 per million tokens. Send the server-side refusal fallback (`fallbacks: "default"` with its
 beta header) on Opus 5.5 and Sonnet 5.5, and check `stop_reason` before reading the text.
 
+### Two kinds of AI, never blurred
+
+**On-device AI is Apple's model running on this Mac; nothing leaves the Mac. External AI is any
+other provider. It sends data to a third party (Anthropic), or to another program or server (a
+local model server), under that party's terms.** This difference is the most important thing the
+feature communicates.
+
+- Settings › Intelligence has two separate sections, **On this Mac** and **External AI services**.
+  They have different icons and wording, and no shared toggle or picker that could switch one to
+  the other.
+- Every insight card names its source in its provenance line. "On-device · macOS Golden Gate 27"
+  for Apple's model; "External · Claude (Anthropic) · sent to api.anthropic.com" for an external
+  one. External cards also carry a distinct badge.
+- While any external service is connected, Settings and the Overview footer say "External AI is on
+  for this Mac", with a Disconnect button.
+
+### Consent before anything is sent
+
+External AI is off by default and is never turned on as a side effect. Connecting a service runs
+an explicit disclosure step, and no request is made until it is confirmed.
+
+1. **Disclosure sheet.** When someone chooses Connect on an external service, the sheet states, in
+   plain words:
+   - who receives the data and the exact endpoint
+   - which features will use it (each insight card, the report narrative)
+   - what kind of data is sent: fleet aggregates (counts, percentages, version names, check names),
+     never device names, serials, users or log text
+   - a live preview of the exact text for the current workspace, built by the same
+     `FleetInsightInput.promptContext` the request uses
+   - that the provider's own terms, retention and location apply, with a link to them, and the
+     region option where the provider has one (`inference_geo: "us"` for Claude)
+   - that requests cost money on the user's own account
+2. **An explicit acknowledgement.** Confirming takes a checkbox reading "I understand this sends my
+   organization's fleet data to <provider>", plus the Connect button. Return does not confirm, and
+   neither does a default button.
+3. **The acknowledgement is recorded.** It is stored per Mac and per service: the provider, the
+   endpoint, the data scope and the features, with the date. Run History records "External AI
+   connected/disconnected" events, so an administrator can see when it happened.
+4. **Asked again when anything widens.** A new feature that would use the service, a new kind of
+   data in the input, a changed endpoint or model family, or an app update that changes the scope
+   shows the disclosure again before the next request. Until it is confirmed, those cards fall back
+   to "Not sent: confirm the new scope in Settings", never to a silent send.
+5. **Easy to undo.** Disconnect deletes the key from the Keychain, clears the acknowledgement and
+   stops all requests immediately. Cards return to on-device or to their idle state.
+
 ### Data and egress rules
 
-1. **Remote only for aggregate surfaces.** The five insight cards and the report narrative may use a
-   remote provider. The run-failure explainer stays on-device only, because it reads a log excerpt;
-   that is the existing rule and it stays.
-2. **Show exactly what is sent.** Settings shows the exact text a remote request would carry for the
-   current workspace, built by the same `FleetInsightInput.promptContext` the request uses. Each card
-   names its source ("From Claude (Anthropic)") in the provenance line it already has.
-3. **Secrets stay in the Keychain.** The API key lives in the login Keychain, never in config.yaml,
+1. **External only for aggregate surfaces.** The five insight cards and the report narrative may use
+   an external service. The run-failure explainer stays on-device only, because it reads a log
+   excerpt; that is the existing rule and it stays.
+2. **Secrets stay in the Keychain.** The API key lives in the login Keychain, never in config.yaml,
    which may sit in a synced team folder. It never reaches a log line, a diagnostic bundle or a
    webhook. Add the `sk-ant-` shape to `LogRedactor`.
-4. **An administrator can turn it off.** Managed preferences in the app's domain, deployable as a
-   configuration profile, decide whether remote providers are allowed and which ones. When off, the
-   provider rows read "Turned off by your organization" and no request is made. A workspace can also
-   forbid remote providers for everyone who opens it, through `ai.allow_remote: false` in
-   config.yaml.
-5. **No silent fallback.** If the chosen remote provider fails, the card says why ("Claude: the API
-   key was rejected") and offers Retry. It does not quietly answer with a different model.
-6. **The GUI only.** Scheduled and command-line runs never call a remote model. That avoids
+3. **Organizations decide.**
+   - A managed preference in the app's domain, deployable as a configuration profile, can turn
+     external AI off entirely, or allow only listed services and endpoints.
+   - When it is off, the External section reads "Turned off by your organization" and offers no
+     Connect button.
+   - A workspace can forbid it for everyone who opens it, through `ai.allow_remote: false` in
+     config.yaml.
+   - Organizations without such restrictions can opt in through the consent step above.
+4. **No silent fallback, in either direction.** If an external service fails, the card says why
+   ("Claude: the API key was rejected") and offers Retry. An on-device failure never falls through
+   to an external service.
+5. **The GUI only.** Scheduled and command-line runs never call an external service. That avoids
    unattended egress and Keychain reads from the background item. The narrative is already
    GUI-only.
 
 ### Where settings live
 
-- **Per Mac** (app preferences plus the Keychain): the active provider, its key, model and URL.
-  Secrets cannot go into a workspace that may be shared.
+- **Per Mac** (app preferences plus the Keychain): the connected services, keys, models, URLs and
+  acknowledgements. Secrets and consent cannot go into a workspace that may be shared.
 - **Per workspace** (config.yaml): `ai.enabled`, which stays the gate it is today, and the new
   `ai.allow_remote`.
 
 ### GUI: Settings › Intelligence
 
-- **One row per provider**, with its status: available, needs macOS 27, not configured, turned off
-  by your organization.
-- **Claude (Anthropic):** an API key field (the `SecureSecretField` pattern), the model picker, a
-  US-only processing switch and **Test connection**. The test shows the latency and a one-line
-  reply, and stores nothing.
-- **Local model server:** the URL (default `http://localhost:11434`), a model picker filled from the
-  server's model list, and **Test connection**.
-- **Which provider insights use:** one choice for all five insight cards and the narrative.
-- **"Show what is sent":** opens the exact text for the current workspace.
+- **On this Mac:** Apple's model, with its availability (available, needs macOS 27, not ready).
+- **External AI services**, each row with Connect, which runs the consent step. Once connected,
+  each shows:
+  - **Claude (Anthropic):** an API key field (the `SecureSecretField` pattern), the model picker,
+    a US-only processing switch, and **Test connection**. The test shows the latency and a one-line
+    reply, and stores nothing.
+  - **Local model server:** the URL (default `http://localhost:11434`), a model picker filled from
+    the server's model list, and **Test connection**. The disclosure names the URL; a non-localhost
+    URL is called out as leaving the Mac.
+- **"Show what is sent":** opens the exact text for the current workspace, also once connected.
 - **Usage this month:** requests and tokens, counted locally from the API's `usage` fields.
+- **Disconnect** on each connected service.
 
 ### Phase 1 scope
 
-The provider seam conformers, the Claude provider, Settings › Intelligence, the egress rules (1–6),
-the managed preference keys, Keychain storage, redaction, and tests. Tests use a stubbed URLProtocol
+The provider seam conformers, the Claude provider, Settings › Intelligence with the two sections,
+the consent step and its record, the egress rules (1–5), the managed preference keys, Keychain
+storage, redaction, and tests. Tests use a stubbed URLProtocol
 and send no live request.
 
 ## Part 2: App Intents
@@ -165,9 +214,9 @@ Entities:
 
 ## Decisions for the owner
 
-1. **Default for remote providers.** Off until an administrator allows them, or allowed but off
-   until each user configures one? (Recommend: allowed, off until configured, with the managed lock
-   available.)
+1. **Default for external AI (decided 2026-10-04).** Off by default, and connected only through the
+   explicit consent step; organizations can turn it off entirely by managed preference. Settled; no
+   longer open.
 2. **How remote providers are reached.** Raw HTTPS at the app's seams (recommended), or the
    `ClaudeForFoundationModels` package behind Foundation Models?
 3. **Who pays.** A key per user, or an organization key through a proxy? The latter adds a proxy
