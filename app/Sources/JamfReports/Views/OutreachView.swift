@@ -244,7 +244,7 @@ struct OutreachView: View {
                         }
                         .width(min: 100, ideal: 120)
                     }
-                    .frame(minHeight: 200)
+                    .pageTableHeight(rows: devices.count)
                 } else {
                     Text("No devices in the \(selectedTier.label.lowercased()) tier.")
                         .font(.footnote)

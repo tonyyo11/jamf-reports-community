@@ -182,6 +182,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Offline Outreach, Patch Compliance titles, Policy findings and Extension Attribute definitions
+  tables use the window's height instead of stopping at about seven rows with empty space below;
+  a short list shows only the rows it has.
 - Health Audit > Command health keeps its "Most failed" label on one line; the command pills wrap
   to a second line when they do not fit beside it.
 - Devices no longer cuts the Risk pills ("ATTE", "CRIT") or hides the Risk column and the legend

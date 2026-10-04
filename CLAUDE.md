@@ -772,6 +772,10 @@ the shipped `.app`/`.pkg`/`.dmg` are arm64-only; Intel Macs build from source.
 view puts the controls beside the title when they fit and wraps them under it when they do not
 (`ViewThatFits`; `WrappingRowMetrics.lines` is the line breaking). Backups and Reports use it; the
 other headers keep one row, and Run History still scrolls its buttons sideways (open finding).
+A `Table` in a `PageScaffold` takes `.pageTableHeight(rows:)` (`PageTableMetrics`): its rows when
+they fit the visible page, else one screenful that scrolls inside. Outreach, Patch titles, Policy
+findings and EA definitions use it; the Profiles table, Patch recent failures and others still
+use a fixed `minHeight` (open finding).
 
 **Demo mode (2.8.1).** `WorkspaceStore.demoMode` puts every screen on `DemoData` (`Models/DemoData*.swift`). `DemoData.swift` holds the shared fleet facts — 524 Macs, `securityControls`, `osDistribution`, `complianceBands`, `scheduledRuns`, `referenceDate` — and `+Config`, `+Operations`, `+Security` and `+Admin` hold per-screen data derived from them (`fleetMacs` is the 524 named Macs). The rules: a demo screen never reads or writes a workspace (the demo profile's name can match a real one), never runs jamf-cli and never opens a real path — a control that would is disabled with a note (`DemoData.liveOnlyHelp` unless the screen says more) and its action returns early too; demo dates fall on or before `referenceDate`, ages are measured from it rather than `Date()`, and headers pass `lastModified: nil`; every demo number is derived from the shared facts or asserted against them in a `DemoData*Tests` suite, so no two screens disagree. `WorkspaceStore.setDemoMode(false)` removes what older builds left under the demo profile's name unless jamf-cli lists a real profile called that.
 
