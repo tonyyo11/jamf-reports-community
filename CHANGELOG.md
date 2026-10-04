@@ -182,6 +182,11 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Config > Columns no longer reports a warning that was not there. Every live workspace carried
+  one phantom "Bootstrap Token" warning copied from the demo data, so "Run check" listed three
+  OK lines and nothing about it. A column is now mapped or unmapped by its value alone. Where a
+  warning does show (in demo mode), it names the column it counts, and "1 warning" and "1 column
+  mapped" read correctly in the singular.
 - Settings > Data & Charts names all six per-device commands that "Skip expensive collections"
   skips (it listed four), and starts with the switch's position ("On: ..." or "Off: ..."), so the
   text shown with the switch off no longer reads as the opposite of its label. It also says

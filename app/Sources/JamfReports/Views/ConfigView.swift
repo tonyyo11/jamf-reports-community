@@ -658,10 +658,13 @@ private struct ColumnsTab: View {
                 let skip = workspace.columnMappings.filter { $0.status == .skip }.count
                 VStack(alignment: .leading, spacing: 10) {
                     validationRow(icon: "checkmark.circle.fill", color: Theme.Colors.ok,
-                                  title: "\(ok) columns mapped", detail: "Required fields present")
+                                  title: ColumnValidationText.mapped(ok),
+                                  detail: "Required fields present")
                     if warn > 0 {
                         validationRow(icon: "exclamationmark.triangle.fill", color: Theme.Colors.warn,
-                                      title: "\(warn) warnings", detail: "Run check for details")
+                                      title: ColumnValidationText.warnings(warn),
+                                      detail: ColumnValidationText.warningDetail(
+                                          workspace.columnMappings))
                     }
                     if skip > 0 {
                         validationRow(icon: "minus.circle", color: Theme.Text.tertiary(contrast),
@@ -1417,6 +1420,28 @@ private struct OutputTab: View {
                 PNPTextField(value: value, mono: true)
             }
         }
+    }
+}
+
+// MARK: - Validation card text
+
+/// The Columns tab's validation summary: counts that agree with their noun, and a warning that
+/// names the mappings it counts instead of sending the reader to a check that may not mention it.
+enum ColumnValidationText {
+    static func mapped(_ count: Int) -> String {
+        "\(count) column\(count == 1 ? "" : "s") mapped"
+    }
+
+    static func warnings(_ count: Int) -> String {
+        "\(count) warning\(count == 1 ? "" : "s")"
+    }
+
+    /// The labels of the mappings flagged `.warn`, with the column each is mapped to.
+    static func warningDetail(_ mappings: [ColumnMapping]) -> String {
+        let flagged = mappings.filter { $0.status == .warn }.map { mapping in
+            mapping.value.isEmpty ? mapping.label : "\(mapping.label) (\(mapping.value))"
+        }
+        return flagged.isEmpty ? "Run check for details" : "Flagged: " + flagged.joined(separator: ", ")
     }
 }
 

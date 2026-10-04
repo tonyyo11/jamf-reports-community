@@ -890,9 +890,14 @@ final class WorkspaceStore {
         }
     }
 
-    /// Rebuild [ColumnMapping] from configState.columns, preserving existing status badges.
+    /// Rebuild [ColumnMapping] from configState.columns. A live workspace's status is read
+    /// off its value (empty is unmapped, else mapped): `columnMappings` starts as the demo's
+    /// list, and carrying its badges over put the demo's one warning on every live workspace.
+    /// Demo mode keeps its own badges.
     private func rebuildColumnMappings() {
-        let statusByKey = Dictionary(columnMappings.map { ($0.key, $0.status) }, uniquingKeysWith: { $1 })
+        let statusByKey: [String: ColumnMapping.Status] = demoMode
+            ? Dictionary(columnMappings.map { ($0.key, $0.status) }, uniquingKeysWith: { $1 })
+            : [:]
         columnMappings = ConfigState.columnKeys.map { key in
             let value = configState.columns[key] ?? ""
             return ColumnMapping(
