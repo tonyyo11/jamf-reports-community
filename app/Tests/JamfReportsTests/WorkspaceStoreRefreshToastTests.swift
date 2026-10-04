@@ -103,7 +103,7 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
             return 0
         }
         XCTAssertEqual(store.toast?.message, Self.warningsInRunHistory)
-        XCTAssertEqual(store.toast?.style, .danger)
+        XCTAssertEqual(store.toast?.style, .warning)
         let run = try XCTUnwrap(RunHistoryService.list(profile: store.profile).first)
         XCTAssertTrue(
             RunHistoryService.loadLog(run.logURL).contains { $0.text == unlanded },
@@ -131,7 +131,7 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
             return 0
         }
         XCTAssertEqual(store.toast?.message, Self.warningsInRunHistory)
-        XCTAssertEqual(store.toast?.style, .danger)
+        XCTAssertEqual(store.toast?.style, .warning)
         let run = try XCTUnwrap(RunHistoryService.list(profile: store.profile).first)
         XCTAssertTrue(
             RunHistoryService.loadLog(run.logURL).contains { $0.text == unlanded },
@@ -148,7 +148,7 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
             return 0
         }
         XCTAssertEqual(store.toast?.message, Self.warningsInRunHistory)
-        XCTAssertEqual(store.toast?.style, .danger)
+        XCTAssertEqual(store.toast?.style, .warning)
         let run = try XCTUnwrap(RunHistoryService.list(profile: store.profile).first)
         XCTAssertTrue(
             RunHistoryService.loadLog(run.logURL).contains { $0.text == unlanded },
@@ -167,12 +167,12 @@ final class WorkspaceStoreRefreshToastTests: XCTestCase {
         let inHistory = WorkspaceStore.collectCompletedToast(
             "Data refreshed", incomplete: true, warningsAt: .runHistory)
         XCTAssertEqual(inHistory.message, Self.warningsInRunHistory)
-        XCTAssertEqual(inHistory.style, .danger)
+        XCTAssertEqual(inHistory.style, .warning)
 
         let inLogging = WorkspaceStore.collectCompletedToast(
             "Data refreshed", incomplete: true, warningsAt: .settingsLogging)
         XCTAssertEqual(inLogging.message, Self.warningsInLogging)
-        XCTAssertEqual(inLogging.style, .danger)
+        XCTAssertEqual(inLogging.style, .warning)
     }
 
     /// A first collect whose recorder could not open has no Run History entry, so it points at

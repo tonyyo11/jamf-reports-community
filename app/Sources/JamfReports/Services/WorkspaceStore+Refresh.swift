@@ -299,9 +299,8 @@ extension WorkspaceStore {
         _ message: String, incomplete: Bool, warningsAt: WarningsDestination
     ) -> Toast {
         guard incomplete else { return Toast(message: message, style: .success) }
-        // `.danger` is the toast system's only warning-triangle style; there is no `.warning`.
         return Toast(
-            message: "Refresh finished with warnings — \(warningsAt.pointer)", style: .danger)
+            message: "Refresh finished with warnings — \(warningsAt.pointer)", style: .warning)
     }
 
     /// `sink`, after feeding each run line to `honesty`.

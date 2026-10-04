@@ -136,7 +136,7 @@ final class AppCollectRunHistoryTests: XCTestCase {
 
             XCTAssertEqual(store.toast?.message,
                            "Refresh finished with warnings — see Run History", "\(path)")
-            XCTAssertEqual(store.toast?.style, .danger, "\(path)")
+            XCTAssertEqual(store.toast?.style, .warning, "\(path)")
             let entry = try XCTUnwrap(entries().first, "\(path)")
             XCTAssertEqual(entry.status, .partial, "\(path)")
             XCTAssertTrue(RunHistoryService.loadLog(entry.logURL).contains { $0.text == unlanded },
@@ -161,7 +161,7 @@ final class AppCollectRunHistoryTests: XCTestCase {
 
         XCTAssertEqual(store.toast?.message,
                        "Refresh finished with warnings — see Settings › Logging")
-        XCTAssertEqual(store.toast?.style, .danger)
+        XCTAssertEqual(store.toast?.style, .warning)
         XCTAssertTrue(LogBuffer.shared.snapshot(minLevel: .debug, limit: 2000)
             .contains { $0.message == unlanded })
     }
