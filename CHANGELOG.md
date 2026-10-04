@@ -211,6 +211,14 @@ compliance is now one figure everywhere.
   baseline name is held to one line with the full name in a tooltip, so the card's figure stays
   level with its neighbours. Saving the Config screen no longer writes a baseline label you did
   not set.
+- Health Audit numbers agree. The summary's "Affected" tile added commands, policies, groups and
+  devices into one figure; it is now "Findings", a count of findings that need a look. The audit
+  counts a stale check-in against your Stale device days setting (30 by default) instead of
+  jamf-cli's own 14, so its finding name and count change on the next audit. When the Command
+  health scan has run, the audit's "Failed MDM commands" row (CRITICAL, 6359 commands in Jamf
+  Pro's whole history) is replaced by the scan's "Devices with failed MDM commands" (WARNING, 217
+  devices), which now mentions the command total, so the same problem is no longer listed twice in
+  two units at two severities.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
   percentage points and marked better or worse, and System Integrity Protection is named in full.

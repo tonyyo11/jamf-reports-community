@@ -1525,6 +1525,26 @@ final class CLIBridge {
         }
     }
 
+    /// `thresholds.stale_device_days` for the audit's `--days`: 30, the app's default, when the
+    /// workspace has no config.yaml or it does not parse (logged; the audit still runs).
+    nonisolated static func auditStaleDays(profile: String) -> Int {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return 30 }
+        let url = workspace.appendingPathComponent("config.yaml")
+        guard FileManager.default.fileExists(atPath: url.path) else { return 30 }
+        do {
+            return try ConfigLoader.load(from: url).thresholds?.resolvedStaleDays ?? 30
+        } catch {
+            let reason = error.localizedDescription
+            AppLogger.cli.warning(
+                """
+                audit: config.yaml unreadable (\(reason, privacy: .private)); \
+                using the default 30-day stale threshold
+                """
+            )
+            return 30
+        }
+    }
+
     func audit(
         profile: String,
         category: String?,
@@ -1550,10 +1570,9 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] jamf-cli not found"))
             throw CLIBridgeError.executableNotFound
         }
-        var args = ["-p", profile, "pro", "audit", "--output", "json", "--no-input"]
-        if let category, !category.isEmpty {
-            args.append(contentsOf: ["--checks", category])
-        }
+        let args = ReportEngine.auditArguments(
+            profile: profile, staleDays: Self.auditStaleDays(profile: profile),
+            category: category)
 
         let (code, data) = try await runAndCapture(
             executable: bin,

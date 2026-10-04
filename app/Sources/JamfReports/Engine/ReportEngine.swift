@@ -1895,7 +1895,9 @@ struct ReportEngine: Sendable {
         let detectedVersion = JamfCLIInstaller.installedVersion(at: bin)
         let specNames = JamfCLIInstaller.supportsSpecDerivedNames(detectedVersion)
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
-        let commands = Self.collectCommandMatrix(profile: profile, specNames: specNames)
+        let commands = Self.collectCommandMatrix(
+            profile: profile, specNames: specNames,
+            staleDays: loadedConfig?.thresholds?.resolvedStaleDays ?? 30)
 
         let plannedCommands: [(args: [String], kind: String)]
         if skipExpensive {
@@ -2306,12 +2308,25 @@ struct ReportEngine: Sendable {
         "GENERAL", "HARDWARE", "SECURITY", "USER_AND_LOCATION",
     ]
 
+    /// `pro audit`'s arguments. `--days` is the stale check-in threshold (jamf-cli's own default
+    /// is 14); the app passes `thresholds.stale_device_days` so the audit's stale finding, the
+    /// Stale tiles and Offline Outreach all use one threshold. Below 1 it reads as 1, as the
+    /// check would otherwise flag every Mac.
+    static func auditArguments(
+        profile: String, staleDays: Int, category: String? = nil
+    ) -> [String] {
+        var args = ["-p", profile, "pro", "audit", "--output", "json", "--no-input",
+                    "--days", String(max(staleDays, 1))]
+        if let category, !category.isEmpty { args += ["--checks", category] }
+        return args
+    }
+
     /// The jamf-cli commands `collect` fetches and the snapshot kind each
     /// one writes, in fetch order. A data table, lifted out of `collect` so the
     /// function reads as the flow it is. Must stay in sync with
     /// `knownCollectKinds` — `CollectionTierLookupTests` enforces that in CI.
     static func collectCommandMatrix(
-        profile: String, specNames: Bool
+        profile: String, specNames: Bool, staleDays: Int
     ) -> [(args: [String], kind: String)] {
         // jamf-cli 1.29.0 named this resource after its OpenAPI tag. The old name warns
         // on stderr until 2027-03-09; the new one exits 2 before 1.29. `mobile-devices`
@@ -2387,7 +2402,7 @@ struct ReportEngine: Sendable {
             // Health audit — single cheap server call; matches CLIBridge.audit() shape that
             // AuditView and WorkspaceStore+Refresh all consume as "audit".
             // audit-platform-checks omitted: no Swift reader for that kind yet.
-            (["-p", profile, "pro", "audit", "--output", "json", "--no-input"], "audit"),
+            (auditArguments(profile: profile, staleDays: staleDays), "audit"),
             // v1.23.0+ only. Observed behavior on jamf-cli 1.21.1 (production, 2026-07):
             // an older binary exits 2 (usage — unrecognized subcommand), NOT Cobra's
             // exit-0-with-parent-help; exit 2 falls through the exit-0/exit-7 success
