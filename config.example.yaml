@@ -907,7 +907,8 @@ charts:
   os_adoption:
     # Currently has no effect: nothing reads this key.
     enabled: true
-    # Also generate one chart per major macOS version (drilldown to minor/patch).
+    # Draw the OS adoption by major version chart on the Charts tab. A missing
+    # key means true, as the Customize screen shows it; set false to leave it out.
     per_major_charts: true
 
   # Compliance trend: stacked area chart bucketing devices by failure count.

@@ -1025,8 +1025,9 @@ struct ReportEngine: Sendable {
     /// line/stacked-area charts. With 1 point produces a bar chart.
     ///
     /// Respects:
-    /// - `charts.os_adoption.per_major_charts` — adds one series per major OS version
-    ///   (using `ChartPalette.majorVersionColors`).
+    /// - `charts.os_adoption.per_major_charts` — draws the OS adoption chart, one bar per major
+    ///   OS version (using `ChartPalette.majorVersionColors`). On when the key is absent, as
+    ///   the Customize screen shows it; `false` turns it off.
     /// - `charts.compliance_trend.bands` — uses band labels/colors for compliance stacked area;
     ///   `charts.compliance_trend.enabled: false` turns the chart off.
     /// - `charts.device_state_trend.enabled` — renders managed/stale trend line chart.
@@ -1158,8 +1159,8 @@ struct ReportEngine: Sendable {
                 }
             }
 
-            // --- OS adoption (per-major when enabled) ---
-            if config.charts?.osAdoption?.perMajorCharts == true {
+            // --- OS adoption (on unless per_major_charts is false, like the Customize screen) ---
+            if config.charts?.osAdoption?.perMajorCharts ?? ChartsOptions.defaults.perMajorCharts {
                 var majorData: [String: Double] = [:]
                 if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
                                                                   dataDir: dataDir),
