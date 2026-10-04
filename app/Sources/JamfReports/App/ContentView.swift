@@ -112,7 +112,7 @@ struct ContentView: View {
                         }
                     }
 
-                    StatusBar(status: workspace.globalStatus)
+                    StatusBar(status: workspace.statusLine)
                 }
             }
             .background(Theme.Colors.winBG.ignoresSafeArea())

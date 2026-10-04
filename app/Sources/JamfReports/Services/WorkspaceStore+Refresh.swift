@@ -136,9 +136,8 @@ extension WorkspaceStore {
         guard !manualCollectMustWait() else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
-        globalStatus = "refreshing \(labels) data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(
+            for: activeProfile, status: "refreshing \(labels) data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -185,9 +184,7 @@ extension WorkspaceStore {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
         guard !manualCollectMustWait() else { return }
         let activeProfile = profile
-        globalStatus = "refreshing data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -237,9 +234,8 @@ extension WorkspaceStore {
         }
         guard !manualCollectMustWait() else { return }
         let activeProfile = profile
-        globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(
+            for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast

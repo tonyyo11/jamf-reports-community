@@ -74,6 +74,13 @@ final class WorkspaceStore {
     private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
+    /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
+    /// which any screen sets and clears for its own work, so another screen finishing cannot
+    /// wipe the line a collect still owns.
+    private(set) var collectStatus: String? = nil
+    /// The line the status bar shows: a screen's own message while it has one, else the
+    /// running collect's, else nil ("Ready").
+    var statusLine: String? { globalStatus ?? collectStatus }
     var toast: Toast? = nil
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
@@ -1140,12 +1147,16 @@ final class WorkspaceStore {
         collectsInFlight.values.contains { $0 > 0 } || CLIBridge.holdPurpose != nil
     }
 
-    func beginCollect(for profile: String) {
+    /// Marks a collect for `profile` as running; `status` is what the status bar shows for it
+    /// until the last mark ends.
+    func beginCollect(for profile: String, status: String? = nil) {
         collectsInFlight[profile, default: 0] += 1
+        if let status { collectStatus = status }
     }
 
     func endCollect(for profile: String) {
         collectsInFlight[profile] = max(0, (collectsInFlight[profile] ?? 0) - 1)
+        if !collectsInFlight.values.contains(where: { $0 > 0 }) { collectStatus = nil }
     }
 }
 

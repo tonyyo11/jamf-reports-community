@@ -530,7 +530,7 @@ extension WorkspaceStore {
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
         defer { AutomationHealthModel.shared.isRemediating = false }
-        beginCollect(for: profile)
+        beginCollect(for: profile, status: "re-collecting stale data · profile=\(profile)")
         defer { endCollect(for: profile) }
 
         AppLogger.collect.notice(
@@ -867,7 +867,8 @@ extension WorkspaceStore {
         guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
 
-        targets.forEach { beginCollect(for: $0) }
+        let status = "catching up daily data · profile=\(targets.joined(separator: ", "))"
+        targets.forEach { beginCollect(for: $0, status: status) }
         defer { targets.forEach { endCollect(for: $0) } }
         await Self.runCatchUp(profiles: targets, collect: collect)
         return true
