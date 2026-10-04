@@ -220,7 +220,7 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("device_name: Mobile Display Name"))
     }
 
-    // MARK: - Extra column keys (listed on the Config screen after the original 18)
+    // MARK: - Extra column keys (listed on the Config screen after the base columns)
 
     private static let extraColumnMappings: [(key: String, header: String)] = [
         ("full_name", "Full Name"), ("asset_tag", "Asset Tag"), ("building", "Building"),
@@ -243,9 +243,10 @@ final class ConfigServiceTests: XCTestCase {
         )
     }
 
-    func testExtraColumnKeysAreListedAfterTheOriginalEighteen() {
+    func testExtraColumnKeysAreListedAfterTheBaseColumns() {
         let extras = Self.extraColumnMappings.map(\.key)
-        XCTAssertEqual(ConfigState.columnKeys.count, 18 + extras.count)
+        XCTAssertEqual(ConfigState.baseColumnKeys.count, 19)
+        XCTAssertEqual(ConfigState.columnKeys.count, 19 + extras.count)
         XCTAssertEqual(Array(ConfigState.columnKeys.suffix(extras.count)), extras)
         // Every column the engine decodes has a row: writing each listed key reaches every field.
         let keyLines = ConfigState.columnKeys.map { "  \($0): X" }
@@ -343,6 +344,31 @@ final class ConfigServiceTests: XCTestCase {
         let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
         XCTAssertEqual(try ConfigLoader.load(from: url).columns?.purchaseDate, "Purchase Date")
         XCTAssertFalse(try savedText(profile: profile, root: root).contains("building:"))
+    }
+
+    /// `model` is the marketing name; hardware detection reads `model_identifier` and the
+    /// architecture column under the header Jamf Pro's computer export uses.
+    func testDefaultStateMapsTheHardwareColumnsToJamfsExportHeaders() throws {
+        let columns = ConfigState.defaultState.columns
+        XCTAssertEqual(columns["model"], "Model")
+        XCTAssertEqual(columns["model_identifier"], "Model Identifier")
+        XCTAssertEqual(columns["architecture"], "Architecture Type")
+        let keys = ConfigState.baseColumnKeys
+        let model = try XCTUnwrap(keys.firstIndex(of: "model"))
+        XCTAssertEqual(keys[model + 1], "model_identifier")
+    }
+
+    /// A saved config.yaml that lacks the key loads it as unmapped, not as the default header:
+    /// a header the export may not have must not be written back on the next Save.
+    func testLoadingAColumnsBlockWithoutModelIdentifierLeavesItUnmapped() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "no-model-id-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            "columns:\n  computer_name: Computer Name\n  model: Model\n",
+            profile: profile, root: root)
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.columns["model"], "Model")
+        XCTAssertEqual(loaded.state.columns["model_identifier"], "")
     }
 
     func testDefaultStateFileVaultColumnAndEmptyMobileColumns() {

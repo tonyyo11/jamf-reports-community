@@ -230,6 +230,7 @@ final class WorkspaceStore {
         "disk_percent_full": "Disk % Full",
         "architecture":      "Architecture",
         "model":             "Model",
+        "model_identifier":  "Model Identifier",
         "last_enrollment":   "Last Enrollment",
         "mdm_expiry":        "MDM Profile Expiry",
         "full_name":           "Full Name",
