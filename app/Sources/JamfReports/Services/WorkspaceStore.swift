@@ -74,6 +74,13 @@ final class WorkspaceStore {
     private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
+    /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
+    /// which any screen sets and clears for its own work, so another screen finishing cannot
+    /// wipe the line a collect still owns.
+    private(set) var collectStatus: String? = nil
+    /// The line the status bar shows: a screen's own message while it has one, else the
+    /// running collect's, else nil ("Ready").
+    var statusLine: String? { globalStatus ?? collectStatus }
     var toast: Toast? = nil
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
@@ -82,11 +89,13 @@ final class WorkspaceStore {
     /// Per-profile run-in-progress flags to prevent concurrent collection/generation.
     /// Checked by `generateAll`/`collectThenGenerate` before starting.
     /// Note: these keep two GUI runs for one profile apart; a `--tick` run is kept
-    /// apart by the tick lock `CLIBridge.collect` holds for every GUI collect.
+    /// apart by the tick lock `CLIBridge.collect` holds for every GUI collect, and two
+    /// collects in this app by the same hold.
     private var runInProgressFlags: [String: Bool] = [:]
     /// Profiles with a collect in flight in THIS process — Collect now,
-    /// Initialize, Refresh, or an automatic one. A count, not a flag: two
-    /// overlapping manual actions must not clear each other's mark on exit.
+    /// Initialize, Refresh, or an automatic one. Only one runs at a time
+    /// (`isAnyCollectInFlight`); a count, not a flag, still keeps one action's
+    /// exit from clearing another's mark.
     private var collectsInFlight: [String: Int] = [:]
     /// The profile's jamf-cli auth method, for the freshness re-probes. Injectable
     /// so a test runs no `jamf-cli config list`.
@@ -679,7 +688,7 @@ final class WorkspaceStore {
         jamfCLIUpdateMessage = "Updating jamf-cli..."
         let result = await JamfCLIInstaller().update()
         jamfCLIUpdateMessage = result.message
-        jamfCLIUpdateAvailable = false
+        if !result.refused { jamfCLIUpdateAvailable = false }
         isUpdatingJamfCLI = false
         refreshToolStatus()
     }
@@ -1130,12 +1139,24 @@ final class WorkspaceStore {
             || coordinatorIsCollecting(for: profile)
     }
 
-    func beginCollect(for profile: String) {
+    /// True while any collect runs in this process, for any profile: one this store marked
+    /// (`beginCollect`, including the automatic ones) or one holding the bridge's lock, as a
+    /// jamf-cli update does too. A manual collect does not start while it is true; a generate
+    /// run that has not reached its collect does not count.
+    var isAnyCollectInFlight: Bool {
+        collectsInFlight.values.contains { $0 > 0 } || CLIBridge.holdPurpose != nil
+    }
+
+    /// Marks a collect for `profile` as running; `status` is what the status bar shows for it
+    /// until the last mark ends.
+    func beginCollect(for profile: String, status: String? = nil) {
         collectsInFlight[profile, default: 0] += 1
+        if let status { collectStatus = status }
     }
 
     func endCollect(for profile: String) {
         collectsInFlight[profile] = max(0, (collectsInFlight[profile] ?? 0) - 1)
+        if !collectsInFlight.values.contains(where: { $0 > 0 }) { collectStatus = nil }
     }
 }
 

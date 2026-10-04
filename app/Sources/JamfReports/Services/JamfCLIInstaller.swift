@@ -88,6 +88,9 @@ final class JamfCLIInstaller {
         let succeeded: Bool
         let message: String
         var updateAvailable: Bool = false
+        /// The update did not start because a collect or a scheduled run was in the way:
+        /// nothing changed, so an available update is still available.
+        var refused: Bool = false
     }
 
     private struct CommandResult: Sendable {
@@ -417,7 +420,45 @@ final class JamfCLIInstaller {
         }
     }
 
+    /// Updates jamf-cli, holding the tick lock (`CLIBridge.holdingTickLock`) so the binary
+    /// never changes under a collect and no collect or tick starts under the install.
+    /// Refused, with the reason in the message, while either is running.
     func update() async -> UpdateResult {
+        await Self.refusingWhileBusy { await self.performUpdate() }
+    }
+
+    /// `perform` under the tick lock; a collect, a scheduled run or another update in the
+    /// way gives a refused result instead.
+    static func refusingWhileBusy(
+        _ perform: @escaping @Sendable () async -> UpdateResult
+    ) async -> UpdateResult {
+        do {
+            return try await CLIBridge.holdingTickLock(purpose: .toolUpdate, perform)
+        } catch let blocker as CLIBridgeError where blocker.isCollectRefusal {
+            AppLogger.event(.collect, .notice, "jamf-cli update not started: \(blocker)")
+            return UpdateResult(
+                succeeded: false, message: Self.refusalMessage(blocker), refused: true)
+        } catch {
+            return UpdateResult(
+                succeeded: false,
+                message: "jamf-cli was not updated: \(error.localizedDescription)", refused: true)
+        }
+    }
+
+    static func refusalMessage(_ blocker: CLIBridgeError) -> String {
+        switch blocker {
+        case .toolUpdateInProgress:
+            return "jamf-cli is already being updated."
+        case .tickLockHeld:
+            return "jamf-cli was not updated: a scheduled run is in progress. "
+                + "Update it again when the run finishes."
+        default:
+            return "jamf-cli was not updated: a refresh is running. "
+                + "Update it again when the refresh finishes."
+        }
+    }
+
+    private func performUpdate() async -> UpdateResult {
         guard let installation = Self.currentInstallation() else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
         }

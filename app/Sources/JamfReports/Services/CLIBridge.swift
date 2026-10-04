@@ -782,7 +782,8 @@ final class CLIBridge {
     /// pass `force: false` (the default).
     ///
     /// Holds the tick lock throughout (`holdingTickLock`), and throws
-    /// `CLIBridgeError.tickLockHeld` before the auth probe when a tick holds it.
+    /// `CLIBridgeError.tickLockHeld` before the auth probe when a tick holds it, or
+    /// `CLIBridgeError.collectInProgress` when another collect is running in this app.
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
@@ -969,7 +970,7 @@ final class CLIBridge {
     /// anything else falls back to the localized description.
     nonisolated static func explainOperationError(_ error: Error, operation: String) -> String {
         // A refusal, not a failure: the operation never started.
-        if let refused = error as? CLIBridgeError, refused == .tickLockHeld {
+        if let refused = error as? CLIBridgeError, refused.isCollectRefusal {
             return refused.localizedDescription
         }
         if case let ReportEngineError.collectFailed(_, exitCode) = error {

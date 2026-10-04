@@ -37,6 +37,23 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// Another live process — the bundled `--tick` agent — holds the tick lock, so the
     /// collect did not start. Nothing is queued.
     case tickLockHeld
+    /// A collect is already running in this app, for any profile, so this one did not start.
+    /// Nothing is queued.
+    case collectInProgress
+    /// jamf-cli is being installed or updated by this app, so the collect did not start: the
+    /// binary changes under it otherwise. Nothing is queued.
+    case toolUpdateInProgress
+
+    /// True for the ways a collect is turned away before it starts. A refusal is not a
+    /// failure: it is shown as information and leaves no Run History record.
+    var isCollectRefusal: Bool {
+        self == .tickLockHeld || self == .collectInProgress || self == .toolUpdateInProgress
+    }
+
+    /// `isCollectRefusal` for an error of unknown type.
+    static func isCollectRefusal(_ error: Error) -> Bool {
+        (error as? CLIBridgeError)?.isCollectRefusal == true
+    }
 
     var errorDescription: String? {
         switch self {
@@ -75,6 +92,10 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             return "A required directory could not be created or moved — check available disk space and folder permissions."
         case .tickLockHeld:
             return "A scheduled run is in progress — try again when it finishes"
+        case .collectInProgress:
+            return "A refresh is already running — try again when it finishes"
+        case .toolUpdateInProgress:
+            return "jamf-cli is being updated — try again when it finishes"
         }
     }
 }

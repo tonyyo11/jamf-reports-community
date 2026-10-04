@@ -558,12 +558,10 @@ struct FleetOverviewView: View {
     }
 
     private func load() async {
+        // A reload from disk: nothing is collected, so it neither writes the shared status
+        // line (a running collect owns it) nor claims the data was refreshed.
         isLoading = true
-        workspace.globalStatus = "Aggregating multi-profile summaries..."
-        defer { 
-            isLoading = false
-            workspace.globalStatus = nil
-        }
+        defer { isLoading = false }
 
         if workspace.demoMode {
             rows = demoRows()
@@ -584,9 +582,6 @@ struct FleetOverviewView: View {
             }
         }.value
 
-        if !rows.isEmpty {
-            workspace.toast = Toast(message: "Fleet data refreshed", style: .success)
-        }
         clearDrillDownIfProfileMissing()
     }
 

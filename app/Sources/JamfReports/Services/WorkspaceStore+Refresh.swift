@@ -136,9 +136,8 @@ extension WorkspaceStore {
         guard !manualCollectMustWait() else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
-        globalStatus = "refreshing \(labels) data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(
+            for: activeProfile, status: "refreshing \(labels) data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -185,9 +184,7 @@ extension WorkspaceStore {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
         guard !manualCollectMustWait() else { return }
         let activeProfile = profile
-        globalStatus = "refreshing data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -237,9 +234,8 @@ extension WorkspaceStore {
         }
         guard !manualCollectMustWait() else { return }
         let activeProfile = profile
-        globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(
+            for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
@@ -260,22 +256,26 @@ extension WorkspaceStore {
         toast = outcome
     }
 
-    // MARK: Tick lock for manual collects
+    // MARK: One collect at a time for manual collects
 
-    /// True, after posting the toast, when another live process — the bundled `--tick`
-    /// agent — holds the tick lock (#226 5c). `CLIBridge.collect` would refuse the collect
-    /// anyway; asking first keeps a refused button from touching any state.
+    /// True, after posting the toast, when a manual collect must not start: another live
+    /// process — the bundled `--tick` agent — holds the tick lock (#226 5c), or a collect is
+    /// already running in this app, for any profile. `CLIBridge.collect` would refuse the
+    /// collect anyway; asking first keeps a refused button from touching any state.
     func manualCollectMustWait() -> Bool {
-        guard CLIBridge.tickLockHeldElsewhere() else { return false }
-        AppLogger.collect.notice("Manual collect refused: a scheduled run holds the tick lock")
-        toast = Self.collectFailureToast(CLIBridgeError.tickLockHeld, operation: "Refresh")
+        let refusal = CLIBridge.collectRefusal()
+            ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
+        guard let refusal else { return false }
+        AppLogger.collect.notice(
+            "Manual collect refused: \(refusal.localizedDescription, privacy: .public)")
+        toast = Self.collectFailureToast(refusal, operation: "Refresh")
         return true
     }
 
-    /// The toast for a GUI collect that threw. A tick-lock refusal is not a failure, so it
-    /// is not shown as one.
+    /// The toast for a GUI collect that threw. A refusal — a tick holding the lock, or another
+    /// collect running here — is not a failure, so it is not shown as one.
     nonisolated static func collectFailureToast(_ error: Error, operation: String) -> Toast {
-        let refused = (error as? CLIBridgeError) == .tickLockHeld
+        let refused = CLIBridgeError.isCollectRefusal(error)
         return Toast(message: CLIBridge.explainOperationError(error, operation: operation),
                      style: refused ? .info : .danger)
     }
@@ -332,7 +332,7 @@ extension WorkspaceStore {
     /// Runs a GUI collect with its lines fed to the in-app log, `honesty` and a Run History
     /// record under `appCollectRunLabel`, which `runFirstCollect` has always written.
     /// `recorded` is false when the record could not be opened: the run still goes ahead and
-    /// the toast then names the in-app log. A collect the tick lock refuses ends no record,
+    /// the toast then names the in-app log. A collect that is refused ends no record,
     /// since nothing ran. Main-actor like its callers, so their non-`Sendable` collect closures
     /// stay in one isolation domain.
     @MainActor
@@ -361,7 +361,7 @@ extension WorkspaceStore {
             recorder?.finish(exitCode: exit)
             return (exit, recorder != nil)
         } catch {
-            if (error as? CLIBridgeError) == .tickLockHeld {
+            if CLIBridgeError.isCollectRefusal(error) {
                 recorder?.discard()
             } else {
                 recorder?.record("[error] \(error.localizedDescription)")

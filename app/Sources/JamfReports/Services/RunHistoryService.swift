@@ -12,10 +12,14 @@ enum RunHistoryService {
         let logURL: URL
         let label: String
         let name: String
+        /// When the run started, not when its log was last written.
         let date: Date
         let exitCode: Int32?
+        /// `.warn` for a run with no outcome; `isRunning` says whether it is still going.
         let status: Schedule.LastStatus
         let duration: String?
+        /// No exit footer yet and the recorder still has the log open.
+        var isRunning: Bool = false
     }
 
     // MARK: - List
@@ -45,6 +49,9 @@ enum RunHistoryService {
                     .contentModificationDate) ?? .distantPast
                 let label = url.deletingPathExtension().lastPathComponent
                 let (exitCode, duration, logText) = parseLogTail(from: url)
+                let started = ScheduledRunRecorder.startDate(fromLogName: url.lastPathComponent)
+                let isRunning = exitCode == nil
+                    && ScheduledRunRecorder.isRunInProgress(logURL: resolved)
                 let status: Schedule.LastStatus
                 if let code = exitCode {
                     if code == 0 && isPartialRun(logURL: url, logTailText: logText) {
@@ -53,19 +60,20 @@ enum RunHistoryService {
                         status = code == 0 ? .ok : .fail
                     }
                 } else {
-                    // No exit footer and no failure marker — the run never
-                    // recorded an outcome (e.g. killed mid-flight). Do not
-                    // read that as success.
+                    // No exit footer and no failure marker: still running, or the run
+                    // never recorded an outcome (e.g. killed mid-flight). Do not read
+                    // that as success.
                     status = .warn
                 }
                 return RunSummary(
                     logURL: resolved,
                     label: label,
                     name: humanName(from: label),
-                    date: mtime,
+                    date: started ?? mtime,
                     exitCode: exitCode,
                     status: status,
-                    duration: duration
+                    duration: duration,
+                    isRunning: isRunning
                 )
             }
             .sorted { $0.date > $1.date }

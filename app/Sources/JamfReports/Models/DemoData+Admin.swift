@@ -29,6 +29,9 @@ extension DemoData {
     struct RunLog: Sendable {
         let summary: RunHistoryService.RunSummary
         let lines: [CLIBridge.LogLine]
+        /// When the run ended. The row is dated at its start; the Automation screen's Last
+        /// Run is this.
+        let finished: Date
     }
 
     /// A demo profile's Run History, newest first. Each schedule's newest run
@@ -92,7 +95,7 @@ extension DemoData {
     }
 
     /// The row and log a real run of the same schedule would leave: named like
-    /// `ScheduledRunRecorder`'s files, listed at the log's last write.
+    /// `ScheduledRunRecorder`'s files, listed at the run's start.
     private static func runLog(_ run: PlannedRun) -> RunLog {
         let label = LaunchAgentWriter.label(for: run.schedule) ?? run.schedule.name
         // Display only: demo mode never reads it. It sits where the demo's
@@ -107,7 +110,7 @@ extension DemoData {
             logURL: logURL,
             label: label,
             name: run.schedule.name,
-            date: run.finished,
+            date: run.start,
             exitCode: run.recordedExit ? 0 : nil,
             status: run.recordedExit ? .ok : .warn,
             duration: run.recordedExit ? "\(run.seconds)s" : nil
@@ -115,7 +118,7 @@ extension DemoData {
         let lines = logText(run, label: label).map { text in
             CLIBridge.LogLine(timestamp: run.finished, level: .from(line: text), text: text)
         }
-        return RunLog(summary: summary, lines: lines)
+        return RunLog(summary: summary, lines: lines, finished: run.finished)
     }
 
     /// The log lines, in the formats `ScheduledRunRecorder`, `ReportEngine`

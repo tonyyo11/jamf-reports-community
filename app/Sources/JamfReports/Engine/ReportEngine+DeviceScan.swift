@@ -96,29 +96,39 @@ extension ReportEngine {
         let status: CallOutcome
     }
 
+    /// Whether the phase runs: the tier set, Settings, then the cadence floor, which `force`
+    /// bypasses. Decided with the matrix, so the `[plan]` block and the phase share it.
+    static func planDeviceScan(
+        tiers: Set<CollectionTier>, skipExpensive: Bool, force: Bool,
+        stateStore: StateFileStore?, now: Date
+    ) -> DeviceScanPlan {
+        guard tiers.contains(.scan) else { return .tierNotSelected }
+        guard !skipExpensive else { return .turnedOff }
+        guard !force else { return .due }
+        let attempts = [ddmDeviceStatusKind, mdmCommandHealthKind].map { kind in
+            (kind: kind, last: lastAttemptDate(for: kind, stateStore: stateStore))
+        }
+        let due = attempts.contains {
+            CadenceResolver.isDue(
+                lastRun: $0.last, cadence: CadenceResolver.cadence(forReport: $0.kind), now: now)
+        }
+        return due ? .due : .notDue(lastAttempt: attempts.compactMap(\.last).max())
+    }
+
     /// Returns the kinds it wrote. Never throws: the matrix's verdicts have
     /// already run, and a scan problem must not turn a good run red.
     static func runDeviceScanPhase(
-        profile: String, bin: URL, specNames: Bool, dataDir: URL, tiers: Set<CollectionTier>,
-        skipExpensive: Bool, force: Bool, recordManifest: Bool,
+        profile: String, bin: URL, specNames: Bool, dataDir: URL, plan: DeviceScanPlan,
+        recordManifest: Bool,
         stateStore: StateFileStore?, collectStart: Date,
         authConfirmationProbe: @escaping AuthConfirmationProbe,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async -> Set<String> {
-        guard tiers.contains(.scan), !skipExpensive else { return [] }
-        let kinds = [ddmDeviceStatusKind, mdmCommandHealthKind]
-        if !force {
-            let due = kinds.contains { kind in
-                CadenceResolver.isDue(
-                    lastRun: lastAttemptDate(for: kind, stateStore: stateStore),
-                    cadence: CadenceResolver.cadence(forReport: kind),
-                    now: collectStart
-                )
-            }
-            guard due else {
+        guard plan == .due else {
+            if case .notDue = plan {
                 onLine(.init(timestamp: Date(), level: .info, text: "[skip] device scan: not due"))
-                return []
             }
+            return []
         }
         guard let data = try? loadLatestSnapshotData(kind: "computers", dataDir: dataDir),
               let all = try? JSONDecoder().decode([DeviceScanTarget].self, from: data),
