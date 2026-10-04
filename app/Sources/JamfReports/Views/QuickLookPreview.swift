@@ -5,6 +5,8 @@ import Quartz
 /// Triggers on Space key press and validates URLs against SystemActions allow-list.
 struct QuickLookPreview: NSViewRepresentable {
     let url: URL?
+    /// The profile whose reports folder the preview may read from.
+    var profile: String?
 
     func makeNSView(context: Context) -> QLPreviewView {
         let preview = QLPreviewView()
@@ -15,7 +17,7 @@ struct QuickLookPreview: NSViewRepresentable {
     func updateNSView(_ nsView: QLPreviewView, context: Context) {
         // Validate URL against the canonical SystemActions allow-list before previewing.
         guard let url = url,
-              SystemActions.isURLAllowed(url) else {
+              SystemActions.isURLAllowed(url, profile: profile) else {
             nsView.previewItem = nil
             return
         }

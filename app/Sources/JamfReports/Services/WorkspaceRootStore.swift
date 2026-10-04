@@ -144,6 +144,22 @@ enum WorkspaceRootStore {
         return subpath.isEmpty ? base : "\(base)/\(subpath)"
     }
 
+    /// Display path for a folder a profile's reports go to: under its workspace it reads as
+    /// `displayPath(profile:subpath:)` does, elsewhere (`output.output_dir` on a shared folder)
+    /// it is the folder's own path with `~` for the home folder.
+    static func displayPath(of folder: URL, profile: String) -> String {
+        let path = folder.standardizedFileURL.path
+        if let workspace = ProfileService.workspaceURL(for: profile)?
+            .resolvingSymlinksInPath().standardizedFileURL.path {
+            if path == workspace { return displayPath(profile: profile) }
+            if path.hasPrefix(workspace + "/") {
+                return displayPath(profile: profile,
+                                   subpath: String(path.dropFirst(workspace.count + 1)))
+            }
+        }
+        return (path as NSString).abbreviatingWithTildeInPath
+    }
+
     /// True when the operator has moved the root off its default.
     static func isCustomised(defaults: UserDefaults = .standard) -> Bool {
         guard let stored = defaults.string(forKey: defaultsKey), !stored.isEmpty else {

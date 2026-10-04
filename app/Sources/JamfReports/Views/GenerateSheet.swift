@@ -745,7 +745,7 @@ struct GenerateSheet: View {
                 Spacer()
                 PNPButton(title: "Reveal in Finder", icon: "folder", size: .sm) {
                     let dir = state.resolvedOutputDir(for: profile)
-                    SystemActions.openFolder(dir)
+                    SystemActions.openFolder(dir, profile: profile)
                 }
             }
 
