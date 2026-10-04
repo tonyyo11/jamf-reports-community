@@ -182,6 +182,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Config > Scoring lines up its pickers: the "FileVault off on a hardware-encrypted Mac" picker
+  ends on the same edge as the other four controls' pickers, beside its label when there is room
+  and under it when not, instead of starting at the left edge.
 - A message that appears at the bottom of the window while another is still up now clears after
   four seconds like the first. Before, it stayed over the page, covering tiles such as Patch on
   the Overview, until you closed it.
