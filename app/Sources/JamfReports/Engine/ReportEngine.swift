@@ -2968,19 +2968,21 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         template: any ReportTemplate = FullInstanceTemplate(),
         aiNarrative: String? = nil,
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws -> String {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to HTML
         // generation too — otherwise the GUI's "Require snapshot manifest"
         // toggle would be a false promise for users who generate HTML reports.
         try preflightStrictManifestCheck(config: config, dataDir: dataDir)
-        let report = HtmlReport(
-            config: config, dataDir: dataDir, aiNarrative: aiNarrative, onLine: onLine)
+        let report = htmlReport(
+            config: config, dataDir: dataDir, template: template, aiNarrative: aiNarrative,
+            expandAll: false, locateJamfCLI: locateJamfCLI, onLine: onLine)
+        let profile = config.jamfCli?.resolvedProfile ?? ""
         let digest = try await report.generate(
-            outputURL: outputURL, sections: template.htmlSections
+            outputURL: outputURL, profileName: profile, sections: template.htmlSections
         )
         // Write SHA-256 manifest alongside the HTML artifact.
-        let profile = config.jamfCli?.resolvedProfile ?? ""
         writeManifestStatic(for: outputURL, profile: profile, template: template.identifier)
         // T-13 integrity envelope: surface the embedded fingerprint via the log
         // stream so the GUI can show it in the "Report ready" toast.
@@ -2990,6 +2992,27 @@ struct ReportEngine: Sendable {
             text: "[ok] sha256: \(digest) \(outputURL.lastPathComponent)"
         ))
         return digest
+    }
+
+    /// The HTML report for `template`: its display name for the header, the groups it opens,
+    /// and the installed jamf-cli's version. `expandAll` renders every group open, for the
+    /// PDF export.
+    private static func htmlReport(
+        config: ReportConfig,
+        dataDir: URL,
+        template: any ReportTemplate,
+        aiNarrative: String? = nil,
+        expandAll: Bool,
+        locateJamfCLI: @Sendable () -> URL?,
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
+    ) -> HtmlReport {
+        var report = HtmlReport(
+            config: config, dataDir: dataDir, aiNarrative: aiNarrative, onLine: onLine)
+        report.templateName = template.displayName
+        report.openSections = Set(template.htmlOpenSections)
+        report.expandAll = expandAll
+        report.jamfCLIVersion = locateJamfCLI().flatMap(JamfCLIInstaller.installedVersion(at:))
+        return report
     }
 
     // MARK: - Public API: generatePDF
@@ -3018,7 +3041,8 @@ struct ReportEngine: Sendable {
         dataDir: URL,
         outputURL: URL,
         profileName: String = "",
-        template: any ReportTemplate = FullInstanceTemplate()
+        template: any ReportTemplate = FullInstanceTemplate(),
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") }
     ) async throws {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to PDF
         // generation too. PDF is built on top of HTML; the underlying snapshot
@@ -3030,7 +3054,11 @@ struct ReportEngine: Sendable {
         let tmpHTML = tmpDir.appendingPathComponent(
             "jamf_report_pdf_\(UUID().uuidString).html"
         )
-        let report = HtmlReport(config: config, dataDir: dataDir)
+        // The PDF renderer runs no script, so every group is rendered open rather than
+        // left for a print handler, and the expand and collapse buttons are left out.
+        let report = htmlReport(
+            config: config, dataDir: dataDir, template: template, expandAll: true,
+            locateJamfCLI: locateJamfCLI)
         try await report.generate(
             outputURL: tmpHTML,
             profileName: profileName,
@@ -3055,12 +3083,16 @@ struct ReportEngine: Sendable {
 
     /// Inject CSS page-break rules into an HTML document based on the pagination strategy.
     ///
+    /// The rules name `main > section`, the report's top-level blocks (its figures, attention
+    /// list, dashboard, detail groups and appendix), so a section nested inside one, such as
+    /// the security tiles, never takes a page break of its own.
+    ///
     /// - `.compact` — No modifications; minimal page count.
-    /// - `.standard` — Adds a `<style>` block with `section { page-break-after: auto; }`
+    /// - `.standard` — Adds a `<style>` block with `main > section { page-break-after: auto; }`
     ///   so the browser engine places natural breaks between major sections.
-    /// - `.sectionPerPage` — Wraps every top-level `<section>` element in a div with
-    ///   `page-break-after: always` by injecting a CSS rule. This produces one section
-    ///   per page regardless of content height, suitable for formal auditor deliverables.
+    /// - `.sectionPerPage` — Adds `page-break-after: always` to every top-level section.
+    ///   This produces one section per page regardless of content height, suitable for formal
+    ///   auditor deliverables.
     ///
     /// Implementation note: CSS `page-break-after` is the CSS2.1 property recognized by
     /// WKWebView's `createPDF`. The CSS3 `break-after` alias also works but `page-break-after`
@@ -3070,13 +3102,13 @@ struct ReportEngine: Sendable {
         case .compact:
             return html
         case .standard:
-            let style = "<style>section { page-break-after: auto; }</style>"
+            let style = "<style>main > section { page-break-after: auto; }</style>"
             return html.replacingOccurrences(of: "</head>", with: "\(style)\n</head>")
         case .sectionPerPage:
             let style = """
             <style>
-            section { page-break-after: always; }
-            section:last-of-type { page-break-after: avoid; }
+            main > section { page-break-after: always; }
+            main > section:last-of-type { page-break-after: avoid; }
             </style>
             """
             return html.replacingOccurrences(of: "</head>", with: "\(style)\n</head>")

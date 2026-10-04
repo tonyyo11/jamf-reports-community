@@ -25,10 +25,10 @@ struct CustomTemplate: ReportTemplate {
         // For sheets without a clear HTML mapping, include common sections
         var sections: [SectionID] = []
 
-        // Always include these foundational sections for readability
+        // Always include the framing for readability
         if !includedSheets.isEmpty {
-            sections.append(.kpiTiles)
-            sections.append(.fleetSummary)
+            sections.append(.atAGlance)
+            sections.append(.needsAttention)
         }
 
         // Map specific sheets to their HTML sections
@@ -36,7 +36,6 @@ struct CustomTemplate: ReportTemplate {
             switch sheet {
             case .executiveSummary:
                 if !sections.contains(.aiNarrative) { sections.append(.aiNarrative) }
-                if !sections.contains(.execSummary) { sections.append(.execSummary) }
             case .securityPosture:
                 if !sections.contains(.securityTiles) { sections.append(.securityTiles) }
             case .compliancePosture:
@@ -47,7 +46,8 @@ struct CustomTemplate: ReportTemplate {
             case .auditSummary:
                 if !sections.contains(.auditEvidence) { sections.append(.auditEvidence) }
             case .inventorySummary, .hardwareModels:
-                if !sections.contains(.assetMap) { sections.append(.assetMap) }
+                for id in [SectionID.purchaseCohorts, .buildingBreakdown, .departmentBreakdown]
+                where !sections.contains(id) { sections.append(id) }
             case .osCurrency:
                 if !sections.contains(.osAdoptionChart) { sections.append(.osAdoptionChart) }
                 if !sections.contains(.osCurrency) { sections.append(.osCurrency) }
@@ -55,6 +55,8 @@ struct CustomTemplate: ReportTemplate {
                 if !sections.contains(.policyTable) { sections.append(.policyTable) }
             case .profileStatus, .mobileConfigProfiles:
                 if !sections.contains(.profileTable) { sections.append(.profileTable) }
+            case .appStatus:
+                if !sections.contains(.appTable) { sections.append(.appTable) }
             case .protectOverview, .protectAlerts, .protectComputers, .protectInsights:
                 if !sections.contains(.protectAlerts) { sections.append(.protectAlerts) }
                 if !sections.contains(.insightsDrift) { sections.append(.insightsDrift) }
@@ -64,9 +66,10 @@ struct CustomTemplate: ReportTemplate {
             }
         }
 
-        // Always include org info if any sheets were selected
-        if !sections.contains(.orgInfo) && !includedSheets.isEmpty {
-            sections.append(.orgInfo)
+        // Always include org info and the audit appendix if any sheets were selected
+        if !includedSheets.isEmpty {
+            if !sections.contains(.orgInfo) { sections.append(.orgInfo) }
+            sections.append(.auditAppendix)
         }
 
         return sections

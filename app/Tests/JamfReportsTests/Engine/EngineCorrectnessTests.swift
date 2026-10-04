@@ -125,27 +125,6 @@ final class EngineCorrectnessTests: XCTestCase {
             "EMU height should be \(expectedCY); drawing XML: \(xml.prefix(500))")
     }
 
-    // MARK: - P10-B-18: No key collision between baseMap and buildNewSectionEntries
-
-    func testSectionMapKeysDoNotCollide() {
-        let baseKeys: Set<SectionID> = [
-            .kpiTiles, .fleetSummary, .securityTiles,
-            .osAdoptionChart, .patchBar,
-            .policyTable, .profileTable,
-            .complianceBands, .orgInfo,
-        ]
-        let newKeys: Set<SectionID> = [
-            .execSummary, .recentFailures, .interventionList,
-            .patchQueue, .auditEvidence, .exceptionList,
-            .assetMap, .purchaseCohorts,
-            .buildingBreakdown, .departmentBreakdown,
-            .protectAlerts, .insightsDrift, .agentHealth,
-        ]
-        let overlap = baseKeys.intersection(newKeys)
-        XCTAssertTrue(overlap.isEmpty,
-            "Section ID collision between baseMap and buildNewSectionEntries: \(overlap.map(\.rawValue))")
-    }
-
     // MARK: - P10-B-42: XLSXValidator empty sheetData detection
 
     func testXLSXValidatorDetectsEmptySheetData() throws {

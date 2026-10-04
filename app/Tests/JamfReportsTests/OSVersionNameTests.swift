@@ -127,14 +127,11 @@ final class OSVersionNameTests: XCTestCase {
         let report = HtmlReport(
             config: ReportConfig().withDefaults(),
             dataDir: URL(fileURLWithPath: "/tmp/nonexistent"))
-        let html = report.buildChartsSection(
-            osVersions: [
-                ["os_version": "26.7.0", "count": 60],
-                ["os_version": "26.7", "count": 10],
-                ["os_version": "15.7.3", "count": 30],
-            ],
-            patchStatus: [],
-            accentColor: "#2D5EA2")
+        let html = report.buildOSChart(osVersions: [
+            ["os_version": "26.7.0", "count": 60],
+            ["os_version": "26.7", "count": 10],
+            ["os_version": "15.7.3", "count": 30],
+        ]).html
 
         XCTAssertTrue(html.contains("[\"26.7\",\"15.7.3\"]"), "one label per release")
         XCTAssertTrue(html.contains("[70,30]"))

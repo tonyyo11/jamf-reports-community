@@ -5,7 +5,8 @@ import Foundation
 /// Full instance report — the most complete view of a Jamf Pro tenant.
 ///
 /// Audience: Jamf admins, MacAdmins, and anyone doing a full-detail review.
-/// Includes every available sheet and every HTML section in a logical reading order.
+/// Includes every available sheet and every HTML section; the report starts with every
+/// detail group collapsed.
 struct FullInstanceTemplate: ReportTemplate {
 
     let identifier = "full-instance"
@@ -79,32 +80,36 @@ struct FullInstanceTemplate: ReportTemplate {
     var htmlSections: [SectionID] {
         [
             .aiNarrative,
-            .execSummary,
-            .kpiTiles,
-            .fleetSummary,
+            .atAGlance,
+            .needsAttention,
+            .jamfDashboard,
+            // Security and compliance
             .securityTiles,
-            .osAdoptionChart,
-            .patchBar,
             .complianceBands,
-            .recentFailures,
-            .interventionList,
-            .patchQueue,
-            .policyTable,
-            .profileTable,
-            .assetMap,
-            .purchaseCohorts,
-            .buildingBreakdown,
-            .departmentBreakdown,
             .agentHealth,
-            .timeline,
-            .cleanupAnalysis,
-            .auditEvidence,
             .exceptionList,
             .protectAlerts,
             .insightsDrift,
-            .orgInfo,
+            .auditEvidence,
+            // Patching
+            .patchBar,
+            .patchQueue,
+            .osAdoptionChart,
             .osCurrency,
-            .jamfDashboard,
+            // Devices, policies, trends, failures
+            .interventionList,
+            .policyTable,
+            .profileTable,
+            .appTable,
+            .cleanupAnalysis,
+            .timeline,
+            .recentFailures,
+            // Breakdowns
+            .purchaseCohorts,
+            .buildingBreakdown,
+            .departmentBreakdown,
+            .orgInfo,
+            .auditAppendix,
         ]
     }
 

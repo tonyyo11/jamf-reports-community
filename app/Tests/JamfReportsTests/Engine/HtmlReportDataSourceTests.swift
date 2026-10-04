@@ -62,21 +62,23 @@ final class HtmlReportDataSourceTests: XCTestCase {
         let output = root.appendingPathComponent("report.html")
         try await HtmlReport(config: config, dataDir: dataDir).generate(
             outputURL: output,
-            sections: [.execSummary, .agentHealth, .buildingBreakdown, .departmentBreakdown,
-                       .assetMap, .complianceBands])
+            sections: [.securityTiles, .agentHealth, .buildingBreakdown, .departmentBreakdown,
+                       .complianceBands])
         return try String(contentsOf: output, encoding: .utf8)
     }
 
+    /// The block with element id `id`: up to the next block or the end of its group.
     private func section(_ id: String, in html: String) throws -> String {
         let start = try XCTUnwrap(html.range(of: "id=\"\(id)\""), "no \(id) section")
-        let end = try XCTUnwrap(
-            html.range(of: "</section>", range: start.upperBound..<html.endIndex))
-        return String(html[start.lowerBound..<end.lowerBound])
+        let ends = ["<div class=\"block\"", "</details>"].compactMap {
+            html.range(of: $0, range: start.upperBound..<html.endIndex)?.lowerBound
+        }
+        return String(html[start.lowerBound..<(ends.min() ?? html.endIndex)])
     }
 
-    func testExecutiveSummaryNamesTheGapsTheTilesShow() async throws {
+    func testSecurityControlsNameTheGapsTheTilesShow() async throws {
         let html = try await renderedReport()
-        let summary = try section("exec-summary", in: html)
+        let summary = try section("security-controls", in: html)
         XCTAssertTrue(summary.contains("Security gaps to remediate: FileVault off on 1 Mac."),
                       summary)
         XCTAssertFalse(summary.contains("meet all compliance requirements"))
@@ -104,9 +106,6 @@ final class HtmlReportDataSourceTests: XCTestCase {
         XCTAssertTrue(departments.contains("(unassigned)"), "department 99 is in no snapshot")
         let buildings = try section("building-breakdown", in: html)
         XCTAssertTrue(buildings.contains("Main Campus"), buildings)
-
-        let assets = try section("asset-map", in: html)
-        XCTAssertTrue(assets.contains("<td>Engineering</td><td>Main Campus</td>"), assets)
     }
 
     // MARK: - resolvingLocationNames

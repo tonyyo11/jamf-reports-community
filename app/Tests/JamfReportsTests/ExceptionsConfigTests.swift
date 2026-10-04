@@ -70,7 +70,7 @@ final class ExceptionsConfigTests: XCTestCase {
             signed_off_date: "2026-01-01"
         """
         let config = try configWithExceptions(yaml)
-        let html = makeReport(config: config).buildExceptionList()
+        let html = makeReport(config: config).buildExceptionList().html
         XCTAssertTrue(html.contains("EX-001"), "Exception ID must appear in rendered HTML")
         XCTAssertTrue(html.contains("Example waiver"), "Exception description must appear in rendered HTML")
         XCTAssertTrue(html.contains("Alice"), "Signed-off-by must appear in rendered HTML")
@@ -86,14 +86,17 @@ final class ExceptionsConfigTests: XCTestCase {
             signed_off_date: "2026-01-01"
         """
         let config = try configWithExceptions(yaml)
-        let html = makeReport(config: config).buildExceptionList()
+        let html = makeReport(config: config).buildExceptionList().html
         XCTAssertFalse(html.contains("<script>"), "XSS in exception id must be escaped")
         XCTAssertTrue(html.contains("&lt;script&gt;"))
     }
 
-    // MARK: - Renderer fallback to custom_eas with tip
+    // MARK: - Custom EAs are not exceptions
 
-    func testRendererFallsBackToCustomEAsWhenExceptionsEmpty() throws {
+    /// An older build listed `custom_eas` here under a migration tip. They are extension
+    /// attribute definitions, not waivers, so with no `exceptions:` block the section is
+    /// left out and the appendix says why.
+    func testCustomEAsAreNotListedAsExceptions() throws {
         let yaml = """
         custom_eas:
           - name: "FileVault Status"
@@ -101,45 +104,19 @@ final class ExceptionsConfigTests: XCTestCase {
             type: boolean
             true_value: "Encrypted"
         """
-        let config = try configWithExceptions(yaml)
-        let html = makeReport(config: config).buildExceptionList()
-        XCTAssertTrue(
-            html.contains("FileVault Status"),
-            "Fallback renderer must include custom_ea name"
-        )
-        XCTAssertTrue(
-            html.contains("empty-hint"),
-            "Fallback renderer must include migration tip paragraph"
-        )
-        XCTAssertTrue(
-            html.contains("exceptions:"),
-            "Migration tip must mention exceptions: key"
-        )
+        let block = makeReport(config: try configWithExceptions(yaml)).buildExceptionList()
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(
+            block.omission, "not configured: no exceptions: block in config.yaml")
     }
 
-    func testRendererShowsTipInFallbackMode() throws {
-        let yaml = """
-        custom_eas:
-          - name: "SysTrack"
-            column: "SysTrack Status"
-            type: boolean
-            true_value: "Installed"
-        """
-        let config = try configWithExceptions(yaml)
-        let html = makeReport(config: config).buildExceptionList()
-        XCTAssertTrue(html.contains("config.yaml"), "Tip must reference config.yaml")
-    }
+    // MARK: - Left out when nothing is configured
 
-    // MARK: - Empty state when both are absent
-
-    func testRendererEmptyStateWhenBothAbsent() throws {
+    func testRendererOmitsTheSectionWhenNoExceptionsAreConfigured() throws {
         let config = try configWithExceptions("columns:\n  computer_name: Name")
-        let html = makeReport(config: config).buildExceptionList()
-        XCTAssertTrue(html.contains("exception-list"), "Section ID must be present")
-        XCTAssertTrue(
-            html.contains("exceptions:"),
-            "Empty state must recommend exceptions: block"
-        )
+        let block = makeReport(config: config).buildExceptionList()
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertTrue(block.omission?.contains("exceptions:") == true)
     }
 
     // MARK: - Expired row highlighting
@@ -154,7 +131,7 @@ final class ExceptionsConfigTests: XCTestCase {
             expires_date: "2020-01-01"
         """
         let config = try configWithExceptions(yaml)
-        let html = makeReport(config: config).buildExceptionList()
+        let html = makeReport(config: config).buildExceptionList().html
         XCTAssertTrue(
             html.contains("Expired") || html.contains("sev-error"),
             "Row with past expires_date must contain Expired pill or sev-error class"
@@ -172,7 +149,7 @@ final class ExceptionsConfigTests: XCTestCase {
             expires_date: "2099-12-31"
         """
         let config = try configWithExceptions(yaml)
-        let html = makeReport(config: config).buildExceptionList()
+        let html = makeReport(config: config).buildExceptionList().html
         XCTAssertFalse(
             html.contains("sev-error"),
             "Row with future expires_date must not contain sev-error class"
@@ -190,7 +167,7 @@ final class ExceptionsConfigTests: XCTestCase {
             expires_date: "not-a-date"
         """
         let config = try configWithExceptions(yaml)
-        let html = makeReport(config: config).buildExceptionList()
+        let html = makeReport(config: config).buildExceptionList().html
         XCTAssertFalse(
             html.contains("sev-error"),
             "Non-ISO expires_date must not trigger Expired pill"

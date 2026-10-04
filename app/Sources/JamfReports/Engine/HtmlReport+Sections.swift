@@ -2,9 +2,9 @@ import Foundation
 
 // MARK: - HtmlReport+Sections
 //
-// The 14 section renderers that Phase 4 Lane H left as placeholders.
-// Each renderer is a pure instance method — it reads from cached JSON already
-// loaded in `buildSectionMap` and passes data through `HtmlSectionFormatters`.
+// The detail-section renderers. Each is a pure instance method that takes the snapshot rows
+// `HtmlReport.loadInputs` read and returns an `HtmlBlock`: markup for a block inside a detail
+// group, or the reason the section left none (it is listed in the audit appendix).
 //
 // All user-controlled strings MUST go through `HtmlSectionFormatters.escapeHTML(_:)`
 // before interpolation. No exceptions.
@@ -13,8 +13,8 @@ extension HtmlReport {
 
     // MARK: - 0. aiNarrative (F3 — GUI-generate only)
 
-    /// AI-generated executive narrative, rendered above the exec-summary KPI
-    /// cards. Model output is untrusted dynamic text — always escaped.
+    /// AI-generated executive narrative, rendered above the figures. Model output is
+    /// untrusted dynamic text — always escaped.
     func buildAINarrativeSection(_ narrative: String) -> String {
         let f = HtmlSectionFormatters.self
         return """
@@ -26,62 +26,8 @@ extension HtmlReport {
         """
     }
 
-    // MARK: - 1. execSummary
-
-    /// Three-paragraph executive narrative synthesised from KPI snapshots.
-    /// No invented metrics — only values available from loaded JSON.
-    func buildExecSummary(
-        totalDevices: Int,
-        fileVaultPct: Double,
-        sipPct: Double,
-        firewallPct: Double,
-        fleet: SecurityFleetCounts?,
-        patchStatus: [[String: Any]]
-    ) -> String {
-        let f = HtmlSectionFormatters.self
-
-        // Patch summary: titles below 100%
-        let belowFullPatch = patchStatus.filter { item -> Bool in
-            let s = item["compliance_pct"] as? String ?? "100"
-            let v = Double(s.replacingOccurrences(of: "%", with: "")) ?? 100
-            return v < 100
-        }.count
-
-        let fleetP: String
-        if totalDevices > 0 {
-            fleetP = """
-            The fleet comprises \(totalDevices) managed \(totalDevices == 1 ? "device" : "devices"). \
-            FileVault encryption stands at \(String(format: "%.1f", fileVaultPct))%, \
-            SIP at \(String(format: "%.1f", sipPct))%, \
-            and Firewall at \(String(format: "%.1f", firewallPct))%.
-            """
-        } else {
-            fleetP = "Fleet device count could not be determined from available snapshots."
-        }
-
-        let complianceP = Self.securityGapSentence(fleet)
-
-        let patchP: String
-        if !patchStatus.isEmpty {
-            patchP = "\(belowFullPatch) patch title\(belowFullPatch == 1 ? "" : "s") " +
-                "of \(patchStatus.count) tracked \(belowFullPatch == 1 ? "has" : "have") " +
-                "devices pending updates."
-        } else {
-            patchP = "No patch-status data is available in the current snapshot."
-        }
-
-        return """
-        <section class="content-section" id="exec-summary">
-          <h2>Executive Summary</h2>
-          <p>\(f.escapeHTML(fleetP))</p>
-          <p>\(f.escapeHTML(complianceP))</p>
-          <p>\(f.escapeHTML(patchP))</p>
-        </section>
-        """
-    }
-
-    /// The executive summary's security sentence, worded from the counts the summary tiles
-    /// show (`SecurityFleetCounts`, under the workspace's security policy). A gap is a Mac
+    /// The security sentence of the Security and compliance group, worded from the counts its
+    /// tiles show (`SecurityFleetCounts`, under the workspace's security policy). A gap is a Mac
     /// measured off for a control at the `fail` level; the counts are per control, so a Mac
     /// missing two controls appears in both. device-compliance rows carry no failure count,
     /// so they cannot say how many Macs meet a requirement.
@@ -113,7 +59,7 @@ extension HtmlReport {
         return sentence
     }
 
-    // MARK: - 2. recentFailures
+    // MARK: - recentFailures
 
     /// The `update-device-failures` snapshot is one envelope (`[{error_devices, failed_plans,
     /// ...}]`, either list `null` when empty), not a list of failures. This returns its
@@ -130,19 +76,17 @@ extension HtmlReport {
 
     private static func ageRank(_ daysAgo: Int) -> Int { daysAgo < 0 ? Int.max : daysAgo }
 
-    /// Last 25 device-level patch and update failures sorted by recency.
+    /// Device-level patch and update failures, newest first: ten shown, the rest behind
+    /// "Show all". A row with no readable date is not the newest; it sorts last.
     func buildRecentFailures(
         patchFailures: [[String: Any]],
         updateFailures: [[String: Any]]
-    ) -> String {
-        let f = HtmlSectionFormatters.self
-
+    ) -> HtmlBlock {
         struct FailureRow {
             let device: String
             let serial: String
             let title: String
             let source: String
-            let date: String
             let daysAgo: Int
         }
 
@@ -155,7 +99,7 @@ extension HtmlReport {
             let date = item["status_date"] as? String ?? ""
             rows.append(FailureRow(
                 device: device, serial: serial, title: title,
-                source: "Patch", date: date, daysAgo: daysAgo(from: date)
+                source: "Patch", daysAgo: daysAgo(from: date)
             ))
         }
 
@@ -166,148 +110,105 @@ extension HtmlReport {
             let date = item["updated"] as? String ?? item["last_event"] as? String ?? ""
             rows.append(FailureRow(
                 device: device, serial: serial, title: title,
-                source: "Update", date: date, daysAgo: daysAgo(from: date)
+                source: "Update", daysAgo: daysAgo(from: date)
             ))
         }
 
-        guard !rows.isEmpty else {
-            return """
-            <section class="content-section" id="recent-failures">
-              <h2>Recent Failures</h2>
-              \(f.emptyState("No patch or update failures found in the current snapshot. " +
-                "Run jamf-cli collect to refresh."))
-            </section>
-            """
-        }
+        guard !rows.isEmpty else { return .omitted("no patch or update failures in the snapshots") }
 
-        // A row with no readable date (`daysAgo` -1) is not the newest; it sorts last.
-        let sorted = rows.sorted { Self.ageRank($0.daysAgo) < Self.ageRank($1.daysAgo) }
-            .prefix(25)
-        let tableRows = sorted.map { row -> [String] in
-            let daysLabel = row.daysAgo >= 0 ? "\(row.daysAgo)d ago" : "—"
-            return [row.device, row.serial, row.title, row.source, daysLabel]
-        }
+        let tableRows = rows.sorted { Self.ageRank($0.daysAgo) < Self.ageRank($1.daysAgo) }
+            .map { row -> [String] in
+                let daysLabel = row.daysAgo >= 0 ? "\(row.daysAgo)d ago" : "—"
+                return [row.device, row.serial, row.title, row.source, daysLabel]
+            }
 
-        return """
-        <section class="content-section" id="recent-failures">
-          <h2>Recent Failures (last \(min(rows.count, 25)))</h2>
-          \(f.renderTable(
-              headers: ["Device", "Serial", "Title", "Source", "Age"],
-              rows: Array(tableRows)
-          ))
-        </section>
-        """
+        return .shown(HtmlSectionFormatters.block(
+            id: "recent-failures",
+            title: "Recent failures (\(rows.count))",
+            body: HtmlSectionFormatters.renderCappedTable(
+                headers: ["Device", "Serial", "Title", "Source", "Age"],
+                rows: tableRows, expanded: expandAll)))
     }
 
-    // MARK: - 3. interventionList
+    // MARK: - interventionList
 
-    /// Devices past `thresholds.stale_device_days` with last check-in and primary user.
-    func buildInterventionList(computersInventory: [[String: Any]]) -> String {
-        let f = HtmlSectionFormatters.self
+    /// The Macs whose last check-in is `thresholds.stale_device_days` or more days old, oldest
+    /// first, each with its age. A Mac with no readable check-in date is not counted.
+    func staleComputers(
+        _ computers: [[String: Any]]
+    ) -> [(item: [String: Any], days: Int)] {
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        return computers
+            .map { (item: $0, days: daysAgo(from: inventoryLastContact($0))) }
+            .filter { $0.days >= staleDays }
+            .sorted { $0.days > $1.days }
+    }
 
-        let stale = computersInventory.filter { item -> Bool in
-            let raw = inventoryLastContact(item)
-            let days = daysAgo(from: raw)
-            return days >= staleDays
-        }
-
+    /// Macs past `thresholds.stale_device_days` with last check-in and primary user.
+    func buildInterventionList(computersInventory: [[String: Any]]) -> HtmlBlock {
+        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        guard !computersInventory.isEmpty else { return .omitted("no computers snapshot") }
+        let stale = staleComputers(computersInventory)
         guard !stale.isEmpty else {
-            return """
-            <section class="content-section" id="intervention-list">
-              <h2>Intervention Required</h2>
-              \(f.emptyState("No devices found exceeding the \(staleDays)-day check-in " +
-                "threshold. Update thresholds.stale_device_days in config.yaml to adjust."))
-            </section>
-            """
+            return .omitted(
+                "no Mac has gone \(staleDays) days or more without a check-in")
         }
-
-        let sorted = stale.sorted { lhsItem, rhsItem -> Bool in
-            daysAgo(from: inventoryLastContact(lhsItem)) >
-                daysAgo(from: inventoryLastContact(rhsItem))
+        let tableRows = stale.map { entry -> [String] in
+            [inventoryName(entry.item), inventorySerial(entry.item),
+             inventoryUsername(entry.item), "\(entry.days)"]
         }
-
-        let tableRows = sorted.prefix(100).map { item -> [String] in
-            let name = inventoryName(item)
-            let serial = inventorySerial(item)
-            let user = inventoryUsername(item)
-            let raw = inventoryLastContact(item)
-            let days = daysAgo(from: raw)
-            let daysLabel = days >= 0 ? "\(days)" : "—"
-            return [name, serial, user, daysLabel]
-        }
-
-        return """
-        <section class="content-section" id="intervention-list">
-          <h2>Intervention Required (\(stale.count) device\(stale.count == 1 ? "" : "s")
-            &gt; \(staleDays) days)</h2>
-          \(f.renderTable(
-              headers: ["Device", "Serial", "Primary User", "Days Since Check-in"],
-              rows: Array(tableRows)
-          ))
-          \(stale.count > 100 ? "<p class=\"empty\">\(stale.count - 100) additional devices " +
-            "omitted — see the workbook for the full list.</p>" : "")
-        </section>
-        """
+        return .shown(HtmlSectionFormatters.block(
+            id: "intervention-list",
+            title: "Macs with no check-in for \(staleDays) days or more (\(stale.count))",
+            body: HtmlSectionFormatters.renderCappedTable(
+                headers: ["Device", "Serial", "Primary User", "Days Since Check-in"],
+                rows: tableRows, expanded: expandAll)))
     }
 
-    // MARK: - 4. patchQueue
+    // MARK: - patchQueue
 
-    /// Patch titles with `on_other` > 0, ordered by gap size descending.
-    func buildPatchQueue(patchStatus: [[String: Any]]) -> String {
-        let f = HtmlSectionFormatters.self
-
-        let pending = patchStatus.filter { item -> Bool in
-            (asInt(item["on_other"]) ?? 0) > 0
-        }.sorted { lhs, rhs -> Bool in
-            (asInt(lhs["on_other"]) ?? 0) > (asInt(rhs["on_other"]) ?? 0)
+    /// A patch title's share of devices on its latest version: the row's own
+    /// `compliance_pct` ("83%") when it reads, else `on_latest` over `total`. Nil when
+    /// neither does, so a title with no devices is not a 0%.
+    func patchTitlePct(_ item: [String: Any]) -> Double? {
+        if let text = item["compliance_pct"] as? String,
+           let value = Double(text.trimmingCharacters(in: CharacterSet(charactersIn: "% "))) {
+            return value
         }
+        guard let total = asInt(item["total"]), total > 0,
+              let onLatest = asInt(item["on_latest"]) else { return nil }
+        return Double(onLatest) / Double(total) * 100
+    }
 
+    /// Patch titles with devices on another version, largest gap first.
+    func buildPatchQueue(patchStatus: [[String: Any]]) -> HtmlBlock {
+        guard !patchStatus.isEmpty else { return .omitted("no patch-status snapshot") }
+        let pending = patchStatus.filter { (asInt($0["on_other"]) ?? 0) > 0 }
+            .sorted { (asInt($0["on_other"]) ?? 0) > (asInt($1["on_other"]) ?? 0) }
         guard !pending.isEmpty else {
-            return """
-            <section class="content-section" id="patch-queue">
-              <h2>Patch Queue</h2>
-              \(f.emptyState("No patch titles with pending devices found. " +
-                "All tracked titles are at the latest version, or patch-status data is absent."))
-            </section>
-            """
+            return .omitted("every tracked patch title is on its latest version")
         }
-
-        let tableRows = pending.prefix(50).map { item -> [String] in
-            let title = item["title"] as? String ?? ""
-            let latest = item["latest"] as? String ?? "—"
-            let onOther = asInt(item["on_other"]) ?? 0
-            let total = asInt(item["total"]) ?? 0
-            let pctStr = item["compliance_pct"] as? String ?? "—"
-            return [title, latest, "\(onOther)", "\(total)", pctStr]
+        let tableRows = pending.map { item -> [String] in
+            [item["title"] as? String ?? "", item["latest"] as? String ?? "—",
+             "\(asInt(item["on_other"]) ?? 0)", "\(asInt(item["total"]) ?? 0)",
+             item["compliance_pct"] as? String ?? "—"]
         }
-
-        return """
-        <section class="content-section" id="patch-queue">
-          <h2>Patch Queue (\(pending.count) title\(pending.count == 1 ? "" : "s") pending)</h2>
-          \(f.renderTable(
-              headers: ["Title", "Latest Version", "Pending", "Total", "Compliance"],
-              rows: Array(tableRows)
-          ))
-        </section>
-        """
+        return .shown(HtmlSectionFormatters.block(
+            id: "patch-queue",
+            title: "Patch titles behind (\(pending.count))",
+            body: HtmlSectionFormatters.renderCappedTable(
+                headers: ["Title", "Latest Version", "Behind", "Total", "Compliance"],
+                rows: tableRows, expanded: expandAll)))
     }
 
-    // MARK: - 5. auditEvidence
+    // MARK: - auditEvidence
 
-    /// Audit findings grouped by severity, top 10 per severity.
-    func buildAuditEvidence(auditFindings: [[String: Any]]) -> String {
+    /// Audit findings grouped by severity. A finding is `{name, category, severity, affected,
+    /// recommendation}` from `pro audit`; the older `check`, `policy` and `detail` spellings
+    /// still read.
+    func buildAuditEvidence(auditFindings: [[String: Any]]) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
-
-        guard !auditFindings.isEmpty else {
-            return """
-            <section class="content-section" id="audit-evidence">
-              <h2>Audit Evidence</h2>
-              \(f.emptyState("No audit findings available. Run " +
-                "<code>jamf-cli pro audit --checks all</code> and re-collect."))
-            </section>
-            """
-        }
+        guard !auditFindings.isEmpty else { return .omitted("no audit findings in the snapshot") }
 
         // Group by severity, preserving severity display order
         let severityOrder = ["critical", "high", "error", "medium", "moderate",
@@ -329,7 +230,7 @@ extension HtmlReport {
             // Collect invisible device anchors for every unique device named in findings.
             var seenDeviceSlugs: Set<String> = []
             var deviceAnchors = ""
-            for item in items.prefix(10) {
+            for item in items {
                 let device = item["device"] as? String
                     ?? item["computer_name"] as? String ?? ""
                 guard !device.isEmpty else { continue }
@@ -340,108 +241,44 @@ extension HtmlReport {
                 }
             }
 
-            let tableRows = items.prefix(10).map { item -> [String] in
+            let showsAffected = items.contains { $0["affected"] != nil }
+            let tableRows = items.map { item -> [String] in
                 let check = item["check"] as? String
-                    ?? item["rule_id"] as? String ?? ""
+                    ?? item["rule_id"] as? String ?? item["name"] as? String ?? ""
                 let detail = item["detail"] as? String
-                    ?? item["message"] as? String ?? ""
+                    ?? item["message"] as? String ?? item["recommendation"] as? String ?? ""
                 let resource = item["policy"] as? String
-                    ?? item["resource"] as? String ?? ""
-                return [check, resource, detail]
+                    ?? item["resource"] as? String ?? item["category"] as? String ?? ""
+                let row = [check, resource, detail]
+                return showsAffected ? row + [item["affected"].map { "\($0)" } ?? ""] : row
             }
+            let headers = ["Check", "Policy / Resource", "Detail"]
+                + (showsAffected ? ["Affected"] : [])
             parts.append("""
             <div class="audit-severity-group">
-              \(deviceAnchors)<h3>\(pill) \(HtmlSectionFormatters.escapeHTML(sev.capitalized)) (\(items.count))</h3>
-              \(f.renderTable(
-                  headers: ["Check", "Policy / Resource", "Detail"],
-                  rows: Array(tableRows)
-              ))
-              \(items.count > 10 ? "<p class=\"empty\">\(items.count - 10) additional " +
-                "\(HtmlSectionFormatters.escapeHTML(sev)) findings omitted.</p>" : "")
+              \(deviceAnchors)<h4>\(pill) \(f.escapeHTML(sev.capitalized)) (\(items.count))</h4>
+              \(f.renderCappedTable(headers: headers, rows: tableRows, expanded: expandAll))
             </div>
             """)
         }
 
-        return """
-        <section class="content-section" id="audit-evidence">
-          <h2>Audit Evidence (\(auditFindings.count) finding\(auditFindings.count == 1 ? "" : "s"))</h2>
-          \(parts.joined(separator: "\n"))
-        </section>
-        """
+        return .shown(f.block(
+            id: "audit-evidence",
+            title: "Audit findings (\(auditFindings.count))",
+            body: parts.joined(separator: "\n")))
     }
 
-    // MARK: - 6. exceptionList
+    // MARK: - exceptionList
 
-    /// Compliance exceptions from `config.yaml`.
-    ///
-    /// Primary source: `exceptions:` list of structured `ConfigException` entries.
-    /// Fallback: `custom_eas` list (legacy behavior from Phase 5), shown with a
-    /// migration hint when that path is taken.
-    func buildExceptionList() -> String {
+    /// Compliance exceptions from `config.yaml`'s `exceptions:` list. Omitted when none are
+    /// configured: custom EAs are not exceptions, and an older build listed them here.
+    func buildExceptionList() -> HtmlBlock {
         let f = HtmlSectionFormatters.self
-        let framework = config.compliance?.displayFramework ?? "Not configured"
-
         let exceptions = config.exceptions ?? []
-        if !exceptions.isEmpty {
-            return buildExceptionListFromExceptions(exceptions, framework: framework)
+        guard !exceptions.isEmpty else {
+            return .omitted("not configured: no exceptions: block in config.yaml")
         }
-
-        // Fallback to custom_eas-based rendering with migration tip.
-        let eas = config.customEas ?? []
-        guard !eas.isEmpty else {
-            return """
-            <section class="content-section" id="exception-list">
-              <h2>Exception List</h2>
-              \(f.emptyState("No exceptions configured. " +
-                "Add an exceptions: block in config.yaml to document waivers " +
-                "for \(framework)."))
-            </section>
-            """
-        }
-
-        let tip = """
-        <p class="empty-hint">Tip: prefer a dedicated <code>exceptions:</code> block \
-        in <code>config.yaml</code> for documented waivers.</p>
-        """
-
-        let tableRows = eas.map { ea -> [String] in
-            let typeStr = ea.type.rawValue
-            let threshold: String
-            switch ea.type {
-            case .boolean:
-                threshold = ea.trueValue.map { "Pass value: \($0)" } ?? "—"
-            case .percentage:
-                let warn = ea.warningThreshold.map { "\($0)%" } ?? "—"
-                let crit = ea.criticalThreshold.map { "\($0)%" } ?? "—"
-                threshold = "Warn: \(warn) / Crit: \(crit)"
-            case .version:
-                threshold = ea.currentVersions.map { $0.joined(separator: ", ") } ?? "—"
-            case .date:
-                threshold = ea.warningDays.map { "Warn within \($0) days" } ?? "—"
-            case .text:
-                threshold = "—"
-            }
-            // Plain text: renderTable escapes every cell.
-            return [ea.name, ea.column, typeStr, threshold]
-        }
-
-        return """
-        <section class="content-section" id="exception-list">
-          <h2>Exception List — \(f.escapeHTML(framework))</h2>
-          \(tip)
-          \(f.renderTable(
-              headers: ["EA Name", "Column", "Type", "Threshold / Pass Value"],
-              rows: tableRows
-          ))
-        </section>
-        """
-    }
-
-    private func buildExceptionListFromExceptions(
-        _ exceptions: [ConfigException],
-        framework: String
-    ) -> String {
-        let f = HtmlSectionFormatters.self
+        let framework = config.compliance?.displayFramework ?? "Not configured"
 
         // ISO-8601 date parser for expires_date — yyyy-MM-dd only.
         let isoDF: DateFormatter = {
@@ -483,254 +320,94 @@ extension HtmlReport {
             """
         }
 
-        let headers = ["ID", "Description", "Signed off by", "Signed off", "Expires", "Linked finding"]
-        let ths = headers.map { "<th>\(f.escapeHTML($0))</th>" }.joined()
-
-        return """
-        <section class="content-section" id="exception-list">
-          <h2>Exception List — \(f.escapeHTML(framework)) (\(exceptions.count))</h2>
-          <table class="data-table">
-            <thead><tr>\(ths)</tr></thead>
-            <tbody>\(tableRows.joined(separator: "\n"))</tbody>
-          </table>
-        </section>
-        """
+        let headers = ["ID", "Description", "Signed off by", "Signed off", "Expires",
+                       "Linked finding"]
+        return .shown(f.block(
+            id: "exception-list",
+            title: "Exceptions — \(framework) (\(exceptions.count))",
+            body: f.renderCappedRows(headers: headers, rowHTML: tableRows, expanded: expandAll)))
     }
 
-    // MARK: - 7. assetMap
+    // MARK: - purchaseCohorts
 
-    /// Per-device asset_tag / serial / department from inventory, paginated at 100.
-    func buildAssetMap(computersInventory: [[String: Any]]) -> String {
-        let f = HtmlSectionFormatters.self
+    /// Macs grouped by purchase-date year, as bars.
+    func buildPurchaseCohorts(computersInventory: [[String: Any]]) -> HtmlBlock {
+        let dates = computersInventory.map { inventoryPurchaseDate($0) }
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !dates.isEmpty else { return .omitted("no purchase dates in the inventory") }
 
-        guard !computersInventory.isEmpty else {
-            return """
-            <section class="content-section" id="asset-map">
-              <h2>Asset Map</h2>
-              \(f.emptyState("No inventory data available. Run jamf-cli pro collect, " +
-                "then re-generate the report."))
-            </section>
-            """
-        }
-
-        let tableRows = computersInventory.prefix(100).map { item -> [String] in
-            let name = inventoryName(item)
-            let serial = inventorySerial(item)
-            let asset = inventoryAssetTag(item)
-            let dept = inventoryDepartment(item)
-            let building = inventoryBuilding(item)
-            return [name, serial, asset, dept, building]
-        }
-
-        let total = computersInventory.count
-        let overflow = total > 100
-
-        return """
-        <section class="content-section" id="asset-map">
-          <h2>Asset Map (\(total) device\(total == 1 ? "" : "s"))</h2>
-          \(f.renderTable(
-              headers: ["Device Name", "Serial", "Asset Tag", "Department", "Building"],
-              rows: Array(tableRows)
-          ))
-          \(overflow ? "<p class=\"empty\">\(total - 100) additional devices omitted. " +
-            "See the Asset Inventory workbook for the full list.</p>" : "")
-        </section>
-        """
-    }
-
-    // MARK: - 9. purchaseCohorts
-
-    /// Devices grouped by purchase-date year with a CSS bar chart.
-    func buildPurchaseCohorts(computersInventory: [[String: Any]]) -> String {
-        let f = HtmlSectionFormatters.self
-
-        let withDate = computersInventory.compactMap { item -> (String, String)? in
-            let name = inventoryName(item)
-            let raw = inventoryPurchaseDate(item)
-            guard !raw.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-            return (name, raw)
-        }
-
-        guard !withDate.isEmpty else {
-            return """
-            <section class="content-section" id="purchase-cohorts">
-              <h2>Purchase Cohorts</h2>
-              \(f.emptyState("No purchase_date field found in inventory data. " +
-                "Map the field under columns.purchase_date in config.yaml, or ensure " +
-                "jamf-cli inventory-csv exports that field."))
-            </section>
-            """
-        }
-
-        // Group by year
         var byYear: [String: Int] = [:]
-        for (_, raw) in withDate {
+        for raw in dates {
             let year = String(raw.prefix(4))
             guard !year.isEmpty, year.allSatisfy(\.isNumber) else { continue }
             byYear[year, default: 0] += 1
         }
+        guard !byYear.isEmpty else { return .omitted("no purchase date with a readable year") }
 
-        let sortedYears = byYear.keys.sorted()
-        let maxCount = byYear.values.max() ?? 1
-
-        let bars = sortedYears.map { year -> String in
-            let count = byYear[year] ?? 0
-            let pct = Int((Double(count) / Double(maxCount) * 100).rounded())
-            return """
-            <div class="cohort-bar-row">
-              <span class="cohort-bar-key">\(f.escapeHTML(year))</span>
-              <div class="cohort-bar-bg">
-                <div class="cohort-bar-fill" style="width:\(pct)%" aria-label="\(count) devices"></div>
-              </div>
-              <span class="cohort-bar-n">\(count)</span>
-            </div>
-            """
-        }.joined(separator: "\n")
-
-        let tableRows = sortedYears.map { year -> [String] in
-            [year, "\(byYear[year] ?? 0)"]
-        }
-
-        return """
-        <section class="content-section" id="purchase-cohorts">
-          <h2>Purchase Cohorts (\(withDate.count) device\(withDate.count == 1 ? "" : "s"))</h2>
-          <div class="cohort-bar-section">\(bars)</div>
-          \(f.renderTable(headers: ["Year", "Devices"], rows: tableRows))
-        </section>
-        """
+        let rows = byYear.keys.sorted().map { (label: $0, count: byYear[$0] ?? 0) }
+        return .shown(HtmlSectionFormatters.block(
+            id: "purchase-cohorts",
+            title: "Purchase cohorts (\(dates.count) Mac\(dates.count == 1 ? "" : "s"))",
+            body: HtmlSectionFormatters.renderBars(rows, expanded: expandAll)))
     }
 
-    // MARK: - 10. buildingBreakdown
+    // MARK: - buildingBreakdown
 
-    /// Device count per building with a CSS bar chart.
-    func buildBuildingBreakdown(computersInventory: [[String: Any]]) -> String {
+    /// Macs per building, as bars.
+    func buildBuildingBreakdown(computersInventory: [[String: Any]]) -> HtmlBlock {
         buildGroupBreakdown(
-            computersInventory: computersInventory,
-            field: "building",
-            fallbackFields: ["buildingName"],
-            sectionID: "building-breakdown",
-            title: "Building Breakdown",
-            emptyHint: "No building field found in inventory data. " +
-                "Map the field under columns.building in config.yaml."
-        )
+            computersInventory: computersInventory, sectionID: "building-breakdown",
+            title: "Buildings", value: inventoryBuilding)
     }
 
-    // MARK: - 11. departmentBreakdown
+    // MARK: - departmentBreakdown
 
-    /// Device count per department with a CSS bar chart.
-    func buildDepartmentBreakdown(computersInventory: [[String: Any]]) -> String {
+    /// Macs per department, as bars.
+    func buildDepartmentBreakdown(computersInventory: [[String: Any]]) -> HtmlBlock {
         buildGroupBreakdown(
-            computersInventory: computersInventory,
-            field: "department",
-            fallbackFields: ["departmentName"],
-            sectionID: "department-breakdown",
-            title: "Department Breakdown",
-            emptyHint: "No department field found in inventory data. " +
-                "Map the field under columns.department in config.yaml."
-        )
+            computersInventory: computersInventory, sectionID: "department-breakdown",
+            title: "Departments", value: inventoryDepartment)
     }
 
-    // Shared CSS-bar breakdown builder for building / department.
+    /// Shared bars for building / department, largest first. Omitted when no Mac is assigned
+    /// to any: a single "(unassigned)" bar says nothing.
     private func buildGroupBreakdown(
         computersInventory: [[String: Any]],
-        field: String,
-        fallbackFields: [String],
         sectionID: String,
         title: String,
-        emptyHint: String
-    ) -> String {
-        let f = HtmlSectionFormatters.self
-
+        value: ([String: Any]) -> String
+    ) -> HtmlBlock {
+        guard !computersInventory.isEmpty else { return .omitted("no computers snapshot") }
         var counts: [String: Int] = [:]
         for item in computersInventory {
-            // Use dedicated accessors for building/department to handle nested shape.
-            var value: String
-            if field == "building" {
-                value = inventoryBuilding(item)
-                if value == "—" { value = "" }
-            } else if field == "department" {
-                value = inventoryDepartment(item)
-                if value == "—" { value = "" }
-            } else {
-                value = item[field] as? String ?? ""
-                if value.isEmpty {
-                    for fb in fallbackFields {
-                        if let v = item[fb] as? String, !v.isEmpty { value = v; break }
-                    }
-                }
-            }
-            let key = value.isEmpty ? "(unassigned)" : value
-            counts[key, default: 0] += 1
+            let name = value(item)
+            counts[name == "—" || name.isEmpty ? "(unassigned)" : name, default: 0] += 1
         }
-
-        guard !counts.isEmpty else {
-            return """
-            <section class="content-section" id="\(sectionID)">
-              <h2>\(HtmlSectionFormatters.escapeHTML(title))</h2>
-              \(f.emptyState(emptyHint))
-            </section>
-            """
+        guard counts.keys.contains(where: { $0 != "(unassigned)" }) else {
+            return .omitted("every Mac is unassigned")
         }
-
-        let sorted = counts.sorted { $0.value > $1.value }
-        let maxCount = sorted.first?.value ?? 1
-
-        let bars = sorted.map { key, count -> String in
-            let pct = Int((Double(count) / Double(maxCount) * 100).rounded())
-            return """
-            <div class="cohort-bar-row">
-              <span class="cohort-bar-key">\(f.escapeHTML(key))</span>
-              <div class="cohort-bar-bg">
-                <div class="cohort-bar-fill" style="width:\(pct)%"
-                     aria-label="\(f.escapeHTML(key)): \(count) devices"></div>
-              </div>
-              <span class="cohort-bar-n">\(count)</span>
-            </div>
-            """
-        }.joined(separator: "\n")
-
-        let tableRows = sorted.map { key, count -> [String] in [key, "\(count)"] }
-
-        return """
-        <section class="content-section" id="\(sectionID)">
-          <h2>\(HtmlSectionFormatters.escapeHTML(title))</h2>
-          <div class="cohort-bar-section">\(bars)</div>
-          \(f.renderTable(headers: [title.components(separatedBy: " ").first ?? "Group",
-                                    "Devices"], rows: Array(tableRows)))
-        </section>
-        """
+        let sorted = counts
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .map { (label: $0.key, count: $0.value) }
+        return .shown(HtmlSectionFormatters.block(
+            id: sectionID, title: "\(title) (\(sorted.count))",
+            body: HtmlSectionFormatters.renderBars(sorted, expanded: expandAll)))
     }
 
-    // MARK: - 12. protectAlerts
+    // MARK: - protectAlerts
 
     /// Protect alerts grouped by severity, capped by `html.section_limits.protect_alerts`
     /// (default 25, bounded [1, 200]). Reads jamf-cli's flattened alert rows from the
     /// `protect-alerts` kind directory `ReportEngine.protectCollect` writes.
-    func buildProtectAlerts(protectDataDir: URL?) -> String {
+    func buildProtectAlerts(protectDataDir: URL?) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let cap = config.html?.sectionLimits?.resolvedProtectAlerts ?? 25
 
         guard let dir = protectDataDir else {
-            return """
-            <section class="content-section" id="protect-alerts">
-              <h2>Protect Alerts</h2>
-              \(f.emptyState("Jamf Protect is not configured. Set protect.enabled: true " +
-                "in config.yaml and provide protect.profile to enable Protect data collection."))
-            </section>
-            """
+            return .omitted("not configured: protect.enabled is off in config.yaml")
         }
-
         let alerts = loadProtectJSON(kind: "protect-alerts", dataDir: dir)
-
-        guard !alerts.isEmpty else {
-            return """
-            <section class="content-section" id="protect-alerts">
-              <h2>Protect Alerts</h2>
-              \(f.emptyState("No Protect alerts found. Run a collect (Sources tab → " +
-                "Collect now) with Protect enabled to populate alert data."))
-            </section>
-            """
-        }
+        guard !alerts.isEmpty else { return .omitted("no Protect alerts in the snapshot") }
 
         var bySeverity: [String: [[String: Any]]] = [:]
         for alert in alerts {
@@ -750,7 +427,6 @@ extension HtmlReport {
             let take = max(0, min(sevAlerts.count, cap - totalShown))
             guard take > 0 else { continue }
 
-            let pill = f.renderSeverityPill(sev)
             let alertRows = sevAlerts.prefix(take).map { alert -> String in
                 // jamf-cli's flattened row: `computer` is the host name (string,
                 // absent when the alert has no computer); `eventType` names the
@@ -775,30 +451,24 @@ extension HtmlReport {
                     "<td>\(f.escapeHTML(description))</td>" +
                     "<td>\(f.escapeHTML(date))</td></tr>"
             }
-            let alertTable = """
-            <table class="data-table">
-              <thead><tr><th>Device</th><th>Alert</th><th>Date</th></tr></thead>
-              <tbody>\(alertRows.joined(separator: "\n"))</tbody>
-            </table>
-            """
             totalShown += take
             parts.append("""
             <div class="audit-severity-group">
-              <h3>\(pill) (\(sevAlerts.count))</h3>
-              \(alertTable)
+              <h4>\(f.renderSeverityPill(sev)) (\(sevAlerts.count))</h4>
+              \(f.renderCappedRows(
+                  headers: ["Device", "Alert", "Date"], rowHTML: Array(alertRows),
+                  expanded: expandAll))
             </div>
             """)
         }
 
-        return """
-        <section class="content-section" id="protect-alerts">
-          <h2>Protect Alerts (showing \(totalShown) of \(alerts.count))</h2>
-          \(parts.joined(separator: "\n"))
-        </section>
-        """
+        return .shown(f.block(
+            id: "protect-alerts",
+            title: "Protect alerts (showing \(totalShown) of \(alerts.count))",
+            body: parts.joined(separator: "\n")))
     }
 
-    // MARK: - 13. insightsDrift
+    // MARK: - insightsDrift
 
     /// Protect insights snapshot comparison, using up to
     /// `html.section_limits.insights_drift_snapshots` (default 2, bounded [1, 12]) snapshots.
@@ -807,32 +477,17 @@ extension HtmlReport {
     ///
     /// When more than two snapshots are requested, the table gains one column per additional
     /// snapshot labelled "N ago" (oldest first, current last).
-    func buildInsightsDrift(protectDataDir: URL?) -> String {
+    func buildInsightsDrift(protectDataDir: URL?) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let snapshotCap = config.html?.sectionLimits?.resolvedInsightsDriftSnapshots ?? 2
 
         guard let dir = protectDataDir else {
-            return """
-            <section class="content-section" id="insights-drift">
-              <h2>Insights Drift</h2>
-              \(f.emptyState("Jamf Protect is not configured. Set protect.enabled: true " +
-                "in config.yaml to enable Protect data collection."))
-            </section>
-            """
+            return .omitted("not configured: protect.enabled is off in config.yaml")
         }
-
         let allSnapshots = loadProtectInsightSnapshots(dataDir: dir)
-
         guard allSnapshots.count >= 2 else {
-            let count = allSnapshots.count
-            return """
-            <section class="content-section" id="insights-drift">
-              <h2>Insights Drift</h2>
-              \(f.emptyState("Comparison requires N≥2 cached snapshots; " +
-                "\(count) snapshot\(count == 1 ? "" : "s") found. Run a collect " +
-                "(Sources tab → Collect now) with Protect enabled on two or more days."))
-            </section>
-            """
+            return .omitted("needs two or more Protect insights snapshots; "
+                + "\(allSnapshots.count) found")
         }
 
         // Take the most recent `snapshotCap` snapshots; fall back to all available if fewer.
@@ -855,8 +510,7 @@ extension HtmlReport {
             } else if idx == window.count - 2 {
                 headers.append("Previous")
             } else {
-                let stepsBack = window.count - 1 - idx
-                headers.append("\(stepsBack) ago")
+                headers.append("\(window.count - 1 - idx) ago")
             }
         }
 
@@ -869,44 +523,36 @@ extension HtmlReport {
             return row
         }
 
-        return """
-        <section class="content-section" id="insights-drift">
-          <h2>Insights Drift (\(window.count) of \(allSnapshots.count) snapshots)</h2>
-          <p class="empty-hint">Values are failing-device counts per insight.</p>
-          \(f.renderTable(headers: headers, rows: tableRows))
-        </section>
-        """
+        return .shown(f.block(
+            id: "insights-drift",
+            title: "Protect insights drift (\(window.count) of \(allSnapshots.count) snapshots)",
+            body: """
+            <p class="empty-hint">Values are failing-device counts per insight.</p>
+            \(f.renderCappedTable(headers: headers, rows: tableRows, expanded: expandAll))
+            """))
     }
 
-    // MARK: - 14. agentHealth
+    // MARK: - agentHealth
 
     /// Per-security-agent (CrowdStrike, etc.) installed/missing/unknown counts from the
     /// `ea-results` snapshot, through `SecurityAgentCoverage` like the Overview card and the
     /// daily summary's EDR figure. Coverage is over `fleet` Macs, so a Mac with no value
     /// counts as unknown; `fleet` falls back to the Macs ea-results knows when it is 0.
-    func buildAgentHealth(eaRows: [EAResultRow]?, fleet: Int) -> String {
+    func buildAgentHealth(eaRows: [EAResultRow]?, fleet: Int) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let agents = config.securityAgents ?? []
-
-        func section(_ body: String) -> String {
-            """
-            <section class="content-section" id="agent-health">
-              <h2>Security Agent Health</h2>
-              \(body)
-            </section>
-            """
-        }
-
         guard !agents.isEmpty else {
-            return section(f.emptyState("No security agents configured. Add entries under " +
-                "security_agents in config.yaml to track CrowdStrike Falcon and other agents."))
+            return .omitted("not configured: no security_agents in config.yaml")
         }
         guard let eaRows, !eaRows.isEmpty else {
-            return section(f.emptyState("No extension attribute results are available. " +
-                "A collect writes them."))
+            return .omitted("no extension attribute results in the snapshot")
         }
 
         let coverage = SecurityAgentCoverage.compute(rows: eaRows, agents: agents)
+        guard coverage.contains(where: { $0.reporting > 0 }) else {
+            return .omitted("no Mac reports the extension attribute of any configured agent ("
+                + coverage.map(\.column).joined(separator: ", ") + ")")
+        }
         let total = fleet > 0 ? fleet : MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
         var tableRows: [[String]] = []
         var barCards: [HtmlSectionFormatters.SectionCard] = []
@@ -929,13 +575,13 @@ extension HtmlReport {
                     : "no Mac reports \(agent.column)"
             ))
         }
-        return section("""
+        return .shown(f.block(id: "agent-health", title: "Security agent health", body: """
             \(f.renderCardGrid(cards: barCards))
             \(f.renderTable(
                 headers: ["Agent", "Installed", "Missing", "Unknown", "Coverage"],
                 rows: tableRows
             ))
-            """)
+            """))
     }
 
     // MARK: - Protect helpers
@@ -1032,7 +678,7 @@ extension HtmlReport {
             }
     }
 
-    // MARK: - 15. cleanupAnalysis
+    // MARK: - cleanupAnalysis
 
     /// Jamf instance hygiene: disabled policies, unscoped policies/profiles,
     /// unused packages, and unused scripts.
@@ -1041,14 +687,15 @@ extension HtmlReport {
     /// `package_configuration.packages`, `scripts`) that are only present when
     /// jamf-cli collects individual policy detail records. The flat
     /// `classic-policies` list snapshot (id + name only) cannot satisfy these
-    /// requirements. When no detail fields are found, the section renders an
-    /// honest "detail not available" note rather than incorrect "none found" results.
+    /// requirements, so the section is left out with that reason instead of reporting
+    /// "none found". It is also left out when the detail is present and nothing needs
+    /// cleaning up.
     func buildCleanupAnalysis(
         classicPolicies: [[String: Any]],
         classicProfiles: [[String: Any]],
         packages: [[String: Any]],
         scripts: [[String: Any]]
-    ) -> String {
+    ) -> HtmlBlock {
         let f = HtmlSectionFormatters.self
 
         // Detect whether any record carries the per-policy detail fields needed.
@@ -1063,20 +710,10 @@ extension HtmlReport {
 
         // When no detail is present the section must say so honestly.
         guard hasDetailFields || hasProfileDetailFields else {
-            let policyNote = classicPolicies.isEmpty
-                ? "No classic-policies snapshot available."
-                : "classic-policies snapshot has \(classicPolicies.count) " +
-                  "record\(classicPolicies.count == 1 ? "" : "s") (id + name only) — " +
-                  "per-policy detail required for enabled/scope/package/script analysis " +
-                  "is not present in this snapshot."
-            return """
-            <section class="content-section" id="cleanup-analysis">
-              <h2>Cleanup Analysis</h2>
-              \(f.emptyState(policyNote +
-                " Run jamf-cli pro collect to refresh, or check that per-policy detail " +
-                "collection is enabled."))
-            </section>
-            """
+            return .omitted(classicPolicies.isEmpty
+                ? "no classic-policies snapshot"
+                : "the classic-policies snapshot lists id and name only; the per-policy detail "
+                    + "this analysis needs is not in it")
         }
 
         let disabled = cleanupDisabledPolicies(classicPolicies)
@@ -1099,6 +736,10 @@ extension HtmlReport {
             ("Unused Packages",    "unused-packages",     unusedPackages,   hasPackageDetail),
             ("Unused Scripts",     "unused-scripts",      unusedScripts,    hasScriptDetail),
         ]
+        guard categories.contains(where: { $0.3 && !$0.2.isEmpty }) else {
+            return .omitted("nothing to clean up: no disabled or unscoped policies, unscoped "
+                + "profiles, or unused packages or scripts")
+        }
 
         let tabs = categories.enumerated().map { idx, tuple -> String in
             let (label, tabID, items, hasData) = tuple
@@ -1130,7 +771,7 @@ extension HtmlReport {
             } else if items.isEmpty {
                 body = "<p class=\"cleanup-ok\">None found — good!</p>"
             } else {
-                body = f.renderList(items: items)
+                body = f.renderCappedList(items: items, expanded: expandAll)
             }
             return """
             <div class="cleanup-pane\(activeAttr)"
@@ -1143,28 +784,22 @@ extension HtmlReport {
             """
         }.joined(separator: "\n")
 
-        let detailNote: String
         let policiesWithDetail = classicPolicies.filter { $0["general"] != nil }.count
         let profilesWithDetail = classicProfiles.filter { $0["general"] != nil }.count
-        if policiesWithDetail > 0 || profilesWithDetail > 0 {
-            detailNote = "Based on \(policiesWithDetail) " +
-                "polic\(policiesWithDetail == 1 ? "y" : "ies") and " +
-                "\(profilesWithDetail) profile\(profilesWithDetail == 1 ? "" : "s") " +
-                "with cached detail."
-        } else {
-            detailNote = ""
-        }
+        let detailNote = policiesWithDetail > 0 || profilesWithDetail > 0
+            ? "Based on \(policiesWithDetail) "
+                + "polic\(policiesWithDetail == 1 ? "y" : "ies") and "
+                + "\(profilesWithDetail) profile\(profilesWithDetail == 1 ? "" : "s") "
+                + "with cached detail."
+            : ""
 
-        return """
-        <section class="content-section" id="cleanup-analysis">
-          <h2>Cleanup Analysis</h2>
-          \(detailNote.isEmpty ? "" : "<p class=\"cleanup-note\">\(f.escapeHTML(detailNote))</p>")
-          <div class="cleanup-tabs" role="tablist" aria-label="Cleanup categories">
-            \(tabs)
-          </div>
-          \(panes)
-        </section>
-        """
+        return .shown(f.block(id: "cleanup-analysis", title: "Cleanup analysis", body: """
+            \(detailNote.isEmpty ? "" : "<p class=\"cleanup-note\">\(f.escapeHTML(detailNote))</p>")
+            <div class="cleanup-tabs" role="tablist" aria-label="Cleanup categories">
+              \(tabs)
+            </div>
+            \(panes)
+            """))
     }
 
     // MARK: Cleanup helpers — field-presence aware
@@ -1276,74 +911,59 @@ extension HtmlReport {
         }.sorted()
     }
 
-    // MARK: - 16. timeline
+    // MARK: - timeline
 
     /// OS adoption and security metric trends from workspace `summary_*.json` snapshots.
     ///
     /// Reads from `<dataDir>/../snapshots/summaries/summary_*.json` — the same
     /// directory `TrendStore` reads, but parsed independently (Engine layer must not
-    /// depend on Services). Plots available scalar series: total devices,
-    /// FileVault %, SIP %, and compliance %.
+    /// depend on Services). Plots available scalar series: FileVault %, SIP %, and
+    /// compliance %. The chart is visible; the daily values sit in a nested block of their
+    /// own, since a year of days is a table nobody scrolls.
     ///
     /// Note: Python's `_render_timeline_section` renders per-OS-version lines from a
     /// `{ts, versions:[{v,c}]}` history file. Summary snapshots carry only aggregate
     /// scalars (no per-version counts), so per-version trend lines cannot be reproduced
     /// from this data source; scalar metric trends are rendered instead.
-    func buildTimelineSection() -> String {
+    func buildTimelineSection() -> HtmlBlock {
         let f = HtmlSectionFormatters.self
         let (summaries, skipped) = loadSummarySnapshots()
+        guard !summaries.isEmpty else { return .omitted("no daily summaries yet") }
         let skippedNote = skipped > 0
-            ? "<p class=\"timeline-warn\">\(skipped) snapshot file\(skipped == 1 ? "" : "s") could not be parsed.</p>"
+            ? "<p class=\"timeline-warn\">\(skipped) snapshot file\(skipped == 1 ? "" : "s") "
+                + "could not be parsed.</p>"
             : ""
 
-        guard !summaries.isEmpty else {
-            return HtmlSectionFormatters.emptySection(
-                title: "Historical Trends",
-                dataKind: "snapshots/summaries/summary_*.json"
-            ) + skippedNote
-        }
-
-        // Build the trend table rows (date + key metrics), newest last.
+        // Date + key metrics, oldest first.
         let tableRows: [[String]] = summaries.map { s in
             let fvStr = s.fileVaultPct.map { String(format: "%.1f%%", $0) } ?? "—"
             let sipStr = s.sipPct.map { String(format: "%.1f%%", $0) } ?? "—"
             let compStr = s.compliancePct.map { String(format: "%.1f%%", $0) } ?? "—"
-            return [
-                f.escapeHTML(s.date),
-                f.escapeHTML("\(s.totalDevices)"),
-                f.escapeHTML(fvStr),
-                f.escapeHTML(sipStr),
-                f.escapeHTML(compStr),
-            ]
+            return [s.date, "\(s.totalDevices)", fvStr, sipStr, compStr]
         }
-
-        let tableHTML = f.renderTable(
-            headers: ["Date", "Total Devices", "FileVault", "SIP", "Compliance"],
-            rows: tableRows
-        )
+        let daily = f.disclosure(
+            label: "Daily values (\(summaries.count))",
+            body: f.renderTable(
+                headers: ["Date", "Total Devices", "FileVault", "SIP", "Compliance"],
+                rows: tableRows),
+            expanded: expandAll)
 
         if summaries.count == 1 {
-            return """
-            <section class="content-section" id="timeline">
-              <h2>Historical Trends</h2>
-              <p class="empty-note">Only 1 snapshot available — collect more runs to see trends.</p>
-              \(skippedNote)
-              \(tableHTML)
-            </section>
-            """
+            return .shown(f.block(id: "timeline", title: "Historical trends", body: """
+                <p class="empty-note">Only 1 snapshot available — collect more runs to see
+                trends.</p>
+                \(skippedNote)
+                \(daily)
+                """))
         }
-
-        let svgHTML = renderTimelineSVG(summaries: summaries)
-
-        return """
-        <section class="content-section" id="timeline">
-          <h2>Historical Trends</h2>
-          <p class="timeline-note">\(f.escapeHTML("\(summaries.count) snapshot\(summaries.count == 1 ? "" : "s")")) &middot; metrics from workspace summaries</p>
-          \(skippedNote)
-          \(svgHTML)
-          \(tableHTML)
-        </section>
-        """
+        let count = summaries.count
+        return .shown(f.block(id: "timeline", title: "Historical trends", body: """
+            <p class="timeline-note">\(count) snapshots &middot; metrics from workspace
+            summaries</p>
+            \(skippedNote)
+            \(renderTimelineSVG(summaries: summaries))
+            \(daily)
+            """))
     }
 
     // MARK: Timeline helpers
@@ -1423,6 +1043,9 @@ extension HtmlReport {
 
         return (snapshots: snapshots.sorted { $0.date < $1.date }, skipped: skipped)
     }
+
+    /// Series up to this many days get a dot on every point.
+    static let timelineDotLimit = 31
 
     /// Render an inline SVG multi-series line chart for summary trends.
     ///
@@ -1522,8 +1145,12 @@ extension HtmlReport {
                   stroke-linejoin="round" points="\(points)"/>
                 """
             }
-            // Dots for all non-nil points
-            for i in 0 ..< n {
+            // A dot on every point of a short series; a long one gets its last point only,
+            // since 200 dots hide the line and weigh more than the rest of the chart.
+            let lastPoint = series.values.indices.last { series.values[$0] != nil }
+            let dotted = n <= Self.timelineDotLimit
+                ? Array(0 ..< n) : lastPoint.map { [$0] } ?? []
+            for i in dotted {
                 guard let val = series.values[i] else { continue }
                 seriesHTML += """
                 <circle cx="\(String(format: "%.1f", xPos(i)))" \
@@ -1592,137 +1219,36 @@ extension HtmlReport {
         return slug.isEmpty ? "device" : slug
     }
 
-}
+    // MARK: - osCurrency
 
-// MARK: - buildSectionMap extension
-
-extension HtmlReport {
-
-    /// Register the extended section renderers into the map produced by `buildSectionMap`.
-    ///
-    /// Called from `buildSectionMap` after the original 9 entries are populated.
-    /// Returns a dictionary that merges into the base map.
-    func buildNewSectionEntries(
-        security: [[String: Any]],
-        deviceCompliance: [[String: Any]],
-        patchStatus: [[String: Any]],
-        patchFailures: [[String: Any]],
-        updateFailures: [[String: Any]],
-        computersInventory: [[String: Any]],
-        auditFindings: [[String: Any]],
-        classicPolicies: [[String: Any]] = [],
-        classicProfiles: [[String: Any]] = [],
-        packages: [[String: Any]] = [],
-        scripts: [[String: Any]] = [],
-        buildings: [[String: Any]] = [],
-        departments: [[String: Any]] = []
-    ) -> [SectionID: String] {
-        let secSummary = security.first { $0["section"] as? String == "summary" }
-        let secData = secSummary?["data"] as? [String: Any] ?? [:]
-        let totalDevices = asInt(secData["total_devices"]) ?? overviewDeviceCount([])
-        let fileVaultPct = computePct(asInt(secData["filevault_encrypted"]),
-                                      total: totalDevices)
-        let sipPct = computePct(asInt(secData["sip_enabled"]), total: totalDevices)
-        let firewallPct = computePct(asInt(secData["firewall_enabled"]),
-                                     total: totalDevices)
-
-        // `computers list` carries only buildingId and departmentId; the names come from the
-        // buildings and departments snapshots.
-        let computersInventory = resolvingLocationNames(
-            computersInventory, buildings: buildings, departments: departments)
-        let fleet = securityFleet()
-        let eaRows = (config.securityAgents ?? []).isEmpty ? nil
-            : loadJSONData(kind: "ea-results").flatMap { EAResultRow.decodeSnapshot($0).rows }
-
-        // Protect kind dirs (protect-alerts, protect-insights) live under the
-        // same jamf-cli data dir every other snapshot uses.
-        let protectDir: URL? = config.protect?.isEnabled == true ? dataDir : nil
-
-        return [
-            .execSummary: buildExecSummary(
-                totalDevices: totalDevices,
-                fileVaultPct: fileVaultPct,
-                sipPct: sipPct,
-                firewallPct: firewallPct,
-                fleet: fleet,
-                patchStatus: patchStatus
-            ),
-            .recentFailures: buildRecentFailures(
-                patchFailures: patchFailures,
-                updateFailures: updateFailures
-            ),
-            .interventionList: buildInterventionList(
-                computersInventory: computersInventory
-            ),
-            .patchQueue: buildPatchQueue(patchStatus: patchStatus),
-            .auditEvidence: buildAuditEvidence(auditFindings: auditFindings),
-            .exceptionList: buildExceptionList(),
-            .assetMap: buildAssetMap(computersInventory: computersInventory),
-            .purchaseCohorts: buildPurchaseCohorts(
-                computersInventory: computersInventory
-            ),
-            .buildingBreakdown: buildBuildingBreakdown(
-                computersInventory: computersInventory
-            ),
-            .departmentBreakdown: buildDepartmentBreakdown(
-                computersInventory: computersInventory
-            ),
-            .protectAlerts: buildProtectAlerts(protectDataDir: protectDir),
-            .insightsDrift: buildInsightsDrift(protectDataDir: protectDir),
-            .agentHealth: buildAgentHealth(eaRows: eaRows, fleet: totalDevices),
-            .cleanupAnalysis: buildCleanupAnalysis(
-                classicPolicies: classicPolicies,
-                classicProfiles: classicProfiles,
-                packages: packages,
-                scripts: scripts
-            ),
-            .timeline: buildTimelineSection(),
-            .osCurrency: buildOSCurrencySection(),
-            .jamfDashboard: buildJamfDashboardSection(),
-        ]
-    }
-
-    // MARK: - OS Currency section
-
-    /// Build the OS Currency HTML section from cached SOFA feeds.
-    /// Renders a summary table; renders a note row when no feeds are cached.
-    func buildOSCurrencySection() -> String {
+    /// The latest release per platform from the cached SOFA feed. Omitted when no feed is
+    /// cached.
+    func buildOSCurrencySection() -> HtmlBlock {
+        let f = HtmlSectionFormatters.self
         let sofaSnapshot = SOFAFeedService.load(dataDir: dataDir)
         guard !sofaSnapshot.rows.isEmpty else {
-            let note = "SOFA feed unavailable — run Collect to refresh or check network access."
-            return "<div class=\"section\" id=\"os-currency\"><h2>OS Currency</h2>" +
-                   "<p class=\"note\">\(HtmlSectionFormatters.escapeHTML(note))</p></div>"
+            return .omitted("the SOFA feed is not cached; a collect fetches it")
         }
 
         // HTML section shows SOFA latest data only — fleet counts require the
         // security/mobile-inventory snapshots, which are not joined here.
         let headers = ["Platform", "OS Family", "Latest Version", "Released",
                        "Days Since Release", "CVEs Exploited"]
-        var rowsHTML = ""
-        for entry in sofaSnapshot.rows {
+        let rows = sofaSnapshot.rows.map { entry -> String in
             let days = entry.daysSinceRelease.map { String($0) } ?? "—"
             let released = entry.releaseDate.isEmpty ? "—" : entry.releaseDate
             let cveStyle = entry.activelyExploitedCVEs > 0 ? " style=\"color:var(--red)\"" : ""
-            rowsHTML += "<tr>"
-            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(entry.platform))</td>"
-            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(entry.osFamily))</td>"
-            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(entry.productVersion))</td>"
-            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(released))</td>"
-            rowsHTML += "<td>\(HtmlSectionFormatters.escapeHTML(days))</td>"
-            rowsHTML += "<td\(cveStyle)>\(entry.activelyExploitedCVEs)</td>"
-            rowsHTML += "</tr>"
+            return "<tr>"
+                + "<td>\(f.escapeHTML(entry.platform))</td>"
+                + "<td>\(f.escapeHTML(entry.osFamily))</td>"
+                + "<td>\(f.escapeHTML(entry.productVersion))</td>"
+                + "<td>\(f.escapeHTML(released))</td>"
+                + "<td>\(f.escapeHTML(days))</td>"
+                + "<td\(cveStyle)>\(entry.activelyExploitedCVEs)</td></tr>"
         }
-
-        let headerCells = headers
-            .map { "<th>\(HtmlSectionFormatters.escapeHTML($0))</th>" }
-            .joined()
-        return "<div class=\"section\" id=\"os-currency\">" +
-               "<h2>OS Currency</h2>" +
-               "<p class=\"note\">Source: SOFA (sofa.macadmins.io)</p>" +
-               "<div class=\"table-wrapper\"><table>" +
-               "<thead><tr>\(headerCells)</tr></thead>" +
-               "<tbody>\(rowsHTML)</tbody>" +
-               "</table></div></div>"
+        return .shown(f.block(id: "os-currency", title: "OS currency", body: """
+            <p class="note">Source: SOFA (sofa.macadmins.io)</p>
+            \(f.renderCappedRows(headers: headers, rowHTML: rows, expanded: expandAll))
+            """))
     }
-
 }

@@ -111,7 +111,7 @@ final class SectionLimitsTests: XCTestCase {
 
         var cfg = ReportConfig().withDefaults()
         cfg.protect = ProtectConfig(enabled: true, profile: nil)
-        let html = makeReport(config: cfg).buildProtectAlerts(protectDataDir: tmp)
+        let html = makeReport(config: cfg).buildProtectAlerts(protectDataDir: tmp).html
 
         // The title should show "showing 25 of 30".
         XCTAssertTrue(
@@ -159,7 +159,7 @@ final class SectionLimitsTests: XCTestCase {
         """
         var cfg = try config(yaml: yaml)
         cfg = cfg.withDefaults()
-        let html = makeReport(config: cfg).buildInsightsDrift(protectDataDir: tmp)
+        let html = makeReport(config: cfg).buildInsightsDrift(protectDataDir: tmp).html
 
         // With 4 snapshots, headers should include "Current" and columns for older ones.
         XCTAssertTrue(html.contains("Current"), "Drift table must include 'Current' column")
@@ -197,7 +197,7 @@ final class SectionLimitsTests: XCTestCase {
         """
         var cfg = try config(yaml: yaml)
         cfg = cfg.withDefaults()
-        let html = makeReport(config: cfg).buildInsightsDrift(protectDataDir: tmp)
+        let html = makeReport(config: cfg).buildInsightsDrift(protectDataDir: tmp).html
 
         // Should still produce a valid table (2 of 2 snapshots).
         XCTAssertTrue(html.contains("insights-drift"), "Section must render with fewer snapshots")
