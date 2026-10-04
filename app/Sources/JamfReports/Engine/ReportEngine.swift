@@ -1899,21 +1899,6 @@ struct ReportEngine: Sendable {
         let dashboardSupported = JamfCLIInstaller.supportsDashboard(detectedVersion)
         let commands = Self.collectCommandMatrix(profile: profile, specNames: specNames)
 
-        let plannedCommands: [(args: [String], kind: String)]
-        if skipExpensive {
-            plannedCommands = commands.filter { !Self.expensivePerDeviceKinds.contains($0.kind) }
-            let skipped = commands
-                .filter { Self.expensivePerDeviceKinds.contains($0.kind) }
-                .map(\.kind)
-                .joined(separator: ", ")
-            onLine(.init(
-                timestamp: Date(), level: .info,
-                text: "[info] skipping per-device commands (\(skipped)) — Settings: Skip expensive collections"
-            ))
-        } else {
-            plannedCommands = commands
-        }
-
         // Cadence state store: persists per-kind last-success timestamps so
         // the cadence filter skips reports that aren't due yet.
         let stateStore: StateFileStore? = (try? workspacePaths.stateDir(for: profile))
@@ -1936,6 +1921,25 @@ struct ReportEngine: Sendable {
         let tenantLevel = profileAuth?.isTenantLevel == true
         let collectSkip = Self.collectSkipKinds(loadedConfig?.jamfCli?.collectSkip)
 
+        // Every skip decision is made here, once, before the first command: the `[plan]`
+        // lines and the loop below both read this list.
+        let plan = Self.planCollect(
+            commands: commands,
+            inputs: CollectPlanInputs(
+                tiers: tiers, force: force, skipExpensive: skipExpensive,
+                nonPlatformAuth: nonPlatformAuth, tenantLevel: tenantLevel,
+                collectSkip: collectSkip, dashboardSupported: dashboardSupported,
+                installedVersion: detectedVersion, now: collectStart),
+            lastRun: { stateStore?.lastRun(report: $0) }
+        )
+        let scanPlan = Self.planDeviceScan(
+            tiers: tiers, skipExpensive: skipExpensive, force: force,
+            stateStore: stateStore, now: collectStart)
+        let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers)
+        Self.logCollectPlan(
+            profile: profile, plan: plan, afterMatrix: afterMatrix, deviceScan: scanPlan,
+            onLine: onLine)
+
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
         // Tracks kinds where saveSnapshot actually wrote a file this run.
@@ -1945,71 +1949,19 @@ struct ReportEngine: Sendable {
         // Cadence "not due" skips only — NOT tier-filter skips, which say nothing
         // about server reachability. Feeds isCollectDead's veto: a run that skipped
         // fresh-cache kinds and failed only the chronic residue is not an outage.
-        var skippedNotDueCount = 0
+        let skippedNotDueCount = plan.filter { $0.skip?.isNotDue == true }.count
         // Listed at most once per run, by whichever compliance kind runs first.
         var benchmarkDiscovery: BenchmarkDiscovery?
-        for (args, kind) in plannedCommands {
-            // Platform-only filter. Recorded nowhere: a kind this profile's API
-            // cannot serve is not a failure, so it must not advance a failure
-            // counter, reach `degradedKinds`, or count toward the outage guard.
-            if let nonPlatformAuth, Self.platformOnlyKinds.contains(kind) {
-                onLine(.init(
-                    timestamp: Date(), level: .info,
-                    text: "[skip] \(kind): requires a Platform API profile "
-                        + "(auth-method is \(nonPlatformAuth))"
-                ))
-                continue
-            }
-            // Same rule for kinds Jamf Account cannot grant a tenant-level integration.
-            if tenantLevel, Self.environmentLevelKinds.contains(kind) {
-                onLine(.init(
-                    timestamp: Date(), level: .info,
-                    text: "[skip] \(kind): needs a platform environment integration "
-                        + "(this profile is tenant level)"
-                ))
-                continue
-            }
-            // And for kinds the operator listed in jamf_cli.collect_skip to keep an
-            // on-prem server from stalling — even on a forced collect.
-            if collectSkip.contains(kind) {
-                onLine(.init(
-                    timestamp: Date(), level: .info,
-                    text: "[skip] \(kind): listed in jamf_cli.collect_skip"
-                ))
-                continue
-            }
-            // And for the dashboard on a jamf-cli that has no such command: recorded
-            // nowhere, like the Platform-only skip, since it is not a failure either.
-            if kind == Self.dashboardKind, !dashboardSupported {
-                onLine(.init(
-                    timestamp: Date(), level: .info,
-                    text: "[skip] \(kind): needs jamf-cli \(JamfCLIInstaller.dashboardVersion) "
-                        + "or later (installed: \(detectedVersion ?? "unknown"))"
-                ))
-                continue
-            }
-
-            // T-9 tier filter: drop kinds outside the selected tier set.
-            // An unmapped kind has no tier and is always allowed — the
-            // tier map is a guidance layer, not a gate.
-            if let tier = CollectionTier.tier(forReport: kind), !tiers.contains(tier) {
-                onLine(.init(
-                    timestamp: Date(), level: .info,
-                    text: "[skip] \(kind): tier \(tier.rawValue) not selected"
-                ))
-                continue
-            }
-
-            // Cadence filter: skip when last-run + cadence is in the future.
-            // Bypassed entirely when force == true so ad-hoc refreshes always refetch.
-            let cadence = CadenceResolver.cadence(forReport: kind)
-            let lastRun = stateStore?.lastRun(report: kind)
-            if !force, !CadenceResolver.isDue(lastRun: lastRun, cadence: cadence, now: collectStart) {
-                skippedNotDueCount += 1
-                onLine(.init(
-                    timestamp: Date(), level: .info,
-                    text: "[skip] \(kind): not due (last: \(lastRunLabel(lastRun)), cadence: \(cadence.label))"
-                ))
+        for planned in plan {
+            let (args, kind) = (planned.args, planned.kind)
+            // A skipped kind is recorded nowhere: a kind this profile's API cannot serve, the
+            // operator turned off or is not due is not a failure, so it must not advance a
+            // failure counter, reach `degradedKinds`, or count toward the outage guard.
+            if let skip = planned.skip {
+                if let detail = skip.skipDetail {
+                    onLine(.init(
+                        timestamp: Date(), level: .info, text: "[skip] \(kind): \(detail)"))
+                }
                 continue
             }
 
@@ -2064,8 +2016,8 @@ struct ReportEngine: Sendable {
         // run never starts a fleet-wide fan-out) and before finalize (so its kinds count
         // as live in today's summary).
         let scanSaved = await Self.runDeviceScanPhase(
-            profile: profile, bin: bin, specNames: specNames, dataDir: dataDir, tiers: tiers,
-            skipExpensive: skipExpensive, force: force, recordManifest: recordManifest,
+            profile: profile, bin: bin, specNames: specNames, dataDir: dataDir, plan: scanPlan,
+            recordManifest: recordManifest,
             stateStore: stateStore, collectStart: collectStart,
             authConfirmationProbe: authConfirmationProbe, onLine: onLine
         )
@@ -2073,7 +2025,7 @@ struct ReportEngine: Sendable {
         if let deadAfterScan { throw Self.reportDeadCollect(deadAfterScan, onLine: onLine) }
 
         await Self.finalizeCollect(
-            profile: profile, tiers: tiers, bin: bin, dataDir: dataDir,
+            profile: profile, afterMatrix: afterMatrix, bin: bin, dataDir: dataDir,
             savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
             loadedConfig: loadedConfig,
             workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
@@ -2189,7 +2141,7 @@ struct ReportEngine: Sendable {
     /// the day's summary. Reached only once the verdicts above have passed.
     private static func finalizeCollect(
         profile: String,
-        tiers: Set<CollectionTier>,
+        afterMatrix: [String],
         bin: URL,
         dataDir: URL,
         savedKinds: Set<String>,
@@ -2209,7 +2161,7 @@ struct ReportEngine: Sendable {
         // every successful collect, and self-remediation re-collects the whole
         // refresh tier hourly for nothing.
         var sofaRefreshSucceeded = false
-        if let sofaTier = CollectionTier.tier(forReport: "sofa"), tiers.contains(sofaTier) {
+        if afterMatrix.contains(Self.sofaKind) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting sofa for \(profile)"))
             let (sofaSnapshot, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
@@ -2229,8 +2181,7 @@ struct ReportEngine: Sendable {
         // Patch release dates: collect per-title definitions after patch-status.
         // Gated on the "patch-release-dates" kind being in the requested tiers
         // AND patch-status having been collected (so the title list exists).
-        if let prdTier = CollectionTier.tier(forReport: "patch-release-dates"),
-           tiers.contains(prdTier) {
+        if afterMatrix.contains(Self.patchReleaseDatesKind) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting patch-release-dates for \(profile)"))
             if let landed = await collectPatchReleaseDates(
@@ -3169,6 +3120,10 @@ struct ReportEngine: Sendable {
             (["-p", profile, "school", "dep-devices", "list", "--output", "json"], "school-dep-devices"),
         ]
 
+        for line in collectPlanLines(profile: profile, running: commands.map(\.kind)) {
+            onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
+
         let bridge = CLIBridge()
         var schoolOutcomes: [CollectOutcome] = []
         var schoolSaved: Set<String> = []
@@ -3256,6 +3211,10 @@ struct ReportEngine: Sendable {
             (["-p", profile, "protect", "insights", "list", "--output", "json"], "protect-insights"),
             (["-p", profile, "protect", "plans", "list", "--output", "json"], "protect-plans"),
         ]
+
+        for line in collectPlanLines(profile: profile, running: commands.map(\.kind)) {
+            onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
 
         let bridge = CLIBridge()
         for (args, kind) in commands {
@@ -4102,7 +4061,8 @@ nonisolated(unsafe) private let collectLogDateFormatter: ISO8601DateFormatter = 
     return f
 }()
 
-private func lastRunLabel(_ date: Date?) -> String {
+/// `date` as the collect log writes it, or "never". Shared by the `[skip]` and `[plan]` lines.
+func collectLogDateLabel(_ date: Date?) -> String {
     guard let date else { return "never" }
     return collectLogDateFormatter.string(from: date)
 }
