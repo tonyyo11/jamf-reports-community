@@ -146,14 +146,16 @@ compliance is now one figure everywhere.
 - A `notify.detail` that is neither `full` nor `minimal` now sends the minimal digest. It sent the
   full one before.
 - Keys older builds wrote that nothing reads now get a "does not read this key" note:
-  `ai.lock_on_device`, `protect.data_dir`, `school_columns`, and six that earlier builds of the
+  `ai.lock_on_device`, `ai.external`, `collect_cadence`, `columns.warranty_expires`,
+  `output.export_pptx`, `protect.data_dir`, `school_columns`, and six that earlier builds of the
   Config screen or the scaffold wrote: `jamf_cli.enabled`, `jamf_cli.allow_live_overview`,
   `charts.os_adoption.enabled`, `branding.accent_dark`, `platform.enabled` and
-  `thresholds.profile_error_critical`. Config Doctor lists them as "No longer read since 2.9"
-  suggestions, not warnings, and a config.yaml that still holds them works as before. A Config
-  save removes settings the app no longer reads, and says so on the screen (a Customize Apply
-  does the same for `charts.os_adoption.enabled`); the file is copied to
-  `config.yaml.bak-<date-time>` first. New configs no longer get `allow_live_overview`.
+  `thresholds.profile_error_critical`. Config Doctor lists them as suggestions, not warnings,
+  worded "No longer read since" the release that dropped them, and a config.yaml that still holds
+  them works as before. A Config save removes settings the app no longer reads, and says so on
+  the screen (a Customize Apply does the same for `charts.os_adoption.enabled`); the file is
+  copied to `config.yaml.bak-<date-time>` first. New configs no longer get
+  `allow_live_overview`.
 - The Config screen no longer has the "Accent dark" colour field, the "Enable Platform API sheets"
   switch or the "Profile error critical" threshold. None of them changed a report.
 - The Check-in Health sheet counts a Mac as overdue when its last contact is more than
@@ -181,6 +183,24 @@ compliance is now one figure everywhere.
   extra inventory columns.
 
 ### Fixed
+
+- OS Updates reads the update failure scan again. jamf-cli writes an empty list as `null`, which
+  made the whole scan unreadable: the screen said "Failure scan not run" and the chip "never"
+  while the failures sat in the snapshot. The HTML report's Recent Failures lists those plans
+  instead of one empty line, and rows with no date sort after dated ones.
+- Offline Outreach shows when each Mac last contacted Jamf. Last Contact read "Unknown" on every
+  row because the Jamf timestamps carry fractions of a second.
+- Top Failing Rules lists each rule once. The mSCP failed-rules list is one rule per line, which
+  the card read as a single rule; a Mac with no scored baseline ("No Baseline Set", "Multiple
+  Baselines Found") was ranked as a failing rule. The count-versus-list check in Config Doctor
+  no longer reports every Mac as a disagreement.
+- macOS Distribution, the Devices legend, the Security Posture chart and the workbook and HTML OS
+  tables list a release once. Jamf reports it as both `26.7` and `26.7.0`; both now show as
+  `26.7`.
+- A security agent value that says the agent is absent or off ("Not Installed", "not running",
+  "Disconnected") no longer counts as connected because it contains your `connected_value`. The
+  Overview agent card, the daily summary, Devices, the workbook and the HTML report use the same
+  rule.
 
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
   1% of Macs had SIP on). Each device share comes with its other side, changes are given in
