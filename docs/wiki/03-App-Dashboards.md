@@ -172,7 +172,10 @@ these interactive dashboards either — it produces a separate generated workboo
   [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
   Data source: no tier (configuration and schedule management).
 - **Run History** — streamed output from past collect and generate runs, including an
-  "Explain this run" AI action on failed runs — see [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
+  "Explain this run" AI action on failed runs. A collect you start in the app (the first
+  collect, Refresh, the Overview prompt, Collect now) is listed as "Manual collect"; the
+  last 20 are kept. One the background item turned away because it was running records
+  nothing — see [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
   Data source: no tier (local log files, not API data).
 
 ## Configuration

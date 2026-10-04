@@ -31,6 +31,11 @@ with a green **"Reports publish to …"** row.
 `~` is expanded; a folder the app will not use is named in the run log and
 reports go to `Generated Reports` in the workspace.
 
+The Reports screen lists the folder the reports go to, and Reveal in Finder, Open and
+Quick Look work there for that profile. Nothing else outside the workspace is opened, and a
+system or credentials folder typed as `output_dir` is never used, so it is never opened
+either.
+
 `~/Library` is otherwise off-limits to output paths, but `~/Library/CloudStorage`
 is deliberately carved out — that is where macOS mounts every modern sync
 provider, and it holds user data rather than application state.

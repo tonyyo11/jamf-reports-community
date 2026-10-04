@@ -228,6 +228,18 @@ compliance is now one figure everywhere.
 - Leaving Settings stops its connection checks. It used to keep starting a jamf-cli run for
   each remaining profile, and switching profiles while Settings was open could mark a
   connection's token invalid when it wasn't.
+- The Reports screen lists the folder your `output_dir` names. Reports saved to a shared folder
+  (with `output.allow_absolute_paths: true`) used to be missing from the list, and the header,
+  Reveal in Finder, Open, Quick Look and the PDF and CSV save panels pointed at the workspace's
+  Generated Reports folder instead. A folder the app will not use still falls back to Generated
+  Reports, and a system or credentials folder is still never opened.
+- A collect you start from a button now appears in Run History as "Manual collect": Refresh, the
+  Overview prompt and Collect now, as the first collect already did. "Refresh finished with
+  warnings" points there, and a failed refresh says "see Run History". A collect turned away
+  because a scheduled run is in progress leaves no entry, and the last 20 are kept so they do not
+  push scheduled runs out of the list.
+- "Refresh finished with warnings" and the reminder to allow JamfReports under Login Items after
+  setup are amber, not red: nothing failed.
 
 ### Security
 

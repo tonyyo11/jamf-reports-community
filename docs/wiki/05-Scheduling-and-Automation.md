@@ -224,7 +224,10 @@ scheduled run is in progress — try again when it finishes" and starts nothing.
 run that comes due while you collect waits for the next wake, and the overdue banner does
 not call it missed. The app's own automatic re-collects (the hourly repair and the
 catch-up on wake) hold the lock too. A manual collect that finishes with a source missing
-says "Refresh finished with warnings" and where to read why.
+says "Refresh finished with warnings" in an amber toast and points at Run History, where
+every collect you start appears as "Manual collect" (the last 20 are kept, so they do not
+push scheduled runs out of the 50). A collect that is turned away because a scheduled run
+holds the lock leaves no entry, and a manual collect is never counted as a schedule's run.
 
 A development build (`swift run JamfReports`) has no bundled agent, so registration is
 skipped and the Automation screen shows "Ticker unavailable in this build" — `JamfReports
