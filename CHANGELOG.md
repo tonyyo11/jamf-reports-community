@@ -232,6 +232,14 @@ compliance is now one figure everywhere.
   after an afternoon collect fetched newer ones. A collect that fetches new data now rebuilds
   the day's summary from the newest snapshots, keeping any value the morning had that the later
   run could not measure; one that fetches nothing leaves it alone.
+- Every configured security agent is tracked, not only the first. The daily summary records
+  each agent's coverage (CrowdStrike, Nessus, Splunk and any others you list under Security
+  Agents), the Overview offers a score card per agent in Customize, and Trends lists each one,
+  labelled "<agent> coverage". History for days recorded before this is rebuilt from the dated
+  extension-attribute snapshots of the last 21 days that have one, after the screen has drawn. In
+  Config > Scoring, "Agent counted as EDR" (or `security_policy.edr_agent`) chooses which agent
+  the Security Score and the EDR card follow; the others are shown but do not change the score.
+  A name that matches no agent counts the first, and Config Doctor says so.
 - A metric on the Overview with no data says "No data yet" instead of 0.0% current, 0.0%
   previous and +0.0pp over 0 summaries.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when

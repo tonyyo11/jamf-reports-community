@@ -43,12 +43,43 @@ enum SecurityScoreInputs {
         return extras
     }
 
-    /// The first `security_agents` entry with a name: the agent the EDR card, the trend and the
-    /// score are labelled with (`WorkspaceStore.edrAgentName`).
+    /// The agent the score counts as the EDR agent, the one the EDR card, the trend and
+    /// `crowdstrikePct` follow: `security_policy.edr_agent` when it names a `security_agents`
+    /// entry (case-insensitive, trimmed), else the first entry with a name.
     static func edrAgent(in config: ReportConfig?) -> SecurityAgentConfig? {
-        (config?.securityAgents ?? []).first {
-            !$0.name.trimmingCharacters(in: .whitespaces).isEmpty
+        let agents = config?.securityAgents ?? []
+        let chosen = config?.resolvedSecurityPolicy.edrAgent
+        return edrAgentIndex(among: agents.map(\.name), chosen: chosen).map { agents[$0] }
+    }
+
+    static func edrAgent(
+        among agents: [SecurityAgentConfig], chosen: String?
+    ) -> SecurityAgentConfig? {
+        edrAgentIndex(among: agents.map(\.name), chosen: chosen).map { agents[$0] }
+    }
+
+    /// Index of the EDR agent among `names` (blank names never count): the one `chosen`
+    /// names, else the first. The one rule behind the score, the summary, the Overview and
+    /// the Scoring tab's picker.
+    static func edrAgentIndex(among names: [String], chosen: String?) -> Int? {
+        let trimmed = names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let chosen = chosen?.trimmingCharacters(in: .whitespacesAndNewlines), !chosen.isEmpty,
+           let match = trimmed.firstIndex(where: {
+               !$0.isEmpty && $0.caseInsensitiveCompare(chosen) == .orderedSame
+           }) {
+            return match
         }
+        return trimmed.firstIndex { !$0.isEmpty }
+    }
+
+    /// Every `security_agents` entry with a name, in config order.
+    static func namedAgents(in config: ReportConfig?) -> [SecurityAgentConfig] {
+        (config?.securityAgents ?? []).filter { !agentKey($0.name).isEmpty }
+    }
+
+    /// An agent's name as the summary keys it and the Overview and Trends look it up.
+    static func agentKey(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The extras for decoded `ea-results` rows under `config`.

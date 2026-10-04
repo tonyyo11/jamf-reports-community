@@ -141,6 +141,21 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         isLoading = false
     }
 
+    /// The second phase of a load, after `apply`: fills per-agent history for older days from
+    /// their dated `ea-results` snapshots (`resolvingAgentCoverage`) off the main actor, then
+    /// republishes. Dropped if another load started, or the profile changed, meanwhile.
+    @MainActor
+    func backfillAgentCoverage(profile: String) async {
+        let generation = loadGeneration
+        let summaries = allSummaries
+        let resolved = await Task.detached(priority: .utility) {
+            TrendStore.resolvingAgentCoverage(summaries, profile: profile)
+        }.value
+        guard generation == loadGeneration, currentProfile == profile else { return }
+        allSummaries = resolved
+        filterSummaries(range: currentRange)
+    }
+
     /// Re-filter for a new range without re-reading disk (range-picker changes).
     func setRange(_ range: TrendRange) {
         currentRange = range
@@ -299,6 +314,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .fileVault:     return summary.fileVaultPct
         case .osCurrent:     return summary.osCurrentPct
         case .edrAgent:      return summary.crowdstrikePct
+        case .agent(let name): return summary.securityAgentCoverage?[name]
         case .stale:         return summary.staleCount.map(Double.init)
         case .patch:         return summary.patchPct
         case .securityScore: return summary.securityScore
@@ -606,7 +622,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     /// The `kind` snapshots in `dataDir`, oldest first by filename stamp, after the
     /// exclusions every snapshot picker applies.
-    private nonisolated static func datedSnapshots(
+    nonisolated static func datedSnapshots(
         of kind: String, in dataDir: URL
     ) -> [(url: URL, date: Date)] {
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
@@ -813,7 +829,7 @@ private extension TrendSeries.Metric {
         switch self {
         case .stale: .lowerIsBetter
         case .activeDevices, .mscpBandTrend, .managedDevices: .neutral
-        case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .patch,
+        case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
              .securityScore, .sip, .firewall, .gatekeeper: .higherIsBetter
         }
     }
@@ -822,7 +838,7 @@ private extension TrendSeries.Metric {
     var insightComplement: String? {
         switch self {
         case .fileVault: return "not encrypted"
-        case .edrAgent: return "not installed"
+        case .edrAgent, .agent: return "not installed"
         default: return nil
         }
     }

@@ -33,6 +33,7 @@ enum ConfigEditedKeys {
         }
         SecurityPolicyConfigWriter.apply(.hardwareLevel(.fail), to: &block)
         SecurityPolicyConfigWriter.apply(.scoreWeights(.defaultWeights), to: &block)
+        SecurityPolicyConfigWriter.apply(.edrAgent("x"), to: &block)
         return block
     }
 
@@ -40,9 +41,9 @@ enum ConfigEditedKeys {
     /// when set, and one entry of each custom EA type with all of that type's values.
     private static var probeState: ConfigState {
         var state = ConfigState.defaultState
-        for key in ConfigState.optionalColumnKeys { state.columns[key] = "x" }
         // Written only when set, since the default is blank (the Overview's generic title).
         state.baselineLabel = "x"
+        for key in ConfigState.optionalColumnKeys { state.columns[key] = "x" }
         state.securityAgents = [
             ConfigSecurityAgent(name: "x", column: "x", connectedValue: "x"),
         ]

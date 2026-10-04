@@ -62,7 +62,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // the device-weighted definition (epic #207 C1).
              patchPctBasis,
              // Which inputs `securityScore` was computed from (epic #207 H1).
-             securityScoreBasis
+             securityScoreBasis,
+             // Every configured agent's coverage, by name (`crowdstrikePct` is the agent the
+             // score counts as EDR).
+             securityAgentCoverage
     }
 
     var id: String { date }
@@ -83,7 +86,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// TrendStore so the chart skips the point rather than emitting a misleading 0%.
     let osCurrentPct: Double?
     /// Omitted by Python when the source is `"jamf-cli"` (CSV-only metric).
-    let crowdstrikePct: Double?
+    private(set) var crowdstrikePct: Double?
     /// Omitted when source data is absent or fails to decode; nil propagates to
     /// TrendStore so the chart skips the point rather than emitting a misleading 0%.
     private(set) var patchPct: Double?
@@ -143,6 +146,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// 2.9, which scored FileVault, SIP and Firewall only; two scores compare only when the
     /// bases are equal.
     let securityScoreBasis: String?
+    /// Percent of the fleet each configured `security_agents` entry reports connected, by
+    /// agent name: `SecurityAgentCoverage` over `totalDevices`, one decimal, like
+    /// `crowdstrikePct` (which is the entry the score counts as EDR, and stays for older
+    /// readers). An agent no Mac reports is absent, not 0. Nil on a summary written before 2.9.
+    private(set) var securityAgentCoverage: [String: Double]?
 
     /// Value of `patchPctBasis` for the device-weighted definition.
     static let deviceWeightedPatchBasis = "device"
@@ -167,6 +175,27 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// and real mSCP compliance is never replaced by the control-gap proxy. A value this
     /// summary has always wins, and so do `date`, `totalDevices` and `source`;
     /// `collectionSources` is left to the caller (`ReportEngine.mergedSources`).
+    /// This day with per-agent coverage taken from its dated `ea-results` snapshot
+    /// (`TrendStore.resolvingAgentCoverage`), for a summary written before the app recorded
+    /// it. A value the summary already has wins; `edrAgent` fills `crowdstrikePct` when that
+    /// is missing too.
+    func withBackfilledAgentCoverage(
+        _ coverage: [String: Double], edrAgent: String?
+    ) -> DailySummary {
+        var resolved = self
+        resolved.securityAgentCoverage = coverage.merging(
+            securityAgentCoverage ?? [:]) { _, own in own }
+        if crowdstrikePct == nil, let edrAgent { resolved.crowdstrikePct = coverage[edrAgent] }
+        return resolved
+    }
+
+    /// Each agent's coverage: this run's where it measured the agent, else the earlier one's.
+    private func mergedAgentCoverage(_ older: [String: Double]?) -> [String: Double]? {
+        guard let older else { return securityAgentCoverage }
+        let merged = older.merging(securityAgentCoverage ?? [:]) { _, new in new }
+        return merged.isEmpty ? nil : merged
+    }
+
     func filling(from older: DailySummary) -> DailySummary {
         let olderIsReal = older.complianceIsProxy == false && complianceIsProxy != false
         let olderComplianceWins = older.compliancePct != nil
@@ -206,7 +235,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
             mobileDeviceCount: mobileDeviceCount ?? older.mobileDeviceCount,
             collectedByHost: collectedByHost ?? older.collectedByHost,
             patchPctBasis: patchFromOlder ? older.patchPctBasis : patchPctBasis,
-            securityScoreBasis: scoreFromOlder ? older.securityScoreBasis : securityScoreBasis
+            securityScoreBasis: scoreFromOlder ? older.securityScoreBasis : securityScoreBasis,
+            securityAgentCoverage: mergedAgentCoverage(older.securityAgentCoverage)
         )
     }
 
@@ -241,7 +271,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         mobileDeviceCount: Int? = nil,
         collectedByHost: String? = nil,
         patchPctBasis: String? = nil,
-        securityScoreBasis: String? = nil
+        securityScoreBasis: String? = nil,
+        securityAgentCoverage: [String: Double]? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -274,6 +305,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.collectedByHost = collectedByHost
         self.patchPctBasis = patchPctBasis
         self.securityScoreBasis = securityScoreBasis
+        self.securityAgentCoverage = securityAgentCoverage
     }
 
     init(from decoder: Decoder) throws {
@@ -313,6 +345,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         patchPctBasis = try container.decodeIfPresent(String.self, forKey: .patchPctBasis)
         securityScoreBasis = try container.decodeIfPresent(
             String.self, forKey: .securityScoreBasis)
+        securityAgentCoverage = try container.decodeIfPresent(
+            [String: Double].self, forKey: .securityAgentCoverage)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -348,6 +382,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(collectedByHost, forKey: .collectedByHost)
         try container.encodeIfPresent(patchPctBasis, forKey: .patchPctBasis)
         try container.encodeIfPresent(securityScoreBasis, forKey: .securityScoreBasis)
+        try container.encodeIfPresent(securityAgentCoverage, forKey: .securityAgentCoverage)
     }
 }
 

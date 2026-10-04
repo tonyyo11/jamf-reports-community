@@ -193,7 +193,7 @@ extension TrendSeries.Metric {
             "Needs jamf-cli's security report."
         case .osCurrent:
             "Needs the inventory summary and the SOFA feed."
-        case .edrAgent:
+        case .edrAgent, .agent:
             "Needs a security agent in Config and extension-attribute results."
         case .patch:
             "Needs the patch-status report."

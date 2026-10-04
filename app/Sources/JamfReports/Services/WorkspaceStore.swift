@@ -142,6 +142,34 @@ final class WorkspaceStore {
         return metrics.isEmpty ? nil : metrics
     }
 
+    /// One metric per configured `security_agents` entry other than the one the score counts
+    /// as EDR (that one is `.edrAgent`), in config order, for the Overview's score cards and
+    /// the Trends picker. None in demo mode, whose history has no per-agent series.
+    var agentMetrics: [TrendSeries.Metric] {
+        guard !demoMode else { return [] }
+        let names = configState.securityAgents.map(\.name)
+        let edr = SecurityScoreInputs.edrAgentIndex(among: names, chosen: securityPolicy.edrAgent)
+            .map { SecurityScoreInputs.agentKey(names[$0]).lowercased() }
+        var seen = Set<String>()
+        return names.map(SecurityScoreInputs.agentKey).compactMap { name in
+            let key = name.lowercased()
+            guard !name.isEmpty, key != edr, seen.insert(key).inserted else { return nil }
+            return .agent(name)
+        }
+    }
+
+    /// Every metric a score card or the Trends picker can show for this workspace.
+    var availableMetrics: [TrendSeries.Metric] { TrendSeries.Metric.allCases + agentMetrics }
+
+    /// Whether the Overview shows `metric` as a score card: an agent metric needs its agent
+    /// configured (and not counted as EDR), a control card needs its control counted by the
+    /// security policy. A stored selection naming one that is not offered is kept, and shows
+    /// again when it is.
+    func isOffered(_ metric: TrendSeries.Metric) -> Bool {
+        if case .agent = metric { return agentMetrics.contains(metric) }
+        return metric.isOffered(under: securityPolicy)
+    }
+
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
     /// they don't have an on-disk workspace to initialize.
@@ -202,13 +230,14 @@ final class WorkspaceStore {
         return configState.complianceBenchmarks.first(where: { !$0.isEmpty })
     }
 
-    /// The first configured security agent's name (e.g. "CrowdStrike Falcon"),
-    /// used to label the EDR metric across the UI. Nil when no security_agents
-    /// are configured — surfaces fall back to the generic "EDR Agent" label.
+    /// The name of the security agent the score counts as EDR (e.g. "CrowdStrike Falcon"),
+    /// used to label the EDR metric across the UI: `security_policy.edr_agent` when it names a
+    /// configured agent, else the first. Nil when no security_agents are configured —
+    /// surfaces fall back to the generic "EDR Agent" label.
     var edrAgentName: String? {
-        configState.securityAgents
-            .first { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }?
-            .name
+        let names = configState.securityAgents.map(\.name)
+        return SecurityScoreInputs.edrAgentIndex(among: names, chosen: securityPolicy.edrAgent)
+            .map { names[$0] }
     }
 
     // MARK: Column label / required metadata
@@ -780,6 +809,13 @@ final class WorkspaceStore {
     /// Nil removes the block, so the default weights apply.
     func saveScoreWeights(_ weights: SecurityScoreWeights?) throws {
         try saveSecuritySetting(.scoreWeights(weights)) { $0.scoreWeights = weights }
+    }
+
+    /// The agent the score counts as EDR; nil removes the key, so the first agent counts.
+    func saveEDRAgent(_ name: String?) throws {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chosen = trimmed?.isEmpty == false ? trimmed : nil
+        try saveSecuritySetting(.edrAgent(chosen)) { $0.edrAgent = chosen }
     }
 
     private func saveSecuritySetting(

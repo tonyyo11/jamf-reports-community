@@ -846,8 +846,21 @@ struct ReportEngine: Sendable {
         // profile. Over the whole fleet, so a Mac that reports no value counts as
         // not connected; nil (unknown, not 0%) when no Mac reports the agent's
         // extension attribute at all — usually a column name that doesn't match.
-        let edrCoverage = edrAgent.flatMap { agent in
-            eaRows.flatMap { SecurityAgentCoverage.compute(rows: $0, agents: [agent]).first }
+        // Every named agent's coverage, one pass over the rows; the EDR agent's is the one
+        // `crowdstrikePct` and the score read.
+        let agentCoverages = eaRows.map {
+            SecurityAgentCoverage.compute(
+                rows: $0, agents: SecurityScoreInputs.namedAgents(in: config))
+        } ?? []
+        let edrCoverage = edrAgent.flatMap { edr in
+            agentCoverages.first { $0.name == edr.name && $0.column == edr.trimmedColumn }
+        }
+        var agentCoveragePct: [String: Double] = [:]
+        for coverage in agentCoverages where coverage.reporting > 0 {
+            if let pct = SecurityAgentCoverage.percent(
+                installed: coverage.installed, fleet: totalDevices) {
+                agentCoveragePct[SecurityScoreInputs.agentKey(coverage.name)] = pct
+            }
         }
         // The same two figures feed the security score below, through the one function the
         // Security Posture screen and the workbook use, so a fleet has one score everywhere.
@@ -922,7 +935,8 @@ struct ReportEngine: Sendable {
             // a hostname to a file that never needed one.
             collectedByHost: Self.collectingHostLabel(dataDir: dataDir),
             patchPctBasis: DailySummary.deviceWeightedPatchBasis,
-            securityScoreBasis: securityScore == nil ? nil : SecurityScoreInputs.basis(of: score)
+            securityScoreBasis: securityScore == nil ? nil : SecurityScoreInputs.basis(of: score),
+            securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct
         )
     }
 

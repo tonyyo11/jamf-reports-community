@@ -287,6 +287,7 @@ struct TrendsView: View {
             TrendStore.computeSnapshot(profile: profile)
         }.value
         trendStore.apply(snapshot, profile: profile, range: r, generation: generation)
+        await trendStore.backfillAgentCoverage(profile: profile)
     }
 
     /// First-load placeholder: shown only while the initial scan runs with no
@@ -384,7 +385,7 @@ struct TrendsView: View {
     /// .managedDevices shows in demo mode too, from the demo fleet's
     /// computer and mobile series.
     private var availableMetrics: [TrendSeries.Metric] {
-        TrendSeries.Metric.allCases.filter { metric in
+        workspaceStore.availableMetrics.filter { metric in
             switch metric {
             case .mscpBandTrend:
                 return workspaceStore.demoMode || trendStore.hasMSCPBandHistory
@@ -787,7 +788,8 @@ struct TrendsView: View {
             TrendsAIInsightCard(
                 trendStore: trendStore,
                 benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
-                edrAgentName: workspaceStore.edrAgentName)
+                edrAgentName: workspaceStore.edrAgentName,
+                metrics: workspaceStore.availableMetrics)
         }
     }
 
@@ -1849,6 +1851,7 @@ private struct TrendsAIInsightCard: View {
     let trendStore: TrendStore
     let benchmarkLabel: String?
     let edrAgentName: String?
+    let metrics: [TrendSeries.Metric]
 
     var body: some View {
         AIInsightCard(
@@ -1861,7 +1864,7 @@ private struct TrendsAIInsightCard: View {
             // `trends` leaves out the band metric and any metric with fewer than two
             // points, which is what the screen's picker hides on a live profile.
             FleetInsightInput.trends(
-                metrics: TrendSeries.Metric.allCases,
+                metrics: metrics,
                 points: { trendStore.points(metric: $0) },
                 label: { $0.displayLabel(
                     benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) })

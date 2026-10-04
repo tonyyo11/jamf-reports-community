@@ -485,6 +485,11 @@ security_policy:
   # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
   # silicon, or Intel with the T2 chip). Omit to use the filevault level.
   # filevault_off_hardware_encrypted: warning
+  # The security_agents entry the Security Score counts as the EDR agent (its name, as
+  # written under security_agents). Omit to use the first agent. A name that matches no
+  # agent also uses the first, and Config Doctor warns. The other agents are tracked and
+  # shown (an Overview card and a Trends series each) but do not change the score.
+  # edr_agent: "CrowdStrike Falcon"
   # Your own words for on and off, for an extension attribute or CSV column mapped
   # to filevault, sip, firewall or gatekeeper: a list, or one string, per control.
   # Checked in order: off_values, on_values (a value in both reads off), then the

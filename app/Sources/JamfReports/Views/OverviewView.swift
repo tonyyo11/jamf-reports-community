@@ -358,6 +358,7 @@ struct OverviewView: View {
             TrendStore.computeSnapshot(profile: profile)
         }.value
         trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
+        await trendStore.backfillAgentCoverage(profile: profile)
     }
 
     /// First-load overlay: shown only while the initial scan runs with no cached
@@ -1058,7 +1059,7 @@ struct OverviewView: View {
     /// The selection without the cards whose control the security policy does not
     /// count. The stored selection is not edited, so a card returns with its control.
     private var offeredScoreCards: [TrendSeries.Metric] {
-        workspace.selectedScoreCards.filter { $0.isOffered(under: workspace.securityPolicy) }
+        workspace.selectedScoreCards.filter { workspace.isOffered($0) }
     }
 
     private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
@@ -1779,7 +1780,7 @@ struct OverviewView: View {
             "Open Devices to inspect FileVault state on individual Macs."
         case .osCurrent:
             "Open Devices to inspect macOS versions and filter inventory."
-        case .edrAgent:
+        case .edrAgent, .agent:
             "Open Devices or Config to review security-agent tracking."
         case .stale:
             "Open Devices to focus on stale inventory records."
@@ -1807,7 +1808,7 @@ struct OverviewView: View {
             return [.devices]
         case .compliance, .securityScore, .mscpBandTrend:
             return [.securityPosture, .compliancePosture]
-        case .edrAgent:
+        case .edrAgent, .agent:
             return [.devices, .config]
         case .managedDevices:
             return [.devices, .mobileFleet]
@@ -1816,7 +1817,6 @@ struct OverviewView: View {
         }
     }
 
-    private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
     /// The drill-down's title: the tenant's own label, as on the card it was opened from.
     private func metricDetailTitle(_ metric: TrendSeries.Metric) -> String {
         metric.displayLabel(
@@ -1824,6 +1824,7 @@ struct OverviewView: View {
             edrAgentName: workspace.edrAgentName)
     }
 
+    private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
         if workspace.demoMode {
             return DemoData.trends[metric] ?? []
         }
