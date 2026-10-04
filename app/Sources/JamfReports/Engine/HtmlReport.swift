@@ -305,7 +305,8 @@ struct HtmlReport: Sendable {
         """
 
         let patchFailures = loadJSONList(kinds: ["patch-device-failures", "patch-failures"])
-        let updateFailures = loadJSONList(kinds: ["update-device-failures", "update-failures"])
+        let updateFailures = Self.updateFailureRows(
+            from: loadJSONList(kinds: ["update-device-failures", "update-failures"]))
         let auditFindings = loadJSONList(kinds: ["audit-findings", "audit"])
 
         var baseMap: [SectionID: String] = [
