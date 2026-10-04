@@ -254,7 +254,9 @@ struct SecurityAgent: Identifiable, Sendable {
     let installed: Int
     let pct: Double
     let column: String
-    let trend: Trend
+    /// Direction of the agent's coverage over the summary series; nil when no series exists
+    /// to say (only the first configured agent's coverage is recorded day by day).
+    let trend: Trend?
 }
 
 // MARK: - Compliance bands

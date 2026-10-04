@@ -963,7 +963,9 @@ struct OverviewView: View {
 
     private var agents: [SecurityAgent] {
         guard !workspace.demoMode else { return DemoData.securityAgents }
-        return OverviewLiveDataLoader.agents(live.agents, overFleet: overviewFleetCount)
+        return OverviewLiveDataLoader.agents(
+            live.agents, overFleet: overviewFleetCount, edrAgentName: workspace.edrAgentName,
+            edrSeries: trendStore.values(metric: .edrAgent))
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -1660,7 +1662,10 @@ struct OverviewView: View {
                 StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
                 StatTile(label: "Installed", value: "\(agent.installed)",
                          sub: fleet > 0 ? "of \(fleet) managed Macs" : "managed Macs")
-                StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
+                if let trend = agent.trend {
+                    StatTile(label: "Trend", value: trend.rawValue.capitalized,
+                             sub: "vs the previous snapshot")
+                }
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
