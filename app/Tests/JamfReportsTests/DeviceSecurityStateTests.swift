@@ -186,7 +186,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(records[1].securityGapCount(policy: .default), 2,
                        "FileVault 0/1 and the firewall off")
         XCTAssertTrue(riskFactors(records[1]).contains(.noFileVault))
-        XCTAssertEqual(records[0].fileVaultEnabled, true)
+        XCTAssertEqual(records[0].fileVaultEnabled(policy: .default), true)
         XCTAssertEqual(snapshot(records).fileVaultPercent, 75)
     }
 
@@ -209,11 +209,39 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(DevicesView.fileVaultTileValue(66.6), "67%")
     }
 
+    /// An organization's FileVault words reach the share, the hardware-rule count and the
+    /// record's own reading; without them the same Macs read as unmeasured.
+    func testTheFileVaultShareAndCountsFollowTheWorkspaceVocabulary() {
+        var wrapped = record(allControls: "Enabled")
+        wrapped.fileVault = "Wrapped"
+        var bare = record(allControls: "Enabled")
+        bare.fileVault = "Bare"
+        bare.hardwareEncrypted = true
+        let words = SecurityControlPolicy(
+            fileVaultOffHardwareEncrypted: .warning,
+            onValues: [.fileVault: ["Wrapped"]], offValues: [.fileVault: ["Bare"]])
+        func inventory(_ policy: SecurityControlPolicy) -> DeviceInventorySnapshot {
+            DeviceInventorySnapshot(
+                devices: [wrapped, bare], patchTitles: [], sourceFiles: [], warnings: [],
+                generatedAt: "", generatedDate: nil, isDemo: false, securityPolicy: policy)
+        }
+
+        XCTAssertEqual(wrapped.fileVaultEnabled(policy: words), true)
+        XCTAssertEqual(bare.fileVaultEnabled(policy: words), false)
+        XCTAssertEqual(inventory(words).fileVaultPercent, 50)
+        XCTAssertEqual(inventory(words).fileVaultOffHardwareEncryptedCount, 1)
+        XCTAssertEqual(inventory(words).securityGapCount, 0, "the hardware rule is a warning")
+
+        XCTAssertNil(bare.fileVaultEnabled(policy: .default))
+        XCTAssertNil(inventory(.default).fileVaultPercent)
+        XCTAssertEqual(inventory(.default).fileVaultOffHardwareEncryptedCount, 0)
+    }
+
     /// The phrase contains "Encrypted", which used to count it as encrypted.
     func testNoPartitionsEncryptedIsNotEncrypted() {
         var record = record(allControls: "Enabled")
         record.fileVault = "No Partitions Encrypted"
-        XCTAssertEqual(record.fileVaultEnabled, false)
+        XCTAssertEqual(record.fileVaultEnabled(policy: .default), false)
         XCTAssertEqual(snapshot([record]).fileVaultPercent, 0)
         XCTAssertEqual(record.securityGapCount(policy: .default), 1)
         XCTAssertEqual(riskFactors(record), [.noFileVault])
@@ -225,7 +253,7 @@ final class DeviceSecurityStateTests: XCTestCase {
         for value in ["DECRYPTED", "DECRYPTING_PAUSED", "ENCRYPTING_PAUSED"] {
             var record = record(allControls: "Enabled")
             record.fileVault = value
-            XCTAssertEqual(record.fileVaultEnabled, false, value)
+            XCTAssertEqual(record.fileVaultEnabled(policy: .default), false, value)
             XCTAssertEqual(record.securityGapCount(policy: .default), 1, value)
             XCTAssertEqual(riskFactors(record), [.noFileVault], value)
         }

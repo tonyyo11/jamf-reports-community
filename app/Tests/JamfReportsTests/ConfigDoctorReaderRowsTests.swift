@@ -25,6 +25,22 @@ final class ConfigDoctorReaderRowsTests: XCTestCase {
                        "\"yes\" is not true or false, so the app reads it as false.")
     }
 
+    /// `html.with_workbook` is decoded, but a value that is not a boolean reads as off instead
+    /// of failing the file, so the Doctor says so the way it does for `track_history`.
+    func testANonBooleanWithWorkbookIsStated() throws {
+        let root = try ConfigLoader.rawMapping(fromYAML: "html:\n  with_workbook: yes\n")
+        let rows = ConfigDoctorService.fileReadBooleanRows(root)
+        XCTAssertEqual(rows.map(\.id), ["config.value.html.with_workbook"])
+        XCTAssertEqual(rows.first?.severity, .warn)
+        XCTAssertEqual(rows.first?.detail,
+                       "\"yes\" is not true or false, so the app reads it as false.")
+        for yaml in ["html:\n  with_workbook: true\n", "html:\n  with_workbook: \"False\"\n",
+                     "html:\n  track_history: true\n"] {
+            XCTAssertEqual(ConfigDoctorService.fileReadBooleanRows(
+                try ConfigLoader.rawMapping(fromYAML: yaml)), [], yaml)
+        }
+    }
+
     /// yes, on and 1 opt in to absolute paths, as they always have; the row suggests true.
     func testAnOptInSpelledOtherThanTrueIsASuggestion() throws {
         for value in ["yes", "ON", "1"] {

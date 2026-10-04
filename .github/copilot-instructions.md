@@ -88,7 +88,6 @@ Use these exact names:
 | `columns` | `last_checkin` | `last_contact` |
 | `columns` | `email` | `assigned_user_email` |
 | `jamf_cli` | `profile` | `jamf_profile` |
-| `jamf_cli` | `allow_live_overview` | `live_overview` |
 | `security_agents` | `connected_value` | `installed_value` |
 | `compliance` | `failures_count_column` | `failed_count_column` |
 

@@ -157,10 +157,10 @@ struct CompliancePostureService: Sendable {
         _ device: SecurityDevice, policy: SecurityControlPolicy, hardwareEncrypted: Bool?
     ) -> Int? {
         policy.gapCount(
-            fileVault: reading(.fileVault, of: device),
-            sip: reading(.sip, of: device),
-            firewall: reading(.firewall, of: device),
-            gatekeeper: reading(.gatekeeper, of: device),
+            fileVault: device.reading(of: .fileVault, policy: policy),
+            sip: device.reading(of: .sip, policy: policy),
+            firewall: device.reading(of: .firewall, policy: policy),
+            gatekeeper: device.reading(of: .gatekeeper, policy: policy),
             hardwareEncrypted: hardwareEncrypted
         )
     }
@@ -175,7 +175,7 @@ struct CompliancePostureService: Sendable {
             .map { control in
                 let verdicts = zip(devices, hardwareEncrypted).map {
                     policy.verdict(
-                        for: control, reading: reading(control, of: $0),
+                        for: control, reading: $0.reading(of: control, policy: policy),
                         hardwareEncrypted: $1)
                 }
                 return Snapshot.ControlGap(
@@ -188,16 +188,7 @@ struct CompliancePostureService: Sendable {
             .sorted { $0.failingDevices > $1.failingDevices }
     }
 
-    private static func reading(_ control: SecurityControl, of device: SecurityDevice) -> Bool? {
-        switch control {
-        case .fileVault: SecurityControlPolicy.reading(device.fileVault)
-        case .sip: SecurityControlPolicy.reading(device.sip)
-        case .firewall: device.firewall
-        case .gatekeeper: SecurityControlPolicy.reading(device.gatekeeper)
-        }
-    }
-
-    fileprivate static func label(_ control: SecurityControl) -> String {
+    static func label(_ control: SecurityControl) -> String {
         switch control {
         case .fileVault: "FileVault"
         case .sip: "SIP"
@@ -275,6 +266,8 @@ extension FleetInsightInput {
         let warning: Int
         /// FileVault-off Macs the hardware rule leaves out at `ignore`; Security only.
         var notCounted = 0
+        /// Macs whose value Jamf did not report: not failing, not on; Security only.
+        var unreported = 0
     }
 
     /// The KPI tiles' share, Macs with the control on of every Mac in the report; the policy
@@ -289,7 +282,8 @@ extension FleetInsightInput {
             let dropped = control == .fileVault && policy.fileVaultOffHardwareEncrypted == .ignore
             return PostureRow(control: control, share: .on(onPct), failing: counts.fail,
                               warning: counts.warning,
-                              notCounted: dropped ? fleet.fileVaultOffHardwareEncrypted : 0)
+                              notCounted: dropped ? fleet.fileVaultOffHardwareEncrypted : 0,
+                              unreported: counts.notReported)
         }
     }
 
@@ -314,7 +308,8 @@ extension FleetInsightInput {
         let share = switch row.share {
         case .on(let pct):
             Fact(label: "\(first) enabled", value: .percent(pct), prior: nil,
-                 polarity: .higherIsBetter, complement: "off")
+                 polarity: .higherIsBetter,
+                 complement: row.unreported > 0 ? "off or not reported" : "off")
         case .failing(let pct):
             Fact(label: "\(first) failing", value: .percent(pct), prior: nil,
                  polarity: .lowerIsBetter, complement: "not failing")
@@ -332,6 +327,10 @@ extension FleetInsightInput {
             let off = isHardware ? hardware : "Macs with \(name) off"
             facts.append(Fact(label: off + " (a warning, not failing)", value: .count(row.warning),
                               prior: nil, polarity: .lowerIsBetter))
+        }
+        if row.unreported > 0 {
+            facts.append(Fact(label: "Macs that did not report \(name) (not counted as failing)",
+                              value: .count(row.unreported), prior: nil, polarity: .neutral))
         }
         if row.notCounted > 0 {
             facts.append(Fact(label: hardware + ", not counted by this workspace's policy",

@@ -90,6 +90,8 @@ enum ConfigDoctorService {
             rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
             rows += securityPolicyRows(profile: profile, config: config)
+            rows += csvHardwareColumnRows(
+                config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
@@ -590,8 +592,10 @@ enum ConfigDoctorService {
     }
 
     /// One warning per unknown key, titled with its key path. The value is never shown: it can
-    /// be a webhook URL under a misspelled key.
-    static func unknownKeyRows(_ keys: [UnknownKey]) -> [DoctorRow] {
+    /// be a webhook URL under a misspelled key. A key the app once wrote and no longer reads
+    /// gets a suggestion of its own instead (`retiredKeyRows`), so it is reported once.
+    static func unknownKeyRows(_ allKeys: [UnknownKey]) -> [DoctorRow] {
+        let keys = allKeys.filter { $0.retiredSince == nil }
         var rows = keys.prefix(unknownKeyCap).enumerated().map { index, key in
             DoctorRow(
                 id: "config.unknown_key.\(index)", severity: .warn, title: key.keyPath,
@@ -610,7 +614,22 @@ enum ConfigDoctorService {
                 hint: "Fix the keys above, then run the check again to see the rest."
             ))
         }
-        return rows
+        return rows + retiredKeyRows(allKeys.compactMap { key in
+            key.retiredSince.map { (key.keyPath, $0) }
+        })
+    }
+
+    /// One suggestion per retired key (path, release): nothing is broken, the app just stopped
+    /// reading it, and only `.fail` rows reach the run log. The hint says what removes it.
+    private static func retiredKeyRows(_ keys: [(path: String, since: String)]) -> [DoctorRow] {
+        keys.enumerated().map { index, key in
+            let block = key.path.components(separatedBy: ".").first ?? ""
+            let hint = ConfigService.retiredKeyRemover(inBlock: block)
+                .map { "The next \($0) removes it." } ?? "Delete the line from config.yaml."
+            return DoctorRow(
+                id: "config.retired_key.\(index)", severity: .suggest, title: key.path,
+                detail: "No longer read since \(key.since).", hint: hint)
+        }
     }
 
     // MARK: - What the reader did not take as written
@@ -665,8 +684,10 @@ enum ConfigDoctorService {
         }
     }
 
-    /// true/false keys the decoder does not model. `output.allow_absolute_paths` also takes yes,
-    /// on and 1 (`WorkspacePaths.optIn`); `html.track_history` takes only true and false.
+    /// true/false keys the decoder does not model, and `html.with_workbook`, which it reads
+    /// as off for any other value instead of failing the decode.
+    /// `output.allow_absolute_paths` also takes yes, on and 1 (`WorkspacePaths.optIn`);
+    /// `html.track_history` and `html.with_workbook` take only true and false.
     static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {
         var rows: [DoctorRow] = []
         if let value = typedNonBoolean(at: ["output", "allow_absolute_paths"], in: root) {
@@ -681,8 +702,10 @@ enum ConfigDoctorService {
             case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
             }
         }
-        if let value = typedNonBoolean(at: ["html", "track_history"], in: root) {
-            rows.append(readsAsFalseRow("html.track_history", value))
+        for key in ["track_history", "with_workbook"] {
+            if let value = typedNonBoolean(at: ["html", key], in: root) {
+                rows.append(readsAsFalseRow("html.\(key)", value))
+            }
         }
         return rows
     }
@@ -745,6 +768,35 @@ enum ConfigDoctorService {
         return rows
     }
 
+    /// On a CSV the hardware rule reads Apple silicon from `columns.architecture` and T2 Macs
+    /// from `columns.model_identifier` (`columns.model` is the marketing name). A mapped column
+    /// the export lacks already gets a `columns.<key>` row; this names one that is not mapped.
+    static func csvHardwareColumnRows(
+        config: ReportConfig, csvHeaders: [String]?, csvFamily: CSVFamily?
+    ) -> [DoctorRow] {
+        guard config.resolvedSecurityPolicy.usesHardwareRule, csvHeaders != nil,
+              csvFamily != .mobile else { return [] }
+        let candidates: [(field: ColumnField, header: String)] = [
+            (field: .modelIdentifier, header: "Model Identifier"),
+            (field: .architecture, header: "Architecture Type"),
+        ]
+        let unmapped = candidates.filter { config.columns?.columnName(for: $0.field) == nil }
+        guard !unmapped.isEmpty else { return [] }
+        let keys = unmapped.map { "columns.\($0.field.configKey)" }
+        let headers = unmapped.map { "'\($0.header)'" }
+        return [DoctorRow(
+            id: "security_policy.csv_hardware_columns", severity: .warn,
+            title: "security_policy.filevault_off_hardware_encrypted",
+            detail: "\(keys.joined(separator: " and ")) "
+                + "\(keys.count == 1 ? "is" : "are") not mapped, so a CSV report cannot tell "
+                + "which Macs are hardware-encrypted. FileVault off counts at the FileVault "
+                + "level for them.",
+            hint: "Map \(keys.count == 1 ? "it" : "them") in Config, or re-run scaffold, "
+                + "to the export's \(headers.joined(separator: " and ")) "
+                + "\(headers.count == 1 ? "column" : "columns")."
+        )]
+    }
+
     private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
@@ -752,7 +804,21 @@ enum ConfigDoctorService {
         if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
             return "\"\(issue.value)\" is not a number from 0 to 100 — using \(issue.used)"
         }
+        if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
+            return securityVocabularyDetail(issue)
+        }
         return "\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)"
+    }
+
+    private static func securityVocabularyDetail(_ issue: SecurityPolicyIssue) -> String {
+        let list = issue.keyPath.hasPrefix(SecurityPolicyConfigLoader.onValuesPath)
+            ? "on_values" : "off_values"
+        if issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff {
+            return "\"\(issue.value)\" is listed in both on_values and off_values — "
+                + "reading it as off"
+        }
+        if issue.value.isEmpty { return "An empty value in \(list) is skipped" }
+        return "\"\(issue.value)\" in \(list) is not text — skipped"
     }
 
     private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
@@ -761,6 +827,11 @@ enum ConfigDoctorService {
         }
         if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
             return "Set it to a number from 0 to 100 in config.yaml, or remove the line."
+        }
+        if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
+            return issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff
+                ? "Remove it from on_values, or from off_values, in config.yaml."
+                : "Write each value as text, such as \"Pass\" (quote a number), or remove it."
         }
         return "Set it to fail, warning or ignore in config.yaml, or remove the line."
     }

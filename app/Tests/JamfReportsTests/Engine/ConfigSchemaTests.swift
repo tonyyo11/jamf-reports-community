@@ -35,6 +35,14 @@ final class ConfigSchemaTests: XCTestCase {
         ], "an unknown top-level key is reported once, not once per key under it")
     }
 
+    func testWithWorkbookIsKnownAndAMisspellingNamesIt() throws {
+        XCTAssertEqual(
+            try unknownKeys("html:\n  with_workbook: true\n  track_history: false\n"), [])
+        XCTAssertEqual(try unknownKeys("html:\n  with_workbok: true\n"), [
+            UnknownKey(keyPath: "html.with_workbok", suggestion: "with_workbook"),
+        ])
+    }
+
     func testACorrectFileHasNoUnknownKeys() throws {
         let keys = try unknownKeys("""
         columns:
@@ -120,6 +128,30 @@ final class ConfigSchemaTests: XCTestCase {
         XCTAssertEqual(keys.last?.suggestion, "filevault")
     }
 
+    func testTheVocabularyBlocksAreKnownAndTheirUnknownKeysAreReported() throws {
+        let keys = try unknownKeys("""
+        security_policy:
+          on_values:
+            firewall: [Pass]
+            sip: Protected
+            antivirus: [Clean]
+          off_values:
+            filevault: Bare
+            firewal: [Fail]
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), [
+            "security_policy.off_values.firewal",
+            "security_policy.on_values.antivirus",
+        ])
+        XCTAssertEqual(keys.first?.suggestion, "firewall")
+        let policyKeys = ConfigSchema.knownKeys(at: ["security_policy"]) ?? []
+        XCTAssertTrue(policyKeys.isSuperset(of: ["on_values", "off_values"]))
+        for block in ["on_values", "off_values"] {
+            XCTAssertEqual(ConfigSchema.knownKeys(at: ["security_policy", block]),
+                           ["filevault", "sip", "firewall", "gatekeeper"], block)
+        }
+    }
+
     func testABlockOfTheWrongShapeIsLeftToTheDecoderError() throws {
         let keys = try unknownKeys("""
         custom_eas:
@@ -163,6 +195,51 @@ final class ConfigSchemaTests: XCTestCase {
         ])
     }
 
+    // MARK: - Retired keys
+
+    /// A retired key is one the schema does not read; a key that is read again must leave the list.
+    func testNoRetiredKeyIsOneTheSchemaReads() {
+        XCTAssertFalse(ConfigSchema.retiredKeys.isEmpty)
+        for path in ConfigSchema.retiredKeys.keys {
+            let parts = path.components(separatedBy: ".")
+            let parent = ConfigSchema.knownKeys(at: Array(parts.dropLast()))
+            XCTAssertNotNil(parent, "\(path): the block that held it is still read")
+            XCTAssertFalse(parent?.contains(parts.last ?? "") ?? true, path)
+        }
+    }
+
+    func testARetiredKeyIsMarkedWithItsReleaseAndAnyOtherUnknownKeyIsNot() throws {
+        let keys = try unknownKeys("""
+        branding:
+          accent_dark: "#445566"
+        charts:
+          os_adoption:
+            enabled: false
+        thresholds:
+          profile_error_critical: 80
+          stale_device_dayz: 45
+        """)
+        XCTAssertEqual(keys, [
+            UnknownKey(keyPath: "branding.accent_dark", suggestion: nil, retiredSince: "2.9"),
+            UnknownKey(keyPath: "charts.os_adoption.enabled", suggestion: nil, retiredSince: "2.9"),
+            UnknownKey(keyPath: "thresholds.profile_error_critical", suggestion: nil,
+                       retiredSince: "2.9"),
+            UnknownKey(keyPath: "thresholds.stale_device_dayz", suggestion: "stale_device_days"),
+        ])
+        XCTAssertEqual(keys.map(\.note), [
+            "No longer read since 2.9.", "No longer read since 2.9.",
+            "No longer read since 2.9.", "Did you mean \"stale_device_days\"?",
+        ])
+        XCTAssertNil(UnknownKey(keyPath: "x", suggestion: nil).note)
+    }
+
+    /// The same name under a block where it is not retired is still just unknown.
+    func testARetiredNameElsewhereIsOnlyUnknown() throws {
+        let keys = try unknownKeys("output:\n  enabled: true\nhtml:\n  accent_dark: x\n")
+        XCTAssertEqual(keys.map(\.keyPath), ["html.accent_dark", "output.enabled"])
+        XCTAssertEqual(keys.map(\.retiredSince), [nil, nil])
+    }
+
     // MARK: - Known misnames
 
     /// The wrong names CLAUDE.md's "Actual key names" table lists, each with its right key.
@@ -174,7 +251,6 @@ final class ConfigSchemaTests: XCTestCase {
           assigned_user_email: "Email"
         jamf_cli:
           jamf_profile: "example"
-          live_overview: true
         security_agents:
           - name: "Agent"
             column: "Agent Status"
@@ -206,12 +282,11 @@ final class ConfigSchemaTests: XCTestCase {
           auto_archive: true
         """)
         let suggested = Dictionary(uniqueKeysWithValues: keys.map { ($0.keyPath, $0.suggestion) })
-        XCTAssertEqual(keys.count, 17)
+        XCTAssertEqual(keys.count, 16)
         XCTAssertEqual(suggested["columns.os_version"], "operating_system")
         XCTAssertEqual(suggested["columns.last_contact"], "last_checkin")
         XCTAssertEqual(suggested["columns.assigned_user_email"], "email")
         XCTAssertEqual(suggested["jamf_cli.jamf_profile"], "profile")
-        XCTAssertEqual(suggested["jamf_cli.live_overview"], "allow_live_overview")
         XCTAssertEqual(suggested["security_agents[0].installed_value"], "connected_value")
         XCTAssertEqual(suggested["compliance.failed_count_column"], "failures_count_column")
         XCTAssertEqual(suggested["compliance.failed_list_column"], "failures_list_column")
@@ -339,6 +414,8 @@ final class ConfigSchemaTests: XCTestCase {
             (["html", "section_limits"], keys(HTMLSectionLimits.CodingKeys.self)),
             (["security_policy"], keys(SecurityControlPolicy.CodingKeys.self)),
             (["security_policy", "controls"], keys(SecurityControlPolicy.ControlKeys.self)),
+            (["security_policy", "on_values"], keys(SecurityControlPolicy.ControlKeys.self)),
+            (["security_policy", "off_values"], keys(SecurityControlPolicy.ControlKeys.self)),
         ]
         for (path, expected) in decoded {
             let label = path.isEmpty ? "<root>" : path.joined(separator: ".")

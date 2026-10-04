@@ -120,6 +120,12 @@ struct SecurityPostureView: View {
         (Self.p0TileCount(snapshot.fleetCounts), snapshot.fleetCounts.p1 ?? 0, 0)
     }
 
+    /// An Action Items caption with the values the tile leaves out because Jamf did not
+    /// report them.
+    static func actionCaption(_ base: String, notReported: Int) -> String {
+        notReported > 0 ? base + " · not reported: \(notReported)" : base
+    }
+
     /// summary.json writes no P0 without a FileVault count; the tile still sums the
     /// controls the report does carry, as it always has.
     static func p0TileCount(_ fleet: SecurityFleetCounts) -> Int {
@@ -134,7 +140,8 @@ struct SecurityPostureView: View {
     ) -> String {
         let counts = fleet.controls[control]
         if counts?.level == .ignore { return "Not counted by this workspace's policy" }
-        let base = "\(on) of \(total)"
+        var base = "\(on) of \(total)"
+        if let missing = counts?.notReported, missing > 0 { base += " · not reported: \(missing)" }
         let lowered = fleet.fileVaultOffHardwareEncrypted
         if control == .fileVault, lowered > 0 {
             return base + " · \(lowered) more hardware-encrypted, FileVault off"
@@ -288,10 +295,14 @@ struct SecurityPostureView: View {
                 SectionHeader(title: "Action Items", trailing: "By priority")
                 HStack(spacing: 12) {
                     actionTile(level: "P0", count: actionItems.p0,
-                               caption: "FileVault / SIP / Firewall gaps",
+                               caption: Self.actionCaption(
+                                   "FileVault / SIP / Firewall gaps",
+                                   notReported: snapshot.fleetCounts.p0NotReported),
                                tone: .danger)
                     actionTile(level: "P1", count: actionItems.p1,
-                               caption: "Gatekeeper gaps",
+                               caption: Self.actionCaption(
+                                   "Gatekeeper gaps",
+                                   notReported: snapshot.fleetCounts.p1NotReported),
                                tone: .warn)
                 }
             }

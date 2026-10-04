@@ -345,7 +345,7 @@ struct ContentView: View {
         switch style {
         case .info:    "info.circle.fill"
         case .success: "checkmark.circle.fill"
-        case .danger:  "exclamationmark.triangle.fill"
+        case .warning, .danger: "exclamationmark.triangle.fill"
         }
     }
 
@@ -353,6 +353,7 @@ struct ContentView: View {
         switch style {
         case .info:    Theme.Colors.info
         case .success: Theme.Colors.ok
+        case .warning: Theme.Colors.warn
         case .danger:  Theme.Colors.danger
         }
     }

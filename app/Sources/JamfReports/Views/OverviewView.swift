@@ -726,8 +726,11 @@ struct OverviewView: View {
     /// Format the first artifact's 12-char short fingerprint for the toast.
     /// Empty when no `[ok] sha256:` lines were captured (e.g., legacy engine
     /// path or an engine that doesn't emit the T-13 sentinel).
+    /// The workbook's fingerprint when there is one: with `html.with_workbook` on, the HTML
+    /// report's is in the dictionary too, and `first` would pick either.
     private func firstFingerprintSummary() -> String {
-        guard let first = generatedHashes.first else { return "" }
+        let workbook = generatedHashes.first { $0.key.hasSuffix(".xlsx") }
+        guard let first = workbook ?? generatedHashes.first else { return "" }
         let short = String(first.value.prefix(12))
         return "sha256: \(short)…"
     }

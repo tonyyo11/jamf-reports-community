@@ -538,10 +538,16 @@ struct HtmlReport: Sendable {
                 : control.map { securityTileClass($0, pct: pct ?? 0, fleet: fleet) } ?? ""
             let label = ignored ? label + " (not counted)" : label
             let hardwareMacs = control == .fileVault ? fleet?.fileVaultOffHardwareEncrypted ?? 0 : 0
-            let note = hardwareMacs > 0
-                ? "\n  <div class=\"tile-label\">" + HtmlSectionFormatters.escapeHTML(
-                    "\(hardwareMacs) more hardware-encrypted, FileVault off") + "</div>"
-                : ""
+            let notes = [
+                hardwareMacs > 0
+                    ? "\(hardwareMacs) more hardware-encrypted, FileVault off" : nil,
+                control.flatMap { fleet?.controls[$0]?.notReported }.flatMap {
+                    $0 > 0 && !ignored ? "not reported: \($0)" : nil
+                },
+            ].compactMap { $0 }
+            let note = notes.map {
+                "\n  <div class=\"tile-label\">" + HtmlSectionFormatters.escapeHTML($0) + "</div>"
+            }.joined()
             return """
             <div class="tile \(statusClass)">
               <div class="tile-value">\(HtmlSectionFormatters.escapeHTML(value))</div>

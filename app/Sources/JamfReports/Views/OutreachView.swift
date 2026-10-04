@@ -283,7 +283,7 @@ struct OutreachView: View {
 
     /// Export all stale-device records (every tier) as a CSV into the workspace's
     /// output directory, then reveal the file in Finder. Gated on the allow-list
-    /// via `SystemActions.reveal` — writes only inside `~/Jamf-Reports/<profile>/`.
+    /// via `SystemActions.reveal`, which allows the workspace and this profile's reports folder.
     private func exportOutreachCSV() {
         guard !workspace.demoMode else { return }
         guard let outputDir = try? WorkspacePaths.outputDir(for: workspace.profile) else {
@@ -307,7 +307,7 @@ struct OutreachView: View {
                 message: "Exported \(snapshot.totalDevices) devices to \(filename)",
                 style: .success
             )
-            SystemActions.reveal(fileURL)
+            SystemActions.reveal(fileURL, profile: workspace.profile)
         } catch {
             workspace.toast = Toast(
                 message: "Could not export CSV: \(error.localizedDescription)",

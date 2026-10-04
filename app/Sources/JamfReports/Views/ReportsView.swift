@@ -7,6 +7,8 @@ struct ReportsView: View {
     @State private var filter: String = "All"
     @State private var selectedReports = Set<Report.ID>()
     @State private var reports: [Report] = []
+    /// Where `output.output_dir` sends reports; nil until the first `reload`.
+    @State private var reportsFolder: URL?
     @State private var reportStats = ReportLibrary.Stats(count: 0, totalBytes: 0, archivedCount: 0)
     @State private var snapshotFamilies: [SnapshotFamily] = []
     @State private var showGenerate = false
@@ -23,9 +25,9 @@ struct ReportsView: View {
     @State private var quickLookURL: URL? = nil
 
     private var reportsDirectory: URL {
-        let workspace = ProfileService.workspaceURL(for: workspace.profile)
-            ?? WorkspaceRootStore.defaultRoot
-        return workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+        reportsFolder ?? (ProfileService.workspaceURL(for: workspace.profile)
+            ?? WorkspaceRootStore.defaultRoot)
+            .appendingPathComponent(WorkspacePaths.generatedReportsDirName, isDirectory: true)
     }
 
     /// The header's folder. Demo mode names the demo workspace, not this Mac's
@@ -34,14 +36,13 @@ struct ReportsView: View {
         workspace.demoMode
             ? DemoData.workspaceDisplayPath(
                 profile: DemoData.org.profile, subpath: "Generated Reports") + "/"
-            : WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                             subpath: "Generated Reports") + "/"
+            : WorkspaceRootStore.displayPath(of: reportsDirectory, profile: workspace.profile) + "/"
     }
 
     private func revealReportsFolder() {
         // Demo reports are not on disk; the demo profile's folder could be real.
         guard !workspace.demoMode else { return }
-        SystemActions.openFolder(reportsDirectory)
+        SystemActions.openFolder(reportsDirectory, profile: workspace.profile)
     }
 
     private var filteredReports: [Report] {
@@ -144,10 +145,10 @@ struct ReportsView: View {
                             reportName: reportID
                            ) {
                             Button("Reveal in Finder") {
-                                SystemActions.reveal(url)
+                                SystemActions.reveal(url, profile: workspace.profile)
                             }
                             Button("Open") {
-                                SystemActions.open(url)
+                                SystemActions.open(url, profile: workspace.profile)
                             }
                             Button("Copy path") {
                                 SystemActions.copyToClipboard(url.path)
@@ -170,7 +171,7 @@ struct ReportsView: View {
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
                 if let url = quickLookURL {
-                    QuickLookPreview(url: url)
+                    QuickLookPreview(url: url, profile: workspace.profile)
                         .navigationTitle("Preview")
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
@@ -380,7 +381,9 @@ struct ReportsView: View {
             reports = DemoData.generatedReports
             reportStats = DemoData.generatedReportStats
             snapshotFamilies = DemoData.snapshotFamilies(for: DemoData.org.profile)
+            reportsFolder = nil
         } else {
+            reportsFolder = WorkspacePaths.reportsDir(for: workspace.profile, onLine: nil)
             let library = ReportLibrary()
             reports = library.list(profile: workspace.profile)
             reportStats = library.stats(profile: workspace.profile)
@@ -464,7 +467,7 @@ struct ReportsView: View {
                 workspace.globalStatus = nil
                 if code == 0 {
                     workspace.toast = Toast(message: "PDF report generated", style: .success)
-                    SystemActions.open(dest)
+                    SystemActions.open(dest, profile: profile)
                     reload()
                 } else {
                     let msg = CLIBridge.explainExit(code, operation: "PDF report generation")
@@ -513,7 +516,7 @@ struct ReportsView: View {
                 workspace.globalStatus = nil
                 if code == 0 {
                     workspace.toast = Toast(message: "Inventory CSV exported", style: .success)
-                    SystemActions.reveal(dest)
+                    SystemActions.reveal(dest, profile: profile)
                     reload()
                 } else {
                     let msg = CLIBridge.explainExit(code, operation: "Inventory CSV export")

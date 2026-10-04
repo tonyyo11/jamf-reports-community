@@ -152,6 +152,12 @@ Each run mode is strict — it does exactly one thing:
 `csv-assisted` fails loudly when its inbox has no CSV rather than silently degrading to a
 no-CSV workbook — use `jamf-cli-full` explicitly if you want the no-CSV path.
 
+With `html.with_workbook: true` in the profile's `config.yaml` (the Customize screen's
+**Write the HTML report with every workbook**), the three modes that generate also write the
+profile's HTML report beside the workbook, and the schedule's artifacts list both. If only the HTML
+report fails, the run still succeeds and is not marked Partial; its log has one
+`[warn] HTML report not written` line.
+
 > A legacy schedule imported from before run modes existed omits a mode and defaults to
 > `jamf-cli-only`. The meaning of `jamf-cli-only` later narrowed to "generate from cache,
 > no collect," so a very old imported schedule that used to collect-then-generate now only
@@ -224,7 +230,10 @@ scheduled run is in progress — try again when it finishes" and starts nothing.
 run that comes due while you collect waits for the next wake, and the overdue banner does
 not call it missed. The app's own automatic re-collects (the hourly repair and the
 catch-up on wake) hold the lock too. A manual collect that finishes with a source missing
-says "Refresh finished with warnings" and where to read why.
+says "Refresh finished with warnings" in an amber toast and points at Run History, where
+every collect you start appears as "Manual collect" (the last 20 are kept, so they do not
+push scheduled runs out of the 50). A collect that is turned away because a scheduled run
+holds the lock leaves no entry, and a manual collect is never counted as a schedule's run.
 
 A development build (`swift run JamfReports`) has no bundled agent, so registration is
 skipped and the Automation screen shows "Ticker unavailable in this build" — `JamfReports

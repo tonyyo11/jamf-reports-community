@@ -247,6 +247,10 @@ struct ReportEngine: Sendable {
     ///   `YYYY-MM-DDTHHMMSS`, `YYYY-MM-DDTHH_MM_SS`, `YYYY-MM-DDTHH-MM-SS`
     /// Falls back to file mtime when no date pattern is found.
     ///
+    /// A run is a workbook: `keep` counts workbooks, and one that moves takes its companion HTML
+    /// (the same name with `.html`, written by `html.with_workbook`) and its sidecars with it.
+    /// An HTML report with no workbook of the same name beside it is never moved.
+    ///
     /// - Parameter onLine: When provided, warnings are emitted here instead of (only) via
     ///   `print`, so live log views (e.g. GenerateSheet) display side-effect failures.
     func archiveOldRuns(
@@ -285,40 +289,51 @@ struct ReportEngine: Sendable {
         }
 
         for file in sorted.dropFirst(keep) {
-            let dest = archiveDir.appendingPathComponent(file.lastPathComponent)
-            do {
-                if fm.fileExists(atPath: dest.path) {
-                    try fm.removeItem(at: dest)
+            // The workbook's companion HTML (`html.with_workbook`) is part of its run. A
+            // `.html` with no workbook beside it, such as the Generate sheet's HTML format or
+            // `jamf-reports html` output, is not a run of this stem and is left where it is.
+            let run = [file, Self.htmlURL(besideWorkbook: file)]
+                .filter { fm.fileExists(atPath: $0.path) }
+            for artifact in run {
+                // Skip sidecars when the move failed: sidecars without their report in the
+                // archive are uninformative.
+                guard Self.moveToArchive(artifact, archiveDir: archiveDir, onLine: onLine) else {
+                    continue
                 }
-                try fm.moveItem(at: file, to: dest)
-            } catch {
-                let msg = "[warn] Could not archive \(file.lastPathComponent): \(error)"
-                AppLogger.report.warning("\(msg, privacy: .private)")
-                print(msg)
-                onLine?(.init(timestamp: Date(), level: .warn, text: msg))
-                // Skip sidecar move when the xlsx move failed — sidecars without
-                // a workbook in the archive are uninformative.
-                continue
-            }
-            // Move sibling sidecar files (sha256 + manifest.txt) alongside the
-            // xlsx so they don't accumulate as orphans in the reports root.
-            // Failures are best-effort: warn and continue rather than block rotation.
-            let sidecarExts = ["sha256", "manifest.txt"]
-            for ext in sidecarExts {
-                let sidecar = file.appendingPathExtension(ext)
-                guard fm.fileExists(atPath: sidecar.path) else { continue }
-                let sidecarDest = archiveDir.appendingPathComponent(sidecar.lastPathComponent)
-                do {
-                    if fm.fileExists(atPath: sidecarDest.path) {
-                        try fm.removeItem(at: sidecarDest)
-                    }
-                    try fm.moveItem(at: sidecar, to: sidecarDest)
-                } catch {
-                    let msg = "[warn] Could not archive sidecar \(sidecar.lastPathComponent): \(error)"
-                    AppLogger.report.warning("\(msg, privacy: .private)")
-                    onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+                // Sibling sidecar files (sha256 + manifest.txt) move with their report so
+                // they don't accumulate as orphans in the reports root. Failures are
+                // best-effort: warn and continue rather than block rotation.
+                for ext in ["sha256", "manifest.txt"] {
+                    let sidecar = artifact.appendingPathExtension(ext)
+                    guard fm.fileExists(atPath: sidecar.path) else { continue }
+                    Self.moveToArchive(
+                        sidecar, archiveDir: archiveDir, label: "sidecar ", onLine: onLine)
                 }
             }
+        }
+    }
+
+    /// Moves `file` into `archiveDir`, replacing a file of the same name there. A failure is a
+    /// `[warn]` line, and the result is false.
+    @discardableResult
+    private static func moveToArchive(
+        _ file: URL, archiveDir: URL, label: String = "",
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> Bool {
+        let fm = FileManager.default
+        let dest = archiveDir.appendingPathComponent(file.lastPathComponent)
+        do {
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: dest)
+            }
+            try fm.moveItem(at: file, to: dest)
+            return true
+        } catch {
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): \(error)"
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            if label.isEmpty { print(msg) }
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return false
         }
     }
 
@@ -1025,9 +1040,11 @@ struct ReportEngine: Sendable {
     /// line/stacked-area charts. With 1 point produces a bar chart.
     ///
     /// Respects:
-    /// - `charts.os_adoption.per_major_charts` — adds one series per major OS version
-    ///   (using `ChartPalette.majorVersionColors`).
-    /// - `charts.compliance_trend.bands` — uses band labels/colors for compliance stacked area.
+    /// - `charts.os_adoption.per_major_charts` — draws the OS adoption chart, one bar per major
+    ///   OS version (using `ChartPalette.majorVersionColors`). On when the key is absent, as
+    ///   the Customize screen shows it; `false` turns it off.
+    /// - `charts.compliance_trend.bands` — uses band labels/colors for compliance stacked area;
+    ///   `charts.compliance_trend.enabled: false` turns the chart off.
     /// - `charts.device_state_trend.enabled` — renders managed/stale trend line chart.
     /// - `compliance.baselines` — when configured, appends mSCP/STIG compliance donut(s) and
     ///   a band trend stackplot even when the summaries dir is empty (first-run case).
@@ -1134,7 +1151,8 @@ struct ReportEngine: Sendable {
             }
 
             // --- Compliance trend (stacked area with configurable bands) ---
-            if let bands = config.charts?.complianceTrend?.bands, !bands.isEmpty {
+            if let trend = config.charts?.complianceTrend, trend.isEnabled,
+               let bands = trend.bands, !bands.isEmpty {
                 let bandSeries: [ChartSeries] = bands.enumerated().compactMap { (idx, band) in
                     let color = cgColorFromHex(band.color) ?? ChartPalette.color(for: idx)
                     let pts = summaries.compactMap { s -> (date: Date, value: Double)? in
@@ -1156,8 +1174,8 @@ struct ReportEngine: Sendable {
                 }
             }
 
-            // --- OS adoption (per-major when enabled) ---
-            if config.charts?.osAdoption?.perMajorCharts == true {
+            // --- OS adoption (on unless per_major_charts is false, like the Customize screen) ---
+            if config.charts?.osAdoption?.perMajorCharts ?? ChartsOptions.defaults.perMajorCharts {
                 var majorData: [String: Double] = [:]
                 if let invData = try? Self.loadLatestSnapshotData(kind: "inventory-summary",
                                                                   dataDir: dataDir),
@@ -3846,7 +3864,8 @@ struct ReportEngine: Sendable {
         let orderedKeys = [
             "computer_name", "serial_number", "operating_system", "last_checkin",
             "department", "email", "filevault", "sip", "firewall", "gatekeeper",
-            "secure_boot", "bootstrap_token", "disk_percent_full", "model", "architecture",
+            "secure_boot", "bootstrap_token", "disk_percent_full", "model", "model_identifier",
+            "architecture",
         ]
         for key in orderedKeys {
             lines.append("  \(key): \"\"")

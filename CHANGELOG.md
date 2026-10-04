@@ -26,6 +26,23 @@ compliance is now one figure everywhere.
   needs the Mac's hardware details from the latest inventory collect. A Mac is never treated this
   way when its record disagrees with another record for the same serial number, or when it is a
   virtual machine.
+- CSV reports can tell a T2 Mac from other Intel Macs. A new `columns.model_identifier` key maps
+  the export's "Model Identifier" column (`columns.model` stays the marketing name), and the
+  default `columns.architecture` is now "Architecture Type", the header Jamf Pro's computer export
+  uses. Scaffold and re-scaffold fill both, and Config Doctor warns when the hardware rule is set,
+  a CSV is present and either one is unmapped.
+- Macs that did not report a security setting are no longer counted as failing it. FileVault, SIP,
+  Firewall and Gatekeeper figures, the security score and the P0 and P1 action items count the
+  Macs measured off, and the Security Posture screen, the workbook and the HTML report show "not
+  reported: N" where some Macs did not report. A tenant where Jamf collects every value sees no
+  change.
+- Your own on and off words. When your organization maps its own extension attribute or CSV
+  column to FileVault, SIP, Firewall or Gatekeeper and it says `Pass` and `Fail`, or `Compliant`
+  and `Non-Compliant`, list those words under `security_policy.on_values` and `off_values` for
+  that control and every screen and report reads them; before, those Macs counted as not
+  measured. A value must match whole, a value in both lists reads as off, and Config > Run check
+  warns about one that is empty, not text or in both. The totals jamf-cli's security report
+  carries keep jamf-cli's words.
 - Security Score weights are saved in the workspace's `security_policy.score_weights`, so the
   Security Posture screen, the Overview, Trends, alerts and reports score with the same weights.
   Weights set on this Mac earlier are shown on the Scoring tab and apply to a workspace once you
@@ -37,8 +54,7 @@ compliance is now one figure everywhere.
   typed was not used as written: an unrecognised provider or detail, a webhook that cannot send, a
   retention setting that would never remove anything, limits that were clamped, sheet names that
   match no sheet, dates that are not `yyyy-MM-dd`, thresholds out of order, colours that are not
-  hex, settings that do not fit their type. It lists keys the app reads but nothing uses as
-  suggestions. Config Doctor also warns about a security policy level it could not read, and which
+  hex, settings that do not fit their type. Config Doctor also warns about a security policy level it could not read, and which
   level it used instead.
 - The Config screen and the Config Doctor list each line of config.yaml the app did not read as
   written, by line number: a line indented differently from its neighbours, a line with no
@@ -68,6 +84,13 @@ compliance is now one figure everywhere.
   Cloud, with no device names, serials or usernames. The report shows it as its last section,
   as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
   says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
+- Write the HTML report with every workbook. Turn on **Write the HTML report with every
+  workbook** on the Customize screen, or set `html.with_workbook: true`, and each run that
+  writes a profile's workbook also writes its HTML report beside it, with the same name: the
+  Generate buttons, scheduled runs that generate, and `jamf-reports generate`. If only the HTML
+  report fails, the workbook is kept and the log says so. When older runs are archived, the
+  HTML report moves with its workbook; other HTML reports stay where they are. The fleet and
+  period workbooks and Jamf School workbooks are not included.
 
 ### Changed
 
@@ -123,10 +146,27 @@ compliance is now one figure everywhere.
 - A `notify.detail` that is neither `full` nor `minimal` now sends the minimal digest. It sent the
   full one before.
 - Keys older builds wrote that nothing reads now get a "does not read this key" note:
-  `ai.lock_on_device`, `protect.data_dir`, `school_columns`. Six more keys are documented as
-  currently having no effect: `jamf_cli.enabled`, `jamf_cli.allow_live_overview`,
-  `thresholds.checkin_overdue_days`, `thresholds.profile_error_critical`,
-  `charts.os_adoption.enabled` and `charts.compliance_trend.enabled`.
+  `ai.lock_on_device`, `protect.data_dir`, `school_columns`, and six that earlier builds of the
+  Config screen or the scaffold wrote: `jamf_cli.enabled`, `jamf_cli.allow_live_overview`,
+  `charts.os_adoption.enabled`, `branding.accent_dark`, `platform.enabled` and
+  `thresholds.profile_error_critical`. Config Doctor lists them as "No longer read since 2.9"
+  suggestions, not warnings, and a config.yaml that still holds them works as before. A Config
+  save removes settings the app no longer reads, and says so on the screen (a Customize Apply
+  does the same for `charts.os_adoption.enabled`); the file is copied to
+  `config.yaml.bak-<date-time>` first. New configs no longer get `allow_live_overview`.
+- The Config screen no longer has the "Accent dark" colour field, the "Enable Platform API sheets"
+  switch or the "Profile error critical" threshold. None of them changed a report.
+- The Check-in Health sheet counts a Mac as overdue when its last contact is more than
+  `thresholds.checkin_overdue_days` days ago (default 7), and its header states that number. It
+  used jamf-cli's own stale flag under a header showing the stale-device threshold, so the two
+  could disagree. The Config screen's "Check-in overdue" field now does what it says. A Mac with
+  no contact date is still counted from jamf-cli's flag.
+- `charts.compliance_trend.enabled: false` now leaves the compliance band chart out of the Charts
+  tab. The key was read by nothing before.
+- The OS adoption chart is drawn on the Charts tab unless `charts.os_adoption.per_major_charts`
+  is `false`. A workspace with no `charts:` block now gets it, which is what the Customize screen
+  already showed for the switch. `charts.device_state_trend.enabled` is unchanged: that chart
+  still needs an explicit `true`.
 - The AI Insights settings no longer mention Private Cloud Compute, and the never-built
   `ai.tier: external` option and its `external:` block are removed. A config.yaml that still names
   `external` (or `pcc`) keeps working and runs on-device; the next save from Settings drops the
@@ -228,6 +268,18 @@ compliance is now one figure everywhere.
 - Leaving Settings stops its connection checks. It used to keep starting a jamf-cli run for
   each remaining profile, and switching profiles while Settings was open could mark a
   connection's token invalid when it wasn't.
+- The Reports screen lists the folder your `output_dir` names. Reports saved to a shared folder
+  (with `output.allow_absolute_paths: true`) used to be missing from the list, and the header,
+  Reveal in Finder, Open, Quick Look and the PDF and CSV save panels pointed at the workspace's
+  Generated Reports folder instead. A folder the app will not use still falls back to Generated
+  Reports, and a system or credentials folder is still never opened.
+- A collect you start from a button now appears in Run History as "Manual collect": Refresh, the
+  Overview prompt and Collect now, as the first collect already did. "Refresh finished with
+  warnings" points there, and a failed refresh says "see Run History". A collect turned away
+  because a scheduled run is in progress leaves no entry, and the last 20 are kept so they do not
+  push scheduled runs out of the list.
+- "Refresh finished with warnings" and the reminder to allow JamfReports under Login Items after
+  setup are amber, not red: nothing failed.
 
 ### Security
 

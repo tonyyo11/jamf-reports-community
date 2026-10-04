@@ -28,11 +28,10 @@ final class ConfigServiceTests: XCTestCase {
               timestamp_outputs: false
               keep_latest_runs: 7
             jamf_cli:
-              enabled: true
               data_dir: existing-data
               profile: tenant-a
               use_cached_data: true
-              allow_live_overview: false
+              max_cache_age_hours: 24
             """,
             profile: profile,
             root: root
@@ -76,7 +75,103 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("use_cached_data: false"))
         XCTAssertTrue(savedText.contains("data_dir: existing-data"))
         XCTAssertTrue(savedText.contains("profile: tenant-a"))
-        XCTAssertTrue(savedText.contains("allow_live_overview: false"))
+        XCTAssertTrue(savedText.contains("max_cache_age_hours: 24"))
+    }
+
+    /// Earlier builds wrote these keys and nothing reads them now. A save that rewrites the block
+    /// holding one removes it, says so, and copies the file as it was first; every other key and
+    /// the comments outside the rewritten blocks stay.
+    func testASaveRemovesTheRetiredKeysTheAppWroteAndSaysSo() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "retired-keys-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            """
+            # kept: a comment outside the blocks a save rewrites
+            html:
+              track_history: false
+            thresholds:
+              stale_device_days: 45
+              profile_error_critical: 80
+              team_note: keep me
+            platform:
+              enabled: true
+              compliance_benchmarks:
+                - CIS
+            branding:
+              org_name: Example Org
+              accent_color: "#112233"
+              accent_dark: "#445566"
+            jamf_cli:
+              data_dir: existing-data
+              enabled: true
+              allow_live_overview: false
+              max_cache_age_hours: 24
+            """,
+            profile: profile, root: root)
+
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        var state = loaded.state
+        state.staleDeviceDays = "61"
+        let saved = try ConfigService.save(
+            profile: profile, state: state, existingDocument: loaded.document, workspaceRoot: root)
+
+        XCTAssertEqual(saved.report.removedRetiredKeys, [
+            "branding.accent_dark", "jamf_cli.allow_live_overview", "jamf_cli.enabled",
+            "platform.enabled", "thresholds.profile_error_critical",
+        ])
+        let text = try savedText(profile: profile, root: root)
+        for gone in ["accent_dark", "allow_live_overview", "profile_error_critical"] {
+            XCTAssertFalse(text.contains(gone), gone)
+        }
+        let blocks = try XCTUnwrap(YAMLCodec.decode(text).root.mapping)
+        XCTAssertNil(blocks.value(for: "jamf_cli")?.mapping?.value(for: "enabled"))
+        XCTAssertNil(blocks.value(for: "platform")?.mapping?.value(for: "enabled"))
+        for kept in ["# kept: a comment outside", "track_history: false", "team_note: keep me",
+                     "max_cache_age_hours: 24", "data_dir: existing-data", "- CIS",
+                     "org_name: Example Org", "accent_color", "stale_device_days: 61"] {
+            XCTAssertTrue(text.contains(kept), kept)
+        }
+
+        let copy = try XCTUnwrap(saved.report.backupName, "a removed line is backed up first")
+        let backup = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root)
+                .deletingLastPathComponent().appendingPathComponent(copy),
+            encoding: .utf8)
+        XCTAssertTrue(backup.contains("accent_dark: \"#445566\""), "the copy is the file as it was")
+        XCTAssertEqual(saved.report.notes, [
+            "Settings the app no longer reads were removed from config.yaml: "
+                + "branding.accent_dark (since 2.9), jamf_cli.allow_live_overview (since 2.9), "
+                + "jamf_cli.enabled (since 2.9), platform.enabled (since 2.9), "
+                + "thresholds.profile_error_critical (since 2.9). "
+                + "A copy of the file as it was is at \(copy).",
+        ])
+
+        // Nothing is left to remove, so the next save says nothing about it.
+        let again = try ConfigService.save(
+            profile: profile, state: saved.state, existingDocument: saved.document,
+            workspaceRoot: root)
+        XCTAssertEqual(again.report.removedRetiredKeys, [])
+        XCTAssertEqual(again.report.notes, [])
+        XCTAssertNil(again.report.backupName)
+    }
+
+    /// Only the blocks a writer rewrites lose a retired key, and every copy of a repeated key goes.
+    func testRetiredKeysOutsideTheRewrittenBlocksStay() throws {
+        var mapping = try XCTUnwrap(YAMLCodec.decode("""
+            branding:
+              accent_dark: "#445566"
+            thresholds:
+              profile_error_critical: 80
+              profile_error_critical: 90
+              stale_device_days: 45
+            """).root.mapping)
+        let removed = ConfigService.dropRetiredKeys(from: &mapping, inBlocks: ["thresholds"])
+
+        XCTAssertEqual(removed, ["thresholds.profile_error_critical"])
+        let thresholds = try XCTUnwrap(mapping.value(for: "thresholds")?.mapping)
+        XCTAssertEqual(thresholds.entries.map(\.key), ["stale_device_days"])
+        XCTAssertNotNil(mapping.value(for: "branding")?.mapping?.value(for: "accent_dark"))
+        XCTAssertEqual(ConfigService.dropRetiredKeys(from: &mapping, inBlocks: []), [])
     }
 
     /// The editor models a few keys per entry; any other key typed on an entry rides along with
@@ -220,7 +315,7 @@ final class ConfigServiceTests: XCTestCase {
         XCTAssertTrue(savedText.contains("device_name: Mobile Display Name"))
     }
 
-    // MARK: - Extra column keys (listed on the Config screen after the original 18)
+    // MARK: - Extra column keys (listed on the Config screen after the base columns)
 
     private static let extraColumnMappings: [(key: String, header: String)] = [
         ("full_name", "Full Name"), ("asset_tag", "Asset Tag"), ("building", "Building"),
@@ -243,9 +338,10 @@ final class ConfigServiceTests: XCTestCase {
         )
     }
 
-    func testExtraColumnKeysAreListedAfterTheOriginalEighteen() {
+    func testExtraColumnKeysAreListedAfterTheBaseColumns() {
         let extras = Self.extraColumnMappings.map(\.key)
-        XCTAssertEqual(ConfigState.columnKeys.count, 18 + extras.count)
+        XCTAssertEqual(ConfigState.baseColumnKeys.count, 19)
+        XCTAssertEqual(ConfigState.columnKeys.count, 19 + extras.count)
         XCTAssertEqual(Array(ConfigState.columnKeys.suffix(extras.count)), extras)
         // Every column the engine decodes has a row: writing each listed key reaches every field.
         let keyLines = ConfigState.columnKeys.map { "  \($0): X" }
@@ -343,6 +439,31 @@ final class ConfigServiceTests: XCTestCase {
         let url = try ConfigService.configURL(for: profile, workspaceRoot: root)
         XCTAssertEqual(try ConfigLoader.load(from: url).columns?.purchaseDate, "Purchase Date")
         XCTAssertFalse(try savedText(profile: profile, root: root).contains("building:"))
+    }
+
+    /// `model` is the marketing name; hardware detection reads `model_identifier` and the
+    /// architecture column under the header Jamf Pro's computer export uses.
+    func testDefaultStateMapsTheHardwareColumnsToJamfsExportHeaders() throws {
+        let columns = ConfigState.defaultState.columns
+        XCTAssertEqual(columns["model"], "Model")
+        XCTAssertEqual(columns["model_identifier"], "Model Identifier")
+        XCTAssertEqual(columns["architecture"], "Architecture Type")
+        let keys = ConfigState.baseColumnKeys
+        let model = try XCTUnwrap(keys.firstIndex(of: "model"))
+        XCTAssertEqual(keys[model + 1], "model_identifier")
+    }
+
+    /// A saved config.yaml that lacks the key loads it as unmapped, not as the default header:
+    /// a header the export may not have must not be written back on the next Save.
+    func testLoadingAColumnsBlockWithoutModelIdentifierLeavesItUnmapped() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "no-model-id-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            "columns:\n  computer_name: Computer Name\n  model: Model\n",
+            profile: profile, root: root)
+        let loaded = try ConfigService.load(profile: profile, workspaceRoot: root)
+        XCTAssertEqual(loaded.state.columns["model"], "Model")
+        XCTAssertEqual(loaded.state.columns["model_identifier"], "")
     }
 
     func testDefaultStateFileVaultColumnAndEmptyMobileColumns() {
@@ -506,13 +627,11 @@ final class ConfigServiceTests: XCTestCase {
             warningDiskPercent: "75",
             criticalDiskPercent: "92",
             certWarningDays: "120",
-            profileErrorCritical: "25",
             profileErrorWarning: "5",
             complianceEnabled: true,
             baselineLabel: "CIS Level 1",
             failuresCountColumn: "Compliance Failures",
             failuresListColumn: "Compliance Failure List",
-            platformEnabled: true,
             complianceBenchmarks: ["CIS", "NIST"],
             outputDir: "Executive Reports",
             archiveDir: "Report Archive",
@@ -523,8 +642,7 @@ final class ConfigServiceTests: XCTestCase {
             jamfCLIRequireManifest: true,
             orgName: "Example Org",
             logoPath: "/tmp/example-logo.png",
-            accentColor: "#112233",
-            accentDark: "#445566"
+            accentColor: "#112233"
         )
     }
 

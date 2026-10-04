@@ -199,23 +199,27 @@ final class ExecutiveSummarySheetTests: XCTestCase {
             config: try ConfigLoader.loadFromString(yaml), dataDir: dataDir)
     }
 
-    /// Fixture `security.json` (real `pro report security` shape): 101 Macs, FileVault 100,
-    /// SIP 1, Firewall 0, Gatekeeper 100. Score = mean of 99.0, 1.0 and 0.0 percent.
-    func testExecutiveMetricsOnTheSecurityFixtureKeepTodaysScoreAndP1() throws {
+    /// Fixture `security.json` (the dummy tenant's `pro report security`): 101 Macs, FileVault
+    /// 100, SIP 1, Firewall 0, Gatekeeper 100; SIP is NOT_COLLECTED on 100 rows. Score = mean
+    /// of 99.0, 100 (the one Mac that reported SIP) and 0.0 percent.
+    func testExecutiveMetricsOnTheSecurityFixtureCountOnlyMeasuredMacs() throws {
         let dataDir = try tempDataDir(copying: ["security"])
         let m = try metrics(dataDir: dataDir)
         XCTAssertEqual(m.totalDevices, 101)
-        XCTAssertEqual(try XCTUnwrap(m.securityScore), 33.3, accuracy: 0.001)
-        XCTAssertEqual(m.securityGrade, .f)
+        XCTAssertEqual(try XCTUnwrap(m.securityScore), 66.3, accuracy: 0.001)
+        XCTAssertEqual(m.securityGrade, .d)
         XCTAssertEqual(m.actionItemsP1, 1)
+        XCTAssertEqual(m.p0NotReported, 100)
+        XCTAssertEqual(m.p1NotReported, 0)
         XCTAssertEqual(try XCTUnwrap(m.fileVaultPct), 99.0, accuracy: 0.05)
     }
 
     /// Intended change: P0 was `total - FileVault on` (1) under a label that names FileVault,
-    /// SIP and Firewall gaps. It counts all three: 1 + 100 + 101.
+    /// SIP and Firewall gaps. It counts all three over the Macs that reported: 1 + 0 + 101,
+    /// the 100 Macs with SIP NOT_COLLECTED being neither.
     func testActionItemP0CountsFileVaultSipAndFirewallGaps() throws {
         let dataDir = try tempDataDir(copying: ["security"])
-        XCTAssertEqual(try metrics(dataDir: dataDir).actionItemsP0, 202)
+        XCTAssertEqual(try metrics(dataDir: dataDir).actionItemsP0, 102)
     }
 
     func testExecutiveMetricsFollowThePolicy() throws {
@@ -228,8 +232,8 @@ final class ExecutiveSummarySheetTests: XCTestCase {
 
         let firewall = try metrics(
             "security_policy:\n  controls:\n    firewall: ignore\n", dataDir: dataDir)
-        XCTAssertEqual(firewall.actionItemsP0, 1 + 100)
-        XCTAssertEqual(try XCTUnwrap(firewall.securityScore), 50.0, accuracy: 0.001)
+        XCTAssertEqual(firewall.actionItemsP0, 1, "SIP's 100 Macs did not report")
+        XCTAssertEqual(try XCTUnwrap(firewall.securityScore), 99.5, accuracy: 0.001)
 
         let gatekeeper = try metrics(
             "security_policy:\n  controls:\n    gatekeeper: ignore\n", dataDir: dataDir)

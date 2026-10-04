@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Report options that live outside the Config tab: the two chart settings the
-/// workbook reads, and pointers to where the rest of a report's shape is chosen.
+/// workbook reads, the HTML-with-every-workbook switch, and pointers to where the rest of a
+/// report's shape is chosen.
 ///
 /// Before 2.8.1 this screen also had a grid of sheet toggles, an Executive preset,
 /// a workbook preview and three more chart switches. None of them was saved or
@@ -15,6 +16,7 @@ struct CustomizeView: View {
     @State private var chartPerMajor: Bool = true
     @State private var chartSavePNGs: Bool = false
     @State private var chartsLoaded = false
+    @State private var htmlWithWorkbook: Bool = false
 
     @State private var applySaved = false
     @State private var saveError: String?
@@ -79,32 +81,34 @@ struct CustomizeView: View {
         .onAppear {
             guard !chartsLoaded else { return }
             chartsLoaded = true
-            loadChartOptions()
+            loadOptions()
         }
         // A profile switch or leaving demo mode keeps this view, so the toggles reload.
         // Before, Apply wrote the previous profile's values, or the demo's defaults, into
         // the current profile's config.yaml.
-        .onChange(of: chartSource) { loadChartOptions() }
+        .onChange(of: chartSource) { loadOptions() }
     }
 
     /// Which config the chart options were read from.
     private var chartSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    /// Both options are config keys, so they come from config.yaml. Before 2.7.0
-    /// they were never loaded or saved at all. Demo mode has no config.yaml to
+    /// Every option here is a config key, so it comes from config.yaml. Before 2.7.0
+    /// the chart options were never loaded or saved at all. Demo mode has no config.yaml to
     /// read, so it shows the defaults.
-    private func loadChartOptions() {
+    private func loadOptions() {
         let charts = workspace.demoMode
             ? ChartsOptions.defaults : ChartsConfigLoader.load(profile: workspace.profile)
         chartSavePNGs = charts.savePNGs
         chartPerMajor = charts.perMajorCharts
+        htmlWithWorkbook = !workspace.demoMode
+            && HTMLReportConfigLoader.withWorkbook(profile: workspace.profile)
     }
 
     private var header: some View {
         PageHeader(
             kicker: "Report Options",
             title: "Customize Reports",
-            subtitle: "Chart options for generated workbooks, and where to change "
+            subtitle: "Chart and HTML options for generated reports, and where to change "
                 + "what else a report shows"
         ) {
             AnyView(
@@ -117,7 +121,7 @@ struct CustomizeView: View {
                     ) {
                         showGuide = true
                     }
-                    // Apply writes the chart options into config.yaml, which in
+                    // Apply writes the options into config.yaml, which in
                     // demo mode would create one under the demo profile's name.
                     PNPButton(
                         title: applySaved ? "Saved" : "Apply",
@@ -187,6 +191,7 @@ struct CustomizeView: View {
         VStack(spacing: 12) {
             scoreCardsCard
             chartsCard
+            HTMLWithWorkbookCard(isOn: $htmlWithWorkbook, isDemo: workspace.demoMode)
         }
         .frame(width: 260)
     }
@@ -286,11 +291,13 @@ struct CustomizeView: View {
             savePNGs: chartSavePNGs, perMajorCharts: chartPerMajor
         )
         let profile = workspace.profile
+        let withWorkbook = htmlWithWorkbook
         Task {
             do {
-                // Only the chart options. This screen edits nothing else, so it
+                // Only this screen's options. It edits nothing else, so it
                 // no longer saves the Config tab's unsaved edits along with them.
                 try ChartsConfigWriter.save(chartOptions, profile: profile)
+                try HTMLReportConfigWriter.save(withWorkbook: withWorkbook, profile: profile)
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
@@ -299,6 +306,39 @@ struct CustomizeView: View {
                     "CustomizeView: save failed: \(error.localizedDescription, privacy: .private)"
                 )
                 saveError = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// The switch for `html.with_workbook`: the HTML report is written with every workbook.
+/// A card of its own, so the chart toggles' row layout is untouched.
+private struct HTMLWithWorkbookCard: View {
+    @Binding var isOn: Bool
+    let isDemo: Bool
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private static let title = "Write the HTML report with every workbook"
+
+    var body: some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "HTML report", style: .body)
+                HStack(alignment: .top, spacing: 12) {
+                    Text(Self.title)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.Text.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    PNPToggle(isOn: $isOn, label: Self.title)
+                        .disabled(isDemo)
+                        .help(isDemo ? DemoData.liveOnlyHelp : "")
+                }
+                Text("Scheduled runs and the command-line tool write it too.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

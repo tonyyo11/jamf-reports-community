@@ -7,12 +7,16 @@ enum WorkspacePathGuard {
     }
 
     static func validate(_ url: URL, under root: URL) -> URL? {
+        validate(url, underAny: [root])
+    }
+
+    /// `url` resolved, when it sits in any one of `roots`.
+    static func validate(_ url: URL, underAny roots: [URL]) -> URL? {
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
-        let rootPath = root.path
-        guard resolved.path == rootPath || resolved.path.hasPrefix(rootPath + "/") else {
-            return nil
+        let inside = roots.contains { root in
+            resolved.path == root.path || resolved.path.hasPrefix(root.path + "/")
         }
-        return resolved
+        return inside ? resolved : nil
     }
 }
 
@@ -44,49 +48,45 @@ struct ReportLibrary {
         let archivedCount: Int
     }
 
-    func list(profile: String) -> [Report] {
-        guard let root = WorkspacePathGuard.root(for: profile) else { return [] }
-        let reportsRoot: URL
-        do {
-            reportsRoot = try WorkspacePaths.outputDir(for: profile)
-        } catch {
-            return []
-        }
-        guard let validatedReportsRoot = WorkspacePathGuard.validate(
-            reportsRoot,
-            under: root
-        ) else {
-            return []
-        }
+    /// The folder reports are listed from and the folders a listed file may sit in.
+    private struct Location {
+        let reports: URL
+        let roots: [URL]
+        let archive: URL?
+    }
 
-        return reportFileURLs(in: validatedReportsRoot, root: root, profile: profile)
-            .compactMap { report(from: $0, profile: profile, root: root) }
+    /// `WorkspacePaths.readableReportsDir` is the folder the writers use, so a report written
+    /// to a shared `output.output_dir` is listed, and a refused folder falls back as writing
+    /// does. Files are kept to the workspace and that folder: a symlink out of either is dropped.
+    private func location(for profile: String) -> Location? {
+        guard let workspace = WorkspacePathGuard.root(for: profile),
+              let reports = WorkspacePaths.readableReportsDir(for: profile) else { return nil }
+        let roots = [workspace, reports]
+        guard let validated = WorkspacePathGuard.validate(reports, underAny: roots) else {
+            return nil
+        }
+        return Location(
+            reports: validated, roots: roots, archive: try? WorkspacePaths.archiveDir(for: profile)
+        )
+    }
+
+    func list(profile: String) -> [Report] {
+        guard let location = location(for: profile) else { return [] }
+        return reportFileURLs(in: location)
+            .compactMap { report(from: $0, profile: profile, roots: location.roots) }
             .sorted { $0.mtime > $1.mtime }
             .map(\.report)
     }
 
     func stats(profile: String) -> Stats {
-        guard let root = WorkspacePathGuard.root(for: profile) else {
+        guard let location = location(for: profile) else {
             return Stats(count: 0, totalBytes: 0, archivedCount: 0)
         }
-        let reportsRoot: URL
-        let archiveRoot: URL?
-        do {
-            reportsRoot = try WorkspacePaths.outputDir(for: profile)
-            archiveRoot = try? WorkspacePaths.archiveDir(for: profile)
-        } catch {
-            return Stats(count: 0, totalBytes: 0, archivedCount: 0)
-        }
-        guard let validatedReportsRoot = WorkspacePathGuard.validate(
-            reportsRoot,
-            under: root
-        ) else {
-            return Stats(count: 0, totalBytes: 0, archivedCount: 0)
-        }
-
-        let rows = reportFileURLs(in: validatedReportsRoot, root: root, profile: profile)
-            .compactMap { metadata(for: $0, root: root) }
-        let archivePath = (archiveRoot ?? validatedReportsRoot.appendingPathComponent("archive", isDirectory: true)).path + "/"
+        let rows = reportFileURLs(in: location)
+            .compactMap { metadata(for: $0, roots: location.roots) }
+        let archiveRoot = location.archive
+            ?? location.reports.appendingPathComponent("archive", isDirectory: true)
+        let archivePath = archiveRoot.path + "/"
         return Stats(
             count: rows.count,
             totalBytes: rows.reduce(Int64(0)) { $0 + $1.size },
@@ -95,47 +95,27 @@ struct ReportLibrary {
     }
 
     func url(profile: String, reportName: String) -> URL? {
-        guard let root = WorkspacePathGuard.root(for: profile) else { return nil }
-        let reportsRoot: URL
-        do {
-            reportsRoot = try WorkspacePaths.outputDir(for: profile)
-        } catch {
-            return nil
-        }
-        guard let validatedReportsRoot = WorkspacePathGuard.validate(
-            reportsRoot,
-            under: root
-        ) else {
-            return nil
-        }
-
-        return reportFileURLs(in: validatedReportsRoot, root: root, profile: profile)
-            .compactMap { metadata(for: $0, root: root) }
+        guard let location = location(for: profile) else { return nil }
+        return reportFileURLs(in: location)
+            .compactMap { metadata(for: $0, roots: location.roots) }
             .filter { $0.url.lastPathComponent == reportName }
             .sorted { $0.mtime > $1.mtime }
             .first?
             .url
     }
 
-    private func reportFileURLs(in reportsRoot: URL, root: URL, profile: String) -> [URL] {
-        var urls: [URL] = []
-        urls.append(contentsOf: immediateReportFiles(in: reportsRoot, root: root))
-
-        let archive: URL
-        do {
-            archive = try WorkspacePaths.archiveDir(for: profile)
-        } catch {
-            archive = reportsRoot.appendingPathComponent("archive", isDirectory: true)
+    private func reportFileURLs(in location: Location) -> [URL] {
+        var urls = immediateReportFiles(in: location.reports, roots: location.roots)
+        let archive = location.archive
+            ?? location.reports.appendingPathComponent("archive", isDirectory: true)
+        if let validatedArchive = WorkspacePathGuard.validate(archive, underAny: location.roots) {
+            urls.append(contentsOf: recursiveReportFiles(
+                in: validatedArchive, roots: location.roots))
         }
-
-        if let validatedArchive = WorkspacePathGuard.validate(archive, under: root) {
-            urls.append(contentsOf: recursiveReportFiles(in: validatedArchive, root: root))
-        }
-
         return urls
     }
 
-    private func immediateReportFiles(in directory: URL, root: URL) -> [URL] {
+    private func immediateReportFiles(in directory: URL, roots: [URL]) -> [URL] {
         guard let entries = try? fileManager.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
@@ -146,7 +126,7 @@ struct ReportLibrary {
 
         return entries.compactMap { candidate in
             guard allowedExtensions.contains(candidate.pathExtension.lowercased()),
-                  let validated = WorkspacePathGuard.validate(candidate, under: root),
+                  let validated = WorkspacePathGuard.validate(candidate, underAny: roots),
                   isReadableFile(validated) else {
                 return nil
             }
@@ -154,7 +134,7 @@ struct ReportLibrary {
         }
     }
 
-    private func recursiveReportFiles(in directory: URL, root: URL) -> [URL] {
+    private func recursiveReportFiles(in directory: URL, roots: [URL]) -> [URL] {
         guard let enumerator = fileManager.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
@@ -166,7 +146,7 @@ struct ReportLibrary {
         var urls: [URL] = []
         for case let candidate as URL in enumerator {
             guard allowedExtensions.contains(candidate.pathExtension.lowercased()),
-                  let validated = WorkspacePathGuard.validate(candidate, under: root),
+                  let validated = WorkspacePathGuard.validate(candidate, underAny: roots),
                   isReadableFile(validated) else {
                 continue
             }
@@ -178,9 +158,9 @@ struct ReportLibrary {
     private func report(
         from url: URL,
         profile: String,
-        root: URL
+        roots: [URL]
     ) -> (report: Report, mtime: Date)? {
-        guard let metadata = metadata(for: url, root: root) else { return nil }
+        guard let metadata = metadata(for: url, roots: roots) else { return nil }
         let name = url.lastPathComponent
         let report = Report(
             name: name,
@@ -193,8 +173,8 @@ struct ReportLibrary {
         return (report, metadata.mtime)
     }
 
-    private func metadata(for url: URL, root: URL) -> (url: URL, size: Int64, mtime: Date)? {
-        guard let validated = WorkspacePathGuard.validate(url, under: root),
+    private func metadata(for url: URL, roots: [URL]) -> (url: URL, size: Int64, mtime: Date)? {
+        guard let validated = WorkspacePathGuard.validate(url, underAny: roots),
               isReadableFile(validated),
               let values = try? validated.resourceValues(
                 forKeys: [.fileSizeKey, .contentModificationDateKey]

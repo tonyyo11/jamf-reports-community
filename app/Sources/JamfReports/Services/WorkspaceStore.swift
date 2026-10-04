@@ -230,6 +230,7 @@ final class WorkspaceStore {
         "disk_percent_full": "Disk % Full",
         "architecture":      "Architecture",
         "model":             "Model",
+        "model_identifier":  "Model Identifier",
         "last_enrollment":   "Last Enrollment",
         "mdm_expiry":        "MDM Profile Expiry",
         "full_name":           "Full Name",
@@ -1372,7 +1373,7 @@ enum SidebarMode: String, CaseIterable {
 // MARK: - Toast Model
 
 struct Toast: Identifiable, Sendable {
-    enum Style: Sendable { case info, success, danger }
+    enum Style: Sendable { case info, success, warning, danger }
     let id: UUID = UUID()
     let message: String
     let style: Style

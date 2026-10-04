@@ -403,7 +403,7 @@ struct ExistingCLISetupView: View {
                     workspace.toast = Toast(
                         message: "Setup finished — allow JamfReports under Login Items › "
                             + "Allow in the Background to start automation",
-                        style: .danger
+                        style: .warning
                     )
                 }
             }

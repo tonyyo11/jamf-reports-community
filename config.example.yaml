@@ -89,15 +89,19 @@ columns:
 
   # --- Hardware info (optional) ---
 
-  # security_policy's hardware rule on a CSV needs architecture (Apple silicon) and a "Model
-  # Identifier" column as model (T2 Macs); without them hardware is unknown and FileVault off
-  # keeps the control's own level.
+  # security_policy's hardware rule on a CSV needs architecture (Apple silicon) and
+  # model_identifier (T2 Macs); without them hardware is unknown and FileVault off keeps the
+  # control's own level.
 
   # Processor architecture, as Jamf exports it. Typical values: "arm64", "x86_64".
   architecture: "Architecture Type"
 
   # The human-readable model name (e.g., "MacBook Pro (16-inch, 2021)").
   model: "Model"
+
+  # The hardware model identifier (e.g., "Mac16,6", "MacBookPro16,1"). Used with architecture
+  # to tell Apple silicon and T2 Macs apart for security_policy.filevault_off_hardware_encrypted.
+  model_identifier: "Model Identifier"
 
   # --- Enrollment / MDM (optional) ---
 
@@ -242,9 +246,6 @@ security_agents:
 # Relative paths here resolve from the folder containing config.yaml.
 
 jamf_cli:
-  # Currently has no effect: collect and generate always use jamf-cli, and
-  # false does not make a CSV-only run.
-  enabled: true
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
   # Optional jamf-cli profile name, equivalent to passing -p/--profile to
@@ -262,8 +263,6 @@ jamf_cli:
   # ancient cache surfaces as "no data" instead of rendering stale-forever.
   # Set 0 (or any value <= 0) to keep cache forever (legacy behavior).
   max_cache_age_hours: 168
-  # Currently has no effect: nothing reads this key.
-  allow_live_overview: true
   # Hard-fail on snapshot integrity violations (SHA-256 mismatch or corrupt
   # manifest). When true, every collected snapshot is also recorded in a
   # per-kind manifest.json (2.6), so tamper detection works end-to-end:
@@ -347,14 +346,20 @@ branding:
   # Write it as #RRGGBB or #RGB; both reports use the default for anything else.
   accent_color: "#2D5EA2"
 
-  # This key currently has no effect: no report reads it. The Config screen
-  # still edits it.  Default: #004165
-  accent_dark:  "#004165"
-
 
 # =============================================================================
 # HTML REPORT
 # =============================================================================
+# with_workbook: when true, every run that writes a report workbook also writes
+#   that profile's HTML report beside it, with the same name and a .html
+#   extension, from the same report template's sections. That covers the app's
+#   Generate buttons, scheduled runs that generate (jamf-cli-only,
+#   jamf-cli-full and csv-assisted) and `jamf-reports generate`. The fleet and
+#   period workbooks and Jamf School workbooks are not included. A run that
+#   already writes the HTML report as a format of its own writes that one only.
+#   If the HTML report cannot be written the workbook stays, and the log gets one
+#   [warn] line. track_history applies to it as to any HTML report. Default: false.
+#
 # When track_history is true, every `html` run appends an OS-version snapshot
 # to the history file.  Once two or more snapshots exist for an instance URL, a
 # macOS Adoption Timeline chart appears in the HTML report.
@@ -366,6 +371,7 @@ branding:
 #   used. Default (when blank or refused): html_history.json beside the report.
 #
 html:
+  with_workbook: false
   track_history: false
   history_file: ""
 
@@ -479,6 +485,16 @@ security_policy:
   # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
   # silicon, or Intel with the T2 chip). Omit to use the filevault level.
   # filevault_off_hardware_encrypted: warning
+  # Your own words for on and off, for an extension attribute or CSV column mapped
+  # to filevault, sip, firewall or gatekeeper: a list, or one string, per control.
+  # Checked in order: off_values, on_values (a value in both reads off), then the
+  # built-in words. A whole value must match, in any case, with - and _ read as
+  # spaces. They apply to each Mac's own value; the totals jamf-cli's security
+  # report carries keep jamf-cli's words.
+  # on_values:
+  #   firewall: ["Pass", "Compliant"]
+  # off_values:
+  #   firewall: ["Fail", "Non-Compliant"]
   # Security Score weights, 0-100 each. Omit for these defaults.
   # score_weights:
   #   filevault: 15
@@ -589,9 +605,6 @@ ai:
 # Compliance Benchmarks screen shows one benchmark at a time.
 
 platform:
-  # Written by the Config screen's "Enable Platform API sheets" switch. Neither
-  # collect nor the reports read it: the profile's auth method decides.
-  enabled: false
   # List of benchmark titles for the Platform compliance sheets.
   # Empty collects every benchmark; listed titles narrow it (exact, case-sensitive).
   compliance_benchmarks:
@@ -788,8 +801,9 @@ thresholds:
   # report over a longer window.
   stale_device_days: 30
 
-  # Currently has no effect: nothing reads this key. The Check-in Health sheet
-  # uses stale_device_days.
+  # The Check-in Health sheet counts a Mac as overdue when it last checked in
+  # more than this many days ago. A Mac with no check-in date is overdue only
+  # when jamf-cli flags it stale.
   checkin_overdue_days: 7
 
   # Default disk usage thresholds used when not set per-EA.
@@ -801,8 +815,6 @@ thresholds:
 
   # Error count thresholds for the jamf-cli Profile Status sheet. Rows with
   # error counts at or above profile_error_warning are highlighted yellow.
-  # profile_error_critical currently has no effect: nothing reads it.
-  profile_error_critical: 50
   profile_error_warning: 10
 
 
@@ -832,7 +844,10 @@ output:
 
   # Number of recent timestamped runs to keep in the main output folder for
   # each report family before older runs are moved into archive_dir. A value
-  # below 1 is read as 1.
+  # below 1 is read as 1. A run is a workbook: the HTML report that
+  # html.with_workbook writes beside it (same name, .html) moves with it and is
+  # not counted. An HTML report with no workbook of that name, such as the
+  # Generate sheet's HTML format or `jamf-reports html` output, is never moved.
   keep_latest_runs: 10
 
   # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE
@@ -904,15 +919,15 @@ charts:
   # Uses CSV snapshots when available and falls back to jamf-cli
   # inventory-summary snapshot history for jamf-cli-only workflows.
   os_adoption:
-    # Currently has no effect: nothing reads this key.
-    enabled: true
-    # Also generate one chart per major macOS version (drilldown to minor/patch).
+    # Draw the OS adoption by major version chart on the Charts tab. A missing
+    # key means true, as the Customize screen shows it; set false to leave it out.
     per_major_charts: true
 
   # Compliance trend: stacked area chart bucketing devices by failure count.
   # Requires compliance.failures_count_column to be configured.
   compliance_trend:
-    # Currently has no effect: nothing reads this key. Only the bands below are read.
+    # Set to false to leave this chart out of the Charts tab. The bands below
+    # are read either way.
     enabled: true
     # Failure count bands — labels, thresholds, and colors.
     bands:

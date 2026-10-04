@@ -218,7 +218,7 @@ final class ExistingCLISetupFlow {
             // Recorded so `collectFailureReason`'s "see Run History" points at
             // a log that actually exists for this run.
             let recorder = ProfileService.workspaceURL(for: profile).flatMap {
-                ScheduledRunRecorder(workspace: $0, label: WorkspaceStore.firstCollectRunLabel)
+                ScheduledRunRecorder(workspace: $0, label: WorkspaceStore.appCollectRunLabel)
             }
             if recorder == nil {
                 AppLogger.cli.warning(

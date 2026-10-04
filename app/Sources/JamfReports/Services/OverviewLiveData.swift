@@ -36,13 +36,13 @@ extension RecentDeviceRow {
         )
     }
 
-    init(record: DeviceInventoryRecord, failedRules: Int?) {
+    init(record: DeviceInventoryRecord, failedRules: Int?, policy: SecurityControlPolicy) {
         self.init(
             id: record.id, name: record.displayName, serial: record.serial,
             jamfID: record.jamfID, os: record.osVersion,
             user: record.email.isEmpty ? record.user : record.email,
             department: record.department.isEmpty ? nil : record.department,
-            fileVault: record.fileVaultEnabled,
+            fileVault: record.fileVaultEnabled(policy: policy),
             failedRules: failedRules,
             lastSeen: Self.lastSeenLabel(record),
             isStale: record.stale
@@ -274,8 +274,11 @@ enum OverviewLiveDataLoader {
             eaRows.map { failureCounts(rows: $0, countColumn: base.failuresCountColumn) }
         } ?? [:]
         data.recentDevices = recentDevices(inventory.devices, limit: recentLimit).map { record in
-            RecentDeviceRow(record: record, failedRules: failedRules(
-                for: record, eaCounts: counts, baselineConfigured: baseline != nil))
+            RecentDeviceRow(
+                record: record,
+                failedRules: failedRules(
+                    for: record, eaCounts: counts, baselineConfigured: baseline != nil),
+                policy: inventory.securityPolicy)
         }
     }
 

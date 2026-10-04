@@ -12,7 +12,10 @@ func collectRoutingConfig(profile: String) -> ReportConfig? {
 }
 
 struct Generate: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Generate an xlsx workbook for a profile.")
+    static let configuration = CommandConfiguration(
+        abstract: "Generate an xlsx workbook for a profile.",
+        discussion: "With html.with_workbook: true in the profile's config.yaml, the HTML "
+            + "report is written beside the workbook, with the same name and a .html extension.")
     @Option(help: "Workspace profile slug.") var profile: String
     @Option(help: "Output .xlsx path (default: the workspace's Generated Reports dir).") var output: String?
     @Option(help: "Report template id (default: full-instance).") var template: String?
@@ -33,6 +36,11 @@ struct Generate: AsyncParsableCommand {
         do {
             let failures = try await engine.generate(
                 csvURL: nil, outputURL: outputURL, template: resolved,
+                onLine: signals.teeing(CLIRun.printLogLine))
+            // html.with_workbook. Before the path below, which stays the last line of
+            // stdout for a script that reads it.
+            await engine.writeHTMLWithWorkbook(
+                besideWorkbook: outputURL, template: resolved,
                 onLine: signals.teeing(CLIRun.printLogLine))
             // The workbook is written even when some sheets error, so always emit
             // the path (scripts can still find the artifact); exit non-zero to

@@ -27,6 +27,8 @@ final class GenerateSheetState {
     /// Where the generators write with no folder chosen: `output.output_dir` as
     /// `WorkspacePaths.reportsDir` resolves it. Nil until the sheet has read it.
     var configuredOutputDir: URL? = nil
+    /// `html.with_workbook` as config.yaml holds it. False until the sheet has read it.
+    var htmlWithWorkbook: Bool = false
     var folderPickerError: String? = nil
     var logLines: [CLIBridge.LogLine] = []
     var isRunning: Bool = false
@@ -125,6 +127,19 @@ final class GenerateSheetState {
 
     /// True for the School template, whose workbook the School generator writes.
     var schoolMode: Bool { selectedTemplateID == SchoolTemplate().identifier }
+
+    /// True when this run writes the HTML report because `html.with_workbook` is on: a Jamf Pro
+    /// workbook is asked for and HTML is not, since a chosen HTML format is the one HTML report.
+    var writesHTMLWithWorkbook: Bool {
+        htmlWithWorkbook && selectedTypes.contains(.xlsx) && !selectedTypes.contains(.html)
+            && !schoolMode
+    }
+
+    /// The "What will be written" line for the HTML report that goes with the workbook.
+    nonisolated static func htmlWithWorkbookLine(profile: String) -> String {
+        ExportNaming.stem(for: .xlsx, profile: profile, schoolMode: false)
+            + "_<date>.html (the HTML report, written with every workbook)"
+    }
 
     /// What one format writes, as "What will be written" lists it: the stem the generators
     /// write (`ExportNaming.stem`) and what they write beside it.
@@ -317,7 +332,7 @@ struct GenerateSheet: View {
         .frame(minHeight: 440)
         .background(Theme.Surface.raised)
         .interactiveDismissDisabled(!state.canDismiss)
-        .task { await readConfiguredOutputDir() }
+        .task { await readConfiguredOptions() }
     }
 
     // MARK: Subviews
@@ -365,6 +380,12 @@ struct GenerateSheet: View {
             ForEach(Array(state.selectedTypes.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { type in
                 Text("• " + GenerateSheetState.writtenFiles(
                     for: type, profile: profile, schoolMode: state.schoolMode))
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+            }
+
+            if state.writesHTMLWithWorkbook {
+                Text("• " + GenerateSheetState.htmlWithWorkbookLine(profile: profile))
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -745,7 +766,7 @@ struct GenerateSheet: View {
                 Spacer()
                 PNPButton(title: "Reveal in Finder", icon: "folder", size: .sm) {
                     let dir = state.resolvedOutputDir(for: profile)
-                    SystemActions.openFolder(dir)
+                    SystemActions.openFolder(dir, profile: profile)
                 }
             }
 
@@ -847,13 +868,16 @@ struct GenerateSheet: View {
         }
     }
 
-    /// `output.output_dir` as the generators resolve it, off the main actor: it reads
-    /// config.yaml. Demo mode reads no workspace.
-    private func readConfiguredOutputDir() async {
+    /// `output.output_dir` as the generators resolve it and `html.with_workbook`, off the
+    /// main actor: both read config.yaml. Demo mode reads no workspace.
+    private func readConfiguredOptions() async {
         guard !workspace.demoMode else { return }
         let profile = profile
         state.configuredOutputDir = await Task.detached(priority: .utility) {
             WorkspacePaths.reportsDir(for: profile, onLine: nil)
+        }.value
+        state.htmlWithWorkbook = await Task.detached(priority: .utility) {
+            HTMLReportConfigLoader.withWorkbook(profile: profile)
         }.value
     }
 

@@ -134,6 +134,11 @@ It produces `.xlsx` and HTML reports (PDF stays GUI-only). See the
 [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line) wiki
 page for the full command reference.
 
+To get the HTML report with every workbook, set `html.with_workbook: true` in `config.yaml`
+or turn on **Write the HTML report with every workbook** on the Customize screen. Each
+Generate button, each scheduled run that generates and `jamf-reports generate` then write the
+HTML report beside the workbook.
+
 ### OS currency and patch release dates
 
 - **OS Currency** — an "OS Currency" workbook sheet and HTML card show the latest available

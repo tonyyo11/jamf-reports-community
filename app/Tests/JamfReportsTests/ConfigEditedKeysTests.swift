@@ -16,8 +16,9 @@ final class ConfigEditedKeysTests: XCTestCase {
             ["custom_eas", "current_versions"], ["custom_eas", "warning_days"],
             ["thresholds", "stale_device_days"], ["compliance", "baseline_label"],
             ["platform", "compliance_benchmarks"], ["output", "keep_latest_runs"],
-            ["jamf_cli", "require_manifest"], ["branding", "accent_dark"],
+            ["jamf_cli", "require_manifest"], ["branding", "accent_color"],
             ["charts", "save_png"], ["charts", "os_adoption", "per_major_charts"],
+            ["html", "with_workbook"],
             ["notify", "enabled"], ["notify", "url"], ["notify", "detail"],
             ["ai", "enabled"], ["ai", "tier"], ["ai", "reasoning_level"],
             ["security_policy", "controls", "sip"], ["security_policy", "controls", "filevault"],
@@ -34,7 +35,10 @@ final class ConfigEditedKeysTests: XCTestCase {
         let typedOnly: [[String]] = [
             ["jamf_cli", "data_dir"], ["jamf_cli", "profile"], ["output", "allow_absolute_paths"],
             ["compliance", "baselines"], ["charts", "historical_csv_dir"],
-            ["charts", "os_adoption", "enabled"], ["retention", "enabled"], ["sheets", "only"],
+            ["charts", "embed_in_xlsx"], ["retention", "enabled"], ["sheets", "only"],
+            ["security_policy", "on_values", "firewall"],
+            ["security_policy", "off_values", "firewall"],
+            ["html", "track_history"], ["html", "section_limits", "protect_alerts"],
         ]
         for path in typedOnly {
             XCTAssertFalse(paths.contains(path), path.joined(separator: "."))

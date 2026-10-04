@@ -9,7 +9,8 @@ struct ChartsOptions: Sendable, Equatable {
 
     /// Matches what `ScaffoldService` writes into a fresh config and what the
     /// engine did before `save_png` was honoured, so a workspace with no
-    /// `charts:` block behaves as it always has.
+    /// `charts:` block behaves as it always has. The report engine reads an absent
+    /// `per_major_charts` from here too, so the screen and the report agree.
     static let defaults = ChartsOptions(savePNGs: true, perMajorCharts: true)
 }
 

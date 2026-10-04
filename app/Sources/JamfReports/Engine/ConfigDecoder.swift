@@ -97,6 +97,9 @@ struct ColumnConfig: Decodable, Sendable {
     var diskPercentFull: String?
     var architecture: String?
     var model: String?
+    /// Hardware model identifier column (`Mac16,6`), as opposed to `model`'s marketing name.
+    /// YAML key: `model_identifier`.
+    var modelIdentifier: String?
     var lastEnrollment: String?
     var mdmExpiry: String?
     var fullName: String?
@@ -127,6 +130,7 @@ struct ColumnConfig: Decodable, Sendable {
         case diskPercentFull = "disk_percent_full"
         case architecture
         case model
+        case modelIdentifier = "model_identifier"
         case lastEnrollment = "last_enrollment"
         case mdmExpiry = "mdm_expiry"
         case fullName = "full_name"
@@ -160,6 +164,7 @@ struct ColumnConfig: Decodable, Sendable {
         case .diskPercentFull: value = diskPercentFull
         case .architecture: value = architecture
         case .model: value = model
+        case .modelIdentifier: value = modelIdentifier
         case .lastEnrollment: value = lastEnrollment
         case .mdmExpiry: value = mdmExpiry
         case .fullName: value = fullName
@@ -195,7 +200,7 @@ enum ColumnField: String, CaseIterable, Sendable {
     case computerName, serialNumber, operatingSystem, lastCheckin
     case department, manager, email
     case filevault, sip, firewall, gatekeeper, secureBoot, bootstrapToken
-    case diskPercentFull, architecture, model, lastEnrollment, mdmExpiry
+    case diskPercentFull, architecture, model, modelIdentifier, lastEnrollment, mdmExpiry
     case fullName, assetTag, building, position
     case lastLoggedInUser, recoveryLock, batteryHealth, entraSSOStatus
     /// Device purchase or acquisition date. YAML key: `purchase_date`.
@@ -221,6 +226,7 @@ enum ColumnField: String, CaseIterable, Sendable {
         case .diskPercentFull: .diskPercentFull
         case .architecture: .architecture
         case .model: .model
+        case .modelIdentifier: .modelIdentifier
         case .lastEnrollment: .lastEnrollment
         case .mdmExpiry: .mdmExpiry
         case .fullName: .fullName
@@ -277,11 +283,9 @@ struct SecurityAgentConfig: Decodable, Sendable {
 // MARK: - jamf_cli
 
 struct JamfCLIConfig: Decodable, Sendable {
-    var enabled: Bool?
     var dataDir: String?
     var profile: String?             // key is `profile`, NOT `jamf_profile`
     var useCachedData: Bool?
-    var allowLiveOverview: Bool?
     var requireManifest: Bool?       // PR-10 / threat-model T-11
     /// Age limit (hours) past which a cached jamf-cli snapshot is treated as
     /// ABSENT rather than silently served as current. `nil` → default 168h
@@ -293,11 +297,9 @@ struct JamfCLIConfig: Decodable, Sendable {
     var collectSkip: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case dataDir = "data_dir"
         case profile
         case useCachedData = "use_cached_data"
-        case allowLiveOverview = "allow_live_overview"
         case requireManifest = "require_manifest"
         case maxCacheAgeHours = "max_cache_age_hours"
         case collectSkip = "collect_skip"
@@ -306,8 +308,6 @@ struct JamfCLIConfig: Decodable, Sendable {
     var resolvedProfile: String { profile?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedDataDir: String { dataDir?.trimmingCharacters(in: .whitespaces) ?? "jamf-cli-data" }
     var isCachedDataEnabled: Bool { useCachedData ?? true }
-    var isLiveOverviewAllowed: Bool { allowLiveOverview ?? true }
-    var isEnabled: Bool { enabled ?? true }
 
     /// PR-10 / threat-model T-11: when true, the Swift engine aborts on
     /// snapshot integrity violations (`.mismatch` / `.corrupt`) rather than
@@ -596,7 +596,6 @@ struct ThresholdsConfig: Decodable, Sendable {
     var criticalDiskPercent: Int?
     var warningDiskPercent: Int?
     var certWarningDays: Int?
-    var profileErrorCritical: Int?
     var profileErrorWarning: Int?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -605,7 +604,6 @@ struct ThresholdsConfig: Decodable, Sendable {
         case criticalDiskPercent = "critical_disk_percent"
         case warningDiskPercent = "warning_disk_percent"
         case certWarningDays = "cert_warning_days"
-        case profileErrorCritical = "profile_error_critical"
         case profileErrorWarning = "profile_error_warning"
     }
 
@@ -614,7 +612,6 @@ struct ThresholdsConfig: Decodable, Sendable {
     var resolvedCriticalDisk: Int { criticalDiskPercent ?? 90 }
     var resolvedWarningDisk: Int { warningDiskPercent ?? 80 }
     var resolvedCertWarningDays: Int { certWarningDays ?? 90 }
-    var resolvedProfileErrorCritical: Int { profileErrorCritical ?? 50 }
     var resolvedProfileErrorWarning: Int { profileErrorWarning ?? 10 }
 }
 
@@ -670,15 +667,9 @@ struct ChartsConfig: Decodable, Sendable {
 }
 
 struct OSAdoptionConfig: Decodable, Sendable {
-    var enabled: Bool?
     var perMajorCharts: Bool?
 
-    /// What config.example.yaml documents; nothing reads `enabled`, so this only tells the
-    /// Config Doctor which value is the default.
-    var isEnabled: Bool { enabled ?? true }
-
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case perMajorCharts = "per_major_charts"
     }
 }
@@ -687,7 +678,7 @@ struct ComplianceTrendConfig: Decodable, Sendable {
     var enabled: Bool?
     var bands: [ComplianceBandConfig]?
 
-    /// As `OSAdoptionConfig.isEnabled`: the documented default, read by nothing else.
+    /// Absent means on, as `config.example.yaml` documents; `false` turns the chart off.
     var isEnabled: Bool { enabled ?? true }
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -723,13 +714,11 @@ struct BrandingConfig: Decodable, Sendable {
     var orgName: String?
     var logoPath: String?
     var accentColor: String?
-    var accentDark: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case orgName = "org_name"
         case logoPath = "logo_path"
         case accentColor = "accent_color"
-        case accentDark = "accent_dark"
     }
 
     var resolvedOrgName: String { orgName?.trimmingCharacters(in: .whitespaces) ?? "" }
@@ -1134,10 +1123,30 @@ struct ConfigException: Decodable, Sendable, Equatable {
 /// Configuration for the HTML instance report (`html:` top-level block).
 struct HTMLReportConfig: Decodable, Sendable {
     var sectionLimits: HTMLSectionLimits?
+    /// `with_workbook`: write the HTML report beside every report workbook. Absent or
+    /// anything but a boolean reads as off; Config Doctor names a value that is not one.
+    var withWorkbook: Bool?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case sectionLimits = "section_limits"
+        case withWorkbook = "with_workbook"
     }
+
+    init(sectionLimits: HTMLSectionLimits? = nil, withWorkbook: Bool? = nil) {
+        self.sectionLimits = sectionLimits
+        self.withWorkbook = withWorkbook
+    }
+
+    /// A mistyped `with_workbook` falls back to off rather than failing the whole
+    /// config.yaml decode: it is a switch, and a scheduled run must not stop over it.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sectionLimits = try container.decodeIfPresent(
+            HTMLSectionLimits.self, forKey: .sectionLimits)
+        withWorkbook = try? container.decodeIfPresent(Bool.self, forKey: .withWorkbook)
+    }
+
+    var writesWithWorkbook: Bool { withWorkbook ?? false }
 }
 
 /// Configurable display caps for HTML report sections.
@@ -1181,15 +1190,12 @@ struct HTMLSectionLimits: Decodable, Sendable {
 // MARK: - platform
 
 struct PlatformConfig: Decodable, Sendable {
-    var enabled: Bool?
     var complianceBenchmarks: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
-        case enabled
         case complianceBenchmarks = "compliance_benchmarks"
     }
 
-    var isEnabled: Bool { enabled ?? false }
     /// Configured titles, trimmed, with blanks and repeats dropped. A title listed twice was
     /// collected twice and its rows saved twice.
     var benchmarkTitles: [String] {

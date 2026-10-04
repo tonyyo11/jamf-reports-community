@@ -135,7 +135,7 @@ final class WorkspaceStoreRecoveryTests: XCTestCase {
         let logsDir = root.appendingPathComponent("automation/logs")
         let logs = (try? FileManager.default.contentsOfDirectory(atPath: logsDir.path)) ?? []
         let runLog = try XCTUnwrap(
-            logs.first { $0.hasPrefix(WorkspaceStore.firstCollectRunLabel + ".") },
+            logs.first { $0.hasPrefix(WorkspaceStore.appCollectRunLabel + ".") },
             "first collect must record a Run History log"
         )
         let contents = try String(contentsOf: logsDir.appendingPathComponent(runLog), encoding: .utf8)

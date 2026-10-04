@@ -182,8 +182,9 @@ the day's summary could not be written. The line names which.
 every collect it starts. Wait for it to finish, then try again; the app starts nothing
 while the lock is held.
 
-**"Refresh finished with warnings".** The collect exited 0 but a source did not land. Run
-History (first collect) or Settings → Logging has the `[partial]` line.
+**"Refresh finished with warnings".** The collect exited 0 but a source did not land. The toast is
+amber, not red, and Run History has the `[partial]` line under "Manual collect"; if the run
+could not be recorded the toast says Settings → Logging instead.
 
 **"config.yaml changed on disk since this screen loaded it".** The file changed after the
 Config screen loaded it, so the save was refused. Reload on the Config screen, then repeat

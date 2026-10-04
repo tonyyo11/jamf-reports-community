@@ -510,8 +510,9 @@ comparisons in Config Doctor so a partial day is never misread as a real coverag
 ### Security policy
 The `security_policy` block of a workspace's config.yaml: for each of FileVault,
 SIP, Firewall and Gatekeeper, whether being off is a failure, a warning or not
-counted, plus the hardware-encrypted FileVault level and the Security Score
-weights. Applies to every screen, report and scheduled run of the workspace.
+counted, plus the hardware-encrypted FileVault level, the Security Score
+weights and the words your own data uses for on and off. Applies to every
+screen, report and scheduled run of the workspace.
 *see also: Security Score, Hardware-encrypted Mac.*
 
 ### Security Score

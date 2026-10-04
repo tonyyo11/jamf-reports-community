@@ -80,8 +80,9 @@ these interactive dashboards either — it produces a separate generated workboo
 - **Security Posture** — a weighted Security Score ring, per-control KPIs (FileVault,
   SIP, firewall, Gatekeeper), prioritized action items, and an OS-version donut, all
   following the workspace's security policy (Config → Scoring): a control set to warning
-  is not a P0 or P1 gap, an ignored one is left out, and hardware-encrypted Macs with
-  FileVault off are counted apart. On macOS 27 an AI Posture Insight card says which
+  is not a P0 or P1 gap, an ignored one is left out, hardware-encrypted Macs with
+  FileVault off are counted apart, and Macs that did not report a control are left out
+  of its counts with a "not reported: N" note. On macOS 27 an AI Posture Insight card says which
   control to work first. Freshness chips show the age of the underlying data source.
   Data source: `pro report security` (tier 2) aggregates, device inventory and, for the
   hardware rule, the `computers` snapshot (tier 1).
@@ -172,7 +173,10 @@ these interactive dashboards either — it produces a separate generated workboo
   [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
   Data source: no tier (configuration and schedule management).
 - **Run History** — streamed output from past collect and generate runs, including an
-  "Explain this run" AI action on failed runs — see [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
+  "Explain this run" AI action on failed runs. A collect you start in the app (the first
+  collect, Refresh, the Overview prompt, Collect now) is listed as "Manual collect"; the
+  last 20 are kept. One the background item turned away because it was running records
+  nothing — see [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
   Data source: no tier (local log files, not API data).
 
 ## Configuration
@@ -182,7 +186,8 @@ these interactive dashboards either — it produces a separate generated workboo
   [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
   Data source: no tier (configuration only).
 - **Customize** — the chart options generated workbooks use: whether to save chart images,
-  and one OS chart per major macOS version. The Overview's Generate makes the Full Instance
+  and one OS chart per major macOS version, plus a switch to write the HTML report with every
+  workbook. The Overview's Generate makes the Full Instance
   report; **Generate…** on Generated Reports, and `jamf-reports generate --template`, make
   the others. Overview score cards
   and sections are chosen on the Overview itself.

@@ -20,6 +20,19 @@ final class ConfigFileSectionsTests: XCTestCase {
         }
     }
 
+    /// The Customize screen writes `html.with_workbook`, so it is not "file only"; the keys
+    /// beside it that no screen writes still are.
+    func testWithWorkbookIsEditedOnAScreenAndItsNeighboursAreNot() throws {
+        let sections = try build("""
+            html:
+              with_workbook: true
+              track_history: true
+            """)
+        let keys = sections.fileOnly.flatMap(\.settings).map(\.keyPath)
+        XCTAssertEqual(keys, ["html.track_history"])
+        XCTAssertTrue(sections.unknown.isEmpty)
+    }
+
     // MARK: - The three sections
 
     func testBuildsTheThreeSectionsFromAFile() throws {
@@ -112,7 +125,6 @@ final class ConfigFileSectionsTests: XCTestCase {
           failures_count_column: Failures
           failures_list_column: Failed Rules
         platform:
-          enabled: true
           compliance_benchmarks:
             - Benchmark One
         output:
@@ -128,7 +140,6 @@ final class ConfigFileSectionsTests: XCTestCase {
           org_name: Example Org
           logo_path: logo.png
           accent_color: "#112233"
-          accent_dark: "#001122"
         charts:
           save_png: true
           os_adoption:
@@ -168,13 +179,51 @@ final class ConfigFileSectionsTests: XCTestCase {
         XCTAssertEqual(sections.unknown, [])
     }
 
+    /// The app reads the on and off values, and no screen edits them, so the tab lists them
+    /// as file-only and not as unknown keys.
+    func testTheSecurityPolicyVocabularyIsListedAsFileOnly() throws {
+        let yaml = """
+        security_policy:
+          controls:
+            firewall: warning
+          on_values:
+            firewall: ["Pass", "Compliant"]
+            sip: Protected
+          off_values:
+            firewall: Fail
+        """
+        let sections = try build(yaml)
+        XCTAssertEqual(summary(sections), [
+            "security_policy: security_policy.on_values.firewall=Pass, Compliant, "
+                + "security_policy.on_values.sip=Protected, "
+                + "security_policy.off_values.firewall=Fail",
+        ])
+        XCTAssertEqual(sections.unknown, [])
+        XCTAssertEqual(sections.skipped, [])
+    }
+
     func testAKeyNextToAnEditedOneIsStillListed() throws {
         let sections = try build(
             "charts:\n  save_png: true\n  historical_csv_dir: snaps\n"
-                + "  os_adoption:\n    per_major_charts: true\n    enabled: false\n")
+                + "  os_adoption:\n    per_major_charts: true\n"
+                + "  device_state_trend:\n    enabled: false\n")
         XCTAssertEqual(summary(sections), [
-            "charts: charts.historical_csv_dir=snaps, charts.os_adoption.enabled=false",
+            "charts: charts.historical_csv_dir=snaps, charts.device_state_trend.enabled=false",
         ])
+    }
+
+    /// The tab has no new place for it: a retired key is listed as not read, with its note.
+    func testARetiredKeyIsListedAsNotReadWithItsNote() throws {
+        let sections = try build("""
+        branding:
+          accent_dark: "#445566"
+        thresholds:
+          stale_device_dayz: 45
+        """)
+        XCTAssertEqual(sections.unknown.map(\.keyPath),
+                       ["branding.accent_dark", "thresholds.stale_device_dayz"])
+        XCTAssertEqual(sections.unknown.map(\.note),
+                       ["No longer read since 2.9.", "Did you mean \"stale_device_days\"?"])
     }
 
     // MARK: - Values

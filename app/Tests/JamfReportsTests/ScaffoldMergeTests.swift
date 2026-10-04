@@ -146,6 +146,28 @@ final class ScaffoldMergeTests: XCTestCase {
         XCTAssertEqual(try ConfigLoader.load(from: url).columns?.assetTag, "Asset Tag")
     }
 
+    /// A config from before `model_identifier` existed, with the old `architecture` default:
+    /// a re-scaffold on an export that has the Jamf headers fills the new key, repairs the
+    /// architecture header and keeps `model`.
+    func testRescaffoldFillsModelIdentifierAndRepairsArchitectureOnAnOlderConfig() throws {
+        let ws = try workspace(
+            config: "columns:\n  computer_name: Computer Name\n  model: Model\n"
+                + "  architecture: Architecture\n",
+            csvHeaders: ["Computer Name", "Model", "Model Identifier", "Architecture Type"])
+        let outcome = try ScaffoldService.mergeIntoConfig(
+            csvURL: ws.csv, profile: ws.profile, workspaceRoot: ws.root)
+
+        XCTAssertEqual(outcome.report.added, ["model_identifier"])
+        XCTAssertEqual(outcome.report.repaired, ["architecture"])
+        XCTAssertEqual(outcome.report.keptCount, 2, "computer_name and model are kept")
+
+        let url = try ConfigService.configURL(for: ws.profile, workspaceRoot: ws.root)
+        let columns = try XCTUnwrap(ConfigLoader.load(from: url).columns)
+        XCTAssertEqual(columns.model, "Model")
+        XCTAssertEqual(columns.modelIdentifier, "Model Identifier")
+        XCTAssertEqual(columns.architecture, "Architecture Type")
+    }
+
     func testRescaffoldOfAMobileExportMergesMobileColumns() throws {
         let ws = try workspace(
             config: "columns:\n  computer_name: Computer Name\n",
