@@ -99,6 +99,8 @@ struct ReauthenticateSheet: View {
                 .accessibilityHidden(true)
         }
         .onAppear(perform: prefillOnce)
+        // Off the main actor, and after the first layout: see `OnboardingFlow.init`.
+        .task { await flow.refreshJamfCLIStatus() }
     }
 
     // MARK: - Header
@@ -210,7 +212,7 @@ struct ReauthenticateSheet: View {
                     SegmentedControl(
                         selection: Binding(
                             get: { flow.platformScope },
-                            set: { flow.platformScope = $0 }
+                            set: { flow.choosePlatformScope($0) }
                         ),
                         options: OnboardingFlow.PlatformScope.allCases.map {
                             ($0, $0.label, nil)
@@ -354,6 +356,8 @@ struct ReauthenticateSheet: View {
     }
 
     private var canVerify: Bool {
+        // The Platform API scope default is set when the jamf-cli probe answers.
+        guard !flow.isCheckingJamfCLI else { return false }
         switch flow.proConnectionType {
         case .oauth2:
             return Self.canVerifyOAuth2(
