@@ -516,7 +516,8 @@ final class MobileFleetServiceTests: XCTestCase {
         )
 
         XCTAssertNotNil(snapshot.sourceDates["mobile-devices-list"])
-        XCTAssertNotNil(snapshot.sourceDates["mobile-device-inventory-details"])
+        XCTAssertNil(snapshot.sourceDates["mobile-device-inventory-details"],
+                     "the retired kind has no freshness chip")
         XCTAssertNil(snapshot.sourceDates["classic-ios-profiles"])
     }
 
@@ -982,6 +983,50 @@ final class MobileFleetServiceTests: XCTestCase {
         let filtered = MobileFleetService.devices(fleet, in: .unmanaged)
         XCTAssertEqual(filtered.map { $0.mobileDeviceId }, unmanaged.map { $0.mobileDeviceId })
         XCTAssertEqual(MobileFleetService.devices(fleet, in: nil).count, 60)
+    }
+
+    // MARK: - Posture flags: security section first, general as the older location
+
+    private func decodeDevice(_ json: String) throws -> MobileDeviceInventoryItem {
+        try JSONDecoder().decode(MobileDeviceInventoryItem.self, from: Data(json.utf8))
+    }
+
+    /// The flags are under `security`; earlier decoders read `general`, kept as a fallback.
+    /// A device reporting neither is unknown and counts toward nothing.
+    func testPostureCountsReadSecurityThenGeneral() throws {
+        let fleet = [
+            try decodeDevice("""
+            {"mobileDeviceId": "1", "security": {"passcodeCompliant": true,
+             "activationLockEnabled": true, "jailBreakDetected": true}}
+            """),
+            try decodeDevice("""
+            {"mobileDeviceId": "2", "general": {"passcodeCompliant": true,
+             "activationLockEnabled": false, "jailbreakDetected": "None"}}
+            """),
+            try decodeDevice(#"{"mobileDeviceId": "3", "general": {"displayName": "C"}}"#),
+        ]
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: fleet,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.passcodeCompliantCount, 2)
+        XCTAssertEqual(snapshot.activationLockEnabledCount, 1)
+        XCTAssertEqual(snapshot.jailbreakDetectedCount, 1)
+    }
+
+    /// Only the security section: no device reports the old `general` fields at all.
+    func testPostureCountsAreMeasuredWhenOnlySecurityReportsThem() throws {
+        let device = try decodeDevice("""
+        {"mobileDeviceId": "1", "security": {"passcodeCompliant": false,
+         "activationLockEnabled": false, "jailBreakDetected": false}}
+        """)
+        let snapshot = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: [], richDevices: [device],
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        )
+        XCTAssertEqual(snapshot.passcodeCompliantCount, 0)
+        XCTAssertEqual(snapshot.activationLockEnabledCount, 0)
+        XCTAssertEqual(snapshot.jailbreakDetectedCount, 0)
     }
 
     // MARK: - Table heights

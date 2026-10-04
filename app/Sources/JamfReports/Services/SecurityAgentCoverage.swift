@@ -20,34 +20,41 @@ enum SecurityAgentCoverage {
         let reporting: Int
     }
 
-    /// One result per agent with a column, in config order. A Mac counts
-    /// once however many rows it has, keyed the way the mSCP service keys it.
+    /// One result per agent with a column, in config order. A row with a
+    /// computer id or serial counts once per id, however many rows it has. A
+    /// row with neither counts as its own Mac: jamf-cli's rows carry only the
+    /// computer name, and keying by name counted Macs that share one as one.
     static func compute(rows: [EAResultRow], agents: [SecurityAgentConfig]) -> [Result] {
         agents.compactMap { agent -> Result? in
             let column = agent.column.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !column.isEmpty else { return nil }
-            // Config's Add agent leaves connected_value blank. SecurityAgentCheck reads that as
-            // unknown, which recorded 0% EDR coverage every day.
-            let anyValueCounts = agent.connectedValue
-                .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             var reporting: Set<String> = []
             var installed: Set<String> = []
-            for row in rows {
+            for (index, row) in rows.enumerated() {
                 guard let eaName = row.eaName,
-                      eaName.caseInsensitiveCompare(column) == .orderedSame,
-                      let id = MSCPComplianceService.primaryIdentifier(for: row)?.lowercased()
-                else { continue }
+                      eaName.caseInsensitiveCompare(column) == .orderedSame else { continue }
                 let value = (row.value?.stringValue ?? "")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !value.isEmpty else { continue }
-                reporting.insert(id)
+                let mac = macKey(row, index: index)
+                reporting.insert(mac)
                 let check = RiskScoringService.SecurityAgentCheck(
                     value: value, connectedValue: agent.connectedValue)
-                if anyValueCounts || check.isConnected == true { installed.insert(id) }
+                if check.isConnected == true { installed.insert(mac) }
             }
             return Result(name: agent.name, column: column,
                           installed: installed.count, reporting: reporting.count)
         }
+    }
+
+    /// The row's computer id or serial, keyed the way the mSCP service keys it,
+    /// or the row itself when it has neither.
+    private static func macKey(_ row: EAResultRow, index: Int) -> String {
+        let hasID = [row.computerId, row.serial].contains { !($0 ?? "").isEmpty }
+        guard hasID, let id = MSCPComplianceService.primaryIdentifier(for: row) else {
+            return "row #\(index)"
+        }
+        return id.lowercased()
     }
 
     /// Percent of `fleet` with the agent connected, one decimal like every

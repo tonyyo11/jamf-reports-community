@@ -23,11 +23,15 @@ final class HtmlReportDashboardTests: XCTestCase {
         HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
     }
 
-    private func writePage(_ html: String, stamp: String) throws {
+    private func writePage(_ html: String, stamp: String, modified: Date? = nil) throws {
         let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try html.write(to: dir.appendingPathComponent("dashboard_\(stamp).html"),
-                       atomically: true, encoding: .utf8)
+        let file = dir.appendingPathComponent("dashboard_\(stamp).html")
+        try html.write(to: file, atomically: true, encoding: .utf8)
+        if let modified {
+            try FileManager.default.setAttributes(
+                [.modificationDate: modified], ofItemAtPath: file.path)
+        }
     }
 
     func testWithoutASnapshotTheSectionSaysSo() {
@@ -36,20 +40,45 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertFalse(html.contains("<iframe"))
     }
 
+    /// File dates disagree with the filename stamps on purpose, as a sync provider's
+    /// re-stamping makes them: the newest-stamped page is the oldest file and the
+    /// conflict copy is the newest, so a picker ordering by mtime takes the wrong page.
     func testTheNewestPageIsEmbeddedEscapedInASandboxedFrame() throws {
-        try writePage(
-            "<!DOCTYPE html><html><head><title>t</title></head><body>OLDPAGE</body></html>",
-            stamp: "20260901T060000")
+        let day = TimeInterval(86_400)
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
         try writePage(
             "<!DOCTYPE html><html><head><title>t</title></head>"
                 + "<body class=\"x\">A &amp; B</body></html>",
-            stamp: "20260925T060000")
+            stamp: "20260925T060000", modified: base)
+        try writePage(
+            "<!DOCTYPE html><html><head><title>t</title></head><body>OLDPAGE</body></html>",
+            stamp: "20260901T060000", modified: base + day)
+        try writePage(
+            "<!DOCTYPE html><html><head><title>t</title></head><body>CONFLICT</body></html>",
+            stamp: "20260925T060000 2", modified: base + 2 * day)
+        let dir = dataDir.appendingPathComponent("dashboard", isDirectory: true)
+        let dates = try ["dashboard_20260925T060000.html", "dashboard_20260901T060000.html",
+                         "dashboard_20260925T060000 2.html"].map { name in
+            try XCTUnwrap(FileManager.default.attributesOfItem(
+                atPath: dir.appendingPathComponent(name).path)[.modificationDate] as? Date)
+        }
+        XCTAssertEqual(dates, dates.sorted(), "file dates run opposite to the stamps")
+        XCTAssertEqual(Set(dates).count, 3)
         let html = report().buildJamfDashboardSection()
         XCTAssertTrue(html.contains("sandbox=\"allow-scripts\""), html)
         XCTAssertFalse(html.contains("allow-same-origin"), "the page must not reach the report")
-        XCTAssertFalse(html.contains("OLDPAGE"), "the newest stamp wins")
+        XCTAssertFalse(html.contains("OLDPAGE"), "the newest stamp wins, not the newest file")
+        XCTAssertFalse(html.contains("CONFLICT"), "a sync-conflict copy is never picked")
         XCTAssertTrue(html.contains("&lt;body class=&quot;x&quot;&gt;A &amp;amp; B"),
                       "the page is escaped once for the srcdoc attribute")
+    }
+
+    func testAloneASyncConflictCopyIsNotEmbedded() throws {
+        try writePage("<!DOCTYPE html><html><head></head><body>CONFLICT</body></html>",
+                      stamp: "20260925T060000 2")
+        let html = report().buildJamfDashboardSection()
+        XCTAssertTrue(html.contains("Not collected yet"), String(html.prefix(400)))
+        XCTAssertFalse(html.contains("<iframe"))
     }
 
     func testTheAdditionsGoAtTheEndOfTheHead() throws {
@@ -84,10 +113,56 @@ final class HtmlReportDashboardTests: XCTestCase {
         XCTAssertTrue(html.contains("attributeFilter: [\"data-theme\"]"))
     }
 
-    func testAPageWithoutAHeadGetsTheAdditionsFirst() {
+    func testAPageWithoutAHeadGetsOneWithThePolicyAndTheAdditions() {
         let page = HtmlReport.dashboardPageForEmbedding("<p>x</p>")
-        XCTAssertTrue(page.hasPrefix("<style id=\"jrc-embed\">"))
-        XCTAssertTrue(page.hasSuffix("<p>x</p>"))
+        XCTAssertTrue(page.hasPrefix("<head>" + Self.policyMeta + "<style id=\"jrc-embed\">"), page)
+        XCTAssertTrue(page.hasSuffix("</head><p>x</p>"))
+    }
+
+    private static let policy = "default-src 'none'; style-src 'unsafe-inline'; "
+        + "script-src 'unsafe-inline'; img-src data:"
+    private static let policyMeta =
+        "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">"
+
+    /// The frame is scripted, so without a policy the page could fetch or post anywhere.
+    /// A meta policy only governs what follows it, so it sits first in the head.
+    func testThePolicyFollowsTheOpeningHeadTagAheadOfEverythingElse() throws {
+        XCTAssertEqual(HtmlReport.dashboardContentSecurityPolicy, Self.policy)
+        let heads = ["<head>", "<HEAD>", "<head lang=\"en\">", "<Head\n  data-x='1'\n>"]
+        for head in heads {
+            let page = HtmlReport.dashboardPageForEmbedding(
+                "<!DOCTYPE html><html>\(head)<title>t</title><script>var a;</script></head>"
+                    + "<body></body></html>")
+            XCTAssertTrue(page.contains(head + Self.policyMeta + "<title>"),
+                          "\(head): the policy is the first thing in the head\n\(page)")
+            let meta = try XCTUnwrap(page.range(of: "Content-Security-Policy"))
+            let firstScript = try XCTUnwrap(page.range(of: "<script"))
+            XCTAssertLessThan(meta.lowerBound, firstScript.lowerBound, head)
+            XCTAssertEqual(page.components(separatedBy: "Content-Security-Policy").count, 2, head)
+        }
+    }
+
+    /// `<header>` and `<head-x>` start with `<head` but are not the head.
+    func testAHeaderElementIsNotTakenForTheHead() {
+        let page = HtmlReport.dashboardPageForEmbedding("<header>x</header><body></body>")
+        XCTAssertTrue(page.hasPrefix("<head>" + Self.policyMeta), page)
+        XCTAssertTrue(page.hasSuffix("</head><header>x</header><body></body>"), page)
+    }
+
+    func testAHeadWithoutAClosingTagStillGetsThePolicyAndTheAdditionsInside() {
+        let page = HtmlReport.dashboardPageForEmbedding("<html><head><title>t</title><body>")
+        XCTAssertTrue(page.hasPrefix("<html><head>" + Self.policyMeta), page)
+        XCTAssertTrue(page.contains("<style id=\"jrc-embed\">"))
+        XCTAssertTrue(page.hasSuffix("<title>t</title><body>"), page)
+    }
+
+    func testTheEmbeddedFrameCarriesThePolicy() throws {
+        try writePage("<!DOCTYPE html><html><head></head><body></body></html>",
+                      stamp: "20260925T060000")
+        let html = report().buildJamfDashboardSection()
+        XCTAssertTrue(html.contains(
+            "srcdoc=\"&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;head&gt;"
+                + "&lt;meta http-equiv=&quot;Content-Security-Policy&quot;"), html)
     }
 
     func testAnOversizedPageIsNamedNotEmbedded() throws {

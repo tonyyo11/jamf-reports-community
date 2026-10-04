@@ -477,7 +477,7 @@ extension ReportEngine {
             onLine(.init(
                 timestamp: Date(), level: .warn,
                 text: "[partial] \(kind): \(tally.failed) of \(tally.attempted) "
-                    + "devices failed — not written"
+                    + "devices failed \(deviceScanNotWrittenMarkerSuffix)"
             ))
             stateStore?.record(.failed(exitCode: nil), report: kind, at: collectStart)
         } else {
@@ -503,7 +503,7 @@ extension ReportEngine {
             onLine(.init(
                 timestamp: Date(), level: .warn,
                 text: "[partial] \(mdmCommandHealthKind): stopped after exit "
-                    + "\(stopExit) — not written"
+                    + "\(stopExit) \(deviceScanNotWrittenMarkerSuffix)"
             ))
             stateStore?.record(
                 .failed(exitCode: stopExit), report: mdmCommandHealthKind, at: collectStart
@@ -532,7 +532,7 @@ extension ReportEngine {
             onLine(.init(
                 timestamp: Date(), level: .warn,
                 text: "[partial] \(ddmDeviceStatusKind): stopped after exit "
-                    + "\(stopExit) — not written"
+                    + "\(stopExit) \(deviceScanNotWrittenMarkerSuffix)"
             ))
             stateStore?.record(
                 .failed(exitCode: stopExit), report: ddmDeviceStatusKind, at: collectStart

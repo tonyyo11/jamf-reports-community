@@ -197,11 +197,11 @@ struct StaleDeviceService: Sendable {
     }
 
     /// Escape a value for CSV output. Neutralizes spreadsheet formula injection
-    /// (leading `=`, `+`, `-`, `@` get a tab prefix) and applies RFC 4180
-    /// quoting — matches `PatchStatusService.csvField` exactly.
+    /// (leading `=`, `+`, `-`, `@`, tab or carriage return get a tab prefix) and applies
+    /// RFC 4180 quoting — matches `PatchStatusService.csvField` exactly.
     static func csvField(_ value: String) -> String {
         var field = value
-        if let first = field.first, "=+-@".contains(first) {
+        if let first = field.first, "=+-@\t\r".contains(first) {
             field = "\t" + field
         }
         guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }

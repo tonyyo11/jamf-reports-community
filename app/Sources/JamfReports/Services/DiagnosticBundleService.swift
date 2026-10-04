@@ -49,6 +49,7 @@ final class DiagnosticRedactor {
     private let salt: SymmetricKey
     private var cache: [String: String] = [:]
     private var seededRegexes: [String: [NSRegularExpression]] = [:]
+    private var scopeIDRegex: NSRegularExpression?
 
     private let secretPatterns: [(NSRegularExpression, String)]
     private let hostnameURLRE: NSRegularExpression
@@ -134,8 +135,8 @@ final class DiagnosticRedactor {
         ]
     }
 
-    /// Redact free text: credential patterns (always), then enabled PII regexes,
-    /// then any literals seeded from `jamf-cli-data/`.
+    /// Redact free text: credential patterns (always), then the seeded scope IDs,
+    /// then enabled PII regexes, then any literals seeded from `jamf-cli-data/`.
     func redactText(_ text: String) -> String {
         var out = text
         for (re, template) in secretPatterns {
@@ -143,6 +144,8 @@ final class DiagnosticRedactor {
                 in: out, range: NSRange(location: 0, length: (out as NSString).length),
                 withTemplate: template)
         }
+        // Before the serial pattern, which would otherwise cut a UUID's last segment out of it.
+        out = redactScopeIDs(in: out)
         if redactHostnames {
             out = replaceMatches(hostnameURLRE, in: out) { g in
                 (g[1] ?? "") + self.placeholder("host", g[2] ?? "")
@@ -206,6 +209,19 @@ final class DiagnosticRedactor {
         return value
     }
 
+    /// Registers exact identifiers (a profile's tenant and environment IDs) to remove wherever
+    /// they appear, in any case. jamf-cli echoes them in error text such as
+    /// "Environment '<uuid>' not found", and they identify the organisation. Unlike a general
+    /// UUID rule this leaves the other IDs readers match up, such as a host's hardware UUID.
+    func seedScopeIDs(_ ids: [String]) {
+        let literals = Set(ids.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+            .filter { $0.count >= Self.minSeedLen }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0 < $1 }
+        scopeIDRegex = literals.isEmpty ? nil : Self.mustCompile(
+            literals.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|"),
+            [.caseInsensitive])
+    }
+
     /// Harvest PII literals from `<dataDir>` JSON and compile per-category
     /// alternation regexes so the same identifiers are redacted from free text
     /// (e.g. inside log lines). Returns the count of distinct literals harvested
@@ -264,6 +280,13 @@ final class DiagnosticRedactor {
             }
         }
         if !chunks.isEmpty { seededRegexes[category] = chunks }
+    }
+
+    private func redactScopeIDs(in text: String) -> String {
+        guard let scopeIDRegex else { return text }
+        return replaceMatches(scopeIDRegex, in: text) { g in
+            self.placeholder("org", (g[0] ?? "").lowercased())
+        }
     }
 
     private func placeholder(_ kind: String, _ value: String) -> String {
@@ -395,6 +418,8 @@ enum DiagnosticBundleService {
         /// jamf-cli profile to diagnose via `doctor`. Empty disables the live
         /// doctor capture (e.g. tests that don't want a network probe).
         var cliProfile: String = ""
+        /// The profile's tenant and environment IDs, redacted wherever they appear.
+        var scopeIDs: [String] = []
     }
 
     struct ManifestEntry {
@@ -437,11 +462,69 @@ enum DiagnosticBundleService {
             summariesDir: try WorkspacePaths.summariesDir(for: profile),
             configURL: workspace.appendingPathComponent("config.yaml"),
             dataDir: try WorkspacePaths.dataDir(for: profile),
-            cliProfile: profile
+            cliProfile: profile,
+            scopeIDs: options.redact ? scopeIDs(profile: profile) : []
         )
         return try buildBundle(
             sources: sources, outputDir: try WorkspacePaths.diagnosticsDir(for: profile),
             profileSlug: slug(profile), options: options, now: now)
+    }
+
+    private static let scopeIDKeys: Set<String> = ["tenant-id", "environment-id"]
+
+    /// The tenant and environment IDs jamf-cli's config file holds for `profile`. The bundle runs
+    /// no `config list`, so it reads the file the way `ProfileService.fallbackConfigProfiles`
+    /// does. No file, or a profile without those keys (an instance profile), gives no IDs.
+    static func scopeIDs(
+        profile: String,
+        configURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/jamf-cli/config.yaml")
+    ) -> [String] {
+        guard FileManager.default.fileExists(atPath: configURL.path) else { return [] }
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else {
+            AppLogger.collect.warning(
+                "DiagnosticBundle: could not read the jamf-cli config; scope IDs not redacted")
+            return []
+        }
+        return scopeIDs(profile: profile, inConfig: text)
+    }
+
+    /// Pure: the `tenant-id` and `environment-id` values under `profile` in config text.
+    static func scopeIDs(profile: String, inConfig text: String) -> [String] {
+        let rows: [(indent: Int, text: String)] = text.components(separatedBy: .newlines)
+            .compactMap { raw in
+                let line = raw.trimmingCharacters(in: .whitespaces)
+                guard !line.isEmpty, !line.hasPrefix("#") else { return nil }
+                return (raw.prefix { $0 == " " }.count, line)
+            }
+        guard let start = rows.firstIndex(where: { $0.indent == 0 && $0.text == "profiles:" })
+        else { return [] }
+        let body = rows[(start + 1)...].prefix { $0.indent > 0 }
+        guard let nameIndent = body.first?.indent else { return [] }
+        var inProfile = false
+        var ids: [String] = []
+        for row in body {
+            if row.indent == nameIndent, row.text.hasSuffix(":") {
+                inProfile = ProfileService.unquotedYAMLKey(String(row.text.dropLast())) == profile
+            } else if inProfile, let (key, value) = yamlPair(row.text),
+                      scopeIDKeys.contains(key), !value.isEmpty {
+                ids.append(value)
+            }
+        }
+        return ids
+    }
+
+    /// `key: value` with the value's quotes or trailing ` # comment` removed.
+    private static func yamlPair(_ line: String) -> (key: String, value: String)? {
+        guard let colon = line.firstIndex(of: ":") else { return nil }
+        let key = line[..<colon].trimmingCharacters(in: .whitespaces)
+        var value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        if let quote = value.first, quote == "\"" || quote == "'" {
+            value = String(value.dropFirst().prefix { $0 != quote })
+        } else if let comment = value.range(of: " #") {
+            value = value[..<comment.lowerBound].trimmingCharacters(in: .whitespaces)
+        }
+        return (key, value)
     }
 
     /// Core builder: stage files into a temp dir, write the manifest, archive to
@@ -477,6 +560,7 @@ enum DiagnosticBundleService {
 
         let redactor: DiagnosticRedactor? = options.redact ? makeRedactor(options) : nil
         redactor?.seedFromWorkspace(sources.dataDir)
+        redactor?.seedScopeIDs(sources.scopeIDs)
 
         let entries = try stageFiles(
             sources: sources, into: staging, redactor: redactor, options: options, now: now)

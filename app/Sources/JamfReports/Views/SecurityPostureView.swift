@@ -13,9 +13,10 @@ struct SecurityPostureView: View {
     @ScaledMetric(relativeTo: .title) private var actionTileSize: CGFloat = 22
     @State private var snapshot: SecurityPostureService.Snapshot = .empty
     @State private var hasLoaded = false
-    /// User-configurable weight overrides edited in ConfigView → Scoring tab.
-    /// Empty string ⇒ the v3.5 defaults via `ScoringConfig.parse`.
-    @AppStorage(ScoringConfig.storageKey) private var scoringRaw: String = ""
+    /// Bumped by each reload, so a read that a newer one replaced is dropped.
+    @State private var loadGeneration = 0
+    /// False until the first read lands: until then the screen does not say there is no data.
+    @State private var hasRead = false
 
     var body: some View {
         PageScaffold {
@@ -31,7 +32,7 @@ struct SecurityPostureView: View {
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
+            if !workspace.demoMode && hasRead {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.refresh])
                 // Per-kind file dates are the honest per-screen signal here;
                 // digest-level collectionSources belongs on summary screens only.
@@ -51,10 +52,11 @@ struct SecurityPostureView: View {
                     )
                 }
             } else if snapshot.totalDevices == 0 {
-                emptyState
+                if hasRead { emptyState }
             } else {
                 heroScoreCard
                 kpiGrid
+                aiInsightCard
                 actionItemsCard
                 osDistributionCard
             }
@@ -81,37 +83,66 @@ struct SecurityPostureView: View {
     }
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? DemoData.securityPostureSnapshot
-            : SecurityPostureService.load(profile: workspace.profile)
+        loadGeneration += 1
+        if workspace.demoMode {
+            snapshot = DemoData.securityPostureSnapshot
+            hasRead = true
+            return
+        }
+        let generation = loadGeneration
+        let profile = workspace.profile
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) {
+                SecurityPostureService.load(profile: profile)
+            }.value
+            // A read that a profile switch or a later refresh replaced must not paint.
+            guard generation == loadGeneration else { return }
+            snapshot = loaded
+            hasRead = true
+        }
     }
 
     // MARK: - Computed values
 
-    private var score: SecurityScore {
-        let weights = scoringRaw.isEmpty
-            ? SecurityScoreWeights.defaultWeights
-            : ScoringConfig.parse(scoringRaw).weights
-        return SecurityScoreCalculator.score(
-            input: SecurityScoreCalculator.input(from: snapshot),
-            weights: weights
+    private var score: SecurityScore { Self.score(snapshot) }
+
+    /// The ring's score, under the weights the workspace's policy carries.
+    static func score(_ snapshot: SecurityPostureService.Snapshot) -> SecurityScore {
+        SecurityScoreCalculator.score(
+            input: snapshot.fleetCounts.scoreInput(),
+            weights: snapshot.policy.resolvedScoreWeights
         )
     }
 
     private var actionItems: (p0: Int, p1: Int, p2: Int) {
-        // P0 = devices missing FileVault, SIP, or Firewall. P1 = devices
-        // missing Gatekeeper. P2 reserved. Matches v3.5 surface taxonomy.
-        let total = snapshot.totalDevices
-        let p0 = [
-            snapshot.fileVaultEncrypted,
-            snapshot.sipEnabled,
-            snapshot.firewallEnabled
-        ]
-            .compactMap { $0 }
-            .map { total - $0 }
+        // P0 = FileVault, SIP or Firewall failures under the workspace's policy. P1 =
+        // Gatekeeper failures. P2 reserved. Matches v3.5 surface taxonomy.
+        (Self.p0TileCount(snapshot.fleetCounts), snapshot.fleetCounts.p1 ?? 0, 0)
+    }
+
+    /// summary.json writes no P0 without a FileVault count; the tile still sums the
+    /// controls the report does carry, as it always has.
+    static func p0TileCount(_ fleet: SecurityFleetCounts) -> Int {
+        fleet.p0 ?? [SecurityControl.sip, .firewall].compactMap { fleet.controls[$0]?.fail }
             .reduce(0, +)
-        let p1 = (snapshot.gatekeeperEnabled.map { total - $0 }) ?? 0
-        return (p0, p1, 0)
+    }
+
+    /// A KPI tile's sub-line. The tile's value stays the fact; this says how the
+    /// workspace's policy counts the Macs where the control is off.
+    static func kpiTileSub(
+        _ control: SecurityControl, on: Int, total: Int, fleet: SecurityFleetCounts
+    ) -> String {
+        let counts = fleet.controls[control]
+        if counts?.level == .ignore { return "Not counted by this workspace's policy" }
+        let base = "\(on) of \(total)"
+        let lowered = fleet.fileVaultOffHardwareEncrypted
+        if control == .fileVault, lowered > 0 {
+            return base + " · \(lowered) more hardware-encrypted, FileVault off"
+        }
+        if let warnings = counts?.warning, warnings > 0 {
+            return base + " · \(warnings) warning\(warnings == 1 ? "" : "s")"
+        }
+        return base
     }
 
     // MARK: - Sections
@@ -147,7 +178,8 @@ struct SecurityPostureView: View {
                     }
                     // The demo cannot collect, so it never tells its viewer to.
                     if !score.missing.isEmpty && !workspace.demoMode {
-                        Text(missingText)
+                        Text(Self.missingText(score, fleet: snapshot.fleetCounts,
+                                              edrAgentName: workspace.edrAgentName))
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -164,13 +196,28 @@ struct SecurityPostureView: View {
         return "Weighted across: \(names)."
     }
 
-    private var missingText: String {
+    /// The hero card's line for metrics the ring does not score. FileVault, when the report
+    /// carries it but the hardware rule left no Mac to score it over, gets its own reason.
+    static func missingText(
+        _ score: SecurityScore, fleet: SecurityFleetCounts, edrAgentName: String?
+    ) -> String {
+        let fileVaultNotCounted = score.missing.contains(.fileVault)
+            && fleet.controls[.fileVault] != nil
         let names = score.missing
-            .map { $0.displayLabel(edrAgentName: workspace.edrAgentName) }
+            .filter { !(fileVaultNotCounted && $0 == .fileVault) }
+            .map { $0.displayLabel(edrAgentName: edrAgentName) }
             .joined(separator: ", ")
+        var sentences: [String] = []
         // The ring scores `pro report security`, which carries FileVault, SIP and the
         // firewall only. No collect adds the rest here, so the line asks for none.
-        return "Not in the security report, so not scored here: \(names)."
+        if !names.isEmpty {
+            sentences.append("Not in the security report, so not scored here: \(names).")
+        }
+        if fileVaultNotCounted {
+            sentences.append("FileVault is not scored: every Mac with it off is "
+                + "hardware-encrypted and not counted by this workspace's policy.")
+        }
+        return sentences.joined(separator: " ")
     }
 
     private func pillTone(for grade: SecurityScore.Grade) -> Pill.Tone {
@@ -185,10 +232,10 @@ struct SecurityPostureView: View {
     private var kpiGrid: some View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
-            kpiTile(label: "FileVault", count: snapshot.fileVaultEncrypted)
-            kpiTile(label: "SIP", count: snapshot.sipEnabled)
-            kpiTile(label: "Firewall", count: snapshot.firewallEnabled)
-            kpiTile(label: "Gatekeeper", count: snapshot.gatekeeperEnabled)
+            kpiTile(label: "FileVault", control: .fileVault, count: snapshot.fileVaultEncrypted)
+            kpiTile(label: "SIP", control: .sip, count: snapshot.sipEnabled)
+            kpiTile(label: "Firewall", control: .firewall, count: snapshot.firewallEnabled)
+            kpiTile(label: "Gatekeeper", control: .gatekeeper, count: snapshot.gatekeeperEnabled)
             StatTile(
                 label: "Total Devices",
                 value: "\(snapshot.totalDevices)",
@@ -198,20 +245,39 @@ struct SecurityPostureView: View {
     }
 
     @ViewBuilder
-    private func kpiTile(label: String, count: Int?) -> some View {
+    private func kpiTile(label: String, control: SecurityControl, count: Int?) -> some View {
         let total = snapshot.totalDevices
         if let count, total > 0 {
             let pct = (Double(count) / Double(total)) * 100
+            // Rounded as the AI card rounds it, so an exact x.x5 reads the same in both.
             StatTile(
                 label: label,
-                value: String(format: "%.1f%%", pct),
-                sub: "\(count) of \(total)"
+                value: FleetInsightInput.Value.percent(pct).text,
+                sub: Self.kpiTileSub(
+                    control, on: count, total: total, fleet: snapshot.fleetCounts)
             )
         } else {
             StatTile(
                 label: label,
                 value: "—",
                 sub: "Not in snapshot"
+            )
+        }
+    }
+
+    /// macOS 27, opt-in: which control to work first. The card hides itself while
+    /// `ai.enabled` is off; the input is built only where it can show.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspace.demoMode),
+           let input = FleetInsightInput.posture(.security(snapshot)) {
+            AIInsightCard(
+                title: "AI Posture Insight",
+                idleText: "Suggest which security control to work first using on-device "
+                    + "intelligence.",
+                provenanceText: "AI-generated from the counts on this screen — verify against "
+                    + "the tiles above.",
+                input: input
             )
         }
     }

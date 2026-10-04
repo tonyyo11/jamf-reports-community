@@ -17,7 +17,9 @@ Tier 1 kinds include:
 
 - `ea-results` — one row per device's Extension Attribute result
 - `device-compliance` — one row per device's per-rule compliance failures
-- `computers` (device inventory) and `mobile-device-inventory-details`
+- `computers` (device inventory) and `mobile-devices-list` (mobile inventory); `computers`
+  also supplies the hardware facts the security policy's hardware rule reads (Apple
+  silicon, T2 model identifier)
 - `patch-device-failures` and `update-device-failures` — per-device scan failures
 - `compliance-devices` — Jamf Platform API per-device control compliance
 - `ddm-device-status` — one row per DDM-enabled device's declaration and
@@ -102,10 +104,11 @@ This table shows where each Overview KPI number comes from:
 | Firewall % | Security report firewall enabled / total | 2 |
 | Gatekeeper % | Security report Gatekeeper enabled / total | 2 |
 | Compliance % | EA results (real mSCP/STIG bands) OR 4-control proxy from security report — check config for `complianceIsProxy` | 1 or 2 |
-| Patch % | Unweighted mean of per-title compliance from `patch-status` | 2 |
+| Patch % | Share of devices on the latest version: sum of devices on latest / sum of devices, over titles that have devices; from `patch-status` | 2 |
 | Stale Count | Device-compliance rows with last-check-in older than `stale_device_days` threshold | 1 |
 | OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary | SOFA + 2 |
-| Security Score | Weighted composite of FileVault, SIP, firewall, Gatekeeper, compliance, EDR agent, and other factors — weights configurable in **Customize** | 2 + config |
+| Security Score | Weighted composite of FileVault, SIP, firewall, EDR agent, mSCP, XProtect, CVE and Secure Boot, over the metrics measured, under the workspace's security policy and `security_policy.score_weights` (Config → Scoring) | 2 + config |
+| Action items P0 / P1 | Security report counts under the security policy: P0 = FileVault, SIP or Firewall failing, P1 = Gatekeeper failing | 2 + config |
 | mSCP Bands | Pass/Low/Med-Low/Medium/High/No Data distribution from EA results per device | 1 |
 
 ## Zero vs. unknown

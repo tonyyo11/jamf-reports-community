@@ -7,19 +7,27 @@ import XCTest
 /// The guard short-circuits the jamf-cli collection loop (which requires the
 /// binary and live credentials) when a valid `summary_<today>.json` already
 /// exists and `force` is false. Tests verify the guard fires / does not fire
-/// based on the filesystem state alone, without needing jamf-cli installed.
+/// based on the filesystem state alone. The workspace is under a temporary root,
+/// and jamf-cli is never found (`locateJamfCLI`), so a collect the guard lets
+/// through stops at the binary check instead of running jamf-cli.
 final class CollectOncePerdayGuardTests: XCTestCase {
 
     // MARK: - Setup
 
-    /// A profile slug that is valid per `ProfileService.isValid` but is
-    /// unlikely to collide with any real workspace (test-only prefix).
+    /// A profile slug that is valid per `ProfileService.isValid` (test-only prefix).
     private let testProfile = "testonly-collect-guard"
 
     private var summariesDir: URL!
+    private var root: URL!
+    private var savedRoot: String?
 
     override func setUpWithError() throws {
         try super.setUpWithError()
+        root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-collect-guard-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        savedRoot = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
         guard let workspaceURL = ProfileService.workspaceURL(for: testProfile) else {
             throw XCTSkip("ProfileService could not resolve workspace URL — check home directory")
         }
@@ -32,11 +40,26 @@ final class CollectOncePerdayGuardTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        // Remove only the test workspace; leave any real workspaces untouched.
-        if let workspace = ProfileService.workspaceURL(for: testProfile) {
-            try? FileManager.default.removeItem(at: workspace)
-        }
+        if let savedRoot { setenv("JRC_TEST_WORKSPACES_ROOT", savedRoot, 1) }
+        else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        try? FileManager.default.removeItem(at: root)
         try super.tearDownWithError()
+    }
+
+    /// A collect the guard lets through reaches the jamf-cli check and stops there.
+    private func assertTheGuardLetItThrough(
+        tiers: Set<CollectionTier> = Set(CollectionTier.allCases), force: Bool,
+        onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void = { _ in }
+    ) async {
+        do {
+            try await ReportEngine.collect(
+                profile: testProfile, workspacePaths: WorkspacePaths.self, tiers: tiers,
+                force: force, locateJamfCLI: { nil }, onLine: onLine)
+            XCTFail("with no jamf-cli a collect past the guard throws jamfCLINotFound")
+        } catch ReportEngineError.jamfCLINotFound {
+        } catch {
+            XCTFail("expected jamfCLINotFound, got \(error)")
+        }
     }
 
     // MARK: - Helpers
@@ -71,7 +94,8 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         let disposition = try await ReportEngine.collect(
             profile: testProfile,
             workspacePaths: WorkspacePaths.self,
-            force: false
+            force: false,
+            locateJamfCLI: { nil }
         ) { line in
             collector.append(line.text)
         }
@@ -84,52 +108,16 @@ final class CollectOncePerdayGuardTests: XCTestCase {
                        "CollectRouter must be able to tell the guard's skip from a collect")
     }
 
-    /// When `force` is true, `collect` must proceed past the once-per-day
-    /// guard. Without jamf-cli the call throws `jamfCLINotFound` — that
-    /// error proves the guard was bypassed, which is exactly what we want.
+    /// When `force` is true, `collect` must proceed past the once-per-day guard.
     func testProceedsWhenForceIsTrue() async throws {
         try writeTodaySummary()
-
-        do {
-            try await ReportEngine.collect(
-                profile: testProfile,
-                workspacePaths: WorkspacePaths.self,
-                force: true,
-                onLine: { _ in }
-            )
-            // If jamf-cli happens to be installed in CI, collect proceeds
-            // normally (may fail for auth reasons). Either outcome is fine —
-            // we only care that the once-per-day guard did NOT intercept the call.
-        } catch ReportEngineError.jamfCLINotFound {
-            // Expected when jamf-cli is absent: the guard was bypassed and the
-            // binary check was reached. This is the correct behavior.
-        } catch {
-            // Auth or network errors are acceptable — they prove the guard
-            // was bypassed and the collection loop was entered.
-            let isAuthOrNetworkError = error.localizedDescription.lowercased()
-                .contains("jamf-cli") || error.localizedDescription.contains("collect")
-            _ = isAuthOrNetworkError  // suppress unused warning; we just needed to reach here
-        }
+        await assertTheGuardLetItThrough(force: true)
     }
 
     /// When no today's summary exists, `collect(force: false)` must proceed
     /// past the guard (same behavior as `force: true` for a fresh workspace).
     func testProceedsWhenNoTodaySummaryExists() async throws {
-        // Do not write a summary file — summaries dir is empty.
-
-        do {
-            try await ReportEngine.collect(
-                profile: testProfile,
-                workspacePaths: WorkspacePaths.self,
-                force: false,
-                onLine: { _ in }
-            )
-        } catch ReportEngineError.jamfCLINotFound {
-            // Guard was bypassed (no summary → proceed). Expected in CI.
-        } catch {
-            // Auth/network errors also prove the guard was bypassed.
-        }
-        // Test passes if we reach here: the guard did not intercept the call.
+        await assertTheGuardLetItThrough(force: false)
     }
 
     /// Regression: a tier-scoped collect (e.g. the weekly `managed-scan` run with
@@ -143,19 +131,8 @@ final class CollectOncePerdayGuardTests: XCTestCase {
         try writeTodaySummary()
 
         let collector = LogLineTextCollector()
-        do {
-            try await ReportEngine.collect(
-                profile: testProfile,
-                workspacePaths: WorkspacePaths.self,
-                tiers: [.scan],
-                force: false,
-                onLine: { line in collector.append(line.text) }
-            )
-        } catch ReportEngineError.jamfCLINotFound {
-            // Expected when jamf-cli is absent: the guard was bypassed and the
-            // binary check was reached — exactly the behavior under test.
-        } catch {
-            // Auth/network errors also prove the guard was bypassed.
+        await assertTheGuardLetItThrough(tiers: [.scan], force: false) { line in
+            collector.append(line.text)
         }
 
         XCTAssertFalse(

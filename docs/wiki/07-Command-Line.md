@@ -2,8 +2,10 @@
 
 The app ships an included `jamf-reports` command-line interface. It is the same
 binary as the GUI — when you run it with a recognized subcommand it executes
-headlessly; with no arguments it opens the app. The CLI uses the native Swift
-report engine, so its output matches what the app produces.
+headlessly; with no arguments it opens the app. An unknown first word (one not
+starting with `-`) prints an error and exits non-zero; a flag the system adds
+(`-psn_…`) still opens the app. The CLI uses the native Swift report engine, so its
+output matches what the app produces.
 
 Use it to script report generation, collect snapshots on a schedule of your own,
 or wire report generation into other automation.
@@ -100,7 +102,8 @@ A few behaviors worth knowing:
 - `collect` runs at most once per profile per day; a second run the same day
   exits successfully without re-collecting. Pass `--force` to override.
 - `scaffold` **overwrites** the `--out` file if it already exists — it's an
-  initial-setup command. To safely update an existing `config.yaml`, use the
+  initial-setup command. It copies the existing file to `<out>.bak-<date-time>`
+  first and prints the path on stderr. To safely update an existing `config.yaml`, use the
   app's re-scaffold (which merges non-destructively) instead. This applies whether
   or not `--csv` is given.
 - `collect` tolerates a missing `config.yaml` and proceeds with defaults; `generate`

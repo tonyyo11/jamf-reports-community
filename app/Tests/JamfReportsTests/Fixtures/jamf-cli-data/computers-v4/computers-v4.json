@@ -63,7 +63,8 @@
       "make": "Apple",
       "model": "MacBook Air (M2, 2022)",
       "modelIdentifier": "Mac14,2",
-      "serialNumber": "FXTR0021AA"
+      "serialNumber": "FXTR0021AA",
+      "appleSilicon": true
     },
     "certificates": null,
     "attachments": null,
@@ -141,7 +142,8 @@
       "make": "Apple",
       "model": "MacBook Pro (14-inch, 2023)",
       "modelIdentifier": "Mac14,5",
-      "serialNumber": "FXTR0022AA"
+      "serialNumber": "FXTR0022AA",
+      "appleSilicon": true
     },
     "certificates": null,
     "attachments": null,
@@ -223,7 +225,8 @@
       "make": "Apple",
       "model": "Mac mini (M2, 2023)",
       "modelIdentifier": "Mac14,3",
-      "serialNumber": "FXTR0023AA"
+      "serialNumber": "FXTR0023AA",
+      "appleSilicon": true
     },
     "certificates": null,
     "attachments": null,

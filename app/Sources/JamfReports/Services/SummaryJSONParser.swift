@@ -57,7 +57,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // shared workspace, where "whose collect was this?" is a real
              // diagnostic question — one Mac with a stale CSV or a misconfigured
              // tenant otherwise poisons a pooled history invisibly.
-             collectedByHost
+             collectedByHost,
+             // How `patchPct` was computed. Absent on a summary written before
+             // the device-weighted definition (epic #207 C1).
+             patchPctBasis
     }
 
     var id: String { date }
@@ -129,6 +132,13 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Machine that collected this day's data. Present only on a shared
     /// workspace; nil everywhere else, where the answer is trivially "this Mac".
     let collectedByHost: String?
+    /// `deviceWeightedPatchBasis` when `patchPct` is `Σ on_latest / Σ total` over the
+    /// titles that have devices. Nil on a summary written before 2.9, whose `patchPct`
+    /// is the unweighted mean of each title's percentage — the two do not compare.
+    let patchPctBasis: String?
+
+    /// Value of `patchPctBasis` for the device-weighted definition.
+    static let deviceWeightedPatchBasis = "device"
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
@@ -163,7 +173,8 @@ struct DailySummary: Codable, Identifiable, Sendable {
         mscpBandColumns: [String: String]? = nil,
         collectionSources: [String: String]? = nil,
         mobileDeviceCount: Int? = nil,
-        collectedByHost: String? = nil
+        collectedByHost: String? = nil,
+        patchPctBasis: String? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -194,6 +205,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.collectionSources = collectionSources
         self.mobileDeviceCount = mobileDeviceCount
         self.collectedByHost = collectedByHost
+        self.patchPctBasis = patchPctBasis
     }
 
     init(from decoder: Decoder) throws {
@@ -230,6 +242,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
             [String: String].self, forKey: .collectionSources)
         mobileDeviceCount = try container.decodeIfPresent(Int.self, forKey: .mobileDeviceCount)
         collectedByHost = try container.decodeIfPresent(String.self, forKey: .collectedByHost)
+        patchPctBasis = try container.decodeIfPresent(String.self, forKey: .patchPctBasis)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -263,6 +276,7 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(collectionSources, forKey: .collectionSources)
         try container.encodeIfPresent(mobileDeviceCount, forKey: .mobileDeviceCount)
         try container.encodeIfPresent(collectedByHost, forKey: .collectedByHost)
+        try container.encodeIfPresent(patchPctBasis, forKey: .patchPctBasis)
     }
 }
 

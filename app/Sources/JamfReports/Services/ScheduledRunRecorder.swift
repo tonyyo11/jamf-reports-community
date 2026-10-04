@@ -232,9 +232,17 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         name.range(of: #"\.\d{8}-\d{6}\.log$"#, options: .regularExpression) != nil
     }
 
-    /// Delete recorder-written run logs beyond the newest `keep`. Files not
-    /// matching the recorder naming pattern are never touched.
-    static func pruneRunLogs(in dir: URL, keep: Int) {
+    /// Matches `<label>.<yyyyMMdd-HHmmss>.log` exactly, so a longer label that starts with
+    /// `label` (another profile's schedule) does not.
+    static func isLogName(_ name: String, of label: String) -> Bool {
+        name.hasPrefix(label + ".")
+            && String(name.dropFirst(label.count + 1))
+                .range(of: #"^\d{8}-\d{6}\.log$"#, options: .regularExpression) != nil
+    }
+
+    /// Delete recorder-written run logs beyond the newest `keep`, only `label`'s when given.
+    /// Files not matching the recorder naming pattern are never touched.
+    static func pruneRunLogs(in dir: URL, keep: Int, label: String? = nil) {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: dir,
@@ -243,7 +251,10 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         ) else { return }
 
         let runLogs = entries
-            .filter { isRecorderLogName($0.lastPathComponent) }
+            .filter { url in
+                let name = url.lastPathComponent
+                return label.map { isLogName(name, of: $0) } ?? isRecorderLogName(name)
+            }
             .sorted { lhs, rhs in
                 let lhsDate = (try? lhs.resourceValues(forKeys: [.contentModificationDateKey])
                     .contentModificationDate) ?? .distantPast

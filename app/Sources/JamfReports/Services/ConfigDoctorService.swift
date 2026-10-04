@@ -84,8 +84,12 @@ enum ConfigDoctorService {
             csvFamily: csvFamily,
             eaCoverageNames: eaNames
         )
+        rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
+        rows += readerRows(profile: profile, workspaceRoot: workspaceRoot)
         if let config, parseError == nil {
+            rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
+            rows += securityPolicyRows(profile: profile, config: config)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
@@ -570,6 +574,197 @@ enum ConfigDoctorService {
         return nil
     }
 
+    // MARK: - Unknown keys
+
+    private static let unknownKeyCap = 20
+
+    /// Reads the profile's config.yaml as the decoder sees it, whether or not it decodes: a
+    /// misspelled required key is the likeliest reason it does not. Nothing for a file that is
+    /// missing or is not YAML.
+    static func unknownKeyRows(profile: String, workspaceRoot: URL? = nil) -> [DoctorRow] {
+        guard let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot),
+              let text = try? String(contentsOf: url, encoding: .utf8),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
+        else { return [] }
+        return unknownKeyRows(ConfigSchema.unknownKeys(in: root))
+    }
+
+    /// One warning per unknown key, titled with its key path. The value is never shown: it can
+    /// be a webhook URL under a misspelled key.
+    static func unknownKeyRows(_ keys: [UnknownKey]) -> [DoctorRow] {
+        var rows = keys.prefix(unknownKeyCap).enumerated().map { index, key in
+            DoctorRow(
+                id: "config.unknown_key.\(index)", severity: .warn, title: key.keyPath,
+                detail: "The app does not read this key."
+                    + (key.suggestion.map { " Did you mean \"\($0)\"?" } ?? ""),
+                hint: "Remove it from config.yaml, or check its spelling: keys are case-sensitive."
+            )
+        }
+        if keys.count > unknownKeyCap {
+            let more = keys.count - unknownKeyCap
+            rows.append(DoctorRow(
+                id: "config.unknown_key.more", severity: .warn,
+                title: "More keys the app does not read",
+                detail: "\(more) more key\(more == 1 ? "" : "s") in config.yaml that the app "
+                    + "does not read.",
+                hint: "Fix the keys above, then run the check again to see the rest."
+            ))
+        }
+        return rows
+    }
+
+    // MARK: - What the reader did not take as written
+
+    /// Reads the profile's config.yaml whether or not it decodes: a skipped line can be why it
+    /// does not. Nothing for a file that is missing or is not YAML.
+    static func readerRows(profile: String, workspaceRoot: URL? = nil) -> [DoctorRow] {
+        guard let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot),
+              let text = try? String(contentsOf: url, encoding: .utf8),
+              let document = try? YAMLCodec.decode(text),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
+        else { return [] }
+        return parseNoteRows(document.parseNotes) + fileReadBooleanRows(root)
+    }
+
+    private static let parseNoteCap = 20
+
+    /// One warning per line the reader did not take as written, titled with its line number.
+    static func parseNoteRows(_ notes: [YAMLCodec.ParseNote]) -> [DoctorRow] {
+        var rows = notes.prefix(parseNoteCap).enumerated().map { index, note in
+            DoctorRow(
+                id: "config.parse_note.\(index)", severity: .warn,
+                title: "config.yaml line \(note.line)",
+                detail: note.detail.prefix(1).uppercased() + note.detail.dropFirst() + ".",
+                hint: parseNoteHint(note.kind)
+            )
+        }
+        if notes.count > parseNoteCap {
+            let more = notes.count - parseNoteCap
+            rows.append(DoctorRow(
+                id: "config.parse_note.more", severity: .warn,
+                title: "More lines the app did not read as written",
+                detail: more == 1
+                    ? "1 more line in config.yaml was not read as written."
+                    : "\(more) more lines in config.yaml were not read as written.",
+                hint: "Fix the lines above, then run the check again to see the rest."
+            ))
+        }
+        return rows
+    }
+
+    private static func parseNoteHint(_ kind: YAMLCodec.ParseNote.Kind) -> String {
+        switch kind {
+        case .indentation: "Line it up with the other keys of its block."
+        case .noKey: "Write it as key: value, or remove it."
+        case .tab: "Replace the tab with spaces."
+        case .duplicateKey: "Remove one of the two lines."
+        case .blockScalar: "Put the value on the same line, in quotes."
+        case .orphanItems: "Put the list under the key it belongs to, or remove it."
+        case .unclosedFlow: "Close it on the same line, or put one item per line under the key."
+        case .secondDocument: "Remove the --- line; config.yaml holds one document."
+        }
+    }
+
+    /// true/false keys the decoder does not model. `output.allow_absolute_paths` also takes yes,
+    /// on and 1 (`WorkspacePaths.optIn`); `html.track_history` takes only true and false.
+    static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+        if let value = typedNonBoolean(at: ["output", "allow_absolute_paths"], in: root) {
+            switch WorkspacePaths.optIn(value) {
+            case true?:
+                rows.append(DoctorRow(
+                    id: "config.value.output.allow_absolute_paths", severity: .suggest,
+                    title: "output.allow_absolute_paths",
+                    detail: "\(typedText(value)) opts in, as true does.",
+                    hint: "Write true: the rest of config.yaml reads only true and false."))
+            case false?: break
+            case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
+            }
+        }
+        if let value = typedNonBoolean(at: ["html", "track_history"], in: root) {
+            rows.append(readsAsFalseRow("html.track_history", value))
+        }
+        return rows
+    }
+
+    /// The value at `path` unless it is absent, null, true or false.
+    private static func typedNonBoolean(at path: [String], in root: [String: Any]) -> Any? {
+        guard let value = ConfigLoader.rawValue(at: path, in: root),
+              !(value is NSNull), !(value is Bool) else { return nil }
+        return value
+    }
+
+    private static func typedText(_ value: Any) -> String {
+        ((value as? String) ?? (value as? Int).map { String($0) })
+            .map { "\"\(ConfigSchema.displayText($0))\"" } ?? "This value"
+    }
+
+    private static func readsAsFalseRow(_ keyPath: String, _ value: Any) -> DoctorRow {
+        DoctorRow(
+            id: "config.value.\(keyPath)", severity: .warn, title: keyPath,
+            detail: "\(typedText(value)) is not true or false, so the app reads it as false.",
+            hint: "Write true or false."
+        )
+    }
+
+    // MARK: - Security policy (hand-typed values)
+
+    /// Reads what the workspace's `security_policy:` block says that the app did not use as
+    /// written. Warnings only: a typo must not turn a healthy scheduled run red.
+    static func securityPolicyRows(profile: String, config: ReportConfig) -> [DoctorRow] {
+        let policy = config.resolvedSecurityPolicy
+        let hardware = (try? WorkspacePaths.dataDir(for: profile))
+            .map { HardwareEncryption.index(dataDir: $0, for: policy) } ?? [:]
+        return securityPolicyRows(
+            issues: SecurityPolicyConfigLoader.issues(profile: profile),
+            policy: policy, hardware: hardware)
+    }
+
+    /// One warning per value the app did not use as written, titled with its key path, plus
+    /// one when the hardware rule is set but no Mac has hardware facts yet (the value is valid,
+    /// so it is no issue). A key the app does not read (an empty `used`) is left to
+    /// `unknownKeyRows`, so it is reported once.
+    static func securityPolicyRows(
+        issues: [SecurityPolicyIssue], policy: SecurityControlPolicy, hardware: [String: Bool]
+    ) -> [DoctorRow] {
+        var rows = issues.filter { !$0.used.isEmpty }.enumerated().map { index, issue in
+            DoctorRow(
+                id: "security_policy.issue.\(index)", severity: .warn, title: issue.keyPath,
+                detail: securityPolicyDetail(issue), hint: securityPolicyHint(issue)
+            )
+        }
+        if policy.usesHardwareRule, hardware.isEmpty {
+            rows.append(DoctorRow(
+                id: "security_policy.hardware_facts", severity: .warn,
+                title: "security_policy.filevault_off_hardware_encrypted",
+                detail: "No hardware information yet — the rule applies after an inventory "
+                    + "collect. Until then FileVault off counts at the FileVault level.",
+                hint: "Run a collect for this profile."
+            ))
+        }
+        return rows
+    }
+
+    private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
+        if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
+            return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
+        }
+        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
+            return "\"\(issue.value)\" is not a number from 0 to 100 — using \(issue.used)"
+        }
+        return "\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)"
+    }
+
+    private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
+        if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
+            return "Write it as indented key: value lines in config.yaml, or remove it."
+        }
+        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
+            return "Set it to a number from 0 to 100 in config.yaml, or remove the line."
+        }
+        return "Set it to fail, warning or ignore in config.yaml, or remove the line."
+    }
+
     // MARK: - Column-mapping helpers
 
     private typealias Mapping = (logical: String, column: String)
@@ -577,7 +772,7 @@ enum ConfigDoctorService {
     private static func computerMappings(_ config: ReportConfig) -> [Mapping] {
         guard let columns = config.columns else { return [] }
         return ColumnField.allCases.compactMap { field in
-            columns.columnName(for: field).map { (field.rawValue.snakeCased, $0) }
+            columns.columnName(for: field).map { (field.configKey, $0) }
         }
     }
 
@@ -958,25 +1153,6 @@ extension ConfigDoctorService {
                 hint: nil
             )
         }
-    }
-}
-
-// MARK: - Logical-field naming
-
-private extension String {
-    /// camelCase → snake_case, matching `config.yaml` logical column keys
-    /// (e.g. `operatingSystem` → `operating_system`).
-    var snakeCased: String {
-        var out = ""
-        for ch in self {
-            if ch.isUppercase {
-                out += "_"
-                out += ch.lowercased()
-            } else {
-                out.append(ch)
-            }
-        }
-        return out
     }
 }
 

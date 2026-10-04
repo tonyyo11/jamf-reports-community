@@ -52,7 +52,7 @@ final class GoldenFleetTests: XCTestCase {
             to: dataDir.appendingPathComponent("security", isDirectory: true)
                 .appendingPathComponent("security_\(GoldenFleetClock.stamp(anchor)).json"))
 
-        // Patch titles: compliance_pct 80, 90, 70 → mean 80.0.
+        // Patch titles of 100 devices each at 80, 90 and 70 on latest → 240 / 300 = 80.0.
         try GoldenFleetWorkspace.writePatchStatus(dataDir: dataDir, at: anchor, rows: [
             GoldenFleetWorkspace.patchRow(id: "1", title: "Firefox", onLatest: 80, total: 100),
             GoldenFleetWorkspace.patchRow(id: "2", title: "Chrome", onLatest: 90, total: 100),
@@ -80,7 +80,7 @@ final class GoldenFleetTests: XCTestCase {
         XCTAssertEqual(s.actionItemsP0, 15)
         // P1 = (250-248) = 2
         XCTAssertEqual(s.actionItemsP1, 2)
-        // Unweighted mean of parseable compliance_pct: (80 + 90 + 70) / 3 = 80.0
+        // Device-weighted: (80 + 90 + 70) on latest / (100 + 100 + 100) devices = 80.0
         XCTAssertEqual(try XCTUnwrap(s.patchPct), 80.0, accuracy: 0.001)
         // No device rows and no compliance config → no proxy, no real mSCP.
         XCTAssertNil(s.compliancePct)

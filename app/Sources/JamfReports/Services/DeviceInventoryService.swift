@@ -85,10 +85,16 @@ enum DeviceInventoryService {
             warnings: &warnings
         )
 
-        let devices = merger.records.sorted { lhs, rhs in
-            if lhs.risk != rhs.risk { return riskRank(lhs.risk) > riskRank(rhs.risk) }
-            return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
-        }
+        let policy = SecurityPolicyConfigLoader.load(profile: profile)
+        // Ranked once per device: risk reads five values, and the sort compares many times.
+        let devices = merger.records
+            .map { (record: $0, rank: riskRank($0.risk(policy: policy))) }
+            .sorted { lhs, rhs in
+                if lhs.rank != rhs.rank { return lhs.rank > rhs.rank }
+                return lhs.record.displayName
+                    .localizedStandardCompare(rhs.record.displayName) == .orderedAscending
+            }
+            .map(\.record)
         let uniqueSources = sourceFiles.reduce(into: [String]()) { acc, item in
             if !acc.contains(item) { acc.append(item) }
         }
@@ -100,7 +106,8 @@ enum DeviceInventoryService {
             warnings: warnings,
             generatedAt: formattedDate(newestSourceDate),
             generatedDate: newestSourceDate,
-            isDemo: false
+            isDemo: false,
+            securityPolicy: policy
         )
     }
 
@@ -229,12 +236,14 @@ fileprivate extension DeviceInventoryService {
 
 fileprivate extension DeviceInventoryService {
 
+    /// Reads config.yaml through the engine's loader, so a value reads as the decoder would
+    /// read it.
     static func loadConfigHints(root: URL, warnings: inout [String]) -> ConfigHints {
-        var values: [String: [String: String]] = [:]
+        var values: [String: Any] = [:]
         let configURL = root.appendingPathComponent("config.yaml")
         if let configFile = validatedFile(configURL, root: root),
            let text = readText(configFile, root: root, maxBytes: 256 * 1024, warnings: &warnings) {
-            values = parseSimpleYAML(text)
+            values = (try? ConfigLoader.rawMapping(fromYAML: text)) ?? [:]
         }
 
         let profile = profileName(ofWorkspace: root)
@@ -246,12 +255,13 @@ fileprivate extension DeviceInventoryService {
         return ConfigHints(
             jamfCLIDataDir: jamfCLIDataDir,
             outputDir: resolvedDirectory(
-                values["output"]?["output_dir"],
+                ConfigLoader.rawValue(at: ["output", "output_dir"], in: values) as? String,
                 fallback: "Generated Reports",
                 root: root
             ),
             historicalCSVDir: historicalCSVDir,
-            staleDeviceDays: Int(values["thresholds"]?["stale_device_days"] ?? "") ?? 30
+            staleDeviceDays: ConfigLoader.rawValue(
+                at: ["thresholds", "stale_device_days"], in: values) as? Int ?? 30
         )
     }
 
@@ -262,29 +272,6 @@ fileprivate extension DeviceInventoryService {
             ? URL(fileURLWithPath: value, isDirectory: true)
             : root.appendingPathComponent(value, isDirectory: true)
         return secureURL(candidate, root: root) ?? root.appendingPathComponent(fallback, isDirectory: true)
-    }
-
-    static func parseSimpleYAML(_ text: String) -> [String: [String: String]] {
-        var result: [String: [String: String]] = [:]
-        var section = ""
-        for rawLine in text.components(separatedBy: .newlines) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
-            if !rawLine.hasPrefix(" "), trimmed.hasSuffix(":") {
-                section = String(trimmed.dropLast()).trimmingCharacters(in: .whitespaces)
-                result[section] = result[section] ?? [:]
-                continue
-            }
-            guard !section.isEmpty, let colon = trimmed.firstIndex(of: ":") else { continue }
-            let key = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
-            var value = String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-            if let comment = value.firstIndex(of: "#") {
-                value = String(value[..<comment]).trimmingCharacters(in: .whitespaces)
-            }
-            value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            result[section]?[key] = value
-        }
-        return result
     }
 }
 
@@ -541,9 +528,14 @@ extension DeviceInventoryService {
         record.sip = cell(row, ["System Integrity Protection", "SIP"])
         record.firewall = cell(row, ["Firewall Enabled", "Firewall"])
         record.gatekeeper = cell(row, ["Gatekeeper"])
-        record.bootstrapToken = cell(row, ["Bootstrap Token Escrowed", "Bootstrap Token Allowed"])
+        // Not "Bootstrap Token Allowed": that is whether the server accepts escrow.
+        record.bootstrapToken = cell(row, ["Bootstrap Token Escrowed"])
         record.diskUsage = cell(row, ["Boot Drive Percentage Full", "Disk Usage %"])
         record.failedRules = failureCount(row)
+        record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(
+            appleSilicon: yesNo(cell(row, ["Apple Silicon"])),
+            modelIdentifier: cell(row, ["Model Identifier"]),
+            architecture: cell(row, ["Architecture Type", "Architecture"]))
         return record
     }
 
@@ -586,7 +578,11 @@ extension DeviceInventoryService {
         record.sip = first(flat, ["security.sipStatus", "security.systemIntegrityProtection"])
         record.firewall = first(flat, ["security.firewallEnabled", "operatingSystem.activeDirectoryStatus.firewallEnabled"])
         record.gatekeeper = first(flat, ["security.gatekeeperStatus"])
-        record.bootstrapToken = first(flat, ["security.bootstrapTokenEscrowed", "security.bootstrapTokenAllowed"])
+        // Jamf Pro reports escrow as bootstrapTokenEscrowedStatus; the older key only for
+        // snapshots that carry it. bootstrapTokenAllowed says escrow is allowed, not done.
+        record.bootstrapToken = first(
+            flat, ["security.bootstrapTokenEscrowedStatus", "security.bootstrapTokenEscrowed"])
+        record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
         return record
     }
 
@@ -987,6 +983,16 @@ private extension DeviceInventoryService {
         if let bool = value as? Bool { return bool }
         let text = clean(value)?.lowercased() ?? ""
         return ["true", "yes", "1", "managed", "stale"].contains(text)
+    }
+
+    /// Jamf's CSV `Apple Silicon` column: Yes or No. Nil for anything else, so an empty
+    /// cell leaves the model and architecture to decide.
+    static func yesNo(_ text: String) -> Bool? {
+        switch text.lowercased() {
+        case "yes", "true": true
+        case "no", "false": false
+        default: nil
+        }
     }
 
     static func managedLabel(_ value: String) -> String {

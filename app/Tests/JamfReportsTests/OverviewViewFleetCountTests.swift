@@ -18,7 +18,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
 
     func testInstalledLabelUsesProvidedFleetCount() {
         let label = agentInstalledOverTotalLabel(installed: 47, fleetCount: 100)
-        XCTAssertEqual(label, "47 / 100",
+        XCTAssertEqual(label, "47 of 100 Macs",
                        "Inline progress label must use the provided fleetCount, not a hardcoded value")
     }
 
@@ -28,7 +28,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
         // every agent which is internally inconsistent with the rest of
         // demo mode (Recent Activity card line 478 shows "of 524").
         let label = agentInstalledOverTotalLabel(installed: 488, fleetCount: 524)
-        XCTAssertEqual(label, "488 / 524")
+        XCTAssertEqual(label, "488 of 524 Macs")
         XCTAssertFalse(label.contains("502"),
                        "Demo-mode label must reflect the actual demo fleet total (524), not a stale 502")
     }
@@ -105,9 +105,9 @@ final class OverviewViewFleetCountTests: XCTestCase {
     // nonsensical "47 / 0" or "across 0 active devices".
 
     func testInstalledLabelDropsDenominatorWhenFleetUnknown() {
-        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: 0), "47",
-                       "fleetCount=0 must render the count alone, not '47 / 0'")
-        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: -1), "47",
+        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: 0), "47 Macs",
+                       "fleetCount=0 must render the count alone, not '47 of 0 Macs'")
+        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: -1), "47 Macs",
                        "Negative fleetCount is treated as unknown")
     }
 
@@ -126,6 +126,15 @@ final class OverviewViewFleetCountTests: XCTestCase {
                        "Must not announce 'of 0 installed' when fleet is unknown: '\(label)'")
         XCTAssertFalse(label.contains("not installed"),
                        "Gap clause must be omitted when fleet is unknown: '\(label)'")
+    }
+
+    /// The card printed "0 not installed" under an at-risk agent when its denominator was
+    /// unknown, which reads as a finding.
+    func testNotInstalledLineIsOmittedWithoutAGap() {
+        XCTAssertNil(agentNotInstalledLabel(installed: 47, fleetCount: 0))
+        XCTAssertNil(agentNotInstalledLabel(installed: 10, fleetCount: 10))
+        XCTAssertNil(agentNotInstalledLabel(installed: 12, fleetCount: 10))
+        XCTAssertEqual(agentNotInstalledLabel(installed: 47, fleetCount: 100), "53 not installed")
     }
 
     func testFailingRulesSubtitleDropsAcrossClauseWhenFleetUnknown() {

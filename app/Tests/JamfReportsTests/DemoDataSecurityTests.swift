@@ -331,19 +331,47 @@ final class DemoDataSecurityTests: XCTestCase {
             + (controls.total - controls.firewall)
         XCTAssertEqual(p0, 53)
         XCTAssertEqual(controls.total - controls.gatekeeper, 12)
+        let fleet = DemoData.securityPostureSnapshot.fleetCounts
+        XCTAssertEqual(fleet.p0, p0)
+        XCTAssertEqual(fleet.p1, 12)
+        XCTAssertEqual(fleet.totalDevices, DemoData.totalDevices)
+        XCTAssertEqual(DemoData.securityPostureSnapshot.policy, .default)
     }
 
     /// The ring's value with the default weights. The Overview's Security Score
     /// card ends on `DemoData.trends[.securityScore]`, which should match it.
     func testSecurityScoreRingWithDefaultWeights() throws {
+        let snapshot = DemoData.securityPostureSnapshot
         let score = SecurityScoreCalculator.score(
-            input: SecurityScoreCalculator.input(from: DemoData.securityPostureSnapshot),
-            weights: .defaultWeights)
+            input: snapshot.fleetCounts.scoreInput(),
+            weights: snapshot.policy.effectiveScoreWeights(.defaultWeights))
         XCTAssertEqual(score.value, 96.6, accuracy: 0.001)
         XCTAssertEqual(score.grade, .aPlus)
         XCTAssertEqual(score.available, [.fileVault, .sip, .firewall])
         let overviewScore = try XCTUnwrap(DemoData.trends[.securityScore]?.last)
         XCTAssertEqual(overviewScore, score.value, accuracy: 0.05)
+    }
+
+    /// The SIP, Firewall and Gatekeeper cards end on the shares of the 524 Macs
+    /// the Security Posture screen counts (100.0, 482 of 524, 512 of 524), and
+    /// no earlier week claims more than the whole fleet.
+    func testSecurityControlTrendsEndOnTheFleetsShares() throws {
+        let controls = DemoData.securityControls
+        XCTAssertEqual(controls.total, DemoData.totalDevices)
+        let expected: [(TrendSeries.Metric, Int, Double)] = [
+            (.sip, controls.sip, 100.0),
+            (.firewall, controls.firewall, 92.0),
+            (.gatekeeper, controls.gatekeeper, 97.7),
+        ]
+        for (metric, count, share) in expected {
+            let series = try XCTUnwrap(DemoData.trends[metric], "\(metric)")
+            XCTAssertEqual(series.count, DemoData.totalDevicesTrend.count, "\(metric)")
+            XCTAssertEqual(series.last, share, "\(metric)")
+            XCTAssertEqual(
+                series.last ?? 0, Double(count) / Double(controls.total) * 100,
+                accuracy: 0.05, "\(metric)")
+            XCTAssertTrue(series.allSatisfy { $0 <= 100 }, "\(metric) exceeds the fleet")
+        }
     }
 
     // MARK: - Compliance Posture

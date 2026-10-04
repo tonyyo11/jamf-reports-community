@@ -10,9 +10,9 @@ let package = Package(
         .executable(name: "JamfReports", targets: ["JamfReports"])
     ],
     dependencies: [
-        // ZIPFoundation — pure-Swift ZIP creation for the OOXML (.xlsx) writer
-        // and validator. Required by `Engine/OOXMLWriter.swift` and
-        // `Engine/Validators/XLSXValidator.swift`.
+        // ZIPFoundation — pure-Swift ZIP creation for the OOXML (.xlsx) writer.
+        // Required by `Engine/OOXMLWriter.swift`; the tests also read workbooks
+        // back with it (`Tests/JamfReportsTests/XLSXValidator.swift`).
         .package(url: "https://github.com/weichsel/ZIPFoundation", from: "0.9.20"),
         // swift-argument-parser — subcommand parsing for the included `jamf-reports`
         // CLI (Sources/JamfReports/CLI/). Apple-official; resolves to the latest 1.x.

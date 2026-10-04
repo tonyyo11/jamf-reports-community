@@ -812,31 +812,6 @@ final class OnboardingFlow {
         return data
     }
 
-    /// Sanitize a human-readable display name into a valid profile slug.
-    /// "Jamf Platform" → "jamf-platform", "My Tenant!" → "my-tenant"
-    static func slugify(_ name: String) -> String {
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
-        let lowered = name.lowercased()
-        let result = lowered.unicodeScalars.map { scalar -> Character in
-            if allowed.contains(scalar) {
-                return Character(scalar)
-            } else if scalar == "_" || scalar.value == 0x20 {
-                return "-"
-            } else {
-                return "-"
-            }
-        }
-        // Collapse consecutive hyphens and strip leading/trailing hyphens.
-        var slug = String(result).components(separatedBy: "-")
-            .filter { !$0.isEmpty }
-            .joined(separator: "-")
-        // Ensure first char is lowercase letter or digit.
-        if let first = slug.first, !first.isLowercase && !first.isNumber {
-            slug = "profile-" + slug
-        }
-        return slug.isEmpty ? "profile" : slug
-    }
-
     func validateRegisteredProfile() async {
         validationOutput.removeAll()
         validationExitCode = nil
@@ -925,6 +900,8 @@ final class OnboardingFlow {
             defer { isScaffoldingCSV = false }
 
             let outputConfig = workspace.appendingPathComponent("config.yaml")
+            // It may be a config.yaml typed by hand, so it is copied aside first.
+            try keepCopy(of: outputConfig)
             // Remove any prior attempt or skip-seeded config so the user can
             // re-enter the mapping step without leaving a half-written file.
             try? FileManager.default.removeItem(at: outputConfig)
@@ -986,6 +963,7 @@ final class OnboardingFlow {
         let outputConfig = workspace.appendingPathComponent("config.yaml")
         csvOutput.append(.init(timestamp: Date(), level: .info, text: "[info] writing minimal config.yaml…"))
         do {
+            try keepCopy(of: outputConfig)
             try ScaffoldService.writeMinimalConfig(to: outputConfig, profile: profile)
             csvOutput.append(.init(
                 timestamp: Date(), level: .ok,
@@ -996,6 +974,15 @@ final class OnboardingFlow {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// Copies an existing config.yaml aside before setup replaces it, and says where.
+    private func keepCopy(of config: URL) throws {
+        guard let backup = try ConfigService.backUp(config) else { return }
+        csvOutput.append(.init(
+            timestamp: Date(), level: .info,
+            text: "[info] kept a copy of the existing config.yaml as \(backup.lastPathComponent)"
+        ))
     }
 
     /// One first-report stage (collect or generate) for a profile, streaming log lines.

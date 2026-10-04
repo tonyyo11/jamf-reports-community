@@ -95,7 +95,7 @@ final class ReportEngineTests: XCTestCase {
         let outURL = dataDir.appendingPathComponent("out.xlsx")
 
         do {
-            try await engine.generate(csvURL: nil, outputURL: outURL)
+            try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
             XCTFail("Expected snapshotIntegrityViolation, generate returned cleanly")
         } catch let ReportEngineError.snapshotIntegrityViolation(summary, _) {
             XCTAssertEqual(summary.mismatch, 1)
@@ -130,7 +130,7 @@ final class ReportEngineTests: XCTestCase {
 
         // Should NOT throw snapshotIntegrityViolation. May skip sheets due
         // to schema mismatch — the test goal is "didn't pre-flight-abort."
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Workbook should be written when only .absent results exist")
     }
@@ -243,7 +243,7 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outURL = dataDir.appendingPathComponent("out.xlsx")
 
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Permissive mode must not abort on mismatch")
     }
@@ -277,7 +277,7 @@ final class ReportEngineTests: XCTestCase {
         }
 
         let capture = LogCapture()
-        try ReportEngine.testableSaveSnapshot(
+        try ReportEngine.saveSnapshot(
             data: Data(#"{"ok":true}"#.utf8), kind: kind, dataDir: dataDir,
             recordManifest: true, onLine: { capture.append($0) }
         )
@@ -316,7 +316,7 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: config, dataDir: emptyDir)
         let outURL = emptyDir.appendingPathComponent("out.xlsx")
 
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Workbook with Cover sheet should be produced even without data")
     }
@@ -347,7 +347,7 @@ final class ReportEngineTests: XCTestCase {
 
         let engine = ReportEngine(config: config, dataDir: emptyDataDir)
         // CSV-only: no CoreDashboard data, but should succeed because CSV provides sheets.
-        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL)
+        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL, locateJamfCLI: { nil })
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
         let data = try Data(contentsOf: outURL)
@@ -371,7 +371,7 @@ final class ReportEngineTests: XCTestCase {
         let outURL = emptyDir.appendingPathComponent("out.xlsx")
 
         do {
-            try await engine.generate(csvURL: badCSV, outputURL: outURL)
+            try await engine.generate(csvURL: badCSV, outputURL: outURL, locateJamfCLI: { nil })
             XCTFail("Expected csvParseFailed error")
         } catch ReportEngineError.csvParseFailed {
             // Expected.
@@ -724,23 +724,6 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertTrue(CLIBridge.isSafeDeviceIdentifier("123"))
     }
 
-    // MARK: - P3: why XLSXValidator is not wired into generate()
-
-    // `XLSXValidator` has no production call sites. The reason, recorded here
-    // rather than as a test: it treats a sheet with no row elements as invalid
-    // (deliberately — see `testXLSXValidatorDetectsEmptySheetData`), while a
-    // full-instance report with real tenant data legitimately contains empty
-    // sheets, so wiring it as-is would warn on every genuine generate.
-    //
-    // An earlier version of this asserted that engine output DOES trip that
-    // rule. It passed locally and failed on CI, because whether the generated
-    // workbook happens to contain an empty sheet depends on the data present,
-    // not on the code — CI runs with none. That made it a test of incidental
-    // output, so it was removed rather than made conditional. The design
-    // question it guarded (is an empty sheet legitimate output?) is a product
-    // decision; if it is ever answered "no", the validator can be wired and
-    // this comment deleted.
-
     // MARK: - Helpers
 
     /// Thread-safe collector for `@Sendable` log-line closures so Swift 6
@@ -878,5 +861,25 @@ final class ReportEngineTests: XCTestCase {
                        "device-compliance has a file but was not in liveKinds → must be 'cache'")
         XCTAssertEqual(sources["patch-status"], "absent",
                        "patch-status has no snapshot → must be 'absent'")
+    }
+
+    // MARK: - initializeWorkspace default config
+
+    func testInitializeWorkspaceDefaultConfigLeavesOptionalColumnsOut() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReportEngineTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try ReportEngine.initializeWorkspace(
+            profile: "init-default", workspacesRoot: root, seedConfigURL: nil, onLine: { _ in })
+
+        let configURL = root.appendingPathComponent("init-default/config.yaml")
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("computer_name: \"\""))
+        for key in ConfigState.optionalColumnKeys {
+            XCTAssertFalse(text.contains("\(key):"), "\(key) must not be written empty")
+        }
+        XCTAssertNoThrow(try ConfigLoader.load(from: configURL))
     }
 }

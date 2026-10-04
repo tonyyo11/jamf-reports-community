@@ -597,11 +597,7 @@ struct OverviewView: View {
         }
 
         let freshnessDecision = await Task.detached(priority: .utility) {
-            guard ProfileService.isValid(profile),
-                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-                return SnapshotFreshness.Decision.noSnapshots
-            }
-            return SnapshotFreshness.evaluate(dataDir: dataDir)
+            SnapshotFreshness.evaluate(profile: profile)
         }.value
 
         let shouldSkipCollect: Bool
@@ -640,6 +636,14 @@ struct OverviewView: View {
                 }
             }
 
+            // F3: GUI-only AI executive narrative, time-boxed (nil = section omitted). Both
+            // branches ask the same way; the collect branch asks after its collect, so the
+            // paragraph describes the snapshots the report is built from.
+            let makeNarrative: () async -> String? = {
+                if workspace.demoMode { return nil }
+                return await ReportNarrative.makeForGUIGenerate(profile: profile)
+            }
+
             let exit: Int32
             if shouldSkipCollect {
                 // Emit a durable-intent message through the live log channel so the
@@ -656,8 +660,7 @@ struct OverviewView: View {
                 await MainActor.run { workspace.globalStatus = skipMessage }
                 AppLogger.cli.info("\(skipMessage, privacy: .public)")
 
-                // F3: GUI-only AI executive narrative, time-boxed (nil = section omitted).
-                let narrative = workspace.demoMode ? nil : await ReportNarrative.makeForGUIGenerate(profile: profile)
+                let narrative = await makeNarrative()
                 exit = try await bridge.generate(profile: profile, csvPath: nil, aiNarrative: narrative) { [weak workspace] line in
                     Task { @MainActor in
                         guard let workspace, self.isRunning else { return }
@@ -668,7 +671,9 @@ struct OverviewView: View {
                     }
                 }
             } else {
-                exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
+                exit = try await bridge.collectThenGenerate(
+                    profile: profile, csvPath: nil, narrative: makeNarrative
+                ) { [weak workspace] line in
                     Task { @MainActor in
                         guard let workspace, self.isRunning else { return }
                         // PR-15: capture T-13 SHA-256 fingerprints from the live log
@@ -704,10 +709,18 @@ struct OverviewView: View {
             }
         } catch {
             workspace.globalStatus = nil
-            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
-            workspace.toast = Toast(message: "Generate failed — \(error.localizedDescription)", style: .danger)
+            // The bridge logs a refusal itself, as a notice.
+            if (error as? CLIBridgeError) != .tickLockHeld {
+                AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            }
+            workspace.toast = Self.generateFailureToast(error)
             generatedHashes.removeAll()
         }
+    }
+
+    /// A scheduled run holding the tick lock is a refusal, shown as information.
+    nonisolated static func generateFailureToast(_ error: Error) -> Toast {
+        WorkspaceStore.collectFailureToast(error, operation: "Generate")
     }
 
     /// Format the first artifact's 12-char short fingerprint for the toast.
@@ -726,7 +739,7 @@ struct OverviewView: View {
     private var renderedSections: [OverviewSection] {
         workspace.overviewLayout.visible.filter { section in
             switch section {
-            case .aiInsight: return !workspace.demoMode && ModelAvailability.platformSupported
+            case .aiInsight: return AIInsightCard.isOffered(demoMode: workspace.demoMode)
             case .workspaceStatus: return !workspace.demoMode
             default: return true
             }
@@ -786,8 +799,16 @@ struct OverviewView: View {
     /// Why a section has nothing to show on this profile; nil when it has.
     /// Demo mode always has content.
     private func unavailableReason(_ section: OverviewSection) -> OverviewUnavailable? {
-        if section == .scoreCards, workspace.selectedScoreCards.isEmpty {
-            return OverviewUnavailable(reason: "No score cards are selected.")
+        if section == .scoreCards {
+            if workspace.selectedScoreCards.isEmpty {
+                return OverviewUnavailable(reason: "No score cards are selected.")
+            }
+            if offeredScoreCards.isEmpty {
+                return OverviewUnavailable(
+                    reason: "Every selected score card is a control the security policy "
+                        + "does not count. Its levels are on Config › Scoring.",
+                    remedy: .config)
+            }
         }
         guard !workspace.demoMode else { return nil }
         switch section {
@@ -876,17 +897,23 @@ struct OverviewView: View {
         return "\(workspace.profile)|\(workspace.demoMode)|\(sections)"
     }
 
-    /// Reads the data-driven sections off the main thread, like the trend scan.
+    /// Reads the data-driven sections off the main thread, in the calling task:
+    /// `.task(id:)` cancels a read whose profile or sections went out of date.
     private func loadLiveSectionsOffMain() async {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let sections = visibleLiveSections
-        let fleet = overviewFleetCount
-        let data = await Task.detached(priority: .userInitiated) {
-            OverviewLiveDataLoader.load(profile: profile, sections: sections, fleetCount: fleet)
-        }.value
-        // A profile switch mid-read must not paint the previous tenant's data.
-        guard profile == workspace.profile, !workspace.demoMode else { return }
+        let data: OverviewLiveData
+        do {
+            data = try await OverviewLiveDataLoader.load(profile: profile, sections: sections)
+        } catch {
+            // Only cancellation is thrown; the read that replaced this one paints.
+            return
+        }
+        // A read started before a profile switch or a Customize change must not paint:
+        // the refresh paths run in plain Tasks that `.task(id:)` does not cancel.
+        guard !Task.isCancelled, profile == workspace.profile, !workspace.demoMode,
+              sections == visibleLiveSections else { return }
         live = data
         liveLoaded = true
     }
@@ -925,19 +952,15 @@ struct OverviewView: View {
         return workspace.complianceBenchmarkLabel ?? "Compliance Benchmark"
     }
 
-    /// Live coverage is re-expressed against the fleet count the cards print
-    /// ("installed / fleet") once the trend summaries have loaded.
+    /// The Macs the failing-rules card counted: the demo fleet, or live, the
+    /// Macs whose results it read.
+    private var failingRulesMacCount: Int {
+        workspace.demoMode ? DemoData.totalDevices : live.failingRulesReportingMacs
+    }
+
     private var agents: [SecurityAgent] {
         guard !workspace.demoMode else { return DemoData.securityAgents }
-        let fleet = overviewFleetCount
-        guard fleet > 0 else { return live.agents }
-        return live.agents.map { agent in
-            SecurityAgent(
-                name: agent.name, installed: agent.installed,
-                pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
-                    ?? agent.pct,
-                column: agent.column, trend: agent.trend)
-        }
+        return OverviewLiveDataLoader.agents(live.agents, overFleet: overviewFleetCount)
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -949,15 +972,19 @@ struct OverviewView: View {
     // MARK: - Sections
 
     /// v2.5 (macOS 27, opt-in): the daily digest as a plain-language insight.
-    /// `platformSupported` is a synchronous, config-free check, so a Mac that
-    /// cannot run it never lists or renders this section.
+    /// The card hides itself where `AIInsightCard.isOffered` is false and while
+    /// `ai.enabled` is off.
     private var aiInsightCard: some View {
-        AIInsightCard(
-            profile: workspace.profile,
-            current: trendStore.filteredSummaries.last,
-            previous: trendStore.filteredSummaries.count >= 2
-                ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
-                : nil
+        let summaries = trendStore.filteredSummaries
+        return AIInsightCard(
+            title: "AI Fleet Insight",
+            idleText: "Turn today's fleet data into a plain-language summary using "
+                + "on-device intelligence.",
+            provenanceText: "AI-generated from the daily digest — verify against the tiles below.",
+            input: summaries.last.map { current in
+                .fleet(current: current, previous: summaries.count >= 2
+                    ? FleetReportEmitter.priorSummary(summaries, lookbackDays: 1) : nil)
+            }
         )
     }
 
@@ -1004,7 +1031,7 @@ struct OverviewView: View {
     /// tops out of line.
     private var statRow: some View {
         EqualHeightTileGrid(minTileWidth: 220) {
-            ForEach(workspace.selectedScoreCards) { metric in
+            ForEach(offeredScoreCards) { metric in
                 let hasData = !metricValues(metric).isEmpty
                 let isDanger = hasData && scoreCardTrend(for: metric) == .down && metric != .stale
                 Button {
@@ -1021,6 +1048,12 @@ struct OverviewView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// The selection without the cards whose control the security policy does not
+    /// count. The stored selection is not edited, so a card returns with its control.
+    private var offeredScoreCards: [TrendSeries.Metric] {
+        workspace.selectedScoreCards.filter { $0.isOffered(under: workspace.securityPolicy) }
     }
 
     private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
@@ -1101,9 +1134,6 @@ struct OverviewView: View {
         // range the operator picked does not change which day it lands on.
         // Naming the day is both shorter and true.
         //
-        // Patch compliance in the daily summary is the average of per-title
-        // percentages, while the Patch screen's figure is device-weighted; the
-        // caption keeps the two from reading as a contradiction (epic #207 C1).
         // A card with no value says so rather than showing a bare "--".
         let subText: String? = {
             guard lastValue != nil else { return "Not reported by this profile" }
@@ -1111,9 +1141,6 @@ struct OverviewView: View {
             if metric == .activeDevices {
                 let days = Int(workspace.configState.staleDeviceDays) ?? 30
                 parts.append("Checked in within \(days)d")
-            }
-            if metric == .patch {
-                parts.append("Avg per title")
             }
             if values.count >= 2, let comparisonDate {
                 parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
@@ -1206,7 +1233,7 @@ struct OverviewView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             SectionHeader(title: "Top Failing Rules")
                             Text(failingRulesSubtitle(
-                                baseline: failingRulesLabel, fleetCount: overviewFleetCount))
+                                baseline: failingRulesLabel, fleetCount: failingRulesMacCount))
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
@@ -1618,7 +1645,8 @@ struct OverviewView: View {
     }
 
     private func securityAgentDetail(_ agent: SecurityAgent) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let fleet = overviewFleetCount
+        return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: agent.name,
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
@@ -1627,7 +1655,8 @@ struct OverviewView: View {
             )
             HStack(spacing: 12) {
                 StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
-                StatTile(label: "Installed", value: "\(agent.installed)", sub: overviewFleetCount > 0 ? "of \(overviewFleetCount) tracked devices" : "tracked devices")
+                StatTile(label: "Installed", value: "\(agent.installed)",
+                         sub: fleet > 0 ? "of \(fleet) tracked devices" : "tracked devices")
                 StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
             }
             Card(padding: 18) {
@@ -1738,6 +1767,8 @@ struct OverviewView: View {
             "Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution."
         case .managedDevices:
             "Historical computers-vs-mobile split. Open Devices or Mobile Fleet to inspect current records."
+        case .sip, .firewall, .gatekeeper:
+            "Open Security Posture for the per-control breakdown."
         }
         return Text(text)
             .font(.footnote)
@@ -1756,6 +1787,8 @@ struct OverviewView: View {
             return [.devices, .config]
         case .managedDevices:
             return [.devices, .mobileFleet]
+        case .sip, .firewall, .gatekeeper:
+            return [.securityPosture, .devices]
         }
     }
 
@@ -1994,7 +2027,8 @@ struct AgentCardView: View {
         let barColor: Color = pct > 90 ? Theme.Colors.ok :
                               pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
         let trackColor: Color = isAtRisk ? Theme.Colors.warn.opacity(0.15) : Color.white.opacity(0.05)
-        let gap = max(0, fleetCount - agent.installed)
+        let notInstalled = agentNotInstalledLabel(
+            installed: agent.installed, fleetCount: fleetCount)
 
         return VStack(alignment: .leading, spacing: 4) {
             Text(agent.name).font(.footnote.weight(.semibold))
@@ -2020,8 +2054,8 @@ struct AgentCardView: View {
             }
             .padding(.top, 4)
             .accessibilityHidden(true)
-            if isAtRisk {
-                Mono(text: "\(gap) not installed", size: 10, color: Theme.Text.tertiary(contrast))
+            if isAtRisk, let notInstalled {
+                Mono(text: notInstalled, size: 10, color: Theme.Text.tertiary(contrast))
                     .padding(.top, 2)
             }
         }
@@ -2054,13 +2088,14 @@ struct AgentCardView: View {
 // take the fleet count as an explicit parameter — a future hardcode
 // would fail `OverviewViewFleetCountTests`.
 
-/// Inline label rendered as "<installed> / <fleetCount>" beside an
-/// agent's coverage percentage. `fleetCount <= 0` signals "fleet total
-/// unknown" (e.g. live mode before any trend snapshot lands) — render
-/// the count alone rather than nonsensical "47 / 0".
+/// Inline label rendered as "<installed> of <fleetCount> Macs" beside an
+/// agent's coverage percentage, so the card says what the share is of: every
+/// Mac, as the daily summary counts it. `fleetCount <= 0` signals "fleet total
+/// unknown" (e.g. live mode before any trend snapshot lands) — render the
+/// count alone rather than nonsensical "47 of 0 Macs".
 func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return "\(installed)" }
-    return "\(installed) / \(fleetCount)"
+    guard fleetCount > 0 else { return "\(installed) Macs" }
+    return "\(installed) of \(fleetCount) Macs"
 }
 
 /// Composite accessibility label announcing coverage and gap.
@@ -2075,9 +2110,19 @@ func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> Strin
         parts.append("\(agent.installed) installed")
     }
     if agent.trend == .up { parts.append("trending up") }
-    let gap = max(0, fleetCount - agent.installed)
-    if fleetCount > 0, gap > 0 { parts.append("\(gap) not installed") }
+    if let notInstalled = agentNotInstalledLabel(
+        installed: agent.installed, fleetCount: fleetCount) {
+        parts.append(notInstalled)
+    }
     return parts.joined(separator: ", ")
+}
+
+/// "<N> not installed" under an at-risk agent card; nil when the denominator is
+/// unknown or nothing is missing, where "0 not installed" read as a finding.
+func agentNotInstalledLabel(installed: Int, fleetCount: Int) -> String? {
+    let gap = fleetCount - installed
+    guard fleetCount > 0, gap > 0 else { return nil }
+    return "\(gap) not installed"
 }
 
 /// "Top Failing Rules" card subtitle — "<baseline> · across <N> active devices".

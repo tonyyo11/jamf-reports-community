@@ -1,19 +1,6 @@
 import Foundation
 import ZIPFoundation
 
-// MARK: - Errors
-
-enum OOXMLError: Error, LocalizedError {
-    case archiveCreationFailed(URL)
-
-    var errorDescription: String? {
-        switch self {
-        case .archiveCreationFailed(let url):
-            return "Failed to create XLSX archive at \(url.path)"
-        }
-    }
-}
-
 // MARK: - Cell value
 
 /// A sanitized, formula-injection-safe cell value.
@@ -55,13 +42,16 @@ enum CellValue: Sendable {
         }
     }
 
-    /// Strip C0 (keeping tab, LF, CR) and C1. Broader than XML 1.0 requires —
-    /// C1 is legal there — so cell values and sheet names sanitize identically.
+    /// Strip C0 (keeping tab, LF, CR), C1, and U+FFFE/U+FFFF, which XML 1.0 forbids.
+    /// Broader than XML 1.0 requires — C1 is legal there — so cell values and sheet
+    /// names sanitize identically. A String holds no unpaired surrogates, so none
+    /// can reach here.
     static func stripControlCharacters(_ raw: String) -> [Unicode.Scalar] {
         raw.unicodeScalars.filter { scalar in
             let v = scalar.value
             let isControl = (v <= 0x1F && v != 0x09 && v != 0x0A && v != 0x0D)
                 || (v >= 0x7F && v <= 0x9F)
+                || v == 0xFFFE || v == 0xFFFF
             return !isControl
         }
     }
@@ -308,6 +298,15 @@ final class Workbook: @unchecked Sendable {
     func sheet(named name: String) -> Worksheet? {
         let sanitized = sanitizeSheetName(name)
         return sheets.first { $0.name == sanitized }
+    }
+
+    /// Keeps and orders the tabs as `sheets` in config.yaml says. Typed names are cleaned the
+    /// way `addSheet` cleans a tab name, so a custom EA name past 31 characters still matches.
+    func arrange(by settings: SheetsConfig) {
+        func asWritten(_ names: [String]?) -> [String]? { names?.map(sanitizeSheetName) }
+        let typed = SheetsConfig(only: asWritten(settings.only), skip: asWritten(settings.skip),
+                                 order: asWritten(settings.order))
+        sheets = typed.applyTo(sheets.map { (name: $0.name, write: $0) }).map(\.write)
     }
 
     /// Write the workbook to `url` atomically using a temp file + `replaceItem`.
@@ -587,9 +586,11 @@ final class Workbook: @unchecked Sendable {
         return xml
     }
 
+    /// `#RGB` is spread to `RRGGBB`: the styles part takes six digits after the alpha.
     private func rgbFromHex(_ hex: String) -> String {
         let clean = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        return clean.uppercased()
+        let digits = clean.count == 3 ? clean.map { "\($0)\($0)" }.joined() : clean
+        return digits.uppercased()
     }
 
     // MARK: - Shared strings

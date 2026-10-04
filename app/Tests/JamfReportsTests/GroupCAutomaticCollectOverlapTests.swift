@@ -30,7 +30,7 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         }
         let store = WorkspaceStore(demoMode: false, tickerRegistrar: StubTickerRegistrar())
         store.profile = profile
-        store.tickLockHeldElsewhere = { false }
+        _ = useTemporaryTickLock()
         return (store, workspace)
     }
 
@@ -72,13 +72,13 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         defer { AutomationHealthModel.shared.freshnessIssues = [] }
         let spy = CollectSpy()
 
-        store.tickLockHeldElsewhere = { true }
-        let deferred = await store.remediateStaleDataIfNeeded(collect: spy.remediation)
-        XCTAssertFalse(deferred)
-        XCTAssertTrue(spy.profiles.isEmpty)
-        XCTAssertNil(remediationMarker.lastStampedDay(in: workspace))
+        try await whileAnotherProcessHolds(CLIBridge.tickLock()) {
+            let deferred = await store.remediateStaleDataIfNeeded(collect: spy.remediation)
+            XCTAssertFalse(deferred)
+            XCTAssertTrue(spy.profiles.isEmpty)
+            XCTAssertNil(remediationMarker.lastStampedDay(in: workspace))
+        }
 
-        store.tickLockHeldElsewhere = { false }
         let attempted = await store.remediateStaleDataIfNeeded(collect: spy.remediation)
         XCTAssertTrue(attempted)
         XCTAssertEqual(spy.profiles, [profile])
@@ -147,13 +147,13 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         let spy = CollectSpy()
         let now = day(2)
 
-        store.tickLockHeldElsewhere = { true }
-        let deferred = await store.catchUpCollectIfNeeded(
-            policy: managedFreshness, now: now, collect: spy.catchUp)
-        XCTAssertFalse(deferred)
-        XCTAssertTrue(spy.profiles.isEmpty)
+        try await whileAnotherProcessHolds(CLIBridge.tickLock()) {
+            let deferred = await store.catchUpCollectIfNeeded(
+                policy: managedFreshness, now: now, collect: spy.catchUp)
+            XCTAssertFalse(deferred)
+            XCTAssertTrue(spy.profiles.isEmpty)
+        }
 
-        store.tickLockHeldElsewhere = { false }
         let attempted = await store.catchUpCollectIfNeeded(
             policy: managedFreshness, now: now, collect: spy.catchUp)
         XCTAssertTrue(attempted)

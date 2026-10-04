@@ -296,7 +296,7 @@ extension WorkspaceStore {
     /// issues to the shared health model, and (once per day) post an overdue
     /// webhook digest when `notify:` is usable. No-op in demo mode. Cheap enough
     /// to call on every reconcile / launch.
-    func refreshAutomationHealth() async {
+    func refreshAutomationHealth(now: Date = Date()) async {
         guard !demoMode else {
             AutomationHealthModel.shared.issues = []
             return
@@ -320,14 +320,21 @@ extension WorkspaceStore {
                 policy: AutomationPolicy.current(),
                 hasHandBuilt: !ScheduleStore().load().isEmpty)
             let inputs = LaunchAgentService.filterHealthInputs(
-                LaunchAgentService.healthInputs(schedules: schedules, statusProfile: profile),
+                LaunchAgentService.healthInputs(
+                    schedules: schedules, statusProfile: profile, now: now),
                 forProfile: profile)
             return (status: status,
                     issues: AutomationHealth.evaluate(
-                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker))
+                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now))
         }.value
         tickerStatus = evaluated.status
-        let issues = evaluated.issues
+        // While this process holds the tick lock, and until the wake it turned away has had
+        // its turn, a schedule that came due is waiting, not missed; while a tick holds it,
+        // the schedule is running. Neither the banner nor the digest calls it overdue.
+        let waiting = CLIBridge.tickLockHeldRecently(now: now) || CLIBridge.tickLockHeldElsewhere()
+        let issues = waiting
+            ? evaluated.issues.filter { $0.kind != .overdue }
+            : evaluated.issues
         AutomationHealthModel.shared.issues = issues
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
@@ -359,8 +366,10 @@ extension WorkspaceStore {
         }
         let profile = self.profile
         let jamfCLIVersion = self.jamfCLIVersion
+        let resolveAuth = resolveAuthMethod
         let issues = await Task.detached(priority: .utility) {
-            Self.evaluateFreshness(profile: profile, jamfCLIVersion: jamfCLIVersion)
+            Self.evaluateFreshness(
+                profile: profile, jamfCLIVersion: jamfCLIVersion, resolveAuth: resolveAuth)
         }.value
         AutomationHealthModel.shared.freshnessIssues = issues
     }
@@ -370,21 +379,17 @@ extension WorkspaceStore {
     nonisolated static func evaluateFreshness(
         profile: String,
         jamfCLIVersion: String? = nil,
+        resolveAuth: (String) -> ProfileAuthMethod.Resolved? = {
+            ProfileAuthMethod.resolve(profile: $0)
+        },
         now: Date = Date()
     ) -> [DataFreshnessIssue] {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return [] }
         let store = StateFileStore(directory: stateDir)
-        let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
-        let auth = ProfileAuthMethod.resolve(profile: profile)
+        // The Overview's heavy-tier prompt reads the same list.
         let kinds = expectedKinds(
-            skipExpensive: skipExpensive,
-            authMethod: auth?.authMethod,
-            tenantLevel: auth?.isTenantLevel == true,
-            collectSkip: ReportEngine.collectSkipKinds(
-                loadReportConfig(profile: profile)?.jamfCli?.collectSkip),
-            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion)
-        )
+            profile: profile, jamfCLIVersion: jamfCLIVersion, auth: resolveAuth(profile))
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.
@@ -554,7 +559,7 @@ extension WorkspaceStore {
             )
             return true
         }
-        if tickLockHeldElsewhere() {
+        if CLIBridge.tickLockHeldElsewhere() {
             AppLogger.collect.info("Automatic collect deferred: the background tick holds the lock")
             return true
         }
@@ -575,13 +580,7 @@ extension WorkspaceStore {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return issues }
         let store = StateFileStore(directory: stateDir)
-        let permanent = issues.filter {
-            let code = store.lastFailureExitCode(for: $0.snapshotKind)
-            return code == CLIBridge.exitCodeUsage
-                || code == CLIBridge.exitCodeUnauthorized
-                || code == CLIBridge.exitCodeRefusedByPolicy
-                || store.cause(for: $0.snapshotKind)?.isPermanent == true
-        }
+        let permanent = issues.filter { lastFailureRepeatsOnRetry($0.snapshotKind, in: store) }
         guard !permanent.isEmpty else { return issues }
         AppLogger.collect.notice(
             """
@@ -593,6 +592,20 @@ extension WorkspaceStore {
         )
         let skip = Set(permanent.map(\.snapshotKind))
         return issues.filter { !skip.contains($0.snapshotKind) }
+    }
+
+    /// The rule above for one kind: its last failure was exit 2, 3 or 8, or carries a
+    /// permanent cause. The background item's same-day retry shares it with
+    /// `countingUnauthorized: false`, so it still reaches an exit-3 kind once someone
+    /// re-authenticates.
+    nonisolated static func lastFailureRepeatsOnRetry(
+        _ kind: String, in store: StateFileStore, countingUnauthorized: Bool = true
+    ) -> Bool {
+        let code = store.lastFailureExitCode(for: kind)
+        return code == CLIBridge.exitCodeUsage
+            || (countingUnauthorized && code == CLIBridge.exitCodeUnauthorized)
+            || code == CLIBridge.exitCodeRefusedByPolicy
+            || store.cause(for: kind)?.isPermanent == true
     }
 
     /// Per-tier collect closure used by `remediateOne`. Matches a one-tier
@@ -636,16 +649,19 @@ extension WorkspaceStore {
         }
     }
 
+    /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultRemediationCollector: RemediationCollector = {
         profile, tiers, config in
-        try await CollectRouter.run(
-            profile: profile,
-            tiers: tiers,
-            skipExpensive: false,
-            force: false,
-            config: config,
-            onLine: CLIBridge.bufferingOnLine
-        )
+        try await CLIBridge.holdingTickLock {
+            try await CollectRouter.run(
+                profile: profile,
+                tiers: tiers,
+                skipExpensive: false,
+                force: false,
+                config: config,
+                onLine: CLIBridge.bufferingOnLine
+            )
+        }
     }
 
     /// One-click "Run now" for a failing/overdue managed row on the
@@ -851,15 +867,18 @@ extension WorkspaceStore {
         return true
     }
 
+    /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
-        try await CollectRouter.run(
-            profile: profile,
-            tiers: [.refresh, .inventory],
-            skipExpensive: false,
-            force: false,  // per-kind cadence filter: no-op if this kind already ran today
-            config: config,
-            onLine: CLIBridge.noOpOnLine
-        )
+        try await CLIBridge.holdingTickLock {
+            try await CollectRouter.run(
+                profile: profile,
+                tiers: [.refresh, .inventory],
+                skipExpensive: false,
+                force: false,  // per-kind cadence filter: no-op if this kind already ran today
+                config: config,
+                onLine: CLIBridge.noOpOnLine
+            )
+        }
     }
 
     /// Profiles eligible for a catch-up collect: only when the policy manages

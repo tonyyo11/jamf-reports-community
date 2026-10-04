@@ -34,7 +34,7 @@ struct ConfigView: View {
     @State private var cli = CLIBridge()
 
     enum ConfigTab: String, CaseIterable {
-        case columns, agents, eas, thresholds, platform, output, scoring
+        case columns, agents, eas, thresholds, platform, output, scoring, fromFile
         var label: String {
             switch self {
             case .columns:    "Columns"
@@ -44,6 +44,7 @@ struct ConfigView: View {
             case .platform:   "Platform API"
             case .output:     "Output & Branding"
             case .scoring:    "Scoring"
+            case .fromFile:   "From config.yaml"
             }
         }
         var icon: String {
@@ -55,6 +56,7 @@ struct ConfigView: View {
             case .platform:   "arrow.triangle.branch"
             case .output:     "folder"
             case .scoring:    "scalemass"
+            case .fromFile:   "doc.text"
             }
         }
         /// Lets the strip fit PageScaffold.minSupportedWidth when the full labels do not.
@@ -64,6 +66,7 @@ struct ConfigView: View {
             case .eas:      "EAs"
             case .platform: "Platform"
             case .output:   "Output"
+            case .fromFile: "From file"
             default:        label
             }
         }
@@ -82,7 +85,17 @@ struct ConfigView: View {
     /// Key-path detail from the report engine's strict parse, when it fails
     /// on a file the lenient GUI editor tolerates (#181 recovery card).
     @State private var engineParseDetail: String?
+    /// `Line N: …` for each line the YAML reader did not take as written.
+    @State private var parseNotes: [String] = []
     @State private var showRestoreConfirm = false
+    /// A Save found config.yaml changed since the screen read it, and wrote nothing.
+    @State private var changedOnDisk = false
+    /// What the last Save left as typed.
+    @State private var saveReport: ConfigSaveReport?
+    /// What config.yaml holds that the other tabs do not edit, for the From config.yaml tab.
+    @State private var fileReading: ConfigFileReading = .sections(ConfigFileSections())
+    /// config.yaml exists, whether or not the tab could read it.
+    @State private var canRevealFile = false
 
     var body: some View {
         PageScaffold(spacing: 16) {
@@ -91,18 +104,28 @@ struct ConfigView: View {
             if let problem = configProblem {
                 configRecoveryCard(problem)
             }
-            if !workspace.configRepairedKeys.isEmpty {
-                configHealedKeysCard(workspace.configRepairedKeys)
+            // The From config.yaml tab lists the skipped lines itself.
+            let bannerNotes = tab == .fromFile ? [] : parseNotes
+            if !workspace.configRepairedKeys.isEmpty || !bannerNotes.isEmpty {
+                configHealedKeysCard(workspace.configRepairedKeys, notes: bannerNotes)
+            }
+            if let notice = Self.saveNotice(changedOnDisk: changedOnDisk, report: saveReport) {
+                saveNoticeCard(notice)
             }
             tabContent
         }
         .task(id: workspace.profile) {
+            changedOnDisk = false
+            saveReport = nil
             do {
                 try await workspace.loadConfig()
             } catch {
                 workspace.configError = error.localizedDescription
             }
             refreshEngineParseStatus()
+        }
+        .onChange(of: tab) { _, selected in
+            if selected == .fromFile { refreshFileReading() }
         }
         .confirmationDialog(
             "Restore the default config.yaml?",
@@ -139,15 +162,20 @@ struct ConfigView: View {
 
     /// Re-run the engine's strict parse and keep its key-path detail for the
     /// recovery card. The GUI's lenient YAMLCodec can tolerate a file that
-    /// still breaks report generation, so both checks matter.
+    /// still breaks report generation, so both checks matter. Also lists the
+    /// lines the reader did not take as written, for the healed-keys card.
     private func refreshEngineParseStatus() {
+        refreshFileReading()
         guard !workspace.demoMode,
               let url = ProfileService.workspaceURL(for: workspace.profile)?
                   .appendingPathComponent("config.yaml"),
               FileManager.default.fileExists(atPath: url.path) else {
             engineParseDetail = nil
+            parseNotes = []
             return
         }
+        parseNotes = ((try? String(contentsOf: url, encoding: .utf8))
+            .flatMap { try? YAMLCodec.decode($0) }?.parseNotes ?? []).map(\.display)
         do {
             _ = try ConfigLoader.load(from: url)
             engineParseDetail = nil
@@ -156,6 +184,22 @@ struct ConfigView: View {
         } catch {
             engineParseDetail = error.localizedDescription
         }
+    }
+
+    private var configFileURL: URL? {
+        ProfileService.workspaceURL(for: workspace.profile)?
+            .appendingPathComponent("config.yaml")
+    }
+
+    /// Re-reads config.yaml for the From config.yaml tab only; the editors keep their state.
+    private func refreshFileReading() {
+        fileReading = ConfigFileReading.read(at: configFileURL, demoMode: workspace.demoMode)
+        canRevealFile = ConfigFileReading.canReveal(at: configFileURL, demoMode: workspace.demoMode)
+    }
+
+    private func revealConfigFile() {
+        guard !workspace.demoMode, let url = configFileURL else { return }
+        SystemActions.reveal(url)
     }
 
     private func configRecoveryCard(_ problem: String) -> some View {
@@ -190,33 +234,126 @@ struct ConfigView: View {
     }
 
     /// Informational card shown when the YAML parser auto-healed orphaned
-    /// sequence items on load. Not a parse failure — the file is still readable
-    /// — but the on-disk YAML is malformed until the user saves from this screen.
-    private func configHealedKeysCard(_ keys: [String]) -> some View {
-        Card(padding: 16) {
+    /// sequence items on load, or read some lines other than as written. Not a
+    /// parse failure — the file is still readable. Saving heals the repaired
+    /// keys only, so the Save button shows only for them.
+    private func configHealedKeysCard(_ keys: [String], notes: [String]) -> some View {
+        let text = Self.readerCardText(keys: keys, notes: notes)
+        return Card(padding: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "wand.and.sparkles")
                         .foregroundStyle(Theme.Colors.warn)
                         .accessibilityHidden(true)
-                    Text("Config auto-healed on load")
+                    Text(text.title)
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(Theme.Colors.fg)
-                    Pill(text: "\(keys.count) key\(keys.count == 1 ? "" : "s")", tone: .warn)
+                    Pill(text: text.pill, tone: .warn)
                 }
-                Text("The following YAML keys had malformed sequence items that were "
-                    + "auto-reattached. The file reads correctly but is still malformed "
-                    + "on disk. Save from this screen to persist the cleanup.")
+                Text(text.summary)
                     .font(.footnote)
                     .foregroundStyle(Theme.Text.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Mono(text: keys.joined(separator: ", "), size: 11.5, color: Theme.Colors.warnSoft)
+                Mono(text: text.detail, size: 11.5, color: Theme.Colors.warnSoft)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Healed keys: \(keys.joined(separator: ", "))")
-                PNPButton(title: "Save now", icon: "checkmark", style: .gold, size: .sm) {
-                    save()
+                    .accessibilityLabel(text.detail)
+                if !keys.isEmpty {
+                    PNPButton(title: "Save now", icon: "checkmark", style: .gold, size: .sm) {
+                        save()
+                    }
                 }
             }
+        }
+    }
+
+    /// The healed-keys card's text, for repaired keys, `Line N: …` parse notes, or both. Notes
+    /// past 20 are counted rather than listed.
+    static func readerCardText(
+        keys: [String], notes: [String]
+    ) -> (title: String, pill: String, summary: String, detail: String) {
+        func count(_ n: Int, _ noun: String) -> String? {
+            n == 0 ? nil : "\(n) \(noun)\(n == 1 ? "" : "s")"
+        }
+        let shown = notes.prefix(20) + (notes.count > 20 ? ["…and \(notes.count - 20) more"] : [])
+        let summary = [
+            keys.isEmpty ? nil : "The following YAML keys had malformed sequence items that were "
+                + "auto-reattached. The file reads correctly but is still malformed on disk. "
+                + "Save from this screen to persist the cleanup.",
+            notes.isEmpty ? nil : "The app did not read the lines below as written. "
+                + "Correct them in config.yaml.",
+        ]
+        return (
+            title: keys.isEmpty
+                ? "Some lines in config.yaml were not read as written"
+                : "Config auto-healed on load",
+            pill: [count(keys.count, "key"), count(notes.count, "line")].compactMap { $0 }
+                .joined(separator: " · "),
+            summary: summary.compactMap { $0 }.joined(separator: " "),
+            detail: [keys.isEmpty ? nil : keys.joined(separator: ", "),
+                     shown.isEmpty ? nil : shown.joined(separator: "\n")]
+                .compactMap { $0 }.joined(separator: "\n")
+        )
+    }
+
+    /// What the last Save could not do, or nil when there is nothing to say.
+    static func saveNotice(
+        changedOnDisk: Bool, report: ConfigSaveReport?
+    ) -> (title: String, lines: [String])? {
+        if changedOnDisk {
+            return (
+                title: "Not saved",
+                lines: ["config.yaml changed on disk since this screen loaded it. Reload reads "
+                    + "the file again and discards the changes you have not saved here."]
+            )
+        }
+        let lines = report?.notes ?? []
+        return lines.isEmpty ? nil : (title: "Saved with notes", lines: lines)
+    }
+
+    private func saveNoticeCard(_ notice: (title: String, lines: [String])) -> some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.warn)
+                        .accessibilityHidden(true)
+                    Text(notice.title)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Theme.Colors.fg)
+                }
+                ForEach(notice.lines, id: \.self) { line in
+                    Text(line)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Text.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if changedOnDisk {
+                    PNPButton(title: "Reload", icon: "arrow.clockwise", size: .sm) { reload() }
+                }
+            }
+        }
+    }
+
+    /// The re-scaffold toast: what it merged, then the notes its save left.
+    static func rescaffoldMessage(
+        profile: String, familyLabel: String, summary: String, notes: [String]
+    ) -> String {
+        (["Merged \(familyLabel) column mappings into \(profile)'s config — \(summary). "
+            + "Security agents, custom EAs and thresholds were kept. Review the Columns tab, "
+            + "then Save."] + notes).joined(separator: " ")
+    }
+
+    /// Reads config.yaml again, dropping the edits not yet saved; the notice says so.
+    private func reload() {
+        Task { @MainActor in
+            do {
+                try await workspace.loadConfig()
+            } catch {
+                workspace.configError = error.localizedDescription
+            }
+            changedOnDisk = false
+            saveReport = nil
+            refreshEngineParseStatus()
         }
     }
 
@@ -341,6 +478,10 @@ struct ConfigView: View {
         case .platform:   PlatformTab()
         case .output:     OutputTab()
         case .scoring:    ScoringTab()
+        case .fromFile:
+            ConfigFromFileTab(
+                reading: fileReading, isDemo: workspace.demoMode, canReveal: canRevealFile,
+                reveal: revealConfigFile, reload: refreshEngineParseStatus)
         }
     }
 
@@ -352,8 +493,16 @@ struct ConfigView: View {
         saveStatus = .saving
         saveTask = Task { @MainActor in
             do {
-                try await workspace.saveConfig()
+                saveReport = try await workspace.saveConfig()
+                changedOnDisk = false
+                // A save rewrites the blocks this screen edits; re-read what the card lists.
+                refreshEngineParseStatus()
                 withAnimation { saveStatus = .saved }
+            } catch ConfigService.ConfigError.changedOnDisk {
+                // Nothing was written: the notice says why and offers Reload.
+                changedOnDisk = true
+                saveStatus = .idle
+                return
             } catch {
                 let message = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription
@@ -644,49 +793,15 @@ private struct ColumnsTab: View {
                 // thresholds) untouched. ConfigService.save preserves unmanaged keys.
                 // File reads + config load/save; keep off the main actor so a
                 // large CSV export never blocks the UI.
-                let (report, familyLabel, merged) = try await Task.detached {
-                    () throws -> (ScaffoldService.ColumnMergeReport, String, ConfigState) in
-                    let sample = try ScaffoldService.readSample(from: csvURL)
-                    let result = try ScaffoldService.matchColumns(from: csvURL, profile: profile)
-                    var loaded = try ConfigService.load(profile: profile)
-                    let isMobile = result.family == .mobile
-                    let detected = isMobile ? result.mobileColumns : result.columns
-                    let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
-                    let merge = ScaffoldService.mergeColumns(
-                        existing: existing, detected: detected, csvHeaders: sample.headers)
-                    var report = merge.report
-                    if isMobile { loaded.state.mobileColumns = merge.merged }
-                    else { loaded.state.columns = merge.merged }
-
-                    // Compliance columns (computer family only) merge the same way —
-                    // they live in two scalar fields, not the columns dict.
-                    if !isMobile {
-                        let existingCompliance = [
-                            "failures_count_column": loaded.state.failuresCountColumn,
-                            "failures_list_column": loaded.state.failuresListColumn,
-                        ]
-                        let cMerge = ScaffoldService.mergeColumns(
-                            existing: existingCompliance, detected: result.complianceColumns,
-                            csvHeaders: sample.headers)
-                        loaded.state.failuresCountColumn =
-                            cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
-                        loaded.state.failuresListColumn =
-                            cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
-                        report.added += cMerge.report.added
-                        report.repaired += cMerge.report.repaired
-                        report.keptCount += cMerge.report.keptCount
-                        report.staleUnresolved += cMerge.report.staleUnresolved
-                    }
-                    _ = try ConfigService.save(
-                        profile: profile, state: loaded.state, existingDocument: loaded.document)
-                    let familyLabel = isMobile ? "mobile device export" : "computer export"
-                    return (report, familyLabel, loaded.state)
+                let outcome = try await Task.detached {
+                    try ScaffoldService.mergeIntoConfig(csvURL: csvURL, profile: profile)
                 }.value
+                let merged = outcome.state
                 await MainActor.run {
                     workspace.toast = Toast(
-                        message: "Merged \(familyLabel) column mappings into \(profile)'s "
-                            + "config — \(report.summary). Security agents, custom EAs and "
-                            + "thresholds were kept. Review the Columns tab, then Save.",
+                        message: ConfigView.rescaffoldMessage(
+                            profile: profile, familyLabel: outcome.familyLabel,
+                            summary: outcome.report.summary, notes: outcome.saveReport.notes),
                         style: .success
                     )
                 }
@@ -1439,116 +1554,3 @@ private struct EACard: View {
         }
     }
 }
-
-// MARK: - Scoring tab
-
-/// Lets the user override the weighted Security Score formula lifted from
-/// v3.5. Backed by `@AppStorage(ScoringConfig.storageKey)`. Edits are
-/// applied immediately to `SecurityScoreCalculator` callers that read
-/// `ScoringConfig.parse(...)` from storage. Tenants without certain agent
-/// stacks (e.g. no CrowdStrike) can zero out the matching weight to drop
-/// that metric from the score entirely.
-private struct ScoringTab: View {
-    @AppStorage(ScoringConfig.storageKey) private var raw: String = ""
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(WorkspaceStore.self) private var workspace
-
-    private var config: ScoringConfig {
-        raw.isEmpty ? ScoringConfig() : ScoringConfig.parse(raw)
-    }
-
-    /// The weights are an app-wide preference that scores live profiles too, so
-    /// demo mode shows them without letting an edit reach that preference.
-    private func update(_ mutate: (inout SecurityScoreWeights) -> Void) {
-        guard !workspace.demoMode else { return }
-        var c = config
-        mutate(&c.weights)
-        raw = c.serialize()
-    }
-
-    var body: some View {
-        // Read once per body evaluation — `config` re-parses `raw` on every
-        // access, and this view reads it 9 times (8 weight rows + totalWeight).
-        let config = self.config
-        let totalWeight = Self.totalWeight(config)
-        return VStack(alignment: .leading, spacing: 14) {
-            Card(padding: 18) {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        SectionHeader(title: "Security Score Weights")
-                        Spacer()
-                        Pill(
-                            text: "Sum: \(Int(totalWeight))",
-                            tone: totalWeight == 100 ? .teal : .gold,
-                            icon: totalWeight == 100 ? "checkmark" : "scalemass"
-                        )
-                        PNPButton(title: "Reset to v3.5 defaults", size: .sm) {
-                            guard !workspace.demoMode else { return }
-                            raw = ""
-                        }
-                        .disabled(workspace.demoMode)
-                        .help(workspace.demoMode
-                              ? DemoData.liveOnlyHelp
-                              : "Restore the eight default weights from the v3.5 production "
-                                  + "script.")
-                    }
-                    Text("These weights drive the Security Score on the Security Posture screen. " +
-                         "Set a weight to 0 to drop that metric entirely. Missing metrics in your " +
-                         "data are auto-renormalized so the score still scales to 100.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                    VStack(spacing: 6) {
-                        weightRow("FileVault Encryption",
-                                  value: Binding(get: { Int(config.weights.fileVault) },
-                                                 set: { v in update { $0.fileVault = Double(v) } }))
-                        weightRow("System Integrity Protection",
-                                  value: Binding(get: { Int(config.weights.sip) },
-                                                 set: { v in update { $0.sip = Double(v) } }))
-                        weightRow("Firewall Enabled",
-                                  value: Binding(get: { Int(config.weights.firewall) },
-                                                 set: { v in update { $0.firewall = Double(v) } }))
-                        weightRow("\(workspace.edrAgentName ?? "EDR Agent") Connected",
-                                  value: Binding(get: { Int(config.weights.edrAgent) },
-                                                 set: { v in update { $0.edrAgent = Double(v) } }))
-                        weightRow("mSCP Compliance",
-                                  value: Binding(get: { Int(config.weights.mscp) },
-                                                 set: { v in update { $0.mscp = Double(v) } }))
-                        weightRow("XProtect Current",
-                                  value: Binding(get: { Int(config.weights.xprotect) },
-                                                 set: { v in update { $0.xprotect = Double(v) } }))
-                        weightRow("CVE Clean",
-                                  value: Binding(get: { Int(config.weights.cve) },
-                                                 set: { v in update { $0.cve = Double(v) } }))
-                        weightRow("Secure Boot (Full)",
-                                  value: Binding(get: { Int(config.weights.secureBoot) },
-                                                 set: { v in update { $0.secureBoot = Double(v) } }))
-                    }
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Security score weight configuration")
-        }
-    }
-
-    private static func totalWeight(_ config: ScoringConfig) -> Double {
-        let w = config.weights
-        return w.fileVault + w.sip + w.firewall + w.edrAgent +
-               w.mscp + w.xprotect + w.cve + w.secureBoot
-    }
-
-    @ViewBuilder
-    private func weightRow(_ label: String, value: Binding<Int>) -> some View {
-        HStack {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Theme.Colors.fg)
-            Spacer()
-            EditableNumberStepper(value: value, range: 0...100, suffix: "pts")
-                .accessibilityLabel("\(label) weight")
-                .accessibilityValue("\(value.wrappedValue) points out of 100")
-        }
-    }
-}
-

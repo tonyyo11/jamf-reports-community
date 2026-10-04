@@ -18,8 +18,15 @@ final class AIConfigTests: XCTestCase {
     }
 
     func testTierParsesKnownValuesCaseInsensitively() {
-        XCTAssertEqual(AIConfig(tier: "external").resolvedTier, .external)
         XCTAssertEqual(AIConfig(tier: "ON_DEVICE").resolvedTier, .onDevice)
+    }
+
+    /// The `external` tier was specced but never built, and its keys are gone.
+    /// A config naming it must keep working rather than fail to decode — the
+    /// unknown-value fallback lands it on on-device, the same way `pcc` does.
+    func testRemovedExternalTierDecodesAsOnDevice() {
+        XCTAssertEqual(AIConfig(tier: "external").resolvedTier, .onDevice)
+        XCTAssertEqual(AIConfig(tier: "EXTERNAL").resolvedTier, .onDevice)
     }
 
     /// Apple Foundation Models is on-device only, so the `pcc` tier was
@@ -39,7 +46,6 @@ final class AIConfigTests: XCTestCase {
     func testIsUsableTracksEnabledOnly() {
         XCTAssertFalse(AIConfig(enabled: false).isUsable)
         XCTAssertTrue(AIConfig(enabled: true).isUsable, "on-device needs no URL/key")
-        XCTAssertTrue(AIConfig(enabled: true, tier: "external").isUsable)
     }
 
     // MARK: - YAML decode
@@ -79,23 +85,25 @@ final class AIConfigTests: XCTestCase {
         XCTAssertNil(config.ai)
     }
 
-    func testEmptyExternalBlockIsInert() throws {
+    /// A config.yaml written while `external:` was a reserved block still carries
+    /// it, filled in or not. Decoding must ignore the block and resolve the tier
+    /// to on-device; nothing in it reaches the app.
+    func testStaleExternalBlockIsIgnored() throws {
         let yaml = """
         ai:
           enabled: true
+          tier: "external"
+          reasoning_level: "deep"
           external:
-            provider: ""
-            endpoint: ""
-            keychain_key: ""
+            provider: "openai_compatible"
+            endpoint: "https://llm.example.invalid/v1"
+            keychain_key: "stale-item"
         """
         let config = try ConfigLoader.loadFromString(yaml)
-        XCTAssertNotNil(config.ai?.external, "the reserved block still decodes")
-        XCTAssertEqual(config.ai?.external?.provider, "")
-        XCTAssertEqual(config.ai?.external?.endpoint, "")
-        XCTAssertEqual(config.ai?.external?.keychainKey, "")
-        // The reserved external block must not change usability today.
-        XCTAssertTrue(config.ai?.isUsable ?? false)
+        XCTAssertEqual(config.ai?.isEnabled, true)
         XCTAssertEqual(config.ai?.resolvedTier, .onDevice)
+        XCTAssertEqual(config.ai?.resolvedReasoningLevel, .deep)
+        XCTAssertTrue(config.ai?.isUsable ?? false)
     }
 
     // MARK: - Shipped example

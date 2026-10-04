@@ -116,16 +116,6 @@ extension Theme {
         }
     }
 
-    // MARK: ButtonColors
-
-    /// Foreground colors used on top of brand-colored button fills.
-    enum ButtonColors {
-        /// Foreground text on the gold (`.gold` style) button.
-        static let goldFG: Color = Color(hex: 0x3B2A04)
-        /// Foreground text on the danger (`.danger` style) button.
-        static let dangerFG: Color = Color(hex: 0xFF453A)
-    }
-
     // MARK: Chart
 
     /// Fixed chart colors for export views and consistent visual hierarchy.

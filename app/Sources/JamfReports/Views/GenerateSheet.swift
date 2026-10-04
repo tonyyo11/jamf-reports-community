@@ -13,6 +13,8 @@ import Combine
 final class GenerateSheetState {
     var selectedTypes: Set<GenerateOutputType> = [.xlsx]
     var collectFresh: Bool = true
+    /// Set once the user toggles Collect fresh, so the freshness check leaves it alone.
+    private var collectFreshChosen = false
     /// When true, run a Health Audit before generating so audit-derived
     /// workbook content reflects this run. Persisted via the same UserDefaults
     /// key OverviewView's quick "Generate Report" button reads, so the
@@ -22,6 +24,9 @@ final class GenerateSheetState {
     }
     nonisolated static let includeAuditKey = "includeAuditInGenerate"
     var customOutputDir: URL? = nil
+    /// Where the generators write with no folder chosen: `output.output_dir` as
+    /// `WorkspacePaths.reportsDir` resolves it. Nil until the sheet has read it.
+    var configuredOutputDir: URL? = nil
     var folderPickerError: String? = nil
     var logLines: [CLIBridge.LogLine] = []
     var isRunning: Bool = false
@@ -36,31 +41,33 @@ final class GenerateSheetState {
     var generatedHashes: [String: String] = [:]
 
     /// Identifier of the currently selected report template.
-    /// Persisted for the sheet's lifetime; falls back to Executive on next open.
+    /// Kept for the sheet's lifetime; each open starts on Full Instance.
     var selectedTemplateID: String = FullInstanceTemplate().identifier
 
-    /// Custom sheet selection for the "custom" template.
-    /// Persisted across app launches via UserDefaults. The serialized order is
-    /// rawValue-alphabetical (`.sorted()`), not tap order.
-    var customSelectedSheets: Set<SheetID> {
-        get {
-            let raw = UserDefaults.standard.string(forKey: Self.customSheetsKey) ?? ""
-            let identifiers = raw.split(separator: ",").compactMap { SheetID(rawValue: String($0)) }
-            return Set(identifiers)
-        }
-        set {
-            let raw = newValue.map(\.rawValue).sorted().joined(separator: ",")
+    /// Custom sheet selection for the "custom" template, persisted across app launches
+    /// via UserDefaults. Stored, not computed over UserDefaults, so `@Observable` sees a
+    /// tap. The serialized order is rawValue-alphabetical (`.sorted()`), not tap order.
+    var customSelectedSheets: Set<SheetID> = GenerateSheetState.savedCustomSelection() {
+        didSet {
+            let raw = customSelectedSheets.map(\.rawValue).sorted().joined(separator: ",")
             UserDefaults.standard.set(raw, forKey: Self.customSheetsKey)
         }
     }
 
     nonisolated static let customSheetsKey = "generateSheetCustomSelection"
 
+    nonisolated static func savedCustomSelection() -> Set<SheetID> {
+        let raw = UserDefaults.standard.string(forKey: customSheetsKey) ?? ""
+        return Set(raw.split(separator: ",").compactMap { SheetID(rawValue: String($0)) })
+    }
+
     /// The resolved template for the current selection. Always a known template —
-    /// unknown identifiers fall back to Executive via `TemplateResolver`.
+    /// unknown identifiers fall back to Executive via `TemplateResolver`. Custom lists its
+    /// sheets in the stored rawValue order: the engine writes them in template order.
     var resolvedTemplate: any ReportTemplate {
         if selectedTemplateID == "custom" {
-            return TemplateResolver.resolveCustom(sheets: Array(customSelectedSheets))
+            return TemplateResolver.resolveCustom(
+                sheets: customSelectedSheets.sorted { $0.rawValue < $1.rawValue })
         }
         return TemplateResolver.resolve(identifier: selectedTemplateID)
     }
@@ -76,9 +83,110 @@ final class GenerateSheetState {
         return hasOutputType && notRunning && noFolderError && customSelectionValid
     }
 
-    /// Resolved output directory for display. Falls back to the profile default.
+    /// The sheet closes while idle only: a run would carry on out of sight.
+    var canDismiss: Bool { !isRunning }
+
+    func toggleCollectFresh() {
+        collectFresh.toggle()
+        collectFreshChosen = true
+    }
+
+    /// Sets Collect fresh the way the Overview decides to collect: off while the snapshots
+    /// are fresh, on when they are stale or absent. A choice the user already made stands.
+    func applySnapshotFreshness(_ decision: SnapshotFreshness.Decision) {
+        guard !collectFreshChosen, !isRunning else { return }
+        if case .fresh = decision {
+            collectFresh = false
+        } else {
+            collectFresh = true
+        }
+    }
+
+    /// What one Generate press asks for, read from the controls when it is pressed.
+    struct Request: Sendable {
+        let types: Set<GenerateOutputType>
+        let template: any ReportTemplate
+        let collectFirst: Bool
+        let runsAudit: Bool
+        let outputDir: URL?
+        /// The School template's workbook comes from the School generator.
+        let schoolMode: Bool
+        /// The narrative describes Jamf Pro snapshots, which a School report does not read.
+        let asksForNarrative: Bool
+    }
+
+    func request() -> Request {
+        let school = schoolMode
+        return Request(
+            types: selectedTypes, template: resolvedTemplate, collectFirst: collectFresh,
+            runsAudit: includeAudit, outputDir: customOutputDir,
+            schoolMode: school, asksForNarrative: !school)
+    }
+
+    /// True for the School template, whose workbook the School generator writes.
+    var schoolMode: Bool { selectedTemplateID == SchoolTemplate().identifier }
+
+    /// What one format writes, as "What will be written" lists it: the stem the generators
+    /// write (`ExportNaming.stem`) and what they write beside it.
+    nonisolated static func writtenFiles(
+        for type: GenerateOutputType, profile: String, schoolMode: Bool
+    ) -> String {
+        let name = ExportNaming.stem(for: type, profile: profile, schoolMode: schoolMode)
+            + "_<date>.\(type.rawValue.lowercased())"
+        switch type {
+        case .xlsx where schoolMode: return name + " + integrity sidecar (.sha256)"
+        case .xlsx: return name + " + integrity sidecar (.sha256, manifest)"
+        case .html, .pdf: return name + " + integrity manifest"
+        case .csv: return name
+        }
+    }
+
+    /// `CLIBridge.generateAll(types:outputDir:profile:schoolMode:template:aiNarrative:onLine:)`,
+    /// injected so a test sees what the sheet hands it.
+    typealias GenerateAll = @MainActor (
+        Set<GenerateOutputType>, URL?, String, Bool, any ReportTemplate, String?,
+        @escaping @Sendable (CLIBridge.LogLine) -> Void
+    ) async -> GenerateAllResult
+
+    /// Runs `request` in the Overview's order (`CLIBridge.runCollectThenGenerate`): the
+    /// collect when asked for, then the narrative, which reads the snapshots that collect
+    /// wrote, then every format. A refused or failed collect generates nothing and says why.
+    static func perform(
+        _ request: Request,
+        profile: String,
+        onLine: @escaping @Sendable (CLIBridge.LogLine) -> Void,
+        collect: () async throws -> Int32,
+        narrative: @escaping () async -> String?,
+        generateAll: GenerateAll
+    ) async -> (count: Int, message: String?) {
+        var result: GenerateAllResult?
+        do {
+            let exit = try await CLIBridge.runCollectThenGenerate(
+                collect: {
+                    guard request.collectFirst else { return 0 }
+                    return try await collect()
+                },
+                narrative: request.asksForNarrative ? narrative : nil,
+                generate: { aiNarrative in
+                    let generated = await generateAll(
+                        request.types, request.outputDir, profile, request.schoolMode,
+                        request.template, aiNarrative, onLine)
+                    result = generated
+                    return generated.allSucceeded ? 0 : 1
+                }
+            )
+            if let result { return summarize(result) }
+            return (0, CLIBridge.explainExit(exit, operation: "Collect")
+                + " Uncheck Collect fresh data first to generate from cached snapshots.")
+        } catch {
+            return (0, CLIBridge.explainOperationError(error, operation: "Collect"))
+        }
+    }
+
+    /// Resolved output directory for display: the chosen folder, else the configured one,
+    /// else the profile default.
     func resolvedOutputDir(for profile: String) -> URL {
-        if let dir = customOutputDir { return dir }
+        if let dir = customOutputDir ?? configuredOutputDir { return dir }
         let fallback = ProfileService.workspaceURL(for: profile)
             ?? WorkspaceRootStore.defaultRoot
         return fallback.appendingPathComponent("Generated Reports", isDirectory: true)
@@ -123,51 +231,53 @@ final class GenerateSheetState {
     }
 
     /// Summarise a `GenerateAllResult` into the count and optional error message
-    /// the UI should display. Three cases:
-    /// - All succeed  → `(succeeded.count, nil)`
-    /// - Partial      → `(succeeded.count, "Generated X, Y; Z failed (exit N)")`
-    /// - All fail     → `(0, "Generation failed (…). Check the log above.")`
+    /// the UI should display: nil when every format was written; otherwise one
+    /// `CLIBridge.explainExit` per exit code naming the formats that ended with it,
+    /// after "Generated X, Y." when some were written.
     ///
     /// `nonisolated` — the function is pure over its input; callers from any
     /// actor context can invoke it.
     nonisolated static func summarize(_ result: GenerateAllResult) -> (count: Int, message: String?) {
-        if result.failed.isEmpty {
-            return (result.succeeded.count, nil)
+        guard !result.failed.isEmpty else { return (result.succeeded.count, nil) }
+        var codes: [Int32] = []
+        for failure in result.failed where !codes.contains(failure.exitCode) {
+            codes.append(failure.exitCode)
         }
-        if result.succeeded.isEmpty {
-            let codes = result.failed
-                .map { "\($0.type.rawValue): exit \($0.exitCode)" }
-                .joined(separator: ", ")
-            return (0, "Generation failed (\(codes)). Check the log above.")
-        }
-        // Partial: some succeeded, some failed.
-        let succeededLabel = result.succeeded.map(\.rawValue).sorted().joined(separator: ", ")
-        let failedLabel = result.failed
-            .map { "\($0.type.rawValue) (exit \($0.exitCode))" }
-            .joined(separator: ", ")
-        return (result.succeeded.count,
-                "Generated \(succeededLabel); \(failedLabel) failed. Check the log above.")
+        let causes = codes.map { code in
+            let formats = result.failed.filter { $0.exitCode == code }
+                .map(\.type.rawValue).joined(separator: ", ")
+            return CLIBridge.explainExit(code, operation: "\(formats) generation")
+        }.joined(separator: " ")
+        guard !result.succeeded.isEmpty else { return (0, causes) }
+        let written = result.succeeded.map(\.rawValue).sorted().joined(separator: ", ")
+        return (result.succeeded.count, "Generated \(written). \(causes)")
     }
 }
 
 // MARK: - Sheet view
 
-/// Unified report-generation modal. Present as a `.sheet` from any view.
-///
-/// Usage:
-/// ```swift
-/// .sheet(isPresented: $showGenerate) {
-///     GenerateSheet(profile: workspace.profile, bridge: bridge)
-/// }
-/// ```
+/// Report-generation modal: template or custom sheets, formats, collect first, audit.
+/// Presented by the Reports screen; `onGenerated` runs after a run that wrote a file.
 struct GenerateSheet: View {
     let profile: String
     let bridge: CLIBridge
-    var onSchedule: (ScheduleFormState) -> Void = { _ in }
+    let onGenerated: @MainActor () -> Void
 
-    @State private var state = GenerateSheetState()
-    @State private var showScheduleSheet = false
-    @State private var scheduleForm = ScheduleFormState()
+    @State private var state: GenerateSheetState
+
+    /// `freshness`, read by the presenter before the sheet opens, sets Collect fresh from the
+    /// first frame; nil (demo mode) leaves it on.
+    init(
+        profile: String, bridge: CLIBridge, freshness: SnapshotFreshness.Decision?,
+        onGenerated: @escaping @MainActor () -> Void
+    ) {
+        self.profile = profile
+        self.bridge = bridge
+        self.onGenerated = onGenerated
+        let state = GenerateSheetState()
+        if let freshness { state.applySnapshotFreshness(freshness) }
+        _state = State(initialValue: state)
+    }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(WorkspaceStore.self) private var workspace
@@ -206,14 +316,8 @@ struct GenerateSheet: View {
         .frame(minWidth: 460, idealWidth: 540)
         .frame(minHeight: 440)
         .background(Theme.Surface.raised)
-        .sheet(isPresented: $showScheduleSheet) {
-            NewScheduleSheetWrapper(form: $scheduleForm, profiles: [profile]) { form in
-                showScheduleSheet = false
-                onSchedule(form)
-            } onCancel: {
-                showScheduleSheet = false
-            }
-        }
+        .interactiveDismissDisabled(!state.canDismiss)
+        .task { await readConfiguredOutputDir() }
     }
 
     // MARK: Subviews
@@ -232,6 +336,7 @@ struct GenerateSheet: View {
                     .font(Theme.Fonts.bodyText)
             }
             .buttonStyle(.plain)
+            .disabled(!state.canDismiss)
             .accessibilityLabel("Close Generate Reports sheet")
         }
         .padding(18)
@@ -258,7 +363,8 @@ struct GenerateSheet: View {
                 .padding(.top, 6)
 
             ForEach(Array(state.selectedTypes.sorted(by: { $0.rawValue < $1.rawValue })), id: \.self) { type in
-                Text("• \(artifactDescription(for: type))")
+                Text("• " + GenerateSheetState.writtenFiles(
+                    for: type, profile: profile, schoolMode: state.schoolMode))
                     .font(Theme.Fonts.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -270,20 +376,6 @@ struct GenerateSheet: View {
             }
         }
         .padding(.leading, 4)
-    }
-
-    private func artifactDescription(for type: GenerateOutputType) -> String {
-        let timestamp = "report_\(profile)_<date>"
-        switch type {
-        case .xlsx:
-            return "\(timestamp).xlsx + integrity sidecar (.sha256, manifest)"
-        case .html:
-            return "\(timestamp).html + integrity sidecar (.sha256, manifest)"
-        case .pdf:
-            return "\(timestamp).pdf + integrity sidecar (.sha256, manifest)"
-        case .csv:
-            return "automation_inventory_\(profile)_<date>.csv"
-        }
     }
 
     private var templateSection: some View {
@@ -497,7 +589,7 @@ struct GenerateSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             FieldLabel(label: "Data")
             Button {
-                state.collectFresh.toggle()
+                state.toggleCollectFresh()
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: state.collectFresh ? "checkmark.square.fill" : "square")
@@ -707,23 +799,12 @@ struct GenerateSheet: View {
 
     private var footer: some View {
         HStack {
-            Button {
-                prefillAndOpenScheduleSheet()
-            } label: {
-                Text("Save as schedule\u{2026}")
-                    .font(Theme.Fonts.label)
-                    .foregroundStyle(Theme.Colors.goldBright)
-            }
-            .buttonStyle(.plain)
-            .disabled(state.isRunning)
-            .accessibilityLabel("Save current settings as a recurring schedule")
-
             Spacer()
 
             PNPButton(title: state.isRunning ? "Running\u{2026}" : "Done") {
                 dismiss()
             }
-            .disabled(state.isRunning)
+            .disabled(!state.canDismiss)
             .keyboardShortcut(.cancelAction)
 
             PNPButton(
@@ -766,13 +847,20 @@ struct GenerateSheet: View {
         }
     }
 
-    private func prefillAndOpenScheduleSheet() {
-        scheduleForm = ScheduleFormState(defaultProfile: profile)
-        scheduleForm.mode = state.collectFresh ? .jamfCLIOnly : .snapshotOnly
-        showScheduleSheet = true
+    /// `output.output_dir` as the generators resolve it, off the main actor: it reads
+    /// config.yaml. Demo mode reads no workspace.
+    private func readConfiguredOutputDir() async {
+        guard !workspace.demoMode else { return }
+        let profile = profile
+        state.configuredOutputDir = await Task.detached(priority: .utility) {
+            WorkspacePaths.reportsDir(for: profile, onLine: nil)
+        }.value
     }
 
+
     private func runGenerate() async {
+        // A demo profile's name can match a real workspace; the presenter disables Generate too.
+        guard !workspace.demoMode else { return }
         guard workspace.setRunInProgress(for: profile) else {
             state.errorMessage = "Another run is already in progress for profile '\(profile)' — skipped"
             return
@@ -785,21 +873,21 @@ struct GenerateSheet: View {
             state.isRunning = false
         }
 
-        let outputDir: URL? = state.customOutputDir
-        let isSchool = state.resolvedTemplate.identifier == SchoolTemplate().identifier
+        let request = state.request()
+        let onLine: @Sendable (CLIBridge.LogLine) -> Void = { line in
+            Task { @MainActor in state.appendLine(line) }
+        }
 
         // Opt-in audit-before-generate (v2.2.0): refresh Health Audit data so
         // audit-derived workbook content reflects this run. Failures warn and
         // continue — a stale audit is preferable to no report.
-        if state.includeAudit && !workspace.demoMode {
+        if request.runsAudit {
             state.appendLine(.init(
                 timestamp: Date(), level: .info,
                 text: "[info] running health audit before generate"
             ))
             do {
-                _ = try await bridge.audit(profile: profile, category: nil) { line in
-                    Task { @MainActor in state.appendLine(line) }
-                }
+                _ = try await bridge.audit(profile: profile, category: nil, onLine: onLine)
             } catch {
                 state.appendLine(.init(
                     timestamp: Date(), level: .warn,
@@ -808,45 +896,22 @@ struct GenerateSheet: View {
             }
         }
 
-        // School template routes to the school generate command rather than the standard flow.
-        if isSchool {
-            let result = await bridge.generateAll(
-                types: state.selectedTypes,
-                collectFresh: state.collectFresh,
-                outputDir: outputDir,
-                profile: profile,
-                schoolMode: true
-            ) { line in
-                Task { @MainActor in
-                    state.appendLine(line)
-                }
-            }
-            let summary = GenerateSheetState.summarize(result)
-            state.completedCount = summary.count
-            state.errorMessage = summary.message
-            return
-        }
-
-        // F3: GUI-only AI executive narrative. Time-boxed inside makeForGUIGenerate
-        // (nil on disabled/not-ready/no-data/timeout/error) so generate never blocks.
-        let narrative = workspace.demoMode ? nil : await ReportNarrative.makeForGUIGenerate(profile: profile)
-
-        let result = await bridge.generateAll(
-            types: state.selectedTypes,
-            collectFresh: state.collectFresh,
-            outputDir: outputDir,
+        // The collect is the Overview's (`collectThenGenerate`'s), and the F3 narrative,
+        // time-boxed inside makeForGUIGenerate, is asked for after it.
+        let outcome = await GenerateSheetState.perform(
+            request,
             profile: profile,
-            template: state.resolvedTemplate,
-            aiNarrative: narrative
-        ) { line in
-            Task { @MainActor in
-                state.appendLine(line)
-            }
-        }
-
-        let summary = GenerateSheetState.summarize(result)
-        state.completedCount = summary.count
-        state.errorMessage = summary.message
+            onLine: onLine,
+            collect: { try await bridge.collect(profile: profile, force: true, onLine: onLine) },
+            narrative: { await ReportNarrative.makeForGUIGenerate(profile: profile) },
+            generateAll: bridge.generateAll(
+                types:outputDir:profile:schoolMode:template:aiNarrative:onLine:)
+        )
+        state.completedCount = outcome.count
+        state.errorMessage = outcome.message
+        // As every GUI collect path does, so the health banner describes this collect.
+        if request.collectFirst { await workspace.refreshDataFreshness() }
+        if outcome.count > 0 { onGenerated() }
     }
 }
 
@@ -923,117 +988,5 @@ private struct RunLogConsoleEmbed: View {
             return Theme.Colors.ok
         }
         return Theme.Text.secondary
-    }
-}
-
-// MARK: - NewScheduleSheet wrapper
-
-/// Thin wrapper so GenerateSheet can present NewScheduleSheet (which is `private` in
-/// SchedulesView). We re-expose the necessary interface here using ScheduleFormState,
-/// which is already `internal`.
-private struct NewScheduleSheetWrapper: View {
-    @Binding var form: ScheduleFormState
-    let profiles: [String]
-    let onSave: (ScheduleFormState) -> Void
-    let onCancel: () -> Void
-    @Environment(\.colorSchemeContrast) private var contrast
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("New Schedule")
-                    .font(Theme.Fonts.title)
-                    .foregroundStyle(Theme.Text.primary)
-                Spacer()
-                Button(action: onCancel) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .font(Theme.Fonts.bodyText)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Cancel")
-            }
-            .padding(18)
-            Divider()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    formRow(label: "Name") {
-                        PNPTextField(value: $form.name, placeholder: "e.g. Daily Snapshot Collection")
-                    }
-                    formRow(label: "Profile") {
-                        Picker("", selection: $form.profile) {
-                            ForEach(profiles, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        .frame(maxWidth: .infinity)
-                    }
-                    formRow(label: "Mode") {
-                        Picker("", selection: $form.mode) {
-                            ForEach(Schedule.RunMode.allCases) {
-                                Text($0.rawValue).tag($0)
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    Text(modeDescription(for: form.mode))
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                    formRow(label: "Cadence") {
-                        Picker("", selection: $form.cadenceType) {
-                            ForEach(ScheduleFormState.CadenceType.allCases) {
-                                Text($0.rawValue).tag($0)
-                            }
-                        }
-                        .labelsHidden()
-                    }
-                    formRow(label: "Time") {
-                        DatePicker("", selection: $form.scheduledTime,
-                                   displayedComponents: [.hourAndMinute])
-                            .labelsHidden()
-                            .datePickerStyle(.compact)
-                    }
-                    formRow(label: "Enabled") {
-                        Toggle("", isOn: $form.enabled).labelsHidden()
-                    }
-                    FieldHelp(text: "Cadence preview: \(form.scheduleString)")
-                    Text("Note: schedules always produce XLSX. HTML/PDF format selection from Generate applies to on-demand runs only.")
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Text.tertiary(contrast))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(18)
-            }
-            Divider()
-            HStack {
-                Spacer()
-                PNPButton(title: "Cancel", action: onCancel)
-                PNPButton(title: "Add Schedule", icon: "checkmark", style: .gold) {
-                    onSave(form)
-                }
-                .disabled(!form.isValid)
-            }
-            .padding(14)
-        }
-        .frame(minWidth: 360, idealWidth: 420)
-        .background(Theme.Surface.raised)
-    }
-
-    @ViewBuilder
-    private func formRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            FieldLabel(label: label)
-            HStack(spacing: 8) { content() }
-        }
-    }
-
-    private func modeDescription(for mode: Schedule.RunMode) -> String {
-        switch mode {
-        case .snapshotOnly: "Refresh jamf-cli JSON and archive CSV snapshots. No report generated."
-        case .jamfCLIOnly:  "Generate a report from live or cached jamf-cli data. No CSV required."
-        case .jamfCLIFull:  "Full run: collect snapshots, archive CSV, then generate from both sources."
-        case .csvAssisted:  "Generate combining a CSV from the inbox with live jamf-cli data."
-        case .backup:       "Back up Jamf Pro configuration objects to the workspace's backups folder."
-        }
     }
 }

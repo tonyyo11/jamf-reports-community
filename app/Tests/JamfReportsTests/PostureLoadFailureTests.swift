@@ -13,7 +13,9 @@ final class PostureLoadFailureTests: XCTestCase {
 
     func test_security_loadFrom_corruptFile_throwsDecodeFailed() throws {
         let url = try corruptFile(); defer { try? FileManager.default.removeItem(at: url) }
-        XCTAssertThrowsError(try SecurityPostureService.load(from: url)) { error in
+        XCTAssertThrowsError(
+            try SecurityPostureService.load(from: url, policy: .default, hardware: [:])
+        ) { error in
             guard case SecurityPostureService.LoadError.decodeFailed = error else {
                 return XCTFail("expected .decodeFailed, got \(error)")
             }
@@ -29,7 +31,7 @@ final class PostureLoadFailureTests: XCTestCase {
 
     func test_compliance_loadFrom_corruptFile_returnsNil() throws {
         let url = try corruptFile(); defer { try? FileManager.default.removeItem(at: url) }
-        XCTAssertNil(CompliancePostureService.load(from: url))
+        XCTAssertNil(CompliancePostureService.load(from: url, policy: .default, hardware: [:]))
     }
 
     func test_compliance_failedSnapshot_isDistinctFromEmpty() {

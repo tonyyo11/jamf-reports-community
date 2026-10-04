@@ -884,6 +884,213 @@ final class ConfigDoctorServiceTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.id.hasPrefix("alerts.") },
                        "a workspace that never opted into alerts gets no alerts rows")
     }
+
+    // MARK: - Unknown keys
+
+    func testUnknownKeysBecomeWarningRowsThatNameTheKeyPath() {
+        let rows = ConfigDoctorService.unknownKeyRows([
+            UnknownKey(keyPath: "output.keep_lastest_runs", suggestion: "keep_latest_runs"),
+            UnknownKey(keyPath: "exceptions[0].expires", suggestion: nil),
+        ])
+        XCTAssertEqual(rows.map(\.id), ["config.unknown_key.0", "config.unknown_key.1"])
+        XCTAssertEqual(rows.map(\.severity), [.warn, .warn],
+                       "a typo must not be able to turn a scheduled run red")
+        XCTAssertEqual(rows.map(\.title), ["output.keep_lastest_runs", "exceptions[0].expires"])
+        XCTAssertEqual(rows.first?.detail,
+                       "The app does not read this key. Did you mean \"keep_latest_runs\"?")
+        XCTAssertEqual(rows.last?.detail, "The app does not read this key.")
+        XCTAssertNotNil(rows.last?.hint)
+    }
+
+    func testMoreThanTwentyUnknownKeysEndInOneRowSayingHowManyMore() {
+        let keys = (0..<23).map { UnknownKey(keyPath: "extra_\($0)", suggestion: nil) }
+        let rows = ConfigDoctorService.unknownKeyRows(keys)
+        XCTAssertEqual(rows.count, 21)
+        XCTAssertEqual(rows.prefix(20).map(\.title), keys.prefix(20).map(\.keyPath))
+        XCTAssertEqual(rows.last?.id, "config.unknown_key.more")
+        XCTAssertEqual(rows.last?.severity, .warn)
+        XCTAssertEqual(rows.last?.detail, "3 more keys in config.yaml that the app does not read.")
+        XCTAssertEqual(ConfigDoctorService.unknownKeyRows(Array(keys.prefix(21))).last?.detail,
+                       "1 more key in config.yaml that the app does not read.")
+        XCTAssertEqual(ConfigDoctorService.unknownKeyRows(Array(keys.prefix(20))).count, 20)
+    }
+
+    func testUnknownKeyRowsReadTheWorkspaceConfigAndNeverShowAValue() throws {
+        let yaml = """
+        notify:
+          enabled: false
+          webhook_url: "https://hooks.example.com/services/T000/B000/abc123"
+        thresholds:
+          stale_device_dayz: 45
+        """
+        try withWorkspace(yaml) { profile, _ in
+            let rows = ConfigDoctorService.unknownKeyRows(profile: profile)
+            XCTAssertEqual(rows.map(\.title),
+                           ["notify.webhook_url", "thresholds.stale_device_dayz"])
+            XCTAssertEqual(rows.last?.detail,
+                           "The app does not read this key. Did you mean \"stale_device_days\"?")
+            let shown = rows.map { $0.title + $0.detail + ($0.hint ?? "") }.joined()
+            XCTAssertFalse(shown.contains("hooks.example.com"))
+            XCTAssertFalse(shown.contains("45"))
+        }
+    }
+
+    func testUnknownKeyRowsStillNameTheTypoWhenTheFileDoesNotDecode() throws {
+        let yaml = """
+        custom_eas:
+          - name: "Disk Use"
+            colum: "Boot Drive Percentage Full"
+            type: percentage
+        """
+        XCTAssertThrowsError(try makeConfig(yaml), "`column` is required")
+        try withWorkspace(yaml) { profile, _ in
+            XCTAssertEqual(ConfigDoctorService.unknownKeyRows(profile: profile).map(\.detail),
+                           ["The app does not read this key. Did you mean \"column\"?"])
+        }
+    }
+
+    // MARK: - Security policy (hand-typed values)
+
+    func testSecurityPolicyIssuesBecomeWarningRows() {
+        let issues = [
+            SecurityPolicyIssue(keyPath: "security_policy.controls.sip", value: "wrn",
+                                used: "fail"),
+            SecurityPolicyIssue(keyPath: "security_policy.controls.gatekeeper", value: "",
+                                used: "fail"),
+        ]
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: issues, policy: .default, hardware: [:])
+        XCTAssertEqual(rows.map(\.severity), [.warn, .warn],
+                       "a typo must not be able to turn a scheduled run red")
+        XCTAssertEqual(rows.map(\.title),
+                       ["security_policy.controls.sip", "security_policy.controls.gatekeeper"])
+        XCTAssertEqual(rows[0].detail, "\"wrn\" is not fail, warning or ignore — using fail")
+        XCTAssertEqual(Set(rows.map(\.id)).count, 2, "the audit list keys its rows by id")
+    }
+
+    func testAnUnknownSecurityPolicyKeyIsLeftToTheUnknownKeyRows() {
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [SecurityPolicyIssue(keyPath: "security_policy.mode", value: "",
+                                         used: "")],
+            policy: .default, hardware: [:])
+        XCTAssertEqual(rows, [], "unknownKeyRows reports it, with every other block's")
+    }
+
+    func testAHardwareLevelIssueSaysItUsesTheFileVaultLevel() {
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [SecurityPolicyIssue(
+                keyPath: "security_policy.filevault_off_hardware_encrypted", value: "maybe",
+                used: "the FileVault level")],
+            policy: .default, hardware: [:])
+        XCTAssertEqual(rows.first?.detail,
+                       "\"maybe\" is not fail, warning or ignore — using the FileVault level")
+    }
+
+    func testABlockOfTheWrongShapeIsNotCalledALevel() {
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [SecurityPolicyIssue(keyPath: "security_policy.controls", value: "strict",
+                                         used: "fail for every control")],
+            policy: .default, hardware: [:])
+        XCTAssertEqual(rows.first?.severity, .warn)
+        XCTAssertEqual(rows.first?.detail, "Expected a block of settings, found \"strict\" "
+            + "— using fail for every control")
+    }
+
+    func testNoSecurityPolicyIssuesEmitNoRows() {
+        XCTAssertEqual(ConfigDoctorService.securityPolicyRows(
+            issues: [], policy: .default, hardware: [:]), [])
+        XCTAssertEqual(ConfigDoctorService.securityPolicyRows(
+            issues: [], policy: SecurityControlPolicy(sip: .warning), hardware: ["s:C02": true]),
+                       [])
+    }
+
+    func testTheHardwareRuleWithoutHardwareFactsWarnsOnce() {
+        let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
+        let rows = ConfigDoctorService.securityPolicyRows(
+            issues: [], policy: policy, hardware: [:])
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.severity, .warn)
+        XCTAssertEqual(rows.first?.title, "security_policy.filevault_off_hardware_encrypted")
+        XCTAssertEqual(rows.first?.detail, "No hardware information yet — the rule applies "
+            + "after an inventory collect. Until then FileVault off counts at the FileVault "
+            + "level.")
+    }
+
+    func testTheHardwareRuleWithHardwareFactsOrNoRuleEmitsNoRow() {
+        let rule = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
+        XCTAssertEqual(ConfigDoctorService.securityPolicyRows(
+            issues: [], policy: rule, hardware: ["s:C02": false]), [], "facts present")
+        XCTAssertEqual(ConfigDoctorService.securityPolicyRows(
+            issues: [], policy: .default, hardware: [:]), [], "no rule")
+        XCTAssertEqual(ConfigDoctorService.securityPolicyRows(
+            issues: [], policy: SecurityControlPolicy(
+                fileVault: .ignore, fileVaultOffHardwareEncrypted: .warning), hardware: [:]),
+                       [], "FileVault is ignored, so the rule is not in use")
+    }
+
+    // MARK: Security policy rows read from a workspace
+
+    private func withWorkspace(_ yaml: String, body: (String, URL) throws -> Void) throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-doctor-policy-\(UUID().uuidString)", isDirectory: true)
+        let profile = "doctor-policy"
+        let workspace = root.appendingPathComponent(profile, isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try yaml.write(to: workspace.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        try body(profile, workspace)
+    }
+
+    func testSecurityPolicyRowsReadTheWorkspaceConfig() throws {
+        let yaml = """
+        security_policy:
+          controls:
+            sip: wrn
+          antivirus: warning
+        """
+        try withWorkspace(yaml) { profile, _ in
+            let rows = ConfigDoctorService.securityPolicyRows(
+                profile: profile, config: try makeConfig(yaml))
+            XCTAssertEqual(rows.map(\.title), ["security_policy.controls.sip"])
+            XCTAssertEqual(rows.map(\.severity), [.warn])
+            let doctor = rows + ConfigDoctorService.unknownKeyRows(profile: profile)
+            XCTAssertEqual(doctor.filter { $0.title == "security_policy.antivirus" }.count, 1,
+                           "an unknown key is reported once")
+        }
+    }
+
+    func testSecurityPolicyRowsReadTheComputersSnapshotForTheHardwareRule() throws {
+        let yaml = "security_policy:\n  filevault_off_hardware_encrypted: warn\n"
+        try withWorkspace(yaml) { profile, workspace in
+            let config = try makeConfig(yaml)
+            XCTAssertEqual(
+                ConfigDoctorService.securityPolicyRows(profile: profile, config: config)
+                    .map(\.title),
+                ["security_policy.filevault_off_hardware_encrypted"],
+                "the rule is set and there is no computers snapshot yet")
+
+            let dir = workspace.appendingPathComponent("jamf-cli-data/computers",
+                                                       isDirectory: true)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            // Shape: Jamf Pro API computer inventory, `--section GENERAL,HARDWARE`.
+            let computers = """
+            [{"general": {"name": "mac-1"},
+              "hardware": {"serialNumber": "C02ABC", "appleSilicon": true}}]
+            """
+            try computers.write(to: dir.appendingPathComponent("computers_20261001T090000.json"),
+                                atomically: true, encoding: .utf8)
+            XCTAssertEqual(
+                ConfigDoctorService.securityPolicyRows(profile: profile, config: config), [],
+                "the snapshot carries hardware facts")
+        }
+    }
 }
 
 // MARK: - EAResultRow test fixtures

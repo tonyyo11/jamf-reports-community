@@ -309,20 +309,30 @@ final class CLIBridge {
     /// the collected stdout + the process exit code.
     ///
     /// - Parameter environment: see ``run(executable:arguments:cwd:environment:onLine:)``.
+    /// - Parameter timeout: seconds before the child is terminated (SIGTERM, then SIGKILL after
+    ///   ``timeoutKillGrace``) and the call returns ``exitCodeTimedOut`` with the stdout read
+    ///   so far, without waiting for pipe EOF. `nil` waits as long as the child runs.
     nonisolated func runAndCapture(
         executable: URL,
         arguments: [String],
         cwd: URL? = nil,
         environment: [String: String] = CLIBridge.environmentForJamfCLI(),
+        timeout: TimeInterval? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> (Int32, Data) {
         final class DataBox: @unchecked Sendable {
-            var data = Data()
-            let lock = NSLock()
+            private var data = Data()
+            private let lock = NSLock()
             func append(_ newData: Data) {
                 lock.lock()
                 data.append(newData)
                 lock.unlock()
+            }
+            /// A timed-out call resumes without waiting for EOF, so a readability block can
+            /// still be appending while the result is copied.
+            func snapshot() -> Data {
+                lock.lock(); defer { lock.unlock() }
+                return data
             }
         }
         let box = DataBox()
@@ -370,6 +380,18 @@ final class CLIBridge {
                 if shouldResume { continuation.resume(throwing: error) }
             }
 
+            /// Timeout path only: the child has exited but a grandchild may still hold the
+            /// pipes, so do not wait for their EOF. Shares the single-resume flag with
+            /// `finish`, so whichever arrives first is the only resume.
+            func forceResume(_ code: Int32) {
+                let shouldResume: Bool
+                lock.lock()
+                shouldResume = !resumed
+                if shouldResume { resumed = true }
+                lock.unlock()
+                if shouldResume { continuation.resume(returning: code) }
+            }
+
             private func finish(_ mutate: (CaptureCompletion) -> Void) {
                 var pending: Int32?
                 lock.lock()
@@ -383,12 +405,57 @@ final class CLIBridge {
             }
         }
 
-        // Locked process box for task-cancellation — same pattern as run().
+        // Locked process box for task-cancellation — same pattern as run() — and the timeout.
         final class ProcessBox: @unchecked Sendable {
             private let lock = NSLock()
             private var process: Process?
+            private var readHandles: [FileHandle] = []
+            private var timeoutItem: DispatchWorkItem?
+            private var timedOut = false
+            var didTimeOut: Bool { lock.lock(); defer { lock.unlock() }; return timedOut }
             func set(_ p: Process) { lock.lock(); process = p; lock.unlock() }
             func terminate() { lock.lock(); let p = process; lock.unlock(); p?.terminate() }
+
+            func setReadHandles(_ handles: [FileHandle]) {
+                lock.lock(); readHandles = handles; lock.unlock()
+            }
+
+            func clearReadHandlers() {
+                lock.lock(); let handles = readHandles; lock.unlock()
+                for handle in handles { handle.readabilityHandler = nil }
+            }
+
+            /// Terminates the child after `seconds` unless it has exited by then, and kills it
+            /// if it is still running `timeoutKillGrace` later. Arm it once the child is
+            /// running, so a slow launch does not use up the allowance. The flag is set before
+            /// terminate(), and only for a live child, so a child that exited on its own as the
+            /// timer fired is not reported as timed out.
+            func armTimeout(_ seconds: TimeInterval) {
+                let item = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.lock.lock()
+                    guard let p = self.process, p.isRunning else { self.lock.unlock(); return }
+                    self.timedOut = true
+                    self.lock.unlock()
+                    p.terminate()
+                    let killAt = DispatchTime.now() + CLIBridge.timeoutKillGrace
+                    DispatchQueue.global().asyncAfter(deadline: killAt) { [weak self] in
+                        self?.killIfStillRunning()
+                    }
+                }
+                lock.lock(); timeoutItem = item; lock.unlock()
+                DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: item)
+            }
+
+            func disarmTimeout() { lock.lock(); let i = timeoutItem; lock.unlock(); i?.cancel() }
+
+            /// Checked under the lock and only while Foundation still reports the child running,
+            /// so the pid of a child that has exited (and could be reused) is not signalled.
+            private func killIfStillRunning() {
+                lock.lock(); defer { lock.unlock() }
+                guard let p = process, p.isRunning else { return }
+                kill(p.processIdentifier, SIGKILL)
+            }
         }
         let processBox = ProcessBox()
 
@@ -438,13 +505,25 @@ final class CLIBridge {
                     }
                 }
 
+                processBox.setReadHandles(
+                    [stdout.fileHandleForReading, stderr.fileHandleForReading]
+                )
                 process.terminationHandler = { proc in
-                    completion.markTerminated(proc.terminationStatus)
+                    processBox.disarmTimeout()
+                    if processBox.didTimeOut {
+                        // A timed-out call returns what it has; a grandchild holding a pipe
+                        // open must not keep it waiting for EOF.
+                        processBox.clearReadHandlers()
+                        completion.forceResume(proc.terminationStatus)
+                    } else {
+                        completion.markTerminated(proc.terminationStatus)
+                    }
                 }
 
                 do {
                     try process.run()
                     if Task.isCancelled { process.terminate() }
+                    if let timeout { processBox.armTimeout(timeout) }
                 } catch {
                     // C-11: mirror to OSLog — see `run()` above.
                     AppLogger.cli.error(
@@ -459,12 +538,20 @@ final class CLIBridge {
         } onCancel: {
             processBox.terminate()
         }
-        return (code, box.data)
+        if processBox.didTimeOut, let timeout {
+            AppLogger.cli.warning(
+                "CLIBridge.runAndCapture: terminated after \(timeout, privacy: .public)s timeout"
+            )
+            onLine(.init(timestamp: Date(), level: .warn,
+                         text: "[warn] timed out after \(Int(timeout.rounded(.up)))s — stopped"))
+            return (Self.exitCodeTimedOut, box.snapshot())
+        }
+        return (code, box.snapshot())
     }
 
     /// Fluent helper for the most common CLI flows the GUI surfaces.
-    /// `aiNarrative` (F3) is set only by GUI-generate call sites; the schedule
-    /// dispatcher (`runNow`) and onboarding leave the nil default.
+    /// `aiNarrative` (F3) is set only by GUI-generate call sites; every other
+    /// caller leaves the nil default.
     func generate(
         profile: String,
         csvPath: String?,
@@ -489,7 +576,9 @@ final class CLIBridge {
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
-        let defaultURL = engine.resolveOutputURL(stem: "report", profile: profile)
+        let defaultURL = engine.resolveOutputURL(
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: false), profile: profile,
+            onLine: outputDir == nil ? onLine : nil)
         let outputURL = outputDir.map { $0.appendingPathComponent(defaultURL.lastPathComponent) } ?? defaultURL
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
@@ -619,7 +708,9 @@ final class CLIBridge {
         }
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let csvURL = csvPath.map { URL(fileURLWithPath: $0) }
-        let outputURL = engine.resolveOutputURL(stem: "school-report", profile: profile)
+        let outputURL = engine.resolveOutputURL(
+            stem: ExportNaming.reportKind(for: .xlsx, schoolMode: true), profile: profile,
+            onLine: onLine)
         let fm = FileManager.default
         if !fm.fileExists(atPath: outputURL.deletingLastPathComponent().path) {
             do {
@@ -642,7 +733,8 @@ final class CLIBridge {
                 config: config,
                 csvURL: csvURL,
                 dataDir: dataDir,
-                outputURL: outputURL
+                outputURL: outputURL,
+                onLine: onLine
             )
             if failures.isEmpty {
                 onLine(.init(timestamp: Date(), level: .ok,
@@ -681,10 +773,25 @@ final class CLIBridge {
     /// the per-kind cadence filter, so ad-hoc Refresh calls still always
     /// fetch fresh data. Scheduled collects (via `main.swift --scheduled-run`)
     /// pass `force: false` (the default).
+    ///
+    /// Holds the tick lock throughout (`holdingTickLock`), and throws
+    /// `CLIBridgeError.tickLockHeld` before the auth probe when a tick holds it.
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
         force: Bool = false,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) async throws -> Int32 {
+        try await Self.holdingTickLock {
+            try await self.collectHoldingTickLock(
+                profile: profile, tiers: tiers, force: force, onLine: onLine)
+        }
+    }
+
+    private func collectHoldingTickLock(
+        profile: String,
+        tiers: Set<CollectionTier>,
+        force: Bool,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         guard await authGuard(profile: profile, onLine: onLine) else {
@@ -733,23 +840,43 @@ final class CLIBridge {
         }
     }
 
+    /// `narrative` (F3, GUI-only) is asked for between the collect and the generate, only
+    /// when the collect worked: it reads the snapshots the collect just wrote, so a narrative
+    /// asked for before it would describe the stale ones the report is not built from.
     func collectThenGenerate(
         profile: String,
         csvPath: String?,
-        aiNarrative: String? = nil,
+        narrative: (() async -> String?)? = nil,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) async throws -> Int32 {
         // Auth is checked inside collect(); skipping a separate probe here avoids calling
         // jamf-cli pro auth token twice for the combined collect+generate flow.
         onLine(.init(timestamp: Date(), level: .info, text: "[info] collecting jamf-cli snapshots for \(profile)"))
-        // force: true — collectThenGenerate is always a GUI "Run now" action; the
-        // once-per-day guard must not silently skip a user-triggered collect+generate.
-        let collectExit = try await collect(profile: profile, force: true, onLine: onLine)
-        guard collectExit == 0 else { return collectExit }
+        return try await Self.runCollectThenGenerate(
+            // force: true — collectThenGenerate is always a GUI "Run now" action; the
+            // once-per-day guard must not silently skip a user-triggered collect+generate.
+            collect: { try await self.collect(profile: profile, force: true, onLine: onLine) },
+            narrative: narrative,
+            generate: { aiNarrative in
+                onLine(.init(timestamp: Date(), level: .info,
+                             text: "[info] generating report from cached snapshots"))
+                return try await self.generate(profile: profile, csvPath: csvPath,
+                                               aiNarrative: aiNarrative, onLine: onLine)
+            }
+        )
+    }
 
-        onLine(.init(timestamp: Date(), level: .info, text: "[info] generating report from cached snapshots"))
-        return try await generate(profile: profile, csvPath: csvPath,
-                                  aiNarrative: aiNarrative, onLine: onLine)
+    /// Orchestration core of `collectThenGenerate`, with the three steps injected so tests
+    /// can order them without a live jamf-cli (the same seam as `runGenerateAll`). A failed
+    /// collect returns its exit code before the narrative is asked for.
+    static func runCollectThenGenerate(
+        collect: () async throws -> Int32,
+        narrative: (() async -> String?)?,
+        generate: (String?) async throws -> Int32
+    ) async throws -> Int32 {
+        let collectExit = try await collect()
+        guard collectExit == 0 else { return collectExit }
+        return try await generate(await narrative?())
     }
 
     // MARK: - jamf-cli exit codes (jamf-cli Error Handling & Exit Codes spec)
@@ -762,6 +889,11 @@ final class CLIBridge {
     // Refused by policy (v1.28.0+): correctly invoked, but the resolved credentials
     // cannot reach the API that serves it. Never succeeds on retry.
     nonisolated static let exitCodeRefusedByPolicy: Int32 = 8
+    /// Returned by `runAndCapture(timeout:)` when it stopped the child. jamf-cli never exits
+    /// with it; a signal-terminated child would otherwise read as exit 15.
+    nonisolated static let exitCodeTimedOut: Int32 = -2
+    /// Seconds a child gets to act on the timeout's SIGTERM before `runAndCapture` sends SIGKILL.
+    nonisolated static let timeoutKillGrace: TimeInterval = 3
 
     /// Translate a jamf-cli exit code into a plain-language explanation with a
     /// remediation hint, prefixed by the operation. Replaces raw "… exit N"
@@ -773,8 +905,8 @@ final class CLIBridge {
     ///   - operation: human phrase for what failed, e.g. "HTML report generation".
     /// True for the exit codes after which `pro backup` has left output on
     /// disk that retention must prune: `0`, and `exitCodePartialFailure` (7 — a
-    /// partial export is still finalized to `backups/<timestamp>/`). All three
-    /// backup call sites (scheduled, GUI, CLI) share this one rule; they used
+    /// partial export is still finalized to `backups/<timestamp>/`). Both
+    /// backup call sites (scheduled run, CLI) share this one rule; they used
     /// to spell it out separately and drifted apart.
     nonisolated static func backupOutputIsPrunable(exit code: Int32) -> Bool {
         code == 0 || code == exitCodePartialFailure
@@ -829,6 +961,10 @@ final class CLIBridge {
     /// verdicts map to their canonical code (auth-dead → 401, all-kinds-dead → 1);
     /// anything else falls back to the localized description.
     nonisolated static func explainOperationError(_ error: Error, operation: String) -> String {
+        // A refusal, not a failure: the operation never started.
+        if let refused = error as? CLIBridgeError, refused == .tickLockHeld {
+            return refused.localizedDescription
+        }
         if case let ReportEngineError.collectFailed(_, exitCode) = error {
             return explainExit(exitCode, operation: operation)
         }
@@ -1214,7 +1350,7 @@ final class CLIBridge {
             outputURL = URL(fileURLWithPath: path)
         } else {
             let engine = ReportEngine(config: config, dataDir: dataDir)
-            outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
+            outputURL = engine.resolveOutputURL(stem: "report", profile: profile, onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("html")
         }
         let fm = FileManager.default
@@ -1358,7 +1494,9 @@ final class CLIBridge {
             outputURL = URL(fileURLWithPath: path)
         } else {
             let engine = ReportEngine(config: config, dataDir: workspace)
-            outputURL = engine.resolveOutputURL(stem: "inventory", profile: profile)
+            outputURL = engine.resolveOutputURL(
+                stem: ExportNaming.reportKind(for: .csv, schoolMode: false), profile: profile,
+                onLine: onLine)
                 .deletingPathExtension().appendingPathExtension("csv")
         }
         do {

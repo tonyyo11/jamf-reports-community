@@ -62,8 +62,8 @@ extension ModelAvailability {
     /// Only compiled under Xcode 27; the ungated `current(for:)` below routes
     /// here at runtime on macOS 27.
     ///
-    /// One model, so no per-tier branch: `.external` is unbuilt and stubbed by
-    /// the factory, and harmlessly reports on-device readiness here.
+    /// One model, so the config's `tier` cannot change the answer: a config that
+    /// still names a removed tier reports exactly what on-device does.
     static func resolve(for config: AIConfig) -> ModelAvailability {
         map(SystemLanguageModel.default.availability)
     }

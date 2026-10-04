@@ -5,8 +5,9 @@ import SwiftUI
 ///
 /// Before 2.8.1 this screen also had a grid of sheet toggles, an Executive preset,
 /// a workbook preview and three more chart switches. None of them was saved or
-/// read by any generate path, yet Apply then read "Saved" (#207 G9). The app
-/// generates the Full Instance template; the command-line tool takes `--template`.
+/// read by any generate path, yet Apply then read "Saved" (#207 G9). The Overview
+/// generates the Full Instance template; the Generate sheet (Generated Reports) and the
+/// command-line tool's `--template` make the others.
 struct CustomizeView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
@@ -143,8 +144,9 @@ struct CustomizeView: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Workbook sheets", style: .body)
-                Text("A workbook generated in the app has every sheet: the Full Instance "
-                     + "report. For a shorter one, generate a smaller template with the "
+                Text("The Overview's Generate makes the Full Instance report, with every "
+                     + "sheet. For a shorter one, choose a template or your own sheets with "
+                     + "Generate\u{2026} on the Generated Reports screen, or use the "
                      + "command-line tool:")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
@@ -189,6 +191,12 @@ struct CustomizeView: View {
         .frame(width: 260)
     }
 
+    /// The selected cards the Overview shows: one whose control the policy ignores is not.
+    private var offeredScoreCardCount: Int {
+        workspace.selectedScoreCards.filter { $0.isOffered(under: workspace.securityPolicy) }
+            .count
+    }
+
     /// The Overview's score cards and sections are chosen in one editor on the
     /// Overview itself, where it can say which ones this profile can fill.
     /// This card only points there; a second, availability-blind copy of the
@@ -198,7 +206,7 @@ struct CustomizeView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Overview", style: .body)
                 Text("Score cards and Overview sections — what shows, in what order — "
-                     + "are chosen on the Overview. \(workspace.selectedScoreCards.count) "
+                     + "are chosen on the Overview. \(offeredScoreCardCount) "
                      + "score cards selected.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))

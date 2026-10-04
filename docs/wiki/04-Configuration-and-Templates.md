@@ -20,7 +20,7 @@ Scaffolding is a starting point, not a final answer. Always review the result.
 
 ![config.yaml editor](images/config-editor.png)
 
-In the app, the **Config** screen edits `config.yaml` through seven tabs:
+In the app, the **Config** screen edits `config.yaml` through eight tabs:
 
 | Tab | What it covers |
 |---|---|
@@ -30,7 +30,8 @@ In the app, the **Config** screen edits `config.yaml` through seven tabs:
 | Thresholds | stale-device days, disk-usage and compliance bands |
 | Platform API | opt-in Jamf Platform API reporting |
 | Output & Branding | output directory, archiving, run retention, report branding |
-| Scoring | the weighted Security Score and risk-score weights |
+| Scoring | the Security Policy card, the weighted Security Score and risk-score weights |
+| From config.yaml | read-only: settings no tab edits, keys the app does not read, lines it skipped |
 
 ## Reviewing column mappings
 
@@ -48,21 +49,32 @@ header comments list every field.
 
 ## Tracked sections
 
-Not every config block has a screen in the app. The Config screen's seven tabs cover
-`columns`, `security_agents`, `custom_eas`, `thresholds`, `platform`, `output`, and
-`scoring`. `notify` and `ai` each have their own dedicated panel elsewhere in the app
+Not every config block has a screen in the app. The Config screen's seven editing tabs
+cover `columns`, `security_agents`, `custom_eas`, `thresholds`, `platform`, `output`, and
+`scoring`; the eighth, **From config.yaml**, is read-only and lists what none of them
+edit. `notify` and `ai` each have their own dedicated panel elsewhere in the app
 (linked below). `alerts`, `retention`, and `compliance.baselines` are hand-edited in
 `config.yaml` directly — there is no editor for them in the app yet, and so are
 `shared_workspace` and the two `charts` sub-keys the Customize screen does not cover.
+The From config.yaml tab shows all of these read-only.
 
-Hand-editing is safe alongside the GUI: the app's config editor only rewrites its own
-managed keys and preserves everything else verbatim, and scheduled runs read
-`config.yaml` fresh at each run — an edit to `alerts:` or `notify:` takes effect on the
-next scheduled run, no relaunch required.
+Hand-editing is safe alongside the GUI: a save from the Config screen rewrites only the
+blocks that screen edits and keeps the rest, and scheduled runs read `config.yaml` fresh
+at each run — an edit to `alerts:` or `notify:` takes effect on the next scheduled run,
+no relaunch required. Inside a block the screen rewrites, comments and lines the app
+could not read are not kept: the app copies the file first, and refuses a save when the
+file changed on disk after the screen loaded it. See
+[A hand-edited config.yaml](#a-hand-edited-configyaml).
 
 - **`security_agents`** — a list of third-party agents. Each entry drives a row in the
   Security Agents sheet. `connected_value` is a case-insensitive substring match.
-- **`sheets`** — optional `only` / `skip` lists to trim the workbook by tab name.
+- **`sheets`** — `only`, `skip` and `order`, by tab name (case-insensitive), shape every
+  report workbook: the Jamf Pro tabs, the CSV tabs, the Charts tab and Jamf School
+  workbooks. The report template picks its sheets first, so `only` never adds a tab; a
+  name in both `only` and `skip` is not written; `order` can put a CSV tab ahead of the
+  Jamf Pro tabs; a non-empty `only` drops Charts unless you list "Charts"; an `only` that
+  names no tab of the workbook is ignored with a warning. An empty `only: []` means no
+  restriction. Period and fleet workbooks do not read these.
 - **`thresholds`**, **`output`**, **`charts`** — stale-device window, disk-usage bands,
   output retention, chart toggles.
 
@@ -82,6 +94,50 @@ one is configured. `rule_count`, when set, bounds validity: a failure count abov
 baseline's total rule count is treated as bad data (No Data), not banded as a High
 failure count. When `baselines` is empty, the app synthesizes a single baseline from
 `failures_count_column` + `baseline_label`.
+
+### Security policy (`security_policy`)
+
+By default every security control counts as a gap when it is off. The `security_policy`
+block changes that for one workspace, on every screen, report and scheduled run. Each
+control, `filevault`, `sip`, `firewall` and `gatekeeper`, is `fail` (a gap: it counts in
+the action items, the per-device gap count, risk points and the score, and shows red),
+`warning` (shown amber, not a gap, scored as compliant) or `ignore` (not counted at all,
+and its score weight is dropped). The percentages themselves, such as FileVault on 94%,
+never change; only what the app calls a gap does. You can set it on the **Scoring** tab's
+Security Policy card, which saves each change to config.yaml at once and keeps the rest of
+the file, or write it by hand:
+
+```yaml
+security_policy:
+  controls:
+    filevault: fail      # fail | warning | ignore
+    sip: fail
+    firewall: fail
+    gatekeeper: fail
+  filevault_off_hardware_encrypted: warning
+  score_weights:         # 0-100 each; omit for the defaults
+    filevault: 15
+```
+
+**Hardware-encrypted Macs.** An Apple silicon Mac, or an Intel Mac with a T2 chip, always
+encrypts its internal disk; with FileVault off the disk simply unlocks without a password.
+`filevault_off_hardware_encrypted` sets the level for that case alone (`Same as FileVault`
+on the card). Those Macs are named "FileVault off (hardware-encrypted)" and counted apart.
+The rule needs the Mac's model details from the latest inventory collect; a Mac whose
+record is missing, ambiguous (two records on one serial number) or a virtual machine keeps
+FileVault's own level. On a CSV, map `architecture` ("Architecture Type") and `model`
+("Model Identifier").
+
+**Score weights.** Weights are saved in the workspace (`score_weights`), so the Security
+Posture screen, the Overview, Trends, alerts and reports all score the same way. Weights
+set on this Mac before 2.9 show on the Scoring tab and apply to a workspace once you
+change one. A policy or weight change shows in the daily summary, and so on the Overview
+and Trends, from the next day's first collect.
+
+A level written as `warn`, `failure`, `gap`, `ignored`, `skip` or `not counted` is read,
+in any case. A value the app cannot read leaves that control at `fail` (the hardware rule
+at FileVault's level); the Scoring card and Config → Run check name it and the level used
+instead.
 
 ### Shared workspaces (`shared_workspace`)
 
@@ -149,10 +205,20 @@ file — either one keeps it; `include_summaries` (default false) leaves the dur
 trend summaries alone unless explicitly set true; `archive_dir` defaults to
 `<workspace>/_archive`. `retention` has no in-app editor.
 
+### Where reports go (`output`, `branding`)
+
+Reports are written to `output.output_dir`, with `~` expanded. A folder outside the
+workspace is used only with `output.allow_absolute_paths: true` (`yes`, `on` and `1` also
+work; write `true`). A folder the app will not use — outside the workspace without that
+setting, or a system or credentials folder — is named in the run log with the reason, and
+the report goes to `Generated Reports` in the workspace. `retention.archive_dir` follows
+the same rule. `output.keep_latest_runs` below 1 is read as 1. `branding.accent_color`
+takes `#RRGGBB` or `#RGB`; anything else uses the default.
+
 ### AI insights (`ai`)
 
-Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device` |
-`external` — `external` is reserved, not yet built), and `reasoning_level`
+Opt-in, and inert on any macOS below 27: `enabled`, `tier` (`on_device`, the
+only one), and `reasoning_level`
 (`light` | `moderate` | `deep`). Apple Foundation Models is on-device only, so
 `on_device` is the default and the only built behaviour.
 See [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights) for what the feature does and its in-app Settings
@@ -227,7 +293,8 @@ The **Customize** screen holds the report options that are not in Config:
   (`charts.os_adoption.per_major_charts`).
 - A button to the Overview's own **Customize** sheet, where you choose which score cards and
   sections the Overview shows.
-- How to get a shorter workbook: the command-line tool's `--template` (see Report templates
+- How to get a shorter workbook: choose a template or your own sheets with **Generate…** on
+  Generated Reports, or use the command-line tool's `--template` (see Report templates
   below).
 
 Before 2.8.1 the screen also had a grid of sheet toggles, an Executive preset and three more
@@ -241,13 +308,43 @@ beside the workbook — before 2.7.0 the setting was read by nothing and PNGs we
 written. Charts *embedded in* the workbook are governed separately by
 `charts.embed_in_xlsx`.
 
+## A hand-edited config.yaml
+
+The app reads config.yaml the way you wrote it. Two-, three- and four-space indentation,
+or a mix, all read the same; a key typed twice reads as its last value everywhere; a list
+item written as a bare `-` with its contents underneath works. What it cannot read it
+says, by line number, on the Config screen and in Run check: a line indented differently
+from its neighbours, a line with no `key: value`, a tab in the indentation, a `|` or `>`
+block value, a list not closed on its line, a `---` second document. Run check also lists
+every key the app does not read, with the key you probably meant (`os_version` for
+`operating_system`), and says when a value you typed was replaced, clamped or ignored, so
+a hand-typed setting is never changed in silence. It never prints a value that could be a
+URL or secret.
+
+The **From config.yaml** tab shows the same things read-only: the settings no other tab
+edits (your `alerts`, `retention`, `shared_workspace`, `compliance.baselines`), the keys
+the app does not read, and the skipped lines. Reload re-reads the file; the other tabs
+keep what they loaded. Anything that looks like a URL, token or password shows `(set)`.
+
+**Saving.** A save from the Config screen rewrites only the blocks that screen edits. It
+keeps the blank lines and comments between blocks, keys the screen does not show on an
+agent or custom EA, and keys typed in the Notifications and AI blocks. Comments and lines
+the app could not read *inside* a block the screen rewrites are not kept; before such a
+save the app copies the file to `config.yaml.bak-<date-time>` beside it (the newest five
+are kept) and says where. If config.yaml changed on disk after the screen loaded it, the
+save is refused and the screen offers Reload. A `custom_eas` or `security_agents` block
+that is not a list is left as typed. Onboarding and `jamf-reports scaffold --out` copy an
+existing config.yaml the same way before replacing it.
+
 ## Checking your config
 
 **Config → Run check** runs every validation the app has — not just "does `config.yaml`
 parse". It reports column mappings that no longer match your CSV, baselines pointing at
 extension attributes nobody collects, malformed alert rules, data-accuracy problems, and
 the state of the workspace folder, each with a concrete fix. On a shared workspace it also
-reports the other Macs writing there.
+reports the other Macs writing there. It also lists every key the app does not read, with the
+nearest known key, each line it skipped, each typed value it replaced or clamped, and the
+keys it reads that nothing uses.
 
 Two of its findings are about a workspace that is fine but not the one you expected: it
 says when **more history for this profile exists in another folder** (naming it and how
@@ -262,12 +359,20 @@ against broken column mappings no longer looks clean in Run History.
 
 ## Report templates
 
-The app ships five report templates, each a curated sheet selection rather than a separate
-engine. The app itself generates the Full Instance report, with every sheet; generate a
-template with the command-line tool, for example
-`jamf-reports generate --profile <profile> --template executive` (see
+The app ships report templates, each a curated sheet selection rather than a separate
+engine. The Overview generates the Full Instance report, with every sheet. **Generate…** on
+Generated Reports generates any template, or a custom set of sheets;
+`jamf-reports generate --profile <profile> --template executive` generates the same
+templates (see
 [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line)).
 All formats — XLSX, HTML, PDF — are produced by the native Swift engine.
+
+**Generate…** opens a sheet where you choose a template (Full Instance, Executive,
+Operational, Compliance, Asset, Security Posture, School) or **Custom**, any sheets you
+tick (your choice is remembered), the formats (XLSX, HTML, PDF, CSV), whether to collect
+fresh data first (off by default when your data is under an hour old) and whether to run a
+Health Audit first. It replaces the old Generate HTML button, and it has no schedule form:
+use Automation for that.
 
 | Template | Audience | Cadence | Focus |
 |---|---|---|---|

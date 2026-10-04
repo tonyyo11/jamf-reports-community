@@ -244,6 +244,7 @@ struct TrendsView: View {
                 }
                 metricPicker
                 heroChart
+                aiInsightCard
                 comparisonRow
                 snapshotArchive
             }
@@ -771,6 +772,20 @@ struct TrendsView: View {
                             + "snapshots live.")
                 }
             }
+        }
+    }
+
+    // MARK: AI insight
+
+    /// macOS 27, opt-in: how the offered metrics moved over the selected range. The card
+    /// hides itself while `ai.enabled` is off; the input is built only where it can show.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspaceStore.demoMode) {
+            TrendsAIInsightCard(
+                trendStore: trendStore,
+                benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
+                edrAgentName: workspaceStore.edrAgentName)
         }
     }
 
@@ -1429,9 +1444,17 @@ struct TrendsView: View {
         } catch {
             isArchiving = false
             workspaceStore.globalStatus = nil
-            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
-            workspaceStore.toast = Toast(message: "Archive failed — \(error.localizedDescription)", style: .danger)
+            // The bridge logs a refusal itself, as a notice.
+            if (error as? CLIBridgeError) != .tickLockHeld {
+                AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            }
+            workspaceStore.toast = Self.archiveFailureToast(error)
         }
+    }
+
+    /// A scheduled run holding the tick lock is a refusal, shown as information.
+    nonisolated static func archiveFailureToast(_ error: Error) -> Toast {
+        WorkspaceStore.collectFailureToast(error, operation: "Archive")
     }
 
     // MARK: Export PNG
@@ -1800,5 +1823,33 @@ private struct ChartExportView: View {
         if normalized <= 2 { return 2 * magnitude }
         if normalized <= 5 { return 5 * magnitude }
         return 10 * magnitude
+    }
+}
+
+/// The Trends screen's AI card, in a view of its own: a chart hover redraws the screen, and
+/// with nothing here changed SwiftUI does not run this body again, so the input is not
+/// rebuilt; `AIInsightCard` builds it only while the card shows. Live profiles only, so the
+/// points are the store's.
+private struct TrendsAIInsightCard: View {
+    let trendStore: TrendStore
+    let benchmarkLabel: String?
+    let edrAgentName: String?
+
+    var body: some View {
+        AIInsightCard(
+            title: "AI Trend Insight",
+            idleText: "Summarize how these metrics moved over the selected range using "
+                + "on-device intelligence.",
+            provenanceText: "AI-generated from the snapshots in this range — verify "
+                + "against the chart above."
+        ) {
+            // `trends` leaves out the band metric and any metric with fewer than two
+            // points, which is what the screen's picker hides on a live profile.
+            FleetInsightInput.trends(
+                metrics: TrendSeries.Metric.allCases,
+                points: { trendStore.points(metric: $0) },
+                label: { $0.displayLabel(
+                    benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) })
+        }
     }
 }

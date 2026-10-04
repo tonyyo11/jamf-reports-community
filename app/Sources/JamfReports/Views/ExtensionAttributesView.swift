@@ -67,11 +67,18 @@ struct ExtensionAttributesView: View {
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .onChange(of: dataSource) { _, _ in
+            // The picked attribute belongs to the old source; reload picks the new default.
+            selectedEA = nil
+            reload()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
         }
     }
+
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
     private var subtitle: String? {
         guard snapshot.totalEAs > 0 else { return nil }

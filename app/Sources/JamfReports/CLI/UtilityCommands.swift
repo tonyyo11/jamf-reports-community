@@ -15,7 +15,7 @@ struct Backup: AsyncParsableCommand {
         // Run housekeeping BEFORE the possible CLIRun.fail below (which exits the
         // process) so an exit-7 partial export is pruned like any other backup —
         // CLIRun.fail never returns, so housekeeping is otherwise unreachable.
-        // Third caller of the shared housekeeping (GUI + scheduled are the others):
+        // Second caller of the shared housekeeping (the scheduled run is the other):
         // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
         if CLIBridge.backupOutputIsPrunable(exit: code) {
             BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: CLIRun.printLogLine)
@@ -50,16 +50,26 @@ struct Scaffold: AsyncParsableCommand {
         // Python `scaffold`; the user sets the profile when they wire it up). Like
         // Python's `scaffold`, this OVERWRITES `--out` if it exists — it's an
         // initial-setup command; the GUI re-scaffold does a non-destructive merge.
+        // The file it replaces is copied aside first.
         guard let csv else {
             // Same shape the GUI onboarding "Skip for now" path writes, and the
             // same unconditional-overwrite semantics as the CSV branch below.
+            try keepCopy(of: outURL)
             try ScaffoldService.writeMinimalConfig(to: outURL, profile: "")
             print(outURL.path)
             return
         }
         let result = try ScaffoldService.matchColumns(from: URL(fileURLWithPath: csv), profile: "")
+        try keepCopy(of: outURL)
         try ScaffoldService.writeConfig(to: outURL, result: result, profile: "")
         print(outURL.path)
+    }
+
+    /// On stderr, so stdout stays the one path a script reads.
+    private func keepCopy(of url: URL) throws {
+        guard let backup = try ConfigService.backUp(url) else { return }
+        FileHandle.standardError.write(
+            Data("note: kept a copy of the existing file at \(backup.path)\n".utf8))
     }
 }
 

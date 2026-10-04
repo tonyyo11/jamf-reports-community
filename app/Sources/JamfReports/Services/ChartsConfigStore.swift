@@ -46,36 +46,16 @@ enum ChartsConfigLoader {
 enum ChartsConfigWriter {
     enum WriteError: Error, LocalizedError {
         case invalidProfile(String)
-        case invalidDocumentRoot
 
         var errorDescription: String? {
             switch self {
             case .invalidProfile(let profile): "Invalid profile name: \(profile)"
-            case .invalidDocumentRoot:
-                "config.yaml's YAML root is not a mapping — cannot save chart options."
             }
         }
     }
 
-    static func save(_ options: ChartsOptions, profile: String) throws {
-        guard let workspace = ProfileService.workspaceURL(for: profile) else {
-            throw WriteError.invalidProfile(profile)
-        }
-        let manager = FileManager.default
-        try manager.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let configURL = workspace.appendingPathComponent("config.yaml")
-
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: configURL.path) {
-            document = try YAMLCodec.decode(String(contentsOf: configURL, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
-
-        guard case .mapping(var root) = document.root else {
-            throw WriteError.invalidDocumentRoot
-        }
-
+    /// Sets the two options on `root`'s `charts:` block and keeps every other key in it.
+    static func apply(_ options: ChartsOptions, to root: inout YAMLCodec.YAMLMapping) {
         var charts = root.value(for: "charts")?.mapping ?? .init(entries: [])
         charts.set("save_png", value: .scalar(.bool(options.savePNGs)))
 
@@ -84,14 +64,15 @@ enum ChartsConfigWriter {
         charts.set("os_adoption", value: .mapping(osAdoption))
 
         root.set("charts", value: .mapping(charts))
-        document.root = .mapping(root)
+    }
 
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["charts"])
-        let tempURL = workspace.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tempURL, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: configURL.path) {
-            manager.createFile(atPath: configURL.path, contents: Data())
+    @discardableResult
+    static func save(
+        _ options: ChartsOptions, profile: String
+    ) throws -> (stamp: ConfigFileStamp, report: ConfigSaveReport) {
+        guard ProfileService.isValid(profile) else { throw WriteError.invalidProfile(profile) }
+        return try ConfigService.saveBlock(key: "charts", profile: profile) {
+            apply(options, to: &$0)
         }
-        _ = try manager.replaceItemAt(configURL, withItemAt: tempURL)
     }
 }

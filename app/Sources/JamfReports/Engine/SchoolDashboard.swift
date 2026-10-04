@@ -29,10 +29,33 @@ struct SchoolDashboard: Sendable {
     ///
     /// `SchoolDashboardError.noCachedData` (and any `SheetSkippable` conformer) is treated
     /// as an expected-absent skip — tenants that haven't collected school snapshots get
-    /// empty written lists, not failures.
+    /// empty written lists, not failures. A sheet `sheets` leaves out never runs; the engine
+    /// passes the settings from config.yaml (`ReportEngine.sheetSettings`).
     @discardableResult
-    func writeAll() -> (written: [String], failures: [SheetFailure]) {
-        let plan: [(String, () throws -> Void)] = [
+    func writeAll(
+        sheets: SheetsConfig = SheetsConfig()
+    ) -> (written: [String], failures: [SheetFailure]) {
+        var written: [String] = []
+        var failures: [SheetFailure] = []
+        for (name, fn) in sheets.applyTo(sheetPlan) {
+            do {
+                try fn()
+                written.append(name)
+            } catch let skippable as SheetSkippable {
+                // Cached data absent — expected for tenants that haven't collected school snapshots.
+                print("  [skip] \(name): \(skippable)")
+            } catch {
+                let label = "\(type(of: error)): \(error)"
+                failures.append(SheetFailure(sheet: name, error: label))
+                print("  [fail] \(name): unexpected error — \(label)")
+            }
+        }
+        return (written, failures)
+    }
+
+    /// The School tabs in their default order.
+    var sheetPlan: [(name: String, write: () throws -> Void)] {
+        [
             ("School Overview", writeSchoolOverview),
             ("Device Groups", writeSchoolDeviceGroups),
             ("Users", writeSchoolUsers),
@@ -47,22 +70,6 @@ struct SchoolDashboard: Sendable {
             ("Device Status", writeSchoolDeviceStatus),
             ("Stale Devices", writeSchoolStaleDevices),
         ]
-        var written: [String] = []
-        var failures: [SheetFailure] = []
-        for (name, fn) in plan {
-            do {
-                try fn()
-                written.append(name)
-            } catch let skippable as SheetSkippable {
-                // Cached data absent — expected for tenants that haven't collected school snapshots.
-                print("  [skip] \(name): \(skippable)")
-            } catch {
-                let label = "\(type(of: error)): \(error)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
-            }
-        }
-        return (written, failures)
     }
 
     // MARK: - School Overview

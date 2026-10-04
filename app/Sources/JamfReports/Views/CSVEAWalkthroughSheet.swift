@@ -29,6 +29,8 @@ struct CSVEAWalkthroughSheet: View {
     @State private var loaded = false
     @State private var adoptError: String?
     @State private var confirmation: String?
+    /// The save left notes (a block left as typed, a copy made), so the banner warns.
+    @State private var confirmationHasNotes = false
     /// Full sample rows from the source CSV, kept for the dry-run parse check —
     /// `proposals` only carries one sample value per column.
     @State private var csvSample: ScaffoldService.CSVSample?
@@ -57,7 +59,7 @@ struct CSVEAWalkthroughSheet: View {
                         errorBanner(adoptError)
                     }
                     if let confirmation {
-                        confirmationBanner(confirmation)
+                        confirmationBanner(confirmation, warns: confirmationHasNotes)
                     }
                 }
             }
@@ -357,17 +359,18 @@ struct CSVEAWalkthroughSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func confirmationBanner(_ message: String) -> some View {
+    private func confirmationBanner(_ message: String, warns: Bool) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Theme.Colors.tealBright)
+            Image(systemName: warns ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(warns ? Theme.Colors.warn : Theme.Colors.tealBright)
             Text(message)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Theme.Text.primary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer()
         }
         .padding(12)
-        .background(Theme.Colors.teal.opacity(0.12))
+        .background((warns ? Theme.Colors.warn : Theme.Colors.teal).opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -426,6 +429,22 @@ struct CSVEAWalkthroughSheet: View {
             type: override.rawValue, sampleValue: ea.sampleValue)
     }
 
+    /// What an adoption wrote, then the notes its save left (a block left as typed, a copy).
+    static func adoptionMessage(eas: Int, agents: Int, notes: [String], profile: String) -> String {
+        var parts: [String] = []
+        if eas > 0 { parts.append("\(eas) Extension Attribute\(eas == 1 ? "" : "s")") }
+        if agents > 0 { parts.append("\(agents) Security Agent\(agents == 1 ? "" : "s")") }
+        let head: String?
+        if !parts.isEmpty {
+            head = "Added \(parts.joined(separator: " and ")) to config.yaml for profile "
+                + "\(profile). They appear in the Config tab now and in reports after the next "
+                + "generate."
+        } else {
+            head = notes.isEmpty ? "Those columns are already in config.yaml." : nil
+        }
+        return ([head].compactMap { $0 } + notes).joined(separator: " ")
+    }
+
     private func adopt() {
         adoptError = nil
         let eas = selectedProposals.filter { !agentTargets.contains($0.id) }
@@ -435,21 +454,12 @@ struct CSVEAWalkthroughSheet: View {
             let result = try ConfigEAAdopter.adopt(
                 eaProposals: eas, agentProposals: agents,
                 connectedValues: connectedValues, profile: profile)
-            if result.eas == 0 && result.agents == 0 {
-                confirmation = "Those columns are already in config.yaml."
-            } else {
-                var parts: [String] = []
-                if result.eas > 0 {
-                    parts.append("\(result.eas) Extension Attribute\(result.eas == 1 ? "" : "s")")
-                }
-                if result.agents > 0 {
-                    parts.append("\(result.agents) Security Agent\(result.agents == 1 ? "" : "s")")
-                }
-                confirmation = "Added \(parts.joined(separator: " and ")) to config.yaml for "
-                    + "profile \(profile). They appear in the Config tab now and in reports "
-                    + "after the next generate."
-            }
-            // Brief confirmation, then dismiss.
+            let notes = result.report.notes
+            confirmationHasNotes = !notes.isEmpty
+            confirmation = Self.adoptionMessage(
+                eas: result.eas, agents: result.agents, notes: notes, profile: profile)
+            // Brief confirmation, then dismiss; a save note stays until Close.
+            guard notes.isEmpty else { return }
             Task {
                 try? await Task.sleep(for: .milliseconds(900))
                 dismiss()

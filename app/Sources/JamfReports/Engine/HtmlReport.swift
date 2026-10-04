@@ -33,53 +33,30 @@ struct HtmlReport: Sendable {
     /// GUI-generate-only AI executive narrative (F3). nil (the default) omits
     /// the `.aiNarrative` section entirely — headless callers never set it.
     var aiNarrative: String? = nil
+    /// Where a `[warn]` line goes, beside the run's other log lines.
+    var onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
 
     // MARK: - HTML local config
 
-    /// Local representation of `html:` config block, read from YAML if present.
-    /// Avoids touching ConfigDecoder (another agent's territory).
+    /// `html.track_history` and `html.history_file`, which the decoder does not model.
     private struct HtmlConfig: Sendable {
         var trackHistory: Bool = false
         var historyFile: String = ""
     }
 
+    /// Read from the config.yaml beside `dataDir` through the engine's loader, so a value
+    /// reads as the decoder would read it.
     private func htmlConfig() -> HtmlConfig {
-        // Read the raw YAML map via YAMLCodec if it exposed a general accessor,
-        // but since it doesn't, we fall back to loading the raw file ourselves.
-        // This keeps the footprint minimal and avoids touching ConfigDecoder.
-        guard let configURL = dataDir.deletingLastPathComponent()
-                .appendingPathComponent("config.yaml") as URL?,
-              FileManager.default.fileExists(atPath: configURL.path),
-              let text = try? String(contentsOf: configURL, encoding: .utf8)
+        let configURL = dataDir.deletingLastPathComponent().appendingPathComponent("config.yaml")
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
         else { return HtmlConfig() }
-
-        var result = HtmlConfig()
-        var inHtmlBlock = false
-        for rawLine in text.components(separatedBy: "\n") {
-            let line = rawLine
-            // Detect the `html:` top-level block
-            if line.hasPrefix("html:") {
-                inHtmlBlock = true
-                continue
-            }
-            // Leave block when we hit a new top-level key
-            if inHtmlBlock && !line.hasPrefix(" ") && !line.hasPrefix("\t") && !line.isEmpty {
-                inHtmlBlock = false
-            }
-            guard inHtmlBlock else { continue }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("track_history:") {
-                let val = trimmed.components(separatedBy: ":").dropFirst()
-                    .joined(separator: ":").trimmingCharacters(in: .whitespaces)
-                result.trackHistory = val == "true"
-            } else if trimmed.hasPrefix("history_file:") {
-                let val = trimmed.components(separatedBy: ":").dropFirst()
-                    .joined(separator: ":").trimmingCharacters(in: .whitespaces)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-                result.historyFile = val
-            }
-        }
-        return result
+        return HtmlConfig(
+            trackHistory: ConfigLoader.rawValue(at: ["html", "track_history"], in: root)
+                as? Bool ?? false,
+            historyFile: ConfigLoader.rawValue(at: ["html", "history_file"], in: root)
+                as? String ?? ""
+        )
     }
 
     // MARK: - Public API
@@ -177,10 +154,7 @@ struct HtmlReport: Sendable {
 
         let overview = loadJSON(kind: "overview") as? [[String: Any]] ?? []
         let orgName = config.branding?.resolvedOrgName ?? "Jamf Reports"
-        let accentColor = HtmlReport.sanitizedHexColor(
-            config.branding?.resolvedAccentColor ?? "#2D5EA2",
-            fallback: "#2D5EA2"
-        )
+        let accentColor = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let ts = formattedNow()
         let titleEscaped = HtmlSectionFormatters.escapeHTML(orgName)
         let css = buildCSS(accentColor: accentColor)
@@ -285,17 +259,15 @@ struct HtmlReport: Sendable {
         let firewallPct = computePct(asInt(secData["firewall_enabled"]), total: totalDevices)
         let gatekeeperPct = computePct(asInt(secData["gatekeeper_enabled"]), total: totalDevices)
         let osVersions = security.filter { $0["section"] as? String == "os_version" }
-        let accentColor = HtmlReport.sanitizedHexColor(
-            config.branding?.resolvedAccentColor ?? "#2D5EA2",
-            fallback: "#2D5EA2"
-        )
+        let accentColor = (config.branding ?? BrandingConfig()).sanitizedAccentColor
 
         let tilesHTML = buildSummaryTiles(
             total: totalDevices,
             fileVaultPct: fileVaultPct,
             sipPct: sipPct,
             firewallPct: firewallPct,
-            gatekeeperPct: gatekeeperPct
+            gatekeeperPct: gatekeeperPct,
+            fleet: securityFleet()
         )
         let chartsHTML = buildChartsSection(
             osVersions: osVersions,
@@ -409,10 +381,7 @@ struct HtmlReport: Sendable {
 
         let osVersions = security.filter { $0["section"] as? String == "os_version" }
         let orgName = config.branding?.resolvedOrgName ?? "Jamf Reports"
-        let accentColor = HtmlReport.sanitizedHexColor(
-            config.branding?.resolvedAccentColor ?? "#2D5EA2",
-            fallback: "#2D5EA2"
-        )
+        let accentColor = (config.branding ?? BrandingConfig()).sanitizedAccentColor
         let ts = formattedNow()
         let titleEscaped = HtmlSectionFormatters.escapeHTML(orgName)
         let css = buildCSS(accentColor: accentColor)
@@ -431,7 +400,8 @@ struct HtmlReport: Sendable {
             fileVaultPct: fileVaultPct,
             sipPct: sipPct,
             firewallPct: firewallPct,
-            gatekeeperPct: gatekeeperPct
+            gatekeeperPct: gatekeeperPct,
+            fleet: securityFleet()
         )
         let chartsHTML = buildChartsSection(
             osVersions: osVersions,
@@ -458,7 +428,8 @@ struct HtmlReport: Sendable {
         let categoriesTableHTML = buildCategoriesTable(categories)
         let historyHTML = buildHistorySection(
             security: security,
-            outputURL: outputURL
+            outputURL: outputURL,
+            historyURL: historyURL
         )
 
         // Task 6: Catalog moved to appendix
@@ -550,27 +521,52 @@ struct HtmlReport: Sendable {
         fileVaultPct: Double,
         sipPct: Double,
         firewallPct: Double,
-        gatekeeperPct: Double
+        gatekeeperPct: Double,
+        fleet: SecurityFleetCounts?
     ) -> String {
-        let tiles: [(String, String, Double?)] = [
-            ("Total Devices", "\(total)", nil),
-            ("FileVault", String(format: "%.1f%%", fileVaultPct), fileVaultPct),
-            ("SIP", String(format: "%.1f%%", sipPct), sipPct),
-            ("Firewall", String(format: "%.1f%%", firewallPct), firewallPct),
-            ("Gatekeeper", String(format: "%.1f%%", gatekeeperPct), gatekeeperPct),
+        let tiles: [(String, String, Double?, SecurityControl?)] = [
+            ("Total Devices", "\(total)", nil, nil),
+            ("FileVault", String(format: "%.1f%%", fileVaultPct), fileVaultPct, .fileVault),
+            ("SIP", String(format: "%.1f%%", sipPct), sipPct, .sip),
+            ("Firewall", String(format: "%.1f%%", firewallPct), firewallPct, .firewall),
+            ("Gatekeeper", String(format: "%.1f%%", gatekeeperPct), gatekeeperPct, .gatekeeper),
         ]
-        let tileHTML = tiles.map { label, value, pct -> String in
-            let statusClass = pct.map { colorClass($0) } ?? ""
+        let tileHTML = tiles.map { label, value, pct, control -> String in
+            let ignored = control.map { config.resolvedSecurityPolicy.level(for: $0) == .ignore }
+                ?? false
+            let statusClass = ignored ? ""
+                : control.map { securityTileClass($0, pct: pct ?? 0, fleet: fleet) } ?? ""
+            let label = ignored ? label + " (not counted)" : label
+            let hardwareMacs = control == .fileVault ? fleet?.fileVaultOffHardwareEncrypted ?? 0 : 0
+            let note = hardwareMacs > 0
+                ? "\n  <div class=\"tile-label\">" + HtmlSectionFormatters.escapeHTML(
+                    "\(hardwareMacs) more hardware-encrypted, FileVault off") + "</div>"
+                : ""
             return """
             <div class="tile \(statusClass)">
               <div class="tile-value">\(HtmlSectionFormatters.escapeHTML(value))</div>
-              <div class="tile-label">\(HtmlSectionFormatters.escapeHTML(label))</div>
+              <div class="tile-label">\(HtmlSectionFormatters.escapeHTML(label))</div>\(note)
             </div>
             """
         }.joined(separator: "\n")
         return """
         <section class="tiles-row">\n\(tileHTML)\n</section>
         """
+    }
+
+    /// A security tile's colour under the workspace's policy: the share of Macs not failing
+    /// the control (the tile's own share without fleet counts), amber instead of green while
+    /// some Macs only warn, none when no Mac is left to grade.
+    private func securityTileClass(
+        _ control: SecurityControl, pct: Double, fleet: SecurityFleetCounts?
+    ) -> String {
+        guard let fleet, fleet.controls[control] != nil, fleet.totalDevices > 0 else {
+            return colorClass(pct)
+        }
+        guard let share = fleet.nonFailingPct(control) else { return "" }
+        let statusClass = colorClass(share)
+        let warnings = fleet.controls[control]?.warning ?? 0
+        return statusClass == "ok" && warnings > 0 ? "warn" : statusClass
     }
 
     // MARK: - Task 1: Compliance posture hero tile
@@ -1253,15 +1249,17 @@ struct HtmlReport: Sendable {
     // MARK: - History tracking + inline SVG trend
 
     /// Append a metric snapshot to the history file (when `html.track_history: true`)
-    /// and render an inline SVG trend chart from recent history entries.
+    /// and render an inline SVG trend chart from recent history entries. `historyURL` is the
+    /// file a caller already resolved, so a refused path is warned about once.
     func buildHistorySection(
         security: [[String: Any]],
-        outputURL: URL
+        outputURL: URL,
+        historyURL: URL? = nil
     ) -> String {
         let cfg = htmlConfig()
         guard cfg.trackHistory else { return "" }
 
-        let histPath = resolvedHistoryPath(cfg.historyFile, outputURL: outputURL)
+        let histPath = historyURL ?? resolvedHistoryPath(cfg.historyFile, outputURL: outputURL)
         appendHistoryEntry(security: security, path: histPath)
 
         let history = loadHistory(path: histPath)
@@ -1284,18 +1282,30 @@ struct HtmlReport: Sendable {
 
     // MARK: History helpers
 
-    /// Resolve the history file path. Relative paths are resolved next to the output file.
+    /// `html.history_file`, which the report writes to, under the rules for every path
+    /// config.yaml names (`WorkspacePaths.resolve`): relative to the workspace and inside it,
+    /// an absolute path outside it only with `output.allow_absolute_paths`, never a system or
+    /// credentials folder. Blank or refused, it is `html_history.json` beside the report; a
+    /// refused path is one `[warn]` line.
     func resolvedHistoryPath(_ configured: String, outputURL: URL) -> URL {
+        let fallback = outputURL.deletingLastPathComponent()
+            .appendingPathComponent("html_history.json")
         let trimmed = configured.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty {
-            return outputURL.deletingLastPathComponent()
-                .appendingPathComponent("html_history.json")
+        guard !trimmed.isEmpty else { return fallback }
+        let workspace = dataDir.deletingLastPathComponent()
+            .resolvingSymlinksInPath().standardizedFileURL
+        do {
+            let resolved = try WorkspacePaths.resolve(
+                rawValue: trimmed, fallback: fallback.path, workspace: workspace)
+            return URL(fileURLWithPath: resolved.path, isDirectory: false)
+        } catch {
+            let msg = "[warn] html.history_file \"\(ConfigSchema.displayText(trimmed))\" is not "
+                + "used: \(WorkspacePaths.refusal(of: error)). Writing the history to "
+                + "\(fallback.lastPathComponent) beside the report instead."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return fallback
         }
-        if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
-            return URL(fileURLWithPath:
-                NSString(string: trimmed).expandingTildeInPath)
-        }
-        return outputURL.deletingLastPathComponent().appendingPathComponent(trimmed)
     }
 
     struct HistoryEntry: Sendable {
@@ -1437,9 +1447,6 @@ struct HtmlReport: Sendable {
     }
 
     // MARK: - CSS
-
-    /// Testable wrapper — returns the raw `<style>` block for a given accent color.
-    func buildCSSPublic(accentColor: String) -> String { buildCSS(accentColor: accentColor) }
 
     private func buildCSS(accentColor: String) -> String {
         """
@@ -1657,6 +1664,11 @@ struct HtmlReport: Sendable {
     }
 
     private func loadJSON(kind: String) -> Any? {
+        guard let data = loadJSONData(kind: kind) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    private func loadJSONData(kind: String) -> Data? {
         let fm = FileManager.default
         let subdir = dataDir.appendingPathComponent(kind, isDirectory: true)
         var candidates: [URL] = []
@@ -1680,9 +1692,20 @@ struct HtmlReport: Sendable {
         }
         // Shared rule — an HTML report and the workbook generated from the same
         // workspace must not read different days.
-        guard let newest = FileManager.newestSnapshot(among: candidates),
-              let data = try? Data(contentsOf: newest) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data)
+        guard let newest = FileManager.newestSnapshot(among: candidates) else { return nil }
+        return try? Data(contentsOf: newest)
+    }
+
+    /// The `security` snapshot's counts under the workspace's policy: the same fleet the
+    /// workbook and summary.json grade by. Nil without a decodable summary section.
+    private func securityFleet() -> SecurityFleetCounts? {
+        guard let data = loadJSONData(kind: "security"),
+              let items = try? JSONDecoder().decode([SecurityReportItem].self, from: data)
+        else { return nil }
+        let policy = config.resolvedSecurityPolicy
+        return SecurityFleetCounts.build(
+            items: items, hardware: HardwareEncryption.index(dataDir: dataDir, for: policy),
+            policy: policy)
     }
 
     func overviewDeviceCount(_ overview: [[String: Any]]) -> Int {
@@ -1710,7 +1733,7 @@ struct HtmlReport: Sendable {
     func asInt(_ value: Any?) -> Int? {
         switch value {
         case let n as Int: return n
-        case let d as Double: return Int(d)
+        case let d as Double: return Int(exactly: d.rounded())
         case let s as String: return Int(s)
         case let n as NSNumber: return n.intValue
         default: return nil
@@ -1739,23 +1762,14 @@ struct HtmlReport: Sendable {
         result = result
             .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
             .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
-            // Foundation does not escape `/`, so a JSON string containing
-            // `</script>` would close the surrounding <script> block. Escape
-            // the closing-tag sequence so user-controlled chart labels
-            // (e.g. patch policy names) cannot break out into HTML context.
-            .replacingOccurrences(of: "</", with: "<\\/")
+            // `<`, `>` and `&` only occur inside JSON strings, where the \u form
+            // decodes to the same character. Escaping every `<` (not just `</`)
+            // also stops `<!--` + `<script` from entering the HTML parser's
+            // double-escaped state, which would hide the rest of the report.
+            .replacingOccurrences(of: "<", with: "\\u003c")
+            .replacingOccurrences(of: ">", with: "\\u003e")
+            .replacingOccurrences(of: "&", with: "\\u0026")
         return result
-    }
-
-    /// P9-A-02: validate a brand accent color string before interpolating it into
-    /// CSS or a JS string literal. A user-supplied value like `red; }` would
-    /// otherwise close the `--accent:` declaration and inject arbitrary CSS, and
-    /// a value containing a single quote would break out of the Chart.js
-    /// `backgroundColor: '...'` JS literal. Accept only conventional hex colors;
-    /// fall back to `fallback` (which the caller controls and is hard-coded).
-    static func sanitizedHexColor(_ raw: String, fallback: String) -> String {
-        let pattern = "^#[0-9A-Fa-f]{3,8}$"
-        return raw.range(of: pattern, options: .regularExpression) != nil ? raw : fallback
     }
 
     private func formattedNow() -> String {

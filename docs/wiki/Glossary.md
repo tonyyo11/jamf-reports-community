@@ -21,7 +21,7 @@ educational institutions (and what Jamf School integrates with).
 ### Activation Lock
 Anti-theft mechanism tying a device to its Apple ID. On managed devices, MDM
 can hold a bypass code so IT can recover from a lock state. Surfaces as a
-field on `pro mobile-device-inventory-details` payloads.
+field in the Security section of `pro mobile-devices list`.
 
 ### ADE — Automated Device Enrollment
 Modern term for what was previously called DEP. Devices purchased through
@@ -345,10 +345,11 @@ source visible in the health strip but never re-collects it automatically.
 ## jamf-reports-community
 
 ### AI Fleet Insight
-The Overview card that turns the current daily-summary digest into a plain-language
+The Overview's insight card, which turns the current daily-summary digest into a plain-language
 headline and severity-tagged findings using Apple's on-device Foundation Model. Opt-in,
-off by default, and hidden entirely below macOS 27 — one of three AI Insights surfaces
-alongside the Run History failure explainer and the report executive-summary narrative.
+off by default, and hidden entirely below macOS 27. Trends, Audit, Security Posture and
+Compliance Posture have their own insight cards, alongside the Run History failure explainer
+and the report executive-summary narrative.
 
 ### Background item (ticker)
 The one macOS `SMAppService` agent (2.8.0) the app ships inside its own signed bundle —
@@ -373,6 +374,11 @@ One of three per-report cadence tiers — **Refresh**, **Inventory**, and
 sets how often it is re-fetched: Refresh every 12 hours, Inventory every 2 days, Scan
 every 7 days. These are fixed cloud cadences — the On-prem/Cloud/Custom preset picker was
 removed in 2.3.0. *see also: Refresh tier, Inventory tier, Scan tier.*
+
+### Config backup
+`config.yaml.bak-<date-time>`: the copy the app makes beside config.yaml before
+onboarding, `jamf-reports scaffold --out` or a Config screen save drops comments
+or unreadable lines from it. The newest five are kept.
 
 ### Custom EA
 A `custom_eas:` config entry that drives a dedicated sheet in generated
@@ -403,6 +409,18 @@ A per-kind indicator (Patch Compliance, Security Posture, OS Updates, Devices) s
 the age of the newest on-disk snapshot for a raw jamf-cli kind that screen reads. A kind
 the screen expects but has never collected shows a distinct red "never" chip rather than
 silently vanishing.
+
+### From config.yaml
+The Config screen's read-only tab listing the settings no other tab edits, the
+keys the app does not read, and the lines of config.yaml it skipped.
+*see also: Config Doctor.*
+
+### Hardware-encrypted Mac
+A Mac whose internal volume is encrypted by hardware: any Apple silicon Mac, or
+an Intel Mac with the T2 chip. With FileVault off it still encrypts, and unlocks
+without a password. The security policy can treat FileVault off on such a Mac as
+a warning or not count it.
+*see also: Security policy, FileVault.*
 
 ### Health strip
 The banner above every screen reporting data sources that are **failing** (two or
@@ -489,11 +507,19 @@ A snapshot recovered from a truncated jamf-cli JSON file by keeping only its las
 complete top-level array element. A salvaged day is excluded from EA coverage-drift
 comparisons in Config Doctor so a partial day is never misread as a real coverage change.
 
+### Security policy
+The `security_policy` block of a workspace's config.yaml: for each of FileVault,
+SIP, Firewall and Gatekeeper, whether being off is a failure, a warning or not
+counted, plus the hardware-encrypted FileVault level and the Security Score
+weights. Applies to every screen, report and scheduled run of the workspace.
+*see also: Security Score, Hardware-encrypted Mac.*
+
 ### Security Score
 A fleet-level 0–100 weighted score across FileVault, SIP, Firewall,
 CrowdStrike (or equivalent EDR), mSCP, XProtect, CVE, Secure Boot. Missing
 metrics drop from the denominator and the result is renormalized.
-Configurable in Config → Scoring. *see also: Risk Score, Stability
+Configurable in Config → Scoring. Weights are saved in the workspace's
+`security_policy.score_weights`. *see also: Risk Score, Stability
 Index.*
 
 ### Shared workspace

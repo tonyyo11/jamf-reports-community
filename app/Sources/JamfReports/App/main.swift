@@ -485,7 +485,7 @@ private func scheduledRunSingle(
         defer { if holdsGenerateClaim { SharedWorkspace.release(profile: profile) } }
 
         let engine = ReportEngine(config: config, dataDir: dataDir)
-        let outputURL = engine.resolveOutputURL(stem: "report", profile: profile)
+        let outputURL = engine.resolveOutputURL(stem: "report", profile: profile, onLine: onLine)
         // onLine only carries CLIBridge.LogLine progress during generate; per-sheet
         // [fail] lines are raw `print` calls in SheetRegistry and bypass both onLine
         // and the recorder — they reach the console/launchd log only, not Run History.
@@ -614,7 +614,8 @@ private func scheduledRun(profile: String) async -> Int32 {
 /// `--scheduled-run` from an external cron, Run now). Records under the
 /// schedule's label; a multi schedule fans out over discovered profiles minus
 /// its exclusions and emits the consolidated fleet report for report modes,
-/// and succeeds only when every profile did with none incomplete.
+/// and succeeds only when every profile did with none incomplete. The retry
+/// flag leaves out sources whose failure a same-day retry would only repeat.
 @Sendable
 func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcome {
     let label = schedule.launchAgentLabel
@@ -623,7 +624,9 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
         let code = await scheduledRunSingle(
             profile: schedule.profile, mode: schedule.mode, tiers: schedule.tiers,
             verbose: verbose, label: label, honesty: honesty)
-        return ScheduleRunOutcome(exitCode: code, incomplete: honesty.incomplete)
+        return ScheduleRunOutcome(
+            exitCode: code, incomplete: honesty.incomplete,
+            retryCouldHelp: honesty.retryCouldHelp(profile: schedule.profile))
     }
     let excluded = Set(schedule.excludedProfiles ?? [])
     let discovered = ProfileService.discoverLocal()
@@ -644,6 +647,7 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
     }
     var anyFailed = false
     var anyIncomplete = false
+    var anyRetryable = false
     for p in profiles {
         // One watcher per profile: a shared one would carry profile A's
         // stand-down into profile B's completion line.
@@ -653,11 +657,13 @@ func runSchedule(_ schedule: Schedule, verbose: Bool) async -> ScheduleRunOutcom
             verbose: verbose, label: label, honesty: honesty)
         if code != 0 { anyFailed = true }
         if honesty.incomplete { anyIncomplete = true }
+        if honesty.retryCouldHelp(profile: p.name) { anyRetryable = true }
     }
     if [.jamfCLIOnly, .jamfCLIFull, .csvAssisted].contains(schedule.mode) {
         emitConsolidatedReports()
     }
-    return ScheduleRunOutcome(exitCode: anyFailed ? 1 : 0, incomplete: anyIncomplete)
+    return ScheduleRunOutcome(
+        exitCode: anyFailed ? 1 : 0, incomplete: anyIncomplete, retryCouldHelp: anyRetryable)
 }
 
 // MARK: - check subcommand
@@ -832,7 +838,7 @@ let cliArgs = CommandLine.arguments
 // Anchored to position (not a whole-array `contains`) so an option VALUE that
 // happens to equal "--scheduled-run" can't divert the process — mirrors
 // LaunchAgentWriter's plist parser (`args[1] == "--scheduled-run"`) and the
-// isKnownSubcommand check below (`cliArgs[1]`).
+// routesToCLI check below (`cliArgs[1]`).
 if cliArgs.count > 1, cliArgs[1] == "--tick" {
     let code = Task.detached { await runTick(arguments: cliArgs) }
     exit(await code.value)
@@ -841,10 +847,11 @@ if cliArgs.count > 1, cliArgs[1] == "--tick" {
     let code = Task.detached { await scheduledRun(profile: profile) }
     let exitCode = await code.value
     exit(exitCode)
-} else if cliArgs.count > 1, JamfReportsCLI.isKnownSubcommand(cliArgs[1]) {
-    // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/).
+} else if cliArgs.count > 1, JamfReportsCLI.routesToCLI(cliArgs[1]) {
+    // Included CLI: `jamf-reports <subcommand> …` (Sources/JamfReports/CLI/). Any word
+    // lands here, so ArgumentParser rejects a removed or mistyped subcommand.
     await runIncludedCLI(Array(cliArgs.dropFirst()))
 } else {
-    // No recognized subcommand (incl. double-click launch) → the GUI.
+    // No arguments, or a launch argument starting with `-` (double-click) → the GUI.
     JamfReportsApp.main()
 }

@@ -54,20 +54,21 @@ struct RiskScoringService: Sendable {
     /// One device's status check against a configured `security_agents` entry.
     ///
     /// `connected_value` follows the config contract: a case-insensitive
-    /// substring match against the device's EA value. An empty EA value means
-    /// "no data" — the factor is not triggered.
+    /// substring match against the device's EA value, and with no
+    /// `connected_value` any value counts, as `SecurityAgentCoverage` counts it.
+    /// An empty EA value means "no data" — the factor is not triggered.
     struct SecurityAgentCheck: Sendable, Equatable {
         /// The device's raw EA value for the agent's configured column.
         let value: String
         /// The configured `connected_value`.
         let connectedValue: String
 
-        /// nil when there is no usable signal (empty value or empty
-        /// connected_value); otherwise whether the value matches.
+        /// nil when the value is empty; otherwise whether it matches.
         var isConnected: Bool? {
             let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
             let trimmedExpected = connectedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty, !trimmedExpected.isEmpty else { return nil }
+            guard !trimmedValue.isEmpty else { return nil }
+            guard !trimmedExpected.isEmpty else { return true }
             return trimmedValue.localizedCaseInsensitiveContains(trimmedExpected)
         }
     }
@@ -202,16 +203,23 @@ extension RiskScoringService.Input {
     /// security agent (see `RiskScoringService.SecurityAgentCheck`). Pass nil
     /// when no agent is configured or the device has no EA value — the factor
     /// is then skipped, never penalized.
+    ///
+    /// A control scores only when the workspace's policy calls it a failure: a
+    /// warning, an ignored control or an unmeasured value is not a risk point.
     static func from(
         record: DeviceInventoryRecord,
-        agentCheck: RiskScoringService.SecurityAgentCheck? = nil
+        agentCheck: RiskScoringService.SecurityAgentCheck? = nil,
+        policy: SecurityControlPolicy
     ) -> Self {
-        Self(
-            fileVaultEncrypted: looksAffirmative(record.fileVault) &&
-                                !looksNegative(record.fileVault),
-            sipEnabled: looksAffirmative(record.sip),
-            gatekeeperEnabled: looksAffirmative(record.gatekeeper),
-            firewallEnabled: looksAffirmative(record.firewall),
+        func passes(_ control: SecurityControl, _ value: String) -> Bool {
+            policy.verdict(for: control, value: value, hardwareEncrypted: record.hardwareEncrypted)
+                != .fail
+        }
+        return Self(
+            fileVaultEncrypted: passes(.fileVault, record.fileVault),
+            sipEnabled: passes(.sip, record.sip),
+            gatekeeperEnabled: passes(.gatekeeper, record.gatekeeper),
+            firewallEnabled: passes(.firewall, record.firewall),
             secureBootLevel: .unknown,
             bootDrivePctUsed: parseDiskUsagePct(record.diskUsage),
             mscpHighFailures: 0,
@@ -219,42 +227,9 @@ extension RiskScoringService.Input {
             hasBaseline: true,
             daysSinceCheckIn: record.daysSinceContact,
             activeCVEExploits: nil,
-            bootstrapEscrowed: looksAffirmative(record.bootstrapToken) &&
-                               !looksNegative(record.bootstrapToken),
+            bootstrapEscrowed: SecurityControlPolicy.reading(record.bootstrapToken) != false,
             securityAgentConnected: agentCheck?.isConnected
         )
-    }
-
-    /// Same normalization as `valueLooksGood`/`statusLooksBad` (Models.swift), so
-    /// `NOT_ENCRYPTED` and `Not Encrypted` are one value on both paths.
-    private static func normalizedStatus(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "_", with: " ")
-    }
-
-    private static func looksAffirmative(_ raw: String) -> Bool {
-        let text = normalizedStatus(raw)
-        if text.isEmpty { return true }    // missing data ≠ failing
-        // A negative is authoritative and must win. Testing the positive
-        // substrings first scored every disabled control as passing, because
-        // "not enabled" contains "enabled" and "not encrypted" contains
-        // "encrypted" — so an unprotected Mac scored Clean and dropped out of
-        // the Priority filter. Anything not provably negative stays affirmative,
-        // which is what the previous `!looksNegative` tail already did.
-        return !looksNegative(text)
-    }
-
-    private static func looksNegative(_ raw: String) -> Bool {
-        let text = normalizedStatus(raw)
-        guard !text.isEmpty else { return false }
-        // "not " covers not enabled / not encrypted / not escrowed in one test,
-        // matching valueLooksGood (Models.swift) rather than drifting from it.
-        if text.contains("not ") || text.contains("disabled") ||
-            text.contains("unencrypted") {
-            return true
-        }
-        return ["no", "false", "0", "off"].contains(text)
     }
 
     private static func parseDiskUsagePct(_ raw: String) -> Double? {

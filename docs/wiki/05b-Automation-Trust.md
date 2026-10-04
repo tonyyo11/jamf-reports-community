@@ -98,9 +98,12 @@ next collect fetches it.
   - Managed Software Update Plans turned off in Jamf Pro (OS update status and failures)
   - Compliance Benchmark titles that match none on the tenant
 
-  Those sources stay in the strip so you can see them, but the hourly repair skips them.
-  Pressing **Collect now** yourself does try them, on the assumption that you have just
-  fixed the cause.
+  Those sources stay in the strip so you can see them, but the hourly repair skips them,
+  and so does the background item's same-day retry. That retry still tries a source whose
+  credentials the server rejected (exit 3), so it lands once you re-authenticate. A run
+  whose only missing sources fail this way still shows as Partial in Run History; it is
+  just not retried. Pressing **Collect now** yourself does try them, on the assumption
+  that you have just fixed the cause.
 
 The strip re-evaluates after any manual refresh, not only at launch, so a collect you just
 ran is reflected immediately.
@@ -245,7 +248,7 @@ alerts:
 - **`drops_more_than` needs history.** It only fires when a prior summary at least
   `lookback_days` old exists. It also deliberately skips a `compliance_pct` comparison that
   spans a measurement-basis change (the four-control proxy versus a real mSCP failure
-  count), so switching on `compliance.baselines` does not fabricate a large false drop.
+  count), so switching on `compliance.baselines` does not fabricate a large false drop, and a `patch_pct` comparison across the 2.9 change from a per-title mean to the device-weighted figure.
 - **Once per day per rule.** A second same-day run does not re-card a rule that already
   fired, but a rule that trips for the first time later the same day still alerts.
 - **One card per run.** When at least one rule trips, a single attention-styled card is

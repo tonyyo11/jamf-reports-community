@@ -23,12 +23,13 @@ struct Generate: AsyncParsableCommand {
         let resolved = try CLIRun.resolveTemplate(template)
         let (config, dataDir) = try CLIRun.loadProfile(profile)
         let engine = ReportEngine(config: config, dataDir: dataDir)
-        let outputURL = output.map { URL(fileURLWithPath: $0) }
-            ?? engine.resolveOutputURL(stem: "report", profile: profile)
         // Trust signals (Run History record + webhook digest) — best-effort,
         // additive, and mode-consistent with a scheduled jamf-cli-only run.
         // generate does not collect, so it never evaluates metric alerts.
         let signals = CLIRunSignals.begin(profile: profile, kind: .generate, config: config)
+        let outputURL = output.map { URL(fileURLWithPath: $0) }
+            ?? engine.resolveOutputURL(stem: "report", profile: profile,
+                                       onLine: signals.teeing(CLIRun.printLogLine))
         do {
             let failures = try await engine.generate(
                 csvURL: nil, outputURL: outputURL, template: resolved,
@@ -103,7 +104,8 @@ struct Html: AsyncParsableCommand {
         // Reuse the xlsx naming convention (timestamp + profile attribution),
         // swapping the extension — there's no HTML-specific path resolver.
         let defaultURL = ReportEngine(config: config, dataDir: dataDir)
-            .resolveOutputURL(stem: "report", profile: profile)
+            .resolveOutputURL(stem: "report", profile: profile,
+                              onLine: output == nil ? CLIRun.printLogLine : nil)
             .deletingPathExtension().appendingPathExtension("html")
         let outputURL = output.map { URL(fileURLWithPath: $0) } ?? defaultURL
         _ = try await ReportEngine.generateHTML(

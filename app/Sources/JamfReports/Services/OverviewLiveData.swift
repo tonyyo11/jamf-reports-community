@@ -75,6 +75,8 @@ struct OverviewLiveData: Sendable {
     var failingRuleCount = 0
     /// The benchmark or baseline the rules belong to.
     var failingRulesLabel = ""
+    /// Macs whose results the rule counts come from; 0 when unknown.
+    var failingRulesReportingMacs = 0
 
     var agents: [SecurityAgent] = []
     /// Configured agents no Mac reports a value for — usually a column name
@@ -93,8 +95,7 @@ struct OverviewLiveData: Sendable {
     ]
 }
 
-/// Reads what `OverviewLiveData` holds from the workspace. Disk IO throughout:
-/// call it from a detached task.
+/// Reads what `OverviewLiveData` holds from the workspace. Disk IO throughout.
 enum OverviewLiveDataLoader {
     static let recentLimit = 8
     static let osRowLimit = 6
@@ -102,10 +103,12 @@ enum OverviewLiveDataLoader {
     static let rulesKept = 50
 
     /// Only `sections` are read, so a hidden Recent Activity never pays for
-    /// the device inventory. `fleetCount` is the latest summary's device
-    /// count — the denominator agent cards print — or 0 when unknown.
-    static func load(profile: String, sections: Set<OverviewSection>,
-                     fleetCount: Int) -> OverviewLiveData {
+    /// the device inventory. Nonisolated async, so it runs off the main actor
+    /// but in the caller's task: cancelling that task throws `CancellationError`
+    /// at the next section instead of returning data nobody will show.
+    static func load(
+        profile: String, sections: Set<OverviewSection>
+    ) async throws -> OverviewLiveData {
         var data = OverviewLiveData()
         let wanted = sections.intersection(OverviewLiveData.sections)
         guard !wanted.isEmpty else { return data }
@@ -116,8 +119,10 @@ enum OverviewLiveDataLoader {
         }
         let config = loadConfig(profile: profile)
         if wanted.contains(.osDistribution) {
+            try Task.checkCancellation()
             loadOSDistribution(into: &data, dataDir: dataDir)
         }
+        try Task.checkCancellation()
         let benchmarks = wanted.contains(.topFailingRules)
             ? ComplianceBenchmarksService.load(profile: profile)
             : ComplianceBenchmarksService.Snapshot.empty
@@ -129,18 +134,21 @@ enum OverviewLiveDataLoader {
                        && baseline?.failuresListColumn != nil)
             || (wanted.contains(.securityAgents) && !agents.isEmpty)
             || (wanted.contains(.recentActivity) && baseline != nil)
+        try Task.checkCancellation()
         let eaRows = needsEA ? loadEARows(dataDir: dataDir) : nil
         if wanted.contains(.topFailingRules) {
             loadFailingRules(into: &data, benchmarks: benchmarks, baseline: baseline,
                              eaRows: eaRows)
         }
         if wanted.contains(.securityAgents) {
-            loadAgents(into: &data, agents: agents, eaRows: eaRows, fleetCount: fleetCount)
+            loadAgents(into: &data, agents: agents, eaRows: eaRows)
         }
         if wanted.contains(.recentActivity) {
+            try Task.checkCancellation()
             loadRecentActivity(into: &data, profile: profile, baseline: baseline,
                                eaRows: eaRows)
         }
+        try Task.checkCancellation()
         return data
     }
 
@@ -178,6 +186,7 @@ enum OverviewLiveDataLoader {
             data.failingRules = Array(built.rules.prefix(rulesKept))
             data.failingRuleCount = built.rules.count
             data.failingRulesLabel = built.label
+            data.failingRulesReportingMacs = built.reportingMacs
             return
         }
         guard let baseline, let listColumn = baseline.failuresListColumn else {
@@ -206,13 +215,13 @@ enum OverviewLiveDataLoader {
         data.failingRules = Array(built.rules.prefix(rulesKept))
         data.failingRuleCount = built.rules.count
         data.failingRulesLabel = baseline.name
+        data.failingRulesReportingMacs = built.reportingMacs
     }
 
     private static func loadAgents(
         into data: inout OverviewLiveData,
         agents: [SecurityAgentConfig],
-        eaRows: [EAResultRow]?,
-        fleetCount: Int
+        eaRows: [EAResultRow]?
     ) {
         guard !agents.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
@@ -236,14 +245,13 @@ enum OverviewLiveDataLoader {
                 remedy: .config)
             return
         }
-        // The card prints "installed / fleet", so the percentage uses the same
-        // denominator; without a summary, the Macs ea-results knows about.
-        let fleet = fleetCount > 0
-            ? fleetCount : MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
+        // Until the view re-expresses them against the summary's device count
+        // (`agents(_:overFleet:)`), the share is of the Macs ea-results knows about.
+        let known = MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
         data.agents = reported.map {
             SecurityAgent(
                 name: $0.name, installed: $0.installed,
-                pct: SecurityAgentCoverage.percent(installed: $0.installed, fleet: fleet) ?? 0,
+                pct: SecurityAgentCoverage.percent(installed: $0.installed, fleet: known) ?? 0,
                 column: $0.column, trend: .flat)
         }
         data.agentsWithoutValues = coverage.filter { $0.reporting == 0 }.map(\.name)
@@ -272,6 +280,20 @@ enum OverviewLiveDataLoader {
     }
 
     // MARK: Pure builders (tested)
+
+    /// Agent cards as a share of `fleet`, the latest summary's device count —
+    /// the denominator the daily summary's EDR figure uses, so a Mac with no
+    /// value counts as not connected. Unchanged while the fleet is unknown.
+    static func agents(_ agents: [SecurityAgent], overFleet fleet: Int) -> [SecurityAgent] {
+        guard fleet > 0 else { return agents }
+        return agents.map { agent in
+            SecurityAgent(
+                name: agent.name, installed: agent.installed,
+                pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
+                    ?? agent.pct,
+                column: agent.column, trend: agent.trend)
+        }
+    }
 
     /// Versions by device count, the rest rolled into "Other" past `limit`.
     /// `currentShare` is nil without a SOFA feed.
@@ -313,10 +335,11 @@ enum OverviewLiveDataLoader {
 
     /// Failing rules from a Compliance Benchmarks snapshot. Aggregating across
     /// benchmarks would double-count Macs, so with several the first is used —
-    /// the one the Compliance Benchmarks screen opens on.
+    /// the one the Compliance Benchmarks screen opens on. `reportingMacs` is how
+    /// many Macs that benchmark evaluated.
     static func failingRules(
         benchmarks snapshot: ComplianceBenchmarksService.Snapshot
-    ) -> (rules: [FailingRule], label: String) {
+    ) -> (rules: [FailingRule], label: String, reportingMacs: Int) {
         let names = snapshot.benchmarks
         let scoped = names.count > 1 ? snapshot.filtered(to: names[0]) : snapshot
         let label = names.first ?? "Compliance Benchmark"
@@ -324,7 +347,9 @@ enum OverviewLiveDataLoader {
             guard let failed = rule.failed, failed > 0 else { return nil }
             return FailingRule(ruleID: rule.rule, fails: failed, baseline: label)
         }
-        return (ranked(rules), label)
+        // Every rule of a benchmark is evaluated on the same Macs; the largest
+        // count covers a rule that skipped a Mac.
+        return (ranked(rules), label, scoped.rules.map(\.devices).max() ?? 0)
     }
 
     /// Failing rules from the failures-list extension attribute: a pipe-separated

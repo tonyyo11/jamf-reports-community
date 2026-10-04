@@ -149,6 +149,10 @@ enum RunHistoryService {
     /// `com.github.tonyyo11.jamf-reports-community.profile.daily-snapshot.out`
     /// to `"Daily Snapshot"`.
     private static func humanName(from label: String) -> String {
+        // The background item's own records (tick-level failures) carry no profile part.
+        let unstamped = label.replacingOccurrences(
+            of: #"\.\d{8}-\d{6}$"#, with: "", options: .regularExpression)
+        if unstamped == AutomationHealth.tickerLabel { return "Background item" }
         let prefix = "\(LaunchAgentWriter.labelPrefix)."
         guard label.hasPrefix(prefix) else { return label }
         let tail = String(label.dropFirst(prefix.count))

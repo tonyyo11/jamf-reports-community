@@ -11,6 +11,10 @@ struct CompliancePostureView: View {
     @State private var snapshot: CompliancePostureService.Snapshot = .empty
     @State private var mscpResults: [MSCPComplianceService.BaselineResult] = []
     @State private var hasLoaded = false
+    /// Bumped by each reload, so a read that a newer one replaced is dropped.
+    @State private var loadGeneration = 0
+    /// False until the first read lands: until then the screen does not say there is no data.
+    @State private var hasRead = false
 
     var body: some View {
         PageScaffold {
@@ -26,12 +30,12 @@ struct CompliancePostureView: View {
             // Shared StaleDataBanner surfaces snapshot freshness above the main content.
             // Suppressed in demo mode (the demo dataset is intentionally static and
             // not user-perceivably "stale"). Renders nothing when source is .fresh.
-            if !workspace.demoMode {
+            if !workspace.demoMode && hasRead {
                 CollectNowBanner(source: snapshot.cacheSource, tiers: [.inventory])
             }
 
             // Show proxy note only when using proxy compliance (no mSCP baselines)
-            if mscpResults.isEmpty {
+            if mscpResults.isEmpty && hasRead {
                 proxyNoteCard
             }
 
@@ -45,7 +49,7 @@ struct CompliancePostureView: View {
                     )
                 }
             } else if snapshot.totalDevices == 0 && mscpResults.isEmpty {
-                emptyState
+                if hasRead { emptyState }
             } else {
                 // Show mSCP baseline donuts when available, otherwise proxy bands
                 if !mscpResults.isEmpty {
@@ -53,6 +57,7 @@ struct CompliancePostureView: View {
                 } else {
                     bandsHeroCard
                 }
+                aiInsightCard
                 controlCoverageCard
                 perOSBreakdownCard
             }
@@ -91,32 +96,40 @@ struct CompliancePostureView: View {
     }
 
     private func reload() {
-        snapshot = workspace.demoMode
-            ? DemoData.compliancePostureSnapshot
-            : CompliancePostureService.load(profile: workspace.profile)
-
-        // Load real mSCP baseline results when not in demo mode
+        loadGeneration += 1
         if workspace.demoMode {
+            snapshot = DemoData.compliancePostureSnapshot
             mscpResults = DemoData.complianceBaselineResults
-        } else {
-            // Load config to get resolved baselines
-            if let config = readConfig(),
-               let compliance = config.compliance,
-               !compliance.resolvedBaselines.isEmpty {
-                mscpResults = MSCPComplianceService.load(
-                    profile: workspace.profile,
-                    baselines: compliance.resolvedBaselines
-                )
-            } else {
-                mscpResults = []
-            }
+            hasRead = true
+            return
+        }
+        let generation = loadGeneration
+        let profile = workspace.profile
+        Task {
+            // The security snapshot, the computers snapshot the hardware rule reads and
+            // ea-results are parsed whole; on a large fleet that stalled the screen.
+            let loaded = await Task.detached(priority: .userInitiated) {
+                (CompliancePostureService.load(profile: profile),
+                 Self.loadBaselineResults(profile: profile))
+            }.value
+            // A read that a profile switch or a later refresh replaced must not paint.
+            guard generation == loadGeneration else { return }
+            snapshot = loaded.0
+            mscpResults = loaded.1
+            hasRead = true
         }
     }
 
-    private func readConfig() -> ReportConfig? {
-        guard let workspaceURL = ProfileService.workspaceURL(for: workspace.profile) else { return nil }
-        let configURL = workspaceURL.appendingPathComponent("config.yaml")
-        return try? ConfigLoader.load(from: configURL)
+    /// The configured mSCP baselines' results; none when config.yaml names none.
+    nonisolated static func loadBaselineResults(
+        profile: String
+    ) -> [MSCPComplianceService.BaselineResult] {
+        guard let workspaceURL = ProfileService.workspaceURL(for: profile),
+              let config = try? ConfigLoader.load(
+                  from: workspaceURL.appendingPathComponent("config.yaml")),
+              let baselines = config.compliance?.resolvedBaselines, !baselines.isEmpty
+        else { return [] }
+        return MSCPComplianceService.load(profile: profile, baselines: baselines)
     }
 
     // MARK: - Sections
@@ -395,6 +408,24 @@ struct CompliancePostureView: View {
         }
     }
 
+    /// macOS 27, opt-in: which control and macOS version to work first, from the control-gap
+    /// counts. The card hides itself while `ai.enabled` is off, and with no security snapshot.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspace.demoMode),
+           let input = FleetInsightInput.posture(
+               .compliance(snapshot, showsBands: mscpResults.isEmpty)) {
+            AIInsightCard(
+                title: "AI Posture Insight",
+                idleText: "Suggest which control and macOS version to work first using "
+                    + "on-device intelligence.",
+                provenanceText: "AI-generated from the control-gap counts on this screen — "
+                    + "verify against the bars below.",
+                input: input
+            )
+        }
+    }
+
     private var controlCoverageCard: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
@@ -420,7 +451,7 @@ struct CompliancePostureView: View {
                         .foregroundStyle(Theme.Colors.fg)
                 }
                 Spacer()
-                Text("\(gap.failingDevices) failing")
+                Text(Self.controlBarCountText(gap))
                     .font(Theme.Fonts.mono(11))
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                 Text(String(format: "%.1f%%", gap.pct))
@@ -442,7 +473,27 @@ struct CompliancePostureView: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(gap.control) control coverage, \(String(format: "%.1f", gap.pct)) percent failing, \(gap.failingDevices) of \(gap.totalDevices) devices")
+        .accessibilityLabel(Self.controlBarAccessibilityLabel(gap))
+    }
+
+    static func controlBarCountText(_ gap: CompliancePostureService.Snapshot.ControlGap) -> String {
+        let failing = "\(gap.failingDevices) failing"
+        guard gap.warningDevices > 0 else { return failing }
+        return failing + " · " + warningCount(gap.warningDevices)
+    }
+
+    /// The bar ignores its children for VoiceOver, so the warnings must be in the label.
+    static func controlBarAccessibilityLabel(
+        _ gap: CompliancePostureService.Snapshot.ControlGap
+    ) -> String {
+        let label = "\(gap.control) control coverage, \(String(format: "%.1f", gap.pct)) percent "
+            + "failing, \(gap.failingDevices) of \(gap.totalDevices) devices"
+        guard gap.warningDevices > 0 else { return label }
+        return label + ", " + warningCount(gap.warningDevices)
+    }
+
+    private static func warningCount(_ count: Int) -> String {
+        count == 1 ? "1 warning" : "\(count) warnings"
     }
 
     private func barColor(for pct: Double) -> Color {
@@ -491,7 +542,7 @@ struct CompliancePostureView: View {
         VStack(spacing: 8) {
             ForEach(snapshot.perOSMajor, id: \.osMajor) { row in
                 HStack(alignment: .center, spacing: 12) {
-                    Text(osLabel(row.osMajor))
+                    Text(ComplianceBandingService.osLabel(row.osMajor))
                         .font(.callout.weight(.medium))
                         .foregroundStyle(Theme.Colors.fg)
                         .frame(width: 150, alignment: .leading)
@@ -523,20 +574,8 @@ struct CompliancePostureView: View {
         }
     }
 
-    private func osLabel(_ major: Int) -> String {
-        switch major {
-        case 12: return "macOS Monterey 12"
-        case 13: return "macOS Ventura 13"
-        case 14: return "macOS Sonoma 14"
-        case 15: return "macOS Sequoia 15"
-        case 26: return "macOS Tahoe 26"
-        case 27: return "macOS Golden Gate 27"
-        default: return "macOS \(major)"
-        }
-    }
-
     private func perOSAccessibilityLabel(for row: (osMajor: Int, bands: [ComplianceBand])) -> String {
-        let osName = osLabel(row.osMajor)
+        let osName = ComplianceBandingService.osLabel(row.osMajor)
         let totalDevices = row.bands.reduce(0) { $0 + $1.count }
         let majorBand = row.bands.max(by: { $0.count < $1.count })?.label ?? "Unknown"
         return "\(osName), \(totalDevices) devices, majority in \(majorBand) band"

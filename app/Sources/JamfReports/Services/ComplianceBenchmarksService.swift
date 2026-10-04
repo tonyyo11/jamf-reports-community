@@ -10,9 +10,7 @@ import Foundation
 /// skips the environment-level ones on a tenant-level profile. The screen is also
 /// behind Settings → Experimental Features → Platform API.
 ///
-/// Decoded shapes track ``ComplianceRuleRow`` and ``ComplianceDeviceRow``
-/// in ``JamfCLIDecoder.swift`` so a parser-level field rename is felt in
-/// one place.
+/// Rows decode through the private `RawRule` and `RawDevice` structs below.
 struct ComplianceBenchmarksService: Sendable {
 
     /// Everything the view needs to render. `.empty` when the workspace has

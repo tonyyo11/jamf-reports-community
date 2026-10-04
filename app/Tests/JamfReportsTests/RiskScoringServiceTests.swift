@@ -99,13 +99,21 @@ final class RiskScoringServiceTests: XCTestCase {
         XCTAssertEqual(disconnected.isConnected, false)
     }
 
-    func testSecurityAgentCheckHasNoSignalForEmptyValues() {
+    func testSecurityAgentCheckHasNoSignalForAnEmptyValue() {
         XCTAssertNil(RiskScoringService.SecurityAgentCheck(
             value: "", connectedValue: "connected"
         ).isConnected, "empty EA value = no data, not a finding")
         XCTAssertNil(RiskScoringService.SecurityAgentCheck(
-            value: "Connected", connectedValue: ""
-        ).isConnected, "empty connected_value = unconfigured, not a finding")
+            value: " ", connectedValue: ""
+        ).isConnected)
+    }
+
+    /// Config's Add agent leaves connected_value blank, and Overview coverage then counts
+    /// any value as connected. The Devices risk check read the same agent as unknown.
+    func testSecurityAgentCheckCountsAnyValueWhenConnectedValueIsBlank() {
+        XCTAssertEqual(RiskScoringService.SecurityAgentCheck(
+            value: "Stopped", connectedValue: "  "
+        ).isConnected, true)
     }
 
     func testAdapterFeedsAgentCheckIntoScore() {
@@ -123,11 +131,12 @@ final class RiskScoringServiceTests: XCTestCase {
         )
         let disconnectedInput = RiskScoringService.Input.from(
             record: record,
-            agentCheck: .init(value: "Service not running", connectedValue: "Connected")
+            agentCheck: .init(value: "Service not running", connectedValue: "Connected"),
+            policy: .default
         )
         XCTAssertEqual(disconnectedInput.securityAgentConnected, false)
 
-        let noCheckInput = RiskScoringService.Input.from(record: record)
+        let noCheckInput = RiskScoringService.Input.from(record: record, policy: .default)
         XCTAssertNil(noCheckInput.securityAgentConnected)
     }
 
@@ -203,7 +212,7 @@ final class RiskScoringServiceTests: XCTestCase {
             source: "jamf-cli"
         )
 
-        let input = RiskScoringService.Input.from(record: record)
+        let input = RiskScoringService.Input.from(record: record, policy: .default)
 
         XCTAssertTrue(input.fileVaultEncrypted)
         XCTAssertTrue(input.sipEnabled)
@@ -254,7 +263,7 @@ final class RiskScoringServiceTests: XCTestCase {
         let input = RiskScoringService.Input.from(record: statusRecord(
             fileVault: "Not Encrypted", sip: "Not Enabled",
             firewall: "Not Enabled", gatekeeper: "Off"
-        ))
+        ), policy: .default)
         XCTAssertFalse(input.fileVaultEncrypted, "\"Not Encrypted\" is not encrypted")
         XCTAssertFalse(input.sipEnabled, "\"Not Enabled\" is not enabled")
         XCTAssertFalse(input.firewallEnabled, "\"Not Enabled\" is not enabled")
@@ -271,7 +280,7 @@ final class RiskScoringServiceTests: XCTestCase {
         let input = RiskScoringService.Input.from(record: statusRecord(
             fileVault: "NOT_ENCRYPTED", sip: "NOT_ENABLED",
             firewall: "DISABLED", gatekeeper: "NOT_ENABLED"
-        ))
+        ), policy: .default)
         XCTAssertFalse(input.fileVaultEncrypted)
         XCTAssertFalse(input.sipEnabled)
         XCTAssertFalse(input.firewallEnabled)
@@ -282,7 +291,7 @@ final class RiskScoringServiceTests: XCTestCase {
         let input = RiskScoringService.Input.from(record: statusRecord(
             fileVault: "Encrypted", sip: "Enabled",
             firewall: "Enabled", gatekeeper: "Yes"
-        ))
+        ), policy: .default)
         XCTAssertTrue(input.fileVaultEncrypted)
         XCTAssertTrue(input.sipEnabled)
         XCTAssertTrue(input.firewallEnabled)
@@ -294,8 +303,28 @@ final class RiskScoringServiceTests: XCTestCase {
     func testEmptyStatusIsNotScoredAsFailing() {
         let input = RiskScoringService.Input.from(record: statusRecord(
             fileVault: "", sip: "", firewall: "", gatekeeper: ""
-        ))
+        ), policy: .default)
         XCTAssertTrue(input.fileVaultEncrypted)
         XCTAssertTrue(input.sipEnabled)
+    }
+
+    /// Only a control the workspace's policy fails scores; a warning or an ignored control
+    /// does not. The bootstrap token is outside the policy.
+    func testOnlyAFailingControlScores() {
+        var record = statusRecord(fileVault: "UNENCRYPTED", sip: "DISABLED",
+                                  firewall: "false", gatekeeper: "DISABLED")
+        record.bootstrapToken = "NOT_ESCROWED"
+        let policy = SecurityControlPolicy(
+            fileVault: .fail, sip: .warning, firewall: .ignore, gatekeeper: .fail)
+        let input = RiskScoringService.Input.from(record: record, policy: policy)
+        XCTAssertFalse(input.fileVaultEncrypted)
+        XCTAssertTrue(input.sipEnabled, "a warning is not a risk point")
+        XCTAssertTrue(input.firewallEnabled, "an ignored control is not a risk point")
+        XCTAssertFalse(input.gatekeeperEnabled)
+        XCTAssertFalse(input.bootstrapEscrowed)
+
+        let atDefault = RiskScoringService.Input.from(record: record, policy: .default)
+        XCTAssertFalse(atDefault.sipEnabled)
+        XCTAssertFalse(atDefault.firewallEnabled)
     }
 }

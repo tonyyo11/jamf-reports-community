@@ -8,33 +8,14 @@ import Foundation
 /// Proposals whose column already exists in `custom_eas` are skipped.
 enum ConfigEAAdopter {
 
-    /// Append `proposals` to a profile's `custom_eas`, skipping duplicate columns.
-    ///
-    /// - Parameters:
-    ///   - proposals: EA candidates the user selected to adopt.
-    ///   - profile: Profile slug whose `config.yaml` is updated.
-    ///   - workspaceRoot: Optional workspace root override (for tests).
-    /// - Returns: The number of EAs actually appended (excludes skipped duplicates).
-    /// - Throws: `ConfigService` load/save errors.
-    @discardableResult
-    static func adoptEAs(
-        _ proposals: [ScaffoldService.ProposedEA],
-        profile: String,
-        workspaceRoot: URL? = nil
-    ) throws -> Int {
-        try adopt(
-            eaProposals: proposals, agentProposals: [],
-            profile: profile, workspaceRoot: workspaceRoot
-        ).eas
-    }
-
     /// Append selected proposals to `custom_eas` and/or `security_agents` in one
     /// load/save. Duplicate columns (already present in the respective section)
     /// are skipped. A security agent's connected value comes from
     /// `connectedValues[proposal.id]`, falling back to the proposal's sample
     /// value. Additive — unrelated config is preserved.
     ///
-    /// - Returns: counts of EAs and security agents actually appended.
+    /// - Returns: counts of EAs and security agents actually written, and what the save left
+    ///   as typed or did not keep.
     @discardableResult
     static func adopt(
         eaProposals: [ScaffoldService.ProposedEA],
@@ -42,7 +23,7 @@ enum ConfigEAAdopter {
         connectedValues: [String: String] = [:],
         profile: String,
         workspaceRoot: URL? = nil
-    ) throws -> (eas: Int, agents: Int) {
+    ) throws -> (eas: Int, agents: Int, report: ConfigSaveReport) {
         let loaded = try ConfigService.load(profile: profile, workspaceRoot: workspaceRoot)
         var state = loaded.state
 
@@ -68,15 +49,19 @@ enum ConfigEAAdopter {
             agentAdded += 1
         }
 
-        guard eaAdded > 0 || agentAdded > 0 else { return (0, 0) }
+        guard eaAdded > 0 || agentAdded > 0 else { return (0, 0, ConfigSaveReport()) }
 
-        _ = try ConfigService.save(
+        let report = try ConfigService.save(
             profile: profile,
             state: state,
             existingDocument: loaded.document,
             workspaceRoot: workspaceRoot
-        )
-        return (eaAdded, agentAdded)
+        ).report
+        // A block left as typed (not a list) received nothing.
+        return (
+            report.keptBlocks.contains("custom_eas") ? 0 : eaAdded,
+            report.keptBlocks.contains("security_agents") ? 0 : agentAdded,
+            report)
     }
 
     /// Map a `ProposedEA` to the flat `ConfigCustomEA` editing model.

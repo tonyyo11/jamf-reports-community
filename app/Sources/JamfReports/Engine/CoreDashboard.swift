@@ -19,6 +19,8 @@ struct CoreDashboard: Sendable {
     /// GUI-generate-only AI executive narrative (F3). nil (the default) writes
     /// no AI block on the Executive Summary sheet — headless callers never set it.
     let aiNarrative: String?
+    /// Shared by the copies of this struct that `sheetPlan`'s closures hold.
+    private let hardwareIndex = HardwareIndexCache()
 
     init(
         config: ReportConfig,
@@ -34,7 +36,6 @@ struct CoreDashboard: Sendable {
         self.aiNarrative = aiNarrative
     }
 
-    private var accentColor: String { config.branding?.resolvedAccentColor ?? "#2D5EA2" }
     private var orgName: String { config.branding?.resolvedOrgName ?? "" }
 
     // MARK: - Sheet plan
@@ -51,7 +52,8 @@ struct CoreDashboard: Sendable {
     ///
     /// **All sheets in this plan are always included** — they gracefully skip (write a
     /// "no data" placeholder) when the underlying jamf-cli data is absent or malformed.
-    /// Config-gating via `sheets.only` / `sheets.skip` is applied externally in `writeAll`.
+    /// `sheets.only` / `skip` / `order` are applied by `SheetRegistry.writeSelected` and
+    /// `Workbook.arrange(by:)`.
     ///
     /// **Adding a new sheet:** append to the appropriate group comment, update the group
     /// range comment (e.g., "sheets 28–32"), and add a corresponding test in
@@ -116,45 +118,6 @@ struct CoreDashboard: Sendable {
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
         ]
-    }
-
-    /// Write all sheets; skip silently on missing/malformed data.
-    ///
-    /// Applies `sheets.only`, `sheets.skip`, and `sheets.order` from config before
-    /// iterating. `selectedNames` further narrows to a caller-specified subset (used by
-    /// the UI when the user wants a single sheet regenerated).
-    /// Returns list of sheet names successfully written and any unexpected failures.
-    @discardableResult
-    func writeAll(selectedNames: Set<String>? = nil) -> (written: [String], failures: [SheetFailure]) {
-        let effectivePlan = (config.sheets ?? SheetsConfig()).applyTo(sheetPlan)
-        var written: [String] = []
-        var failures: [SheetFailure] = []
-        for (name, fn) in effectivePlan {
-            if let sel = selectedNames,
-               !sel.contains(name.lowercased()) {
-                continue
-            }
-            do {
-                try fn()
-                written.append(name)
-            } catch let skippable as SheetSkippable {
-                // Cached data absent — expected for jamf-cli snapshots not yet collected.
-                print("  [skip] \(name): \(skippable)")
-            } catch {
-                let label = "\(type(of: error)): \(error)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
-            }
-        }
-        if let logoData = CSVDashboard.loadLogoData(from: config) {
-            for name in written {
-                if let ws = workbook.sheet(named: name) {
-                    ws.insertImage(row: 0, col: 0, data: logoData,
-                                   filename: "logo.png", xScale: 1.0, yScale: 1.0)
-                }
-            }
-        }
-        return (written, failures)
     }
 
     // MARK: - Sheet title helper
@@ -255,13 +218,16 @@ struct CoreDashboard: Sendable {
         // Summary block
         if let s = summaryData {
             let total = s.totalDevices ?? 0
-            let fields: [(String, String)] = [
+            var fields: [(String, String)] = [
                 ("Total Devices", "\(total)"),
                 ("FileVault Encrypted", percentLabel(s.fileVaultEncrypted, total: total)),
                 ("Gatekeeper Enabled", percentLabel(s.gatekeeperEnabled, total: total)),
                 ("SIP Enabled", percentLabel(s.sipEnabled, total: total)),
                 ("Firewall Enabled", percentLabel(s.firewallEnabled, total: total)),
             ]
+            if let n = securityFleet(items: items)?.fileVaultOffHardwareEncrypted, n > 0 {
+                fields.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: 2)
+            }
             ws.write("Summary", row: row, col: 0, format: .header)
             ws.write("Count / %", row: row, col: 1, format: .header)
             row += 1
@@ -932,13 +898,14 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Mobile Fleet Summary
-    // Sources: overview + mobile-device-inventory-details (or mobile-devices-list) + classic-ios-profiles
+    // Sources: overview + mobile-devices-list (or a legacy mobile-device-inventory-details)
+    // + classic-ios-profiles
 
     func writeMobileFleetSummary() throws {
         let mobileRows = normalizeMobileInventory()
         let profileRows = normalizeMobileProfiles()
         guard !mobileRows.isEmpty || !profileRows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         let ws = workbook.addSheet("Mobile Fleet Summary")
@@ -956,15 +923,18 @@ struct CoreDashboard: Sendable {
         if !mobileRows.isEmpty {
             summaryPairs += [
                 ("Inventory Rows Returned", summary.total),
-                ("Managed Rows", summary.managed),
-                ("Unmanaged Rows", summary.unmanaged),
-                ("Supervised Devices", summary.supervised),
-                ("Shared iPad Devices", summary.sharedIPad),
+                ("Managed Rows", countCell(summary.managed)),
+                ("Unmanaged Rows", countCell(summary.unmanaged)),
+                ("Supervised Devices", countCell(summary.supervised)),
+                ("Shared iPad Devices", countCell(summary.sharedIPad)),
                 ("Assigned Users", summary.assigned),
-                ("Activation Lock Enabled", summary.activationLock),
-                ("Passcode Compliant", summary.passcodeCompliant),
-                ("Inventory Older Than \(staleThreshold) Days", summary.stale),
+                ("Activation Lock Enabled", countCell(summary.activationLock)),
+                ("Passcode Compliant", countCell(summary.passcodeCompliant)),
+                ("Inventory Older Than \(staleThreshold) Days", countCell(summary.stale)),
             ]
+            if summary.managed != nil, summary.managementUnknown > 0 {
+                summaryPairs.insert(("Management State Unknown", summary.managementUnknown), at: 3)
+            }
         }
         if !profileRows.isEmpty {
             summaryPairs.append(("Mobile Config Profiles (List)", profileRows.count))
@@ -1032,12 +1002,12 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Mobile Inventory
-    // Source: mobile-device-inventory-details (preferred) or mobile-devices-list
+    // Source: mobile-devices-list (or a newer legacy mobile-device-inventory-details)
 
     func writeMobileInventory() throws {
         let rows = normalizeMobileInventory()
         guard !rows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
@@ -1048,15 +1018,18 @@ struct CoreDashboard: Sendable {
         var row = ws.writeSheetHeader(title: t("Mobile Inventory"),
                                       subtitle: "Generated: \(ts)", ncols: 20)
 
-        let summaryPairs: [(String, Int)] = [
+        var summaryPairs: [(String, Any)] = [
             ("Total Mobile Devices", summary.total),
-            ("Managed", summary.managed),
-            ("Unmanaged", summary.unmanaged),
-            ("Supervised", summary.supervised),
-            ("Shared iPad", summary.sharedIPad),
+            ("Managed", countCell(summary.managed)),
+            ("Unmanaged", countCell(summary.unmanaged)),
+            ("Supervised", countCell(summary.supervised)),
+            ("Shared iPad", countCell(summary.sharedIPad)),
             ("Assigned Users", summary.assigned),
-            ("Inventory Older Than Threshold", summary.stale),
+            ("Inventory Older Than Threshold", countCell(summary.stale)),
         ]
+        if summary.managed != nil, summary.managementUnknown > 0 {
+            summaryPairs.insert(("Management State Unknown", summary.managementUnknown), at: 3)
+        }
         for (label, value) in summaryPairs {
             ws.write(label, row: row, col: 0, format: .cell)
             ws.write(value, row: row, col: 1, format: .cell)
@@ -1502,67 +1475,80 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Mobile inventory helpers
 
-    /// Normalize mobile device records from inventory-details (preferred) or devices-list.
-    private func normalizeMobileInventory() -> [[String: Any]] {
-        let names = ["mobile-device-inventory-details", "mobile_device_inventory_details",
-                     "mobile-devices-list", "mobile_devices_list"]
-        guard let raw = try? loadLatestJSON(names: names),
-              let items = raw as? [[String: Any]] else { return [] }
-
-        return items.compactMap { item -> [String: Any]? in
-            // inventory-details has a `general` sub-dict; devices-list is flat.
-            let general = item["general"] as? [String: Any] ?? item
-            let model = general["model"] as? String ?? item["model"] as? String ?? ""
-            let name = general["displayName"] as? String ?? item["name"] as? String ?? ""
-            let managed = general["managed"] as? Bool ?? item["managed"] as? Bool
-            let supervised = general["supervised"] as? Bool ?? item["supervised"] as? Bool
-            let osVersion = general["osVersion"] as? String ?? item["type"] as? String ?? ""
-            let serial = item["serialNumber"] as? String
-                ?? general["serialNumber"] as? String ?? ""
-            let jamfId = item["mobileDeviceId"] as? String ?? item["id"] as? String ?? ""
-            let lastInventory = general["lastInventoryUpdateDate"] as? String ?? ""
-            let ownership = general["deviceOwnershipType"] as? String ?? ""
-
-            let userLocation = item["userAndLocation"] as? [String: Any] ?? [:]
-            let username = userLocation["username"] as? String ?? item["username"] as? String ?? ""
-            let email = userLocation["emailAddress"] as? String ?? item["email"] as? String ?? ""
-            let dept = userLocation["department"] as? String ?? item["department"] as? String ?? ""
-            let building = userLocation["building"] as? String ?? item["building"] as? String ?? ""
-
-            let activationLock = general["activationLockEnabled"] as? Bool
-            let passcodeCompliant = general["passcodeCompliant"] as? Bool
-            // GENERAL names the flag `sharedIpad`; a device without it is
-            // unknown (blank), not "No".
-            let sharedIPad = general["sharedIpad"] as? Bool
-            let dataProtection = general["dataProtectionEnabled"] as? Bool
-            let jailbreak = general["jailbreakDetected"] as? String ?? ""
-
-            let family = mobileDeviceFamily(model: model, name: name)
-            let daysSince = daysSinceDate(lastInventory)
-
-            return [
-                "Jamf Pro ID": jamfId,
-                "Device Name": name,
-                "Serial Number": serial,
-                "Device Family": family,
-                "Managed": yesNoUnknown(managed),
-                "Supervised": yesNoUnknown(supervised),
-                "Shared iPad": yesNoUnknown(sharedIPad),
-                "Model": model,
-                "OS Version": osVersion,
-                "Username": username,
-                "Email": email,
-                "Department": dept,
-                "Building": building,
-                "Last Inventory Update": lastInventory,
-                "Days Since Inventory": daysSince as Any,
-                "Activation Lock": yesNoUnknown(activationLock),
-                "Passcode Compliant": yesNoUnknown(passcodeCompliant),
-                "Data Protection": yesNoUnknown(dataProtection),
-                "Jailbreak Status": jailbreak,
-                "Ownership": ownership,
-            ]
+    /// The inventory rows the mobile sheets read: the newest `mobile-devices-list`, or a
+    /// newer legacy `mobile-device-inventory-details` snapshot, whose rows carry sections.
+    /// Same choice the Mobile Fleet screen makes (`MobileFleetService.inventorySource`).
+    private func loadMobileInventoryRows() -> [MobileDeviceInventoryItem] {
+        let newestPerKind = [
+            ["mobile-devices-list", "mobile_devices_list"],
+            ["mobile-device-inventory-details", "mobile_device_inventory_details"],
+        ].compactMap { FileManager.newestSnapshot(among: snapshotCandidates(names: $0)) }
+        guard let source = MobileFleetService.inventorySource(among: newestPerKind) else {
+            return []
         }
+        if let data = try? Data(contentsOf: source.url) {
+            SnapshotManifest.verify(snapshot: source.url, data: data)
+        }
+        return source.devices
+    }
+
+    /// Normalize mobile device records from the inventory rows, joined to the devices-list
+    /// row with the same id, or from the devices-list alone. Fields are read through
+    /// `MobileFleetService`, so the workbook and the Mobile Fleet screen agree. A blank
+    /// string means the snapshot does not report the field.
+    private func normalizeMobileInventory() -> [[String: Any]] {
+        let rich = loadMobileInventoryRows()
+        let light = loadLatestTyped(
+            names: ["mobile-devices-list", "mobile_devices_list"],
+            as: [MobileDeviceListRow].self) ?? []
+        guard !rich.isEmpty else {
+            return light.map { row in
+                let stub = MobileDeviceInventoryItem(
+                    mobileDeviceId: row.id, deviceType: row.deviceType ?? row.type)
+                return mobileInventoryRow(stub, listRow: row)
+            }
+        }
+        let listByID = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: light, richDevices: rich,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        ).lightDevicesByID
+        return rich.map { device in
+            mobileInventoryRow(device, listRow: device.mobileDeviceId.flatMap { listByID[$0] })
+        }
+    }
+
+    private func mobileInventoryRow(
+        _ device: MobileDeviceInventoryItem, listRow: MobileDeviceListRow?
+    ) -> [String: Any] {
+        let general = device.general
+        let user = device.userAndLocation
+        let lastInventory = general?.lastInventoryUpdateDate ?? ""
+        let factor = MobileFleetService.formFactor(of: device, listRow: listRow)
+        return [
+            "Jamf Pro ID": MobileFleetService.firstNonBlank(device.mobileDeviceId, listRow?.id)
+                ?? "",
+            "Device Name": MobileFleetService.firstNonBlank(general?.displayName, listRow?.name)
+                ?? "",
+            "Serial Number": MobileFleetService.serialNumber(of: device, listRow: listRow) ?? "",
+            "Device Family": MobileFleetService.typeLabel(
+                for: factor, deviceType: device.deviceType),
+            "Managed": yesNoUnknown(general?.managed),
+            "Supervised": yesNoUnknown(general?.supervised),
+            "Shared iPad": yesNoUnknown(general?.sharedIpad),
+            "Model": MobileFleetService.model(of: device, listRow: listRow) ?? "",
+            "OS Version": general?.osVersion ?? "",
+            "Username": MobileFleetService.firstNonBlank(user?.username, listRow?.username) ?? "",
+            "Email": user?.emailAddress ?? "",
+            "Department": user?.department ?? "",
+            "Building": user?.building ?? "",
+            "Last Inventory Update": lastInventory,
+            "Days Since Inventory": daysSinceDate(lastInventory) as Any,
+            "Activation Lock": yesNoUnknown(MobileFleetService.activationLockEnabled(of: device)),
+            "Passcode Compliant": yesNoUnknown(MobileFleetService.passcodeCompliant(of: device)),
+            "Data Protection": yesNoUnknown(MobileFleetService.dataProtected(of: device)),
+            "Jailbreak Status": MobileFleetService.jailbreakStatus(of: device) ?? "",
+            "Ownership": general?.deviceOwnershipType ?? "",
+        ]
     }
 
     private func normalizeMobileProfiles() -> [[String: Any]] {
@@ -1581,44 +1567,49 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    /// The counts are nil when no row answers the question: unmeasured, not zero.
     private struct MobileInventorySummary {
-        var total, managed, unmanaged, supervised, sharedIPad: Int
-        var assigned, activationLock, passcodeCompliant, stale: Int
-        var families, osVersions, models: [String: Int]
+        var total = 0, managementUnknown = 0, assigned = 0
+        var managed, unmanaged, supervised, sharedIPad, activationLock, passcodeCompliant: Int?
+        var stale: Int?
+        var families: [String: Int] = [:], osVersions: [String: Int] = [:]
+        var models: [String: Int] = [:]
+    }
+
+    /// A count cell: the number, or "Unknown" when nothing in the snapshot measured it.
+    private func countCell(_ count: Int?) -> Any {
+        if let count { return count }
+        return "Unknown"
     }
 
     private func summarizeMobileInventory(_ rows: [[String: Any]], staleDays: Int) -> MobileInventorySummary {
-        var s = MobileInventorySummary(
-            total: rows.count, managed: 0, unmanaged: 0, supervised: 0, sharedIPad: 0,
-            assigned: 0, activationLock: 0, passcodeCompliant: 0, stale: 0,
-            families: [:], osVersions: [:], models: [:]
-        )
+        var s = MobileInventorySummary(total: rows.count)
+        func cell(_ row: [String: Any], _ column: String) -> String {
+            row[column] as? String ?? ""
+        }
+        func count(_ column: String, _ value: String) -> Int? {
+            let answered = rows.filter { !cell($0, column).isEmpty }
+            guard !answered.isEmpty else { return nil }
+            return answered.filter { cell($0, column) == value }.count
+        }
+        s.managed = count("Managed", "Yes")
+        s.unmanaged = count("Managed", "No")
+        s.managementUnknown = rows.filter { cell($0, "Managed").isEmpty }.count
+        s.supervised = count("Supervised", "Yes")
+        s.sharedIPad = count("Shared iPad", "Yes")
+        s.activationLock = count("Activation Lock", "Yes")
+        s.passcodeCompliant = count("Passcode Compliant", "Yes")
+        let ages = rows.compactMap { $0["Days Since Inventory"] as? Int }
+        if !ages.isEmpty { s.stale = ages.filter { $0 > staleDays }.count }
         for row in rows {
-            if (row["Managed"] as? String) == "Yes" { s.managed += 1 } else { s.unmanaged += 1 }
-            if (row["Supervised"] as? String) == "Yes" { s.supervised += 1 }
-            if (row["Shared iPad"] as? String) == "Yes" { s.sharedIPad += 1 }
-            if let u = row["Username"] as? String, !u.isEmpty { s.assigned += 1 }
-            if (row["Activation Lock"] as? String) == "Yes" { s.activationLock += 1 }
-            if (row["Passcode Compliant"] as? String) == "Yes" { s.passcodeCompliant += 1 }
-            if let days = row["Days Since Inventory"] as? Int, days > staleDays { s.stale += 1 }
-            let family = row["Device Family"] as? String ?? "Mobile"
-            s.families[family, default: 0] += 1
-            let os = row["OS Version"] as? String ?? ""
+            if !cell(row, "Username").isEmpty { s.assigned += 1 }
+            s.families[cell(row, "Device Family"), default: 0] += 1
+            let os = cell(row, "OS Version")
             if !os.isEmpty { s.osVersions[os, default: 0] += 1 }
-            let model = row["Model"] as? String ?? ""
+            let model = cell(row, "Model")
             if !model.isEmpty { s.models[model, default: 0] += 1 }
         }
         return s
-    }
-
-    private func mobileDeviceFamily(model: String, name: String) -> String {
-        let text = "\(model) \(name)".lowercased()
-        if text.contains("ipad") { return "iPad" }
-        if text.contains("iphone") { return "iPhone" }
-        if text.contains("ipod") { return "iPod" }
-        if text.contains("appletv") || text.contains("apple tv") { return "Apple TV" }
-        if text.contains("vision") { return "Vision" }
-        return "Mobile"
     }
 
     private func yesNoUnknown(_ value: Bool?) -> String {
@@ -2198,9 +2189,7 @@ struct CoreDashboard: Sendable {
         }
 
         let totalTitles = patchRows.count
-        let avgPct = totalTitles > 0
-            ? patchRows.reduce(0.0) { $0 + $1.adjPct } / Double(totalTitles)
-            : 0.0
+        let fleetPct = PatchStatusService.fleetCompliancePct(patchItems)
         let excellent = patchRows.filter { $0.adjPct >= 0.95 }.count
         let good = patchRows.filter { $0.adjPct >= 0.80 && $0.adjPct < 0.95 }.count
         let warning = patchRows.filter { $0.adjPct >= 0.50 && $0.adjPct < 0.80 }.count
@@ -2237,9 +2226,9 @@ struct CoreDashboard: Sendable {
         ws.write("Total Patch Titles", row: row, col: 0, format: .cell)
         ws.write(totalTitles, row: row, col: 1, format: .cell)
         row += 1
-        let avgPctStr = String(format: "%.1f%%", avgPct * 100)
-        ws.write("Average Completion (Adjusted)", row: row, col: 0, format: .cell)
-        ws.write(avgPctStr, row: row, col: 1, format: .cell)
+        ws.write("Fleet Compliance (devices on latest)", row: row, col: 0, format: .cell)
+        ws.write(fleetPct.map { String(format: "%.1f%%", $0) } ?? "\u{2014}",
+                 row: row, col: 1, format: .cell)
         row += 1
         ws.write("Fully Compliant (\u{2265}95%)", row: row, col: 0, format: .cell)
         ws.write(excellent, row: row, col: 1, format: .cell)
@@ -2307,6 +2296,7 @@ struct CoreDashboard: Sendable {
             let firewall: String
             let gatekeeper: String
             let bootstrapToken: String
+            let hardwareEncrypted: Bool?
         }
 
         let rows: [DeviceSecurityRow] = items.compactMap { item in
@@ -2334,17 +2324,16 @@ struct CoreDashboard: Sendable {
             if let b = asBool(firewallRaw) { firewallStr = b ? "ENABLED" : "DISABLED" }
             else { firewallStr = "" }
             let gatekeeperStr = security?["gatekeeperStatus"] as? String ?? ""
-            let btRaw = security?["bootstrapTokenEscrowed"]
-            let bootstrapStr: String
-            if let b = asBool(btRaw) { bootstrapStr = b ? "ESCROWED" : "NOT ESCROWED" }
-            else { bootstrapStr = "" }
+            let bootstrapStr = bootstrapEscrowText(security)
 
             let hasAny = !fileVaultStr.isEmpty || !sipStr.isEmpty || !firewallStr.isEmpty
                 || !gatekeeperStr.isEmpty || !bootstrapStr.isEmpty
             guard hasAny else { return nil }
             return DeviceSecurityRow(name: name, serial: serial, fileVault: fileVaultStr,
                                      sip: sipStr, firewall: firewallStr, gatekeeper: gatekeeperStr,
-                                     bootstrapToken: bootstrapStr)
+                                     bootstrapToken: bootstrapStr,
+                                     hardwareEncrypted: HardwareEncryption.isHardwareEncrypted(
+                                        computer: item))
         }
 
         guard !rows.isEmpty else {
@@ -2367,53 +2356,63 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
+        let policy = config.resolvedSecurityPolicy
         let sorted = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
         for r in sorted {
             ws.write(r.name, row: row, col: 0, format: .cell)
             ws.write(r.serial, row: row, col: 1, format: .cell)
-            ws.write(r.fileVault, row: row, col: 2, format: securityControlFormat("filevault", r.fileVault))
-            ws.write(r.sip, row: row, col: 3, format: securityControlFormat("sip", r.sip))
-            ws.write(r.firewall, row: row, col: 4, format: securityControlFormat("firewall", r.firewall))
+            ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
+                     row: row, col: 2, format: securityVerdictFormat(
+                        .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))
+            ws.write(r.sip, row: row, col: 3,
+                     format: securityVerdictFormat(.sip, r.sip, hardwareEncrypted: nil))
+            ws.write(r.firewall, row: row, col: 4,
+                     format: securityVerdictFormat(.firewall, r.firewall, hardwareEncrypted: nil))
             ws.write(r.gatekeeper, row: row, col: 5,
-                     format: securityControlFormat("gatekeeper", r.gatekeeper))
+                     format: securityVerdictFormat(
+                        .gatekeeper, r.gatekeeper, hardwareEncrypted: nil))
+            let escrowed = SecurityControlPolicy.reading(r.bootstrapToken)
             ws.write(r.bootstrapToken, row: row, col: 6,
-                     format: securityControlFormat("bootstrap_token", r.bootstrapToken))
+                     format: escrowed.map { $0 ? CellFormat.green : .red } ?? .cell)
             row += 1
         }
     }
 
-    /// Returns green/red/neutral based on whether a security control value is compliant.
-    /// Mirrors Python `_security_control_is_compliant` logic.
-    private func securityControlFormat(_ control: String, _ value: String) -> CellFormat {
-        guard !value.isEmpty else { return .cell }
-        let v = value.uppercased()
-        let compliant: Bool
-        switch control {
-        case "filevault":
-            compliant = v == "ENCRYPTED" || v.contains("ENCRYPT")
-        case "sip":
-            compliant = v == "ENABLED" || v.contains("ENABLE") || v == "ACTIVE"
-        case "firewall":
-            compliant = v == "ENABLED" || v == "TRUE" || v == "YES"
-        case "gatekeeper":
-            // APP_STORE or APP_STORE_AND_IDENTIFIED_DEVELOPERS are compliant
-            compliant = v.contains("APP_STORE") || v == "ENABLED" || v == "ACTIVE"
-        case "bootstrap_token":
-            compliant = v == "ESCROWED"
-        default:
-            return .cell
+    /// Bootstrap token escrow as the sheet shows it. Jamf Pro reports it as
+    /// `bootstrapTokenEscrowedStatus` (ESCROWED, NOT_ESCROWED, NOT_SUPPORTED); a snapshot with
+    /// the older Bool key still reads. `bootstrapTokenAllowed` says whether escrow is
+    /// permitted, not whether the token is escrowed, so it never stands in.
+    private func bootstrapEscrowText(_ security: [String: Any]?) -> String {
+        let status = (security?["bootstrapTokenEscrowedStatus"] as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        if !status.isEmpty { return status }
+        guard let escrowed = asBool(security?["bootstrapTokenEscrowed"]) else { return "" }
+        return escrowed ? "ESCROWED" : "NOT ESCROWED"
+    }
+
+    /// Green when the control passes under the workspace's policy, red when it fails, amber
+    /// for a warning; neutral when the value says nothing or the policy does not count it.
+    private func securityVerdictFormat(
+        _ control: SecurityControl, _ value: String, hardwareEncrypted: Bool?
+    ) -> CellFormat {
+        let verdict = config.resolvedSecurityPolicy.verdict(
+            for: control, value: value, hardwareEncrypted: hardwareEncrypted)
+        switch verdict {
+        case .pass: return .green
+        case .fail: return .red
+        case .warning: return .yellow
+        case .ignored, .unknown: return .cell
         }
-        return compliant ? .green : .red
     }
 
     // MARK: - Mobile Supervision Status
-    // Source: mobile-device-inventory-details (or mobile-devices-list) snapshot.
+    // Source: mobile-devices-list (or a newer legacy mobile-device-inventory-details) snapshot.
     // Per-family aggregate of supervised/unsupervised counts.
 
     func writeMobileSupervisionStatus() throws {
         let mobileRows = normalizeMobileInventory()
         guard !mobileRows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         var perFamily: [String: (total: Int, supervised: Int, unsupervised: Int)] = [:]
@@ -2574,14 +2573,8 @@ struct CoreDashboard: Sendable {
 
     /// Returns {osVersion: count} for iOS/iPadOS from the cached mobile inventory.
     private func mobileOSCounts() -> [String: Int] {
-        let inventoryDir = dataDir.appendingPathComponent(
-            "mobile-device-inventory-details", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: inventoryDir),
-              let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
-        else { return [:] }
         var counts: [String: Int] = [:]
-        for item in items {
+        for item in loadMobileInventoryRows() {
             let ver = (item.general?.osVersion ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !ver.isEmpty else { continue }
@@ -2617,6 +2610,8 @@ struct CoreDashboard: Sendable {
         var dormantCount: Int?
         var actionItemsP0: Int?
         var actionItemsP1: Int?
+        /// FileVault-off Macs the hardware rule counts apart (warning or not counted).
+        var fileVaultOffHardwareEncrypted: Int?
     }
 
     /// Assemble `ExecutiveSummaryMetrics` from the cached jamf-cli snapshots in `dataDir`.
@@ -2646,9 +2641,21 @@ struct CoreDashboard: Sendable {
             let total = s.data.totalDevices ?? 0
             m.totalDevices = total
             applySecurityControlPcts(to: &m, data: s.data, total: total)
-            applySecurityScoreAndActions(to: &m, data: s.data, total: total)
+            if let fleet = securityFleet(items: items) {
+                applySecurityScoreAndActions(to: &m, fleet: fleet)
+            }
             break
         }
+    }
+
+    /// The security snapshot's counts under the workspace's policy: what summary.json and the
+    /// Security Posture screen take P0, P1 and the score from. Nil without a summary section.
+    private func securityFleet(items: [SecurityReportItem]) -> SecurityFleetCounts? {
+        let policy = config.resolvedSecurityPolicy
+        let hardware = hardwareIndex.value {
+            HardwareEncryption.index(dataDir: dataDir, for: policy)
+        }
+        return SecurityFleetCounts.build(items: items, hardware: hardware, policy: policy)
     }
 
     /// Populate per-control coverage percentages from a security summary.
@@ -2666,35 +2673,26 @@ struct CoreDashboard: Sendable {
     /// Compute the weighted security score, grade, and P0/P1 action item counts.
     private func applySecurityScoreAndActions(
         to m: inout ExecutiveSummaryMetrics,
-        data: SecuritySummaryData,
-        total: Int
+        fleet: SecurityFleetCounts
     ) {
-        var counts: [SecurityScore.Metric: Int] = [:]
-        if let n = data.fileVaultEncrypted { counts[.fileVault] = n }
-        if let n = data.sipEnabled { counts[.sip] = n }
-        if let n = data.firewallEnabled { counts[.firewall] = n }
-        if !counts.isEmpty && total > 0 {
-            let score = SecurityScoreCalculator.score(
-                input: .init(totalDevices: total, compliantCounts: counts)
-            )
-            if !score.available.isEmpty {
-                m.securityScore = score.value
-                m.securityGrade = score.grade
-            }
+        let score = SecurityScoreCalculator.score(
+            input: fleet.scoreInput(),
+            weights: config.resolvedSecurityPolicy.resolvedScoreWeights
+        )
+        if !score.available.isEmpty {
+            m.securityScore = score.value
+            m.securityGrade = score.grade
         }
-        if let n = data.fileVaultEncrypted { m.actionItemsP0 = total - n }
-        if let n = data.gatekeeperEnabled { m.actionItemsP1 = total - n }
+        m.actionItemsP0 = fleet.p0
+        m.actionItemsP1 = fleet.p1
+        m.fileVaultOffHardwareEncrypted = fleet.fileVaultOffHardwareEncrypted
     }
 
     /// Populate patch compliance % from the cached `patch-status` snapshot.
     private func applyPatchMetric(to m: inout ExecutiveSummaryMetrics) {
         guard let rows = loadLatestTyped(names: ["patch-status", "patch_status"],
-                                          as: [PatchStatusRow].self),
-              !rows.isEmpty else { return }
-        let snap = PatchStatusService.Snapshot(
-            titles: rows, failures: [], sourceFile: nil, snapshotDate: nil
-        )
-        m.patchFleetCompliancePct = snap.fleetCompliancePct
+                                          as: [PatchStatusRow].self) else { return }
+        m.patchFleetCompliancePct = PatchStatusService.fleetCompliancePct(rows)
     }
 
     /// Populate managed count + stale tier buckets from the cached `device-compliance` snapshot.
@@ -2754,7 +2752,7 @@ struct CoreDashboard: Sendable {
             return "\(n)"
         }
 
-        let metricRows: [(String, String)] = [
+        var metricRows: [(String, String)] = [
             ("Security Score", scoreLabel),
             ("Total Devices", fmtInt(m.totalDevices)),
             ("Managed Devices", fmtInt(m.managedCount)),
@@ -2770,6 +2768,10 @@ struct CoreDashboard: Sendable {
             ("P0 Action Items (FV/SIP/FW gaps)", fmtInt(m.actionItemsP0)),
             ("P1 Action Items (Gatekeeper gaps)", fmtInt(m.actionItemsP1)),
         ]
+        if let n = m.fileVaultOffHardwareEncrypted, n > 0,
+           let at = metricRows.firstIndex(where: { $0.0 == "FileVault Coverage" }) {
+            metricRows.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: at + 1)
+        }
 
         ws.write("Metric", row: row, col: 0, format: .header)
         ws.write("Value", row: row, col: 1, format: .header)
@@ -2995,6 +2997,8 @@ struct CoreDashboard: Sendable {
             .first(where: { ($0["section"] as? String) == "summary" })?["data"]
             as? [String: Any] ?? [:]
         let totalDevices = asInt(secSummary["total_devices"]) ?? 0
+        let fleet = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
+            .flatMap { securityFleet(items: $0) }
 
         // Device compliance snapshot
         let deviceCompItems = ((try? loadLatestJSON(
@@ -3007,34 +3011,33 @@ struct CoreDashboard: Sendable {
             ? Double(managedCount) / Double(deviceTotal) * 100 : 0
 
         // Patch compliance snapshot
-        let patchItems = ((try? loadLatestJSON(
-            names: ["patch-status", "patch_status"]
-        )) as? [[String: Any]]) ?? []
-        let patchPct = averagePatchCompliancePct(patchItems)
+        let patchPct = loadLatestTyped(
+            names: ["patch-status", "patch_status"], as: [PatchStatusRow].self
+        ).flatMap(PatchStatusService.fleetCompliancePct)
 
-        // Metric rows: (label, rawValue, pctValue for RAG)
-        let metrics: [(label: String, value: String, pct: Double?)] = [
+        // Metric rows: (label, rawValue, pctValue for RAG, security control the policy grades)
+        let metrics: [(label: String, value: String, pct: Double?, control: SecurityControl?)] = [
             ("Device Compliance (managed %)",
              deviceTotal > 0 ? String(format: "%.0f%%", compliancePct) : "\u{2014}",
-             deviceTotal > 0 ? compliancePct : nil),
+             deviceTotal > 0 ? compliancePct : nil, nil),
             ("FileVault Encrypted",
              percentLabel(asInt(secSummary["filevault_encrypted"]), total: totalDevices),
-             pctFromSummary(secSummary["filevault_encrypted"], total: totalDevices)),
+             nil, .fileVault),
             ("SIP Enabled",
              percentLabel(asInt(secSummary["sip_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["sip_enabled"], total: totalDevices)),
+             nil, .sip),
             ("Firewall Enabled",
              percentLabel(asInt(secSummary["firewall_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["firewall_enabled"], total: totalDevices)),
+             nil, .firewall),
             ("Gatekeeper Enabled",
              percentLabel(asInt(secSummary["gatekeeper_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["gatekeeper_enabled"], total: totalDevices)),
-            ("Patch Compliance (avg across titles)",
-             patchItems.isEmpty ? "\u{2014}" : String(format: "%.0f%%", patchPct),
-             patchItems.isEmpty ? nil : patchPct),
+             nil, .gatekeeper),
+            ("Patch Compliance (devices on latest)",
+             patchPct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",
+             patchPct, nil),
             ("Stale Devices (>\(config.thresholds?.resolvedStaleDays ?? 30) days)",
              "\(staleCount)",
-             nil),
+             nil, nil),
         ]
 
         ws.write("Metric", row: row, col: 0, format: .header)
@@ -3043,7 +3046,9 @@ struct CoreDashboard: Sendable {
         row += 1
 
         for metric in metrics {
-            let (statusLabel, statusFmt) = ragStatus(pct: metric.pct)
+            let (statusLabel, statusFmt) = metric.control.map {
+                securityRagStatus($0, fleet: fleet)
+            } ?? ragStatus(pct: metric.pct)
             ws.write(metric.label, row: row, col: 0, format: .cell)
             ws.write(metric.value, row: row, col: 1, format: .cell)
             ws.write(statusLabel, row: row, col: 2, format: statusFmt)
@@ -3055,6 +3060,14 @@ struct CoreDashboard: Sendable {
         ws.write("Compliance bands: GREEN \u{2265}95% \u{00B7} AMBER \u{2265}80% \u{00B7} RED <80%",
                  row: row, col: 0, format: .subtitle)
         row += 1
+        // Under a policy the security rows are graded differently from the bands above.
+        if !config.resolvedSecurityPolicy.gradesLikeTheDefault {
+            ws.write("Security rows follow this workspace's security policy: they are graded on "
+                     + "the Macs not failing, AMBER also covers warnings, and Not counted means "
+                     + "the control is set to ignore or no Mac is left to grade.",
+                     row: row, col: 0, format: .subtitle)
+            row += 1
+        }
         ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
         row += 2
         writePostureDeviceTable(ws: ws, row: row, items: deviceCompItems)
@@ -3102,21 +3115,25 @@ struct CoreDashboard: Sendable {
         }
     }
 
-    /// Average patch compliance % across all titles; returns 0.0 if no data.
-    private func averagePatchCompliancePct(_ items: [[String: Any]]) -> Double {
-        guard !items.isEmpty else { return 0 }
-        let pcts = items.compactMap { item -> Double? in
-            let s = item["compliance_pct"] as? String ?? ""
-            return Double(s.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces))
+    /// A security row's status under the workspace's policy: not counted at `ignore` or with
+    /// no Mac left to grade, else
+    /// graded on the share of Macs not failing the control, amber instead of green when some
+    /// Macs only warn.
+    private func securityRagStatus(
+        _ control: SecurityControl, fleet: SecurityFleetCounts?
+    ) -> (String, CellFormat) {
+        if config.resolvedSecurityPolicy.level(for: control) == .ignore {
+            return ("Not counted", .cell)
         }
-        guard !pcts.isEmpty else { return 0 }
-        return pcts.reduce(0, +) / Double(pcts.count)
-    }
-
-    /// Convert a count/total pair into a percentage Double for RAG banding.
-    private func pctFromSummary(_ value: Any?, total: Int) -> Double? {
-        guard let n = asInt(value), total > 0 else { return nil }
-        return Double(n) / Double(total) * 100
+        // Every Mac the hardware rule took out of FileVault's count: none is left to grade.
+        if fleet?.controls[control] != nil, fleet?.nonFailingPct(control) == nil {
+            return ("Not counted", .cell)
+        }
+        let status = ragStatus(pct: fleet?.nonFailingPct(control))
+        guard status.0 == "GREEN", (fleet?.controls[control]?.warning ?? 0) > 0 else {
+            return status
+        }
+        return ("AMBER", .yellow)
     }
 
     /// Return RAG (RED/AMBER/GREEN) label and cell format for a percentage.
@@ -3187,6 +3204,20 @@ struct CoreDashboard: Sendable {
     /// enforced strict mode through the Python CLI's `--strict-manifest`
     /// flag).
     private func loadLatestJSONData(names: [String]) throws -> Data {
+        // One ordering rule for every reader: filename stamp first, manifest and
+        // sync-conflict copies excluded.
+        guard let newest = FileManager.newestSnapshot(among: snapshotCandidates(names: names))
+        else {
+            throw CoreDashboardError.noCachedData(names: names)
+        }
+        let data = try Data(contentsOf: newest)
+        SnapshotManifest.verify(snapshot: newest, data: data)
+        return data
+    }
+
+    /// Every JSON file under `dataDir` that could be the snapshot of one of `names`: the
+    /// kind's own directory, and flat `<name>_*.json` files beside it.
+    private func snapshotCandidates(names: [String]) -> [URL] {
         var candidates: [URL] = []
         let fm = FileManager.default
         for name in names {
@@ -3212,16 +3243,7 @@ struct CoreDashboard: Sendable {
                 candidates.append(contentsOf: matching)
             }
         }
-        // One ordering rule for every reader: filename stamp first, manifest and
-        // sync-conflict copies excluded. `newestSnapshot` also replaces a
-        // force-unwrap that only held because `candidates` was checked non-empty
-        // one line above — the filter can now empty it, so the guard does both.
-        guard let newest = FileManager.newestSnapshot(among: candidates) else {
-            throw CoreDashboardError.noCachedData(names: names)
-        }
-        let data = try Data(contentsOf: newest)
-        SnapshotManifest.verify(snapshot: newest, data: data)
-        return data
+        return candidates
     }
 
     private func loadLatestJSON(names: [String]) throws -> Any {
@@ -3280,7 +3302,7 @@ struct CoreDashboard: Sendable {
     private func asInt(_ value: Any?) -> Int? {
         switch value {
         case let n as Int: return n
-        case let d as Double: return Int(d)
+        case let d as Double: return Int(exactly: d.rounded())
         case let s as String: return Int(s)
         case let n as NSNumber: return n.intValue
         default: return nil
@@ -3500,5 +3522,23 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
         case .noCachedData(let names):
             return "No cached jamf-cli snapshot found for: \(names.joined(separator: ", "))"
         }
+    }
+}
+
+// MARK: - HardwareIndexCache
+
+/// The hardware index reads and parses the `computers` snapshot, so a dashboard builds it once
+/// however many sheets grade by it.
+private final class HardwareIndexCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var index: [String: Bool]?
+
+    func value(_ make: () -> [String: Bool]) -> [String: Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        if let index { return index }
+        let made = make()
+        index = made
+        return made
     }
 }

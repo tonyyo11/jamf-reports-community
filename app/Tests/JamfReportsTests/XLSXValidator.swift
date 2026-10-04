@@ -5,6 +5,10 @@ import ZIPFoundation
 
 /// Validates a generated `.xlsx` file for structural integrity.
 ///
+/// Test support, not product code: the app does not run it on its own output
+/// because a real report legitimately contains empty sheets, which its
+/// one-row-per-sheet check rejects.
+///
 /// Checks performed:
 /// - File is a valid ZIP archive (OOXML is a ZIP container).
 /// - Required OOXML entries exist: `[Content_Types].xml`, `xl/workbook.xml`,
@@ -13,16 +17,16 @@ import ZIPFoundation
 /// - Each sheet has ≥ 1 row element.
 /// - No cells contain Excel error literals: `#REF!`, `#NAME?`, `#DIV/0!`,
 ///   `#VALUE!`, `#NULL!`, `#N/A`.
-public struct XLSXValidator: Sendable {
+struct XLSXValidator: Sendable {
 
-    public init() {}
+    init() {}
 
     /// Validate the XLSX file at `url`.
     ///
     /// - Parameter url: Path to a `.xlsx` file.
     /// - Returns: A `ValidationReport`.
     /// - Throws: `XLSXValidatorError` when the file cannot be opened.
-    public func validate(at url: URL) throws -> ValidationReport {
+    func validate(at url: URL) throws -> ValidationReport {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw XLSXValidatorError.notFound(url.path)
         }
@@ -119,14 +123,44 @@ public struct XLSXValidator: Sendable {
 
 // MARK: - Errors
 
-public enum XLSXValidatorError: Error, LocalizedError {
+enum XLSXValidatorError: Error, LocalizedError {
     case notFound(String)
     case notZIP(String)
 
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .notFound(let path): return "File not found: \(path)"
         case .notZIP(let path): return "File is not a valid ZIP/XLSX archive: \(path)"
+        }
+    }
+}
+
+// MARK: - ValidationReport
+
+/// Result returned by `XLSXValidator`.
+struct ValidationReport: Sendable {
+    var isValid: Bool
+    var issues: [Issue]
+    var warnings: [String]
+
+    init(isValid: Bool, issues: [Issue] = [], warnings: [String] = []) {
+        self.isValid = isValid
+        self.issues = issues
+        self.warnings = warnings
+    }
+
+    /// A single finding attached to a validation report.
+    struct Issue: Sendable {
+        enum Severity: String, Sendable { case error, warning }
+        var severity: Severity
+        var message: String
+        /// Optional location hint (e.g. file offset, sheet name, img src path).
+        var location: String?
+
+        init(severity: Severity, message: String, location: String? = nil) {
+            self.severity = severity
+            self.message = message
+            self.location = location
         }
     }
 }

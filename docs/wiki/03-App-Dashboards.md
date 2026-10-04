@@ -26,7 +26,8 @@ these interactive dashboards either — it produces a separate generated workboo
 
 ![Fleet Overview](images/overview.png)
 
-- **Overview** — the fleet home screen: headline KPIs, an OS-distribution donut, top
+- **Overview** — the fleet home screen: headline KPIs and score cards (including SIP,
+  Firewall and Gatekeeper, chosen with Customize), an OS-distribution donut, top
   failing compliance rules, security-agent coverage, and recent activity. On a shared
   workspace it also says when another Mac is mid-run, so Refresh appearing to do nothing
   reads as "someone else is working" rather than a bug. On a
@@ -42,10 +43,15 @@ these interactive dashboards either — it produces a separate generated workboo
   filter. The detail panel shows a per-device risk breakdown. Freshness chips show the
   age of each underlying data source (a red "never" chip flags a kind that's never been
   collected), and a "Collect now" banner appears when the cache is stale.
+  FileVault off on a hardware-encrypted Mac reads "Off (hardware-encrypted)" and, under a
+  policy that lowers it, adds no risk points. A value Jamf did not collect shows neutral,
+  not red.
   Data source: per-device snapshots of computers and mobile-device inventory (tier 1).
 - **Device Lookup** — find one device by serial, hostname, asset tag, or ID.
   Data source: per-device snapshot of computer detail from `pro device <id>` (tier 1).
-- **Trends** — historical charts over archived snapshots. See
+- **Trends** — historical charts over archived snapshots, including SIP, firewall and
+  Gatekeeper lines and, on macOS 27, an AI Trend Insight card that summarises how the
+  offered metrics moved over the selected range. See
   [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends).
   Data source: daily summary digest (tier 3) over time; see Data Provenance for metric
   definitions.
@@ -53,10 +59,14 @@ these interactive dashboards either — it produces a separate generated workboo
   unused smart/static groups). Also hosts the Config Doctor's checks — config drift,
   Alerts rule validation, and Data accuracy (EA parse health, device-count
   reconciliation, EA coverage drift) — see [Diagnostics & Troubleshooting](https://github.com/tonyyo11/jamf-reports-community/wiki/09-Diagnostics-and-Troubleshooting).
+  On macOS 27 an AI Audit Insight card suggests which findings to work first and what
+  changed since the previous audit.
   Data source: `pro audit` (instance-config checks, fetched by the Run Audit button)
   and group lists (tier 1).
-- **Generated** — the library of reports already produced, with actions to generate new
-  workbooks, HTML reports, and inventory CSVs. A **Period report** button builds a
+- **Generated** — the library of reports already produced, with **Generate…** (a sheet:
+  a template or your own sheets, the formats XLSX, HTML, PDF and CSV, whether to collect
+  fresh data first, and whether to run a Health Audit first), Export PDF, an inventory CSV
+  export, and a **Period report** button that builds a
   start/end/change workbook for a rolling or calendar window — see
   [Period Reports](https://github.com/tonyyo11/jamf-reports-community/wiki/06c-Period-Reports).
   Data source: generated report catalog (no single tier; see [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance) for report composition).
@@ -68,16 +78,23 @@ these interactive dashboards either — it produces a separate generated workboo
 ![Security Posture](images/security-posture.png)
 
 - **Security Posture** — a weighted Security Score ring, per-control KPIs (FileVault,
-  SIP, firewall, Gatekeeper), prioritized action items, and an OS-version donut.
-  Freshness chips show the age of the underlying data source.
-  Data source: `pro report security` (tier 2) aggregates and device inventory (tier 1).
+  SIP, firewall, Gatekeeper), prioritized action items, and an OS-version donut, all
+  following the workspace's security policy (Config → Scoring): a control set to warning
+  is not a P0 or P1 gap, an ignored one is left out, and hardware-encrypted Macs with
+  FileVault off are counted apart. On macOS 27 an AI Posture Insight card says which
+  control to work first. Freshness chips show the age of the underlying data source.
+  Data source: `pro report security` (tier 2) aggregates, device inventory and, for the
+  hardware rule, the `computers` snapshot (tier 1).
 - **Compliance Posture** — a compliance-band distribution donut (Pass / Low / Med-Low /
   Medium / High / No Data), control-coverage gaps, and a per-OS breakdown. When
   `compliance.baselines` configures more than one mSCP/STIG baseline (for example, one per
   OS or one per framework), each baseline gets its own donut; a device whose failure count
   exceeds that baseline's configured rule count is treated as No Data rather than a real
   High band. [Historical Trends](https://github.com/tonyyo11/jamf-reports-community/wiki/06-Historical-Trends) gains a matching baseline picker on
-  its compliance-band chart once more than one baseline is configured.
+  its compliance-band chart once more than one baseline is configured. Control-coverage
+  gaps follow the same policy; the legend under the bars explains warnings and
+  not-counted controls. On macOS 27 the AI Posture Insight card also names the macOS
+  version that accounts for most of the gap.
   Data source: per-device EA results for mSCP/STIG baselines (tier 1) and device inventory
   (tier 1).
 - **Compliance Benchmarks** — per-benchmark compliance rates and device counts from the
@@ -133,7 +150,8 @@ these interactive dashboards either — it produces a separate generated workboo
 
 - **Mobile Fleet** — iOS/iPadOS device counts, compliance signals, OS-version
   distribution, and a device/profile inventory.
-  Data source: per-device mobile device inventory (tier 1) and profiles (tier 2).
+  Data source: `mobile-devices-list` (one fetch with the General, Hardware, Security and
+  User and Location sections, tier 1) and profiles (tier 2).
 - **Jamf Protect** — Protect alerts, agent health, and insights. Shows an explicit
   "Protect not detected" state for tenants that do not run Jamf Protect.
   Data source: Jamf Protect GraphQL API (separate OAuth2 credentials, tier 2).
@@ -159,12 +177,14 @@ these interactive dashboards either — it produces a separate generated workboo
 
 ## Configuration
 
-- **Config** — the `config.yaml` editor. See
+- **Config** — the `config.yaml` editor, with a read-only From config.yaml tab for what no
+  other tab edits. See
   [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
   Data source: no tier (configuration only).
 - **Customize** — the chart options generated workbooks use: whether to save chart images,
-  and one OS chart per major macOS version. The app always generates the Full Instance
-  template; `jamf-reports generate --template` makes the shorter ones. Overview score cards
+  and one OS chart per major macOS version. The Overview's Generate makes the Full Instance
+  report; **Generate…** on Generated Reports, and `jamf-reports generate --template`, make
+  the others. Overview score cards
   and sections are chosen on the Overview itself.
   Data source: no tier (user preferences).
 - **Data Sources** — the inputs surface: cached `jamf-cli` data, the CSV inbox, and

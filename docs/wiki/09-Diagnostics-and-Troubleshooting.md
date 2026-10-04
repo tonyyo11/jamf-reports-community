@@ -29,7 +29,7 @@ Every action logs through the unified `os.Logger` under subsystem
 `collect`, `report`, `auth`, `schedule`, `webhook`, `platform`, `ui` — so you can filter
 to the area you care about in Console.app or the in-app viewer.
 
-**Settings → Diagnostics → Logging** controls verbosity and shows recent entries:
+**Settings → Logging** controls verbosity and shows recent entries:
 
 - **Persist verbose logs** — keeps `debug`/`info` entries in the local log store (off by
   default; the OS otherwise persists only `notice` and above). Interpolated values stay
@@ -107,6 +107,13 @@ expected:
 Both are suggestions rather than failures, and both stay quiet once the workspace has
 history. Only failures reach a scheduled run's log, so neither can turn a healthy run red.
 
+**Hand-edited values.** Warns for each key the app does not read (with the nearest known
+key), each line the reader skipped (by line number), and each value you typed that was
+replaced, clamped or ignored, saying what the app uses instead; keys it reads that nothing
+uses are suggestions. Security policy values it could not read are named with the level
+used. These are warnings, never failures, so a typo cannot turn a healthy scheduled run
+red.
+
 The same checks run headlessly as `jamf-reports check` (and `check --json` for a CI gate)
 — see [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line).
 
@@ -170,6 +177,17 @@ never retried automatically, because they fail identically every time. See
 **A run says `[partial]`.** The run completed but did not refresh everything: at least one
 source served cached data, the run stood down for another Mac on a shared workspace, or
 the day's summary could not be written. The line names which.
+
+**"A scheduled run is in progress".** A background run holds the lock the app takes for
+every collect it starts. Wait for it to finish, then try again; the app starts nothing
+while the lock is held.
+
+**"Refresh finished with warnings".** The collect exited 0 but a source did not land. Run
+History (first collect) or Settings → Logging has the `[partial]` line.
+
+**"config.yaml changed on disk since this screen loaded it".** The file changed after the
+Config screen loaded it, so the save was refused. Reload on the Config screen, then repeat
+your edit.
 
 **`[skip]` lines in run output.** A sub-step skipped because the cached data it needed
 was stale or absent. Normal in the first day after enabling schedules. If `[skip]` lines

@@ -94,6 +94,56 @@ final class PeriodReportEmitterTests: XCTestCase {
         XCTAssertNotNil(wb.sheet(named: "About"))
     }
 
+    // MARK: - Patch definition change (epic #207 C1)
+
+    private func patchSummary(_ date: String, patch: Double, basis: String?) -> DailySummary {
+        DailySummary(date: date, totalDevices: 600, fileVaultPct: nil, compliancePct: nil,
+            staleCount: nil, osCurrentPct: nil, crowdstrikePct: nil, patchPct: patch,
+            source: "test", patchPctBasis: basis)
+    }
+
+    private func patchWorkbook(startBasis: String?, endBasis: String?) -> Workbook {
+        let s = [patchSummary("2026-04-01", patch: 70, basis: startBasis),
+                 patchSummary("2026-06-30", patch: 78.7, basis: endBasis)]
+        let period = ReportPeriod.resolve(
+            kind: .explicit(start: d("2026-04-01"), end: d("2026-06-30")),
+            availableDates: s.map { d($0.date) }, now: d("2026-07-15"), calendar: cal)!
+        let model = PeriodReportModel.build(
+            period: period, metrics: PeriodMetricCatalog.fleetMetrics(in: s), summaries: s,
+            eaSnapshots: [], profile: "acme-prod", generatedAt: d("2026-07-15"))
+        return PeriodReportEmitter.workbook(for: model)
+    }
+
+    private func texts(_ wb: Workbook, _ sheet: String) -> [(row: Int, col: Int, text: String)] {
+        (wb.sheet(named: sheet)?.dedupedCells ?? []).compactMap {
+            if case .string(let s) = $0.value { return ($0.row, $0.col, s) }
+            return nil
+        }
+    }
+
+    private func patchChangeCell(_ wb: Workbook) throws -> String {
+        let cells = texts(wb, "Summary")
+        let label = try XCTUnwrap(cells.first { $0.col == 0 && $0.text == "Patch compliance" })
+        return try XCTUnwrap(cells.first { $0.row == label.row && $0.col == 3 }).text
+    }
+
+    func testSummaryChangeCellIsADashAndAboutNamesTheChangeAcrossTheDefinitionChange() throws {
+        let wb = patchWorkbook(startBasis: nil, endBasis: "device")
+
+        XCTAssertEqual(try patchChangeCell(wb), "—")
+        let note = "Patch compliance changed definition during this period "
+            + "(device-weighted from 2.9); the change is not shown."
+        XCTAssertEqual(texts(wb, "About").filter { $0.text == note }.count, 1)
+    }
+
+    func testSummaryChangeCellAndAboutAreUnchangedOnOneDefinition() throws {
+        let wb = patchWorkbook(startBasis: "device", endBasis: "device")
+
+        // The writer tab-escapes a leading "+", so the cell reads "\t+8.7pp".
+        XCTAssertTrue(try patchChangeCell(wb).hasSuffix("+8.7pp"))
+        XCTAssertFalse(texts(wb, "About").contains { $0.text.hasPrefix("Patch compliance") })
+    }
+
     // MARK: - Untrusted values
 
     /// EA names and values are server-supplied and reach cells verbatim. Every

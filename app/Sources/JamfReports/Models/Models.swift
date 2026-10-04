@@ -429,6 +429,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var failedRules: Int
     var patchFailures: [DevicePatchFailure]
     var source: String
+    /// Whether the internal volume is hardware-encrypted (`HardwareEncryption`); nil unknown.
+    var hardwareEncrypted: Bool? = nil
 
     var displayName: String { name.isEmpty ? "Unknown device" : name }
     var displaySerial: String { serial.isEmpty ? "No serial" : serial }
@@ -442,15 +444,22 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         return trimmed
     }
 
-    var securityGapCount: Int {
-        [fileVault, sip, firewall, gatekeeper, bootstrapToken].filter(Self.statusLooksBad).count
+    /// Controls the policy counts as failing, plus a bootstrap token that is not escrowed,
+    /// which the policy does not govern.
+    func securityGapCount(policy: SecurityControlPolicy) -> Int {
+        let read = SecurityControlPolicy.reading
+        let controls = policy.gapCount(
+            fileVault: read(fileVault), sip: read(sip), firewall: read(firewall),
+            gatekeeper: read(gatekeeper), hardwareEncrypted: hardwareEncrypted) ?? 0
+        return controls + (read(bootstrapToken) == false ? 1 : 0)
     }
 
-    var risk: Risk {
+    func risk(policy: SecurityControlPolicy) -> Risk {
         if failedRules > 30 || patchFailureCount > 2 || daysSinceContact ?? 0 > 90 {
             return .critical
         }
-        if failedRules > 0 || patchFailureCount > 0 || stale || securityGapCount > 0 {
+        if failedRules > 0 || patchFailureCount > 0 || stale
+            || securityGapCount(policy: policy) > 0 {
             return .attention
         }
         if source.isEmpty {
@@ -493,6 +502,12 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         bootstrapToken = firstNonEmpty(bootstrapToken, other.bootstrapToken)
         diskUsage = firstNonEmpty(diskUsage, other.diskUsage)
         failedRules = max(failedRules, other.failedRules)
+        // Sources that disagree are not a guess either way (the hardware index's rule).
+        if let mine = hardwareEncrypted, let theirs = other.hardwareEncrypted {
+            hardwareEncrypted = mine == theirs ? mine : nil
+        } else {
+            hardwareEncrypted = hardwareEncrypted ?? other.hardwareEncrypted
+        }
         for failure in other.patchFailures where !patchFailures.contains(failure) {
             patchFailures.append(failure)
         }
@@ -535,17 +550,6 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
             source: source
         )
     }
-
-    private static func statusLooksBad(_ value: String) -> Bool {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "_", with: " ")
-        guard !text.isEmpty else { return false }
-        if text.contains("not ") || text.contains("disabled") {
-            return true
-        }
-        return ["false", "no", "0", "unencrypted", "not escrowed"].contains(text)
-    }
 }
 
 struct DeviceInventorySnapshot: Sendable {
@@ -556,6 +560,8 @@ struct DeviceInventorySnapshot: Sendable {
     var generatedAt: String
     var generatedDate: Date?
     var isDemo: Bool
+    /// The workspace's `security_policy`, which every gap and risk on the screen follows.
+    var securityPolicy: SecurityControlPolicy = .default
 
     static let empty = DeviceInventorySnapshot(
         devices: [], patchTitles: [], sourceFiles: [], warnings: [],
@@ -564,7 +570,17 @@ struct DeviceInventorySnapshot: Sendable {
 
     var totalDevices: Int { devices.count }
     var patchIssueCount: Int { devices.filter { $0.patchFailureCount > 0 }.count }
-    var securityGapCount: Int { devices.filter { $0.securityGapCount > 0 }.count }
+    var securityGapCount: Int {
+        devices.filter { $0.securityGapCount(policy: securityPolicy) > 0 }.count
+    }
+
+    /// Macs with FileVault off that the hardware rule keeps out of the FileVault gaps.
+    var fileVaultOffHardwareEncryptedCount: Int {
+        devices.filter {
+            securityPolicy.hardwareRuleLowers(
+                fileVaultReading: $0.fileVaultEnabled, hardwareEncrypted: $0.hardwareEncrypted)
+        }.count
+    }
 
     func staleCount(thresholdDays: Int) -> Int {
         devices.filter { device in
@@ -575,11 +591,12 @@ struct DeviceInventorySnapshot: Sendable {
         }.count
     }
 
-    var fileVaultPercent: Double {
-        let known = devices.filter { !$0.fileVault.isEmpty }
-        guard !known.isEmpty else { return 0 }
-        let encrypted = known.filter { valueLooksGood($0.fileVault) }.count
-        return Double(encrypted) / Double(known.count) * 100
+    /// The share of Macs whose FileVault value reads as on, over those whose value reads as
+    /// on or off; nil when none does, so no reading shows as unknown rather than 0%.
+    var fileVaultPercent: Double? {
+        let readings = devices.compactMap(\.fileVaultEnabled)
+        guard !readings.isEmpty else { return nil }
+        return Double(readings.filter { $0 }.count) / Double(readings.count) * 100
     }
 
     var osDistribution: [DeviceOSSummary] {
@@ -822,75 +839,10 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
 }
 
 extension DeviceInventoryRecord {
-    /// FileVault as yes or no, read as the Devices table reads it (`SecurityValueState`); nil
-    /// when the inventory carried no value or neither answer, such as ENCRYPTING or UNKNOWN,
-    /// so the Overview's Recent Activity shows "—" instead of a guess.
-    var fileVaultEnabled: Bool? {
-        switch SecurityValueState(fileVault) {
-        case .good: true
-        case .bad: false
-        case .unknown: nil
-        }
-    }
-}
-
-private func valueLooksGood(_ value: String) -> Bool {
-    let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        .lowercased()
-        .replacingOccurrences(of: "_", with: " ")
-    guard !text.isEmpty else { return false }
-    if text.contains("not ") || text.contains("disabled") || text.contains("unencrypted") {
-        return false
-    }
-    return text.contains("enabled")
-        || text.contains("encrypted")
-        || text.contains("escrowed")
-        || ["true", "yes", "1", "managed"].contains(text)
-}
-
-/// Whether an inventory security value (FileVault, SIP, firewall, Gatekeeper,
-/// bootstrap token) reads as good, bad or unknown, for the Devices table and
-/// detail panel. Unknown and negative forms are checked before positive ones,
-/// because most negatives contain their positive word: "UNENCRYPTED",
-/// "NOT_ENCRYPTED", "Not Enabled", "NOT_ESCROWED", "inactive".
-enum SecurityValueState: Equatable, Sendable {
-    case good, bad, unknown
-
-    init(_ value: String) {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "_", with: " ")
-        self = Self.classify(text)
-    }
-
-    /// Jamf did not collect the value, or the Mac cannot report it.
-    private static let unknownMarkers = [
-        "not collected", "not available", "not supported", "unknown", "pending",
-    ]
-    private static let badMarkers = [
-        "not ", "disabled", "unencrypted", "inactive", "decrypt", "missing",
-    ]
-    private static let badValues: Set<String> = ["false", "no", "0", "off", "none"]
-    /// Gatekeeper reports its setting ("APP_STORE_AND_IDENTIFIED_DEVELOPERS"),
-    /// not a yes or no.
-    private static let goodMarkers = [
-        "enabled", "encrypted", "escrowed", "installed", "active", "app store",
-        "identified developers",
-    ]
-    private static let goodValues: Set<String> = ["true", "yes", "1", "on"]
-
-    private static func classify(_ text: String) -> SecurityValueState {
-        if text.isEmpty || unknownMarkers.contains(where: { text.contains($0) }) {
-            return .unknown
-        }
-        if badValues.contains(text) || badMarkers.contains(where: { text.contains($0) }) {
-            return .bad
-        }
-        if goodValues.contains(text) || goodMarkers.contains(where: { text.contains($0) }) {
-            return .good
-        }
-        return .unknown
-    }
+    /// FileVault as on or off (`SecurityControlPolicy.reading`); nil when the inventory
+    /// carried no value or neither answer, such as ENCRYPTING or UNKNOWN, so the Overview's
+    /// Recent Activity shows "—" instead of a guess.
+    var fileVaultEnabled: Bool? { SecurityControlPolicy.reading(fileVault) }
 }
 
 // MARK: - Token status
@@ -977,6 +929,9 @@ struct TrendSeries: Identifiable, Sendable {
         /// (computer count — Jamf Pro itself can't answer "how many managed
         /// Macs did we have on <past date>", but every archived summary can).
         case managedDevices
+        /// Share of Macs with each control on, read from the summary's own shares.
+        /// Appended last so `allCases` keeps every older position.
+        case sip, firewall, gatekeeper
         var id: String { rawValue }
         var displayLabel: String {
             switch self {
@@ -991,6 +946,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .securityScore: return "Security Score (Weighted)"
             case .mscpBandTrend: return "mSCP Compliance Bands"
             case .managedDevices: return "Managed Devices"
+            case .sip:           return "System Integrity Protection"
+            case .firewall:      return "Firewall Enabled"
+            case .gatekeeper:    return "Gatekeeper Enabled"
             }
         }
 
@@ -1014,7 +972,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .activeDevices, .mscpBandTrend, .managedDevices: return 0
             case .stability:     return 40
             case .compliance:    return 40
-            case .fileVault:     return 60
+            case .fileVault, .sip, .firewall, .gatekeeper: return 60
             case .osCurrent:     return 30
             case .edrAgent:      return 70
             case .stale:         return 0
@@ -1043,6 +1001,9 @@ struct TrendSeries: Identifiable, Sendable {
             case .securityScore: return 0xFF453A
             case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
             case .managedDevices: return 0x4472C4  // Matches the Computers series line
+            case .sip:           return 0x64D2FF
+            case .firewall:      return 0x5E5CE6
+            case .gatekeeper:    return 0xAC8E68
             }
         }
     }
@@ -1149,7 +1110,8 @@ struct CustomSheetGroup: Sendable {
     let sheets: [SheetID]
 
     /// All sheet groups organized by functional area.
-    /// Order matches the sidebar grouping in the main app for consistency.
+    /// Order matches the sidebar grouping in the main app for consistency. Together they
+    /// list every `SheetID` once; a test holds that when a sheet is added.
     static let allGroups: [CustomSheetGroup] = [
         CustomSheetGroup(name: "Executive", sheets: [
             .executiveSummary,
@@ -1168,6 +1130,7 @@ struct CustomSheetGroup: Sendable {
             .patchCompliance,
             .patchFailures,
             .patchSummaryDashboard,
+            .patchVelocity,
             .updateStatus,
             .updateFailures,
             .policyHealth,
@@ -1176,6 +1139,8 @@ struct CustomSheetGroup: Sendable {
             .eaCoverage,
             .eaDefinitions,
             .ddmStatus,
+            .ddmDeviceStatus,
+            .mdmCommandHealth,
             .blueprintStatus,
         ]),
         CustomSheetGroup(name: "Fleet", sheets: [

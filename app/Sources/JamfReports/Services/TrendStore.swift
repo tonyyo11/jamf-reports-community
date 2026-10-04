@@ -39,6 +39,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     /// summary date. Rebuilt once per load; fills gaps only — a recorded count wins.
     private var mobileCountBackfill: [String: Int] = [:]
 
+    /// Device-weighted patch figures for days whose summary recorded the old per-title
+    /// mean (`recomputePatchPct`), keyed by summary date. Rebuilt once per load; the
+    /// Patch and Stability series read it ahead of the recorded value.
+    private var patchPctRecompute: [String: Double] = [:]
+
     /// The baseline whose series `mscpStackedSeries()` and `.mscpBandTrend`
     /// derivation read. Defaults to the first name; user-settable via
     /// `selectMSCPBaseline`. Nil only when no baseline has band history.
@@ -59,6 +64,9 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         /// Mobile counts for days summarized before 2.6.0 (`backfillMobileCounts`).
         /// Defaulted so a snapshot built by hand, as tests do, need not pass it.
         var mobileCountBackfill: [String: Int] = [:]
+        /// Device-weighted patch figures for days recorded under the old per-title mean
+        /// (`recomputePatchPct`), keyed by summary date.
+        var patchPctRecompute: [String: Double] = [:]
     }
 
     init(summaries: [DailySummary] = [], range: TrendRange = .w4) {
@@ -103,7 +111,8 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             hasEverFetchedLive: summaries.contains { $0.source == "jamf-cli" },
             bandSeries: built.series,
             baselineNames: built.names,
-            mobileCountBackfill: loadMobileCountBackfill(profile: profile, summaries: summaries)
+            mobileCountBackfill: loadMobileCountBackfill(profile: profile, summaries: summaries),
+            patchPctRecompute: loadPatchPctRecompute(profile: profile, summaries: summaries)
         )
     }
 
@@ -132,6 +141,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         cachedBandSeries = snapshot.bandSeries
         mscpBaselineNames = snapshot.baselineNames
         mobileCountBackfill = snapshot.mobileCountBackfill
+        patchPctRecompute = snapshot.patchPctRecompute
         // Preserve a still-valid selection across reloads; else default to first.
         let keepSelection = selectedMSCPBaseline.map(snapshot.baselineNames.contains) ?? false
         if !keepSelection { selectedMSCPBaseline = snapshot.baselineNames.first }
@@ -158,6 +168,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         cachedBandSeries = [:]
         mscpBaselineNames = []
         mobileCountBackfill = [:]
+        patchPctRecompute = [:]
         selectedMSCPBaseline = nil
         latestSnapshotDate = nil
         hasEverFetchedLive = false
@@ -288,7 +299,10 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
 
     private func value(for metric: TrendSeries.Metric, in summary: DailySummary) -> Double? {
         switch metric {
-        case .stability:     return summary.stabilityIndex
+        case .stability:
+            return TrendSeries.stabilityIndex(
+                compliancePct: summary.compliancePct, patchPct: patchPct(of: summary),
+                staleCount: summary.staleCount, totalDevices: summary.totalDevices)
         // Redefined 2.6: active = totalDevices - staleCount, not totalDevices
         // (was redundant with .managedDevices). Nil when staleness is
         // unmeasured — the point is skipped, never overstated as the total.
@@ -298,8 +312,11 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         case .osCurrent:     return summary.osCurrentPct
         case .edrAgent:      return summary.crowdstrikePct
         case .stale:         return summary.staleCount.map(Double.init)
-        case .patch:         return summary.patchPct
+        case .patch:         return patchPct(of: summary)
         case .securityScore: return summary.securityScore
+        case .sip:           return summary.sipPct
+        case .firewall:      return summary.firewallPct
+        case .gatekeeper:    return summary.gatekeeperPct
         case .mscpBandTrend:
             // Derive from the SELECTED baseline's points: find the point whose
             // date matches this summary's date (string-matched), then sum the 5
@@ -326,6 +343,12 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
             // is rendered separately by `managedDeviceSeries()`.
             return Double(summary.totalDevices)
         }
+    }
+
+    /// The device-weighted figure for a day recorded under the old per-title mean, else
+    /// what the summary recorded.
+    private func patchPct(of summary: DailySummary) -> Double? {
+        patchPctRecompute[summary.date] ?? summary.patchPct
     }
 
     func dates() -> [Date] {
@@ -556,7 +579,7 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     ) -> [String: Int] {
         let days = summaries.filter { $0.mobileDeviceCount == nil }.map(\.date)
         guard !days.isEmpty else { return [:] }
-        let snapshots = mobileDeviceSnapshots(in: dataDir)
+        let snapshots = datedSnapshots(of: "mobile-devices-list", in: dataDir)
         guard !snapshots.isEmpty else { return [:] }
         let calendar = Calendar(identifier: .iso8601)
 
@@ -577,12 +600,12 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         return backfill
     }
 
-    /// The `mobile-devices-list` snapshots in `dataDir`, oldest first by filename
-    /// stamp, after the exclusions every snapshot picker applies.
-    private nonisolated static func mobileDeviceSnapshots(
-        in dataDir: URL
+    /// The `kind` snapshots in `dataDir`, oldest first by filename stamp, after the
+    /// exclusions every snapshot picker applies.
+    private nonisolated static func datedSnapshots(
+        of kind: String, in dataDir: URL
     ) -> [(url: URL, date: Date)] {
-        let dir = dataDir.appendingPathComponent("mobile-devices-list", isDirectory: true)
+        let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: dir,
             includingPropertiesForKeys: [.contentModificationDateKey],
@@ -625,5 +648,165 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
     private nonisolated static func decodeMobileCount(at url: URL) -> Int? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         return MobileFleetService.deviceCount(fromMobileDevicesListData: data)
+    }
+
+    // MARK: - Patch-compliance history
+
+    /// `recomputePatchPct` for `profile`, resolving its data dir the way
+    /// `loadMobileCountBackfill` does. `nonisolated static` so it runs off the main actor
+    /// inside `computeSnapshot`.
+    nonisolated static func loadPatchPctRecompute(
+        profile: String, summaries: [DailySummary]
+    ) -> [String: Double] {
+        // The scan is bounded: one directory listing and at most one successful decode per
+        // eligible day (an undecodable file gives way to the next), off the main thread. It
+        // is skipped when every recorded figure already carries the device basis (a workspace
+        // that began on 2.9).
+        guard summaries.contains(where: isRecordedPerTitle),
+              let workspace = ProfileService.workspaceURL(for: profile) else { return [:] }
+        let dataDir = (try? WorkspacePaths.dataDir(for: profile))
+            ?? workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        return recomputePatchPct(dataDir: dataDir, summaries: summaries)
+    }
+
+    /// A summary written before `patchPctBasis` recorded the unweighted mean of each
+    /// title's percentage; one that recorded no patch figure has nothing to replace.
+    private nonisolated static func isRecordedPerTitle(_ summary: DailySummary) -> Bool {
+        summary.patchPct != nil && summary.patchPctBasis == nil
+    }
+
+    /// The device-weighted patch figure (`PatchStatusService.fleetCompliancePct`) for each
+    /// summary recorded under the old per-title mean, from the newest `patch-status`
+    /// snapshot stamped that local day, rounded to a tenth as the summary writer records
+    /// it. Without it the Patch series would step at the upgrade by however much the two
+    /// definitions differ.
+    ///
+    /// Manifest, `.partial` and sync-conflict files are dropped before ordering, and a
+    /// file that does not decode gives way to the next-newest of the same day. A day
+    /// with no snapshot of its own, or whose newest readable snapshot has no title on
+    /// devices, is absent: its recorded value stands, never a 0.
+    ///
+    /// - Returns: percentages keyed by summary `date` (`yyyy-MM-dd`).
+    nonisolated static func recomputePatchPct(
+        dataDir: URL, summaries: [DailySummary]
+    ) -> [String: Double] {
+        let days = Set(summaries.filter(isRecordedPerTitle).map(\.date))
+        guard !days.isEmpty else { return [:] }
+        var newestFirstByDay: [String: [URL]] = [:]
+        for snapshot in datedSnapshots(of: "patch-status", in: dataDir).reversed() {
+            let day = SummaryJSONParser.dateFormatter.string(from: snapshot.date)
+            if days.contains(day) { newestFirstByDay[day, default: []].append(snapshot.url) }
+        }
+        var recomputed: [String: Double] = [:]
+        for (day, urls) in newestFirstByDay {
+            guard let rows = urls.lazy.compactMap(decodePatchRows).first else { continue }
+            if let pct = PatchStatusService.fleetCompliancePct(rows) {
+                recomputed[day] = (pct * 10).rounded() / 10
+            }
+        }
+        return recomputed
+    }
+
+    private nonisolated static func decodePatchRows(at url: URL) -> [PatchStatusRow]? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode([PatchStatusRow].self, from: data)
+    }
+}
+
+// MARK: - AI insight input
+
+extension FleetInsightInput {
+    /// The Trends insight: each of `metrics` with two or more points, valued at its last
+    /// point with its first as the prior. `points` is the screen's own series, so the facts
+    /// match its pills, and `label` its metric names. Nil when no metric qualifies.
+    static func trends(
+        metrics: [TrendSeries.Metric],
+        points: (TrendSeries.Metric) -> [TrendPoint],
+        label: (TrendSeries.Metric) -> String
+    ) -> FleetInsightInput? {
+        var facts: [Fact] = []
+        var spans: [(first: Date, last: Date)] = []
+        var snapshots = Set<Date>()
+        // Its headline counts devices with band data: coverage, not a measure of health.
+        for metric in metrics where metric != .mscpBandTrend {
+            let series = points(metric)
+            guard series.count >= 2, let first = series.first, let last = series.last else {
+                continue
+            }
+            facts.append(Fact(
+                label: label(metric), value: metric.insightValue(last.value),
+                prior: metric.insightValue(first.value), polarity: metric.insightPolarity,
+                complement: metric.insightComplement))
+            spans.append((first.date, last.date))
+            snapshots.formUnion(series.map(\.date))
+        }
+        guard let notes = trendNotes(facts: facts, spans: spans, snapshots: snapshots) else {
+            return nil
+        }
+        return FleetInsightInput(
+            title: "Trend insight",
+            focus: "which metrics moved together or against each other over the period, "
+                + "and which change matters most.",
+            facts: facts, notes: notes)
+    }
+
+    /// The range, then what the facts leave unclear: a count's change has no unit and a
+    /// neutral count's none at all, so its start and end go here, and a metric recorded
+    /// for part of the range names its dates.
+    private static func trendNotes(
+        facts: [Fact], spans: [(first: Date, last: Date)], snapshots: Set<Date>
+    ) -> [String]? {
+        guard !facts.isEmpty, let start = snapshots.min(), let end = snapshots.max() else {
+            return nil
+        }
+        // `parsedDate` is `.distantPast` for a summary whose date is not a day.
+        func day(_ date: Date) -> String {
+            safeDate(date == .distantPast ? "" : SummaryJSONParser.dateFormatter.string(from: date))
+        }
+        var notes = ["Range: \(day(start)) to \(day(end)), \(snapshots.count) snapshots. "
+            + "Each value is the last snapshot in the range and its prior is the first."]
+        for (fact, span) in zip(facts, spans) {
+            if case .count = fact.value, let prior = fact.prior {
+                notes.append(
+                    "\(fact.label): \(prior.text) at the start, \(fact.value.text) at the end.")
+            }
+            if span.first != start || span.last != end {
+                notes.append("\(fact.label): compared from \(day(span.first)) to "
+                    + "\(day(span.last)), its first and last snapshots in the range.")
+            }
+        }
+        return notes
+    }
+}
+
+private extension TrendSeries.Metric {
+    /// A percentage where the screen shows one, a count where it shows none, and the two
+    /// composite scores as numbers, so a metric added later is described by its unit.
+    func insightValue(_ value: Double) -> FleetInsightInput.Value {
+        switch self {
+        case .stability, .securityScore: return .number(value)
+        default: return unit == "%" ? .percent(value) : .count(Int(value.rounded()))
+        }
+    }
+
+    /// Fewer stale devices is better; a device count has no good direction; every other
+    /// metric is a share or score where higher is better. No default, so a new metric needs
+    /// a decision here.
+    var insightPolarity: FleetInsightInput.Polarity {
+        switch self {
+        case .stale: .lowerIsBetter
+        case .activeDevices, .mscpBandTrend, .managedDevices: .neutral
+        case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .patch,
+             .securityScore, .sip, .firewall, .gatekeeper: .higherIsBetter
+        }
+    }
+
+    /// The other side of a device share, where the rest of the fleet is a plain statement.
+    var insightComplement: String? {
+        switch self {
+        case .fileVault: return "not encrypted"
+        case .edrAgent: return "not installed"
+        default: return nil
+        }
     }
 }

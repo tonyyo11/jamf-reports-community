@@ -263,9 +263,12 @@ struct CSVDashboard: Sendable {
         return plan
     }
 
+    /// Writes the CSV tabs `sheets` keeps; the engine passes the settings from config.yaml
+    /// (`ReportEngine.sheetSettings`).
     @discardableResult
-    func writeAll(selectedNames: Set<String>? = nil) -> [String] {
-        let effectivePlan = (config.sheets ?? SheetsConfig()).applyTo(sheetPlan)
+    func writeAll(selectedNames: Set<String>? = nil, sheets: SheetsConfig = SheetsConfig())
+        -> [String] {
+        let effectivePlan = sheets.applyTo(sheetPlan)
         var written: [String] = []
         for (name, fn) in effectivePlan {
             if let sel = selectedNames, !sel.contains(name.lowercased()) { continue }
@@ -444,9 +447,14 @@ struct CSVDashboard: Sendable {
 
     func writeSecurityControls() {
         let ws = workbook.addSheet("Security Controls")
+        let policy = config.resolvedSecurityPolicy
+        // A warning, or a hardware rule that can move Macs to one, needs its own column.
+        let showsWarning = SecurityControl.allCases.contains { policy.level(for: $0) != .fail }
+            || policy.fileVaultOffHardwareEncrypted != nil
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Security Controls"),
-                                      subtitle: "Active devices only | Generated: \(ts)", ncols: 5)
+                                      subtitle: "Active devices only | Generated: \(ts)",
+                                      ncols: showsWarning ? 6 : 5)
         ws.setColumnWidth(0, 0, 24)
         ws.setColumnWidth(1, 1, 12)
         ws.setColumnWidth(2, 2, 12)
@@ -457,12 +465,15 @@ struct CSVDashboard: Sendable {
         ws.write("Non-Compliant", row: row, col: 2, format: .header)
         ws.write("Unknown", row: row, col: 3, format: .header)
         ws.write("% Compliant", row: row, col: 4, format: .header)
+        if showsWarning { ws.write("Warning", row: row, col: 5, format: .header) }
         row += 1
 
         let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         let activeRows = rows.filter { !isStale($0, days: staleThreshold) }
         let total = activeRows.count
 
+        // `logical` doubles as the policy control's raw value; Secure Boot and Bootstrap
+        // Token have no level, so `SecurityControl(rawValue:)` is nil for them.
         let controls: [(String, ColumnField, String)] = [
             ("FileVault", .filevault, "filevault"),
             ("SIP", .sip, "sip"),
@@ -472,28 +483,88 @@ struct CSVDashboard: Sendable {
             ("Bootstrap Token", .bootstrapToken, "bootstrap_token"),
         ]
 
+        var fileVaultNotCounted = 0
         for (label, field, logical) in controls {
             guard let colName = col(field), columns.contains(colName) else { continue }
-            var compliant = 0, nonCompliant = 0, unknown = 0
+            let control = SecurityControl(rawValue: logical)
+            // An ignored control is not graded, but what the export says about it still counts.
+            let ignored = control.map { policy.level(for: $0) == .ignore } ?? false
+            let verdictPolicy = ignored ? SecurityControlPolicy.default : policy
+            var compliant = 0, nonCompliant = 0, unknown = 0, warning = 0, notCounted = 0
             for csvRow in activeRows {
-                let val = csvRow[colName] ?? ""
-                if val.isEmpty {
-                    unknown += 1
-                } else if isSecurityCompliant(logical: logical, value: val) {
-                    compliant += 1
-                } else {
-                    nonCompliant += 1
+                let hardware = control == .fileVault && policy.usesHardwareRule
+                    ? hardwareEncrypted(csvRow) : nil
+                switch securityVerdict(
+                    logical: logical, control: control, value: csvRow[colName] ?? "",
+                    policy: verdictPolicy, hardwareEncrypted: hardware) {
+                case .pass: compliant += 1
+                case .fail: nonCompliant += 1
+                case .warning: warning += 1
+                case .unknown: unknown += 1
+                case .ignored: notCounted += 1
                 }
             }
-            let pct = total > 0 ? Double(compliant) / Double(total) : 0
-            let pctFmt: CellFormat = pct >= 0.95 ? .pctGreen : pct >= 0.80 ? .pctYellow : .pctRed
-            ws.write(label, row: row, col: 0, format: .cell)
+            // Macs the hardware rule drops at `ignore` leave the share.
+            let counted = total - notCounted
+            if control == .fileVault { fileVaultNotCounted = notCounted }
+            let pct = counted > 0 ? Double(compliant) / Double(counted) : 0
+            // A warning is not a failure: it grades like a compliant Mac, but keeps the cell
+            // from reading green.
+            let graded = counted > 0 ? Double(compliant + warning) / Double(counted) : 0
+            var pctFmt: CellFormat = ignored ? .pct
+                : graded >= 0.95 ? .pctGreen : graded >= 0.80 ? .pctYellow : .pctRed
+            if pctFmt == .pctGreen, warning > 0 { pctFmt = .pctYellow }
+            ws.write(ignored ? "\(label) (not counted)" : label, row: row, col: 0, format: .cell)
             ws.write(compliant, row: row, col: 1, format: .green)
-            ws.write(nonCompliant, row: row, col: 2, format: nonCompliant > 0 ? .red : .cell)
+            if ignored {
+                ws.write("\u{2014}", row: row, col: 2, format: .cell)
+            } else {
+                ws.write(nonCompliant, row: row, col: 2, format: nonCompliant > 0 ? .red : .cell)
+            }
             ws.write(unknown, row: row, col: 3, format: .cell)
             ws.write(pct, row: row, col: 4, format: pctFmt)
+            if showsWarning {
+                ws.write(warning, row: row, col: 5, format: warning > 0 ? .yellow : .cell)
+            }
             row += 1
         }
+        // The FileVault row sums to the Macs counted; say how many the rule left out.
+        if fileVaultNotCounted > 0 {
+            ws.write(
+                "\(SecurityFleetCounts.hardwareEncryptedRowLabel) (not counted): "
+                    + "\(fileVaultNotCounted)",
+                row: row + 1, col: 0, format: .subtitle)
+        }
+    }
+
+    /// How one export value counts for a control: policy controls and Bootstrap Token read
+    /// the value like every other screen does; an empty or unreadable value is unknown.
+    private func securityVerdict(
+        logical: String, control: SecurityControl?, value: String,
+        policy: SecurityControlPolicy, hardwareEncrypted: Bool?
+    ) -> SecurityVerdict {
+        if let control {
+            return policy.verdict(
+                for: control, value: value, hardwareEncrypted: hardwareEncrypted)
+        }
+        guard !value.isEmpty else { return .unknown }
+        if logical == "secure_boot" {
+            let level = value.trimmingCharacters(in: .whitespaces).lowercased()
+            return ["full security", "medium security"].contains(level) ? .pass : .fail
+        }
+        switch SecurityControlPolicy.reading(value) {
+        case true?: return .pass
+        case false?: return .fail
+        case nil: return .unknown
+        }
+    }
+
+    /// Whether the row's Mac is hardware-encrypted, from the mapped model and architecture
+    /// columns; nil when they are not mapped or say nothing.
+    private func hardwareEncrypted(_ csvRow: CSVRow) -> Bool? {
+        HardwareEncryption.isHardwareEncrypted(
+            appleSilicon: nil, modelIdentifier: value(csvRow, .model),
+            architecture: value(csvRow, .architecture))
     }
 
     // MARK: - Security Agents sheet
@@ -963,27 +1034,6 @@ struct CSVDashboard: Sendable {
             if s.hasPrefix(prefix) { s = String(s.dropFirst(prefix.count)); break }
         }
         return s
-    }
-
-    private func isSecurityCompliant(logical: String, value: String) -> Bool {
-        let norm = value.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !norm.isEmpty else { return false }
-        switch logical {
-        case "filevault":
-            if norm.range(of: #"^(\d+)/(\d+)$"#, options: .regularExpression) != nil {
-                let parts = norm.split(separator: "/")
-                if parts.count == 2, let e = Int(parts[0]), let t = Int(parts[1]) {
-                    return t > 0 && e == t
-                }
-            }
-            return ["encrypted", "all partitions encrypted", "boot partitions encrypted", "yes", "true", "enabled", "on"].contains(norm)
-        case "secure_boot":
-            return ["full security", "medium security"].contains(norm)
-        case "bootstrap_token":
-            return ["escrowed", "yes", "true", "enabled"].contains(norm)
-        default:
-            return ["enabled", "yes", "true", "1", "on", "active", "running", "connected"].contains(norm)
-        }
     }
 
     private func compareVersions(_ lhs: String, _ rhs: String) -> Int {

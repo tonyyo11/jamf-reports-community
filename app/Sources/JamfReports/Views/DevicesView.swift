@@ -97,11 +97,12 @@ struct DevicesView: View {
             case .patch:
                 return device.patchFailureCount > 0
             case .security:
-                return device.securityGapCount > 0 || device.failedRules > 0
+                return device.securityGapCount(policy: activeSnapshot.securityPolicy) > 0
+                    || device.failedRules > 0
             case .priorityAction:
                 // Devices that score in the v3.5 Critical or High band
                 // via the configurable RiskScoringService. Note: the inline
-                // `device.risk` enum is a legacy heuristic; this is the
+                // `device.risk(policy:)` enum is a legacy heuristic; this is the
                 // authoritative scorer used by the new Priority Action List.
                 let risk = priorityRisk(for: device)
                 return risk.level >= .high
@@ -113,7 +114,9 @@ struct DevicesView: View {
     /// would help if the filter cost showed up in profiling, but the live
     /// table re-renders on selection change rather than per filter pass.
     private func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
-        RiskScoringService.score(input: .from(record: device, agentCheck: agentCheck(for: device)))
+        RiskScoringService.score(input: .from(
+            record: device, agentCheck: agentCheck(for: device),
+            policy: activeSnapshot.securityPolicy))
     }
 
     /// The device's status against the tenant's configured security agent, or
@@ -372,9 +375,24 @@ struct DevicesView: View {
                      sub: "\(staleDays)+ days since contact")
             StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
-            StatTile(label: "FileVault", value: "\(Int(activeSnapshot.fileVaultPercent.rounded()))%",
-                     sub: "\(activeSnapshot.securityGapCount) security gaps")
+            StatTile(label: "FileVault",
+                     value: Self.fileVaultTileValue(activeSnapshot.fileVaultPercent),
+                     sub: fileVaultTileSub)
         }
+    }
+
+    /// "—" when no Mac's FileVault value reads as on or off.
+    nonisolated static func fileVaultTileValue(_ percent: Double?) -> String {
+        percent.map { "\(Int($0.rounded()))%" } ?? "—"
+    }
+
+    /// Macs the hardware rule took out of the gaps are named, so the share and the gap
+    /// count do not look as if they disagree.
+    private var fileVaultTileSub: String {
+        let gaps = activeSnapshot.securityGapCount
+        let moved = activeSnapshot.fileVaultOffHardwareEncryptedCount
+        guard moved > 0 else { return "\(gaps) security gaps" }
+        return "\(gaps) security gaps · \(moved) more hardware-encrypted, FileVault off"
     }
 
     private var inventoryTable: some View {
@@ -453,7 +471,9 @@ struct DevicesView: View {
                     TableColumn("Patch") { device in patchPill(device) }
                     TableColumn("Security") { device in securityIndicators(for: device) }
                         .width(min: 70, ideal: 78, max: 90)
-                    TableColumn("Risk") { device in riskPill(device.risk) }
+                    TableColumn("Risk") { device in
+                        riskPill(device.risk(policy: activeSnapshot.securityPolicy))
+                    }
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)
@@ -509,7 +529,7 @@ struct DevicesView: View {
                                 .textSelection(.enabled)
                         }
                         Spacer()
-                        riskPill(device.risk)
+                        riskPill(device.risk(policy: activeSnapshot.securityPolicy))
                     }
 
                     detailSection("Inventory", rows: [
@@ -835,12 +855,16 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Security State")
             VStack(spacing: 0) {
-                securityRow("FileVault", value: device.fileVault)
-                securityRow("SIP", value: device.sip)
-                securityRow("Firewall", value: device.firewall)
-                securityRow("Gatekeeper", value: device.gatekeeper)
+                securityRow("FileVault", value: fileVaultText(device, short: true),
+                            tone: securityTone(.fileVault, of: device))
+                securityRow("SIP", value: device.sip, tone: securityTone(.sip, of: device))
+                securityRow("Firewall", value: device.firewall,
+                            tone: securityTone(.firewall, of: device))
+                securityRow("Gatekeeper", value: device.gatekeeper,
+                            tone: securityTone(.gatekeeper, of: device))
                 if !device.bootstrapToken.isEmpty {
-                    securityRow("Bootstrap", value: device.bootstrapToken)
+                    securityRow("Bootstrap", value: device.bootstrapToken,
+                                tone: bootstrapTone(device.bootstrapToken))
                 }
                 HStack(alignment: .firstTextBaseline) {
                     Text("FAILED RULES")
@@ -1004,7 +1028,7 @@ struct DevicesView: View {
     }
 
     @ViewBuilder
-    private func securityRow(_ label: String, value: String) -> some View {
+    private func securityRow(_ label: String, value: String, tone: Pill.Tone) -> some View {
         if !value.isEmpty {
             HStack(alignment: .firstTextBaseline) {
                 Text(label.uppercased())
@@ -1012,44 +1036,68 @@ struct DevicesView: View {
                     .tracking(1.0)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: Self.detailLabelWidth, alignment: .leading)
-                Pill(text: value, tone: securityTone(for: value))
+                Pill(text: value, tone: tone)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 4)
         }
     }
 
-    /// Positive words used to be matched first, so "UNENCRYPTED" and "Not Enabled"
-    /// showed a green check; `SecurityValueState` checks the negative forms first.
-    private func securityTone(for value: String) -> Pill.Tone {
-        switch SecurityValueState(value) {
-        case .good: return .teal
-        case .bad: return .danger
-        case .unknown: return .muted
+    /// The workspace's verdict sets the tone, so a control the policy calls a warning
+    /// reads amber, and an ignored or unmeasured one grey.
+    private func securityTone(
+        _ control: SecurityControl, of device: DeviceInventoryRecord
+    ) -> Pill.Tone {
+        let value = switch control {
+        case .fileVault: device.fileVault
+        case .sip: device.sip
+        case .firewall: device.firewall
+        case .gatekeeper: device.gatekeeper
+        }
+        let verdict = activeSnapshot.securityPolicy.verdict(
+            for: control, value: value, hardwareEncrypted: device.hardwareEncrypted)
+        switch verdict {
+        case .pass: return .teal
+        case .fail: return .danger
+        case .warning: return .warn
+        case .ignored, .unknown: return .muted
         }
     }
 
+    /// The policy does not govern the bootstrap token, so its tone is the value read alone.
+    private func bootstrapTone(_ value: String) -> Pill.Tone {
+        switch SecurityControlPolicy.reading(value) {
+        case true?: return .teal
+        case false?: return .danger
+        case nil: return .muted
+        }
+    }
+
+    /// `short` for the detail pill, which already sits under a "FileVault" label.
+    private func fileVaultText(_ device: DeviceInventoryRecord, short: Bool = false) -> String {
+        activeSnapshot.securityPolicy.fileVaultLabel(
+            device.fileVault, hardwareEncrypted: device.hardwareEncrypted, short: short)
+    }
+
     // Per-control glyph row for the inventory table. Five tight icons:
-    // FV / SIP / FW / GK / BT. Reuses `securityTone` so the table and the
-    // detail panel agree on what counts as good/bad/unknown.
+    // FV / SIP / FW / GK / BT. Uses the detail panel's tones so the two agree.
     @ViewBuilder
     private func securityIndicators(for device: DeviceInventoryRecord) -> some View {
-        let controls: [(String, String)] = [
-            ("FV", device.fileVault),
-            ("SIP", device.sip),
-            ("FW", device.firewall),
-            ("GK", device.gatekeeper),
-            ("BT", device.bootstrapToken),
+        let controls: [(String, String, Pill.Tone)] = [
+            ("FV", fileVaultText(device), securityTone(.fileVault, of: device)),
+            ("SIP", device.sip, securityTone(.sip, of: device)),
+            ("FW", device.firewall, securityTone(.firewall, of: device)),
+            ("GK", device.gatekeeper, securityTone(.gatekeeper, of: device)),
+            ("BT", device.bootstrapToken, bootstrapTone(device.bootstrapToken)),
         ]
         HStack(spacing: 3) {
-            ForEach(controls, id: \.0) { (label, value) in
-                securityGlyph(label: label, value: value)
+            ForEach(controls, id: \.0) { (label, value, tone) in
+                securityGlyph(label: label, value: value, tone: tone)
             }
         }
     }
 
-    private func securityGlyph(label: String, value: String) -> some View {
-        let tone = securityTone(for: value)
+    private func securityGlyph(label: String, value: String, tone: Pill.Tone) -> some View {
         let symbol: String
         let color: Color
         switch tone {
@@ -1059,6 +1107,9 @@ struct DevicesView: View {
         case .danger:
             symbol = "xmark.circle.fill"
             color = Theme.Colors.danger
+        case .warn:
+            symbol = "exclamationmark.circle.fill"
+            color = Theme.Colors.warn
         default:
             symbol = "minus.circle"
             color = Theme.Colors.fgMuted
@@ -1219,21 +1270,32 @@ struct DevicesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isExportingCSV = true
         defer { isExportingCSV = false }
-        let rows = filteredDevices
-        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
-        let body = rows.map { d in
-            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
-             d.fileVault, d.lastContact, d.risk.rawValue]
-                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-                .joined(separator: ",")
-        }.joined(separator: "\n")
+        let text = Self.exportCSV(devices: filteredDevices, policy: activeSnapshot.securityPolicy)
         do {
-            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            try text.write(to: url, atomically: true, encoding: .utf8)
             // Path is user-confirmed via NSSavePanel — safe to reveal directly.
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
             exportError = error.localizedDescription
         }
+    }
+
+    /// The filtered list as CSV, one row per device, each field through
+    /// `StaleDeviceService.csvField` so a typed formula opens as text. FileVault is labelled
+    /// as on screen, so a Mac the hardware rule lowered does not read UNENCRYPTED beside its
+    /// risk.
+    nonisolated static func exportCSV(
+        devices: [DeviceInventoryRecord], policy: SecurityControlPolicy
+    ) -> String {
+        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
+        let body = devices.map { d in
+            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
+             policy.fileVaultLabel(d.fileVault, hardwareEncrypted: d.hardwareEncrypted),
+             d.lastContact, d.risk(policy: policy).rawValue]
+                .map(StaleDeviceService.csvField)
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        return header + body
     }
 }
 

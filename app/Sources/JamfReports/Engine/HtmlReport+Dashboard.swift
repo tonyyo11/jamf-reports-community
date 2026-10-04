@@ -5,7 +5,8 @@ import Foundation
 ///
 /// The frame gets scripts but no same-origin access, so the page cannot reach the
 /// report or its file. Its own script touches no storage, so the sandbox costs it
-/// nothing. Three things are added to the page before it is embedded:
+/// nothing. Four things are added to the page before it is embedded:
+/// - A content-security policy, so the page's scripts cannot make requests either.
 /// - CSS that shows every section card and fills every ring. jamf-cli reveals both by
 ///   animation, and its own print styles switch animations off without restoring
 ///   them, which leaves the cards invisible and the rings empty. It also hides the
@@ -25,6 +26,13 @@ extension HtmlReport {
     /// Largest page embedded. A fast-tier page is tens of kilobytes, so this only
     /// stops an unusual page from swelling every report generated from the workspace.
     static let maxEmbeddedDashboardBytes = 4_000_000
+
+    /// The frame's page runs scripts, so this keeps it from reaching anything outside
+    /// itself: no requests, no frames, no fonts, images only as `data:` URIs. jamf-cli's
+    /// page is one inline `<style>` and `<script>` with inline handlers and no resources.
+    static let dashboardContentSecurityPolicy =
+        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+        + "img-src data:"
 
     /// Shows the cards and rings without their animation (jamf-cli's
     /// `dashboard_html.go`: `.section` starts at opacity 0 and `.ring` at `--rv: 0`),
@@ -132,18 +140,27 @@ extension HtmlReport {
         """
     }
 
-    /// `page` with the embed style and the height and theme scripts added at the end of
-    /// its `<head>`, or at the start when it has none.
+    /// `page` with the content-security policy right after its opening `<head>` tag (a
+    /// meta policy only governs what follows it) and the embed style and the height and
+    /// theme scripts at the end of the head. A page with no head gets one first.
     static func dashboardPageForEmbedding(_ page: String) -> String {
+        let policy = "<meta http-equiv=\"Content-Security-Policy\" "
+            + "content=\"\(dashboardContentSecurityPolicy)\">"
         let addition = "<style id=\"jrc-embed\">\(dashboardEmbedStyle)</style>"
             + "<script id=\"jrc-embed-height\">\(dashboardHeightScript)</script>"
             + "<script id=\"jrc-embed-theme\">\(dashboardThemeScript)</script>"
-        guard let head = page.range(of: "</head>", options: .caseInsensitive) else {
-            return addition + page
+        // `(?=[\s/>])` keeps `<header>` from passing for the head.
+        guard let open = page.range(
+            of: "<head(?=[\\s/>])[^>]*>", options: [.regularExpression, .caseInsensitive]
+        ) else {
+            return "<head>" + policy + addition + "</head>" + page
         }
-        var out = page
-        out.insert(contentsOf: addition, at: head.lowerBound)
-        return out
+        let close = page.range(
+            of: "</head>", options: .caseInsensitive, range: open.upperBound..<page.endIndex)
+        let insideEnd = close?.lowerBound ?? open.upperBound
+        return String(page[..<open.upperBound]) + policy
+            + String(page[open.upperBound..<insideEnd]) + addition
+            + String(page[insideEnd...])
     }
 
     private static func dashboardNoteSection(_ note: String) -> String {

@@ -128,15 +128,12 @@ final class RefreshCoordinatorTests: XCTestCase {
         XCTAssertEqual(CollectionTier.scan.intervalSeconds, 604_800)
     }
 
-    func testStalenessProbeKindsAreRealCollectKinds() {
+    func testTheRefreshProbeKindIsARealCollectKind() throws {
         // The probe kind must be a directory ReportEngine.collect writes,
         // or the mtime probe finds nothing and reports everything stale.
-        for tier in CollectionTier.allCases {
-            XCTAssertTrue(
-                ReportEngine.knownCollectKinds.contains(tier.stalenessProbeKind),
-                "\(tier.rawValue) probe kind '\(tier.stalenessProbeKind)' must be a real collect kind"
-            )
-        }
+        let probe = try XCTUnwrap(CollectionTier.refresh.stalenessProbeKind)
+        XCTAssertTrue(ReportEngine.knownCollectKinds.contains(probe))
+        XCTAssertEqual(CollectionTier.tier(forReport: probe), .refresh)
     }
 
     // MARK: - Coordinator entry points (PR-24 — now wired)

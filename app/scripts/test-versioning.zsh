@@ -98,6 +98,23 @@ expect "repository with no commits: 0" 0 "$(build_number_in "$empty_repo")"
 expect "outside any repository: 0" 0 "$(build_number_in "$plain_dir")"
 expect "outside any repository, BUILD_NUMBER=77" 77 "$(build_number_in "$plain_dir" 77)"
 
+# A shallow clone counts only the commits it fetched, so its "build number" would
+# repeat across builds. jr_build_number refuses it and names the fix.
+shallow="${tmp_root}/shallow"
+tgit clone -q --depth 1 "file://${repo}" "$shallow"
+expect "the test clone is shallow" true \
+  "$(git -C "$shallow" rev-parse --is-shallow-repository)"
+expect "shallow clone: no build number" "" "$(build_number_in "$shallow" 2>/dev/null)"
+expect "shallow clone: rejected" reject "$(verdict build_number_in "$shallow")"
+shallow_msg="$(build_number_in "$shallow" 2>&1 >/dev/null)"
+expect "shallow clone: message names git fetch --unshallow" yes \
+  "$([[ "$shallow_msg" == *"git fetch --unshallow"* ]] && echo yes || echo no)"
+expect "shallow clone: message names BUILD_NUMBER" yes \
+  "$([[ "$shallow_msg" == *BUILD_NUMBER* ]] && echo yes || echo no)"
+expect "shallow clone, BUILD_NUMBER=4242 is honoured" 4242 "$(build_number_in "$shallow" 4242)"
+git -C "$shallow" fetch -q --unshallow
+expect "unshallowed clone: full commit count" 3 "$(build_number_in "$shallow")"
+
 # --- Validators ----------------------------------------------------------------
 # marketing_row <value> <accept|reject>
 marketing_row() {
@@ -163,11 +180,86 @@ expect "jr_artifact_name with 3 args fails" reject "$(verdict jr_artifact_name 2
 expect "jr_artifact_path with 4 args fails" reject \
   "$(verdict jr_artifact_path build 2.8.0 812 beta)"
 
+# package_row <expected> <configuration> <app channel>
+package_row() {
+  expect "jr_package_channel '$2' '$3'" "$1" "$(jr_package_channel "$2" "$3")"
+}
+package_row release release release
+package_row beta release beta
+# build-pkg.sh defaults to the debug configuration, which neither verifies the
+# signature nor notarizes, so it never names a package like a release.
+package_row beta debug release
+package_row beta debug beta
+package_row beta "" release
+package_row beta Release release
+package_row beta release ""
+package_row beta release Release
+expect "jr_package_channel with 1 arg fails" reject "$(verdict jr_package_channel release)"
+expect "debug packaging of a release-channel app is named as a beta" \
+  JamfReports-2.8.0-beta812.pkg \
+  "$(jr_artifact_name 2.8.0 812 "$(jr_package_channel debug release)" pkg)"
+expect "release packaging of a release-channel app is named as a release" \
+  JamfReports-2.8.0.pkg \
+  "$(jr_artifact_name 2.8.0 812 "$(jr_package_channel release release)" pkg)"
+
 # The whole chain: RELEASE at build time, JRReleaseChannel read back at packaging.
 expect "RELEASE=1 build packages as a release" JamfReports-2.8.0.pkg \
   "$(jr_artifact_name 2.8.0 812 "$(jr_release_channel 1)" pkg)"
 expect "RELEASE unset build packages as a beta" JamfReports-2.8.0-beta812.dmg \
   "$(jr_artifact_name 2.8.0 812 "$(jr_release_channel 0)" dmg)"
+
+# --- Swift toolchain -----------------------------------------------------------
+# build-app.sh warns on a release build below Swift 6.4, the first toolchain that
+# compiles the FoundationModels (AI Insights) code. The text is `swift --version`.
+# swift_row <accept|reject> <swift --version text>
+swift_row() {
+  expect "jr_swift_at_least 6.4 '${2%%$'\n'*}'" "$1" "$(verdict jr_swift_at_least 6.4 "$2")"
+}
+# The two-line text Xcode 27's `swift --version` prints, driver prefix included.
+xcode27_text=$'swift-driver version: 1.168.6 Apple Swift version 6.4 (swiftlang-6.4.0.34.1)\n'
+xcode27_text+=$'Target: arm64-apple-macosx27.0.0'
+swift_row accept "$xcode27_text"
+swift_row accept "Apple Swift version 6.4.1 (swiftlang-6.4.1.2)"
+swift_row accept "Apple Swift version 6.10 (swiftlang-6.10.0.1)"  # 10 > 4, not "1" < "4"
+swift_row accept "Apple Swift version 7.0 (swiftlang-7.0.0.1)"
+swift_row accept "Swift version 6.4-dev (LLVM abc, Swift def)"
+swift_row reject "Apple Swift version 6.3.1 (swiftlang-6.3.1.1.2)"
+swift_row reject "Apple Swift version 6.2 (swiftlang-6.2.0.17.14)"
+swift_row reject "Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2)"
+swift_row reject "Swift version 5.10 (swift-5.10-RELEASE)"
+# Text with no readable version is status 2, so the caller can tell it from "older".
+swift_status() { jr_swift_at_least "$@" >/dev/null 2>&1; echo $?; }
+expect "jr_swift_at_least: older is status 1" 1 "$(swift_status 6.4 "Apple Swift version 6.1.2")"
+expect "jr_swift_at_least: newer is status 0" 0 "$(swift_status 6.4 "Apple Swift version 6.4")"
+expect "jr_swift_at_least: no version text is status 2" 2 \
+  "$(swift_status 6.4 "swift: command not found")"
+expect "jr_swift_at_least: empty text is status 2" 2 "$(swift_status 6.4 "")"
+expect "jr_swift_at_least: 'Swift version' with no number is status 2" 2 \
+  "$(swift_status 6.4 "Apple Swift version unknown")"
+expect "jr_swift_at_least: a bare major is status 2" 2 \
+  "$(swift_status 6.4 "Apple Swift version 6 (x)")"
+expect "jr_swift_at_least: a malformed minimum is status 2" 2 \
+  "$(swift_status six "Apple Swift version 6.4")"
+expect "jr_swift_at_least: one argument is status 2" 2 "$(swift_status 6.4)"
+
+# --- Info.plist termination keys -----------------------------------------------
+# With either key true, macOS may end the app mid-run when it looks idle, and
+# nothing wraps a GUI collect or generate in an activity that would prevent it.
+# plist_value <key>: the line after <key> in the Info.plist build-app.sh writes.
+plist_value() {
+  awk -v key="<key>$1</key>" \
+    'index($0, key) { getline; gsub(/^[ \t]+|[ \t]+$/, ""); print; exit }' \
+    "${APP_DIR}/build-app.sh"
+}
+expect "Info.plist NSSupportsAutomaticTermination" "<false/>" \
+  "$(plist_value NSSupportsAutomaticTermination)"
+expect "Info.plist NSSupportsSuddenTermination" "<false/>" \
+  "$(plist_value NSSupportsSuddenTermination)"
+expect "plist_value reads a key that is present (LSUIElement)" "<false/>" \
+  "$(plist_value LSUIElement)"
+expect "plist_value reads a string key (JRReleaseChannel)" "<string>\${RELEASE_CHANNEL}</string>" \
+  "$(plist_value JRReleaseChannel)"
+expect "plist_value of an absent key is empty" "" "$(plist_value NoSuchKeyInThePlist)"
 
 # --- Wiring --------------------------------------------------------------------
 # The checks above only matter while the scripts use the library, so each one
@@ -184,10 +276,12 @@ wired() {
   expect "$script has no inline -beta naming" no "$(
     grep -qF -e "-beta\${" "$file" && echo yes || echo no)"
 }
-wired build-app.sh jr_build_number jr_release_channel
+wired build-app.sh jr_build_number jr_release_channel jr_swift_at_least
 wired build-pkg.sh jr_is_valid_marketing_version jr_is_valid_build_number \
-  jr_artifact_path jr_artifact_version
-wired scripts/package-dmg.sh jr_is_valid_build_number jr_artifact_path
+  jr_package_channel jr_artifact_path jr_artifact_version
+wired scripts/package-dmg.sh jr_is_valid_marketing_version jr_is_valid_build_number \
+  jr_artifact_path
+wired scripts/release.sh jr_artifact_path jr_release_channel
 
 # --- Summary -------------------------------------------------------------------
 total=$((passed + failed))

@@ -64,7 +64,8 @@ compliance rate, on current macOS, patch compliance, SIP, firewall, Gatekeeper, 
 Boot, bootstrap token escrowed, XProtect, CVE posture, compliance benchmark score,
 security score, EDR agent connected, and stale devices. A metric with no data anywhere in
 the period is not offered — the app does not invite you to report on numbers it does not
-have.
+have. A period that spans the 2.9 change in the patch compliance definition shows no
+change for that metric, and the About sheet says why.
 
 **Extension attributes** are discovered from your collected `ea-results`, so an
 organisation with none sees fleet metrics and nothing looks broken, and an organisation

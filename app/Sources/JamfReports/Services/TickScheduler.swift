@@ -57,14 +57,28 @@ struct TickState: Codable, Sendable {
     }
 }
 
-/// A schedule run's exit code plus the one fact the tick needs beyond it:
-/// whether a collect came back incomplete, so a same-day retry can follow.
+/// A schedule run's exit code plus what the tick needs beyond it: whether a
+/// collect came back incomplete, and whether a same-day retry could fetch what
+/// is missing.
 struct ScheduleRunOutcome: Sendable {
     let exitCode: Int32
+    /// A source or the summary did not land; Run History shows the run as Partial.
     let incomplete: Bool
+    /// False when everything missing failed in a way a retry repeats. Defaults to
+    /// `incomplete`.
+    let retryCouldHelp: Bool
 
-    /// Exit 0 with nothing left on the table — the only outcome that ends retries.
+    init(exitCode: Int32, incomplete: Bool, retryCouldHelp: Bool? = nil) {
+        self.exitCode = exitCode
+        self.incomplete = incomplete
+        self.retryCouldHelp = retryCouldHelp ?? incomplete
+    }
+
+    /// Exit 0 with nothing left on the table.
     var succeeded: Bool { exitCode == 0 && !incomplete }
+
+    /// Exit 0 with nothing a retry could fetch — the only outcome that ends retries.
+    var endsRetries: Bool { exitCode == 0 && !retryCouldHelp }
 }
 
 /// Pure "what is due" decision. Input order is preserved so the caller
@@ -140,7 +154,8 @@ enum TickScheduler {
 
 /// One tick at a time. A pid file: a live holder blocks, a dead or garbage
 /// holder is taken over — the 300-second wake must never pile a second run
-/// on top of a 20-minute collect.
+/// on top of a 20-minute collect. The GUI holds it for every collect too
+/// (`CLIBridge.holdingTickLock`), so a wake during one queues.
 struct TickLock: Sendable {
     static var defaultURL: URL { AppSupport.directory().appendingPathComponent(".tick.lock") }
 
@@ -162,7 +177,20 @@ struct TickLock: Sendable {
     /// No real run lasts this long; past it the lock is left to go stale.
     static let heartbeatLimit: Duration = .seconds(6 * 3600)
 
+    /// The bundled agent's `StartInterval`: a wake the lock turned away runs this long later.
+    static let wakeInterval: TimeInterval = 300
+
     let url: URL
+
+    /// What `claim` found.
+    enum Claim: Sendable, Equatable {
+        /// The file names `pid`.
+        case acquired
+        /// A live, fresh holder other than `pid`; the file is untouched.
+        case heldElsewhere
+        /// The file could not be written and `pid` holds nothing.
+        case writeFailed
+    }
 
     /// The test `acquire()` refuses on: the file names a live pid other than
     /// `pid` and is not stale. Read-only — never writes or touches the lock.
@@ -170,9 +198,7 @@ struct TickLock: Sendable {
         pid: Int32 = getpid(),
         isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM }
     ) -> Bool {
-        guard let text = try? String(contentsOf: url, encoding: .utf8),
-              let holder = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines))
-        else { return false }
+        guard let holder = holder() else { return false }
         return holder != pid && isAlive(holder) && !isStale()
     }
 
@@ -180,27 +206,48 @@ struct TickLock: Sendable {
         pid: Int32 = getpid(),
         isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM }
     ) -> Bool {
-        if isHeldByAnotherLiveProcess(pid: pid, isAlive: isAlive) { return false }
+        claim(pid: pid, isAlive: isAlive) == .acquired
+    }
+
+    /// `acquire` with the reason a caller that degrades on a write failure needs. Decided
+    /// from one read of the holder, so a holder letting go mid-call cannot read as a failure.
+    func claim(
+        pid: Int32 = getpid(),
+        isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM },
+        protect: (URL) throws -> Void = {
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: $0.path)
+        }
+    ) -> Claim {
+        if isHeldByAnotherLiveProcess(pid: pid, isAlive: isAlive) { return .heldElsewhere }
         do {
             try Data(String(pid).utf8).write(to: url, options: .atomic)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: url.path)
-            return true
         } catch {
             AppLogger.schedule.error(
                 "tick lock could not be written: \(error.localizedDescription, privacy: .public)")
-            return false
+            // A hold this process already had stands; only the rewrite failed.
+            return holder() == pid ? .acquired : .writeFailed
         }
+        do {
+            try protect(url)
+        } catch {
+            // The file names `pid` now: reporting a failure would leave it unreleased.
+            AppLogger.schedule.warning(
+                "tick lock permissions not set: \(error.localizedDescription, privacy: .public)")
+        }
+        return .acquired
     }
 
     /// Only removes the file if it still names OUR pid — a takeover by
     /// another process must not have its lock deleted out from under it.
     func release(pid: Int32 = getpid()) {
-        guard let text = try? String(contentsOf: url, encoding: .utf8),
-              let holder = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
-              holder == pid
-        else { return }
+        guard holder() == pid else { return }
         try? FileManager.default.removeItem(at: url)
+    }
+
+    /// The pid the file names; nil when there is no file or it holds no pid.
+    private func holder() -> Int32? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return Int32(text.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Resets the lock file's mtime so a long-running holder never crosses
@@ -217,7 +264,20 @@ struct TickLock: Sendable {
         limit: Duration = TickLock.heartbeatLimit,
         _ body: () async -> T
     ) async -> T {
-        let heartbeat = Task.detached(priority: .utility) { [self] in
+        let beats = heartbeat(every: interval, limit: limit)
+        let result = await body()
+        beats.cancel()
+        await beats.value
+        return result
+    }
+
+    /// `keepingAlive`'s beats, for a holder whose body runs on the main actor and so
+    /// cannot be handed over: touches the lock every `interval` until cancelled or `limit`.
+    func heartbeat(
+        every interval: Duration = TickLock.heartbeatInterval,
+        limit: Duration = TickLock.heartbeatLimit
+    ) -> Task<Void, Never> {
+        Task.detached(priority: .utility) { [self] in
             let clock = ContinuousClock()
             let deadline = clock.now.advanced(by: limit)
             while true {
@@ -226,10 +286,6 @@ struct TickLock: Sendable {
                 touch()
             }
         }
-        let result = await body()
-        heartbeat.cancel()
-        await heartbeat.value
-        return result
     }
 
     /// Unreadable attributes fail toward "not stale" — keep blocking rather

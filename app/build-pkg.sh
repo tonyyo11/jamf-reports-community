@@ -9,6 +9,10 @@
 # Usage:
 #   ./build-pkg.sh [debug|release]         (default: debug)
 #
+# Only `release` verifies the app's signature and notarizes the package, and
+# only `release` may name it like a release (JamfReports-2.8.0.pkg). `debug`
+# always names it as a beta, even when the app carries the release channel.
+#
 # Environment:
 #   INSTALLER_IDENTITY   productsign identity (default: auto-pick Developer ID
 #                        Installer for team TEAM_ID)
@@ -68,6 +72,14 @@ APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") || {
 }
 APP_CHANNEL=$(/usr/libexec/PlistBuddy -c "Print :JRReleaseChannel" "$PLIST" 2>/dev/null || echo "beta")
 
+# Only a release-configuration package is signature-checked and notarized, so
+# only that one may be named like a release (the default configuration is debug).
+PKG_CHANNEL="$(jr_package_channel "$CONFIG" "$APP_CHANNEL")"
+if [[ "$CONFIG" != "release" && "$APP_CHANNEL" == "release" ]]; then
+  echo "⚠ '$CONFIG' packaging of a release-channel app: naming the package as a beta" >&2
+  echo "  (not signature-checked or notarized). Run ./build-pkg.sh release for a release." >&2
+fi
+
 if ! jr_is_valid_marketing_version "$APP_VERSION"; then
   echo "✗ unexpected CFBundleShortVersionString: '$APP_VERSION' (want N.N or N.N.N)" >&2
   exit 1
@@ -79,9 +91,9 @@ fi
 
 # Any channel but exactly "release" (a missing key included) gets the -betaN
 # suffix: JamfReports-2.8.0-beta812.pkg, or JamfReports-2.8.0.pkg on release.
-PKG_OUT="$(jr_artifact_path build "$APP_VERSION" "$APP_BUILD" "$APP_CHANNEL" pkg)"
+PKG_OUT="$(jr_artifact_path build "$APP_VERSION" "$APP_BUILD" "$PKG_CHANNEL" pkg)"
 # productbuild's `--version` flag is a string — pkg receipts store it as-is.
-PKG_VERSION="$(jr_artifact_version "$APP_VERSION" "$APP_BUILD" "$APP_CHANNEL")"
+PKG_VERSION="$(jr_artifact_version "$APP_VERSION" "$APP_BUILD" "$PKG_CHANNEL")"
 
 echo "→ staging .app for pkgbuild"
 rm -rf "$PKG_STAGING"

@@ -96,20 +96,6 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertEqual(HtmlSectionFormatters.renderCardGrid(cards: []), "")
     }
 
-    func testRenderPercentBar() {
-        let html = HtmlSectionFormatters.renderPercentBar(label: "FileVault", fraction: 0.87)
-        XCTAssertTrue(html.contains("pct-bar-row"))
-        XCTAssertTrue(html.contains("87%"))
-        XCTAssertTrue(html.contains("aria-valuenow=\"87\""))
-    }
-
-    func testRenderPercentBarClampsRange() {
-        let over = HtmlSectionFormatters.renderPercentBar(label: "X", fraction: 1.5)
-        XCTAssertTrue(over.contains("width:100%"))
-        let under = HtmlSectionFormatters.renderPercentBar(label: "X", fraction: -0.5)
-        XCTAssertTrue(under.contains("width:0%"))
-    }
-
     func testRenderSeverityPillKnownValues() {
         XCTAssertTrue(HtmlSectionFormatters.renderSeverityPill("critical").contains("sev-critical"))
         XCTAssertTrue(HtmlSectionFormatters.renderSeverityPill("HIGH").contains("sev-high"))

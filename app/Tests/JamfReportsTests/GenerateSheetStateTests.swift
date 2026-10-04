@@ -71,6 +71,17 @@ final class GenerateSheetStateTests: XCTestCase {
                       "Expected fallback to end in 'Generated Reports', got: \(dir.path)")
     }
 
+    /// With no folder chosen, the folder `output.output_dir` names, where the generators write.
+    func testResolvedOutputDirIsTheConfiguredFolderWhenNoneIsChosen() {
+        let state = GenerateSheetState()
+        let configured = URL(fileURLWithPath: "/Users/Shared/Team Reports", isDirectory: true)
+        state.configuredOutputDir = configured
+        XCTAssertEqual(state.resolvedOutputDir(for: "any-profile"), configured)
+        let custom = URL(fileURLWithPath: "/tmp/my-reports")
+        state.customOutputDir = custom
+        XCTAssertEqual(state.resolvedOutputDir(for: "any-profile"), custom, "a chosen folder wins")
+    }
+
     func testResolvedOutputDirUsesCustomWhenSet() {
         let state = GenerateSheetState()
         let custom = URL(fileURLWithPath: "/tmp/my-reports")
@@ -192,6 +203,16 @@ final class GenerateSheetStateTests: XCTestCase {
         XCTAssertNil(message, "empty result (nothing requested) must return nil message")
     }
 
+    /// A failed format reads its cause, as other screens do, once per exit code.
+    func testFailedFormatsAreExplainedByTheirExitCode() {
+        let result = GenerateAllResult(succeeded: [.pdf], failed: [(.xlsx, 1), (.csv, 3), (.html, 1)])
+        let (count, message) = GenerateSheetState.summarize(result)
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(message, "Generated PDF. "
+            + CLIBridge.explainExit(1, operation: "XLSX, HTML generation") + " "
+            + CLIBridge.explainExit(3, operation: "CSV generation"))
+    }
+
     // MARK: - Custom template selection
 
     func testDefaultSelectedTemplateIDIsFullInstance() {
@@ -226,6 +247,21 @@ final class GenerateSheetStateTests: XCTestCase {
         } else {
             XCTFail("Expected CustomTemplate, got \(type(of: template))")
         }
+    }
+
+    /// The engine writes a template's sheets in its order, so Custom must not take a Set's
+    /// hash order, which changes from run to run.
+    func testCustomTemplateListsTheSelectionInStoredOrder() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        let picked: [SheetID] = [
+            .patchVelocity, .executiveSummary, .osCurrency, .activeDevices,
+            .securityPosture, .cover, .mdmCommandHealth, .hardwareModels,
+        ]
+        state.customSelectedSheets = Set(picked)
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+        XCTAssertEqual(state.resolvedTemplate.includedSheets,
+                       picked.sorted { $0.rawValue < $1.rawValue })
     }
 
     func testResolvedTemplateWithCustomTemplateAndEmptySheetsFallsBackToExecutive() {
@@ -276,4 +312,34 @@ final class GenerateSheetStateTests: XCTestCase {
         // Clean up
         UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
     }
+
+    /// Every sheet the engine writes can be picked for Custom, and only once.
+    func testTheCustomListOffersEverySheetOnce() {
+        let listed = CustomSheetGroup.allGroups.flatMap(\.sheets)
+        XCTAssertEqual(listed.count, Set(listed).count, "a sheet is listed twice")
+        let missing = Set(SheetID.allCases).subtracting(listed)
+        XCTAssertTrue(missing.isEmpty,
+                      "not offered: \(missing.map(\.rawValue).sorted().joined(separator: ", "))")
+    }
+
+    /// A tap must redraw the checkmark, the "N sheets selected" line and Generate, so a
+    /// change to the selection has to reach the view's observation, and still be saved.
+    func testATappedSheetReachesObserversAndIsSaved() {
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+        let state = GenerateSheetState()
+        let changed = ObservedChange()
+        withObservationTracking {
+            _ = state.customSelectedSheets
+        } onChange: {
+            changed.seen = true
+        }
+        state.customSelectedSheets.insert(.cover)
+        XCTAssertTrue(changed.seen, "the view would not redraw")
+        XCTAssertEqual(GenerateSheetState().customSelectedSheets, [.cover])
+    }
+}
+
+private final class ObservedChange: @unchecked Sendable {
+    var seen = false
 }

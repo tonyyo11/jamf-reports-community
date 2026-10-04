@@ -86,6 +86,8 @@ struct SettingsView: View {
         // reloads the connections even when the profile name stays the same.
         .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             testResults = [:]
+            // A cancelled run leaves its flag set for this task to reset, never to clear.
+            loadingTokenProfiles = []
             guard !workspace.demoMode else {
                 // Demo mode runs no jamf-cli and reloads nothing: a reload here
                 // put a demo profile chosen in the sidebar back to meridian-prod.
@@ -598,10 +600,13 @@ struct SettingsView: View {
         let names = workspace.profiles.filter { $0.status != .error }.map(\.name)
         await Self.probeTokenStatuses(
             for: names,
-            probe: { name in
-                loadingTokenProfiles.insert(name)
-                defer { loadingTokenProfiles.remove(name) }
-                return await bridge.tokenStatus(for: name)
+            probe: { name in await bridge.tokenStatus(for: name) },
+            setChecking: { name, on in
+                if on {
+                    loadingTokenProfiles.insert(name)
+                } else {
+                    loadingTokenProfiles.remove(name)
+                }
             },
             onStatus: { name, status in tokenStatuses[name] = status }
         )
@@ -612,13 +617,17 @@ struct SettingsView: View {
     static func probeTokenStatuses(
         for names: [String],
         probe: (String) async -> TokenStatus?,
+        setChecking: (String, Bool) -> Void,
         onStatus: (String, TokenStatus) -> Void
     ) async {
         for name in names {
             if Task.isCancelled { return }
+            setChecking(name, true)
             let status = await probe(name)
             // A terminated jamf-cli reads as an invalid token, which is not what the profile has.
+            // The task that replaced this one reset the flags and owns them, so leave them be.
             if Task.isCancelled { return }
+            setChecking(name, false)
             if let status { onStatus(name, status) }
         }
     }
@@ -937,9 +946,15 @@ struct SettingsView: View {
 
     // MARK: - AI Insights (macOS 27+, opt-in)
 
-    /// Turns already-collected fleet data into a plain-language insight card
-    /// on Overview. Off by default; requires macOS 27 for on-device or Private
-    /// Cloud Compute generation. Persists to this profile's `config.yaml`
+    nonisolated static let aiInsightsBlurb: String =
+        "Turn already-collected fleet data into plain-language insight cards on "
+        + "Overview, Trends, Audit, Security Posture and Compliance Posture, using "
+        + "Apple's on-device Foundation Model. Off by default. "
+        + "The model runs on this Mac and nothing leaves it."
+
+    /// Turns already-collected fleet data into plain-language insight cards on
+    /// five screens. Off by default; requires macOS 27, where Apple's on-device
+    /// Foundation Model generates it. Persists to this profile's `config.yaml`
     /// (`ai:` block) via `AIConfigWriter`, scoped to just that key — the same
     /// pattern as `DebugLoggingService`'s own plist, not the Config-tab's
     /// managed-key round-trip.
@@ -947,12 +962,7 @@ struct SettingsView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "AI Insights")
-                Text(
-                    "Turn already-collected fleet data into a plain-language insight card "
-                    + "on Overview, using Apple's on-device Foundation Model (or Private Cloud "
-                    + "Compute, if you opt in). Off by default; nothing leaves this Mac unless "
-                    + "you choose Private Cloud Compute."
-                )
+                Text(Self.aiInsightsBlurb)
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)

@@ -151,7 +151,8 @@ struct PatchView: View {
             )
             StatTile(
                 label: "Fleet Compliance",
-                value: String(format: "%.1f%%", snapshot.fleetCompliancePct),
+                value: snapshot.fleetCompliancePct.map { String(format: "%.1f%%", $0) }
+                    ?? "\u{2014}",
                 sub: "Weighted across all devices"
             )
             StatTile(

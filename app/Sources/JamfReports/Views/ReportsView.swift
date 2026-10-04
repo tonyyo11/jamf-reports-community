@@ -9,7 +9,9 @@ struct ReportsView: View {
     @State private var reports: [Report] = []
     @State private var reportStats = ReportLibrary.Stats(count: 0, totalBytes: 0, archivedCount: 0)
     @State private var snapshotFamilies: [SnapshotFamily] = []
-    @State private var isGeneratingHTML = false
+    @State private var showGenerate = false
+    /// Read before the Generate sheet opens; see `presentGenerate`.
+    @State private var generateFreshness: SnapshotFreshness.Decision?
     @State private var isGeneratingPDF = false
     @State private var isExportingCSV = false
     @State private var reportError: String?
@@ -160,6 +162,11 @@ struct ReportsView: View {
         .sheet(isPresented: $showPeriodReport) {
             PeriodReportSheet()
         }
+        .sheet(isPresented: $showGenerate) {
+            GenerateSheet(
+                profile: workspace.profile, bridge: bridge, freshness: generateFreshness,
+                onGenerated: reload)
+        }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
                 if let url = quickLookURL {
@@ -225,17 +232,19 @@ struct ReportsView: View {
                                 : "Fleet numbers for a period, with start, end and change"
                             )
                             PNPButton(
-                                title: isGeneratingHTML ? "Generating..." : "Generate HTML",
-                                icon: "safari",
+                                title: "Generate\u{2026}",
+                                icon: "doc.badge.plus",
                                 style: .gold
                             ) {
-                                generateHTMLReport()
+                                // The sheet runs jamf-cli against the selected profile.
+                                guard !workspace.demoMode else { return }
+                                Task { await presentGenerate() }
                             }
-                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
+                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
                                 ? DemoData.liveOnlyHelp
-                                : "Generate a self-contained HTML instance report"
+                                : "Choose a template or sheets and the formats, then generate"
                             )
                             PNPButton(
                                 title: isGeneratingPDF ? "Generating..." : "Export PDF",
@@ -244,7 +253,7 @@ struct ReportsView: View {
                             ) {
                                 generatePDFReport()
                             }
-                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
+                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
                                 ? DemoData.liveOnlyHelp
@@ -257,7 +266,7 @@ struct ReportsView: View {
                             ) {
                                 runExportInventoryCSV()
                             }
-                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
+                            .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
                             .help(
                                 workspace.demoMode
                                 ? DemoData.liveOnlyHelp
@@ -406,67 +415,15 @@ struct ReportsView: View {
     // The generate and export actions run jamf-cli against the selected
     // profile, a fictional one in demo mode; their buttons are disabled there.
 
-    @MainActor
-    private func generateHTMLReport() {
-        guard !workspace.demoMode else { return }
+    /// Reads the snapshots' freshness off the main actor before the Generate sheet opens, so
+    /// its Collect fresh default is right from the first frame instead of flipping when a slow
+    /// read lands on a large workspace.
+    private func presentGenerate() async {
         let profile = workspace.profile
-        let dateStr = ExportNaming.timestamp()
-        let panel = NSSavePanel()
-        let part = ExportNaming.profilePart(profile)
-        panel.nameFieldStringValue = "jamf_report_\(part)_\(dateStr).html"
-        panel.allowedContentTypes = [.html]
-        panel.directoryURL = reportsDirectory
-        panel.begin { response in
-            guard response == .OK, let dest = panel.url else { return }
-            let outPath = dest.path
-            isGeneratingHTML = true
-            workspace.globalStatus = "generate · profile=\(profile)"
-            reportError = nil
-            Task {
-                // T-13 integrity envelope: scrape the engine's sentinel sha256 log line
-                // so we can surface the truncated fingerprint in the toast.
-                let hashBox = HashBox()
-                // Status-bar race guard — see comment in AuditView.runAudit.
-                let code: Int32
-                do {
-                    code = try await bridge.generateHTML(
-                        profile: profile, outFile: outPath
-                    ) { line in
-                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                            Task { @MainActor in hashBox.value = parsed.hash }
-                        }
-                        Task { @MainActor in
-                            guard self.isGeneratingHTML else { return }
-                            workspace.globalStatus = line.text
-                        }
-                    }
-                } catch {
-                    isGeneratingHTML = false
-                    workspace.globalStatus = nil
-                    workspace.toast = Toast(message: "HTML generation failed · \(error.localizedDescription)", style: .danger)
-                    reportError = "HTML generation failed: \(error.localizedDescription)"
-                    return
-                }
-                isGeneratingHTML = false
-                workspace.globalStatus = nil
-                if code == 0 {
-                    let message: String
-                    if let hash = hashBox.value {
-                        let truncated = hash.count > 12 ? String(hash.prefix(12)) + "\u{2026}" : hash
-                        message = "HTML report generated · sha256: \(truncated)"
-                    } else {
-                        message = "HTML report generated"
-                    }
-                    workspace.toast = Toast(message: message, style: .success)
-                    SystemActions.open(dest)
-                    reload()
-                } else {
-                    let msg = CLIBridge.explainExit(code, operation: "HTML report generation")
-                    workspace.toast = Toast(message: msg, style: .danger)
-                    reportError = msg
-                }
-            }
-        }
+        generateFreshness = await Task.detached(priority: .userInitiated) {
+            SnapshotFreshness.evaluate(profile: profile)
+        }.value
+        showGenerate = true
     }
 
     @MainActor
@@ -475,8 +432,8 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        let part = ExportNaming.profilePart(profile)
-        panel.nameFieldStringValue = "jamf_report_\(part)_\(dateStr).pdf"
+        let stem = ExportNaming.stem(for: .pdf, profile: profile, schoolMode: false)
+        panel.nameFieldStringValue = "\(stem)_\(dateStr).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
@@ -524,7 +481,8 @@ struct ReportsView: View {
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "inventory_\(ExportNaming.profilePart(profile))_\(dateStr).csv"
+        let stem = ExportNaming.stem(for: .csv, profile: profile, schoolMode: false)
+        panel.nameFieldStringValue = "\(stem)_\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
@@ -637,13 +595,4 @@ struct ReportsView: View {
 
 extension Notification.Name {
     static let requestOverviewTab = Notification.Name("JamfReports.requestOverviewTab")
-}
-
-/// Mutable single-value reference for capturing the SHA-256 fingerprint from
-/// the engine's log stream so it can be displayed in the report-ready toast.
-/// Boxed so the closure can mutate it across actor hops without needing
-/// `@MainActor`-isolated state on the call site.
-@MainActor
-private final class HashBox {
-    var value: String?
 }

@@ -36,22 +36,21 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     prioritized findings. Base every statement only on the provided numbers;
     never invent metrics. Use severity "critical" for security regressions or
     failing controls, "warning" for downward trends or gaps, "info" otherwise.
+    A line that says "on N% of devices" gives the share of devices in that
+    state; any other percentage means what its label says. Say which direction
+    is good using the line's own wording; never restate a percentage as its
+    opposite.
     """
 
     // MARK: - Prewarm (session ownership)
 
     /// Construct and prewarm the session ahead of the first request. Same
-    /// selection/guard chain as `generate`; an unavailable model no-ops here
+    /// guard chain as `generate`; an unavailable model no-ops here
     /// (the error surfaces on `generate`, not on this best-effort warm-up).
     func prepare() async {
-        switch GeneratorKind.select(config: config) {
-        case .onDevice:
-            let model = SystemLanguageModel.default
-            guard case .available = model.availability else { return }
-            storePrewarmedSession(model: model)
-        case .external:
-            return
-        }
+        let model = SystemLanguageModel.default
+        guard case .available = model.availability else { return }
+        storePrewarmedSession(model: model)
     }
 
     private func storePrewarmedSession(model: some LanguageModel) {
@@ -95,29 +94,17 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
     }
 
     func generate(_ input: FleetInsightInput) async throws -> FleetInsight {
-        let kind = GeneratorKind.select(config: config)
-        // Audit trail: successes were previously silent, so a tier flipped by an
-        // out-of-band config edit would generate with no log evidence.
-        AppLogger.platform.notice("""
-            Fleet insight requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(self.config.resolvedTier.rawValue, privacy: .public))
-            """)
+        // Audit trail: a successful generation otherwise leaves no log evidence.
+        AppLogger.platform.notice(
+            "Fleet insight requested (tier=\(self.config.resolvedTier.rawValue, privacy: .public))")
 
         do {
-            switch kind {
-            case .onDevice:
-                let model = SystemLanguageModel.default
-                guard case .available = model.availability else {
-                    throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
-                }
-                let prompt = await Self.verifiedPrompt(for: input, model: model)
-                return try await respond(model: model, prompt: prompt)
-
-            case .external:
-                // The factory never routes here (external falls back to the stub
-                // until P5). Guard anyway rather than construct anything.
-                throw FleetInsightError.unavailable(.requiresMacOS27)
+            let model = SystemLanguageModel.default
+            guard case .available = model.availability else {
+                throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
             }
+            let prompt = await Self.verifiedPrompt(for: input, model: model)
+            return try await respond(model: model, prompt: prompt)
         } catch let error as FleetInsightError {
             throw error
         } catch {
@@ -162,7 +149,7 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
 
     // MARK: - Streaming
 
-    /// Real streaming: same selection/guard/error chain as `generate`, yielding
+    /// Real streaming: same guard/error chain as `generate`, yielding
     /// a progressively richer `FleetInsight` per response snapshot.
     func generateStream(_ input: FleetInsightInput) -> AsyncThrowingStream<FleetInsight, Error> {
         AsyncThrowingStream { continuation in
@@ -187,26 +174,16 @@ final class FoundationModelsInsightGenerator: FleetInsightGenerator, @unchecked 
         _ input: FleetInsightInput,
         into continuation: AsyncThrowingStream<FleetInsight, Error>.Continuation
     ) async throws {
-        // Mirrors `generate` exactly: kind selection, tier audit log,
-        // availability guards.
-        let kind = GeneratorKind.select(config: config)
-        AppLogger.platform.notice("""
-            Fleet insight stream requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(self.config.resolvedTier.rawValue, privacy: .public))
-            """)
+        // Mirrors `generate` exactly: audit log, availability guard.
+        let tier = config.resolvedTier.rawValue
+        AppLogger.platform.notice("Fleet insight stream requested (tier=\(tier, privacy: .public))")
 
-        switch kind {
-        case .onDevice:
-            let model = SystemLanguageModel.default
-            guard case .available = model.availability else {
-                throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
-            }
-            let prompt = await Self.verifiedPrompt(for: input, model: model)
-            try await stream(model: model, prompt: prompt, into: continuation)
-
-        case .external:
-            throw FleetInsightError.unavailable(.requiresMacOS27)
+        let model = SystemLanguageModel.default
+        guard case .available = model.availability else {
+            throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
         }
+        let prompt = await Self.verifiedPrompt(for: input, model: model)
+        try await stream(model: model, prompt: prompt, into: continuation)
     }
 
     /// Streaming twin of `respond`, with the same capability probes: plain-text

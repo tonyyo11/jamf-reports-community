@@ -147,4 +147,40 @@ final class SheetOrderTests: XCTestCase {
         let config = try ConfigLoader.loadFromString(yaml)
         XCTAssertNil(config.sheets?.order)
     }
+
+    // MARK: - An empty list means no restriction
+
+    /// `config.example.yaml` ships `only: []`, `skip: []` and `order: []` under `sheets:`,
+    /// and every new workspace is seeded from it. The workbook must keep every tab.
+    func testShippedExampleSheetsBlockKeepsEveryTab() throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var example: URL?
+        for _ in 0..<8 {
+            let candidate = dir.appendingPathComponent("config.example.yaml")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                example = candidate
+                break
+            }
+            dir = dir.deletingLastPathComponent()
+        }
+        guard let example else {
+            throw XCTSkip("config.example.yaml not found above \(#filePath)")
+        }
+        let config = try ConfigLoader.load(from: example)
+        let result = (config.sheets ?? SheetsConfig()).applyTo(plan(["A", "B"]))
+        XCTAssertEqual(names(result), ["A", "B"])
+    }
+
+    func testEmptyListsInYAMLKeepEveryTab() throws {
+        let yaml = "sheets:\n  only: []\n  skip: []\n  order: []\n"
+        let config = try ConfigLoader.loadFromString(yaml)
+        let result = (config.sheets ?? SheetsConfig()).applyTo(plan(["A", "B"]))
+        XCTAssertEqual(names(result), ["A", "B"])
+    }
+
+    func testEmptyOnlyKeepsEveryTabAndOneNameStillRestricts() {
+        let input = plan(["A", "B"])
+        XCTAssertEqual(names(sheets(only: []).applyTo(input)), ["A", "B"])
+        XCTAssertEqual(names(sheets(only: ["B"]).applyTo(input)), ["B"])
+    }
 }

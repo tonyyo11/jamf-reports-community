@@ -7,8 +7,7 @@ import Foundation
 /// `snapshots`), which silently broke when a user pointed those keys at a
 /// different folder. The Python side resolves them via `Config.resolve_path`
 /// (relative paths resolve from the config file's directory). This helper
-/// mirrors that behavior with a tiny YAML scanner so the GUI does not need a
-/// full YAML parser.
+/// mirrors that behavior, reading the file through the engine's loader.
 enum WorkspacePaths {
 
     /// The conventional subdirectory name for generated report output.
@@ -22,10 +21,46 @@ enum WorkspacePaths {
             throw PathError.invalidProfile(profile)
         }
         return try resolve(
-            rawValue: try configValue(workspace: workspace, section: "output", key: "output_dir"),
+            rawValue: try configValue(workspace: workspace, section: "output", key: "output_dir")
+                as? String,
             fallback: "Generated Reports",
             workspace: workspace
         )
+    }
+
+    /// The folder every report is written to: `outputDir(for:)`, or `Generated Reports` in the
+    /// workspace when the typed folder is refused, with one `[warn]` line on `onLine` naming
+    /// it and why. Nil for a profile with no workspace.
+    static func reportsDir(
+        for profile: String, onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
+    ) -> URL? {
+        guard let workspace = workspaceRoot(for: profile) else { return nil }
+        do {
+            return try outputDir(for: profile)
+        } catch {
+            let typed = ((try? configValue(workspace: workspace, section: "output",
+                                           key: "output_dir")) ?? nil) as? String ?? ""
+            let msg = "[warn] output.output_dir \"\(ConfigSchema.displayText(typed))\" is not "
+                + "used: \(refusal(of: error)). Writing to \(generatedReportsDirName) in the "
+                + "workspace instead."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return workspace.appendingPathComponent(generatedReportsDirName, isDirectory: true)
+        }
+    }
+
+    /// Why `resolve` refused a typed folder, worded for a `[warn]` line.
+    static func refusal(of error: Error) -> String {
+        switch error {
+        case PathError.disallowedAbsolutePath(let url) where isSensitiveAbsolutePath(url):
+            "that folder is reserved by macOS or holds credentials"
+        case PathError.disallowedAbsolutePath:
+            "it is outside the workspace and output.allow_absolute_paths is not true"
+        case PathError.resolutionEscaped:
+            "a relative path must stay inside the workspace"
+        default:
+            "config.yaml could not be read"
+        }
     }
 
     /// `<output_dir>/archive` by default; honors `output.archive_dir`.
@@ -39,6 +74,7 @@ enum WorkspacePaths {
             throw PathError.invalidProfile(profile)
         }
         let raw = try configValue(workspace: workspace, section: "output", key: "archive_dir")
+            as? String
         let trimmed = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             let output = try outputDir(for: profile)
@@ -60,7 +96,8 @@ enum WorkspacePaths {
             throw PathError.invalidProfile(profile)
         }
         return try resolve(
-            rawValue: try configValue(workspace: workspace, section: "jamf_cli", key: "data_dir"),
+            rawValue: try configValue(workspace: workspace, section: "jamf_cli", key: "data_dir")
+                as? String,
             fallback: "jamf-cli-data",
             workspace: workspace
         )
@@ -72,7 +109,8 @@ enum WorkspacePaths {
             throw PathError.invalidProfile(profile)
         }
         return try resolve(
-            rawValue: try configValue(workspace: workspace, section: "charts", key: "historical_csv_dir"),
+            rawValue: try configValue(
+                workspace: workspace, section: "charts", key: "historical_csv_dir") as? String,
             fallback: "snapshots",
             workspace: workspace
         )
@@ -187,8 +225,10 @@ enum WorkspacePaths {
         return url.resolvingSymlinksInPath().standardizedFileURL
     }
 
-    /// Resolves a raw config value against the workspace.
-    private static func resolve(
+    /// Resolves a raw config value against the workspace (symlinks resolved): a relative path
+    /// must stay inside it; an absolute path outside it needs `output.allow_absolute_paths`
+    /// and is never a system or credentials folder. `retention.archive_dir` follows it too.
+    static func resolve(
         rawValue: String?,
         fallback: String,
         workspace: URL,
@@ -217,18 +257,16 @@ enum WorkspacePaths {
             if isInside(resolved, root: workspace) {
                 return resolved
             }
-            let optedIn = (try? configValue(
+            let optedIn = optIn((try? configValue(
                 workspace: workspace, section: "output", key: "allow_absolute_paths"
-            )) ?? nil
-            // SF-8 (option b): record the resolved opt-in value alongside the
-            // policy decision. If a future config shape (flow-style, dotted
-            // keys, tab indentation) ends up parsed as nil, this entry shows
-            // *why* the user got "Disallowed absolute path" rather than the
-            // expected acceptance.
+            )) ?? nil) == true
+            // SF-8 (option b): record the opt-in decision alongside the policy
+            // decision, so "Disallowed absolute path" can be told apart from a
+            // missing or unreadable opt-in. The typed value stays out of the log.
             AppLogger.collect.info(
-                "WorkspacePaths: allow_absolute_paths resolved to \(optedIn ?? "<nil>", privacy: .public)"
+                "WorkspacePaths: allow_absolute_paths opts in: \(optedIn, privacy: .public)"
             )
-            if isTruthyConfigValue(optedIn) {
+            if optedIn {
                 AppLogger.collect.warning(
                     "WorkspacePaths: accepting absolute path outside workspace via opt-in"
                 )
@@ -245,11 +283,15 @@ enum WorkspacePaths {
         throw PathError.resolutionEscaped(value, workspace)
     }
 
-    /// Recognize the YAML truthy values our minimal scanner produces (already
-    /// trimmed of quotes and comments by `configValue`).
-    private static func isTruthyConfigValue(_ value: String?) -> Bool {
-        guard let v = value?.lowercased() else { return false }
-        return v == "true" || v == "yes" || v == "1" || v == "on"
+    /// `output.allow_absolute_paths` as read from `rawMapping`: true for true, yes, on or 1, false
+    /// for false, no, off or 0 (any case, quoted or not), nil for anything else. The opt-in has
+    /// always taken these spellings; the Config Doctor suggests writing true.
+    static func optIn(_ value: Any?) -> Bool? {
+        if let flag = value as? Bool { return flag }
+        guard let word = ((value as? String) ?? (value as? Int).map { String($0) })?.lowercased()
+        else { return nil }
+        if ["yes", "on", "1"].contains(word) { return true }
+        return ["no", "off", "0"].contains(word) ? false : nil
     }
 
     private static func expandTilde(_ value: String) -> String {
@@ -266,12 +308,10 @@ enum WorkspacePaths {
         return path == rootPath || path.hasPrefix(rootPath + "/")
     }
 
-    /// SF-8: parse `<workspace>/config.yaml` via the project's `YAMLCodec` so
-    /// flow-style mappings (`output: {allow_absolute_paths: true}`), tab
-    /// indentation, dotted keys, and other shapes the previous minimal
-    /// line-scanner silently skipped resolve correctly. Falls through to a
-    /// nil result only when the section/key genuinely isn't present.
-    private static func configValue(workspace: URL, section: String, key: String) throws -> String? {
+    /// SF-8: `<workspace>/config.yaml` read through the engine's loader, so a value has the
+    /// type the decoder would give it (a path is a `String`, the opt-in a `Bool`) and a key set
+    /// twice reads as its last value. Nil only when the section/key isn't present.
+    private static func configValue(workspace: URL, section: String, key: String) throws -> Any? {
         let configURL = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
 
@@ -283,12 +323,8 @@ enum WorkspacePaths {
         }
 
         do {
-            let document = try YAMLCodec.decode(text)
-            if case .mapping(let root) = document.root,
-               case .mapping(let sectionMap)? = root.value(for: section),
-               let value = sectionMap.value(for: key) {
-                return value.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+            return ConfigLoader.rawValue(
+                at: [section, key], in: try ConfigLoader.rawMapping(fromYAML: text))
         } catch {
             // YAMLCodec rejects only documents whose top level is not a
             // mapping (e.g. an empty file or a sequence at the root). Both

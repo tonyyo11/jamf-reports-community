@@ -163,16 +163,13 @@ extension DemoData {
     /// Monday's executive report collects, then stopped before its exit line.
     private static let staleMobileCacheWarnings = [
         "[warn] mobile-devices-list: newest cached snapshot is from Apr 20 — 4 days old",
-        "[warn] mobile-device-inventory-details: newest cached snapshot is from Apr 20 "
-            + "— 4 days old",
     ]
 
     private static let refreshKinds = [
         "overview", "security", "inventory-summary", "patch-status", "policy-status", "audit",
     ]
     private static let inventoryKinds = [
-        "computers", "mobile-devices-list", "mobile-device-inventory-details", "ea-results",
-        "app-status", "update-status",
+        "computers", "mobile-devices-list", "ea-results", "app-status", "update-status",
     ]
     private static let scanKinds = ["patch-device-failures", "update-device-failures"]
     private static let protectKinds = [
@@ -183,8 +180,7 @@ extension DemoData {
     private static let snapshotBytes: [String: Int] = [
         "overview": 18_422, "security": 412_880, "inventory-summary": 9_310,
         "patch-status": 22_614, "policy-status": 58_102, "audit": 31_447,
-        "computers": 2_914_336, "mobile-devices-list": 48_210,
-        "mobile-device-inventory-details": 162_904, "ea-results": 1_204_418,
+        "computers": 2_914_336, "mobile-devices-list": 162_904, "ea-results": 1_204_418,
         "app-status": 88_120, "update-status": 14_632, "patch-device-failures": 18_872,
         "update-device-failures": 21_406, "protect-overview": 2_140, "protect-alerts": 36_518,
         "protect-computers": 128_774, "protect-insights": 44_203, "protect-plans": 6_912,

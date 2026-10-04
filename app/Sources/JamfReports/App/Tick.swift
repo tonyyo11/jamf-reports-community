@@ -2,7 +2,8 @@ import Foundation
 
 /// The bundled agent's entry: `JamfReports --tick [--now <label>]`.
 /// Exit 0 unless the lock or a tick-state stamp cannot be written; each
-/// schedule's own outcome lands in its Run History record, not in this code.
+/// schedule's own outcome lands in its Run History record, not in this code,
+/// and a stamp failure in a "Background item" record (`TickFailureLog`).
 @Sendable
 func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
     if let idx = arguments.firstIndex(of: "--now"), idx + 1 < arguments.count,
@@ -46,14 +47,17 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
     let due = TickScheduler.due(
         schedules: schedules, state: state, runNowLabels: runNowLabels, now: now,
         nonCatchUpAnchor: blockedSince)
+    let failures = TickFailureLog(profiles: profiles)
+    defer { failures.finish() }
     return await TickLoop.runDue(
         due, state: state,
-        save: saveTickState,
+        save: { try $0.save() },
         clearRunNowMarker: { TickRunner.clearRunNowMarker(label: $0) },
         perform: { run in
             lock.touch()
             return await lock.keepingAlive { await runSchedule(run.schedule, verbose: false) }
         },
+        recordFailure: failures.record,
         // Once per wake, after all runs, so a schedule that just fired is not
         // reported overdue by the same process.
         notifyOverdue: {
@@ -74,13 +78,15 @@ enum TickLoop {
     /// happened, and a run-now marker stays for the next wake. A success that
     /// cannot be stamped is logged and the loop carries on: the run happened, a
     /// later save in this tick still records it, and at worst a same-day retry
-    /// repeats it. Neither failure stops the schedules after it or the digest.
+    /// repeats it. Neither failure stops the schedules after it or the digest, and
+    /// both go to `recordFailure` with their schedule for Run History.
     static func runDue(
         _ due: [TickScheduler.DueRun],
         state initial: TickState,
-        save: (TickState) -> Bool,
+        save: (TickState) throws -> Void,
         clearRunNowMarker: (String) -> Void,
         perform: (TickScheduler.DueRun) async -> ScheduleRunOutcome,
+        recordFailure: (Schedule, String) -> Void,
         notifyOverdue: () async -> Void
     ) async -> Int32 {
         var state = initial
@@ -92,21 +98,31 @@ enum TickLoop {
             let before = state
             let startedAt = Date()
             state.noteStarted(label, at: startedAt, reason: run.reason)
-            guard save(state) else {
+            do {
+                try save(state)
+            } catch {
                 state = before
                 failed = true
-                reportTickError("skipped \(label): its start could not be recorded")
+                let message = "skipped \(label): its start could not be recorded — "
+                    + "could not write tick-state.json: \(error.localizedDescription)"
+                reportTickError(message)
+                recordFailure(run.schedule, message)
                 continue
             }
             // The start is on disk, so the request is honoured. Cleared before the
             // run, never after: see `TickRunner.clearRunNowMarker`.
             if run.reason == .runNow { clearRunNowMarker(label) }
             let outcome = await perform(run)
-            if outcome.succeeded {
+            if outcome.endsRetries {
                 state.noteSucceeded(label, startedAt: startedAt)
-                if !save(state) {
+                do {
+                    try save(state)
+                } catch {
                     failed = true
-                    reportTickError("\(label) succeeded, but the success could not be recorded")
+                    let message = "\(label) succeeded, but the success could not be recorded — "
+                        + "could not write tick-state.json: \(error.localizedDescription)"
+                    reportTickError(message)
+                    recordFailure(run.schedule, message)
                 }
             }
             print(tickResultLine(
@@ -120,7 +136,7 @@ enum TickLoop {
 
 /// `[info] tick: <label>[ retry N] exit <code>[ (incomplete|failed)]` — the
 /// line the GUI's Run now streams back, so it names the attempt and the verdict.
-private func tickResultLine(
+func tickResultLine(
     label: String, reason: TickScheduler.Reason, outcome: ScheduleRunOutcome, retries: Int
 ) -> String {
     let attempt = reason == .retry ? " retry \(retries)" : ""
@@ -128,20 +144,54 @@ private func tickResultLine(
     return "[info] tick: \(label)\(attempt) exit \(outcome.exitCode)\(verdict)"
 }
 
-/// False, with the error logged, when the stamps cannot be written. The caller
-/// skips a run it could not stamp: a run the state file cannot remember would repeat.
-private func saveTickState(_ state: TickState) -> Bool {
-    do {
-        try state.save()
-        return true
-    } catch {
-        reportTickError("could not write tick-state.json: \(error.localizedDescription)")
-        return false
+/// Run History for tick-level failures: one record per workspace per wake, under the
+/// background item's own label, in every workspace the affected schedule runs for.
+final class TickFailureLog {
+    /// Tick records a workspace keeps. A tick-state file that stays unwritable adds one
+    /// every wake; without a cap they would push schedule runs out of the recorder's window.
+    static let keptRecords = 5
+
+    private let profiles: [JamfCLIProfile]
+    private var recorders: [String: ScheduledRunRecorder] = [:]
+
+    /// `profiles` are this wake's discovered profiles, which a multi schedule fans out over.
+    init(profiles: [JamfCLIProfile]) {
+        self.profiles = profiles
+    }
+
+    func record(_ schedule: Schedule, _ message: String) {
+        let names = schedule.isMulti
+            ? ProfileService.runnableProfiles(
+                profiles, excluding: Set(schedule.excludedProfiles ?? [])).map(\.name)
+            : [schedule.profile]
+        for name in names {
+            recorder(for: name)?.record("[error] tick: \(message)")
+        }
+    }
+
+    /// Ends each record as a failed run.
+    func finish() {
+        for recorder in recorders.values { recorder.finish(exitCode: 1) }
+        recorders = [:]
+    }
+
+    private func recorder(for profile: String) -> ScheduledRunRecorder? {
+        if let open = recorders[profile] { return open }
+        if let logs = try? WorkspacePaths.runHistoryDir(for: profile) {
+            ScheduledRunRecorder.pruneRunLogs(
+                in: logs, keep: Self.keptRecords - 1, label: AutomationHealth.tickerLabel)
+        }
+        guard let workspace = ProfileService.workspaceURL(for: profile),
+              let recorder = ScheduledRunRecorder(
+                  workspace: workspace, label: AutomationHealth.tickerLabel)
+        else { return nil }
+        recorders[profile] = recorder
+        return recorder
     }
 }
 
-/// stderr reaches only a Run now caller that streams the tick's output; the
-/// bundled agent's stderr goes nowhere, so the schedule log is the lasting record.
+/// stderr reaches only a Run now caller that streams the tick's output; the bundled
+/// agent's stderr goes nowhere, so OSLog and `TickFailureLog` are the lasting record.
 private func reportTickError(_ message: String) {
     fputs("[error] tick: \(message)\n", stderr)
     AppLogger.schedule.error("tick: \(message, privacy: .public)")

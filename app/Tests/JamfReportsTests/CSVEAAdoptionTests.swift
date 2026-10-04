@@ -7,7 +7,7 @@ import XCTest
 /// top-level keys are preserved.
 final class CSVEAAdoptionTests: XCTestCase {
 
-    func test_adoptEAs_isAdditiveAndPreservesUnmanagedKeys() throws {
+    func test_adopt_isAdditiveAndPreservesUnmanagedKeys() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "ea-adopt-\(UUID().uuidString.lowercased())"
         try writeConfig(
@@ -43,7 +43,9 @@ final class CSVEAAdoptionTests: XCTestCase {
             ),
         ]
 
-        let added = try ConfigEAAdopter.adoptEAs(proposals, profile: profile, workspaceRoot: root)
+        let added = try ConfigEAAdopter.adopt(
+            eaProposals: proposals, agentProposals: [], profile: profile, workspaceRoot: root
+        ).eas
         XCTAssertEqual(added, 2)
 
         let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
@@ -71,7 +73,37 @@ final class CSVEAAdoptionTests: XCTestCase {
                       "unmanaged notify.url must survive EA adoption")
     }
 
-    func test_adoptEAs_skipsDuplicateColumns() throws {
+    /// custom_eas typed as a mapping is left as typed, so nothing is added to it, and the
+    /// save's report says so; the security agent still lands.
+    func test_adopt_intoABlockThatIsNotAListAddsNothingThereAndSaysWhy() throws {
+        let root = try temporaryWorkspaceRoot()
+        let profile = "ea-adopt-map-\(UUID().uuidString.lowercased())"
+        try writeConfig(
+            "columns:\n  # names\n  computer_name: Name\n"
+                + "custom_eas:\n  Battery:\n    column: Battery\nsecurity_agents: []\n",
+            profile: profile, root: root)
+        let proposal = ScaffoldService.ProposedEA(
+            name: "Disk", column: "Disk Free", type: "text", sampleValue: "50")
+        let agent = ScaffoldService.ProposedEA(
+            name: "Agent", column: "Agent Status", type: "text", sampleValue: "Running")
+
+        let result = try ConfigEAAdopter.adopt(
+            eaProposals: [proposal], agentProposals: [agent], profile: profile,
+            workspaceRoot: root)
+
+        XCTAssertEqual(result.eas, 0, "the block was left as typed")
+        XCTAssertEqual(result.agents, 1)
+        XCTAssertEqual(result.report.keptBlocks, ["custom_eas"])
+        XCTAssertTrue(result.report.droppedComments)
+        XCTAssertNotNil(result.report.backupName)
+        let text = try String(
+            contentsOf: ConfigService.configURL(for: profile, workspaceRoot: root),
+            encoding: .utf8)
+        XCTAssertTrue(text.contains("custom_eas:\n  Battery:\n    column: Battery\n"), text)
+        XCTAssertFalse(text.contains("Disk Free"), text)
+    }
+
+    func test_adopt_skipsDuplicateEAColumns() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "ea-adopt-dup-\(UUID().uuidString.lowercased())"
         try writeConfig(
@@ -103,7 +135,9 @@ final class CSVEAAdoptionTests: XCTestCase {
             ),
         ]
 
-        let added = try ConfigEAAdopter.adoptEAs(proposals, profile: profile, workspaceRoot: root)
+        let added = try ConfigEAAdopter.adopt(
+            eaProposals: proposals, agentProposals: [], profile: profile, workspaceRoot: root
+        ).eas
         XCTAssertEqual(added, 1, "duplicate column must be skipped")
 
         let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)
@@ -111,7 +145,7 @@ final class CSVEAAdoptionTests: XCTestCase {
         XCTAssertTrue(reloaded.state.customEAs.map(\.column).contains("New EA"))
     }
 
-    func test_adoptEAs_emptyProposalsLeavesConfigUntouched() throws {
+    func test_adopt_emptyProposalsLeavesConfigUntouched() throws {
         let root = try temporaryWorkspaceRoot()
         let profile = "ea-adopt-empty-\(UUID().uuidString.lowercased())"
         try writeConfig(
@@ -120,7 +154,9 @@ final class CSVEAAdoptionTests: XCTestCase {
             root: root
         )
 
-        let added = try ConfigEAAdopter.adoptEAs([], profile: profile, workspaceRoot: root)
+        let added = try ConfigEAAdopter.adopt(
+            eaProposals: [], agentProposals: [], profile: profile, workspaceRoot: root
+        ).eas
         XCTAssertEqual(added, 0)
 
         let reloaded = try ConfigService.load(profile: profile, workspaceRoot: root)

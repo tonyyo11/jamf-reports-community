@@ -217,6 +217,15 @@ schedule again, as a
 or a queued Run now. So a run that was merely slow, not hung, can overlap another run of
 the same schedule until it finishes.
 
+**Manual collects and the background item.** The app takes the same lock for every collect
+you start: Refresh, Collect now, the health strip's action, Generate with fresh data,
+Archive now, Device Lookup and setup. If a scheduled run holds it, the app says "A
+scheduled run is in progress — try again when it finishes" and starts nothing. A scheduled
+run that comes due while you collect waits for the next wake, and the overdue banner does
+not call it missed. The app's own automatic re-collects (the hourly repair and the
+catch-up on wake) hold the lock too. A manual collect that finishes with a source missing
+says "Refresh finished with warnings" and where to read why.
+
 A development build (`swift run JamfReports`) has no bundled agent, so registration is
 skipped and the Automation screen shows "Ticker unavailable in this build" — `JamfReports
 --tick` still runs from any binary, which is how scheduling is tested locally.

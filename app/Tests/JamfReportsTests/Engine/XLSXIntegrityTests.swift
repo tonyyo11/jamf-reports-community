@@ -112,6 +112,40 @@ final class XLSXIntegrityTests: XCTestCase {
         }
     }
 
+    /// U+FFFE and U+FFFF are Swift-legal scalars but not XML 1.0 characters; one in a
+    /// device name or sheet name made libxml2 (and Excel) reject the whole part.
+    func testNoncharactersFFFEAndFFFFKeepEveryPartWellFormed() throws {
+        let wb = Workbook()
+        let ws = wb.addSheet("Fleet\u{FFFE}Sheet")
+        ws.write("Mac\u{FFFE}Book\u{FFFF}", row: 0, col: 0, format: .cell)
+        ws.write("ok", row: 1, col: 0, format: .cell)
+        let url = try writeTempWorkbook(wb)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let archive = try Archive(url: url, accessMode: .read)
+        var sheetXML = ""
+        for entry in archive where entry.path.hasSuffix(".xml") || entry.path.hasSuffix(".rels") {
+            let data = try extract(entry, from: archive)
+            let parser = XMLParser(data: data)
+            XCTAssertTrue(
+                parser.parse(),
+                "XML part '\(entry.path)' is not well-formed: "
+                    + "\(parser.parserError?.localizedDescription ?? "unknown")"
+            )
+            if entry.path == "xl/worksheets/sheet1.xml" || entry.path == "xl/sharedStrings.xml" {
+                sheetXML += String(decoding: data, as: UTF8.self)
+            }
+        }
+        XCTAssertTrue(sheetXML.contains("MacBook"), "the rest of the name must survive")
+    }
+
+    func testStripControlCharactersDropsFFFEAndFFFFButKeepsPlaneOneNoncharacter() {
+        let raw = "a\u{FFFE}b\u{FFFF}cd\u{1FFFE}e\u{FFFD}f"
+        let kept = String(String.UnicodeScalarView(CellValue.stripControlCharacters(raw)))
+        // U+1FFFE and U+FFFD are legal XML 1.0 characters; only FFFE/FFFF are not.
+        XCTAssertEqual(kept, "abcd\u{1FFFE}e\u{FFFD}f")
+    }
+
     // MARK: - No duplicate cell references (secondary defect)
 
     func testNoDuplicateCellReferencesWithinARow() throws {

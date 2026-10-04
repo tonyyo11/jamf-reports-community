@@ -29,8 +29,9 @@ struct ReportConfig: Decodable, Sendable {
     var sharedWorkspace: SharedWorkspaceConfig?
     var ai: AIConfig?
     var html: HTMLReportConfig?
+    var securityPolicy: SecurityControlPolicy?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case columns
         case mobileColumns = "mobile_columns"
         case securityAgents = "security_agents"
@@ -52,6 +53,7 @@ struct ReportConfig: Decodable, Sendable {
         case sharedWorkspace = "shared_workspace"
         case ai
         case html
+        case securityPolicy = "security_policy"
     }
 
     /// Produce a config with all optional fields filled in from hardcoded defaults,
@@ -108,7 +110,7 @@ struct ColumnConfig: Decodable, Sendable {
     /// Device purchase or acquisition date column. YAML key: `purchase_date`.
     var purchaseDate: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case computerName = "computer_name"
         case serialNumber = "serial_number"
         case operatingSystem = "operating_system"
@@ -198,6 +200,41 @@ enum ColumnField: String, CaseIterable, Sendable {
     case lastLoggedInUser, recoveryLock, batteryHealth, entraSSOStatus
     /// Device purchase or acquisition date. YAML key: `purchase_date`.
     case purchaseDate
+
+    /// The `columns:` key in config.yaml, taken from the decoder rather than spelled from the
+    /// case name (which would read `entraSSOStatus` as `entra_s_s_o_status`).
+    var configKey: String {
+        let key: ColumnConfig.CodingKeys = switch self {
+        case .computerName: .computerName
+        case .serialNumber: .serialNumber
+        case .operatingSystem: .operatingSystem
+        case .lastCheckin: .lastCheckin
+        case .department: .department
+        case .manager: .manager
+        case .email: .email
+        case .filevault: .filevault
+        case .sip: .sip
+        case .firewall: .firewall
+        case .gatekeeper: .gatekeeper
+        case .secureBoot: .secureBoot
+        case .bootstrapToken: .bootstrapToken
+        case .diskPercentFull: .diskPercentFull
+        case .architecture: .architecture
+        case .model: .model
+        case .lastEnrollment: .lastEnrollment
+        case .mdmExpiry: .mdmExpiry
+        case .fullName: .fullName
+        case .assetTag: .assetTag
+        case .building: .building
+        case .position: .position
+        case .lastLoggedInUser: .lastLoggedInUser
+        case .recoveryLock: .recoveryLock
+        case .batteryHealth: .batteryHealth
+        case .entraSSOStatus: .entraSSOStatus
+        case .purchaseDate: .purchaseDate
+        }
+        return key.rawValue
+    }
 }
 
 // MARK: - mobile_columns
@@ -213,7 +250,7 @@ struct MobileColumnConfig: Decodable, Sendable {
     var managed: String?
     var supervised: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case deviceName = "device_name"
         case serialNumber = "serial_number"
         case operatingSystem = "operating_system"
@@ -231,7 +268,7 @@ struct SecurityAgentConfig: Decodable, Sendable {
     let column: String
     let connectedValue: String  // key is `connected_value`, NOT `installed_value`
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case name, column
         case connectedValue = "connected_value"
     }
@@ -255,7 +292,7 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// not write this key, and a Config screen save keeps it.
     var collectSkip: [String]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case dataDir = "data_dir"
         case profile
@@ -372,7 +409,7 @@ struct ComplianceBaselineConfig: Decodable, Sendable {
     /// above this value is rejected as unparseable (No Data).
     var ruleCount: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case name
         case failuresCountColumn = "failures_count_column"
         case failuresListColumn = "failures_list_column"
@@ -413,7 +450,7 @@ struct ComplianceConfig: Decodable, Sendable {
     /// real-data result and the proxy remains active.
     var baselines: [ComplianceBaselineConfig]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case failuresCountColumn = "failures_count_column"
         case failuresListColumn = "failures_list_column"
@@ -489,7 +526,7 @@ struct CustomEAConfig: Decodable, Sendable {
         var id: String { rawValue }
     }
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case name, column, type
         case trueValue = "true_value"
         case warningThreshold = "warning_threshold"
@@ -510,14 +547,19 @@ struct SheetsConfig: Decodable, Sendable {
     /// position within the survivors.
     var order: [String]?
 
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case only, skip, order
+    }
+
     /// Apply `only`, `skip`, and `order` to a sheet plan.
     ///
     /// - Parameter plan: Ordered pairs of (name, closure) from the dashboard.
     /// - Returns: Reordered and filtered plan ready for sequential execution.
     /// - Note: Names in `order` that don't match any plan entry are silently skipped.
+    ///   An empty `only` is no restriction, which is what `config.example.yaml` ships.
     func applyTo<T>(_ plan: [(name: String, write: T)]) -> [(name: String, write: T)] {
         let skipSet = Set((skip ?? []).map { $0.lowercased() })
-        let onlySet = only.map { Set($0.map { $0.lowercased() }) }
+        let onlySet = only.flatMap { $0.isEmpty ? nil : Set($0.map { $0.lowercased() }) }
 
         var survivors = plan.filter { entry in
             let lower = entry.name.lowercased()
@@ -541,6 +583,9 @@ struct SheetsConfig: Decodable, Sendable {
         result += survivors
         return result
     }
+
+    /// True when these lists keep a tab called `name`.
+    func keeps(_ name: String) -> Bool { !applyTo([(name: name, write: ())]).isEmpty }
 }
 
 // MARK: - thresholds
@@ -554,7 +599,7 @@ struct ThresholdsConfig: Decodable, Sendable {
     var profileErrorCritical: Int?
     var profileErrorWarning: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case staleDeviceDays = "stale_device_days"
         case checkinOverdueDays = "checkin_overdue_days"
         case criticalDiskPercent = "critical_disk_percent"
@@ -582,7 +627,7 @@ struct OutputConfig: Decodable, Sendable {
     var archiveDir: String?
     var keepLatestRuns: Int?        // key is `keep_latest_runs`
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case outputDir = "output_dir"
         case timestampOutputs = "timestamp_outputs"
         case archiveEnabled = "archive_enabled"
@@ -593,7 +638,9 @@ struct OutputConfig: Decodable, Sendable {
     var resolvedOutputDir: String { outputDir?.trimmingCharacters(in: .whitespaces) ?? "Generated Reports" }
     var isTimestampEnabled: Bool { timestampOutputs ?? true }
     var isArchiveEnabled: Bool { archiveEnabled ?? true }
-    var resolvedKeepLatestRuns: Int { keepLatestRuns ?? 10 }
+    /// Never below 1: `archiveOldRuns` keeps this many, so 0 archived the report just written
+    /// and a negative number trapped in `dropFirst`.
+    var resolvedKeepLatestRuns: Int { max(1, keepLatestRuns ?? 10) }
 }
 
 // MARK: - charts
@@ -608,7 +655,7 @@ struct ChartsConfig: Decodable, Sendable {
     var complianceTrend: ComplianceTrendConfig?
     var deviceStateTrend: DeviceStateTrendConfig?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case savePng = "save_png"
         case embedInXlsx = "embed_in_xlsx"
@@ -626,7 +673,11 @@ struct OSAdoptionConfig: Decodable, Sendable {
     var enabled: Bool?
     var perMajorCharts: Bool?
 
-    private enum CodingKeys: String, CodingKey {
+    /// What config.example.yaml documents; nothing reads `enabled`, so this only tells the
+    /// Config Doctor which value is the default.
+    var isEnabled: Bool { enabled ?? true }
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case perMajorCharts = "per_major_charts"
     }
@@ -635,6 +686,13 @@ struct OSAdoptionConfig: Decodable, Sendable {
 struct ComplianceTrendConfig: Decodable, Sendable {
     var enabled: Bool?
     var bands: [ComplianceBandConfig]?
+
+    /// As `OSAdoptionConfig.isEnabled`: the documented default, read by nothing else.
+    var isEnabled: Bool { enabled ?? true }
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case enabled, bands
+    }
 }
 
 struct ComplianceBandConfig: Decodable, Sendable {
@@ -643,7 +701,7 @@ struct ComplianceBandConfig: Decodable, Sendable {
     let maxFailures: Int
     let color: String
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case label
         case minFailures = "min_failures"
         case maxFailures = "max_failures"
@@ -653,6 +711,10 @@ struct ComplianceBandConfig: Decodable, Sendable {
 
 struct DeviceStateTrendConfig: Decodable, Sendable {
     var enabled: Bool?
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case enabled
+    }
 }
 
 // MARK: - branding
@@ -663,7 +725,7 @@ struct BrandingConfig: Decodable, Sendable {
     var accentColor: String?
     var accentDark: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case orgName = "org_name"
         case logoPath = "logo_path"
         case accentColor = "accent_color"
@@ -673,22 +735,15 @@ struct BrandingConfig: Decodable, Sendable {
     var resolvedOrgName: String { orgName?.trimmingCharacters(in: .whitespaces) ?? "" }
     var resolvedAccentColor: String { accentColor?.trimmingCharacters(in: .whitespaces) ?? "#2D5EA2" }
 
-    /// Accent color validated to `#RRGGBB` or `#RGB` hex format; falls back to `#2D5EA2`.
-    var sanitizedAccentColor: String { Self.sanitizeHex(resolvedAccentColor, fallback: "#2D5EA2") }
-
-    /// Dark-mode accent color validated to `#RRGGBB` or `#RGB` hex format; falls back to `#4A7EC8`.
-    var sanitizedAccentDark: String {
-        let raw = accentDark?.trimmingCharacters(in: .whitespaces) ?? ""
-        return Self.sanitizeHex(raw, fallback: "#4A7EC8")
-    }
-
-    /// Return `value` if it matches `#RRGGBB` or `#RGB`; otherwise return `fallback`.
-    private static func sanitizeHex(_ value: String, fallback: String) -> String {
-        let hex3 = #"^#[0-9A-Fa-f]{3}$"#
-        let hex6 = #"^#[0-9A-Fa-f]{6}$"#
-        if value.range(of: hex3, options: .regularExpression) != nil { return value }
-        if value.range(of: hex6, options: .regularExpression) != nil { return value }
-        return fallback
+    /// The accent both reports use: the typed colour when it is `#RGB` or `#RRGGBB`, else
+    /// `#2D5EA2`. Anything else could break out of the workbook's styles XML, the report's
+    /// CSS or a chart's JS string (P9-A-02).
+    var sanitizedAccentColor: String {
+        let value = resolvedAccentColor
+        let digits = value.dropFirst()
+        guard value.first == "#", [3, 6].contains(digits.count),
+              digits.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return "#2D5EA2" }
+        return value
     }
 }
 
@@ -702,7 +757,7 @@ struct ProtectConfig: Decodable, Sendable {
     var enabled: Bool?
     var profile: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, profile
     }
 
@@ -720,7 +775,7 @@ struct SchoolCLIConfig: Decodable, Sendable {
     var enabled: Bool?
     var profile: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, profile
     }
 
@@ -739,14 +794,14 @@ struct NotifyConfig: Decodable, Sendable {
     /// and schedule names; `minimal` sends event facts only (counts and statuses,
     /// no values or free text) — for headless deployments that want the webhook
     /// as a doorbell, not a data channel.
-    enum Detail: String, Decodable, Sendable { case full, minimal }
+    enum Detail: String, Decodable, Sendable, CaseIterable { case full, minimal }
 
     var enabled: Bool?
     var provider: String?
     var url: String?
     var detail: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, provider, url, detail
     }
 
@@ -754,8 +809,10 @@ struct NotifyConfig: Decodable, Sendable {
     var resolvedProvider: Provider {
         Provider(rawValue: (provider ?? "teams").lowercased()) ?? .teams
     }
+    /// Absent means `full`. A value that is neither `full` nor `minimal` means `minimal`: a
+    /// privacy setting nobody could read must fail toward sending less.
     var resolvedDetail: Detail {
-        Detail(rawValue: (detail ?? "full").lowercased()) ?? .full
+        Detail(rawValue: (detail ?? "full").lowercased()) ?? .minimal
     }
     var resolvedURL: String { url?.trimmingCharacters(in: .whitespaces) ?? "" }
     /// Usable only when enabled AND a usable https URL is present — the gate
@@ -774,7 +831,7 @@ struct AlertsConfig: Decodable, Sendable {
     var enabled: Bool?
     var rules: [AlertRule]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, rules
     }
 
@@ -812,7 +869,7 @@ struct AlertRule: Decodable, Sendable, Equatable {
     var threshold: Double?
     var lookbackDays: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case metric, when, threshold
         case lookbackDays = "lookback_days"
     }
@@ -896,17 +953,18 @@ struct AlertRule: Decodable, Sendable, Equatable {
 /// model ("system — On-device Apple Foundation Model"), and the Private Cloud
 /// Compute tier this block once carried was never reachable anyway — PCC needs
 /// an Apple-granted entitlement tied to App Store distribution, which a
-/// Developer ID build cannot obtain. Both the `pcc` tier and the
-/// `lock_on_device` override that existed to refuse it are gone; on-device is
-/// the default and the only behaviour.
+/// Developer ID build cannot obtain. The `pcc` tier, the `lock_on_device`
+/// override that existed to refuse it, and the never-built `external` tier with
+/// its `external:` sub-block are gone; on-device is the default and the only
+/// behaviour.
 ///
-/// A config that still names `tier: pcc` decodes to `.onDevice` via
-/// `resolvedTier`'s unknown-value fallback, and a stale `lock_on_device` key is
-/// ignored — neither breaks an existing workspace.
+/// A config that still names `tier: pcc` or `tier: external` decodes to
+/// `.onDevice` via `resolvedTier`'s unknown-value fallback, and a stale
+/// `lock_on_device` key or `external:` sub-block is ignored — none of them
+/// breaks an existing workspace, and the next Settings save drops them.
 struct AIConfig: Decodable, Sendable {
     enum Tier: String, Decodable, Sendable, CaseIterable {
         case onDevice = "on_device"
-        case external
     }
 
     enum ReasoningLevel: String, Decodable, Sendable, CaseIterable {
@@ -916,12 +974,10 @@ struct AIConfig: Decodable, Sendable {
     var enabled: Bool?
     var tier: String?
     var reasoningLevel: String?
-    var external: AIExternalConfig?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled, tier
         case reasoningLevel = "reasoning_level"
-        case external
     }
 
     var isEnabled: Bool { enabled ?? false }
@@ -935,26 +991,6 @@ struct AIConfig: Decodable, Sendable {
     /// site checks so a disabled block never spins up any model. On-device needs
     /// no URL/key, so `isEnabled` is the whole test.
     var isUsable: Bool { isEnabled }
-}
-
-/// Reserved `external:` sub-block — specced now, built in a later phase (P5).
-/// Present so config.yaml round-trips a stable shape before the tier ships;
-/// inert today.
-///
-/// P5 IMPLEMENTATION REQUIREMENT (threat model T-28): a pre-existing `endpoint`
-/// in config.yaml must NEVER auto-activate when the external tier ships — an
-/// attacker could pre-plant it on synced storage and have it go live on app
-/// update. Require explicit in-app re-consent plus https-only validation (the
-/// `NotifyConfig.isUsable` prefix-check pattern) before the first external send.
-struct AIExternalConfig: Decodable, Sendable {
-    var provider: String?
-    var endpoint: String?
-    var keychainKey: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case provider, endpoint
-        case keychainKey = "keychain_key"
-    }
 }
 
 // MARK: - retention (snapshot archive/cleanup)
@@ -978,7 +1014,7 @@ struct RetentionConfig: Decodable, Sendable {
     var includeSummaries: Bool?
     var archiveDir: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case mode
         case snapshotKeepDays = "snapshot_keep_days"
@@ -1017,7 +1053,7 @@ struct SharedWorkspaceConfig: Decodable, Sendable {
     var claimTtlMinutes: Int?
     var minCollectIntervalHours: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case claimTtlMinutes = "claim_ttl_minutes"
         case minCollectIntervalHours = "min_collect_interval_hours"
@@ -1065,7 +1101,7 @@ struct ConfigException: Decodable, Sendable, Equatable {
     /// `ConfigException.typedControlID` (`ConfigSchema+ControlID.swift`).
     var controlID: String?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case id, description
         case signedOffBy = "signed_off_by"
         case signedOffDate = "signed_off_date"
@@ -1099,7 +1135,7 @@ struct ConfigException: Decodable, Sendable, Equatable {
 struct HTMLReportConfig: Decodable, Sendable {
     var sectionLimits: HTMLSectionLimits?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case sectionLimits = "section_limits"
     }
 }
@@ -1112,7 +1148,7 @@ struct HTMLSectionLimits: Decodable, Sendable {
     var protectAlerts: Int?
     var insightsDriftSnapshots: Int?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case protectAlerts = "protect_alerts"
         case insightsDriftSnapshots = "insights_drift_snapshots"
     }
@@ -1148,7 +1184,7 @@ struct PlatformConfig: Decodable, Sendable {
     var enabled: Bool?
     var complianceBenchmarks: [String]?
 
-    private enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case enabled
         case complianceBenchmarks = "compliance_benchmarks"
     }
@@ -1237,11 +1273,7 @@ enum ConfigLoader {
     /// Decode a `ReportConfig` directly from a YAML string (convenience for tests).
     static func loadFromString(_ yaml: String) throws -> ReportConfig {
         do {
-            let document = try YAMLCodec.decode(yaml)
-            let jsonData = try yamlDocumentToJSONData(document)
-            let decoder = JSONDecoder()
-            let config = try decoder.decode(ReportConfig.self, from: jsonData)
-            return config.withDefaults()
+            return try decodeConfig(try YAMLCodec.decode(yaml))
         } catch {
             throw LoadError.decodeError("<string>", error)
         }
@@ -1258,11 +1290,7 @@ enum ConfigLoader {
         // Convert YAML → JSON via YAMLCodec, then decode with JSONDecoder.
         // This avoids pulling in a full YAML library and re-uses the existing codec.
         do {
-            let document = try YAMLCodec.decode(text)
-            let jsonData = try yamlDocumentToJSONData(document)
-            let decoder = JSONDecoder()
-            let config = try decoder.decode(ReportConfig.self, from: jsonData)
-            return config.withDefaults()
+            return try decodeConfig(try YAMLCodec.decode(text))
         } catch let e as LoadError {
             throw e
         } catch {
@@ -1270,15 +1298,87 @@ enum ConfigLoader {
         }
     }
 
-    // MARK: - YAML → JSON conversion
-
-    private static func yamlDocumentToJSONData(_ document: YAMLCodec.YAMLDocument) throws -> Data {
-        let jsonObject = nodeToJSONObject(document.root)
-        return try JSONSerialization.data(withJSONObject: jsonObject, options: [])
+    /// The document as the decoder sees it, before decoding: a repeated key holds its last
+    /// value here too.
+    static func rawMapping(fromYAML text: String) throws -> [String: Any] {
+        nodeToJSONObject(try YAMLCodec.decode(text).root) as? [String: Any] ?? [:]
     }
 
-    private static func nodeToJSONObject(_ node: YAMLCodec.YAMLValue) -> Any {
+    /// The value at `path` in a `rawMapping`, typed as the decoder sees it: `as? Bool` holds
+    /// only for `true`/`false` (any case, quoted or not), `as? Int` only for an unquoted
+    /// number. Nil when a step is missing.
+    static func rawValue(at path: [String], in root: [String: Any]) -> Any? {
+        var node: Any = root
+        for key in path {
+            guard let mapping = node as? [String: Any], let next = mapping[key] else { return nil }
+            node = next
+        }
+        return node
+    }
+
+    // MARK: - YAML → JSON conversion
+
+    /// A quoted `"true"`, `"false"` or `"null"` reads as a boolean or null, so a hand-quoted
+    /// `enabled: "true"` works. Where the decoder wants text instead (`true_value: "true"`, which
+    /// the Config screen writes), that value is read again as the text it was and the decode
+    /// retried, once per such value. An unquoted number where text is wanted (`true_value: 1`,
+    /// `current_versions: [26]`, `profile: 2026`) is retried as its digits the same way. A file
+    /// that decodes on the first pass is unaffected.
+    private static func decodeConfig(_ document: YAMLCodec.YAMLDocument) throws -> ReportConfig {
+        var asText: Set<[String]> = []
+        while true {
+            let object = nodeToJSONObject(document.root, keepingText: asText)
+            let data = try JSONSerialization.data(withJSONObject: object, options: [])
+            do {
+                return try JSONDecoder().decode(ReportConfig.self, from: data).withDefaults()
+            } catch let error as DecodingError {
+                guard case .typeMismatch(let type, let context) = error, type == String.self
+                else { throw error }
+                let path = context.codingPath.map { key in
+                    key.intValue.map { "[\($0)]" } ?? key.stringValue
+                }
+                guard isTextRetryable(node(at: path, in: document.root)),
+                      asText.insert(path).inserted
+                else { throw error }
+            }
+        }
+    }
+
+    /// A string the scalar reader typed as a boolean or null, or an unquoted number.
+    private static func isTextRetryable(_ node: YAMLCodec.YAMLValue?) -> Bool {
         switch node {
+        case .scalar(.string)?, .scalar(.int)?: true
+        default: false
+        }
+    }
+
+    /// The YAML node a decoding path names; a repeated key gives its last value, as here.
+    private static func node(
+        at path: [String], in root: YAMLCodec.YAMLValue
+    ) -> YAMLCodec.YAMLValue? {
+        var node = root
+        for step in path {
+            if let items = node.sequence, let index = Int(step.dropFirst().dropLast()),
+               step.hasPrefix("["), items.indices.contains(index) {
+                node = items[index]
+            } else if let next = node.mapping?.value(for: step) {
+                node = next
+            } else {
+                return nil
+            }
+        }
+        return node
+    }
+
+    /// `asText` holds the paths (a key, or `[n]` for a list item) of strings kept as text.
+    private static func nodeToJSONObject(
+        _ node: YAMLCodec.YAMLValue, keepingText asText: Set<[String]> = [], at path: [String] = []
+    ) -> Any {
+        switch node {
+        case .scalar(.string(let text)) where asText.contains(path):
+            return text
+        case .scalar(.int(let number)) where asText.contains(path):
+            return String(number)
         case .scalar(let scalar):
             return scalarToJSON(scalar)
         case .mapping(let mapping):
@@ -1289,12 +1389,15 @@ enum ConfigLoader {
                 if entry.key == "profile", case .scalar(.string(let name)) = entry.value {
                     dict[entry.key] = name
                 } else {
-                    dict[entry.key] = nodeToJSONObject(entry.value)
+                    dict[entry.key] = nodeToJSONObject(
+                        entry.value, keepingText: asText, at: path + [entry.key])
                 }
             }
             return dict
         case .sequence(let items):
-            return items.map { nodeToJSONObject($0) }
+            return items.enumerated().map { index, item in
+                nodeToJSONObject(item, keepingText: asText, at: path + ["[\(index)]"])
+            }
         }
     }
 

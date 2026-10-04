@@ -27,6 +27,42 @@ final class EDRAgentLabelTests: XCTestCase {
         )
     }
 
+    /// The three security controls join after `managedDevices` (the order is pinned in
+    /// `testCaseIterableOrderUnchangedByRename`) under their own raw values.
+    func testSecurityControlMetricsKeepTheirRawValues() {
+        XCTAssertEqual(TrendSeries.Metric(rawValue: "sip"), .sip)
+        XCTAssertEqual(TrendSeries.Metric(rawValue: "firewall"), .firewall)
+        XCTAssertEqual(TrendSeries.Metric(rawValue: "gatekeeper"), .gatekeeper)
+    }
+
+    /// A selection that names a control card persists and reloads as stored.
+    func testPersistedSecurityControlSelectionRoundTrips() {
+        defer { UserDefaults.standard.removeObject(forKey: WorkspaceStore.scoreCardsKey) }
+
+        UserDefaults.standard.set("sip,firewall", forKey: WorkspaceStore.scoreCardsKey)
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), [.sip, .firewall])
+
+        WorkspaceStore.persistScoreCards([.stability, .gatekeeper, .sip])
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), [.stability, .gatekeeper, .sip])
+    }
+
+    func testSecurityControlMetricsCarryTheirOwnLabelUnitAndColour() {
+        let expected: [(TrendSeries.Metric, String, UInt32)] = [
+            (.sip, "System Integrity Protection", 0x64D2FF),
+            (.firewall, "Firewall Enabled", 0x5E5CE6),
+            (.gatekeeper, "Gatekeeper Enabled", 0xAC8E68),
+        ]
+        for (metric, label, colour) in expected {
+            XCTAssertEqual(metric.displayLabel, label)
+            XCTAssertEqual(
+                metric.displayLabel(benchmarkLabel: "Benchmark", edrAgentName: "Agent"), label)
+            XCTAssertEqual(metric.unit, "%")
+            XCTAssertEqual(metric.minY, 60)
+            XCTAssertEqual(metric.maxY, 100)
+            XCTAssertEqual(metric.colorHex, colour)
+        }
+    }
+
     func testSecurityScoreMetricKeepsLegacyRawValue() {
         XCTAssertEqual(SecurityScore.Metric.edrAgent.rawValue, "crowdstrike")
     }
@@ -83,15 +119,14 @@ final class EDRAgentLabelTests: XCTestCase {
         )
     }
 
-    // MARK: - Scoring weights serialization compatibility
+    // MARK: - Scoring weights preference compatibility
 
-    func testScoringConfigPositionalSerializationUnchanged() {
+    func testScoringConfigPositionalParsingUnchanged() {
         // Slot 4 is the EDR weight regardless of the property rename — a
         // pre-rename persisted preference must parse identically.
         let parsed = ScoringConfig.parse("15,15,15,10,20,5,15,5")
         XCTAssertEqual(parsed.weights.edrAgent, 10)
         XCTAssertEqual(parsed.weights, SecurityScoreWeights.defaultWeights)
-        XCTAssertEqual(ScoringConfig().serialize(), "15,15,15,10,20,5,15,5")
     }
 
     // MARK: - Metric ordering preserved
@@ -100,6 +135,7 @@ final class EDRAgentLabelTests: XCTestCase {
         XCTAssertEqual(TrendSeries.Metric.allCases, [
             .stability, .activeDevices, .compliance, .fileVault, .osCurrent,
             .edrAgent, .stale, .patch, .securityScore, .mscpBandTrend, .managedDevices,
+            .sip, .firewall, .gatekeeper,
         ])
         XCTAssertEqual(SecurityScore.Metric.allCases, [
             .fileVault, .sip, .firewall, .edrAgent, .mscp, .xprotect, .cve, .secureBoot,

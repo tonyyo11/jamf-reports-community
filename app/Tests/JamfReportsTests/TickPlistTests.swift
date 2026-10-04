@@ -31,6 +31,7 @@ final class TickPlistTests: XCTestCase {
         XCTAssertEqual(plist["BundleProgram"] as? String, "Contents/MacOS/JamfReports")
         XCTAssertEqual(plist["ProgramArguments"] as? [String], ["JamfReports", "--tick"])
         XCTAssertEqual(plist["StartInterval"] as? Int, 300)
+        XCTAssertEqual(TickLock.wakeInterval, 300, "the app's copy of StartInterval")
         XCTAssertEqual(plist["RunAtLoad"] as? Bool, true)
         XCTAssertEqual(plist["ProcessType"] as? String, "Background")
         XCTAssertNil(plist["StartCalendarInterval"])

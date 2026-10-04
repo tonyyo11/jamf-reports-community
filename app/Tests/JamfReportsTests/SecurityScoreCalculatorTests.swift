@@ -91,6 +91,24 @@ final class SecurityScoreCalculatorTests: XCTestCase {
         XCTAssertFalse(score.missing.contains(.edrAgent))
     }
 
+    /// A metric with its own total is a share of that total, not of the fleet; a total of
+    /// zero or less is no data for that metric.
+    func testAMetricTotalIsTheShareDenominator() {
+        let input = SecurityScoreCalculator.Input(
+            totalDevices: 10, compliantCounts: [.fileVault: 4, .sip: 10],
+            metricTotals: [.fileVault: 5])
+        let score = SecurityScoreCalculator.score(input: input)
+        // (80 + 100) / 2 with equal weights
+        XCTAssertEqual(score.value, 90.0, accuracy: 0.001)
+
+        let empty = SecurityScoreCalculator.score(input: .init(
+            totalDevices: 10, compliantCounts: [.fileVault: 0, .sip: 10],
+            metricTotals: [.fileVault: 0]))
+        XCTAssertEqual(empty.available, [.sip])
+        XCTAssertTrue(empty.missing.contains(.fileVault))
+        XCTAssertEqual(empty.value, 100.0, accuracy: 0.001)
+    }
+
     func testInputFromSummaryReversesPercentagesIntoCounts() {
         let summary = DailySummary(
             date: "2026-05-11",

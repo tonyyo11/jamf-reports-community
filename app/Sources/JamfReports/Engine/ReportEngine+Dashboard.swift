@@ -29,6 +29,15 @@ extension ReportEngine {
         return base + ["--include-profile=\(other)"]
     }
 
+    /// `arguments` without the `--include-profile=<name>` that `dashboardArguments`
+    /// appended, nil when it appended none. The flag is last, so it is taken by position:
+    /// a main profile can be named `--include-profile=…` and sits after `-p`, where a
+    /// prefix search would find it first.
+    static func dashboardArgumentsWithoutProtect(_ arguments: [String]) -> [String]? {
+        guard let last = arguments.last, last.hasPrefix("--include-profile=") else { return nil }
+        return Array(arguments.dropLast())
+    }
+
     /// Whether `data` starts like an HTML document, after whitespace and a byte-order
     /// mark. jamf-cli creates the `--out-file` before it signs in, so an early
     /// failure leaves it empty; that must not land as a snapshot.
@@ -87,13 +96,13 @@ extension ReportEngine {
             arguments: arguments, supportsQuietFlags: supportsQuietFlags,
             bin: bin, bridge: bridge, onLine: onLine)
         if attempt.stoppedBeforeCollecting,
-           let protectArgument = arguments.first(where: { $0.hasPrefix("--include-profile=") }) {
+           let withoutProtect = Self.dashboardArgumentsWithoutProtect(arguments) {
             let code = attempt.capture.map { String($0.exitCode) } ?? "?"
             onLine(.init(timestamp: Date(), level: .warn,
                          text: "[warn] \(kind): jamf-cli stopped with the Protect profile "
                             + "included (exit \(code)); collecting without it"))
             attempt = await runDashboard(
-                arguments: arguments.filter { $0 != protectArgument },
+                arguments: withoutProtect,
                 supportsQuietFlags: supportsQuietFlags, bin: bin, bridge: bridge, onLine: onLine)
         }
 

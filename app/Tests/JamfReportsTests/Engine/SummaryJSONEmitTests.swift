@@ -297,6 +297,76 @@ final class SummaryJSONEmitTests: XCTestCase {
                         "Proxy compliancePct must be populated when device security data is present")
     }
 
+    // MARK: - Hardware-encrypted Macs in the compliance proxy
+
+    /// Four Macs with FileVault off and every other control passing, and the `computers`
+    /// snapshot that says which of them are hardware-encrypted. Returns the summary the
+    /// writer produced for a workspace with the given `security_policy` text.
+    private func hardwareProxySummary(policyYAML: String?) throws -> DailySummary {
+        let config = try ConfigLoader.loadFromString(
+            policyYAML ?? "thresholds:\n  stale_device_days: 30\n")
+        let dataDir = tmpDir.appendingPathComponent("hw-data", isDirectory: true)
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        let computersDir = dataDir.appendingPathComponent("computers", isDirectory: true)
+        for dir in [secDir, computersDir] {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        func row(_ name: String, _ serial: String) -> [String: Any] {
+            ["section": "device", "name": name, "serial": serial, "os_version": "15.4.1",
+             "filevault": "UNENCRYPTED", "sip": "ENABLED", "firewall": true,
+             "gatekeeper": "APP_STORE_AND_IDENTIFIED_DEVELOPERS"]
+        }
+        let summary: [String: Any] = ["section": "summary", "data": [
+            "total_devices": 4, "filevault_encrypted": 0, "sip_enabled": 4,
+            "firewall_enabled": 4, "gatekeeper_enabled": 4,
+        ]]
+        let security = [summary, row("as-mac", "AS1"), row("t2-mac", "T21"),
+                        row("intel-mac", "IN1"), row("mystery", "")]
+        try JSONSerialization.data(withJSONObject: security)
+            .write(to: secDir.appendingPathComponent("security_\(recentStamp).json"))
+        let computers: [[String: Any]] = [
+            ["general": ["name": "as-mac"],
+             "hardware": ["serialNumber": "AS1", "appleSilicon": true]],
+            ["general": ["name": "t2-mac"],
+             "hardware": ["serialNumber": "T21", "modelIdentifier": "MacBookPro16,2"]],
+            ["general": ["name": "intel-mac"],
+             "hardware": ["serialNumber": "IN1", "appleSilicon": false,
+                          "modelIdentifier": "MacBookPro14,1"]],
+        ]
+        try JSONSerialization.data(withJSONObject: computers)
+            .write(to: computersDir.appendingPathComponent("computers_\(recentStamp).json"))
+
+        let summaries = tmpDir.appendingPathComponent("hw-summaries", isDirectory: true)
+        // `liveKinds` makes the writer record `collectionSources`.
+        ReportEngine(config: config, dataDir: dataDir).emitSummaryJSON(
+            summariesDir: summaries, liveKinds: ["security", "computers"])
+        return try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first)
+    }
+
+    /// With no `security_policy` block the writer reads no `computers` snapshot: the
+    /// proxy is today's number and `computers` is not one of the digest's sources.
+    func testProxyWithoutAPolicyIgnoresHardwareAndComputers() throws {
+        let s = try hardwareProxySummary(policyYAML: nil)
+        XCTAssertEqual(try XCTUnwrap(s.compliancePct), 0, accuracy: 0.01)
+        XCTAssertNil(s.collectionSources?["computers"])
+        XCTAssertEqual(s.collectionSources?["security"], "live")
+    }
+
+    /// Four Macs, FileVault off on all: the Apple-silicon and the T2 Mac are warnings (0
+    /// gaps), the Intel Mac and the Mac the snapshot does not know are gaps. 2 of 4 = 50%.
+    func testProxyCountsHardwareEncryptedMacsWithFileVaultOffAsCompliantAtWarning() throws {
+        let s = try hardwareProxySummary(policyYAML: """
+        security_policy:
+          filevault_off_hardware_encrypted: warning
+        """)
+        XCTAssertEqual(try XCTUnwrap(s.compliancePct), 50, accuracy: 0.01)
+        XCTAssertEqual(s.complianceIsProxy, true)
+        XCTAssertEqual(s.collectionSources?["security"], "live",
+                       "sources are recorded, so the nil check below is not vacuous")
+        XCTAssertNil(s.collectionSources?["computers"],
+                     "the hardware index is read straight from disk, not through cachedData")
+    }
+
     // MARK: - EDR coverage (crowdstrikePct)
 
     /// The jamf-cli writer used to leave the EDR field nil unconditionally, so
@@ -323,6 +393,66 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
     }
 
+    /// jamf-cli's ea-results rows carry the computer name and no id. Keyed by name, two
+    /// Macs called "MacBook Pro" counted once and the figure read 40%.
+    func testEmitCountsMacsThatShareAComputerNameSeparately() throws {
+        let column = "CrowdStrike Falcon - Status"
+        var cfg = ReportConfig()
+        cfg.securityAgents = [
+            SecurityAgentConfig(name: "CrowdStrike Falcon", column: column,
+                                connectedValue: "Running")
+        ]
+        let dataDir = tmpDir.appendingPathComponent("edr-names-data", isDirectory: true)
+        let localEngine = ReportEngine(config: cfg, dataDir: dataDir)
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeAgentEAResults(
+            to: dataDir, column: column, values: ["Running", "Running", "Running", "Stopped"],
+            devices: ["MacBook Pro", "MacBook Pro", "mac-2", "mac-3"])
+
+        let localSummaries = tmpDir.appendingPathComponent("edr-names-summaries", isDirectory: true)
+        localEngine.emitSummaryJSON(summariesDir: localSummaries)
+
+        let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
+        XCTAssertEqual(try XCTUnwrap(s.crowdstrikePct), 60.0, accuracy: 0.01)
+    }
+
+    /// The Overview's Security Agents card and the daily summary's EDR figure are one
+    /// definition: on the same snapshots they print the same number.
+    func testTheOverviewAgentCardShowsTheSummarysEDRFigure() async throws {
+        let column = "CrowdStrike Falcon - Status"
+        let root = tmpDir.appendingPathComponent("workspaces", isDirectory: true)
+        let workspace = root.appendingPathComponent("acme", isDirectory: true)
+        let dataDir = workspace.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try Data("""
+            security_agents:
+              - name: "CrowdStrike Falcon"
+                column: "\(column)"
+                connected_value: "Running"
+            """.utf8).write(to: workspace.appendingPathComponent("config.yaml"))
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        var cfg = ReportConfig()
+        cfg.securityAgents = [
+            SecurityAgentConfig(name: "CrowdStrike Falcon", column: column,
+                                connectedValue: "Running")
+        ]
+        try writeSecuritySnapshotWithDevices(to: dataDir)
+        try writeAgentEAResults(
+            to: dataDir, column: column, values: ["Running", "Running", "Running", "Stopped"],
+            devices: ["MacBook Pro", "MacBook Pro", "mac-2", "mac-3"])
+        let localSummaries = tmpDir.appendingPathComponent("card-summaries", isDirectory: true)
+        ReportEngine(config: cfg, dataDir: dataDir).emitSummaryJSON(summariesDir: localSummaries)
+        let summary = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
+
+        let live = try await OverviewLiveDataLoader.load(
+            profile: "acme", sections: [.securityAgents])
+        let card = OverviewLiveDataLoader.agents(live.agents, overFleet: summary.totalDevices)
+
+        XCTAssertEqual(card.map(\.installed), [3])
+        XCTAssertEqual(card.first?.pct, summary.crowdstrikePct)
+    }
+
     func testEmitLeavesEDRCoverageUnknownWhenNoMacReportsTheAgent() throws {
         var cfg = ReportConfig()
         cfg.securityAgents = [
@@ -340,6 +470,43 @@ final class SummaryJSONEmitTests: XCTestCase {
 
         let s = try XCTUnwrap(SummaryJSONParser.parseDirectory(localSummaries).first)
         XCTAssertNil(s.crowdstrikePct, "A column no Mac reports is unknown, not 0%")
+    }
+
+    // MARK: - Score weights from the security policy
+
+    /// GoldenFleet case A's security summary (250 Macs; FileVault 240, SIP 250, Firewall 245,
+    /// Gatekeeper 248) under the given config: the score the summary writer records.
+    /// Each call writes its own folders: a second call into the first's summaries folder
+    /// would read back the first call's summary (today's is written once).
+    private func goldenFleetScore(policyYAML: String) throws -> Double {
+        let run = UUID().uuidString
+        let dataDir = tmpDir.appendingPathComponent("weights-data-\(run)", isDirectory: true)
+        let stamp = GoldenFleetClock.stamp(Date().addingTimeInterval(-3600))
+        try GoldenFleetWorkspace.writeJSON(
+            GoldenFleetWorkspace.securitySummaryPayload(
+                total: 250, filevault: 240, sip: 250, firewall: 245, gatekeeper: 248),
+            to: dataDir.appendingPathComponent("security/security_\(stamp).json"))
+        let summaries = tmpDir.appendingPathComponent("weights-summaries-\(run)", isDirectory: true)
+        ReportEngine(config: try ConfigLoader.loadFromString(policyYAML), dataDir: dataDir)
+            .emitSummaryJSON(summariesDir: summaries)
+        return try XCTUnwrap(
+            try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first).securityScore)
+    }
+
+    /// With no `score_weights` the weights are 15/15/15 over the three measured controls:
+    /// (96.0 + 100.0 + 98.0) / 3 = 98.0, as before the weights moved into the policy.
+    func testSummaryScoreWithNoWeightsBlockIsTodaysNumber() throws {
+        XCTAssertEqual(try goldenFleetScore(policyYAML: "thresholds:\n  stale_device_days: 30\n"),
+                       98.0, accuracy: 0.001)
+        XCTAssertEqual(try goldenFleetScore(policyYAML: "security_policy:\n  controls:\n"
+                                            + "    sip: warning\n"), 98.0, accuracy: 0.001)
+    }
+
+    /// FileVault 30 against SIP 15 and Firewall 15 (total 60):
+    /// (96.0 * 30 + 100.0 * 15 + 98.0 * 15) / 60 = (2880 + 1500 + 1470) / 60 = 97.5.
+    func testSummaryScoreUsesTheWorkspacesScoreWeights() throws {
+        let yaml = "security_policy:\n  score_weights:\n    filevault: 30\n"
+        XCTAssertEqual(try goldenFleetScore(policyYAML: yaml), 97.5, accuracy: 0.001)
     }
 
     // MARK: - mobileDeviceCount derivation wiring
@@ -806,11 +973,15 @@ final class SummaryJSONEmitTests: XCTestCase {
     }
 
     /// ea-results rows for one security-agent column, one Mac per value.
-    private func writeAgentEAResults(to dataDir: URL, column: String, values: [String]) throws {
+    /// Rows in jamf-cli 1.31's shape: the computer name in `device`, no id.
+    private func writeAgentEAResults(
+        to dataDir: URL, column: String, values: [String], devices: [String]? = nil
+    ) throws {
         let eaDir = dataDir.appendingPathComponent("ea-results", isDirectory: true)
         try FileManager.default.createDirectory(at: eaDir, withIntermediateDirectories: true)
         let rows: [[String: Any]] = values.enumerated().map { index, value in
-            ["device": "mac-agent-\(index)", "ea_name": column, "value": value]
+            ["device": devices?[index] ?? "mac-agent-\(index)", "ea_name": column,
+             "value": value]
         }
         let data = try JSONSerialization.data(withJSONObject: rows)
         let file = eaDir.appendingPathComponent("ea-results_\(recentStamp).json")
