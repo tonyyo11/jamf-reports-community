@@ -270,8 +270,9 @@ final class CoreDashboardSecurityTests: XCTestCase {
 
     // MARK: - Characterization: the sheets at the default policy
 
-    /// Fixture `security.json` (a real `pro report security` shape): 101 Macs, FileVault 100,
-    /// SIP 1, Firewall 0, Gatekeeper 100.
+    /// Fixture `security.json` (the dummy tenant's `pro report security`): 101 Macs, FileVault
+    /// 100, SIP 1, Firewall 0, Gatekeeper 100. SIP is NOT_COLLECTED on 100 rows, so its status
+    /// grades the one Mac that reported it.
     func testCompliancePostureStatusesOnTheSecurityFixture() throws {
         let json = try XCTUnwrap(fixtureData(kind: "security"))
         let dir = try makeTempDir()
@@ -282,7 +283,7 @@ final class CoreDashboardSecurityTests: XCTestCase {
 
         let expected: [(String, String, String, CellFormat)] = [
             ("FileVault Encrypted", "100 (99.0%)", "GREEN", .green),
-            ("SIP Enabled", "1 (1.0%)", "RED", .red),
+            ("SIP Enabled", "1 (1.0%)", "GREEN", .green),
             ("Firewall Enabled", "0 (0.0%)", "RED", .red),
             ("Gatekeeper Enabled", "100 (99.0%)", "GREEN", .green),
         ]
@@ -292,6 +293,9 @@ final class CoreDashboardSecurityTests: XCTestCase {
             XCTAssertEqual(cells[2]?.text, status, label)
             XCTAssertEqual(cells[2]?.format, format, label)
         }
+        XCTAssertTrue(hasRow(dash, "Compliance Posture", "Not reported: SIP 100. Macs whose "
+            + "value Jamf did not report are not counted as failing and are left out of the "
+            + "shares above."))
     }
 
     /// Fixture `computers-list.json`: Lab-Mac-01 has every control on, Lab-Mac-02 has them off,
@@ -607,8 +611,9 @@ final class CoreDashboardSecurityTests: XCTestCase {
         }
     }
 
-    /// On the real-shape fixture: SIP at warning turns its red into amber (no Mac fails it),
-    /// Firewall at ignore is "Not counted", and the rows that fail nothing stay green.
+    /// On the real-shape fixture: Firewall at ignore is "Not counted", and the rows that fail
+    /// nothing stay green. SIP at warning has no Mac to warn about: the 100 that did not
+    /// report it are neither.
     func testCompliancePostureShowsWarningsAndNotCountedControls() throws {
         let json = try XCTUnwrap(fixtureData(kind: "security"))
         let dir = try makeTempDir()
@@ -624,8 +629,8 @@ final class CoreDashboardSecurityTests: XCTestCase {
 
         let sip = try row(dash, "Compliance Posture", "SIP Enabled")
         XCTAssertEqual(sip[1]?.text, "1 (1.0%)")
-        XCTAssertEqual(sip[2]?.text, "AMBER")
-        XCTAssertEqual(sip[2]?.format, .yellow)
+        XCTAssertEqual(sip[2]?.text, "GREEN")
+        XCTAssertEqual(sip[2]?.format, .green)
         let firewall = try row(dash, "Compliance Posture", "Firewall Enabled")
         XCTAssertEqual(firewall[1]?.text, "0 (0.0%)", "the value column is the fact")
         XCTAssertEqual(firewall[2]?.text, "Not counted")
@@ -635,6 +640,47 @@ final class CoreDashboardSecurityTests: XCTestCase {
             XCTAssertEqual(cells[2]?.text, "GREEN", label)
             XCTAssertEqual(cells[2]?.format, .green, label)
         }
+    }
+
+    /// Four Macs: SIP is on for one, DISABLED for one, and NOT_COLLECTED for two. The row
+    /// grades the two that reported, a warning is amber, and a control no Mac reported is
+    /// Not counted.
+    func testCompliancePostureGradesOnlyTheMacsThatReported() throws {
+        func device(_ serial: String, _ sip: String, _ gatekeeper: String) -> [String: Any] {
+            ["section": "device", "name": "Lab-" + serial, "serial": serial,
+             "os_version": "15.4.1", "filevault": "ENCRYPTED", "sip": sip, "firewall": true,
+             "gatekeeper": gatekeeper]
+        }
+        let report: [[String: Any]] = [
+            ["section": "summary", "data": ["total_devices": 4, "filevault_encrypted": 4,
+                                            "sip_enabled": 1, "firewall_enabled": 4,
+                                            "gatekeeper_enabled": 0]],
+            device("A", "ENABLED", "NOT_COLLECTED"), device("B", "DISABLED", "NOT_COLLECTED"),
+            device("C", "NOT_COLLECTED", "NOT_COLLECTED"),
+            device("D", "NOT_COLLECTED", "NOT_COLLECTED"),
+        ]
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try seedJSON(String(decoding: try JSONSerialization.data(withJSONObject: report),
+                            as: UTF8.self), kind: "security", in: dir)
+
+        let strict = try dashboard("", dataDir: dir)
+        try strict.writeCompliancePosture()
+        let sip = try row(strict, "Compliance Posture", "SIP Enabled")
+        XCTAssertEqual(sip[1]?.text, "1 (25.0%)", "the value column is the fact")
+        XCTAssertEqual(sip[2]?.text, "RED", "one of the two that reported fails it")
+        let gatekeeper = try row(strict, "Compliance Posture", "Gatekeeper Enabled")
+        XCTAssertEqual(gatekeeper[2]?.text, "Not counted", "no Mac reported it")
+        XCTAssertTrue(hasRow(strict, "Compliance Posture", "Not reported: SIP 2, Gatekeeper 4. "
+            + "Macs whose value Jamf did not report are not counted as failing and are left out "
+            + "of the shares above."))
+
+        let warning = try dashboard(
+            "security_policy:\n  controls:\n    sip: warning\n", dataDir: dir)
+        try warning.writeCompliancePosture()
+        let amber = try row(warning, "Compliance Posture", "SIP Enabled")
+        XCTAssertEqual(amber[2]?.text, "AMBER")
+        XCTAssertEqual(amber[2]?.format, .yellow)
     }
 
     /// Ten Macs: five encrypted, three Apple silicon and two Intel with FileVault off, the

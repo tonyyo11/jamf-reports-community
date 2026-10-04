@@ -225,9 +225,11 @@ struct CoreDashboard: Sendable {
                 ("SIP Enabled", percentLabel(s.sipEnabled, total: total)),
                 ("Firewall Enabled", percentLabel(s.firewallEnabled, total: total)),
             ]
-            if let n = securityFleet(items: items)?.fileVaultOffHardwareEncrypted, n > 0 {
+            let fleet = securityFleet(items: items)
+            if let n = fleet?.fileVaultOffHardwareEncrypted, n > 0 {
                 fields.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: 2)
             }
+            fields += notReportedFields(fleet)
             ws.write("Summary", row: row, col: 0, format: .header)
             ws.write("Count / %", row: row, col: 1, format: .header)
             row += 1
@@ -2612,6 +2614,9 @@ struct CoreDashboard: Sendable {
         var actionItemsP1: Int?
         /// FileVault-off Macs the hardware rule counts apart (warning or not counted).
         var fileVaultOffHardwareEncrypted: Int?
+        /// Values P0 and P1 leave out because Jamf did not report them.
+        var p0NotReported: Int?
+        var p1NotReported: Int?
     }
 
     /// Assemble `ExecutiveSummaryMetrics` from the cached jamf-cli snapshots in `dataDir`.
@@ -2685,7 +2690,18 @@ struct CoreDashboard: Sendable {
         }
         m.actionItemsP0 = fleet.p0
         m.actionItemsP1 = fleet.p1
+        m.p0NotReported = fleet.p0NotReported
+        m.p1NotReported = fleet.p1NotReported
         m.fileVaultOffHardwareEncrypted = fleet.fileVaultOffHardwareEncrypted
+    }
+
+    /// One "<control> not reported" row per control with Macs that did not report it, for the
+    /// summary block of the Security Posture sheet.
+    private func notReportedFields(_ fleet: SecurityFleetCounts?) -> [(String, String)] {
+        SecurityControl.allCases.compactMap { control in
+            guard let n = fleet?.controls[control]?.notReported, n > 0 else { return nil }
+            return ("\(CompliancePostureService.label(control)) Not Reported", "\(n)")
+        }
     }
 
     /// Populate patch compliance % from the cached `patch-status` snapshot.
@@ -2771,6 +2787,17 @@ struct CoreDashboard: Sendable {
         if let n = m.fileVaultOffHardwareEncrypted, n > 0,
            let at = metricRows.firstIndex(where: { $0.0 == "FileVault Coverage" }) {
             metricRows.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: at + 1)
+        }
+        // A Mac whose value Jamf did not report is in neither P0 nor P1; say how many.
+        for (after, label, count) in [
+            ("P1 Action Items (Gatekeeper gaps)", "P1 Not Reported (Gatekeeper values)",
+             m.p1NotReported),
+            ("P0 Action Items (FV/SIP/FW gaps)", "P0 Not Reported (FV/SIP/FW values)",
+             m.p0NotReported),
+        ] {
+            if let n = count, n > 0, let at = metricRows.firstIndex(where: { $0.0 == after }) {
+                metricRows.insert((label, "\(n)"), at: at + 1)
+            }
         }
 
         ws.write("Metric", row: row, col: 0, format: .header)
@@ -3068,6 +3095,10 @@ struct CoreDashboard: Sendable {
                      row: row, col: 0, format: .subtitle)
             row += 1
         }
+        if let note = notReportedNote(fleet) {
+            ws.write(note, row: row, col: 0, format: .subtitle)
+            row += 1
+        }
         ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
         row += 2
         writePostureDeviceTable(ws: ws, row: row, items: deviceCompItems)
@@ -3115,6 +3146,19 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    /// "Not reported: SIP 100, Gatekeeper 3" for the controls some Macs did not report, with
+    /// what that means for the rows above; nil when every Mac reported every control.
+    private func notReportedNote(_ fleet: SecurityFleetCounts?) -> String? {
+        let parts = SecurityControl.allCases.compactMap { control -> String? in
+            guard let n = fleet?.controls[control]?.notReported, n > 0 else { return nil }
+            return "\(CompliancePostureService.label(control)) \(n)"
+        }
+        guard !parts.isEmpty else { return nil }
+        return "Not reported: " + parts.joined(separator: ", ")
+            + ". Macs whose value Jamf did not report are not counted as failing and are left "
+            + "out of the shares above."
+    }
+
     /// A security row's status under the workspace's policy: not counted at `ignore` or with
     /// no Mac left to grade, else
     /// graded on the share of Macs not failing the control, amber instead of green when some
@@ -3125,7 +3169,8 @@ struct CoreDashboard: Sendable {
         if config.resolvedSecurityPolicy.level(for: control) == .ignore {
             return ("Not counted", .cell)
         }
-        // Every Mac the hardware rule took out of FileVault's count: none is left to grade.
+        // Every Mac the hardware rule took out of FileVault's count, or that did not report the
+        // control: none is left to grade.
         if fleet?.controls[control] != nil, fleet?.nonFailingPct(control) == nil {
             return ("Not counted", .cell)
         }
