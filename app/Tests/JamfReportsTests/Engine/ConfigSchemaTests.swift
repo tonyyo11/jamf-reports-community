@@ -233,6 +233,45 @@ final class ConfigSchemaTests: XCTestCase {
         XCTAssertNil(UnknownKey(keyPath: "x", suggestion: nil).note)
     }
 
+    /// Settings earlier builds read or wrote (CHANGELOG 2.3.0 to 2.9) are retired, not misspelled.
+    func testKeysEarlierBuildsReadAreMarkedRetiredWithTheirRelease() throws {
+        let keys = try unknownKeys("""
+        ai:
+          enabled: true
+          lock_on_device: true
+          external:
+            provider: example
+        collect_cadence:
+          preset: cloud
+        columns:
+          warranty_expires: "Warranty"
+        output:
+          export_pptx: true
+        protect:
+          data_dir: jamf-cli-data/protect
+        school_columns:
+          device_name: "Name"
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), [
+            "ai.external", "ai.lock_on_device", "collect_cadence", "columns.warranty_expires",
+            "output.export_pptx", "protect.data_dir", "school_columns",
+        ])
+        XCTAssertEqual(keys.map(\.retiredSince), [
+            "2.9", "2.7.0", "2.3.0", "2.6.1", "2.4.0", "2.8.1", "2.8.1",
+        ])
+        XCTAssertEqual(Set(keys.map(\.suggestion)), [nil], "a retired key has no spelling hint")
+    }
+
+    /// Config Doctor words each as a suggestion with its release, never as "check its spelling".
+    func testDoctorWordsAnOldKeyAsRetiredNotMisspelled() throws {
+        let rows = ConfigDoctorService.unknownKeyRows(
+            try unknownKeys("ai:\n  lock_on_device: true\n"))
+        XCTAssertEqual(rows.map(\.title), ["ai.lock_on_device"])
+        XCTAssertEqual(rows.map(\.severity), [.suggest])
+        XCTAssertEqual(rows.map(\.detail), ["No longer read since 2.7.0."])
+        XCTAssertFalse(rows.map { $0.hint ?? "" }.joined().contains("spelling"))
+    }
+
     /// The same name under a block where it is not retired is still just unknown.
     func testARetiredNameElsewhereIsOnlyUnknown() throws {
         let keys = try unknownKeys("output:\n  enabled: true\nhtml:\n  accent_dark: x\n")

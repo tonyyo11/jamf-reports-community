@@ -46,11 +46,18 @@ enum ConfigSchema {
     /// the block holding it removes it (`ConfigService.dropRetiredKeys`). A key whose reader
     /// returns leaves this list.
     static let retiredKeys: [String: String] = [
+        "ai.external": "2.9",
+        "ai.lock_on_device": "2.7.0",
         "branding.accent_dark": "2.9",
         "charts.os_adoption.enabled": "2.9",
+        "collect_cadence": "2.3.0",
+        "columns.warranty_expires": "2.6.1",
         "jamf_cli.allow_live_overview": "2.9",
         "jamf_cli.enabled": "2.9",
+        "output.export_pptx": "2.4.0",
         "platform.enabled": "2.9",
+        "protect.data_dir": "2.8.1",
+        "school_columns": "2.8.1",
         "thresholds.profile_error_critical": "2.9",
     ]
 
