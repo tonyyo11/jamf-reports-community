@@ -355,9 +355,9 @@ enum OverviewLiveDataLoader {
         return (ranked(rules), label, scoped.rules.map(\.devices).max() ?? 0)
     }
 
-    /// Failing rules from the failures-list extension attribute: a pipe-separated
-    /// list of rule IDs per Mac, each rule counted once per Mac.
-    /// `reportingMacs` is how many Macs have a row for the column at all.
+    /// Failing rules from the failures-list extension attribute: a list of rule IDs per Mac
+    /// (`FailedRuleList`), each rule counted once per Mac. `reportingMacs` is how many Macs
+    /// have a list in the column, an empty one included.
     static func failingRules(
         rows: [EAResultRow], listColumn: String, baseline: String
     ) -> (rules: [FailingRule], reportingMacs: Int) {
@@ -368,11 +368,11 @@ enum OverviewLiveDataLoader {
                   eaName.caseInsensitiveCompare(listColumn) == .orderedSame,
                   let id = MSCPComplianceService.primaryIdentifier(for: row)?.lowercased()
             else { continue }
+            // A status in place of a list ("No Baseline Set") is a Mac the audit did not
+            // evaluate: not a failing rule, and not a reporting Mac.
+            guard let rules = FailedRuleList.rules(in: row.value?.stringValue) else { continue }
             reporting.insert(id)
-            for part in (row.value?.stringValue ?? "").split(separator: "|") {
-                let rule = part.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !rule.isEmpty { macsPerRule[rule, default: []].insert(id) }
-            }
+            for rule in rules { macsPerRule[rule, default: []].insert(id) }
         }
         let rules = macsPerRule.map {
             FailingRule(ruleID: $0.key, fails: $0.value.count, baseline: baseline)

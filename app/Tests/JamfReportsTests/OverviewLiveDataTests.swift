@@ -57,6 +57,28 @@ final class OverviewLiveDataTests: XCTestCase {
         XCTAssertEqual(Set(built.rules.map(\.baseline)), ["CIS Level 1"])
     }
 
+    /// Prod's list EA is newline-separated, and Macs with no scored baseline carry a status
+    /// in place of a list. Both were ranked as rules: two IDs read as one rule, and "No
+    /// Baseline Set" as the most-failed rule.
+    func testFailingRulesSplitNewlinesAndIgnoreStatusValues() throws {
+        let rows = try eaRows("""
+        [
+          {"device": "mac-1", "ea_name": "mSCP Failed Rules", "value": "rule_a\\nrule_b"},
+          {"device": "mac-2", "ea_name": "mSCP Failed Rules", "value": "rule_a\\nrule_c\\n"},
+          {"device": "mac-3", "ea_name": "mSCP Failed Rules", "value": "No Baseline Set"},
+          {"device": "mac-4", "ea_name": "mSCP Failed Rules", "value": "Multiple Baselines Found"},
+          {"device": "mac-5", "ea_name": "mSCP Failed Rules", "value": ""}
+        ]
+        """)
+
+        let built = OverviewLiveDataLoader.failingRules(
+            rows: rows, listColumn: "mSCP Failed Rules", baseline: "Baseline")
+
+        XCTAssertEqual(built.rules.map(\.ruleID), ["rule_a", "rule_b", "rule_c"])
+        XCTAssertEqual(built.rules.map(\.fails), [2, 1, 1])
+        XCTAssertEqual(built.reportingMacs, 3, "Macs with a status were not evaluated")
+    }
+
     func testBenchmarkRulesUseTheFirstBenchmarkAndSkipUnevaluatedRules() {
         typealias Rule = ComplianceBenchmarksService.Snapshot.Rule
         let snapshot = ComplianceBenchmarksService.Snapshot(

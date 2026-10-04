@@ -187,8 +187,9 @@ extension MSCPComplianceService {
     /// Per-baseline agreement between the failure count EA and the failure list EA.
     ///
     /// A device disagrees when its parsed integer count differs from the number
-    /// of non-empty pipe-separated segments in its list cell. Devices lacking a
-    /// parseable count or a list row are skipped, not counted as disagreements.
+    /// of rule IDs in its list cell (`FailedRuleList`). Devices lacking a parseable
+    /// count or a list (a status such as "No Baseline Set" is not one) are skipped,
+    /// not counted as disagreements.
     struct CrossCheckResult: Sendable, Equatable {
         /// The configured baseline name.
         let baselineName: String
@@ -235,7 +236,10 @@ extension MSCPComplianceService {
                     countByDevice[key] = count
                 }
             } else if eaName.caseInsensitiveCompare(listColumn) == .orderedSame {
-                listLenByDevice[key] = listEntryCount(row.value?.stringValue)
+                // A status in place of a list ("No Baseline Set") has no length to compare.
+                if let rules = FailedRuleList.rules(in: row.value?.stringValue) {
+                    listLenByDevice[key] = rules.count
+                }
             }
         }
 
@@ -252,15 +256,5 @@ extension MSCPComplianceService {
             devicesCompared: compared,
             disagreements: disagreements
         )
-    }
-
-    /// Number of non-empty pipe-separated segments in a list cell. A blank/nil
-    /// cell has 0 entries (should agree with a count of 0).
-    private static func listEntryCount(_ cell: String?) -> Int {
-        guard let cell else { return 0 }
-        return cell
-            .split(separator: "|")
-            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            .count
     }
 }
