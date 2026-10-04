@@ -185,7 +185,8 @@ these interactive dashboards either — it produces a separate generated workboo
   [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
   Data source: no tier (configuration only).
 - **Customize** — the chart options generated workbooks use: whether to save chart images,
-  and one OS chart per major macOS version. The Overview's Generate makes the Full Instance
+  and one OS chart per major macOS version, plus a switch to write the HTML report with every
+  workbook. The Overview's Generate makes the Full Instance
   report; **Generate…** on Generated Reports, and `jamf-reports generate --template`, make
   the others. Overview score cards
   and sections are chosen on the Overview itself.

@@ -55,7 +55,7 @@ name as `%2C` and a percent sign as `%25`.
 
 | Command | What it does | Key options |
 |---------|--------------|-------------|
-| `generate` | Generate an `.xlsx` workbook from cached snapshots | `--profile`, `--output <path>`, `--template <id>` |
+| `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`) | `--profile`, `--output <path>`, `--template <id>` |
 | `collect` | Collect fresh `jamf-cli` snapshots | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
 | `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
@@ -99,6 +99,12 @@ full option list of any command.
 
 A few behaviors worth knowing:
 
+- With `html.with_workbook: true` in `config.yaml`, `generate` also writes the HTML report
+  beside the workbook, with the same name and a `.html` extension and the template's HTML
+  sections. The HTML report's own log lines print before the workbook path, which stays the
+  last line on stdout. If the HTML report cannot be written, `generate` still exits `0` with
+  the workbook and prints a `[warn] HTML report not written: …` line to stderr. `html` is a
+  separate command and always writes one HTML report.
 - `collect` runs at most once per profile per day; a second run the same day
   exits successfully without re-collecting. Pass `--force` to override.
 - `scaffold` **overwrites** the `--out` file if it already exists — it's an

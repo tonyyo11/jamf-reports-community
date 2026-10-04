@@ -72,6 +72,12 @@ compliance is now one figure everywhere.
   Cloud, with no device names, serials or usernames. The report shows it as its last section,
   as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
   says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
+- Write the HTML report with every workbook. Turn on **Write the HTML report with every
+  workbook** on the Customize screen, or set `html.with_workbook: true`, and each run that
+  writes a profile's workbook also writes its HTML report beside it, with the same name: the
+  Generate buttons, scheduled runs that generate, and `jamf-reports generate`. If only the HTML
+  report fails, the workbook is kept and the log says so. The fleet and period workbooks and
+  Jamf School workbooks are not included.
 
 ### Changed
 
