@@ -100,7 +100,8 @@ enum SecurityScoreInputs {
     nonisolated static func load(dataDir: URL, config: ReportConfig?) -> Extras {
         guard let config,
               edrAgent(in: config) != nil || !(config.compliance?.resolvedBaselines ?? []).isEmpty,
-              let data = try? ReportEngine.loadLatestSnapshotData(kind: "ea-results", dataDir: dataDir)
+              let data = try? ReportEngine.loadLatestSnapshotData(
+                  kind: "ea-results", dataDir: dataDir)
         else { return .none }
         return extras(eaRows: EAResultRow.decodeSnapshot(data).rows, config: config)
     }
