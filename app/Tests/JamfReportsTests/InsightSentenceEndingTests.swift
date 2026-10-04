@@ -111,7 +111,7 @@ final class InsightSentenceEndingTests: XCTestCase {
 
     /// Live: "MACOS 27", because the label was a `Kicker`, which upper-cases its text.
     func testBadgeNamesTheMacOSReleaseInTheProjectFormAndCase() {
-        XCTAssertEqual(AIInsightCard.badgeText, "On-device · macOS Golden Gate 27")
+        XCTAssertEqual(AIInsightCard.badgeText, "On-Device · Apple Intelligence")
         XCTAssertNotEqual(AIInsightCard.badgeText, AIInsightCard.badgeText.uppercased())
     }
 }

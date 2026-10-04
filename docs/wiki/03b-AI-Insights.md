@@ -37,12 +37,12 @@ profile.
 - Requires macOS Golden Gate 27 or later with Apple Intelligence available on the Mac.
 - On macOS 26 and earlier, every insight card and the Settings "AI Insights" panel do
   not appear at all — the app doesn't advertise a feature it can't run there.
-- **The app runs the on-device Apple Foundation Model only. No fleet data leaves the
-  Mac,** and there is no setting that can change that. Apple Foundation Models is
-  on-device only — the `fm` command-line tool lists exactly one model, "system —
-  On-device Apple Foundation Model". Private Cloud Compute is not offered, and the app
-  carries no code to reach it. Settings shows a plain "Model — On-device" row rather
-  than a picker, because there is nothing to choose between.
+- **The app uses the On-Device Foundation Model (Apple Intelligence) only. No fleet data
+  leaves the Mac,** and there is no setting that can change that. Apple's framework also
+  offers Private Cloud Compute, but Apple grants its entitlement only to App Store apps, so
+  this app does not use it and carries no code to reach it. Settings shows a plain
+  "On-Device Foundation Model (Apple Intelligence)" row rather than a picker, because there
+  is nothing to choose between.
 - There is one tier, `on_device`. A config that still names `external` or `pcc` runs
   on-device, and the next Settings save removes the old `tier` value and the `external:`
   block.
@@ -70,8 +70,9 @@ profile.
 Settings → **AI Insights** (only visible on a macOS Golden Gate 27 or later host):
 
 - **Enable AI insights** — the master toggle; off by default.
-- **Model — On-device** — a statement, not a control. Apple Foundation Models runs
-  entirely on this Mac.
+- **On-Device Foundation Model (Apple Intelligence)** — a statement, not a control. The
+  model runs entirely on this Mac. Each insight card's corner reads "On-Device · Apple
+  Intelligence".
 - A status line reports the live availability (for example, "On-device intelligence is
   ready," "Turn on Apple Intelligence in System Settings to use insights," or the model
   still warming up).

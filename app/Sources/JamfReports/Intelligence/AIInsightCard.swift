@@ -29,8 +29,11 @@ struct AIInsightCard: View {
         self.makeInput = makeInput
     }
 
-    /// The card's corner label. Not a `Kicker`, which upper-cases its text into "MACOS 27".
-    static let badgeText = "On-device · macOS Golden Gate 27"
+    /// The card's corner label: the short form of `providerName`, which fits one line beside the
+    /// title. Not a `Kicker`, which upper-cases its text.
+    static let badgeText = "On-Device · Apple Intelligence"
+    /// The name Settings and VoiceOver use for Apple's model.
+    static let providerName = "On-Device Foundation Model (Apple Intelligence)"
 
     /// macOS 27 and a live profile. Synchronous, so a screen can leave the
     /// card out of its layout before any config is read.
@@ -69,6 +72,7 @@ struct AIInsightCard: View {
                         .tracking(1)
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .lineLimit(1)
+                        .accessibilityLabel(Self.providerName)
                 }
                 content
             }

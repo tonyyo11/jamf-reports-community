@@ -949,7 +949,7 @@ struct SettingsView: View {
     nonisolated static let aiInsightsBlurb: String =
         "Turn already-collected fleet data into plain-language insight cards on "
         + "Overview, Trends, Audit, Security Posture and Compliance Posture, using "
-        + "Apple's on-device Foundation Model. Off by default. "
+        + "the On-Device Foundation Model (Apple Intelligence). Off by default. "
         + "The model runs on this Mac and nothing leaves it."
 
     /// Turns already-collected fleet data into plain-language insight cards on
@@ -975,11 +975,11 @@ struct SettingsView: View {
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
 
                 if aiConfig.isEnabled {
-                    // No model picker: Apple Foundation Models is on-device only,
-                    // so there is nothing to choose between. The row states what
-                    // will happen rather than offering a one-option control.
+                    // No model picker: the app offers only Apple's on-device model, so
+                    // there is nothing to choose between. The row states what will
+                    // happen rather than offering a one-option control.
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Model — On-device")
+                        Text(AIInsightCard.providerName)
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Text.primary)
                         Text("Runs entirely on this Mac. No fleet data leaves the device.")
