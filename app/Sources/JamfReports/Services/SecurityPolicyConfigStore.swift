@@ -27,15 +27,29 @@ enum SecurityPolicyConfigLoader {
     static let controlsPath = "security_policy.controls"
     static let hardwarePath = "security_policy.filevault_off_hardware_encrypted"
     private static let weightsPath = "security_policy.score_weights"
+    static let onValuesPath = "security_policy.on_values"
+    static let offValuesPath = "security_policy.off_values"
 
     /// Key paths of the blocks that hold other settings: an issue at one of them is about
     /// the block's shape. Any other issue with a `used` is about a typed level, or when
-    /// `isWeightPath` holds, a typed weight.
-    static let blockKeyPaths: Set<String> = [blockPath, controlsPath, weightsPath]
+    /// `isWeightPath` holds, a typed weight, or when `isVocabularyPath` holds, a typed value.
+    static let blockKeyPaths: Set<String> = [
+        blockPath, controlsPath, weightsPath, onValuesPath, offValuesPath,
+    ]
 
     static func isWeightPath(_ keyPath: String) -> Bool {
         keyPath.hasPrefix(weightsPath + ".")
     }
+
+    /// A key under `on_values` or `off_values`: one issue per value that is not used.
+    static func isVocabularyPath(_ keyPath: String) -> Bool {
+        keyPath.hasPrefix(onValuesPath + ".") || keyPath.hasPrefix(offValuesPath + ".")
+    }
+
+    /// `used` of a vocabulary value the decoder left out.
+    static let vocabularySkipped = "skipped"
+    /// `used` of an `on_values` value that `off_values` also lists for the control.
+    static let vocabularyReadAsOff = "off"
 
     /// Reads the file `load(profile:)` reads and reports, without throwing, each value or key
     /// it did not use as written. An accepted synonym is not an issue. `used` is taken from
@@ -67,6 +81,11 @@ enum SecurityPolicyConfigLoader {
                 levelIssues(hardwarePath, node, used: hardwareUsed)
             case "score_weights":
                 weightsIssues(node, applied: applied)
+            case "on_values":
+                vocabularyIssues(
+                    onValuesPath, node, kept: applied.onValues, overriddenBy: applied.offValues)
+            case "off_values":
+                vocabularyIssues(offValuesPath, node, kept: applied.offValues, overriddenBy: [:])
             default:
                 unknownKeyIssues("\(blockPath).\(ConfigSchema.displayText(key))")
             }
@@ -105,6 +124,53 @@ enum SecurityPolicyConfigLoader {
             return [SecurityPolicyIssue(
                 keyPath: path, value: displayText(typedText(node)),
                 used: String(format: "%g", weight))]
+        }
+    }
+
+    /// A value the decoder did not keep (not text, or empty) is an issue at its control's key
+    /// path, and so is an `on_values` value that `overriddenBy` (the `off_values` the decoder
+    /// kept) lists too. `kept` is what the decoder produced, so the two cannot disagree.
+    private static func vocabularyIssues(
+        _ path: String, _ node: YAMLCodec.YAMLValue,
+        kept: [SecurityControl: Set<String>], overriddenBy: [SecurityControl: Set<String>]
+    ) -> [SecurityPolicyIssue] {
+        guard case .mapping(let controls) = node else {
+            return shapeIssues(path, node, used: "the built-in values only")
+        }
+        return settings(controls).flatMap { key, node -> [SecurityPolicyIssue] in
+            let keyPath = "\(path).\(ConfigSchema.displayText(key))"
+            guard let control = SecurityControl(rawValue: key) else {
+                return unknownKeyIssues(keyPath)
+            }
+            // One value is one word, a list holds one per item; a key with no value is one
+            // empty word.
+            let (keptHere, overriddenHere) = (kept[control] ?? [], overriddenBy[control] ?? [])
+            return (node.sequence ?? [node]).compactMap {
+                vocabularyIssue(keyPath, $0, kept: keptHere, overriddenBy: overriddenHere)
+            }
+        }
+    }
+
+    private static func vocabularyIssue(
+        _ keyPath: String, _ word: YAMLCodec.YAMLValue, kept: Set<String>,
+        overriddenBy: Set<String>
+    ) -> SecurityPolicyIssue? {
+        let shown = ConfigSchema.displayText(typedText(word))
+        let normalized = SecurityControlPolicy.normalizedValue(vocabularyText(word))
+        guard kept.contains(normalized) else {
+            return SecurityPolicyIssue(keyPath: keyPath, value: shown, used: vocabularySkipped)
+        }
+        return overriddenBy.contains(normalized)
+            ? SecurityPolicyIssue(keyPath: keyPath, value: shown, used: vocabularyReadAsOff)
+            : nil
+    }
+
+    /// A number is not text: the decoder reads a word as a string or a boolean.
+    private static func vocabularyText(_ word: YAMLCodec.YAMLValue) -> String? {
+        guard case .scalar(let scalar) = word else { return nil }
+        switch scalar {
+        case .string, .bool: return word.stringValue
+        case .int, .null: return nil
         }
     }
 

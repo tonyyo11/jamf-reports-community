@@ -35,6 +35,8 @@ final class ConfigEditedKeysTests: XCTestCase {
             ["jamf_cli", "data_dir"], ["jamf_cli", "profile"], ["output", "allow_absolute_paths"],
             ["compliance", "baselines"], ["charts", "historical_csv_dir"],
             ["charts", "os_adoption", "enabled"], ["retention", "enabled"], ["sheets", "only"],
+            ["security_policy", "on_values", "firewall"],
+            ["security_policy", "off_values", "firewall"],
         ]
         for path in typedOnly {
             XCTAssertFalse(paths.contains(path), path.joined(separator: "."))

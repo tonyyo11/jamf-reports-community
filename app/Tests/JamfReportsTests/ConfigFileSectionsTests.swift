@@ -168,6 +168,29 @@ final class ConfigFileSectionsTests: XCTestCase {
         XCTAssertEqual(sections.unknown, [])
     }
 
+    /// The app reads the on and off values, and no screen edits them, so the tab lists them
+    /// as file-only and not as unknown keys.
+    func testTheSecurityPolicyVocabularyIsListedAsFileOnly() throws {
+        let yaml = """
+        security_policy:
+          controls:
+            firewall: warning
+          on_values:
+            firewall: ["Pass", "Compliant"]
+            sip: Protected
+          off_values:
+            firewall: Fail
+        """
+        let sections = try build(yaml)
+        XCTAssertEqual(summary(sections), [
+            "security_policy: security_policy.on_values.firewall=Pass, Compliant, "
+                + "security_policy.on_values.sip=Protected, "
+                + "security_policy.off_values.firewall=Fail",
+        ])
+        XCTAssertEqual(sections.unknown, [])
+        XCTAssertEqual(sections.skipped, [])
+    }
+
     func testAKeyNextToAnEditedOneIsStillListed() throws {
         let sections = try build(
             "charts:\n  save_png: true\n  historical_csv_dir: snaps\n"

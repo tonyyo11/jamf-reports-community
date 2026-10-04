@@ -267,4 +267,121 @@ final class SecurityValueVocabularyTests: XCTestCase {
         let none = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .warning)
         XCTAssertEqual(none.fileVaultLabel("Bare", hardwareEncrypted: true), "Bare")
     }
+
+    // MARK: - Issues in a hand-typed vocabulary
+
+    private typealias Loaded = (found: [SecurityPolicyIssue], applied: SecurityControlPolicy)
+
+    /// What `issues(profile:)` and `load(profile:)` make of a workspace's config.yaml.
+    private func issues(_ yaml: String) throws -> Loaded {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-vocab-\(UUID().uuidString)", isDirectory: true)
+        let workspace = root.appendingPathComponent("vocab-issues", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try yaml.write(to: workspace.appendingPathComponent("config.yaml"),
+                       atomically: true, encoding: .utf8)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        return (SecurityPolicyConfigLoader.issues(profile: "vocab-issues"),
+                SecurityPolicyConfigLoader.load(profile: "vocab-issues"))
+    }
+
+    private func issue(_ keyPath: String, _ value: String, _ used: String) -> SecurityPolicyIssue {
+        SecurityPolicyIssue(keyPath: keyPath, value: value, used: used)
+    }
+
+    func testAReadableVocabularyHasNoIssues() throws {
+        let result = try issues("""
+        security_policy:
+          on_values:
+            firewall: ["Pass", "Compliant", "PASS"]
+            sip: Protected
+            gatekeeper: []
+          off_values:
+            firewall:
+              - Fail
+              - Non-Compliant
+            sip: ["True"]
+        """)
+        XCTAssertEqual(result.found, [])
+        XCTAssertEqual(result.applied.onValues[.firewall], ["pass", "compliant"])
+        XCTAssertEqual(result.applied.offValues[.sip], ["true"])
+    }
+
+    func testIssuesNameAValueThatIsNotText() throws {
+        let result = try issues("""
+        security_policy:
+          on_values:
+            firewall: 5
+            sip:
+              inner: Pass
+            gatekeeper:
+              - Pass
+              - 7
+              - ""
+            filevault:
+        """)
+        XCTAssertEqual(result.found, [
+            issue("security_policy.on_values.firewall", "5", "skipped"),
+            issue("security_policy.on_values.sip", "{…}", "skipped"),
+            issue("security_policy.on_values.gatekeeper", "7", "skipped"),
+            issue("security_policy.on_values.gatekeeper", "", "skipped"),
+            issue("security_policy.on_values.filevault", "", "skipped"),
+        ])
+        XCTAssertEqual(result.applied.onValues, [.gatekeeper: ["pass"]])
+    }
+
+    func testIssuesNameAValueListedInBothLists() throws {
+        let result = try issues("""
+        security_policy:
+          on_values:
+            firewall: ["Pass", "Compliant"]
+            sip: Enabled
+          off_values:
+            firewall: ["Fail", "pass"]
+            gatekeeper: Pass
+        """)
+        XCTAssertEqual(result.found, [issue("security_policy.on_values.firewall", "Pass", "off")])
+        XCTAssertEqual(result.applied.reading("Pass", for: .firewall), false)
+        XCTAssertEqual(result.applied.reading("Compliant", for: .firewall), true)
+    }
+
+    func testIssuesNameABlockOfTheWrongShapeAndAnUnknownControl() throws {
+        let result = try issues("""
+        security_policy:
+          on_values: pass
+          off_values:
+            bootstrap_token: Missing
+            firewall: Fail
+        """)
+        XCTAssertEqual(result.found, [
+            issue("security_policy.on_values", "pass", "the built-in values only"),
+            issue("security_policy.off_values.bootstrap_token", "", ""),
+        ])
+        XCTAssertEqual(result.applied.offValues, [.firewall: ["fail"]])
+    }
+
+    /// `used` is what the decoder kept: a quoted "null" reaches it as a null, and a key typed
+    /// twice reads as its last copy, in the decoder and in the issues alike.
+    func testIssuesAndTheLoadedPolicyAgree() throws {
+        let result = try issues("""
+        security_policy:
+          off_values:
+            firewall: ["null", "Fail"]
+          on_values:
+            sip: [Pass]
+            sip: 5
+        """)
+        XCTAssertEqual(result.found, [
+            issue("security_policy.off_values.firewall", "null", "skipped"),
+            issue("security_policy.on_values.sip", "5", "skipped"),
+        ])
+        XCTAssertEqual(result.applied.offValues, [.firewall: ["fail"]])
+        XCTAssertTrue(result.applied.onValues.isEmpty)
+    }
 }

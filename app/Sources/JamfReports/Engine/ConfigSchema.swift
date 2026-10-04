@@ -193,9 +193,10 @@ enum ConfigSchema {
         "html": Node(HTMLReportConfig.CodingKeys.self, also: ["track_history", "history_file"], [
             "section_limits": Node(HTMLSectionLimits.CodingKeys.self),
         ]),
-        // A later change decodes `score_weights`, one weight per Security Score metric.
-        "security_policy": Node(SecurityControlPolicy.CodingKeys.self, also: ["score_weights"], [
+        "security_policy": Node(SecurityControlPolicy.CodingKeys.self, [
             "controls": Node(SecurityControlPolicy.ControlKeys.self),
+            "on_values": Node(SecurityControlPolicy.ControlKeys.self),
+            "off_values": Node(SecurityControlPolicy.ControlKeys.self),
             "score_weights": Node(names: [
                 "filevault", "sip", "firewall", "edr_agent", "mscp", "xprotect", "cve",
                 "secure_boot",
