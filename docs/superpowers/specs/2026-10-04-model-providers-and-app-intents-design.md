@@ -79,25 +79,29 @@ An insight is roughly 2 K input tokens and 300 output tokens. That is well under
 at $4/$20 per million tokens. Send the server-side refusal fallback (`fallbacks: "default"` with its
 beta header) on Opus 5.5 and Sonnet 5.5, and check `stop_reason` before reading the text.
 
-### Two kinds of AI, never blurred
+### Naming: two kinds of AI, never blurred
 
-**On-device AI is Apple's model running on this Mac; nothing leaves the Mac. External AI is any
-other provider. It sends data to a third party (Anthropic), or to another program or server (a
+The app uses two names everywhere (Settings, cards, docs, logs): **On-Device Foundation Model
+(Apple Intelligence)** and **External Intelligence Integrations**.
+
+**The On-Device Foundation Model (Apple Intelligence) runs on this Mac; nothing leaves the Mac. An
+External Intelligence Integration is any other provider. It sends data to a third party (Anthropic), or to another program or server (a
 local model server), under that party's terms.** This difference is the most important thing the
 feature communicates.
 
-- Settings › Intelligence has two separate sections, **On this Mac** and **External AI services**.
+- Settings › Intelligence has two separate sections, **On-Device Foundation Model (Apple Intelligence)** and **External Intelligence
+  Integrations**.
   They have different icons and wording, and no shared toggle or picker that could switch one to
   the other.
 - Every insight card names its source in its provenance line. "On-device · macOS Golden Gate 27"
-  for Apple's model; "External · Claude (Anthropic) · sent to api.anthropic.com" for an external
+  for Apple's model; "External Intelligence Integration · Claude (Anthropic) · sent to api.anthropic.com" for an external
   one. External cards also carry a distinct badge.
-- While any external service is connected, Settings and the Overview footer say "External AI is on
-  for this Mac", with a Disconnect button.
+- While any external service is connected, Settings and the Overview footer say "External Intelligence
+  Integrations are on for this Mac", with a Disconnect button.
 
 ### Consent before anything is sent
 
-External AI is off by default and is never turned on as a side effect. Connecting a service runs
+External Intelligence Integrations are off by default and is never turned on as a side effect. Connecting a service runs
 an explicit disclosure step, and no request is made until it is confirmed.
 
 1. **Disclosure sheet.** When someone chooses Connect on an external service, the sheet states, in
@@ -115,8 +119,8 @@ an explicit disclosure step, and no request is made until it is confirmed.
    organization's fleet data to <provider>", plus the Connect button. Return does not confirm, and
    neither does a default button.
 3. **The acknowledgement is recorded.** It is stored per Mac and per service: the provider, the
-   endpoint, the data scope and the features, with the date. Run History records "External AI
-   connected/disconnected" events, so an administrator can see when it happened.
+   endpoint, the data scope and the features, with the date. Run History records "External Intelligence
+   Integration connected/disconnected" events, so an administrator can see when it happened.
 4. **Asked again when anything widens.** A new feature that would use the service, a new kind of
    data in the input, a changed endpoint or model family, or an app update that changes the scope
    shows the disclosure again before the next request. Until it is confirmed, those cards fall back
@@ -135,7 +139,7 @@ an explicit disclosure step, and no request is made until it is confirmed.
 3. **Organizations decide.**
    - A managed preference in the app's domain, deployable as a configuration profile, can turn
      external AI off entirely, or allow only listed services and endpoints.
-   - When it is off, the External section reads "Turned off by your organization" and offers no
+   - When they are off, the External Intelligence Integrations section reads "Turned off by your organization" and offers no
      Connect button.
    - A workspace can forbid it for everyone who opens it, through `ai.allow_remote: false` in
      config.yaml.
@@ -156,8 +160,8 @@ an explicit disclosure step, and no request is made until it is confirmed.
 
 ### GUI: Settings › Intelligence
 
-- **On this Mac:** Apple's model, with its availability (available, needs macOS 27, not ready).
-- **External AI services**, each row with Connect, which runs the consent step. Once connected,
+- **On-Device Foundation Model (Apple Intelligence):** Apple's model, with its availability (available, needs macOS 27, not ready).
+- **External Intelligence Integrations**, each row with Connect, which runs the consent step. Once connected,
   each shows:
   - **Claude (Anthropic):** an API key field (the `SecureSecretField` pattern), the model picker,
     a US-only processing switch, and **Test connection**. The test shows the latency and a one-line
