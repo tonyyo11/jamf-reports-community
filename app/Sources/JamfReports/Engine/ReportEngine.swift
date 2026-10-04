@@ -3063,7 +3063,7 @@ struct ReportEngine: Sendable {
     /// Generate a self-contained PDF instance report from cached jamf-cli data.
     ///
     /// Builds the same HTML content as `generateHTML`, then converts it to a
-    /// paginated PDF using `PDFExporter` (WKWebView + `createPDF`). The PDF is
+    /// paginated PDF using `PDFExporter` (WebKit's print operation). The PDF is
     /// suitable for compliance evidence files — it is paginated to US Letter and
     /// honors `@media print` CSS overrides in the HTML template.
     ///
@@ -3136,8 +3136,8 @@ struct ReportEngine: Sendable {
     ///   This produces one section per page regardless of content height, suitable for formal
     ///   auditor deliverables.
     ///
-    /// Implementation note: CSS `page-break-after` is the CSS2.1 property recognized by
-    /// WKWebView's `createPDF`. The CSS3 `break-after` alias also works but `page-break-after`
+    /// Implementation note: CSS `page-break-after` is the CSS2.1 property WebKit's print
+    /// operation applies. The CSS3 `break-after` alias also works but `page-break-after`
     /// has wider WKWebView support across macOS versions.
     static func applyPagination(html: String, strategy: PaginationStrategy) -> String {
         switch strategy {
