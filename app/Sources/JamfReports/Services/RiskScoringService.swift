@@ -56,7 +56,11 @@ struct RiskScoringService: Sendable {
     /// `connected_value` follows the config contract: a case-insensitive
     /// substring match against the device's EA value, and with no
     /// `connected_value` any value counts, as `SecurityAgentCoverage` counts it.
+    /// A value that says the agent is absent or off ("Not Installed", "Disconnected")
+    /// does not match, by the vocabulary `SecurityControlPolicy.reading` uses for the
+    /// security controls, unless `connected_value` itself reads that way.
     /// An empty EA value means "no data" — the factor is not triggered.
+    /// Every comparison against `connected_value` goes through here.
     struct SecurityAgentCheck: Sendable, Equatable {
         /// The device's raw EA value for the agent's configured column.
         let value: String
@@ -69,7 +73,11 @@ struct RiskScoringService: Sendable {
             let trimmedExpected = connectedValue.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedValue.isEmpty else { return nil }
             guard !trimmedExpected.isEmpty else { return true }
-            return trimmedValue.localizedCaseInsensitiveContains(trimmedExpected)
+            guard trimmedValue.localizedCaseInsensitiveContains(trimmedExpected) else {
+                return false
+            }
+            let negated = SecurityControlPolicy.reading(trimmedValue) == false
+            return !negated || SecurityControlPolicy.reading(trimmedExpected) == false
         }
     }
 

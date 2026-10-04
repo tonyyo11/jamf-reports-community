@@ -277,6 +277,30 @@ struct UpdateFailuresReport: Decodable, Sendable {
         case planStateSummary = "plan_state_summary"
         case failedPlans = "failed_plans"
     }
+
+    /// jamf-cli marshals an empty Go slice as `null`, and prod's scan has printed
+    /// `"error_devices": null` on every run (a strict array made the whole scan
+    /// undecodable and the screen read it as a summary: "Failure scan not run").
+    /// At least one of the two failure keys must be present, null or not — that
+    /// is what tells a scan from a summary-only snapshot.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard c.contains(.errorDevices) || c.contains(.failedPlans) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.failedPlans,
+                .init(codingPath: c.codingPath, debugDescription: "not a --scan-failures document"))
+        }
+        total = try c.decode(Int.self, forKey: .total)
+        statusSummary = try c.decodeIfPresent(
+            [UpdateStatusCount].self, forKey: .statusSummary) ?? []
+        errorDevices = try c.decodeIfPresent(
+            [UpdateErrorDevice].self, forKey: .errorDevices) ?? []
+        planTotal = try c.decodeIfPresent(Int.self, forKey: .planTotal)
+        planStateSummary = try c.decodeIfPresent(
+            [UpdateStateCount].self, forKey: .planStateSummary)
+        failedPlans = try c.decodeIfPresent(
+            [UpdateFailedPlan].self, forKey: .failedPlans) ?? []
+    }
 }
 
 struct UpdateErrorDevice: Decodable, Sendable, Identifiable {

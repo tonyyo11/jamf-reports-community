@@ -393,8 +393,8 @@ enum ComplianceFramework: String, CaseIterable, Codable, Sendable {
 /// failure count for this baseline. Must match the `ea_name` field in
 /// `ea-results` snapshots exactly (case-sensitive).
 ///
-/// `failuresListColumn` is the optional EA name carrying the pipe-delimited list
-/// of failed rule IDs; when set it enables the count-vs-list accuracy cross-check.
+/// `failuresListColumn` is the optional EA name carrying the list of failed rule IDs
+/// (`FailedRuleList` reads it); when set it enables the count-vs-list accuracy cross-check.
 ///
 /// `ruleCount`, when a positive Int, is the validity bound for the failure count:
 /// a parsed count greater than the baseline's total rule count is a garbage EA

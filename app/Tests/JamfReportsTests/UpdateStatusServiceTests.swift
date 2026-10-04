@@ -337,6 +337,65 @@ final class UpdateStatusServiceTests: XCTestCase {
         XCTAssertTrue(snapshot.errorDevices.isEmpty)
     }
 
+    /// 2.9 visual pass: jamf-cli prints an empty Go slice as `null`, and prod's scan
+    /// has `"error_devices": null` on every run. A strict array made the whole scan
+    /// undecodable, the loader fell back to the summary shape, and the screen said
+    /// "Failure scan not run" with the chip on "never".
+    func testScanWithNullErrorDevicesStillReadsAsAScan() throws {
+        let json = """
+        [{"total": 100, "status_summary": [{"status": "IDLE", "count": 100}],
+          "error_devices": null,
+          "plan_total": 5, "plan_state_summary": [{"state": "PlanFailed", "count": 2}],
+          "failed_plans": [
+            {"name": "Mac-1", "serial": "S1", "device_type": "Computer",
+             "os_version": "15.2.1", "username": "", "state": "PlanFailed",
+             "action": "DOWNLOAD_INSTALL_RESTART", "version": "LATEST_MINOR",
+             "error": "SOME_ERROR", "last_event": "PlanFailed"},
+            {"name": "Mac-2", "serial": "S2", "device_type": "Computer",
+             "os_version": "15.2.1", "username": "u", "state": "PlanException",
+             "action": "DOWNLOAD_INSTALL_SCHEDULE", "version": "LATEST_MAJOR",
+             "error": "SOME_ERROR", "last_event": "PlanException"}]}]
+        """
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("udf-null-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: url))
+        XCTAssertTrue(snapshot.scanFailuresAvailable)
+        XCTAssertEqual(snapshot.failedPlans.count, 2)
+        XCTAssertTrue(snapshot.errorDevices.isEmpty)
+        XCTAssertNotNil(snapshot.sourceDates["update-device-failures"])
+    }
+
+    func testScanWithBothListsNullIsAScanWithNoFailures() throws {
+        let json = """
+        [{"total": 10, "status_summary": [], "error_devices": null,
+          "plan_total": 0, "plan_state_summary": null, "failed_plans": null}]
+        """
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("udf-nulls-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: url))
+        XCTAssertTrue(snapshot.scanFailuresAvailable, "null lists are 'scanned, none found'")
+        XCTAssertTrue(snapshot.failedPlans.isEmpty)
+    }
+
+    func testSummaryWithoutFailureKeysIsNotMistakenForAScan() throws {
+        let json = """
+        [{"total": 10, "status_summary": [], "plan_total": 0, "plan_state_summary": []}]
+        """
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("us-plain-\(UUID().uuidString).json")
+        try Data(json.utf8).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        let snapshot = try XCTUnwrap(UpdateStatusService.load(from: url))
+        XCTAssertFalse(snapshot.scanFailuresAvailable)
+    }
+
     // MARK: - CacheSource derivation
 
     func testCacheSourceWithNilSnapshotDate() {

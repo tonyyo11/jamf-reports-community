@@ -305,7 +305,8 @@ struct HtmlReport: Sendable {
         """
 
         let patchFailures = loadJSONList(kinds: ["patch-device-failures", "patch-failures"])
-        let updateFailures = loadJSONList(kinds: ["update-device-failures", "update-failures"])
+        let updateFailures = Self.updateFailureRows(
+            from: loadJSONList(kinds: ["update-device-failures", "update-failures"]))
         let auditFindings = loadJSONList(kinds: ["audit-findings", "audit"])
 
         var baseMap: [SectionID: String] = [
@@ -920,8 +921,13 @@ struct HtmlReport: Sendable {
         // here — it escapes for HTML attribute/text context, not JavaScript string literals.
         // JSON encoding is the only correct escape: it handles backslash, U+2028/U+2029,
         // </script>, and all other JS-literal break sequences.
-        let osLabels = osVersions.map { $0["os_version"] as? String ?? "" }
-        let osCounts = osVersions.map { asInt($0["count"]) ?? 0 }
+        // "26.7" and "26.7.0" are one release (`OSVersionName`).
+        let osRows = OSVersionName.merged(osVersions.map {
+            .init(version: $0["os_version"] as? String ?? "",
+                  count: asInt($0["count"]) ?? 0, pct: 0)
+        })
+        let osLabels = osRows.map(\.version)
+        let osCounts = osRows.map(\.count)
         let osLabelsJS = jsonArray(osLabels)
         let osCountsJS = jsonArray(osCounts)
 

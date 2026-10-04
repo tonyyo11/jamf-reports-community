@@ -115,6 +115,21 @@ extension HtmlReport {
 
     // MARK: - 2. recentFailures
 
+    /// The `update-device-failures` snapshot is one envelope (`[{error_devices, failed_plans,
+    /// ...}]`, either list `null` when empty), not a list of failures. This returns its
+    /// failure rows; an element carrying neither list is already a row and passes through.
+    static func updateFailureRows(from snapshot: [[String: Any]]) -> [[String: Any]] {
+        snapshot.flatMap { element -> [[String: Any]] in
+            guard element["error_devices"] != nil || element["failed_plans"] != nil else {
+                return [element]
+            }
+            return (element["error_devices"] as? [[String: Any]] ?? [])
+                + (element["failed_plans"] as? [[String: Any]] ?? [])
+        }
+    }
+
+    private static func ageRank(_ daysAgo: Int) -> Int { daysAgo < 0 ? Int.max : daysAgo }
+
     /// Last 25 device-level patch and update failures sorted by recency.
     func buildRecentFailures(
         patchFailures: [[String: Any]],
@@ -165,7 +180,9 @@ extension HtmlReport {
             """
         }
 
-        let sorted = rows.sorted { $0.daysAgo < $1.daysAgo }.prefix(25)
+        // A row with no readable date (`daysAgo` -1) is not the newest; it sorts last.
+        let sorted = rows.sorted { Self.ageRank($0.daysAgo) < Self.ageRank($1.daysAgo) }
+            .prefix(25)
         let tableRows = sorted.map { row -> [String] in
             let daysLabel = row.daysAgo >= 0 ? "\(row.daysAgo)d ago" : "—"
             return [row.device, row.serial, row.title, row.source, daysLabel]

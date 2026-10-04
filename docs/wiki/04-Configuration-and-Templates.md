@@ -67,7 +67,9 @@ file changed on disk after the screen loaded it. See
 [A hand-edited config.yaml](#a-hand-edited-configyaml).
 
 - **`security_agents`** — a list of third-party agents. Each entry drives a row in the
-  Security Agents sheet. `connected_value` is a case-insensitive substring match.
+  Security Agents sheet. `connected_value` is a case-insensitive substring match; a value
+  that says the agent is absent or off ("Not Installed", "not running", "Disconnected") never
+  matches, and a blank `connected_value` counts any non-empty value.
 - **`sheets`** — `only`, `skip` and `order`, by tab name (case-insensitive), shape every
   report workbook: the Jamf Pro tabs, the CSV tabs, the Charts tab and Jamf School
   workbooks. The report template picks its sheets first, so `only` never adds a tab; a
@@ -82,8 +84,10 @@ file changed on disk after the screen loaded it. See
 
 `compliance.failures_count_column` and `compliance.failures_list_column` are the
 single-baseline shorthand: an EA column carrying the integer failed-rule count, and an
-optional pipe-delimited EA column carrying the failed rule IDs, for mSCP/STIG
-reporting.
+optional EA column carrying the failed rule IDs, for mSCP/STIG reporting. The IDs are
+one per line; a comma, semicolon or pipe also separates them, and a status in place of
+a list ("No Baseline Set", "Multiple Baselines Found") marks a Mac that was not
+evaluated.
 
 For more than one baseline (an enforced baseline and an audit baseline, or separate
 baselines per department), use `compliance.baselines` — a list of

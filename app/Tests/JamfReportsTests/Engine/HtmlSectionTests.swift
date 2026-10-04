@@ -245,6 +245,56 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("Patch"))
     }
 
+    /// The update snapshot is one envelope, not a list of failures; reading the envelope
+    /// as a row printed an empty "Update" line and none of the failed plans.
+    func testUpdateFailureRowsFlattenTheEnvelope() {
+        let envelope: [[String: Any]] = [[
+            "total": 10,
+            "error_devices": NSNull(),
+            "failed_plans": [
+                ["name": "Mac-1", "serial": "S1", "version": "LATEST_MINOR"],
+                ["name": "Mac-2", "serial": "S2", "version": "LATEST_MAJOR"],
+            ],
+        ]]
+        let rows = HtmlReport.updateFailureRows(from: envelope)
+        XCTAssertEqual(rows.compactMap { $0["name"] as? String }, ["Mac-1", "Mac-2"])
+
+        let html = makeReport().buildRecentFailures(patchFailures: [], updateFailures: rows)
+        XCTAssertTrue(html.contains("Mac-1"))
+        XCTAssertTrue(html.contains("LATEST_MAJOR"))
+    }
+
+    func testUpdateFailureRowsKeepAnEnvelopeWithBothListsNullEmpty() {
+        let envelope: [[String: Any]] = [["error_devices": NSNull(), "failed_plans": NSNull()]]
+        XCTAssertTrue(HtmlReport.updateFailureRows(from: envelope).isEmpty)
+    }
+
+    func testUpdateFailureRowsPassThroughAFlatRow() {
+        let flat: [[String: Any]] = [["name": "Mac-1", "version": "26.1"]]
+        XCTAssertEqual(HtmlReport.updateFailureRows(from: flat).count, 1)
+    }
+
+    /// A row with no readable date must not outrank a dated one: 300 undated update
+    /// plans would otherwise fill the 25 slots ahead of every dated patch failure.
+    func testRecentFailuresSortsUndatedRowsAfterDatedOnes() {
+        let patch: [[String: Any]] = [
+            ["device": "Dated-Patch-Mac", "serial": "P1", "policy": "Zoom",
+             "status_date": "2026-03-01"],
+        ]
+        let update: [[String: Any]] = (0..<30).map {
+            ["name": "Undated-Mac-\($0)", "serial": "U\($0)", "version": "LATEST_MINOR",
+             "last_event": "PlanFailed"]
+        }
+        let html = makeReport().buildRecentFailures(patchFailures: patch, updateFailures: update)
+        let dated = html.range(of: "Dated-Patch-Mac")
+        XCTAssertNotNil(dated)
+        XCTAssertTrue(html.contains("Undated-Mac-0"))
+        let firstUndated = html.range(of: "Undated-Mac-0")
+        if let dated, let firstUndated {
+            XCTAssertLessThan(dated.lowerBound, firstUndated.lowerBound)
+        }
+    }
+
     func testRecentFailuresEmptyState() {
         let report = makeReport()
         let html = report.buildRecentFailures(patchFailures: [], updateFailures: [])
@@ -831,6 +881,25 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("2 of 4 installed"), html)
         XCTAssertTrue(html.contains("<td>Falcon</td><td>2</td><td>1</td><td>1</td><td>50.0%</td>"),
                       html)
+    }
+
+    /// A value that reads as off ("Not Installed") is not connected, though it contains "Installed".
+    func testAgentHealthDoesNotCountANegatedValueAsInstalled() throws {
+        let yaml = """
+        security_agents:
+          - name: "Nessus"
+            column: "Nessus Status"
+            connected_value: "Installed"
+        """
+        let report = makeReport(config: try ConfigLoader.loadFromString(yaml))
+        let rows = try eaRows([
+            ("1", "Nessus Status", "Installed"), ("2", "Nessus Status", "Installed"),
+            ("3", "Nessus Status", "Not Installed"), ("4", "Nessus Status", "Not Installed"),
+            ("5", "Nessus Status", "Not Installed"),
+        ])
+        let html = report.buildAgentHealth(eaRows: rows, fleet: 5)
+        XCTAssertTrue(html.contains("40.0%"), html)
+        XCTAssertFalse(html.contains("100.0%"))
     }
 
     func testAgentHealthColumnNoMacReportsShowsNoCoverage() throws {

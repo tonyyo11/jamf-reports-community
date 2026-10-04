@@ -80,10 +80,12 @@ extension PeriodReportModel {
         let endValues = values(period.end.resolved)
 
         if let match {
-            let needle = match.lowercased()
             func count(_ v: [String: String]?) -> Double? {
                 guard let v else { return nil }
-                return Double(v.values.filter { $0.lowercased().contains(needle) }.count)
+                return Double(v.values.filter {
+                    RiskScoringService.SecurityAgentCheck(value: $0, connectedValue: match)
+                        .isConnected == true
+                }.count)
             }
             let s = count(startValues), e = count(endValues)
             return Row(metricID: metric.id, label: metric.label, unit: .count,
