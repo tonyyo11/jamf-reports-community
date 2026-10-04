@@ -150,6 +150,35 @@ final class GenerateSheetRequestTests: XCTestCase {
         XCTAssertEqual(names("acme/prod")[3], "inventory_\(part)_<date>.csv")
     }
 
+    /// With `html.with_workbook` on, "What will be written" says the HTML report goes with the
+    /// workbook: only for a Jamf Pro workbook, and not when HTML is ticked, which is the run's
+    /// one HTML report.
+    func testTheSheetSaysWhenTheHTMLReportIsWrittenWithTheWorkbook() {
+        let state = GenerateSheetState()
+        XCTAssertFalse(state.writesHTMLWithWorkbook, "option not read, or off")
+
+        state.htmlWithWorkbook = true
+        XCTAssertTrue(state.writesHTMLWithWorkbook, "XLSX is selected by default")
+
+        state.selectedTypes = [.xlsx, .html]
+        XCTAssertFalse(state.writesHTMLWithWorkbook, "the chosen HTML is the one")
+        state.selectedTypes = [.html]
+        XCTAssertFalse(state.writesHTMLWithWorkbook)
+        state.selectedTypes = [.pdf, .csv]
+        XCTAssertFalse(state.writesHTMLWithWorkbook, "no workbook, no companion")
+        state.selectedTypes = [.xlsx, .pdf]
+        XCTAssertTrue(state.writesHTMLWithWorkbook)
+
+        state.selectedTemplateID = SchoolTemplate().identifier
+        XCTAssertFalse(state.writesHTMLWithWorkbook, "the School workbook has no HTML report")
+        state.selectedTemplateID = FullInstanceTemplate().identifier
+        XCTAssertTrue(state.writesHTMLWithWorkbook)
+
+        XCTAssertEqual(
+            GenerateSheetState.htmlWithWorkbookLine(profile: "acme"),
+            "report_acme_<date>.html (the HTML report, written with every workbook)")
+    }
+
     // MARK: - The run
 
     func testCollectFreshCollectsThenAsksForTheNarrativeThenGenerates() async {
