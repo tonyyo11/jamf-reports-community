@@ -182,6 +182,8 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- Health Audit > Command health keeps its "Most failed" label on one line; the command pills wrap
+  to a second line when they do not fit beside it.
 - Devices no longer cuts the Risk pills ("ATTE", "CRIT") or hides the Risk column and the legend
   under the detail panel. The table's columns have set widths, and in a window too narrow for the
   table and the panel side by side the panel sits under the table.
