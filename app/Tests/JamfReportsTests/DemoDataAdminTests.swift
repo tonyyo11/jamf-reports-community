@@ -25,22 +25,24 @@ final class DemoDataAdminTests: XCTestCase {
     func testEachScheduleNewestRunIsItsLastRun() {
         for schedule in DemoData.scheduledRuns {
             let newest = DemoData.runHistory(for: schedule.profile)
-                .map(\.summary)
-                .first { $0.name == schedule.name }
+                .first { $0.summary.name == schedule.name }
             guard let newest else {
                 XCTFail("\(schedule.name) has no demo run history")
                 continue
             }
-            XCTAssertEqual(newest.status, schedule.lastStatus, schedule.name)
-            XCTAssertEqual(lastRunFormat.string(from: newest.date), schedule.last, schedule.name)
+            XCTAssertEqual(newest.summary.status, schedule.lastStatus, schedule.name)
+            // The row is dated at the run's start; Last Run is when it finished.
+            let finished = lastRunFormat.string(from: newest.finished)
+            XCTAssertEqual(finished, schedule.last, schedule.name)
         }
     }
 
     func testOnlyTheApr24IPadRunIsWarn() {
-        let warn = allRuns.filter { $0.summary.status == .warn }.map(\.summary)
-        XCTAssertEqual(warn.map(\.name), ["Mobile Inventory (iPad)"])
-        XCTAssertEqual(warn.map { lastRunFormat.string(from: $0.date) }, ["Apr 24, 07:33"])
-        XCTAssertNil(warn.first?.exitCode)
+        let warn = allRuns.filter { $0.summary.status == .warn }
+        XCTAssertEqual(warn.map(\.summary.name), ["Mobile Inventory (iPad)"])
+        XCTAssertEqual(warn.map { lastRunFormat.string(from: $0.finished) }, ["Apr 24, 07:33"])
+        XCTAssertEqual(warn.map { lastRunFormat.string(from: $0.summary.date) }, ["Apr 24, 07:30"])
+        XCTAssertNil(warn.first?.summary.exitCode)
     }
 
     /// A demo log written to disk must read back as the row it is listed
