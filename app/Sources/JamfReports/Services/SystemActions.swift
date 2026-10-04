@@ -13,9 +13,10 @@ enum SystemActions {
     /// Reveal a file or directory in Finder. Returns `false` if the path is
     /// outside the allow-list or fails canonicalization; the rejection is also
     /// logged via `AppLogger.ui` so operators tailing console logs can spot it.
+    /// Pass `profile` for a report: the folder its `output.output_dir` resolves to is allowed too.
     @discardableResult
-    static func reveal(_ url: URL) -> Bool {
-        guard let resolved = canonicalize(url) else {
+    static func reveal(_ url: URL, profile: String? = nil) -> Bool {
+        guard let resolved = canonicalize(url, profile: profile) else {
             AppLogger.ui.warning(
                 "SystemActions.reveal: path not in allow-list: \(url.path, privacy: .private)"
             )
@@ -68,7 +69,8 @@ enum SystemActions {
     }
 
     /// Open a file with the default application or a URL in the default browser.
-    static func open(_ url: URL) {
+    /// `profile` as for `reveal`.
+    static func open(_ url: URL, profile: String? = nil) {
         if isBrowserOpenable(url) {
             // Reject non-http(s) schemes disguised as URL components (javascript:, data:, file:).
             guard let host = url.host, !host.isEmpty else {
@@ -78,7 +80,7 @@ enum SystemActions {
             NSWorkspace.shared.open(url)
             return
         }
-        guard let resolved = canonicalize(url) else {
+        guard let resolved = canonicalize(url, profile: profile) else {
             notifyDenied(url, verb: "open")
             return
         }
@@ -87,8 +89,9 @@ enum SystemActions {
 
     /// Open a directory in Finder. A missing folder inside the allow-list gets
     /// its own message: it used to read as "outside the allowed folders".
-    static func openFolder(_ url: URL) {
-        guard let resolved = canonicalize(url) else {
+    /// `profile` as for `reveal`.
+    static func openFolder(_ url: URL, profile: String? = nil) {
+        guard let resolved = canonicalize(url, profile: profile) else {
             notifyDenied(url, verb: "open")
             return
         }
@@ -101,9 +104,9 @@ enum SystemActions {
 
     /// Returns true when `url` is within the allow-list used by `reveal` and
     /// `open`. Delegates to `canonicalize` so QuickLook preview and the
-    /// reveal/open paths enforce an identical boundary.
-    static func isURLAllowed(_ url: URL) -> Bool {
-        canonicalize(url) != nil
+    /// reveal/open paths enforce an identical boundary. `profile` as for `reveal`.
+    static func isURLAllowed(_ url: URL, profile: String? = nil) -> Bool {
+        canonicalize(url, profile: profile) != nil
     }
 
     /// Copy a string to the general pasteboard.
@@ -119,16 +122,23 @@ enum SystemActions {
     /// Both the candidate and each parent are fully resolved before comparison
     /// so an allowed parent that is itself a symlink (e.g. `~/Jamf-Reports` on
     /// an external-drive workspace) does not cause false rejections.
-    private static func canonicalize(_ url: URL) -> URL? {
+    ///
+    /// The profile's reports folder is read last, only for a path no fixed parent covers: it
+    /// costs a config.yaml read, and `isURLAllowed` runs on every Quick Look refresh.
+    private static func canonicalize(_ url: URL, profile: String?) -> URL? {
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL
         let resolvedPath = resolved.path
-        for parent in allowedParents() {
-            let parentPath = parent.resolvingSymlinksInPath().standardizedFileURL.path
-            if resolvedPath == parentPath || resolvedPath.hasPrefix(parentPath + "/") {
-                return resolved
-            }
+        if allowedParents().contains(where: { contains($0, resolvedPath) }) { return resolved }
+        if let profile, let reports = WorkspacePaths.readableReportsDir(for: profile),
+           contains(reports, resolvedPath) {
+            return resolved
         }
         return nil
+    }
+
+    private static func contains(_ parent: URL, _ resolvedPath: String) -> Bool {
+        let parentPath = parent.resolvingSymlinksInPath().standardizedFileURL.path
+        return resolvedPath == parentPath || resolvedPath.hasPrefix(parentPath + "/")
     }
 
     /// B-04: narrowed to Jamf-owned data only.
@@ -151,6 +161,12 @@ enum SystemActions {
     /// and Open-report action silently refused, because the allow-list still
     /// described the old location. The default root stays listed too, so
     /// reports left behind by an earlier layout remain reachable.
+    ///
+    /// A report folder outside the workspace (`output.output_dir` with
+    /// `output.allow_absolute_paths`) is not listed here: it belongs to one profile, so
+    /// `canonicalize` adds it for the profile the caller names, and only once
+    /// `WorkspacePaths.readableReportsDir` accepted it, which refuses system and
+    /// credential folders.
     private static func allowedParents() -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         var parents = [

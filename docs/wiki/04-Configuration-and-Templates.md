@@ -213,8 +213,9 @@ Reports are written to `output.output_dir`, with `~` expanded. A folder outside 
 workspace is used only with `output.allow_absolute_paths: true` (`yes`, `on` and `1` also
 work; write `true`). A folder the app will not use — outside the workspace without that
 setting, or a system or credentials folder — is named in the run log with the reason, and
-the report goes to `Generated Reports` in the workspace. `retention.archive_dir` follows
-the same rule. `output.keep_latest_runs` below 1 is read as 1. `branding.accent_color`
+the report goes to `Generated Reports` in the workspace. The Reports screen lists the
+folder in use (and its archive), its header names it, and Reveal in Finder, Open and the
+save panels start there. `retention.archive_dir` follows the same rule. `output.keep_latest_runs` below 1 is read as 1. `branding.accent_color`
 takes `#RRGGBB` or `#RGB`; anything else uses the default.
 
 ### AI insights (`ai`)

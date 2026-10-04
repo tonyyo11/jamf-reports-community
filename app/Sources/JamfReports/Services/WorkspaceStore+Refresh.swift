@@ -143,20 +143,16 @@ extension WorkspaceStore {
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(
-                activeProfile, Set(tiers), Self.observing(honesty, then: CLIBridge.bufferingOnLine))
+            let (exit, recorded) = try await Self.recordingCollect(
+                profile: activeProfile, honesty: honesty
+            ) { onLine in
+                try await collect(activeProfile, Set(tiers), onLine)
+            }
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
-            if exit == 0 {
-                outcome = Self.collectCompletedToast(
-                    "\(labels) data refreshed", incomplete: honesty.incomplete,
-                    warningsAt: .settingsLogging)
-            } else {
-                outcome = Toast(
-                    message: "Refresh finished with exit \(exit) — see Runs for details",
-                    style: .danger
-                )
-            }
+            outcome = Self.refreshToast(
+                "\(labels) data refreshed", exit: exit, incomplete: honesty.incomplete,
+                recorded: recorded)
         } catch {
             outcome = Self.collectFailureToast(error, operation: "Refresh")
         }
@@ -196,20 +192,15 @@ extension WorkspaceStore {
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(
-                activeProfile, tiers, Self.observing(honesty, then: CLIBridge.bufferingOnLine))
+            let (exit, recorded) = try await Self.recordingCollect(
+                profile: activeProfile, honesty: honesty
+            ) { onLine in
+                try await collect(activeProfile, tiers, onLine)
+            }
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
-            if exit == 0 {
-                outcome = Self.collectCompletedToast(
-                    "Data refreshed", incomplete: honesty.incomplete,
-                    warningsAt: .settingsLogging)
-            } else {
-                outcome = Toast(
-                    message: "Refresh finished with exit \(exit) — see Runs for details",
-                    style: .danger
-                )
-            }
+            outcome = Self.refreshToast(
+                "Data refreshed", exit: exit, incomplete: honesty.incomplete, recorded: recorded)
         } catch {
             outcome = Self.collectFailureToast(error, operation: "Refresh")
         }
@@ -250,30 +241,17 @@ extension WorkspaceStore {
         defer { globalStatus = nil }
         beginCollect(for: activeProfile)
         defer { endCollect(for: activeProfile) }
-        // Record the run so the failure toast's "see Run History" is true —
-        // this in-process collect previously discarded every per-kind line.
-        let recorder = ProfileService.workspaceURL(for: activeProfile).flatMap {
-            ScheduledRunRecorder(workspace: $0, label: Self.firstCollectRunLabel)
-        }
-        if recorder == nil {
-            AppLogger.cli.warning(
-                "First-collect run recorder unavailable — this run will not appear in Run History"
-            )
-        }
         let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(activeProfile) { line in
-                honesty.observe(line.text)
-                CLIBridge.bufferingOnLine(line)
-                recorder?.record(line.text)
+            let (exit, recorded) = try await Self.recordingCollect(
+                profile: activeProfile, honesty: honesty
+            ) { onLine in
+                try await collect(activeProfile, onLine)
             }
-            recorder?.finish(exitCode: exit)
             outcome = Self.firstCollectToast(
-                exitCode: exit, runRecorded: recorder != nil, incomplete: honesty.incomplete)
+                exitCode: exit, runRecorded: recorded, incomplete: honesty.incomplete)
         } catch {
-            recorder?.record("[error] \(error.localizedDescription)")
-            recorder?.finish(exitCode: 1)
             outcome = Self.collectFailureToast(error, operation: "Collect")
         }
         await checkHeavyTierStaleness()
@@ -321,9 +299,8 @@ extension WorkspaceStore {
         _ message: String, incomplete: Bool, warningsAt: WarningsDestination
     ) -> Toast {
         guard incomplete else { return Toast(message: message, style: .success) }
-        // `.danger` is the toast system's only warning-triangle style; there is no `.warning`.
         return Toast(
-            message: "Refresh finished with warnings — \(warningsAt.pointer)", style: .danger)
+            message: "Refresh finished with warnings — \(warningsAt.pointer)", style: .warning)
     }
 
     /// `sink`, after feeding each run line to `honesty`.
@@ -337,10 +314,75 @@ extension WorkspaceStore {
         }
     }
 
-    /// Must carry the LaunchAgent label prefix or `ScheduledRunRecorder.init`
-    /// rejects it and the run silently goes unrecorded.
-    nonisolated static var firstCollectRunLabel: String {
+    /// Run History label for every collect the app starts itself: the first collect, a Refresh
+    /// button, a heavy-tier prompt and the banner's Collect now. One reserved label with no
+    /// profile part, so it can never be a schedule's (`LaunchAgentWriter.label(for:)` always
+    /// writes `<prefix>.<profile>.<slug>` and `ManagedAutomation` `<prefix>.multi.<slug>`), and
+    /// no schedule's "Last Run", overdue check or retry reads its `_status.json`. Must carry the
+    /// LaunchAgent label prefix or `ScheduledRunRecorder.init` rejects it and the run goes
+    /// unrecorded.
+    nonisolated static var appCollectRunLabel: String {
         "\(LaunchAgentWriter.labelPrefix).manual-collect"
+    }
+
+    /// App-started collect records kept per workspace. Like `TickFailureLog.keptRecords`, a cap
+    /// so a button pressed often cannot push schedule runs out of the recorder's window.
+    nonisolated static let keptAppCollectRuns = 20
+
+    /// Runs a GUI collect with its lines fed to the in-app log, `honesty` and a Run History
+    /// record under `appCollectRunLabel`, which `runFirstCollect` has always written.
+    /// `recorded` is false when the record could not be opened: the run still goes ahead and
+    /// the toast then names the in-app log. A collect the tick lock refuses ends no record,
+    /// since nothing ran. Main-actor like its callers, so their non-`Sendable` collect closures
+    /// stay in one isolation domain.
+    @MainActor
+    static func recordingCollect(
+        profile: String,
+        honesty: CollectHonestyWatcher,
+        _ run: (@escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32
+    ) async throws -> (exit: Int32, recorded: Bool) {
+        if let logs = try? WorkspacePaths.runHistoryDir(for: profile) {
+            ScheduledRunRecorder.pruneRunLogs(
+                in: logs, keep: keptAppCollectRuns - 1, label: appCollectRunLabel)
+        }
+        let recorder = ProfileService.workspaceURL(for: profile).flatMap {
+            ScheduledRunRecorder(workspace: $0, label: appCollectRunLabel)
+        }
+        if recorder == nil {
+            AppLogger.cli.warning(
+                "Collect run recorder unavailable — this run will not appear in Run History"
+            )
+        }
+        do {
+            let exit = try await run(observing(honesty, then: { line in
+                CLIBridge.bufferingOnLine(line)
+                recorder?.record(line.text)
+            }))
+            recorder?.finish(exitCode: exit)
+            return (exit, recorder != nil)
+        } catch {
+            if (error as? CLIBridgeError) == .tickLockHeld {
+                recorder?.discard()
+            } else {
+                recorder?.record("[error] \(error.localizedDescription)")
+                recorder?.finish(exitCode: 1)
+            }
+            throw error
+        }
+    }
+
+    /// The toast for a finished Refresh: the success or warnings text on exit 0, otherwise the
+    /// exit code and where the run's lines can be read.
+    nonisolated static func refreshToast(
+        _ message: String, exit: Int32, incomplete: Bool, recorded: Bool
+    ) -> Toast {
+        let destination: WarningsDestination = recorded ? .runHistory : .settingsLogging
+        guard exit == 0 else {
+            return Toast(
+                message: "Refresh finished with exit \(exit) — \(destination.pointer)",
+                style: .danger)
+        }
+        return collectCompletedToast(message, incomplete: incomplete, warningsAt: destination)
     }
 
     /// Exit-code triage for the first-collect toast. Only exit 3 blames
