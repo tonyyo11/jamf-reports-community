@@ -3170,8 +3170,9 @@ struct CoreDashboard: Sendable {
             return ("Not counted", .cell)
         }
         // Every Mac the hardware rule took out of FileVault's count, or that did not report the
-        // control: none is left to grade.
-        if fleet?.controls[control] != nil, fleet?.nonFailingPct(control) == nil {
+        // control: none is left to grade. With no Mac in the report there is nothing to say.
+        if let fleet, fleet.totalDevices > 0, fleet.controls[control] != nil,
+           fleet.nonFailingPct(control) == nil {
             return ("Not counted", .cell)
         }
         let status = ragStatus(pct: fleet?.nonFailingPct(control))

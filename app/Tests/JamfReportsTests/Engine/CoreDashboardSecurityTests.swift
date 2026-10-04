@@ -642,6 +642,29 @@ final class CoreDashboardSecurityTests: XCTestCase {
         }
     }
 
+    /// A report with no Mac in it has nothing to grade: a dash, not "Not counted", which the
+    /// legend keeps for an ignored control or a control no Mac is left to grade for.
+    func testCompliancePostureRowsAreADashWhenTheReportHoldsNoMac() throws {
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: [[
+            "section": "summary",
+            "data": ["total_devices": 0, "filevault_encrypted": 0, "sip_enabled": 0,
+                     "firewall_enabled": 0, "gatekeeper_enabled": 0],
+        ]]), as: UTF8.self)
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try seedJSON(json, kind: "security", in: dir)
+        for yaml in ["", "security_policy:\n  controls:\n    sip: warning\n"] {
+            let dash = try dashboard(yaml, dataDir: dir)
+            try dash.writeCompliancePosture()
+            for label in ["FileVault Encrypted", "SIP Enabled", "Firewall Enabled",
+                          "Gatekeeper Enabled"] {
+                let cells = try row(dash, "Compliance Posture", label)
+                XCTAssertEqual(cells[2]?.text, "\u{2014}", "\(label) \(yaml)")
+                XCTAssertEqual(cells[2]?.format, .cell, "\(label) \(yaml)")
+            }
+        }
+    }
+
     /// Four Macs: SIP is on for one, DISABLED for one, and NOT_COLLECTED for two. The row
     /// grades the two that reported, a warning is amber, and a control no Mac reported is
     /// Not counted.
