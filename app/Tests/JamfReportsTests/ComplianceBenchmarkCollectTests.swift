@@ -76,6 +76,24 @@ final class ComplianceBenchmarkSelectionTests: XCTestCase {
             ["-p", "p", "pro", "report", "compliance-rules", "CIS Level 1", "--output", "json"])
     }
 
+    /// A profile name may start with dashes; it is the value of `-p`, not a flag.
+    func testTheTitleSkipsADashLeadingProfileName() {
+        let base = ["-p", "--x", "pro", "report", "compliance-rules", "--output", "json"]
+        XCTAssertEqual(
+            ReportEngine.benchmarkReportArguments(base, title: "CIS Level 1"),
+            ["-p", "--x", "pro", "report", "compliance-rules", "CIS Level 1",
+             "--output", "json"])
+    }
+
+    func testTheTitleLandsLastWhenThereAreNoFlags() {
+        XCTAssertEqual(
+            ReportEngine.benchmarkReportArguments(["-p", "--x", "pro"], title: "STIG"),
+            ["-p", "--x", "pro", "STIG"])
+        XCTAssertEqual(
+            ReportEngine.benchmarkReportArguments(["pro", "report"], title: "STIG"),
+            ["pro", "report", "STIG"])
+    }
+
     func testMergedRowsCarryTheirBenchmark() throws {
         let merged = try XCTUnwrap(ReportEngine.mergedBenchmarkPayload([
             (title: "CIS", data: data(#"[{"rule":"FileVault","ruleId":"r1"}]"#)),
