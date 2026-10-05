@@ -421,7 +421,7 @@ struct ReportEngine: Sendable {
             // this run cannot measure, so nothing goes from known to nil.
             if let built = buildSummaryFromCLI(
                 date: today, provenance: provenance, liveKinds: liveKinds),
-               let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
+               let existing = try? SummaryJSONParser.decode(existingData),
                Self.freshSummaryIsBetter(existing: existing, fresh: built) {
                 var fresh = built.filling(from: existing)
                 fresh.collectionSources = Self.mergedSources(

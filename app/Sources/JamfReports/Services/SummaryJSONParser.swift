@@ -386,6 +386,27 @@ struct DailySummary: Codable, Identifiable, Sendable {
     }
 }
 
+extension DailySummary {
+    /// False when any number is non-finite or past `SummaryJSONParser.maxSummaryNumber`.
+    var numbersAreInRange: Bool {
+        let limit = SummaryJSONParser.maxSummaryNumber
+        let percents = [
+            fileVaultPct, compliancePct, osCurrentPct, crowdstrikePct, patchPct, sipPct,
+            firewallPct, gatekeeperPct, secureBootPct, bootstrapPct, xprotectPct, cvePct,
+            mscpScorePct, securityScore,
+        ].compactMap { $0 } + Array((securityAgentCoverage ?? [:]).values)
+        let bands = (mscpBands ?? [:]).values.flatMap {
+            [$0.pass, $0.low, $0.medLow, $0.medium, $0.high, $0.noData]
+        }
+        let counts = [totalDevices] + bands + [
+            staleCount, actionItemsP0, actionItemsP1, actionItemsP2, noBaselineActive,
+            mobileDeviceCount,
+        ].compactMap { $0 }
+        return percents.allSatisfy { $0.isFinite && abs($0) <= Double(limit) }
+            && counts.allSatisfy { (-limit...limit).contains($0) }
+    }
+}
+
 struct SummaryJSONParser {
     static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -400,14 +421,31 @@ struct SummaryJSONParser {
     /// other software can write to).
     static let maxSummaryFileBytes = 2 * 1024 * 1024
 
+    /// A summary number past this magnitude is corrupt or hostile: percentages sit in 0...100
+    /// and counts are devices. Screens round these to an Int for labels (`Int(1e30)` traps) and
+    /// add counts across profiles (two of `Int.max` overflow), and never see the file.
+    static let maxSummaryNumber = 1_000_000_000
+
+    struct NumberOutOfRange: LocalizedError {
+        var errorDescription: String? {
+            "a number is outside ±\(SummaryJSONParser.maxSummaryNumber)"
+        }
+    }
+
     static func parse(_ url: URL) throws -> DailySummary {
         if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
            size > maxSummaryFileBytes {
             throw CocoaError(.fileReadTooLarge, userInfo: [NSFilePathErrorKey: url.path])
         }
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        return try decoder.decode(DailySummary.self, from: data)
+        return try decode(try Data(contentsOf: url))
+    }
+
+    /// The summary in `data`; throws when it does not decode or holds a number past
+    /// `maxSummaryNumber`.
+    static func decode(_ data: Data) throws -> DailySummary {
+        let summary = try JSONDecoder().decode(DailySummary.self, from: data)
+        guard summary.numbersAreInRange else { throw NumberOutOfRange() }
+        return summary
     }
 
     static func parseDirectory(_ dir: URL) -> [DailySummary] {
