@@ -296,7 +296,7 @@ final class WorkspaceStore {
         discoverProfiles: @escaping @MainActor () -> [JamfCLIProfile]
             = { ProfileService.discoverLocal() },
         jamfCLIInstallation: @escaping @MainActor () -> JamfCLIInstaller.Installation?
-            = WorkspaceStore.liveJamfCLIInstallation
+            = { JamfCLIInstaller.currentInstallation() }
     ) {
         self.tickerRegistrar = tickerRegistrar
         self.jamfCLIProfileNames = jamfCLIProfileNames
@@ -511,16 +511,6 @@ final class WorkspaceStore {
 
     nonisolated static func liveJamfCLIProfileNames() -> Set<String> {
         Set(ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]).map(\.name))
-    }
-
-    /// The installed jamf-cli. A test never runs it; one that needs an installation injects it.
-    /// `currentInstallation` also asks Homebrew (`brew --prefix jamf-cli`), which the locator's
-    /// test guard does not cover.
-    nonisolated static func liveJamfCLIInstallation() -> JamfCLIInstaller.Installation? {
-        #if DEBUG
-        if NSClassFromString("XCTestCase") != nil { return nil }
-        #endif
-        return JamfCLIInstaller.currentInstallation()
     }
 
     /// Whether `profile`'s workspace holds what only a collect, a CSV archive or a

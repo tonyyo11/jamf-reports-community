@@ -507,7 +507,12 @@ final class JamfCLIInstaller {
         return nil
     }
 
-    private nonisolated static func homebrewLinkedJamfCLI(using brew: URL) -> URL? {
+    nonisolated static func homebrewLinkedJamfCLI(using brew: URL) -> URL? {
+        #if DEBUG
+        // The binary this finds is the jamf-cli installed on this Mac, which a test never
+        // launches (see ExecutableLocator.locate).
+        if NSClassFromString("XCTestCase") != nil { return nil }
+        #endif
         let result = runProcessSync(
             executable: brew, arguments: ["--prefix", "jamf-cli"],
             environment: environmentForBrew()
