@@ -3,8 +3,8 @@ import Charts
 
 /// Mobile fleet dashboard for iOS/iPadOS devices managed via Jamf Pro mobile-device
 /// endpoints. Surfaces device counts, compliance KPIs, OS distribution, and device/profile
-/// inventories from `pro mobile-devices list`, `mobile-device-inventory-details`, and
-/// `classic-mobile-config-profiles` snapshots.
+/// inventories from the `pro mobile-devices list` and `classic-mobile-config-profiles`
+/// snapshots.
 struct MobileFleetView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
@@ -38,8 +38,7 @@ struct MobileFleetView: View {
                 FreshnessChipRow(
                     sourceDates: snapshot.sourceDates,
                     expectedKinds: snapshot.isDetected ? [
-                        "mobile-devices-list", "mobile-device-inventory-details",
-                        "classic-ios-profiles",
+                        "mobile-devices-list", "classic-ios-profiles",
                     ] : []
                 )
             }
@@ -211,7 +210,8 @@ struct MobileFleetView: View {
             EmptyStateView(
                 systemImage: "ipad.and.iphone",
                 title: "No mobile device data detected",
-                message: "Run `jamf-cli pro mobile-devices list` (and optionally inventory-details and ios-profiles) to populate this dashboard."
+                message: "Run `jamf-cli pro mobile-devices list` (and optionally ios-profiles) "
+                    + "to populate this dashboard."
             )
         }
     }
@@ -304,8 +304,9 @@ struct MobileFleetView: View {
                 if snapshot.richDevices.isEmpty {
                     EmptyStateView(
                         systemImage: "questionmark.circle",
-                        title: "Run inventory-details for KPIs",
-                        message: "Supervision and ownership signals come from `pro mobile-device-inventory-details list`."
+                        title: "Collect inventory for KPIs",
+                        message: "Supervision and ownership signals come from "
+                            + "`pro mobile-devices list`."
                     )
                 } else {
                     HStack(alignment: .top, spacing: 28) {
@@ -467,7 +468,7 @@ struct MobileFleetView: View {
                 if snapshot.richDevices.isEmpty {
                     EmptyStateView(
                         systemImage: "questionmark.circle",
-                        title: "Run inventory-details for KPIs",
+                        title: "Collect inventory for KPIs",
                         message: "Enrollment method comes from `general.deviceOwnershipType`."
                     )
                 } else if snapshot.enrollmentMethodDistribution.isEmpty {
@@ -633,7 +634,7 @@ struct MobileFleetView: View {
                     .width(min: 80, ideal: 100)
 
                     TableColumn("Serial") { device in
-                        Text(getSerial(device) ?? "—")
+                        Text(getSerial(device, listRowsByID: listRowsByID) ?? "—")
                             .font(Theme.Fonts.mono(11))
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -700,8 +701,12 @@ struct MobileFleetView: View {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         SectionHeader(title: device.general?.displayName ?? "Untitled Device")
+                        let listRows = snapshot.lightDevicesByID
                         Mono(
-                            text: device.general?.serialNumber ?? "—",
+                            text: MobileFleetService.serialNumber(
+                                of: device,
+                                listRow: device.mobileDeviceId.flatMap { listRows[$0] }
+                            ) ?? "—",
                             color: Theme.Colors.goldBright
                         )
                         .textSelection(.enabled)
@@ -899,10 +904,15 @@ struct MobileFleetView: View {
         }
     }
 
-    private func getSerial(_ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>) -> String? {
+    private func getSerial(
+        _ device: Either<MobileDeviceListRow, MobileDeviceInventoryItem>,
+        listRowsByID: [String: MobileDeviceListRow]
+    ) -> String? {
         switch device {
         case .left(let light): light.serialNumber
-        case .right(let rich): rich.general?.serialNumber
+        case .right(let rich):
+            MobileFleetService.serialNumber(
+                of: rich, listRow: rich.mobileDeviceId.flatMap { listRowsByID[$0] })
         }
     }
 

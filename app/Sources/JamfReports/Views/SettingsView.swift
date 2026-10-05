@@ -38,6 +38,8 @@ struct SettingsView: View {
     // not the Config-tab managed-key surface.
     @State private var aiConfig: AIConfig = AIConfig()
     @State private var aiSaveMessage: String? = nil
+    /// What a save did not keep (a backup was made), shown while its profile is live.
+    @State private var aiSaveNote: ProfileSaveNote?
 
     // Workspace location (2.7.0). Held in @State so the card reflects a change
     // without waiting for the next `.task`; the store is the source of truth.
@@ -86,6 +88,8 @@ struct SettingsView: View {
         // reloads the connections even when the profile name stays the same.
         .task(id: "\(workspace.demoMode)|\(workspace.profile)") {
             testResults = [:]
+            // A cancelled run leaves its flag set for this task to reset, never to clear.
+            loadingTokenProfiles = []
             guard !workspace.demoMode else {
                 // Demo mode runs no jamf-cli and reloads nothing: a reload here
                 // put a demo profile chosen in the sidebar back to meridian-prod.
@@ -97,6 +101,7 @@ struct SettingsView: View {
             workspaceRootPath = ProfileService.workspacesRoot().path
             workspace.reloadFromDisk()
             await loadTokenStatuses()
+            guard !Task.isCancelled else { return }
             await probePlatformCapability()
         }
     }
@@ -594,14 +599,38 @@ struct SettingsView: View {
 
     private func loadTokenStatuses() async {
         let bridge = CLIBridge()
-        let profiles = workspace.profiles
-        for profile in profiles where profile.status != .error {
-            loadingTokenProfiles.insert(profile.name)
-            let status = await bridge.tokenStatus(for: profile.name)
-            loadingTokenProfiles.remove(profile.name)
-            if let status {
-                tokenStatuses[profile.name] = status
-            }
+        let names = workspace.profiles.filter { $0.status != .error }.map(\.name)
+        await Self.probeTokenStatuses(
+            for: names,
+            probe: { name in await bridge.tokenStatus(for: name) },
+            setChecking: { name, on in
+                if on {
+                    loadingTokenProfiles.insert(name)
+                } else {
+                    loadingTokenProfiles.remove(name)
+                }
+            },
+            onStatus: { name, status in tokenStatuses[name] = status }
+        )
+    }
+
+    /// Probes each profile in turn until the task is cancelled (Settings closed or its profile
+    /// changed): no jamf-cli run starts after that, and the cancelled run's result is dropped.
+    static func probeTokenStatuses(
+        for names: [String],
+        probe: (String) async -> TokenStatus?,
+        setChecking: (String, Bool) -> Void,
+        onStatus: (String, TokenStatus) -> Void
+    ) async {
+        for name in names {
+            if Task.isCancelled { return }
+            setChecking(name, true)
+            let status = await probe(name)
+            // A terminated jamf-cli reads as an invalid token, which is not what the profile has.
+            // The task that replaced this one reset the flags and owns them, so leave them be.
+            if Task.isCancelled { return }
+            setChecking(name, false)
+            if let status { onStatus(name, status) }
         }
     }
 
@@ -615,20 +644,20 @@ struct SettingsView: View {
                         Text("A GUI for the open-source")
                         Text("jamf-reports-community").foregroundStyle(Theme.Colors.goldBright)
                             .font(.footnote.monospaced())
-                        Text("project — every flow in this app maps to a CLI command.")
+                        Text("project.")
                     }
                     .font(.callout)
                     .foregroundStyle(Theme.Text.secondary)
                     .frame(maxWidth: 620, alignment: .leading)
 
-                    Text("The CLI ships independently and stays the source of truth; this app reads and writes its config and orchestrates runs.")
+                    Text(Self.commandLineBlurb)
                         .font(.callout)
                         .foregroundStyle(Theme.Text.secondary)
                         .frame(maxWidth: 620, alignment: .leading)
 
                     HStack(spacing: 14) {
                         metaPair(label: "App:", value: appVersion)
-                        metaPair(label: "CLI:", value: workspace.demoMode
+                        metaPair(label: "jamf-cli:", value: workspace.demoMode
                                  ? "demo" : workspace.jamfCLIVersion ?? "not found")
                         metaPair(label: "Maintainer:", value: "@tonyyo11")
                         metaPair(label: "License:", value: "MIT")
@@ -738,11 +767,30 @@ struct SettingsView: View {
         .frame(width: 130)
     }
 
+    /// The app is also the `jamf-reports` command-line tool (one binary, installed from the
+    /// Command-line tool card above); jamf-cli, which supplies the data, is separate.
+    nonisolated static let commandLineBlurb =
+        "This app includes its own jamf-reports command-line tool, so reports, collection, "
+        + "backups and diagnostics can be scripted. Both use the same config.yaml and report "
+        + "engine. The fleet data comes from jamf-cli, which is installed separately."
+
     private var skipExpensiveCollectionsSubtitle: String {
-        if skipExpensiveCollections {
-            return "Per-device commands paused. Posture, Patch, Updates, and Extension Attributes dashboards will show last cached values until refreshed."
+        Self.skipExpensiveSubtitle(skipping: skipExpensiveCollections)
+    }
+
+    /// What the switch does in its current position, naming the commands from the engine's own
+    /// list (`ReportEngine.expensivePerDeviceKinds`) so the text cannot fall behind it. Begins
+    /// with the position, so it never reads as the opposite of the switch's label.
+    nonisolated static func skipExpensiveSubtitle(skipping: Bool) -> String {
+        let kinds = ReportEngine.expensivePerDeviceKinds.sorted()
+        let list = "\(kinds.count) per-device commands (\(kinds.joined(separator: ", ")))"
+        if skipping {
+            return "On: manual refreshes skip the \(list), so the screens built on them keep "
+                + "their last cached values until a collect runs them. Scheduled collects "
+                + "still run them."
         }
-        return "Run the four per-device commands (ea-results, patch-device-failures, update-device-failures, device-compliance) on every collect."
+        return "Off: every collect runs the \(list), which can be slow on a large on-prem "
+            + "server. Turn on to skip them on manual refreshes."
     }
 
     // MARK: - Diagnostics
@@ -919,9 +967,15 @@ struct SettingsView: View {
 
     // MARK: - AI Insights (macOS 27+, opt-in)
 
-    /// Turns already-collected fleet data into a plain-language insight card
-    /// on Overview. Off by default; requires macOS 27 for on-device or Private
-    /// Cloud Compute generation. Persists to this profile's `config.yaml`
+    nonisolated static let aiInsightsBlurb: String =
+        "Turn already-collected fleet data into plain-language insight cards on "
+        + "Overview, Trends, Audit, Security Posture and Compliance Posture, using "
+        + "the On-Device Foundation Model (Apple Intelligence). Off by default. "
+        + "The model runs on this Mac and nothing leaves it."
+
+    /// Turns already-collected fleet data into plain-language insight cards on
+    /// five screens. Off by default; requires macOS 27, where Apple's on-device
+    /// Foundation Model generates it. Persists to this profile's `config.yaml`
     /// (`ai:` block) via `AIConfigWriter`, scoped to just that key — the same
     /// pattern as `DebugLoggingService`'s own plist, not the Config-tab's
     /// managed-key round-trip.
@@ -929,12 +983,7 @@ struct SettingsView: View {
         Card(padding: 18) {
             VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "AI Insights")
-                Text(
-                    "Turn already-collected fleet data into a plain-language insight card "
-                    + "on Overview, using Apple's on-device Foundation Model (or Private Cloud "
-                    + "Compute, if you opt in). Off by default; nothing leaves this Mac unless "
-                    + "you choose Private Cloud Compute."
-                )
+                Text(Self.aiInsightsBlurb)
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
                 .fixedSize(horizontal: false, vertical: true)
@@ -947,11 +996,11 @@ struct SettingsView: View {
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
 
                 if aiConfig.isEnabled {
-                    // No model picker: Apple Foundation Models is on-device only,
-                    // so there is nothing to choose between. The row states what
-                    // will happen rather than offering a one-option control.
+                    // No model picker: the app offers only Apple's on-device model, so
+                    // there is nothing to choose between. The row states what will
+                    // happen rather than offering a one-option control.
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Model — On-device")
+                        Text(AIInsightCard.providerName)
                             .font(.callout.weight(.medium))
                             .foregroundStyle(Theme.Text.primary)
                         Text("Runs entirely on this Mac. No fleet data leaves the device.")
@@ -964,12 +1013,7 @@ struct SettingsView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
 
-                if let aiSaveMessage {
-                    Text(aiSaveMessage)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.warn)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                aiSaveStatus
             }
         }
         .accessibilityElement(children: .contain)
@@ -979,14 +1023,30 @@ struct SettingsView: View {
             aiConfig = workspace.demoMode
                 ? AIConfig() : AIConfigLoader.load(profile: workspace.profile)
             aiSaveMessage = nil
+            aiSaveNote = nil
         }
+    }
+
+    @ViewBuilder
+    private var aiSaveStatus: some View {
+        if let aiSaveMessage { aiStatusLine(aiSaveMessage) }
+        if let line = aiSaveNote?.line(for: workspace.profile) { aiStatusLine(line) }
+    }
+
+    private func aiStatusLine(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(Theme.Colors.warn)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func saveAIConfig() {
         guard !workspace.demoMode else { return }
         do {
-            try AIConfigWriter.save(aiConfig, profile: workspace.profile)
+            let profile = workspace.profile
+            let written = try AIConfigWriter.save(aiConfig, profile: profile)
             aiSaveMessage = nil
+            if let saved = written.report.note(for: profile) { aiSaveNote = saved }
         } catch {
             aiSaveMessage = "Couldn't save AI settings: \(error.localizedDescription)"
         }
@@ -1134,14 +1194,15 @@ struct SettingsView: View {
         .accessibilityLabel("Sidebar visibility settings")
     }
 
-    private static let toggleableGroups: [(label: String, tabs: [Tab])] = [
-        ("Reports",       [.fleet, .deviceLookup, .trends, .audit, .reports]),
-        ("Posture",       [.securityPosture, .compliancePosture, .complianceBenchmarks, .outreach]),
-        ("Operations",    [.patch, .updates, .ddmBlueprints, .policyProfile, .extensionAttributes]),
-        ("Fleet",         [.mobileFleet, .protectDashboard]),
-        ("Automation",    [.schedules, .runs]),
-        ("Configuration", [.config, .customize, .backups])
-    ]
+    /// The sidebar's own groups less the tabs that cannot be hidden, so a tab added to
+    /// `Tab.navGroups` gets a switch here with no second list to forget (Groups & Searches
+    /// had none). A group left with only core tabs is dropped.
+    nonisolated static var toggleableGroups: [(label: String, tabs: [Tab])] {
+        Tab.navGroups.compactMap { group in
+            let tabs = group.items.filter { !$0.isCoreTab }
+            return tabs.isEmpty ? nil : (label: group.label, tabs: tabs)
+        }
+    }
 
     private func visibilityGroupRow(label: String, tabs: [Tab]) -> some View {
         VStack(alignment: .leading, spacing: 6) {

@@ -27,16 +27,17 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
 
     func testCleanupAnalysisEmptyWhenNoPoliciesOrProfiles() {
         let report = makeReport()
-        let html = report.buildCleanupAnalysis(
+        let block = report.buildCleanupAnalysis(
             classicPolicies: [],
             classicProfiles: [],
             packages: [],
             scripts: []
         )
-        // Must produce a non-empty section (emptySection placeholder).
-        XCTAssertTrue(html.contains("cleanup-analysis") || html.contains("Cleanup"))
+        // Nothing was evaluated, so there is no section and the appendix says why.
+        XCTAssertTrue(block.html.isEmpty)
+        XCTAssertEqual(block.omission, "no classic-policies snapshot")
         // Must not claim "None found" when data was never evaluated.
-        XCTAssertFalse(html.contains("None found"))
+        XCTAssertFalse(block.html.contains("None found"))
     }
 
     func testCleanupAnalysisFlatListEmitsHonestNote() {
@@ -46,16 +47,18 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
             ["id": 1, "name": "Policy A"],
             ["id": 2, "name": "Policy B"],
         ]
-        let html = report.buildCleanupAnalysis(
+        let block = report.buildCleanupAnalysis(
             classicPolicies: flatPolicies,
             classicProfiles: [],
             packages: [],
             scripts: []
         )
-        // Must tell the user detail is required, not "None found".
-        XCTAssertFalse(html.contains("None found"), "Must not claim clean when data is absent")
+        // Must tell the reader detail is required, not "None found".
+        XCTAssertFalse(block.html.contains("None found"),
+                       "Must not claim clean when data is absent")
+        XCTAssertTrue(block.html.isEmpty)
         XCTAssertTrue(
-            html.contains("detail") || html.contains("per-policy") || html.contains("not present"),
+            block.omission?.contains("lists id and name only") == true,
             "Must explain that detail is missing"
         )
     }
@@ -199,9 +202,9 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
             classicProfiles: [],
             packages: [["id": "2", "packageName": "Orphan.pkg"]],
             scripts: []
-        )
+        ).html
         XCTAssertTrue(html.contains("cleanup-analysis"))
-        XCTAssertTrue(html.contains("Cleanup Analysis"))
+        XCTAssertTrue(html.contains("Cleanup analysis"))
         XCTAssertTrue(html.contains("Disabled Policy"))
         // Tabs must be rendered
         XCTAssertTrue(html.contains("cleanup-tab"))
@@ -220,7 +223,7 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
             classicProfiles: [],
             packages: [],
             scripts: []
-        )
+        ).html
         XCTAssertFalse(html.contains("<script>"), "XSS in policy names must be escaped")
         XCTAssertTrue(html.contains("&lt;script&gt;"))
     }
@@ -302,6 +305,24 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
         XCTAssertEqual(snapshots.first?.sipPct, 1.0)
     }
 
+    func testLoadSummarySnapshotsSkipsATotalOutsideIntRange() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let summariesDir = tmp.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        // `Int(1e30)` traps; the file counts as skipped, like any other unreadable one.
+        let summary: [String: Any] = ["date": "2026-05-31", "totalDevices": 1e30]
+        try JSONSerialization.data(withJSONObject: summary)
+            .write(to: summariesDir.appendingPathComponent("summary_2026-05-31.json"))
+
+        let dataDir = tmp.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
+        let (snapshots, skipped) = report.loadSummarySnapshots()
+
+        XCTAssertTrue(snapshots.isEmpty)
+        XCTAssertEqual(skipped, 1)
+    }
+
     func testLoadSummarySnapshotsSortedOldestFirst() throws {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }
@@ -333,9 +354,9 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
 
     func testBuildTimelineSectionEmptyPlaceholderWhenNoSummaries() {
         let report = makeReport()
-        let html = report.buildTimelineSection()
-        XCTAssertTrue(html.contains("empty-section") || html.contains("Trends"))
-        XCTAssertFalse(html.contains("<svg"), "No SVG expected with zero summaries")
+        let block = report.buildTimelineSection()
+        XCTAssertEqual(block.omission, "no daily summaries yet")
+        XCTAssertFalse(block.html.contains("<svg"), "No SVG expected with zero summaries")
     }
 
     func testBuildTimelineSectionSingleSnapshotNote() {
@@ -469,22 +490,5 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
             script.contains("cleanup-pane"),
             "cleanup-tab handler must toggle .active on .cleanup-pane elements"
         )
-    }
-
-    // MARK: - buildNewSectionEntries wiring
-
-    func testBuildNewSectionEntriesContainsNewKeys() {
-        let report = makeReport()
-        let entries = report.buildNewSectionEntries(
-            security: [],
-            deviceCompliance: [],
-            patchStatus: [],
-            patchFailures: [],
-            updateFailures: [],
-            computersInventory: [],
-            auditFindings: []
-        )
-        XCTAssertNotNil(entries[.cleanupAnalysis], "cleanupAnalysis must be in section map")
-        XCTAssertNotNil(entries[.timeline], "timeline must be in section map")
     }
 }

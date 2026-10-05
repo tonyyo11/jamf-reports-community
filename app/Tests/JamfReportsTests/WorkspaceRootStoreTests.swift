@@ -21,7 +21,7 @@ final class WorkspaceRootStoreTests: XCTestCase {
         // every validation here would come back .sensitiveLocation and prove
         // nothing about the rules under test.
         scratch = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-roottest-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-roottest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 
@@ -32,6 +32,25 @@ final class WorkspaceRootStoreTests: XCTestCase {
     }
 
     // MARK: - Resolution order
+
+    /// A test that sets no root never reaches the real `~/Jamf-Reports` or the developer's
+    /// chosen root: with the standard preferences, a test process gets a folder of its own,
+    /// the same one for the whole run.
+    func testATestProcessThatSetsNoRootGetsAFolderOfItsOwn() {
+        let keys = ["JRC_TEST_WORKSPACES_ROOT", WorkspaceRootStore.environmentKey]
+        let saved = keys.map { ProcessInfo.processInfo.environment[$0] }
+        keys.forEach { unsetenv($0) }
+        defer {
+            for (key, value) in zip(keys, saved) { if let value { setenv(key, value, 1) } }
+        }
+
+        let root = WorkspaceRootStore.current()
+        XCTAssertNotEqual(root.path, WorkspaceRootStore.defaultRoot.path)
+        XCTAssertTrue(root.path.hasPrefix(FileManager.default.temporaryDirectory.path),
+                      root.path)
+        XCTAssertEqual(WorkspaceRootStore.current().path, root.path)
+        XCTAssertEqual(ProfileService.workspacesRoot().path, root.path)
+    }
 
     func testDefaultsToHomeWhenNothingIsConfigured() {
         let root = WorkspaceRootStore.current(defaults: defaults, environment: [:])
@@ -189,11 +208,25 @@ final class WorkspaceRootStoreTests: XCTestCase {
     /// Every screen that tells the operator where a file lives routes through
     /// these. Ten views used to hardcode `~/Jamf-Reports/<profile>/…`, which
     /// names a path that stops existing the moment the root moves.
+    /// A root under the home folder, set the way a headless run sets one: a test process
+    /// that sets none gets a temporary folder.
+    private func withDefaultRootInEnvironment(_ body: () -> Void) {
+        setenv(WorkspaceRootStore.environmentKey, WorkspaceRootStore.defaultRoot.path, 1)
+        defer { unsetenv(WorkspaceRootStore.environmentKey) }
+        body()
+    }
+
     func testDisplayRootIsHomeRelativeByDefault() {
-        XCTAssertEqual(WorkspaceRootStore.displayRoot, "~/Jamf-Reports")
+        withDefaultRootInEnvironment {
+            XCTAssertEqual(WorkspaceRootStore.displayRoot, "~/Jamf-Reports")
+        }
     }
 
     func testDisplayPathComposesProfileAndSubpath() {
+        withDefaultRootInEnvironment(displayPathComposesProfileAndSubpath)
+    }
+
+    private func displayPathComposesProfileAndSubpath() {
         XCTAssertEqual(
             WorkspaceRootStore.displayPath(profile: "prod", subpath: "config.yaml"),
             "~/Jamf-Reports/prod/config.yaml"

@@ -6,6 +6,8 @@ The shipped code diverged from the original proposal below in several
 places; see "Implementation notes" for what changed and why.
 **Authors:** Tony Young + Claude (drafted during the #103 session)
 **Date:** 2026-05-22 · implemented 2026-05-22
+**Update (2.9):** `CLIBridge.runNow` was removed and `CLIBridgeError.csvMissing` was
+replaced by `tickLockHeld`; the names below record the original design.
 
 ---
 

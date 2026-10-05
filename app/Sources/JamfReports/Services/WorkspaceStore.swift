@@ -38,14 +38,14 @@ final class WorkspaceStore {
     /// opens its editor when it next appears and clears the flag — a
     /// notification would arrive before the Overview exists to hear it.
     var overviewCustomizeRequested = false
-    /// Heavy collection tiers (.inventory / .scan) whose newest snapshot is
-    /// older than `heavyTierStaleDays`. Drives the Overview "data is stale —
-    /// refresh now?" prompt. Heavy tiers are never collected automatically
-    /// (per-device queries can stall on-prem Jamf Pro); the prompt's button
-    /// is the only trigger.
+    /// Heavy collection tiers (.inventory / .scan) holding an expected kind
+    /// whose newest snapshot is older than `heavyTierStaleDays`. Drives the
+    /// Overview "data is stale — refresh now?" prompt. Heavy tiers are never
+    /// collected automatically (per-device queries can stall on-prem Jamf Pro);
+    /// the prompt's button is the only trigger.
     var staleHeavyTiers: [CollectionTier] = []
-    /// Subset of `staleHeavyTiers` whose probe kind has NO snapshot even
-    /// though the workspace collected recently — the last collect attempted
+    /// Subset of `staleHeavyTiers` stale only through kinds with NO snapshot
+    /// even though the workspace collected recently — the last collect attempted
     /// them and produced no data (e.g. a tenant with no update plans), as
     /// opposed to data that has simply aged out. Drives honest prompt copy.
     var heavyTiersWithNoData: Set<CollectionTier> = []
@@ -68,26 +68,39 @@ final class WorkspaceStore {
     /// Names of this Mac's jamf-cli profiles, for the demo cleanup. Injected so a
     /// test can say which profiles jamf-cli knows without a jamf-cli on the host.
     private let jamfCLIProfileNames: @MainActor () -> Set<String>
+    /// This Mac's workspaces and jamf-cli profiles, and the installed jamf-cli. Both
+    /// run jamf-cli; injected so a test can count the calls without one on the host.
+    private let discoverProfiles: @MainActor () -> [JamfCLIProfile]
+    private let jamfCLIInstallation: @MainActor () -> JamfCLIInstaller.Installation?
     var tickerStatus: TickerStatus = .unavailable
     var globalStatus: String? = nil
+    /// What the running collect is doing, while one runs. Kept apart from `globalStatus`,
+    /// which any screen sets and clears for its own work, so another screen finishing cannot
+    /// wipe the line a collect still owns.
+    private(set) var collectStatus: String? = nil
+    /// The line the status bar shows: a screen's own message while it has one, else the
+    /// running collect's, else nil ("Ready").
+    var statusLine: String? { globalStatus ?? collectStatus }
     var toast: Toast? = nil
     /// Last known auth probe result for the active profile. `nil` while not yet
     /// checked (e.g. demo mode, or immediately after a profile switch before the
     /// async probe completes). Refreshed by `refreshAuthStatus()`.
     var authStatus: TokenStatus? = nil
     /// Per-profile run-in-progress flags to prevent concurrent collection/generation.
-    /// Checked by `generateAll`/`collectThenGenerate`/`runNow` before starting.
-    /// Note: only guards against concurrent GUI runs; LaunchAgent runs are a separate
-    /// process and would require an on-disk lock file (not implemented).
+    /// Checked by `generateAll`/`collectThenGenerate` before starting.
+    /// Note: these keep two GUI runs for one profile apart; a `--tick` run is kept
+    /// apart by the tick lock `CLIBridge.collect` holds for every GUI collect, and two
+    /// collects in this app by the same hold.
     private var runInProgressFlags: [String: Bool] = [:]
     /// Profiles with a collect in flight in THIS process — Collect now,
-    /// Initialize, Refresh, or an automatic one. A count, not a flag: two
-    /// overlapping manual actions must not clear each other's mark on exit.
+    /// Initialize, Refresh, or an automatic one. Only one runs at a time
+    /// (`isAnyCollectInFlight`); a count, not a flag, still keeps one action's
+    /// exit from clearing another's mark.
     private var collectsInFlight: [String: Int] = [:]
-    /// Whether another process (the bundled `--tick` agent) holds the tick
-    /// lock. Injectable so tests never read the real lock file.
-    var tickLockHeldElsewhere: () -> Bool = {
-        TickLock(url: TickLock.defaultURL).isHeldByAnotherLiveProcess()
+    /// The profile's jamf-cli auth method, for the freshness re-probes. Injectable
+    /// so a test runs no `jamf-cli config list`.
+    var resolveAuthMethod: @Sendable (String) -> ProfileAuthMethod.Resolved? = {
+        ProfileAuthMethod.resolve(profile: $0)
     }
     private var didAutoUpdateJamfCLI = false
     /// Dedup guard for `autoRefreshAuditIfStale()` — rapid profile switches or
@@ -96,6 +109,11 @@ final class WorkspaceStore {
     /// `private`) so the `WorkspaceStore+Refresh.swift` extension can set it —
     /// Swift's `private` is file-scoped, not type-scoped, across extensions.
     var autoAuditRefreshInFlight: Bool = false
+    /// Count of `refreshDataFreshness` and `refreshAutomationHealth` requests. Each read runs
+    /// off the main actor and publishes only if no later request or profile switch overtook it.
+    /// Internal for the `WorkspaceStore+Automation.swift` extension.
+    var freshnessRequests = 0
+    var healthRequests = 0
     /// UserDefaults key for "user has explicitly chosen demo mode."
     /// Persisted by `setDemoMode(_:)`; consulted by `init` and
     /// `reloadFromDisk` to decide whether to enter demo on no-profiles.
@@ -138,6 +156,34 @@ final class WorkspaceStore {
         return metrics.isEmpty ? nil : metrics
     }
 
+    /// One metric per configured `security_agents` entry other than the one the score counts
+    /// as EDR (that one is `.edrAgent`), in config order, for the Overview's score cards and
+    /// the Trends picker. None in demo mode, whose history has no per-agent series.
+    var agentMetrics: [TrendSeries.Metric] {
+        guard !demoMode else { return [] }
+        let names = configState.securityAgents.map(\.name)
+        let edr = SecurityScoreInputs.edrAgentIndex(among: names, chosen: securityPolicy.edrAgent)
+            .map { SecurityScoreInputs.agentKey(names[$0]).lowercased() }
+        var seen = Set<String>()
+        return names.map(SecurityScoreInputs.agentKey).compactMap { name in
+            let key = name.lowercased()
+            guard !name.isEmpty, key != edr, seen.insert(key).inserted else { return nil }
+            return .agent(name)
+        }
+    }
+
+    /// Every metric a score card or the Trends picker can show for this workspace.
+    var availableMetrics: [TrendSeries.Metric] { TrendSeries.Metric.allCases + agentMetrics }
+
+    /// Whether the Overview shows `metric` as a score card: an agent metric needs its agent
+    /// configured (and not counted as EDR), a control card needs its control counted by the
+    /// security policy. A stored selection naming one that is not offered is kept, and shows
+    /// again when it is.
+    func isOffered(_ metric: TrendSeries.Metric) -> Bool {
+        if case .agent = metric { return agentMetrics.contains(metric) }
+        return metric.isOffered(under: securityPolicy)
+    }
+
     /// True when the active profile has a `config.yaml` on disk under
     /// `~/Jamf-Reports/<profile>/`. Demo profiles always report `true` because
     /// they don't have an on-disk workspace to initialize.
@@ -172,9 +218,16 @@ final class WorkspaceStore {
     /// Keys the YAML parser auto-healed on load (orphaned sequence items re-attached).
     /// Non-empty means the on-disk file is still malformed until the user saves from Config.
     var configRepairedKeys: [String] = []
+    /// The active workspace's `security_policy:` as the app applies it, and each value or key
+    /// in a hand-typed block it did not use as written. Loaded with the config; the Scoring
+    /// cards edit them through `saveSecurityLevel` and its siblings.
+    var securityPolicy: SecurityControlPolicy = .default
+    var securityPolicyIssues: [SecurityPolicyIssue] = []
 
     // Last parsed document (preserves unknown keys + original text for round-trip).
     private var _loadedDoc: YAMLCodec.YAMLDocument?
+    // config.yaml as configState was read from it; a save refuses once the file differs.
+    private var _loadedStamp: ConfigFileStamp?
     // Snapshot of state at last load/save — used by revert().
     private var _savedState: ConfigState?
 
@@ -191,13 +244,14 @@ final class WorkspaceStore {
         return configState.complianceBenchmarks.first(where: { !$0.isEmpty })
     }
 
-    /// The first configured security agent's name (e.g. "CrowdStrike Falcon"),
-    /// used to label the EDR metric across the UI. Nil when no security_agents
-    /// are configured — surfaces fall back to the generic "EDR Agent" label.
+    /// The name of the security agent the score counts as EDR (e.g. "CrowdStrike Falcon"),
+    /// used to label the EDR metric across the UI: `security_policy.edr_agent` when it names a
+    /// configured agent, else the first. Nil when no security_agents are configured —
+    /// surfaces fall back to the generic "EDR Agent" label.
     var edrAgentName: String? {
-        configState.securityAgents
-            .first { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty }?
-            .name
+        let names = configState.securityAgents.map(\.name)
+        return SecurityScoreInputs.edrAgentIndex(among: names, chosen: securityPolicy.edrAgent)
+            .map { names[$0] }
     }
 
     // MARK: Column label / required metadata
@@ -219,8 +273,19 @@ final class WorkspaceStore {
         "disk_percent_full": "Disk % Full",
         "architecture":      "Architecture",
         "model":             "Model",
+        "model_identifier":  "Model Identifier",
         "last_enrollment":   "Last Enrollment",
         "mdm_expiry":        "MDM Profile Expiry",
+        "full_name":           "Full Name",
+        "asset_tag":           "Asset Tag",
+        "building":            "Building",
+        "position":            "Position",
+        "last_logged_in_user": "Last Logged-in User",
+        "recovery_lock":       "Recovery Lock",
+        "battery_health":      "Battery Health",
+        "entra_sso_status":    "Entra SSO Status",
+        "purchase_date":       "Purchase Date",
+        "last_inventory":      "Last Inventory Update",
     ]
 
     private static let requiredColumnKeys: Set<String> = [
@@ -233,10 +298,16 @@ final class WorkspaceStore {
         demoMode: Bool? = nil,
         tickerRegistrar: any TickerRegistrar = SMAppServiceRegistrar(),
         jamfCLIProfileNames: @escaping @MainActor () -> Set<String>
-            = WorkspaceStore.liveJamfCLIProfileNames
+            = WorkspaceStore.liveJamfCLIProfileNames,
+        discoverProfiles: @escaping @MainActor () -> [JamfCLIProfile]
+            = { ProfileService.discoverLocal() },
+        jamfCLIInstallation: @escaping @MainActor () -> JamfCLIInstaller.Installation?
+            = { JamfCLIInstaller.currentInstallation() }
     ) {
         self.tickerRegistrar = tickerRegistrar
         self.jamfCLIProfileNames = jamfCLIProfileNames
+        self.discoverProfiles = discoverProfiles
+        self.jamfCLIInstallation = jamfCLIInstallation
         // MFS-2: one-shot Spotlight + permissions backfill on existing
         // workspaces. Gated on a per-version UserDefaults sentinel so the
         // walk runs at most once per app version. Wave 1 covers the
@@ -244,7 +315,6 @@ final class WorkspaceStore {
         // covers the pre-existing-workspace case.
         WorkspaceMigration.runIfNeeded()
 
-        let realProfiles = ProfileService.discoverLocal()
         // First-launch chooser: an empty real-profile list no longer implies
         // demo mode. Only an explicit `demoMode:` override (tests) or the
         // persisted `forceDemoModeKey` (user previously chose demo) enables
@@ -253,6 +323,8 @@ final class WorkspaceStore {
         // make the call before any synthetic data is bound to the app state.
         let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
         let isDemo = demoMode ?? userForcedDemo
+        // Demo mode runs no jamf-cli, and shows neither answer.
+        let realProfiles = isDemo ? [] : discoverProfiles()
 
         self.demoMode = isDemo
         let start = Self.initialProfile(in: realProfiles)
@@ -267,7 +339,7 @@ final class WorkspaceStore {
         self.selectedScoreCards = Self.loadPersistedScoreCards() ?? Self.defaultScoreCards
         self.overviewLayout = OverviewLayout.parse(
             UserDefaults.standard.string(forKey: Self.overviewLayoutKey))
-        let jamfCLI = JamfCLIInstaller.currentInstallation()
+        let jamfCLI = isDemo ? nil : jamfCLIInstallation()
         self.jamfCLIPath = jamfCLI?.path
         self.jamfCLIVersion = jamfCLI?.version
         self.jamfCLIInstallSource = jamfCLI?.source.label
@@ -335,9 +407,9 @@ final class WorkspaceStore {
     /// Respects an explicit user demo-mode preference set via `setDemoMode(_:)`.
     func reloadFromDisk() {
         let wasDemo = demoMode
-        refreshToolStatus()
-        let real = ProfileService.discoverLocal()
         let userForcedDemo = UserDefaults.standard.bool(forKey: Self.forceDemoModeKey)
+        // A demo the operator chose stays one whatever jamf-cli lists, so it is not asked.
+        let real = userForcedDemo ? [] : discoverProfiles()
         if real.isEmpty || userForcedDemo {
             demoMode = true
             org = DemoData.org
@@ -346,6 +418,7 @@ final class WorkspaceStore {
             schedules = DemoData.scheduledRuns
         } else {
             demoMode = false
+            refreshToolStatus()
             profiles = real
             schedules = Self.loadSchedules(baseProfile: ManagedAutomation.managedBaseProfile(
                 profiles: real, policy: AutomationPolicy.current()))
@@ -622,8 +695,10 @@ final class WorkspaceStore {
         return nil
     }
 
+    /// Demo mode runs no jamf-cli; leaving it through `reloadFromDisk` reads the tool.
     func refreshToolStatus() {
-        let jamfCLI = JamfCLIInstaller.currentInstallation()
+        guard !demoMode else { return }
+        let jamfCLI = jamfCLIInstallation()
         jamfCLIPath = jamfCLI?.path
         jamfCLIVersion = jamfCLI?.version
         jamfCLIInstallSource = jamfCLI?.source.label
@@ -648,7 +723,7 @@ final class WorkspaceStore {
         jamfCLIUpdateMessage = "Updating jamf-cli..."
         let result = await JamfCLIInstaller().update()
         jamfCLIUpdateMessage = result.message
-        jamfCLIUpdateAvailable = false
+        if !result.refused { jamfCLIUpdateAvailable = false }
         isUpdatingJamfCLI = false
         refreshToolStatus()
     }
@@ -673,9 +748,14 @@ final class WorkspaceStore {
             applyDemoConfig()
             return
         }
+        // Read before the config decode below, which can throw: the loaders never do, and a
+        // workspace with no policy (or a profile switch) has to drop the previous one.
+        securityPolicy = SecurityPolicyConfigLoader.load(profile: profile)
+        securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
         do {
             let loaded = try ConfigService.load(profile: profile)
             _loadedDoc = loaded.document
+            _loadedStamp = loaded.stamp
             _savedState = loaded.state
             configState = loaded.state
             configError = nil
@@ -683,6 +763,7 @@ final class WorkspaceStore {
         } catch ConfigService.ConfigError.missingConfig {
             configState = .defaultState
             _loadedDoc = nil
+            _loadedStamp = .absent
             _savedState = nil
             configError = nil
             configRepairedKeys = []
@@ -691,23 +772,89 @@ final class WorkspaceStore {
         rebuildCustomEAs()
     }
 
-    /// Flush current configState (+ any column mapping edits) to disk atomically.
-    func saveConfig() async throws {
+    /// Flush current configState (+ any column mapping edits) to disk atomically. Returns what
+    /// the save left as typed, for the Config screen to say.
+    @discardableResult
+    func saveConfig() async throws -> ConfigSaveReport {
         // Demo edits stay in memory. Writing would create the fictional profile's
         // config.yaml in the real workspaces root, where profile discovery and the
         // background item's all-profiles runs treat it as a real workspace.
-        guard !demoMode else { return }
+        guard !demoMode else { return ConfigSaveReport() }
         syncColumnMappingsToState()
-        let newDoc = try ConfigService.save(
+        let saved = try ConfigService.save(
             profile: profile,
             state: configState,
-            existingDocument: _loadedDoc
+            existingDocument: _loadedDoc,
+            ifUnchangedSince: _loadedStamp
         )
-        _loadedDoc = newDoc
+        _loadedDoc = saved.document
+        _loadedStamp = saved.stamp
+        // A block left as typed was not written: the screen goes back to what the file holds
+        // for it, rather than calling its own entries saved.
+        if saved.report.keptBlocks.contains("custom_eas") {
+            configState.customEAs = saved.state.customEAs
+            rebuildCustomEAs()
+        }
+        if saved.report.keptBlocks.contains("security_agents") {
+            configState.securityAgents = saved.state.securityAgents
+        }
         _savedState = configState
         configError = nil
         // Re-saving drops the orphaned sequence items, so the healed-keys note clears.
-        configRepairedKeys = newDoc.repairedKeys.sorted()
+        configRepairedKeys = saved.document.repairedKeys.sorted()
+        return saved.report
+    }
+
+    /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's
+    /// issues: a saved level clears its own issue and nothing else's. The write is built from
+    /// the file, not from `securityPolicy`, so a stale or fallen-back copy cannot overwrite
+    /// another key. A failed write throws and leaves the loaded policy as it was. Demo mode
+    /// returns without writing; the cards' controls are disabled there too. Each returns what
+    /// the write did not keep, for the card's status line.
+    @discardableResult
+    func saveSecurityLevel(
+        _ level: SecurityControlLevel, for control: SecurityControl
+    ) throws -> ConfigSaveReport {
+        try saveSecuritySetting(.level(level, for: control)) {
+            $0 = $0.setting(level, for: control)
+        }
+    }
+
+    /// Nil removes the key, so FileVault's own level applies.
+    @discardableResult
+    func saveHardwareLevel(_ level: SecurityControlLevel?) throws -> ConfigSaveReport {
+        try saveSecuritySetting(.hardwareLevel(level)) { $0.fileVaultOffHardwareEncrypted = level }
+    }
+
+    /// Nil removes the list, so the default factors apply.
+    @discardableResult
+    func saveScoreFactors(_ factors: [SecurityScoreFactor]?) throws -> ConfigSaveReport {
+        try saveSecuritySetting(.scoreFactors(factors)) { $0.scoreFactors = factors }
+    }
+
+    /// The agent the EDR card describes; nil removes the key, so the first agent counts.
+    @discardableResult
+    func saveEDRAgent(_ name: String?) throws -> ConfigSaveReport {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chosen = trimmed?.isEmpty == false ? trimmed : nil
+        return try saveSecuritySetting(.edrAgent(chosen)) { $0.edrAgent = chosen }
+    }
+
+    private func saveSecuritySetting(
+        _ setting: SecurityPolicyConfigWriter.Setting,
+        adopt: (inout SecurityControlPolicy) -> Void
+    ) throws -> ConfigSaveReport {
+        guard !demoMode else { return ConfigSaveReport() }
+        // The Scoring tab is on the Config screen, whose Save compares config.yaml with the
+        // stamp it loaded: this write is the screen's own, so the stamp moves with it. A file
+        // that had already changed on disk keeps the old stamp, so that Save still refuses.
+        let loadedWasCurrent = (try? ConfigService.configURL(for: profile))
+            .map { _loadedStamp?.matches($0) ?? false } ?? false
+        let written = try SecurityPolicyConfigWriter.save(setting, profile: profile)
+        if loadedWasCurrent { _loadedStamp = written.stamp }
+        adopt(&securityPolicy)
+        securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
+        return written.report
     }
 
     /// The demo workspace's config in place of whatever was loaded before, with
@@ -718,6 +865,8 @@ final class WorkspaceStore {
         _savedState = DemoData.configState
         configError = nil
         configRepairedKeys = []
+        securityPolicy = .default
+        securityPolicyIssues = []
         rebuildColumnMappings()
         rebuildCustomEAs()
     }
@@ -734,7 +883,12 @@ final class WorkspaceStore {
     /// config and its saved baseline, and rebuilds the Columns tab. Other unsaved edits stay.
     /// Before, the Columns tab kept the old mappings, and the Save the re-scaffold toast asks
     /// for wrote them back over the merge.
-    func adoptScaffoldedColumns(from saved: ConfigState) {
+    ///
+    /// The file's stamp moves with the write only when the merge read the file this screen
+    /// loaded (`readStamp`, from `ScaffoldService.mergeIntoConfig`). If it had changed on disk
+    /// since, the screen's other values are still the old ones, so the stamp stays and the
+    /// next Save refuses (`changedOnDisk`) until the screen reloads.
+    func adoptScaffoldedColumns(from saved: ConfigState, readStamp: ConfigFileStamp) {
         guard !demoMode else { return }
         configState.columns = saved.columns
         configState.mobileColumns = saved.mobileColumns
@@ -744,8 +898,10 @@ final class WorkspaceStore {
         _savedState?.mobileColumns = saved.mobileColumns
         _savedState?.failuresCountColumn = saved.failuresCountColumn
         _savedState?.failuresListColumn = saved.failuresListColumn
-        if let reloaded = try? ConfigService.load(profile: profile) {
+        if _loadedStamp?.isSameFile(as: readStamp) == true,
+           let reloaded = try? ConfigService.load(profile: profile) {
             _loadedDoc = reloaded.document
+            _loadedStamp = reloaded.stamp
         }
         rebuildColumnMappings()
     }
@@ -799,9 +955,14 @@ final class WorkspaceStore {
         }
     }
 
-    /// Rebuild [ColumnMapping] from configState.columns, preserving existing status badges.
+    /// Rebuild [ColumnMapping] from configState.columns. A live workspace's status is read
+    /// off its value (empty is unmapped, else mapped): `columnMappings` starts as the demo's
+    /// list, and carrying its badges over put the demo's one warning on every live workspace.
+    /// Demo mode keeps its own badges.
     private func rebuildColumnMappings() {
-        let statusByKey = Dictionary(columnMappings.map { ($0.key, $0.status) }, uniquingKeysWith: { $1 })
+        let statusByKey: [String: ColumnMapping.Status] = demoMode
+            ? Dictionary(columnMappings.map { ($0.key, $0.status) }, uniquingKeysWith: { $1 })
+            : [:]
         columnMappings = ConfigState.columnKeys.map { key in
             let value = configState.columns[key] ?? ""
             return ColumnMapping(
@@ -1039,12 +1200,24 @@ final class WorkspaceStore {
             || coordinatorIsCollecting(for: profile)
     }
 
-    func beginCollect(for profile: String) {
+    /// True while any collect runs in this process, for any profile: one this store marked
+    /// (`beginCollect`, including the automatic ones) or one holding the bridge's lock, as a
+    /// jamf-cli update and a report run do too. A manual collect does not start while it is
+    /// true.
+    var isAnyCollectInFlight: Bool {
+        collectsInFlight.values.contains { $0 > 0 } || CLIBridge.holdPurpose != nil
+    }
+
+    /// Marks a collect for `profile` as running; `status` is what the status bar shows for it
+    /// until the last mark ends.
+    func beginCollect(for profile: String, status: String? = nil) {
         collectsInFlight[profile, default: 0] += 1
+        if let status { collectStatus = status }
     }
 
     func endCollect(for profile: String) {
         collectsInFlight[profile] = max(0, (collectsInFlight[profile] ?? 0) - 1)
+        if !collectsInFlight.values.contains(where: { $0 > 0 }) { collectStatus = nil }
     }
 }
 
@@ -1200,9 +1373,6 @@ struct TabVisibility: Sendable, Equatable {
         tab.isCoreTab || !hidden.contains(tab)
     }
 
-    /// True when this tab is explicitly hidden by the user.
-    func isHidden(_ tab: Tab) -> Bool { !isVisible(tab) }
-
     /// Toggle a tab's visibility. Core tabs are no-ops.
     mutating func toggle(_ tab: Tab) {
         guard !tab.isCoreTab else { return }
@@ -1285,8 +1455,18 @@ enum SidebarMode: String, CaseIterable {
 // MARK: - Toast Model
 
 struct Toast: Identifiable, Sendable {
-    enum Style: Sendable { case info, success, danger }
+    enum Style: Sendable { case info, success, warning, danger }
+    /// How long a toast stays up before it clears itself.
+    static let displaySeconds: Double = 4
     let id: UUID = UUID()
     let message: String
     let style: Style
+}
+
+extension WorkspaceStore {
+    /// Clears the toast only if it is still the one that was shown, so a timer that outlives
+    /// its toast never takes down the toast that replaced it.
+    func dismissToast(ifShowing id: UUID) {
+        if toast?.id == id { toast = nil }
+    }
 }

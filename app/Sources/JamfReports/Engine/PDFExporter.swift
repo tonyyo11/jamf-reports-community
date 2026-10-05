@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import WebKit
 
@@ -29,7 +30,7 @@ final class PDFExporter {
             case .renderFailed(let detail):
                 return "PDF export failed during render: \(detail)"
             case .timeout:
-                return "PDF export timed out waiting for WKWebView to finish loading."
+                return "PDF export timed out while WKWebView loaded or printed the report."
             }
         }
     }
@@ -48,8 +49,7 @@ final class PDFExporter {
         paperSize: CGSize = CGSize(width: 612, height: 792)
     ) async throws {
         let coordinator = Coordinator(paperSize: paperSize)
-        let prepared = preparedHTMLForPDF(htmlString)
-        let data = try await coordinator.render(htmlString: prepared, baseURL: nil)
+        let data = try await coordinator.render(htmlString: htmlString, baseURL: nil)
         try writePDF(data: data, to: outputURL)
     }
 
@@ -70,37 +70,11 @@ final class PDFExporter {
         // does not need to resolve same-origin asset paths from the source file,
         // and a `baseURL` lets the renderer attempt subresource loads (favicon,
         // CSS imports) against the user's filesystem. Fail closed instead.
-        let prepared = preparedHTMLForPDF(html)
-        let data = try await coordinator.render(htmlString: prepared, baseURL: nil)
+        let data = try await coordinator.render(htmlString: html, baseURL: nil)
         try writePDF(data: data, to: outputURL)
     }
 
     // MARK: - Private helpers
-
-    /// P9-A-04: inject a CSS rule that hides Chart.js canvases (which require JS)
-    /// and shows a plain-text fallback in their place. The HTML report still
-    /// renders charts in the browser; only the PDF render replaces them with the
-    /// fallback. Done as a string transform (not a DOM rewrite) so we keep the
-    /// renderer fully synchronous and JS-free.
-    static func preparedHTMLForPDF(_ html: String) -> String {
-        let injection = """
-        <style>
-        /* PDF safety: JavaScript is disabled in the PDF renderer (P9-A-04),
-           so Chart.js canvases stay blank. Replace them with a fallback note. */
-        .chart-container canvas, .chart-card canvas { display: none !important; }
-        .chart-card::after, .chart-container::after {
-          content: "Chart unavailable in PDF — see HTML report.";
-          display: block; padding: 1.5rem 1rem; text-align: center;
-          color: #555; font-style: italic; font-size: 0.9rem;
-        }
-        </style>
-        """
-        if let headEnd = html.range(of: "</head>", options: .caseInsensitive) {
-            return html.replacingCharacters(in: headEnd, with: injection + "</head>")
-        }
-        // No <head>: prepend a minimal head so the rule still applies.
-        return "<head>\(injection)</head>" + html
-    }
 
     private static func writePDF(data: Data, to outputURL: URL) throws {
         let fm = FileManager.default
@@ -114,25 +88,33 @@ final class PDFExporter {
 
 // MARK: - Coordinator
 
-/// Internal actor that owns the WKWebView lifecycle for a single export operation.
+/// Owns the WKWebView for one export: loads the HTML, then prints it to a PDF file through
+/// WebKit's print operation, which paginates the whole document and applies the page's print
+/// CSS and page breaks. (`createPDF` captures one rect, which held only the first page.)
 ///
-/// The webview must be retained for the full load+render cycle; storing it as a
-/// property here prevents it from being deallocated while the continuation is live.
+/// The webview and its window must be retained for the full load and print cycle.
 @MainActor
 private final class Coordinator: NSObject, WKNavigationDelegate {
 
-    private let paperSize: CGSize
-    private var webView: WKWebView?
-    private var continuation: CheckedContinuation<Data, Error>?
+    /// Margin on every side of a page: half an inch.
+    static let pageMargin: CGFloat = 36
+    static let loadTimeout: Duration = .seconds(10)
+    static let printTimeout: Duration = .seconds(120)
 
-    // 10-second guard against WKWebView load hangs (e.g., CDN fetch in a test context).
+    private let paperSize: CGSize
+    private let printURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("jamf_report_print_\(UUID().uuidString).pdf")
+    private var webView: WKWebView?
+    /// WebKit runs a WKWebView print operation only modally for a window. It is never shown.
+    private var window: NSWindow?
+    private var continuation: CheckedContinuation<Data, Error>?
     private var timeoutTask: Task<Void, Never>?
 
     init(paperSize: CGSize) {
         self.paperSize = paperSize
     }
 
-    /// Load `htmlString` and produce PDF data via `WKWebView.createPDF`.
+    /// Load `htmlString` and print it to PDF data.
     func render(htmlString: String, baseURL: URL?) async throws -> Data {
         return try await withCheckedThrowingContinuation { [weak self] continuation in
             guard let self else {
@@ -152,33 +134,84 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
             prefs.allowsContentJavaScript = false
             let config = WKWebViewConfiguration()
             config.defaultWebpagePreferences = prefs
+            // The report's bars and severity pills are backgrounds, which printing leaves out
+            // by default.
+            config.preferences.shouldPrintBackgrounds = true
             // Navigation delegate cancels every navigation other than the
             // initial loadHTMLString (about:blank). Combined with JS disabled
             // and a nil baseURL, this prevents the renderer from issuing any
             // network or filesystem requests.
-            let wv = WKWebView(frame: CGRect(x: 0, y: 0, width: 1200, height: 900),
-                               configuration: config)
+            let frame = CGRect(origin: .zero, size: paperSize)
+            let wv = WKWebView(frame: frame, configuration: config)
             wv.navigationDelegate = self
+            let window = NSWindow(contentRect: frame, styleMask: [.borderless],
+                                  backing: .buffered, defer: true)
+            window.isReleasedWhenClosed = false
+            window.contentView = wv
             self.webView = wv
+            self.window = window
 
-            // Arm timeout before kicking off load.
-            self.timeoutTask = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(10))
-                self?.failWithTimeout()
-            }
-
+            self.arm(Self.loadTimeout)
             wv.loadHTMLString(htmlString, baseURL: baseURL)
         }
     }
 
-    private func failWithTimeout() {
+    /// Fails the export with `.timeout` after `limit`, replacing any earlier limit.
+    private func arm(_ limit: Duration) {
+        timeoutTask?.cancel()
+        timeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: limit)
+            guard !Task.isCancelled else { return }
+            self?.finish(.failure(PDFExporter.PDFExportError.timeout))
+        }
+    }
+
+    /// Resumes the caller once; a later call (a print finishing after its timeout) does nothing.
+    private func finish(_ result: Result<Data, Error>) {
         guard let continuation else { return }
         self.continuation = nil
         timeoutTask?.cancel()
         timeoutTask = nil
         webView?.navigationDelegate = nil
         webView = nil
-        continuation.resume(throwing: PDFExporter.PDFExportError.timeout)
+        window = nil
+        try? FileManager.default.removeItem(at: printURL)
+        continuation.resume(with: result)
+    }
+
+    private func printInfo() -> NSPrintInfo {
+        let info = NSPrintInfo()
+        info.paperSize = paperSize
+        info.topMargin = Self.pageMargin
+        info.bottomMargin = Self.pageMargin
+        info.leftMargin = Self.pageMargin
+        info.rightMargin = Self.pageMargin
+        info.jobDisposition = .save
+        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = printURL
+        return info
+    }
+
+    /// AppKit calls this on the print operation's own thread, not the main one.
+    @objc private nonisolated func printOperationDidRun(
+        _ operation: NSPrintOperation,
+        success: Bool,
+        contextInfo: UnsafeMutableRawPointer?
+    ) {
+        Task { @MainActor [weak self] in self?.printFinished(success: success) }
+    }
+
+    private func printFinished(success: Bool) {
+        guard success else {
+            finish(.failure(PDFExporter.PDFExportError.renderFailed(
+                "the print operation did not complete")))
+            return
+        }
+        do {
+            finish(.success(try Data(contentsOf: printURL)))
+        } catch {
+            finish(.failure(PDFExporter.PDFExportError.renderFailed(
+                "no PDF at \(printURL.lastPathComponent): \(error.localizedDescription)")))
+        }
     }
 
     // MARK: - WKNavigationDelegate
@@ -207,27 +240,14 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // Cancel timeout and take sole ownership of the continuation before invoking
-        // createPDF. This prevents the timeout Task from resuming the continuation a
-        // second time if createPDF takes longer than expected.
-        timeoutTask?.cancel()
-        timeoutTask = nil
-        guard let captured = continuation else { return }
-        self.continuation = nil
-
-        let pdfConfig = WKPDFConfiguration()
-        pdfConfig.rect = CGRect(origin: .zero, size: paperSize)
-
-        webView.createPDF(configuration: pdfConfig) { [weak self] result in
-            self?.webView?.navigationDelegate = nil
-            self?.webView = nil
-            switch result {
-            case .success(let data):
-                captured.resume(returning: data)
-            case .failure(let error):
-                captured.resume(throwing: PDFExporter.PDFExportError.renderFailed(error.localizedDescription))
-            }
-        }
+        guard continuation != nil, let window else { return }
+        arm(Self.printTimeout)
+        let operation = webView.printOperation(with: printInfo())
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = false
+        operation.runModal(
+            for: window, delegate: self,
+            didRun: #selector(printOperationDidRun(_:success:contextInfo:)), contextInfo: nil)
     }
 
     func webView(
@@ -235,13 +255,7 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
         didFail navigation: WKNavigation!,
         withError error: Error
     ) {
-        timeoutTask?.cancel()
-        timeoutTask = nil
-        guard let captured = continuation else { return }
-        self.continuation = nil
-        webView.navigationDelegate = nil
-        self.webView = nil
-        captured.resume(throwing: PDFExporter.PDFExportError.loadFailed(error.localizedDescription))
+        finish(.failure(PDFExporter.PDFExportError.loadFailed(error.localizedDescription)))
     }
 
     func webView(
@@ -249,12 +263,6 @@ private final class Coordinator: NSObject, WKNavigationDelegate {
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
-        timeoutTask?.cancel()
-        timeoutTask = nil
-        guard let captured = continuation else { return }
-        self.continuation = nil
-        webView.navigationDelegate = nil
-        self.webView = nil
-        captured.resume(throwing: PDFExporter.PDFExportError.loadFailed(error.localizedDescription))
+        finish(.failure(PDFExporter.PDFExportError.loadFailed(error.localizedDescription)))
     }
 }

@@ -32,14 +32,15 @@ final class TickLoopTests: XCTestCase {
         return url
     }
 
-    /// Drives `TickLoop.runDue` from an empty state; every run exits 0 and complete.
-    /// With `markerDir`, run-now markers are real files there.
+    /// Drives `TickLoop.runDue` from an empty state; every run ends with `outcome`, by
+    /// default exit 0 and complete. With `markerDir`, run-now markers are real files there.
     private func runDue(
-        _ runs: [TickScheduler.DueRun], recorder: TickLoopRecorder, markerDir: URL? = nil
+        _ runs: [TickScheduler.DueRun], recorder: TickLoopRecorder, markerDir: URL? = nil,
+        outcome: ScheduleRunOutcome = ScheduleRunOutcome(exitCode: 0, incomplete: false)
     ) async -> Int32 {
         await TickLoop.runDue(
             runs, state: TickState(),
-            save: { recorder.save($0) },
+            save: { try recorder.save($0) },
             clearRunNowMarker: { label in
                 recorder.cleared(label)
                 if let markerDir { TickRunner.clearRunNowMarker(label: label, dir: markerDir) }
@@ -50,8 +51,9 @@ final class TickLoopTests: XCTestCase {
                     FileManager.default.fileExists(atPath: $0.appendingPathComponent(label).path)
                 } ?? false
                 recorder.ran(label, markerOnDisk: onDisk)
-                return ScheduleRunOutcome(exitCode: 0, incomplete: false)
+                return outcome
             },
+            recordFailure: { recorder.failure($0.launchAgentLabel ?? "", $1) },
             notifyOverdue: { recorder.digest() })
     }
 
@@ -113,6 +115,64 @@ final class TickLoopTests: XCTestCase {
         XCTAssertEqual(recorder.events, [.saveFailed, .digest])
     }
 
+    // MARK: - Run History (#226 5d)
+
+    /// The agent's stderr goes nowhere, so each stamp failure is also handed to Run History
+    /// with the schedule it belongs to and why tick-state.json could not be written.
+    func testAFailedStartStampIsRecordedForItsSchedule() async throws {
+        let recorder = TickLoopRecorder(failingSaves: [1])
+        _ = await runDue([due("first"), due("second")], recorder: recorder)
+
+        XCTAssertEqual(recorder.failures.map(\.label), [label("first")])
+        let message = try XCTUnwrap(recorder.failures.first?.message)
+        XCTAssertTrue(message.contains("skipped \(label("first"))"), message)
+        XCTAssertTrue(message.contains("tick-state.json"), message)
+        XCTAssertTrue(message.contains(TickLoopRecorder.saveErrorText), message)
+    }
+
+    func testAFailedSuccessStampIsRecordedForItsSchedule() async throws {
+        let recorder = TickLoopRecorder(failingSaves: [2])
+        _ = await runDue([due("first"), due("second")], recorder: recorder)
+
+        XCTAssertEqual(recorder.failures.map(\.label), [label("first")])
+        let message = try XCTUnwrap(recorder.failures.first?.message)
+        XCTAssertTrue(message.contains("succeeded, but the success could not be recorded"),
+                      message)
+        XCTAssertTrue(message.contains(TickLoopRecorder.saveErrorText), message)
+    }
+
+    func testACleanTickRecordsNoFailure() async {
+        let recorder = TickLoopRecorder()
+        _ = await runDue([due("first")], recorder: recorder)
+        XCTAssertTrue(recorder.failures.isEmpty)
+    }
+
+    // MARK: - Incomplete, with nothing a retry could fetch (#207)
+
+    /// The retry flag alone ends the retries; `incomplete` still names the run.
+    func testAnIncompleteRunWithNothingToRetryEndsTheRetries() async {
+        let recorder = TickLoopRecorder()
+        _ = await runDue(
+            [due("first")], recorder: recorder,
+            outcome: ScheduleRunOutcome(exitCode: 0, incomplete: true, retryCouldHelp: false))
+        XCTAssertNotNil(recorder.saved.last?.lastSucceeded[label("first")])
+    }
+
+    func testAnIncompleteRunWithSomethingToRetryKeepsRetrying() async {
+        let recorder = TickLoopRecorder()
+        _ = await runDue(
+            [due("first")], recorder: recorder,
+            outcome: ScheduleRunOutcome(exitCode: 0, incomplete: true, retryCouldHelp: true))
+        XCTAssertNil(recorder.saved.last?.lastSucceeded[label("first")])
+    }
+
+    func testTheRunNowLineStillSaysIncomplete() {
+        let outcome = ScheduleRunOutcome(exitCode: 0, incomplete: true, retryCouldHelp: false)
+        XCTAssertEqual(
+            tickResultLine(label: "x", reason: .fire, outcome: outcome, retries: 0),
+            "[info] tick: x exit 0 (incomplete)")
+    }
+
     // MARK: - Run-now markers
 
     func testARunNowMarkerSurvivesAFailedStartStamp() async throws {
@@ -156,23 +216,35 @@ private final class TickLoopRecorder: @unchecked Sendable {
     private var _events: [Event] = []
     private var _saved: [TickState] = []
     private var _markerOnDisk: [Bool] = []
+    private var _failures: [(label: String, message: String)] = []
+
+    /// What a failed save throws, so a test can find it in the recorded message.
+    static let saveErrorText = "disk full in the test"
 
     init(failingSaves: Set<Int> = []) {
         self.failingSaves = failingSaves
     }
 
-    /// `saveTickState`'s contract: true when the stamps reached disk.
-    func save(_ state: TickState) -> Bool {
-        lock.withLock { () -> Bool in
+    /// `TickState.save`'s contract: throws when the stamps did not reach disk.
+    func save(_ state: TickState) throws {
+        let failed = lock.withLock { () -> Bool in
             saveAttempts += 1
             guard !failingSaves.contains(saveAttempts) else {
                 _events.append(.saveFailed)
-                return false
+                return true
             }
             _events.append(.saved)
             _saved.append(state)
-            return true
+            return false
         }
+        if failed {
+            throw NSError(domain: "TickLoopTests", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: Self.saveErrorText])
+        }
+    }
+
+    func failure(_ label: String, _ message: String) {
+        lock.withLock { _failures.append((label, message)) }
     }
 
     func cleared(_ label: String) {
@@ -193,4 +265,5 @@ private final class TickLoopRecorder: @unchecked Sendable {
     var events: [Event] { lock.withLock { _events } }
     var saved: [TickState] { lock.withLock { _saved } }
     var markerOnDiskAtRunStart: [Bool] { lock.withLock { _markerOnDisk } }
+    var failures: [(label: String, message: String)] { lock.withLock { _failures } }
 }

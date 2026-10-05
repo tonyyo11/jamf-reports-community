@@ -106,6 +106,14 @@ struct TrendsView: View {
         return lo...hi
     }
 
+    /// A pill's line: the whole range, as the pill's change and the chart cover it, thinned to
+    /// at most `limit` evenly spaced points with the first and last kept.
+    nonisolated static func sparklineValues(_ series: [Double], limit: Int = 24) -> [Double] {
+        guard limit >= 2, series.count > limit else { return series }
+        let step = Double(series.count - 1) / Double(limit - 1)
+        return (0..<limit).map { series[Int((Double($0) * step).rounded())] }
+    }
+
     /// About a tenth of headroom over the largest count, rounded up to a fifth of its order of
     /// magnitude (524 → 580, 1,100 → 1,400), and never under 10.
     nonisolated static func deviceCountAxisTop(_ dataMax: Double) -> Double {
@@ -131,8 +139,17 @@ struct TrendsView: View {
         return SummaryJSONParser.dateFormatter.string(from: d)
     }
 
-    private var startVal: Double { values.first ?? 0 }
-    private var endVal: Double { values.last ?? 0 }
+    private var startVal: Double { changeValues.first ?? 0 }
+    private var endVal: Double { changeValues.last ?? 0 }
+
+    /// The values the hero's change compares: for the Security Score only the days since its
+    /// definition last changed.
+    private var changeValues: [Double] { changeSeries(for: metric, values) }
+
+    private func changeSeries(for m: TrendSeries.Metric, _ series: [Double]) -> [Double] {
+        guard m == .securityScore, !workspaceStore.demoMode else { return series }
+        return trendStore.comparableSecurityScores()
+    }
     private var delta: Double { endVal - startVal }
 
     /// Below this baseline (in the metric's own units), a relative-change
@@ -176,6 +193,23 @@ struct TrendsView: View {
         }
     }
 
+    nonisolated static func snapshotCountText(_ count: Int) -> String {
+        "\(count) snapshot\(count == 1 ? "" : "s")"
+    }
+
+    /// What one point of the line is, from the lower median gap between the snapshots: a
+    /// daily history reads "Daily snapshot", not the weekly one a legacy import had.
+    nonisolated static func snapshotCadenceLabel(_ dates: [Date]) -> String {
+        let sorted = dates.sorted()
+        guard sorted.count > 1 else { return "Snapshot" }
+        let gaps = zip(sorted.dropFirst(), sorted).map { $0.timeIntervalSince($1) }.sorted()
+        let typical = gaps[(gaps.count - 1) / 2]
+        let day: TimeInterval = 24 * 3600
+        if typical < 1.5 * day { return "Daily snapshot" }
+        if (6 * day)...(8 * day) ~= typical { return "Weekly snapshot" }
+        return "Snapshot"
+    }
+
     /// A metric value as the hero shows it. No value is a dash: "0%" would read as measured.
     nonisolated static func metricValueText(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
@@ -190,21 +224,38 @@ struct TrendsView: View {
         return (low, high, values.reduce(0, +) / Double(values.count))
     }
 
-    /// A pill's change over the range; a metric with no points shows a dash, not "±0".
-    nonisolated static func pillDeltaText(series: [Double], unit: String) -> String {
-        guard let first = series.first, let last = series.last else { return "—" }
-        let change = Int((last - first).rounded())
-        if change == 0 { return "±0\(unit)" }
-        return "\(change > 0 ? "+" : "")\(change)\(unit)"
+    /// The change over the range for one metric, nil when it has no points.
+    nonisolated static func trendChange(
+        metric: TrendSeries.Metric, series: [Double]
+    ) -> TrendChange? {
+        guard let first = series.first, let last = series.last else { return nil }
+        return TrendChange(metric: metric, first: first, last: last)
     }
 
-    private var pctDelta: Double? {
-        Self.relativeChangePercent(delta: delta, baseline: startVal)
+    /// A pill's change over the range, in percentage points for a share; a metric with no
+    /// points shows a dash, not "±0".
+    nonisolated static func pillDeltaText(metric: TrendSeries.Metric, series: [Double]) -> String {
+        trendChange(metric: metric, series: series)?.pillText ?? "—"
     }
 
-    /// "good" trend for stale-devices is *down*; everything else is *up*.
-    private var deltaIsPositive: Bool {
-        metric == .stale ? delta < 0 : delta > 0
+    /// The hero's change: a relative percentage only for a count, whose baseline can be a
+    /// different size from its change. A share's change is already in percentage points.
+    private var heroChange: TrendChange {
+        TrendChange(metric: metric, first: startVal, last: endVal)
+    }
+
+    private var heroChangeText: String {
+        let relative = metric.unit == "%" ? nil
+            : Self.relativeChangePercent(delta: delta, baseline: startVal)
+        return heroChange.heroText(relativeChange: relative)
+    }
+
+    private func verdictColor(_ verdict: TrendChange.Verdict) -> Color {
+        switch verdict {
+        case .better: Theme.Colors.ok
+        case .worse: Theme.Colors.danger
+        case .neutral: Theme.Text.tertiary(contrast)
+        }
     }
 
     /// "Apr 1 → Apr 25 · 12 weeks" — used as the hero header date-range pill.
@@ -244,6 +295,7 @@ struct TrendsView: View {
                 }
                 metricPicker
                 heroChart
+                aiInsightCard
                 comparisonRow
                 snapshotArchive
             }
@@ -286,6 +338,7 @@ struct TrendsView: View {
             TrendStore.computeSnapshot(profile: profile)
         }.value
         trendStore.apply(snapshot, profile: profile, range: r, generation: generation)
+        await trendStore.backfillAgentCoverage(profile: profile)
     }
 
     /// First-load placeholder: shown only while the initial scan runs with no
@@ -329,7 +382,7 @@ struct TrendsView: View {
             kicker: "Trends · \(range.rawValue)",
             breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
             title: "Historical Trends",
-            subtitle: "Snapshot history from snapshots/summaries · \(trendDates.count) snapshot\(trendDates.count == 1 ? "" : "s")",
+            subtitle: "Snapshot history · \(Self.snapshotCountText(trendDates.count))",
             // The demo dataset is frozen on purpose; an age warning on it is noise.
             lastModified: workspaceStore.demoMode ? nil : trendStore.filteredSummaries.last?.parsedDate
         ) {
@@ -383,7 +436,7 @@ struct TrendsView: View {
     /// .managedDevices shows in demo mode too, from the demo fleet's
     /// computer and mobile series.
     private var availableMetrics: [TrendSeries.Metric] {
-        TrendSeries.Metric.allCases.filter { metric in
+        workspaceStore.availableMetrics.filter { metric in
             switch metric {
             case .mscpBandTrend:
                 return workspaceStore.demoMode || trendStore.hasMSCPBandHistory
@@ -402,17 +455,13 @@ struct TrendsView: View {
         let sparkValues: [Double]
 
         series = points(for: m).map(\.value)
-        sparkValues = Array(series.suffix(8))
+        sparkValues = Self.sparklineValues(series)
 
-        let dl = (series.last ?? 0) - (series.first ?? 0)
-        let deltaInt = Int(dl.rounded())
-        let deltaState: DeltaState = deltaInt > 0 ? .positive : deltaInt < 0 ? .negative : .flat
-
-        // For mSCP band trends, "good" trend is more devices with data (positive)
-        let goodTrend = m == .stale ? deltaState == .negative : deltaState == .positive
+        let change = Self.trendChange(metric: m, series: changeSeries(for: m, series))
+        let verdict = change?.verdict ?? .neutral
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
-        let isBadTrend = deltaState == .negative && m != .stale && m != .mscpBandTrend
+        let isBadTrend = verdict == .worse
 
         return Button {
             withAnimation(.snappy(duration: 0.25)) { metric = m }
@@ -423,17 +472,14 @@ struct TrendsView: View {
                 Text(metricLabel(m))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text(Self.pillDeltaText(series: series, unit: m.unit))
+                Text(Self.pillDeltaText(metric: m, series: changeSeries(for: m, series)))
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
-                    .foregroundStyle(
-                        deltaState == .flat ? Theme.Text.tertiary(contrast)
-                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
-                    )
+                    .foregroundStyle(verdictColor(verdict))
                 if sparkValues.count >= 2 {
                     Sparkline(
                         values: sparkValues,
-                        color: deltaState == .flat ? Theme.Colors.gold
-                            : (goodTrend ? Theme.Colors.ok : Theme.Colors.danger)
+                        color: verdict == .neutral ? Theme.Colors.gold : verdictColor(verdict),
+                        domain: Self.chartYDomain(metric: m, values: series)
                     )
                     .frame(width: 40, height: 18)
                     .opacity(0.85)
@@ -472,7 +518,7 @@ struct TrendsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Self.metricPillAccessibilityLabel(
-            label: metricLabel(m), unit: m.unit, series: series, goodTrend: goodTrend
+            label: metricLabel(m), metric: m, series: series
         ))
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .help("Show \(metricLabel(m)) trend")
@@ -486,24 +532,19 @@ struct TrendsView: View {
 
     // MARK: Hero chart
 
-    private var deltaText: String {
-        let magnitude = "\(abs(Int(delta.rounded())))\(metric.unit)"
-        return pctDelta.map { "\(magnitude) (\(String(format: "%.1f", $0))%)" } ?? magnitude
-    }
-
     /// The delta, plus the range pill when asked.
     @ViewBuilder
     private func heroIdleDetail(showsRange: Bool) -> some View {
         // With no points there is no change to report; the range pill says "No snapshots".
         if !values.isEmpty {
             HStack(spacing: 4) {
-                Image(systemName: delta > 0 ? "arrow.up" : "arrow.down")
+                Image(systemName: heroChange.symbol)
                     .font(.system(size: 11, weight: .bold))
-                Text(deltaText)
+                Text(heroChangeText)
                     .lineLimit(1)
             }
             .font(Theme.Fonts.mono(14, weight: .semibold))
-            .foregroundStyle(deltaIsPositive ? Theme.Colors.ok : Theme.Colors.danger)
+            .foregroundStyle(verdictColor(heroChange.verdict))
             .fixedSize(horizontal: true, vertical: false)
         }
         if showsRange {
@@ -584,6 +625,8 @@ struct TrendsView: View {
                         mscpBaselinePicker
                     }
                 }
+
+                scoreDefinitionCaption
 
                 // Swift Charts line + area mark OR stacked area for mSCP bands
                 if let domain = chartDomain {
@@ -752,7 +795,7 @@ struct TrendsView: View {
                 HStack(spacing: 16) {
                     HStack(spacing: 6) {
                         Rectangle().fill(Color(hex: metric.colorHex)).frame(width: 14, height: 2)
-                        Text("Weekly snapshot").font(.caption)
+                        Text(Self.snapshotCadenceLabel(trendDates)).font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
                     HStack(spacing: 6) {
@@ -771,6 +814,21 @@ struct TrendsView: View {
                             + "snapshots live.")
                 }
             }
+        }
+    }
+
+    // MARK: AI insight
+
+    /// macOS 27, opt-in: how the offered metrics moved over the selected range. The card
+    /// hides itself while `ai.enabled` is off; the input is built only where it can show.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspaceStore.demoMode) {
+            TrendsAIInsightCard(
+                trendStore: trendStore,
+                benchmarkLabel: workspaceStore.complianceBenchmarkLabel,
+                edrAgentName: workspaceStore.edrAgentName,
+                metrics: workspaceStore.availableMetrics)
         }
     }
 
@@ -1020,6 +1078,19 @@ struct TrendsView: View {
     /// `.mscpBandTrend` and `.managedDevices` marks use `.foregroundStyle(by:)`
     /// — every other metric styles its mark directly, so the scale is inert
     /// for them and picking the right one here only matters for those two.
+    /// Under the Security Score chart when its inputs changed inside the visible range.
+    @ViewBuilder
+    private var scoreDefinitionCaption: some View {
+        if metric == .securityScore, !workspaceStore.demoMode,
+           let note = trendStore.securityScoreDefinitionNote(
+               edrAgentName: workspaceStore.edrAgentName) {
+            Text(note)
+                .font(.footnote)
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var heroChartForegroundScale: (labels: [String], colors: [Color]) {
         metric == .managedDevices ? managedDevicesChartScale : mscpBandChartScale
     }
@@ -1151,68 +1222,41 @@ struct TrendsView: View {
         }
     }
 
-    /// A pill's VoiceOver label; a metric with no points says so rather than "+0% change",
-    /// matching the dash the pill shows.
+    /// A pill's VoiceOver label; a metric with no points says so rather than "+0 pp change",
+    /// matching the dash the pill shows. A metric with no good direction says "up" or "down".
     nonisolated static func metricPillAccessibilityLabel(
         label: String,
-        unit: String,
-        series: [Double],
-        goodTrend: Bool
+        metric: TrendSeries.Metric,
+        series: [Double]
     ) -> String {
-        guard let first = series.first, let last = series.last else {
+        guard let change = trendChange(metric: metric, series: series) else {
             return "\(label), no snapshots in range"
         }
-        let delta = last - first
-        let direction = goodTrend ? "improving" : (delta == 0 ? "unchanged" : "declining")
-        let deltaStr = "\(delta >= 0 ? "+" : "")\(Int(delta.rounded()))\(unit)"
-        return "\(label), \(direction), \(deltaStr) change"
-    }
-
-    /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
-    /// of how wide the visible window is, so labels don't collide.
-    /// `.all` returns 0 as a sentinel — the builder switches to `.automatic`
-    /// because the visible span depends on how much history exists.
-    private func xAxisStrideDays(for range: TrendRange) -> Int {
-        switch range {
-        case .w4:  return 7
-        case .w12: return 14
-        case .w26: return 28
-        case .w52: return 56
-        case .all: return 0
+        if change.direction == .flat { return "\(label), unchanged" }
+        let direction = switch (change.verdict, change.direction) {
+        case (.better, _): "improving"
+        case (.worse, _): "declining"
+        case (.neutral, .up): "up"
+        case (.neutral, _): "down"
         }
+        return "\(label), \(direction), \(change.pillText) change"
     }
 
-    /// Date format that scales with range width.
-    /// - .w4/.w12: "Apr 1" — month + day
-    /// - .w26/.w52: "Apr '26" — month + 2-digit year
-    /// - .all: "2026" — year only
-    private func xAxisDateFormat(for range: TrendRange) -> Date.FormatStyle {
-        switch range {
-        case .w4, .w12:
-            return .dateTime.month(.abbreviated).day()
-        case .w26, .w52:
-            return .dateTime.month(.abbreviated).year(.twoDigits)
-        case .all:
-            return .dateTime.year()
-        }
-    }
-
-    /// Shared X-axis marks for all three trend charts. Stride scales with
-    /// range; `.all` defers to Swift Charts' automatic spacing with a
-    /// desired-count hint so multi-year data stays readable.
+    /// Shared X-axis marks for all three trend charts. The step and label format come from
+    /// `TrendAxis`; `.all` defers to Swift Charts' automatic spacing and its own label format,
+    /// since the visible span depends on how much history exists.
     @AxisContentBuilder
     private func trendXAxisMarks(for range: TrendRange) -> some AxisContent {
-        let format = xAxisDateFormat(for: range)
         // WCAG 1.4.4: .caption.monospaced() is a Dynamic Type style; scales with text size.
-        if range == .all {
-            AxisMarks(values: .automatic(desiredCount: 8)) { _ in
+        if let step = TrendAxis.step(for: range), let format = TrendAxis.dateFormat(for: range) {
+            AxisMarks(values: .stride(by: step.component, count: step.count)) { _ in
                 AxisValueLabel(format: format)
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         } else {
-            AxisMarks(values: .stride(by: .day, count: xAxisStrideDays(for: range))) { _ in
-                AxisValueLabel(format: format)
+            AxisMarks(values: .automatic(desiredCount: 8)) { _ in
+                AxisValueLabel()
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -1256,10 +1300,8 @@ struct TrendsView: View {
                         HStack(spacing: 4) {
                             Text("snapshots/summaries/")
                                 .font(Theme.Fonts.mono(11.5))
-                            Text("· \(trendDates.count) archived summaries · auto-archived from each ")
-                            Text("generate")
-                                .font(Theme.Fonts.mono(11))
-                            Text(" run")
+                            Text("· \(trendDates.count) archived summaries · one per day, "
+                                 + "written by collect")
                         }
                         .font(.caption)
                         .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -1405,6 +1447,8 @@ struct TrendsView: View {
         // one in demo mode; the button is disabled there too.
         guard !workspaceStore.demoMode else { return }
         let profile = workspaceStore.profile
+        guard workspaceStore.beginReportRun(for: profile) else { return }
+        defer { workspaceStore.clearRunInProgress(for: profile) }
         isArchiving = true
         workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
         // Status-bar race guard — see AuditView.runAudit comment.
@@ -1429,9 +1473,18 @@ struct TrendsView: View {
         } catch {
             isArchiving = false
             workspaceStore.globalStatus = nil
-            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
-            workspaceStore.toast = Toast(message: "Archive failed — \(error.localizedDescription)", style: .danger)
+            // The bridge logs a refusal itself, as a notice.
+            if !CLIBridgeError.isCollectRefusal(error) {
+                AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            }
+            workspaceStore.toast = Self.archiveFailureToast(error)
         }
+    }
+
+    /// A scheduled run holding the tick lock, or another collect running, is a refusal, shown
+    /// as information.
+    nonisolated static func archiveFailureToast(_ error: Error) -> Toast {
+        WorkspaceStore.collectFailureToast(error, operation: "Archive")
     }
 
     // MARK: Export PNG
@@ -1485,7 +1538,6 @@ struct TrendsView: View {
 
 // MARK: - Helpers
 
-private enum DeltaState { case positive, negative, flat }
 
 extension Array {
     subscript(safe idx: Int) -> Element? { indices.contains(idx) ? self[idx] : nil }
@@ -1800,5 +1852,62 @@ private struct ChartExportView: View {
         if normalized <= 2 { return 2 * magnitude }
         if normalized <= 5 { return 5 * magnitude }
         return 10 * magnitude
+    }
+}
+
+/// The Trends screen's AI card, in a view of its own: a chart hover redraws the screen, and
+/// with nothing here changed SwiftUI does not run this body again, so the input is not
+/// rebuilt; `AIInsightCard` builds it only while the card shows. Live profiles only, so the
+/// points are the store's.
+private struct TrendsAIInsightCard: View {
+    let trendStore: TrendStore
+    let benchmarkLabel: String?
+    let edrAgentName: String?
+    let metrics: [TrendSeries.Metric]
+
+    var body: some View {
+        AIInsightCard(
+            title: "AI Trend Insight",
+            idleText: "Summarize how these metrics moved over the selected range using "
+                + "on-device intelligence.",
+            provenanceText: "AI-generated from the snapshots in this range — verify "
+                + "against the chart above."
+        ) {
+            // `trends` leaves out the band metric and any metric with fewer than two
+            // points, which is what the screen's picker hides on a live profile.
+            FleetInsightInput.trends(
+                metrics: metrics,
+                points: { trendStore.points(metric: $0) },
+                label: { $0.displayLabel(
+                    benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) })
+        }
+    }
+}
+
+/// The step and label format of the trend charts' X axis. A tick lands once per month on the
+/// long ranges, because a 28-day step put two ticks in one month and two labels read
+/// "Jun 26"; the year is four digits because "Jun 26" also reads as the 26th of June.
+enum TrendAxis {
+    /// The calendar step between labels, holding about 6 to 13 labels however wide the range
+    /// is. Nil for `.all`, whose spacing Charts chooses.
+    static func step(for range: TrendRange) -> (component: Calendar.Component, count: Int)? {
+        switch range {
+        case .w4:  (.day, 7)
+        case .w12: (.day, 14)
+        case .w26: (.month, 1)
+        case .w52: (.month, 2)
+        case .all: nil
+        }
+    }
+
+    /// "Apr 1" while a label is a day, "Apr 2026" once it is a month; nil for `.all`, where the
+    /// default label follows whatever step Charts picks (a fixed one printed "2026" at every
+    /// tick).
+    static func dateFormat(for range: TrendRange) -> Date.FormatStyle? {
+        switch range {
+        case .w4, .w12: .dateTime.month(.abbreviated).day()
+        case .w26, .w52: .dateTime.month(.abbreviated).year()
+        case .all: nil
+        }
     }
 }

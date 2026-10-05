@@ -305,32 +305,6 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         )
     }
 
-    // MARK: - Part 2: Profile name slug sanitization
-
-    func test_slugify_lowercasesAndReplacesSpaces() {
-        XCTAssertEqual(OnboardingFlow.slugify("Jamf Platform"), "jamf-platform")
-    }
-
-    func test_slugify_collapsesMultipleSpaces() {
-        XCTAssertEqual(OnboardingFlow.slugify("My  Tenant"), "my-tenant")
-    }
-
-    func test_slugify_stripsSpecialChars() {
-        XCTAssertEqual(OnboardingFlow.slugify("My Tenant!"), "my-tenant")
-    }
-
-    func test_slugify_validSlugPassesProfileService() {
-        let slug = OnboardingFlow.slugify("Jamf Platform")
-        XCTAssertTrue(
-            ProfileService.isValid(slug),
-            "slugified 'Jamf Platform' must pass ProfileService.isValid; got '\(slug)'"
-        )
-    }
-
-    func test_slugify_emptyInputReturnsProfile() {
-        XCTAssertFalse(OnboardingFlow.slugify("").isEmpty, "empty input must not produce empty slug")
-    }
-
     // MARK: - Part 2: Secret redaction in error output
 
     func test_secretNotLeakedInPlatformError() {
@@ -439,6 +413,69 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         // protect keys must be present
         let protectMapping = loaded.document.root.mapping?.value(for: "protect")?.mapping
         XCTAssertEqual(protectMapping?.value(for: "enabled")?.boolValue, true)
+    }
+
+    /// The onboarding writes go through the scoped writer: a key the app does not read inside
+    /// `protect:` or `school_cli:` stays, and a comment there is backed up and reported.
+    func test_productWrites_keepUnknownKeysAndBackUpComments() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MPTest-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testproducts"
+        let url = try ConfigService.configURL(for: profile)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        protect:
+          # second tenant
+          team_note: keep me
+        school_cli:
+          site_note: keep me too
+        """.write(to: url, atomically: true, encoding: .utf8)
+        let flow = OnboardingFlow()
+
+        let protect = try flow.writeProtectConfig(
+            profileSlug: profile, protectProfileName: "my-protect")
+        let school = try flow.writeSchoolConfig(profileSlug: profile, schoolProfileName: "edu")
+
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains("team_note: keep me"), text)
+        XCTAssertTrue(text.contains("site_note: keep me too"), text)
+        let backup = try XCTUnwrap(protect.backupName)
+        XCTAssertTrue(protect.statusLine?.contains(backup) ?? false)
+        XCTAssertNil(school.backupName, "nothing in school_cli was dropped")
+    }
+
+    /// Recording a connection keeps what the write did not keep as the flow's note, which the
+    /// Add Products card and the connect sheet show beside CONNECTED.
+    func test_recordingAConnectionKeepsTheBackupNote() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MPTest-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testnote"
+        let url = try ConfigService.configURL(for: profile)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "protect:\n  # second tenant\n  enabled: false\n"
+            .write(to: url, atomically: true, encoding: .utf8)
+        let flow = OnboardingFlow()
+
+        try flow.recordProtectConnection(profileSlug: profile, protectProfileName: "p")
+        try flow.recordSchoolConnection(profileSlug: profile, schoolProfileName: "s")
+
+        XCTAssertTrue(flow.protectConnected)
+        XCTAssertTrue(flow.protectConfigNote?.contains("config.yaml.bak-") ?? false,
+                      "\(String(describing: flow.protectConfigNote))")
+        XCTAssertTrue(flow.schoolConnected)
+        XCTAssertNil(flow.schoolConfigNote, "school_cli held nothing to drop")
     }
 
     func test_writeSchoolConfig_setsEnabledAndProfile() async throws {

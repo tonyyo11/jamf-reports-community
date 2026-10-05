@@ -29,6 +29,9 @@ extension DemoData {
     struct RunLog: Sendable {
         let summary: RunHistoryService.RunSummary
         let lines: [CLIBridge.LogLine]
+        /// When the run ended. The row is dated at its start; the Automation screen's Last
+        /// Run is this.
+        let finished: Date
     }
 
     /// A demo profile's Run History, newest first. Each schedule's newest run
@@ -92,7 +95,7 @@ extension DemoData {
     }
 
     /// The row and log a real run of the same schedule would leave: named like
-    /// `ScheduledRunRecorder`'s files, listed at the log's last write.
+    /// `ScheduledRunRecorder`'s files, listed at the run's start.
     private static func runLog(_ run: PlannedRun) -> RunLog {
         let label = LaunchAgentWriter.label(for: run.schedule) ?? run.schedule.name
         // Display only: demo mode never reads it. It sits where the demo's
@@ -107,7 +110,7 @@ extension DemoData {
             logURL: logURL,
             label: label,
             name: run.schedule.name,
-            date: run.finished,
+            date: run.start,
             exitCode: run.recordedExit ? 0 : nil,
             status: run.recordedExit ? .ok : .warn,
             duration: run.recordedExit ? "\(run.seconds)s" : nil
@@ -115,7 +118,7 @@ extension DemoData {
         let lines = logText(run, label: label).map { text in
             CLIBridge.LogLine(timestamp: run.finished, level: .from(line: text), text: text)
         }
-        return RunLog(summary: summary, lines: lines)
+        return RunLog(summary: summary, lines: lines, finished: run.finished)
     }
 
     /// The log lines, in the formats `ScheduledRunRecorder`, `ReportEngine`
@@ -163,16 +166,13 @@ extension DemoData {
     /// Monday's executive report collects, then stopped before its exit line.
     private static let staleMobileCacheWarnings = [
         "[warn] mobile-devices-list: newest cached snapshot is from Apr 20 — 4 days old",
-        "[warn] mobile-device-inventory-details: newest cached snapshot is from Apr 20 "
-            + "— 4 days old",
     ]
 
     private static let refreshKinds = [
         "overview", "security", "inventory-summary", "patch-status", "policy-status", "audit",
     ]
     private static let inventoryKinds = [
-        "computers", "mobile-devices-list", "mobile-device-inventory-details", "ea-results",
-        "app-status", "update-status",
+        "computers", "mobile-devices-list", "ea-results", "app-status", "update-status",
     ]
     private static let scanKinds = ["patch-device-failures", "update-device-failures"]
     private static let protectKinds = [
@@ -183,8 +183,7 @@ extension DemoData {
     private static let snapshotBytes: [String: Int] = [
         "overview": 18_422, "security": 412_880, "inventory-summary": 9_310,
         "patch-status": 22_614, "policy-status": 58_102, "audit": 31_447,
-        "computers": 2_914_336, "mobile-devices-list": 48_210,
-        "mobile-device-inventory-details": 162_904, "ea-results": 1_204_418,
+        "computers": 2_914_336, "mobile-devices-list": 162_904, "ea-results": 1_204_418,
         "app-status": 88_120, "update-status": 14_632, "patch-device-failures": 18_872,
         "update-device-failures": 21_406, "protect-overview": 2_140, "protect-alerts": 36_518,
         "protect-computers": 128_774, "protect-insights": 44_203, "protect-plans": 6_912,

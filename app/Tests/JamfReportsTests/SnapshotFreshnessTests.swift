@@ -31,6 +31,26 @@ final class SnapshotFreshnessTests: XCTestCase {
         XCTAssertEqual(result, .noSnapshots)
     }
 
+    // MARK: - By profile
+
+    /// The profile's data directory, as the Reports screen reads it before opening Generate.
+    func testAProfileIsEvaluatedInItsDataDirectory() throws {
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", tempDir.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+        }
+        XCTAssertEqual(SnapshotFreshness.evaluate(profile: "p"), .noSnapshots)
+        let kind = tempDir.appendingPathComponent("p/jamf-cli-data/computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: kind, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(to: kind.appendingPathComponent("computers.json"))
+        guard case .fresh = SnapshotFreshness.evaluate(profile: "p") else {
+            return XCTFail("a snapshot written just now is fresh")
+        }
+        XCTAssertEqual(SnapshotFreshness.evaluate(profile: ""), .noSnapshots, "not a profile")
+    }
+
     // MARK: - Boundary: 59 minutes → fresh, 61 minutes → stale
 
     func testFiftyNineMinutesIsFresh() throws {

@@ -36,13 +36,13 @@ extension RecentDeviceRow {
         )
     }
 
-    init(record: DeviceInventoryRecord, failedRules: Int?) {
+    init(record: DeviceInventoryRecord, failedRules: Int?, policy: SecurityControlPolicy) {
         self.init(
             id: record.id, name: record.displayName, serial: record.serial,
             jamfID: record.jamfID, os: record.osVersion,
             user: record.email.isEmpty ? record.user : record.email,
             department: record.department.isEmpty ? nil : record.department,
-            fileVault: record.fileVaultEnabled,
+            fileVault: record.fileVaultEnabled(policy: policy),
             failedRules: failedRules,
             lastSeen: Self.lastSeenLabel(record),
             isStale: record.stale
@@ -75,6 +75,8 @@ struct OverviewLiveData: Sendable {
     var failingRuleCount = 0
     /// The benchmark or baseline the rules belong to.
     var failingRulesLabel = ""
+    /// Macs whose results the rule counts come from; 0 when unknown.
+    var failingRulesReportingMacs = 0
 
     var agents: [SecurityAgent] = []
     /// Configured agents no Mac reports a value for — usually a column name
@@ -93,8 +95,7 @@ struct OverviewLiveData: Sendable {
     ]
 }
 
-/// Reads what `OverviewLiveData` holds from the workspace. Disk IO throughout:
-/// call it from a detached task.
+/// Reads what `OverviewLiveData` holds from the workspace. Disk IO throughout.
 enum OverviewLiveDataLoader {
     static let recentLimit = 8
     static let osRowLimit = 6
@@ -102,10 +103,12 @@ enum OverviewLiveDataLoader {
     static let rulesKept = 50
 
     /// Only `sections` are read, so a hidden Recent Activity never pays for
-    /// the device inventory. `fleetCount` is the latest summary's device
-    /// count — the denominator agent cards print — or 0 when unknown.
-    static func load(profile: String, sections: Set<OverviewSection>,
-                     fleetCount: Int) -> OverviewLiveData {
+    /// the device inventory. Nonisolated async, so it runs off the main actor
+    /// but in the caller's task: cancelling that task throws `CancellationError`
+    /// at the next section instead of returning data nobody will show.
+    static func load(
+        profile: String, sections: Set<OverviewSection>
+    ) async throws -> OverviewLiveData {
         var data = OverviewLiveData()
         let wanted = sections.intersection(OverviewLiveData.sections)
         guard !wanted.isEmpty else { return data }
@@ -116,8 +119,10 @@ enum OverviewLiveDataLoader {
         }
         let config = loadConfig(profile: profile)
         if wanted.contains(.osDistribution) {
+            try Task.checkCancellation()
             loadOSDistribution(into: &data, dataDir: dataDir)
         }
+        try Task.checkCancellation()
         let benchmarks = wanted.contains(.topFailingRules)
             ? ComplianceBenchmarksService.load(profile: profile)
             : ComplianceBenchmarksService.Snapshot.empty
@@ -129,18 +134,21 @@ enum OverviewLiveDataLoader {
                        && baseline?.failuresListColumn != nil)
             || (wanted.contains(.securityAgents) && !agents.isEmpty)
             || (wanted.contains(.recentActivity) && baseline != nil)
+        try Task.checkCancellation()
         let eaRows = needsEA ? loadEARows(dataDir: dataDir) : nil
         if wanted.contains(.topFailingRules) {
             loadFailingRules(into: &data, benchmarks: benchmarks, baseline: baseline,
                              eaRows: eaRows)
         }
         if wanted.contains(.securityAgents) {
-            loadAgents(into: &data, agents: agents, eaRows: eaRows, fleetCount: fleetCount)
+            loadAgents(into: &data, agents: agents, eaRows: eaRows)
         }
         if wanted.contains(.recentActivity) {
+            try Task.checkCancellation()
             loadRecentActivity(into: &data, profile: profile, baseline: baseline,
                                eaRows: eaRows)
         }
+        try Task.checkCancellation()
         return data
     }
 
@@ -178,6 +186,7 @@ enum OverviewLiveDataLoader {
             data.failingRules = Array(built.rules.prefix(rulesKept))
             data.failingRuleCount = built.rules.count
             data.failingRulesLabel = built.label
+            data.failingRulesReportingMacs = built.reportingMacs
             return
         }
         guard let baseline, let listColumn = baseline.failuresListColumn else {
@@ -206,13 +215,13 @@ enum OverviewLiveDataLoader {
         data.failingRules = Array(built.rules.prefix(rulesKept))
         data.failingRuleCount = built.rules.count
         data.failingRulesLabel = baseline.name
+        data.failingRulesReportingMacs = built.reportingMacs
     }
 
     private static func loadAgents(
         into data: inout OverviewLiveData,
         agents: [SecurityAgentConfig],
-        eaRows: [EAResultRow]?,
-        fleetCount: Int
+        eaRows: [EAResultRow]?
     ) {
         guard !agents.isEmpty else {
             data.unavailable[.securityAgents] = OverviewUnavailable(
@@ -236,15 +245,14 @@ enum OverviewLiveDataLoader {
                 remedy: .config)
             return
         }
-        // The card prints "installed / fleet", so the percentage uses the same
-        // denominator; without a summary, the Macs ea-results knows about.
-        let fleet = fleetCount > 0
-            ? fleetCount : MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
+        // Until the view re-expresses them against the summary's device count
+        // (`agents(_:overFleet:)`), the share is of the Macs ea-results knows about.
+        let known = MSCPComplianceService.allDistinctDeviceIds(in: eaRows).count
         data.agents = reported.map {
             SecurityAgent(
                 name: $0.name, installed: $0.installed,
-                pct: SecurityAgentCoverage.percent(installed: $0.installed, fleet: fleet) ?? 0,
-                column: $0.column, trend: .flat)
+                pct: SecurityAgentCoverage.percent(installed: $0.installed, fleet: known) ?? 0,
+                column: $0.column, trend: nil)
         }
         data.agentsWithoutValues = coverage.filter { $0.reporting == 0 }.map(\.name)
     }
@@ -266,19 +274,57 @@ enum OverviewLiveDataLoader {
             eaRows.map { failureCounts(rows: $0, countColumn: base.failuresCountColumn) }
         } ?? [:]
         data.recentDevices = recentDevices(inventory.devices, limit: recentLimit).map { record in
-            RecentDeviceRow(record: record, failedRules: failedRules(
-                for: record, eaCounts: counts, baselineConfigured: baseline != nil))
+            RecentDeviceRow(
+                record: record,
+                failedRules: failedRules(
+                    for: record, eaCounts: counts, baselineConfigured: baseline != nil),
+                policy: inventory.securityPolicy)
         }
     }
 
     // MARK: Pure builders (tested)
+
+    /// Agent cards as a share of `fleet`, the latest summary's device count —
+    /// the denominator the daily summary's EDR figure uses, so a Mac with no
+    /// value counts as not connected. The share is unchanged while the fleet is unknown.
+    ///
+    /// The daily summary records coverage day by day for one agent only, the first configured
+    /// (`edrAgentName`), so `edrSeries`, its values oldest first, gives that agent a trend and
+    /// every other agent none: no series, no direction.
+    static func agents(
+        _ agents: [SecurityAgent], overFleet fleet: Int,
+        edrAgentName: String? = nil, edrSeries: [Double] = []
+    ) -> [SecurityAgent] {
+        agents.map { agent in
+            SecurityAgent(
+                name: agent.name, installed: agent.installed,
+                pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
+                    ?? agent.pct,
+                column: agent.column,
+                trend: agent.name == edrAgentName ? trend(of: edrSeries) : nil)
+        }
+    }
+
+    /// Direction of the last two values of a coverage series, compared at the precision the
+    /// card prints (a tenth of a point). Nil with fewer than two values.
+    static func trend(of series: [Double]) -> SecurityAgent.Trend? {
+        guard series.count >= 2 else { return nil }
+        let latest = (series[series.count - 1] * 10).rounded()
+        let previous = (series[series.count - 2] * 10).rounded()
+        if latest > previous { return .up }
+        return latest < previous ? .down : .flat
+    }
 
     /// Versions by device count, the rest rolled into "Other" past `limit`.
     /// `currentShare` is nil without a SOFA feed.
     static func osDistribution(
         counts: [String: Int], latestByMajor: [Int: String], limit: Int
     ) -> (rows: [OSDistribution], currentShare: Double?, total: Int, versions: Int) {
-        let valid = counts.filter { $0.value > 0 && !$0.key.isEmpty }
+        // "26.7" and "26.7.0" are one release (`OSVersionName`).
+        let valid = Dictionary(
+            counts.filter { $0.value > 0 && !$0.key.isEmpty }
+                .map { (OSVersionName.normalized($0.key), $0.value) },
+            uniquingKeysWith: +)
         let total = valid.values.reduce(0, +)
         guard total > 0 else { return ([], nil, 0, 0) }
         let ranked = valid.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key > $1.key }
@@ -313,10 +359,11 @@ enum OverviewLiveDataLoader {
 
     /// Failing rules from a Compliance Benchmarks snapshot. Aggregating across
     /// benchmarks would double-count Macs, so with several the first is used —
-    /// the one the Compliance Benchmarks screen opens on.
+    /// the one the Compliance Benchmarks screen opens on. `reportingMacs` is how
+    /// many Macs that benchmark evaluated.
     static func failingRules(
         benchmarks snapshot: ComplianceBenchmarksService.Snapshot
-    ) -> (rules: [FailingRule], label: String) {
+    ) -> (rules: [FailingRule], label: String, reportingMacs: Int) {
         let names = snapshot.benchmarks
         let scoped = names.count > 1 ? snapshot.filtered(to: names[0]) : snapshot
         let label = names.first ?? "Compliance Benchmark"
@@ -324,12 +371,14 @@ enum OverviewLiveDataLoader {
             guard let failed = rule.failed, failed > 0 else { return nil }
             return FailingRule(ruleID: rule.rule, fails: failed, baseline: label)
         }
-        return (ranked(rules), label)
+        // Every rule of a benchmark is evaluated on the same Macs; the largest
+        // count covers a rule that skipped a Mac.
+        return (ranked(rules), label, scoped.rules.map(\.devices).max() ?? 0)
     }
 
-    /// Failing rules from the failures-list extension attribute: a pipe-separated
-    /// list of rule IDs per Mac, each rule counted once per Mac.
-    /// `reportingMacs` is how many Macs have a row for the column at all.
+    /// Failing rules from the failures-list extension attribute: a list of rule IDs per Mac
+    /// (`FailedRuleList`), each rule counted once per Mac. `reportingMacs` is how many Macs
+    /// have a list in the column, an empty one included.
     static func failingRules(
         rows: [EAResultRow], listColumn: String, baseline: String
     ) -> (rules: [FailingRule], reportingMacs: Int) {
@@ -340,11 +389,11 @@ enum OverviewLiveDataLoader {
                   eaName.caseInsensitiveCompare(listColumn) == .orderedSame,
                   let id = MSCPComplianceService.primaryIdentifier(for: row)?.lowercased()
             else { continue }
+            // A status in place of a list ("No Baseline Set") is a Mac the audit did not
+            // evaluate: not a failing rule, and not a reporting Mac.
+            guard let rules = FailedRuleList.rules(in: row.value?.stringValue) else { continue }
             reporting.insert(id)
-            for part in (row.value?.stringValue ?? "").split(separator: "|") {
-                let rule = part.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !rule.isEmpty { macsPerRule[rule, default: []].insert(id) }
-            }
+            for rule in rules { macsPerRule[rule, default: []].insert(id) }
         }
         let rules = macsPerRule.map {
             FailingRule(ruleID: $0.key, fails: $0.value.count, baseline: baseline)

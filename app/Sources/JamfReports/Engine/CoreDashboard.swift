@@ -19,6 +19,10 @@ struct CoreDashboard: Sendable {
     /// GUI-generate-only AI executive narrative (F3). nil (the default) writes
     /// no AI block on the Executive Summary sheet — headless callers never set it.
     let aiNarrative: String?
+    /// Shared by the copies of this struct that `sheetPlan`'s closures hold.
+    private let hardwareIndex = OnceCache<[String: Bool]>()
+    /// The `computers` snapshot's dates, read once for every sheet that grades by the stale rule.
+    private let computerDateIndex = OnceCache<ComputerDateIndex?>()
 
     init(
         config: ReportConfig,
@@ -34,7 +38,6 @@ struct CoreDashboard: Sendable {
         self.aiNarrative = aiNarrative
     }
 
-    private var accentColor: String { config.branding?.resolvedAccentColor ?? "#2D5EA2" }
     private var orgName: String { config.branding?.resolvedOrgName ?? "" }
 
     // MARK: - Sheet plan
@@ -51,7 +54,8 @@ struct CoreDashboard: Sendable {
     ///
     /// **All sheets in this plan are always included** — they gracefully skip (write a
     /// "no data" placeholder) when the underlying jamf-cli data is absent or malformed.
-    /// Config-gating via `sheets.only` / `sheets.skip` is applied externally in `writeAll`.
+    /// `sheets.only` / `skip` / `order` are applied by `SheetRegistry.writeSelected` and
+    /// `Workbook.arrange(by:)`.
     ///
     /// **Adding a new sheet:** append to the appropriate group comment, update the group
     /// range comment (e.g., "sheets 28–32"), and add a corresponding test in
@@ -116,45 +120,6 @@ struct CoreDashboard: Sendable {
             ("mSCP Compliance", writeMSCPCompliance),
             ("Compliance Trend", writeComplianceTrend),
         ]
-    }
-
-    /// Write all sheets; skip silently on missing/malformed data.
-    ///
-    /// Applies `sheets.only`, `sheets.skip`, and `sheets.order` from config before
-    /// iterating. `selectedNames` further narrows to a caller-specified subset (used by
-    /// the UI when the user wants a single sheet regenerated).
-    /// Returns list of sheet names successfully written and any unexpected failures.
-    @discardableResult
-    func writeAll(selectedNames: Set<String>? = nil) -> (written: [String], failures: [SheetFailure]) {
-        let effectivePlan = (config.sheets ?? SheetsConfig()).applyTo(sheetPlan)
-        var written: [String] = []
-        var failures: [SheetFailure] = []
-        for (name, fn) in effectivePlan {
-            if let sel = selectedNames,
-               !sel.contains(name.lowercased()) {
-                continue
-            }
-            do {
-                try fn()
-                written.append(name)
-            } catch let skippable as SheetSkippable {
-                // Cached data absent — expected for jamf-cli snapshots not yet collected.
-                print("  [skip] \(name): \(skippable)")
-            } catch {
-                let label = "\(type(of: error)): \(error)"
-                failures.append(SheetFailure(sheet: name, error: label))
-                print("  [fail] \(name): unexpected error — \(label)")
-            }
-        }
-        if let logoData = CSVDashboard.loadLogoData(from: config) {
-            for name in written {
-                if let ws = workbook.sheet(named: name) {
-                    ws.insertImage(row: 0, col: 0, data: logoData,
-                                   filename: "logo.png", xScale: 1.0, yScale: 1.0)
-                }
-            }
-        }
-        return (written, failures)
     }
 
     // MARK: - Sheet title helper
@@ -255,13 +220,18 @@ struct CoreDashboard: Sendable {
         // Summary block
         if let s = summaryData {
             let total = s.totalDevices ?? 0
-            let fields: [(String, String)] = [
+            var fields: [(String, String)] = [
                 ("Total Devices", "\(total)"),
                 ("FileVault Encrypted", percentLabel(s.fileVaultEncrypted, total: total)),
                 ("Gatekeeper Enabled", percentLabel(s.gatekeeperEnabled, total: total)),
                 ("SIP Enabled", percentLabel(s.sipEnabled, total: total)),
                 ("Firewall Enabled", percentLabel(s.firewallEnabled, total: total)),
             ]
+            let fleet = securityFleet(items: items)
+            if let n = fleet?.fileVaultOffHardwareEncrypted, n > 0 {
+                fields.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: 2)
+            }
+            fields += notReportedFields(fleet)
             ws.write("Summary", row: row, col: 0, format: .header)
             ws.write("Count / %", row: row, col: 1, format: .header)
             row += 1
@@ -279,10 +249,13 @@ struct CoreDashboard: Sendable {
             ws.write("Count", row: row, col: 1, format: .header)
             ws.write("Pct", row: row, col: 2, format: .header)
             row += 1
-            for v in osVersionRows {
-                ws.write(v.osVersion, row: row, col: 0, format: .cell)
+            let combined = OSVersionName.merged(osVersionRows.map {
+                .init(version: $0.osVersion, count: $0.count, pct: OSVersionName.percent($0.pct))
+            })
+            for v in combined {
+                ws.write(v.version, row: row, col: 0, format: .cell)
                 ws.write(v.count, row: row, col: 1, format: .cell)
-                ws.write(v.pct, row: row, col: 2, format: .cell)
+                ws.write(String(format: "%.1f%%", v.pct), row: row, col: 2, format: .cell)
                 row += 1
             }
         }
@@ -657,7 +630,7 @@ struct CoreDashboard: Sendable {
     // Source: `jamf-cli pro report device-compliance --output json`
 
     func writeDeviceCompliance() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
+        let items = try loadDeviceComplianceRows()
         let ws = workbook.addSheet("Device Compliance")
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(title: t("Device Compliance"),
@@ -671,30 +644,63 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 10)
         ws.setColumnWidth(4, 4, 18)
 
-        let items = (raw as? [[String: Any]]) ?? []
         guard !items.isEmpty else { return }
 
         let headers = ["Name", "Serial", "Managed", "Stale", "Days Since Check-in"]
         for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         for item in items {
-            let isStale = asBool(item["stale"]) ?? false
-            let daysSince = asInt(item["days_since_checkin"])
+            let isStale = isStaleDevice(item)
             let fmt: CellFormat = isStale ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: fmt)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: fmt)
-            ws.write(asBool(item["managed"]).map { $0 ? "Yes" : "No" } ?? "", row: row, col: 2, format: fmt)
+            ws.write(item.name ?? "", row: row, col: 0, format: fmt)
+            ws.write(item.serial ?? "", row: row, col: 1, format: fmt)
+            ws.write(item.managed.map { $0 ? "Yes" : "No" } ?? "", row: row, col: 2, format: fmt)
             ws.write(isStale ? "Yes" : "No", row: row, col: 3, format: fmt)
-            if let d = daysSince {
-                let daysFmt: CellFormat = d >= staleThreshold ? .yellow : .cell
-                ws.write(d, row: row, col: 4, format: daysFmt)
+            if let d = item.resolvedDaysSinceContact {
+                ws.write(d, row: row, col: 4, format: fmt)
             } else {
                 ws.write("", row: row, col: 4, format: fmt)
             }
             row += 1
         }
+    }
+
+    /// Typed device-compliance rows from the newest snapshot. Throws `noCachedData` when there
+    /// is none and the decode error when the file is corrupt, so a corrupt cache fails the
+    /// sheet ([fail]) instead of skipping it.
+    private func loadDeviceComplianceRows() throws -> [DeviceComplianceRow] {
+        let data = try loadLatestJSONData(names: ["device-compliance", "device_compliance"])
+        return try JSONDecoder().decode([DeviceComplianceRow].self, from: data)
+    }
+
+    /// Whether a Mac is stale under the stale rule (`thresholds.stale_device_days` and
+    /// `stale_basis`), the meaning of every "stale" label in the workbook. jamf-cli's own
+    /// `stale` flag is a 14-day cut that the row only falls back to when it knows no date.
+    private func isStaleDevice(_ row: DeviceComplianceRow) -> Bool {
+        isStale(row, rule: config.staleRule)
+    }
+
+    private func isStale(_ row: DeviceComplianceRow, rule: StaleRule) -> Bool {
+        row.isStale(rule, computers: computerDates(for: rule))
+    }
+
+    /// The dates of each Mac in `computers`, only when `rule` counts a date the
+    /// device-compliance rows lack.
+    private func computerDates(for rule: StaleRule) -> ComputerDateIndex? {
+        guard rule.needsComputers else { return nil }
+        return computerDateIndex.value {
+            (try? loadLatestJSONData(names: ["computers", "computers-list", "computers_list"]))
+                .flatMap(ComputerDateIndex.init)
+        }
+    }
+
+    /// What a sheet's subtitle says about the rule: the window, and the dates when they are
+    /// not just the check-in.
+    private func ruleSubtitle(_ rule: StaleRule, window: String = "Stale threshold") -> String {
+        rule.usesDefaultBasis
+            ? "\(window): \(rule.days) days"
+            : "\(window): \(rule.days) days since \(rule.basisPhrase)"
     }
 
     // MARK: - Policy Health
@@ -756,78 +762,113 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Profile Status
-    // Source: `jamf-cli pro classic-macos-profiles list --output json`
+    // Source: `jamf-cli pro report profile-status --output json`, one envelope
+    // `[{summary, failures, device_failures, device_pending}]`. `failures` lists each profile
+    // that errored in the report window; `classic-macos-profiles` only has {id, name}.
 
     func writeProfileStatus() throws {
-        let raw = try loadLatestJSON(
-            names: ["classic-macos-profiles", "macos-profiles", "profiles", "profile-status"]
-        )
+        let names = ["profile-status", "profile_status"]
+        guard let report = try loadFailureReport(names: names, uniqueKey: "unique_profiles") else {
+            throw CoreDashboardError.noCachedData(names: ["profile-status"])
+        }
         let ws = workbook.addSheet("Profile Status")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("Profile Status"),
-                                      subtitle: snapshotSubtitle(
-                                          names: ["classic-macos-profiles", "macos-profiles",
-                                                  "profiles", "profile-status"],
-                                          generated: ts),
-                                      ncols: 5)
-        ws.setColumnWidth(0, 0, 8)
-        ws.setColumnWidth(1, 1, 36)
-        ws.setColumnWidth(2, 2, 18)
-        ws.setColumnWidth(3, 3, 14)
-        ws.setColumnWidth(4, 4, 12)
-
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else { return }
-
-        let hdrs = ["ID", "Name", "Category", "Management Status", "Error Count"]
-        for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
-        row += 1
-
-        let errWarn = config.thresholds?.resolvedProfileErrorWarning ?? 10
-        for item in items {
-            let errCount = asInt(item["error_count"]) ?? 0
-            let fmt: CellFormat = errCount >= errWarn ? .yellow : .cell
-            ws.write(item["id"].flatMap { asInt($0) } ?? 0, row: row, col: 0, format: .cell)
-            ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["category"] as? String ?? "", row: row, col: 2, format: .cell)
-            ws.write(item["management_status"] as? String ?? "", row: row, col: 3, format: .cell)
-            ws.write(errCount, row: row, col: 4, format: fmt)
-            row += 1
-        }
+        writeFailureReport(
+            ws, report, title: "Profile Status", subject: "Profiles",
+            subtitle: snapshotSubtitle(names: names, generated: ts),
+            warnAtErrors: config.thresholds?.resolvedProfileErrorWarning ?? 10)
     }
 
     // MARK: - App Status
-    // Source: `jamf-cli pro report app-status --output json`
+    // Source: `jamf-cli pro report app-status --output json`, the same envelope as
+    // profile-status with `unique_apps` in the summary.
 
     func writeAppStatus() throws {
-        let raw = try loadLatestJSON(names: ["app-status", "app_status"])
+        let names = ["app-status", "app_status"]
+        guard let report = try loadFailureReport(names: names, uniqueKey: "unique_apps") else {
+            throw CoreDashboardError.noCachedData(names: ["app-status"])
+        }
         let ws = workbook.addSheet("App Status")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("App Status"),
-                                      subtitle: "Generated: \(ts)", ncols: 6)
-        ws.setColumnWidth(0, 0, 36)
-        ws.setColumnWidth(1, 1, 16)
-        ws.setColumnWidth(2, 2, 12)
-        ws.setColumnWidth(3, 3, 12)
-        ws.setColumnWidth(4, 4, 12)
-        ws.setColumnWidth(5, 5, 10)
+        writeFailureReport(
+            ws, report, title: "App Status", subject: "Apps",
+            subtitle: snapshotSubtitle(names: names, generated: ts), warnAtErrors: 1)
+    }
 
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else { return }
+    /// What `profile-status` and `app-status` carry: the window, the totals and one row per
+    /// profile or app that errored.
+    private struct FailureReport {
+        let days: Int?
+        let totalErrors: Int
+        let uniqueItems: Int
+        let uniqueDevices: Int
+        let failures: [[String: Any]]
+    }
 
-        let hdrs = ["Name", "Version", "Installed", "Managed", "Total", "Errors"]
+    /// Reads the newest snapshot of `names` as a `FailureReport`. Throws `noCachedData` when
+    /// there is none and the parse error when the file is corrupt; nil when it is valid JSON
+    /// that is not the `{summary, failures}` envelope.
+    private func loadFailureReport(names: [String], uniqueKey: String) throws -> FailureReport? {
+        let raw = try loadLatestJSON(names: names)
+        guard let envelope = (raw as? [[String: Any]])?.first,
+              envelope["summary"] != nil || envelope["failures"] != nil else { return nil }
+        let summary = envelope["summary"] as? [String: Any] ?? [:]
+        let failures = (envelope["failures"] as? [[String: Any]]) ?? []
+        return FailureReport(
+            days: asInt(summary["days"]),
+            totalErrors: asInt(summary["total_errors"]) ?? 0,
+            uniqueItems: asInt(summary[uniqueKey]) ?? failures.count,
+            uniqueDevices: asInt(summary["unique_devices"]) ?? 0,
+            failures: failures)
+    }
+
+    /// Summary rows, then one table row per failing profile or app, most errors first. An
+    /// errors cell turns yellow at `warnAtErrors` or more.
+    private func writeFailureReport(
+        _ ws: Worksheet, _ report: FailureReport,
+        title: String, subject: String, subtitle: String, warnAtErrors: Int
+    ) {
+        var row = ws.writeSheetHeader(title: t(title), subtitle: subtitle, ncols: 7)
+        for (col, width) in [8.0, 36, 14, 10, 10, 14, 60].enumerated() {
+            ws.setColumnWidth(col, col, width)
+        }
+        let window = report.days.map { "last \($0) days" } ?? "report window"
+        let summary: [(String, Int)] = [
+            ("\(subject) with errors", report.uniqueItems),
+            ("Devices affected", report.uniqueDevices),
+            ("Total errors", report.totalErrors),
+        ]
+        ws.write("Install errors, \(window)", row: row, col: 0, format: .header)
+        ws.write("", row: row, col: 1, format: .header)
+        row += 1
+        for (label, value) in summary {
+            ws.write(label, row: row, col: 0, format: .cell)
+            ws.write(value, row: row, col: 1, format: .cell)
+            row += 1
+        }
+        row += 1
+        guard !report.failures.isEmpty else {
+            ws.write("No \(subject.lowercased()) reported install errors.",
+                     row: row, col: 0, format: .cell)
+            return
+        }
+
+        let hdrs = ["ID", "Name", "Device Type", "Errors", "Devices", "Last Error", "Top Error"]
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
-
-        for item in items {
+        let ordered = report.failures.sorted {
+            (asInt($0["errors"]) ?? 0) > (asInt($1["errors"]) ?? 0)
+        }
+        for item in ordered {
             let errors = asInt(item["errors"]) ?? 0
-            let fmt: CellFormat = errors > 0 ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: .cell)
-            ws.write(item["version"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(asInt(item["installed"]) ?? 0, row: row, col: 2, format: .cell)
-            ws.write(asInt(item["managed"]) ?? 0, row: row, col: 3, format: .cell)
-            ws.write(asInt(item["total"]) ?? 0, row: row, col: 4, format: .cell)
-            ws.write(errors, row: row, col: 5, format: fmt)
+            let id = item["id"] as? String ?? asInt(item["id"]).map(String.init) ?? ""
+            ws.write(id, row: row, col: 0, format: .cell)
+            ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
+            ws.write(item["device_type"] as? String ?? "", row: row, col: 2, format: .cell)
+            ws.write(errors, row: row, col: 3, format: errors >= warnAtErrors ? .yellow : .cell)
+            ws.write(asInt(item["devices"]) ?? 0, row: row, col: 4, format: .cell)
+            ws.write(item["last_error"] as? String ?? "", row: row, col: 5, format: .cell)
+            ws.write(item["top_error"] as? String ?? "", row: row, col: 6, format: .cell)
             row += 1
         }
     }
@@ -884,7 +925,9 @@ struct CoreDashboard: Sendable {
         for item in items {
             ws.write(item["id"] as? String ?? "", row: row, col: 0, format: .cell)
             ws.write(item["name"] as? String ?? "", row: row, col: 1, format: .cell)
-            ws.write(item["data_type"] as? String ?? "", row: row, col: 2, format: .cell)
+            // jamf-cli writes `dataType`; `data_type` is the legacy `ea-definitions` spelling.
+            let dataType = item["dataType"] as? String ?? item["data_type"] as? String
+            ws.write(ExtensionAttribute.dataTypeLabel(dataType), row: row, col: 2, format: .cell)
             ws.write(item["description"] as? String ?? "", row: row, col: 3, format: .cell)
             row += 1
         }
@@ -930,13 +973,14 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Mobile Fleet Summary
-    // Sources: overview + mobile-device-inventory-details (or mobile-devices-list) + classic-ios-profiles
+    // Sources: overview + mobile-devices-list (or a legacy mobile-device-inventory-details)
+    // + classic-ios-profiles
 
     func writeMobileFleetSummary() throws {
         let mobileRows = normalizeMobileInventory()
         let profileRows = normalizeMobileProfiles()
         guard !mobileRows.isEmpty || !profileRows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         let ws = workbook.addSheet("Mobile Fleet Summary")
@@ -954,15 +998,18 @@ struct CoreDashboard: Sendable {
         if !mobileRows.isEmpty {
             summaryPairs += [
                 ("Inventory Rows Returned", summary.total),
-                ("Managed Rows", summary.managed),
-                ("Unmanaged Rows", summary.unmanaged),
-                ("Supervised Devices", summary.supervised),
-                ("Shared iPad Devices", summary.sharedIPad),
+                ("Managed Rows", countCell(summary.managed)),
+                ("Unmanaged Rows", countCell(summary.unmanaged)),
+                ("Supervised Devices", countCell(summary.supervised)),
+                ("Shared iPad Devices", countCell(summary.sharedIPad)),
                 ("Assigned Users", summary.assigned),
-                ("Activation Lock Enabled", summary.activationLock),
-                ("Passcode Compliant", summary.passcodeCompliant),
-                ("Inventory Older Than \(staleThreshold) Days", summary.stale),
+                ("Activation Lock Enabled", countCell(summary.activationLock)),
+                ("Passcode Compliant", countCell(summary.passcodeCompliant)),
+                ("Inventory Older Than \(staleThreshold) Days", countCell(summary.stale)),
             ]
+            if summary.managed != nil, summary.managementUnknown > 0 {
+                summaryPairs.insert(("Management State Unknown", summary.managementUnknown), at: 3)
+            }
         }
         if !profileRows.isEmpty {
             summaryPairs.append(("Mobile Config Profiles (List)", profileRows.count))
@@ -1030,12 +1077,12 @@ struct CoreDashboard: Sendable {
     }
 
     // MARK: - Mobile Inventory
-    // Source: mobile-device-inventory-details (preferred) or mobile-devices-list
+    // Source: mobile-devices-list (or a newer legacy mobile-device-inventory-details)
 
     func writeMobileInventory() throws {
         let rows = normalizeMobileInventory()
         guard !rows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
@@ -1046,15 +1093,18 @@ struct CoreDashboard: Sendable {
         var row = ws.writeSheetHeader(title: t("Mobile Inventory"),
                                       subtitle: "Generated: \(ts)", ncols: 20)
 
-        let summaryPairs: [(String, Int)] = [
+        var summaryPairs: [(String, Any)] = [
             ("Total Mobile Devices", summary.total),
-            ("Managed", summary.managed),
-            ("Unmanaged", summary.unmanaged),
-            ("Supervised", summary.supervised),
-            ("Shared iPad", summary.sharedIPad),
+            ("Managed", countCell(summary.managed)),
+            ("Unmanaged", countCell(summary.unmanaged)),
+            ("Supervised", countCell(summary.supervised)),
+            ("Shared iPad", countCell(summary.sharedIPad)),
             ("Assigned Users", summary.assigned),
-            ("Inventory Older Than Threshold", summary.stale),
+            ("Inventory Older Than Threshold", countCell(summary.stale)),
         ]
+        if summary.managed != nil, summary.managementUnknown > 0 {
+            summaryPairs.insert(("Management State Unknown", summary.managementUnknown), at: 3)
+        }
         for (label, value) in summaryPairs {
             ws.write(label, row: row, col: 0, format: .cell)
             ws.write(value, row: row, col: 1, format: .cell)
@@ -1184,25 +1234,32 @@ struct CoreDashboard: Sendable {
     // Source: device-compliance rows (fallback path; no native checkin-status in fixtures).
 
     func writeCheckinHealth() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let items = (raw as? [[String: Any]]) ?? []
-        guard !items.isEmpty else {
+        guard let items = loadLatestTyped(names: ["device-compliance", "device_compliance"],
+                                          as: [DeviceComplianceRow].self), !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
-        let threshold = config.thresholds?.resolvedStaleDays ?? 7
+        let threshold = config.thresholds?.resolvedCheckinOverdueDays ?? 7
+        // The overdue window is its own threshold, counted over the dates `stale_basis` lists.
+        let overdueRule = config.staleRule.with(days: threshold)
         let ws = workbook.addSheet("Check-in Health")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("Check-in Health"),
-                                      subtitle: "Threshold: \(threshold) days | Generated: \(ts)",
-                                      ncols: 4)
+        var row = ws.writeSheetHeader(
+            title: t("Check-in Health"),
+            subtitle: "\(ruleSubtitle(overdueRule, window: "Threshold")) | Generated: \(ts)",
+            ncols: 6)
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 2, 18)
         ws.setColumnWidth(3, 3, 18)
+        ws.setColumnWidth(4, 4, 18)
+        ws.setColumnWidth(5, 5, 26)
 
         let total = items.count
-        let overdue = items.filter { asBool($0["stale"]) == true }.count
+        // "Overdue (>N days)": a Mac at exactly N days is still current. A row with no date
+        // falls back to jamf-cli's own `stale` flag, as this sheet did for every row
+        // before `checkin_overdue_days` was read.
+        let overdue = items.filter { isStale($0, rule: overdueRule) }.count
         let current = total - overdue
         let pctCurrent = total > 0 ? Double(current) / Double(total) * 100 : 0.0
         let pctOverdue = total > 0 ? Double(overdue) / Double(total) * 100 : 0.0
@@ -1223,6 +1280,73 @@ struct CoreDashboard: Sendable {
         ws.write("Overdue (>\(threshold) days)", row: row, col: 0, format: overdueFmt)
         ws.write(overdue, row: row, col: 1, format: overdueFmt)
         ws.write(String(format: "%.1f%%", pctOverdue), row: row, col: 2, format: overdueFmt)
+        row += 2
+        writeContactDetail(ws: ws, row: row, overdueRule: overdueRule)
+    }
+
+    /// The Macs that are overdue or that MDM reaches while their check-in or inventory lags
+    /// (`ContactGap`), each with its three dates, read from the `computers` snapshot. Nothing
+    /// is written without one, or when no Mac qualifies.
+    private func writeContactDetail(ws: Worksheet, row startRow: Int, overdueRule: StaleRule) {
+        guard let raw = try? loadLatestJSON(
+                names: ["computers", "computers-list", "computers_list"]),
+              let computers = raw as? [[String: Any]] else { return }
+        let gapDays = config.contactGapDays
+        let now = Date()
+        struct Entry {
+            let name: String
+            let serial: String
+            let dates: ComputerDates
+            let gap: ContactGap?
+            let age: StaleAge?
+        }
+        let entries: [Entry] = computers.compactMap { item in
+            let dates = ComputerDates(item: item)
+            let inputs = StaleInputs(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                carriesDates: true)
+            let age = overdueRule.age(of: inputs, now: now)
+            let gap = ContactGap.of(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                staleDays: config.staleRule.days, gapDays: gapDays, now: now)
+            let overdue = age.map { $0 > .days(overdueRule.days) } ?? false
+            guard gap != nil || overdue else { return nil }
+            let general = item["general"] as? [String: Any]
+            let hardware = item["hardware"] as? [String: Any]
+            return Entry(name: general?["name"] as? String ?? item["name"] as? String ?? "",
+                         serial: hardware?["serialNumber"] as? String ?? "",
+                         dates: dates, gap: gap, age: age)
+        }.sorted { lhs, rhs in
+            if (lhs.gap != nil) != (rhs.gap != nil) { return lhs.gap != nil }
+            return (lhs.age ?? .days(0)) > (rhs.age ?? .days(0))
+        }
+        guard !entries.isEmpty else { return }
+        var row = startRow
+        let headers = ["Name", "Serial", "Last Contact", "Last Check-in", "Last Inventory",
+                       "Contact gap"]
+        for (col, header) in headers.enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+        for entry in entries {
+            let fmt: CellFormat = entry.gap != nil ? .yellow : .cell
+            let cells = [entry.name, entry.serial, Self.dayText(entry.dates.contact),
+                         Self.dayText(entry.dates.checkIn), Self.dayText(entry.dates.inventory),
+                         entry.gap?.label ?? ""]
+            for (col, cell) in cells.enumerated() {
+                ws.write(cell, row: row, col: col, format: fmt)
+            }
+            row += 1
+        }
+    }
+
+    /// A date as `yyyy-MM-dd`, empty when the Mac has none.
+    private static func dayText(_ date: Date?) -> String {
+        guard let date else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     // MARK: - Environment Stats
@@ -1334,23 +1458,21 @@ struct CoreDashboard: Sendable {
     // Source: device-compliance rows; counts non-stale devices.
 
     func writeActiveDevices() throws {
-        let raw = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let items = (raw as? [[String: Any]]) ?? []
+        let items = try loadDeviceComplianceRows()
         guard !items.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         let total = items.count
-        let active = items.filter { asBool($0["stale"]) != true }.count
-        let stale = total - active
-        let managed = items.filter { asBool($0["managed"]) == true }.count
+        let stale = items.filter(isStaleDevice).count
+        let active = total - stale
+        let managed = items.filter { $0.managed == true }.count
 
         let ws = workbook.addSheet("Active Devices")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("Active Devices"),
-                                      subtitle: "Stale threshold: \(staleThreshold) days | Generated: \(ts)",
-                                      ncols: 2)
+        var row = ws.writeSheetHeader(
+            title: t("Active Devices"),
+            subtitle: "\(ruleSubtitle(config.staleRule)) | Generated: \(ts)", ncols: 2)
         ws.setColumnWidth(0, 0, 32)
         ws.setColumnWidth(1, 1, 14)
 
@@ -1419,7 +1541,9 @@ struct CoreDashboard: Sendable {
 
     // MARK: - Package Lifecycle
     // Source: `jamf-cli pro packages list --output json`
-    // Shape: [{id, packageName, fileName, notes, size?, ...}]
+    // Shape: [{id, packageName, fileName, notes, size?, ...}]. The Jamf Pro packages payload
+    // has no upload date and reports `size` as "" for every package, so the date, age, size
+    // and bucket columns appear only when some package carries the value.
 
     func writePackageLifecycle() throws {
         let raw = try loadLatestJSON(names: ["packages"])
@@ -1445,122 +1569,151 @@ struct CoreDashboard: Sendable {
             let b = firstStringValue($1, keys: ["packageName", "name"]).lowercased()
             return a < b
         }
+        let uploadKeys = ["upload_date", "uploadDate", "dateUploaded", "created", "updated"]
+        let ages = sorted.map { daysSinceDate(firstStringValue($0, keys: uploadKeys)) }
+        let sizes = sorted.map { packageSizeMB($0["size"]) }
+        let showAge = ages.contains { $0 != nil }
+        let showSize = sizes.contains { $0 != nil }
 
-        let summaryPairs: [(String, Any)] = [
+        let summaryPairs: [(String, Int)] = [
             ("Total Packages", sorted.count),
-            ("Known Sizes", sorted.filter { $0["size"] != nil }.count),
+            ("Known Sizes", sizes.filter { $0 != nil }.count),
         ]
         for (idx, (label, value)) in summaryPairs.enumerated() {
             ws.write(label, row: row, col: idx * 2, format: .header)
-            if let i = value as? Int {
-                ws.write(i, row: row, col: idx * 2 + 1, format: .cell)
-            }
+            ws.write(value, row: row, col: idx * 2 + 1, format: .cell)
         }
-        row += 2
+        row += 1
+        if !showAge || !showSize {
+            let missing = [showAge ? nil : "upload date", showSize ? nil : "size"]
+                .compactMap { $0 }.joined(separator: " or ")
+            ws.write("Jamf reports no \(missing) for these packages, so those columns are "
+                     + "left out.", row: row, col: 0, format: .subtitle)
+            row += 1
+        }
+        row += 1
 
-        let headers = ["Package Name", "Filename", "Upload Date", "Age (days)", "Size (MB)", "Age Bucket", "Note"]
+        var headers = ["Package Name", "Filename"]
+        if showAge { headers += ["Upload Date", "Age (days)", "Age Bucket"] }
+        if showSize { headers.append("Size (MB)") }
+        headers.append("Note")
         for (col, h) in headers.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
-        for pkg in sorted {
+        for (index, pkg) in sorted.enumerated() {
             let name = firstStringValue(pkg, keys: ["packageName", "name"])
             let filename = firstStringValue(pkg, keys: ["fileName", "filename"])
-            let uploadDate = firstStringValue(pkg, keys: ["upload_date", "uploadDate", "dateUploaded", "created", "updated"])
             let note = pkg["notes"] as? String ?? ""
-            let sizeMB = packageSizeMB(pkg["size"])
-            let ageDays = daysSinceDate(uploadDate)
+            let (bucket, fmt) = packageAgeBucket(ages[index])
 
-            let (bucket, fmt): (String, CellFormat)
-            if let days = ageDays {
-                if days <= 30 { (bucket, fmt) = ("0-30 days", .green) }
-                else if days <= 90 { (bucket, fmt) = ("31-90 days", .yellow) }
-                else { (bucket, fmt) = ("91+ days", .red) }
-            } else {
-                (bucket, fmt) = ("Unknown", .cell)
+            var col = 0
+            func put(_ value: String) { ws.write(value, row: row, col: col, format: fmt); col += 1 }
+            func put(_ value: Int?) {
+                if let value { ws.write(value, row: row, col: col, format: fmt) }
+                else { ws.write("", row: row, col: col, format: fmt) }
+                col += 1
             }
-
-            ws.write(name, row: row, col: 0, format: fmt)
-            ws.write(filename.isEmpty ? name : filename, row: row, col: 1, format: fmt)
-            ws.write(uploadDate, row: row, col: 2, format: fmt)
-            if let days = ageDays {
-                ws.write(days, row: row, col: 3, format: fmt)
-            } else {
-                ws.write("", row: row, col: 3, format: fmt)
+            put(name)
+            put(filename.isEmpty ? name : filename)
+            if showAge {
+                put(firstStringValue(pkg, keys: uploadKeys))
+                put(ages[index])
+                put(bucket)
             }
-            if let mb = sizeMB {
-                ws.write(mb, row: row, col: 4, format: fmt)
-            } else {
-                ws.write("", row: row, col: 4, format: fmt)
+            if showSize {
+                if let mb = sizes[index] { ws.write(mb, row: row, col: col, format: fmt) }
+                else { ws.write("", row: row, col: col, format: fmt) }
+                col += 1
             }
-            ws.write(bucket, row: row, col: 5, format: fmt)
-            ws.write(note, row: row, col: 6, format: fmt)
+            put(note)
             row += 1
         }
     }
 
+    /// The Age Bucket label and colour for a package's age in days.
+    private func packageAgeBucket(_ days: Int?) -> (String, CellFormat) {
+        guard let days else { return ("Unknown", .cell) }
+        if days <= 30 { return ("0-30 days", .green) }
+        if days <= 90 { return ("31-90 days", .yellow) }
+        return ("91+ days", .red)
+    }
+
     // MARK: - Mobile inventory helpers
 
-    /// Normalize mobile device records from inventory-details (preferred) or devices-list.
-    private func normalizeMobileInventory() -> [[String: Any]] {
-        let names = ["mobile-device-inventory-details", "mobile_device_inventory_details",
-                     "mobile-devices-list", "mobile_devices_list"]
-        guard let raw = try? loadLatestJSON(names: names),
-              let items = raw as? [[String: Any]] else { return [] }
-
-        return items.compactMap { item -> [String: Any]? in
-            // inventory-details has a `general` sub-dict; devices-list is flat.
-            let general = item["general"] as? [String: Any] ?? item
-            let model = general["model"] as? String ?? item["model"] as? String ?? ""
-            let name = general["displayName"] as? String ?? item["name"] as? String ?? ""
-            let managed = general["managed"] as? Bool ?? item["managed"] as? Bool
-            let supervised = general["supervised"] as? Bool ?? item["supervised"] as? Bool
-            let osVersion = general["osVersion"] as? String ?? item["type"] as? String ?? ""
-            let serial = item["serialNumber"] as? String
-                ?? general["serialNumber"] as? String ?? ""
-            let jamfId = item["mobileDeviceId"] as? String ?? item["id"] as? String ?? ""
-            let lastInventory = general["lastInventoryUpdateDate"] as? String ?? ""
-            let ownership = general["deviceOwnershipType"] as? String ?? ""
-
-            let userLocation = item["userAndLocation"] as? [String: Any] ?? [:]
-            let username = userLocation["username"] as? String ?? item["username"] as? String ?? ""
-            let email = userLocation["emailAddress"] as? String ?? item["email"] as? String ?? ""
-            let dept = userLocation["department"] as? String ?? item["department"] as? String ?? ""
-            let building = userLocation["building"] as? String ?? item["building"] as? String ?? ""
-
-            let activationLock = general["activationLockEnabled"] as? Bool
-            let passcodeCompliant = general["passcodeCompliant"] as? Bool
-            // GENERAL names the flag `sharedIpad`; a device without it is
-            // unknown (blank), not "No".
-            let sharedIPad = general["sharedIpad"] as? Bool
-            let dataProtection = general["dataProtectionEnabled"] as? Bool
-            let jailbreak = general["jailbreakDetected"] as? String ?? ""
-
-            let family = mobileDeviceFamily(model: model, name: name)
-            let daysSince = daysSinceDate(lastInventory)
-
-            return [
-                "Jamf Pro ID": jamfId,
-                "Device Name": name,
-                "Serial Number": serial,
-                "Device Family": family,
-                "Managed": yesNoUnknown(managed),
-                "Supervised": yesNoUnknown(supervised),
-                "Shared iPad": yesNoUnknown(sharedIPad),
-                "Model": model,
-                "OS Version": osVersion,
-                "Username": username,
-                "Email": email,
-                "Department": dept,
-                "Building": building,
-                "Last Inventory Update": lastInventory,
-                "Days Since Inventory": daysSince as Any,
-                "Activation Lock": yesNoUnknown(activationLock),
-                "Passcode Compliant": yesNoUnknown(passcodeCompliant),
-                "Data Protection": yesNoUnknown(dataProtection),
-                "Jailbreak Status": jailbreak,
-                "Ownership": ownership,
-            ]
+    /// The inventory rows the mobile sheets read: the newest `mobile-devices-list`, or a
+    /// newer legacy `mobile-device-inventory-details` snapshot, whose rows carry sections.
+    /// Same choice the Mobile Fleet screen makes (`MobileFleetService.inventorySource`).
+    private func loadMobileInventoryRows() -> [MobileDeviceInventoryItem] {
+        let newestPerKind = [
+            ["mobile-devices-list", "mobile_devices_list"],
+            ["mobile-device-inventory-details", "mobile_device_inventory_details"],
+        ].compactMap { FileManager.newestSnapshot(among: snapshotCandidates(names: $0)) }
+        guard let source = MobileFleetService.inventorySource(among: newestPerKind) else {
+            return []
         }
+        if let data = try? Data(contentsOf: source.url) {
+            SnapshotManifest.verify(snapshot: source.url, data: data)
+        }
+        return source.devices
+    }
+
+    /// Normalize mobile device records from the inventory rows, joined to the devices-list
+    /// row with the same id, or from the devices-list alone. Fields are read through
+    /// `MobileFleetService`, so the workbook and the Mobile Fleet screen agree. A blank
+    /// string means the snapshot does not report the field.
+    private func normalizeMobileInventory() -> [[String: Any]] {
+        let rich = loadMobileInventoryRows()
+        let light = loadLatestTyped(
+            names: ["mobile-devices-list", "mobile_devices_list"],
+            as: [MobileDeviceListRow].self) ?? []
+        guard !rich.isEmpty else {
+            return light.map { row in
+                let stub = MobileDeviceInventoryItem(
+                    mobileDeviceId: row.id, deviceType: row.deviceType ?? row.type)
+                return mobileInventoryRow(stub, listRow: row)
+            }
+        }
+        let listByID = MobileFleetService.Snapshot(
+            isDetected: true, lightDevices: light, richDevices: rich,
+            profiles: [], sourceFile: nil, snapshotDate: nil
+        ).lightDevicesByID
+        return rich.map { device in
+            mobileInventoryRow(device, listRow: device.mobileDeviceId.flatMap { listByID[$0] })
+        }
+    }
+
+    private func mobileInventoryRow(
+        _ device: MobileDeviceInventoryItem, listRow: MobileDeviceListRow?
+    ) -> [String: Any] {
+        let general = device.general
+        let user = device.userAndLocation
+        let lastInventory = general?.lastInventoryUpdateDate ?? ""
+        let factor = MobileFleetService.formFactor(of: device, listRow: listRow)
+        return [
+            "Jamf Pro ID": MobileFleetService.firstNonBlank(device.mobileDeviceId, listRow?.id)
+                ?? "",
+            "Device Name": MobileFleetService.firstNonBlank(general?.displayName, listRow?.name)
+                ?? "",
+            "Serial Number": MobileFleetService.serialNumber(of: device, listRow: listRow) ?? "",
+            "Device Family": MobileFleetService.typeLabel(
+                for: factor, deviceType: device.deviceType),
+            "Managed": yesNoUnknown(general?.managed),
+            "Supervised": yesNoUnknown(general?.supervised),
+            "Shared iPad": yesNoUnknown(general?.sharedIpad),
+            "Model": MobileFleetService.model(of: device, listRow: listRow) ?? "",
+            "OS Version": general?.osVersion ?? "",
+            "Username": MobileFleetService.firstNonBlank(user?.username, listRow?.username) ?? "",
+            "Email": user?.emailAddress ?? "",
+            "Department": user?.department ?? "",
+            "Building": user?.building ?? "",
+            "Last Inventory Update": lastInventory,
+            "Days Since Inventory": daysSinceDate(lastInventory) as Any,
+            "Activation Lock": yesNoUnknown(MobileFleetService.activationLockEnabled(of: device)),
+            "Passcode Compliant": yesNoUnknown(MobileFleetService.passcodeCompliant(of: device)),
+            "Data Protection": yesNoUnknown(MobileFleetService.dataProtected(of: device)),
+            "Jailbreak Status": MobileFleetService.jailbreakStatus(of: device) ?? "",
+            "Ownership": general?.deviceOwnershipType ?? "",
+        ]
     }
 
     private func normalizeMobileProfiles() -> [[String: Any]] {
@@ -1579,44 +1732,49 @@ struct CoreDashboard: Sendable {
         }
     }
 
+    /// The counts are nil when no row answers the question: unmeasured, not zero.
     private struct MobileInventorySummary {
-        var total, managed, unmanaged, supervised, sharedIPad: Int
-        var assigned, activationLock, passcodeCompliant, stale: Int
-        var families, osVersions, models: [String: Int]
+        var total = 0, managementUnknown = 0, assigned = 0
+        var managed, unmanaged, supervised, sharedIPad, activationLock, passcodeCompliant: Int?
+        var stale: Int?
+        var families: [String: Int] = [:], osVersions: [String: Int] = [:]
+        var models: [String: Int] = [:]
+    }
+
+    /// A count cell: the number, or "Unknown" when nothing in the snapshot measured it.
+    private func countCell(_ count: Int?) -> Any {
+        if let count { return count }
+        return "Unknown"
     }
 
     private func summarizeMobileInventory(_ rows: [[String: Any]], staleDays: Int) -> MobileInventorySummary {
-        var s = MobileInventorySummary(
-            total: rows.count, managed: 0, unmanaged: 0, supervised: 0, sharedIPad: 0,
-            assigned: 0, activationLock: 0, passcodeCompliant: 0, stale: 0,
-            families: [:], osVersions: [:], models: [:]
-        )
+        var s = MobileInventorySummary(total: rows.count)
+        func cell(_ row: [String: Any], _ column: String) -> String {
+            row[column] as? String ?? ""
+        }
+        func count(_ column: String, _ value: String) -> Int? {
+            let answered = rows.filter { !cell($0, column).isEmpty }
+            guard !answered.isEmpty else { return nil }
+            return answered.filter { cell($0, column) == value }.count
+        }
+        s.managed = count("Managed", "Yes")
+        s.unmanaged = count("Managed", "No")
+        s.managementUnknown = rows.filter { cell($0, "Managed").isEmpty }.count
+        s.supervised = count("Supervised", "Yes")
+        s.sharedIPad = count("Shared iPad", "Yes")
+        s.activationLock = count("Activation Lock", "Yes")
+        s.passcodeCompliant = count("Passcode Compliant", "Yes")
+        let ages = rows.compactMap { $0["Days Since Inventory"] as? Int }
+        if !ages.isEmpty { s.stale = ages.filter { $0 > staleDays }.count }
         for row in rows {
-            if (row["Managed"] as? String) == "Yes" { s.managed += 1 } else { s.unmanaged += 1 }
-            if (row["Supervised"] as? String) == "Yes" { s.supervised += 1 }
-            if (row["Shared iPad"] as? String) == "Yes" { s.sharedIPad += 1 }
-            if let u = row["Username"] as? String, !u.isEmpty { s.assigned += 1 }
-            if (row["Activation Lock"] as? String) == "Yes" { s.activationLock += 1 }
-            if (row["Passcode Compliant"] as? String) == "Yes" { s.passcodeCompliant += 1 }
-            if let days = row["Days Since Inventory"] as? Int, days > staleDays { s.stale += 1 }
-            let family = row["Device Family"] as? String ?? "Mobile"
-            s.families[family, default: 0] += 1
-            let os = row["OS Version"] as? String ?? ""
+            if !cell(row, "Username").isEmpty { s.assigned += 1 }
+            s.families[cell(row, "Device Family"), default: 0] += 1
+            let os = cell(row, "OS Version")
             if !os.isEmpty { s.osVersions[os, default: 0] += 1 }
-            let model = row["Model"] as? String ?? ""
+            let model = cell(row, "Model")
             if !model.isEmpty { s.models[model, default: 0] += 1 }
         }
         return s
-    }
-
-    private func mobileDeviceFamily(model: String, name: String) -> String {
-        let text = "\(model) \(name)".lowercased()
-        if text.contains("ipad") { return "iPad" }
-        if text.contains("iphone") { return "iPhone" }
-        if text.contains("ipod") { return "iPod" }
-        if text.contains("appletv") || text.contains("apple tv") { return "Apple TV" }
-        if text.contains("vision") { return "Vision" }
-        return "Mobile"
     }
 
     private func yesNoUnknown(_ value: Bool?) -> String {
@@ -2157,15 +2315,13 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["patch-status"])
         }
 
-        let rawDC = try loadLatestJSON(names: ["device-compliance", "device_compliance"])
-        let dcList = (rawDC as? [[String: Any]]) ?? []
+        let dcList = try loadDeviceComplianceRows()
         guard !dcList.isEmpty else {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         let totalEnrolled = dcList.count
-        let activeCount = dcList.filter { !(asBool($0["stale"]) ?? false) }.count
+        let activeCount = dcList.filter { !isStaleDevice($0) }.count
         let inactiveCount = totalEnrolled - activeCount
         let activeRatio = totalEnrolled > 0 ? Double(activeCount) / Double(totalEnrolled) : 0.0
 
@@ -2196,9 +2352,7 @@ struct CoreDashboard: Sendable {
         }
 
         let totalTitles = patchRows.count
-        let avgPct = totalTitles > 0
-            ? patchRows.reduce(0.0) { $0 + $1.adjPct } / Double(totalTitles)
-            : 0.0
+        let fleetPct = PatchStatusService.fleetCompliancePct(patchItems)
         let excellent = patchRows.filter { $0.adjPct >= 0.95 }.count
         let good = patchRows.filter { $0.adjPct >= 0.80 && $0.adjPct < 0.95 }.count
         let warning = patchRows.filter { $0.adjPct >= 0.50 && $0.adjPct < 0.80 }.count
@@ -2209,7 +2363,8 @@ struct CoreDashboard: Sendable {
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(
             title: t("Patch Summary Dashboard"),
-            subtitle: "Source: patch-status + device-compliance | Active window: \(staleDays) days | Generated: \(ts)",
+            subtitle: "Source: patch-status + device-compliance | "
+                + "\(ruleSubtitle(config.staleRule, window: "Active window")) | Generated: \(ts)",
             ncols: 9
         )
         ws.setColumnWidth(0, 0, 32)
@@ -2235,9 +2390,9 @@ struct CoreDashboard: Sendable {
         ws.write("Total Patch Titles", row: row, col: 0, format: .cell)
         ws.write(totalTitles, row: row, col: 1, format: .cell)
         row += 1
-        let avgPctStr = String(format: "%.1f%%", avgPct * 100)
-        ws.write("Average Completion (Adjusted)", row: row, col: 0, format: .cell)
-        ws.write(avgPctStr, row: row, col: 1, format: .cell)
+        ws.write("Fleet Compliance (devices on latest)", row: row, col: 0, format: .cell)
+        ws.write(fleetPct.map { String(format: "%.1f%%", $0) } ?? "\u{2014}",
+                 row: row, col: 1, format: .cell)
         row += 1
         ws.write("Fully Compliant (\u{2265}95%)", row: row, col: 0, format: .cell)
         ws.write(excellent, row: row, col: 1, format: .cell)
@@ -2305,6 +2460,7 @@ struct CoreDashboard: Sendable {
             let firewall: String
             let gatekeeper: String
             let bootstrapToken: String
+            let hardwareEncrypted: Bool?
         }
 
         let rows: [DeviceSecurityRow] = items.compactMap { item in
@@ -2332,17 +2488,16 @@ struct CoreDashboard: Sendable {
             if let b = asBool(firewallRaw) { firewallStr = b ? "ENABLED" : "DISABLED" }
             else { firewallStr = "" }
             let gatekeeperStr = security?["gatekeeperStatus"] as? String ?? ""
-            let btRaw = security?["bootstrapTokenEscrowed"]
-            let bootstrapStr: String
-            if let b = asBool(btRaw) { bootstrapStr = b ? "ESCROWED" : "NOT ESCROWED" }
-            else { bootstrapStr = "" }
+            let bootstrapStr = bootstrapEscrowText(security)
 
             let hasAny = !fileVaultStr.isEmpty || !sipStr.isEmpty || !firewallStr.isEmpty
                 || !gatekeeperStr.isEmpty || !bootstrapStr.isEmpty
             guard hasAny else { return nil }
             return DeviceSecurityRow(name: name, serial: serial, fileVault: fileVaultStr,
                                      sip: sipStr, firewall: firewallStr, gatekeeper: gatekeeperStr,
-                                     bootstrapToken: bootstrapStr)
+                                     bootstrapToken: bootstrapStr,
+                                     hardwareEncrypted: HardwareEncryption.isHardwareEncrypted(
+                                        computer: item))
         }
 
         guard !rows.isEmpty else {
@@ -2365,53 +2520,63 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
 
+        let policy = config.resolvedSecurityPolicy
         let sorted = rows.sorted { $0.name.lowercased() < $1.name.lowercased() }
         for r in sorted {
             ws.write(r.name, row: row, col: 0, format: .cell)
             ws.write(r.serial, row: row, col: 1, format: .cell)
-            ws.write(r.fileVault, row: row, col: 2, format: securityControlFormat("filevault", r.fileVault))
-            ws.write(r.sip, row: row, col: 3, format: securityControlFormat("sip", r.sip))
-            ws.write(r.firewall, row: row, col: 4, format: securityControlFormat("firewall", r.firewall))
+            ws.write(policy.fileVaultLabel(r.fileVault, hardwareEncrypted: r.hardwareEncrypted),
+                     row: row, col: 2, format: securityVerdictFormat(
+                        .fileVault, r.fileVault, hardwareEncrypted: r.hardwareEncrypted))
+            ws.write(r.sip, row: row, col: 3,
+                     format: securityVerdictFormat(.sip, r.sip, hardwareEncrypted: nil))
+            ws.write(r.firewall, row: row, col: 4,
+                     format: securityVerdictFormat(.firewall, r.firewall, hardwareEncrypted: nil))
             ws.write(r.gatekeeper, row: row, col: 5,
-                     format: securityControlFormat("gatekeeper", r.gatekeeper))
+                     format: securityVerdictFormat(
+                        .gatekeeper, r.gatekeeper, hardwareEncrypted: nil))
+            let escrowed = SecurityControlPolicy.reading(r.bootstrapToken)
             ws.write(r.bootstrapToken, row: row, col: 6,
-                     format: securityControlFormat("bootstrap_token", r.bootstrapToken))
+                     format: escrowed.map { $0 ? CellFormat.green : .red } ?? .cell)
             row += 1
         }
     }
 
-    /// Returns green/red/neutral based on whether a security control value is compliant.
-    /// Mirrors Python `_security_control_is_compliant` logic.
-    private func securityControlFormat(_ control: String, _ value: String) -> CellFormat {
-        guard !value.isEmpty else { return .cell }
-        let v = value.uppercased()
-        let compliant: Bool
-        switch control {
-        case "filevault":
-            compliant = v == "ENCRYPTED" || v.contains("ENCRYPT")
-        case "sip":
-            compliant = v == "ENABLED" || v.contains("ENABLE") || v == "ACTIVE"
-        case "firewall":
-            compliant = v == "ENABLED" || v == "TRUE" || v == "YES"
-        case "gatekeeper":
-            // APP_STORE or APP_STORE_AND_IDENTIFIED_DEVELOPERS are compliant
-            compliant = v.contains("APP_STORE") || v == "ENABLED" || v == "ACTIVE"
-        case "bootstrap_token":
-            compliant = v == "ESCROWED"
-        default:
-            return .cell
+    /// Bootstrap token escrow as the sheet shows it. Jamf Pro reports it as
+    /// `bootstrapTokenEscrowedStatus` (ESCROWED, NOT_ESCROWED, NOT_SUPPORTED); a snapshot with
+    /// the older Bool key still reads. `bootstrapTokenAllowed` says whether escrow is
+    /// permitted, not whether the token is escrowed, so it never stands in.
+    private func bootstrapEscrowText(_ security: [String: Any]?) -> String {
+        let status = (security?["bootstrapTokenEscrowedStatus"] as? String)?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+        if !status.isEmpty { return status }
+        guard let escrowed = asBool(security?["bootstrapTokenEscrowed"]) else { return "" }
+        return escrowed ? "ESCROWED" : "NOT ESCROWED"
+    }
+
+    /// Green when the control passes under the workspace's policy, red when it fails, amber
+    /// for a warning; neutral when the value says nothing or the policy does not count it.
+    private func securityVerdictFormat(
+        _ control: SecurityControl, _ value: String, hardwareEncrypted: Bool?
+    ) -> CellFormat {
+        let verdict = config.resolvedSecurityPolicy.verdict(
+            for: control, value: value, hardwareEncrypted: hardwareEncrypted)
+        switch verdict {
+        case .pass: return .green
+        case .fail: return .red
+        case .warning: return .yellow
+        case .ignored, .unknown: return .cell
         }
-        return compliant ? .green : .red
     }
 
     // MARK: - Mobile Supervision Status
-    // Source: mobile-device-inventory-details (or mobile-devices-list) snapshot.
+    // Source: mobile-devices-list (or a newer legacy mobile-device-inventory-details) snapshot.
     // Per-family aggregate of supervised/unsupervised counts.
 
     func writeMobileSupervisionStatus() throws {
         let mobileRows = normalizeMobileInventory()
         guard !mobileRows.isEmpty else {
-            throw CoreDashboardError.noCachedData(names: ["mobile-device-inventory-details"])
+            throw CoreDashboardError.noCachedData(names: ["mobile-devices-list"])
         }
 
         var perFamily: [String: (total: Int, supervised: Int, unsupervised: Int)] = [:]
@@ -2564,7 +2729,7 @@ struct CoreDashboard: Sendable {
             if case .osVersion(let v) = item {
                 let ver = v.osVersion.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !ver.isEmpty else { continue }
-                counts[ver, default: 0] += v.count
+                counts[OSVersionName.normalized(ver), default: 0] += v.count
             }
         }
         return counts
@@ -2572,14 +2737,8 @@ struct CoreDashboard: Sendable {
 
     /// Returns {osVersion: count} for iOS/iPadOS from the cached mobile inventory.
     private func mobileOSCounts() -> [String: Int] {
-        let inventoryDir = dataDir.appendingPathComponent(
-            "mobile-device-inventory-details", isDirectory: true)
-        guard let url = FileManager.newestJSONFile(in: inventoryDir),
-              let data = try? Data(contentsOf: url),
-              let items = try? JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data)
-        else { return [:] }
         var counts: [String: Int] = [:]
-        for item in items {
+        for item in loadMobileInventoryRows() {
             let ver = (item.general?.osVersion ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !ver.isEmpty else { continue }
@@ -2605,6 +2764,8 @@ struct CoreDashboard: Sendable {
         var managedCount: Int?
         var securityScore: Double?
         var securityGrade: SecurityScore.Grade?
+        /// The scored factors, listed under the score.
+        var securityScoreParts: [SecurityScore.Part] = []
         var patchFleetCompliancePct: Double?
         var fileVaultPct: Double?
         var sipPct: Double?
@@ -2615,6 +2776,11 @@ struct CoreDashboard: Sendable {
         var dormantCount: Int?
         var actionItemsP0: Int?
         var actionItemsP1: Int?
+        /// FileVault-off Macs the hardware rule counts apart (warning or not counted).
+        var fileVaultOffHardwareEncrypted: Int?
+        /// Values P0 and P1 leave out because Jamf did not report them.
+        var p0NotReported: Int?
+        var p1NotReported: Int?
     }
 
     /// Assemble `ExecutiveSummaryMetrics` from the cached jamf-cli snapshots in `dataDir`.
@@ -2644,9 +2810,21 @@ struct CoreDashboard: Sendable {
             let total = s.data.totalDevices ?? 0
             m.totalDevices = total
             applySecurityControlPcts(to: &m, data: s.data, total: total)
-            applySecurityScoreAndActions(to: &m, data: s.data, total: total)
+            if let fleet = securityFleet(items: items) {
+                applySecurityScoreAndActions(to: &m, fleet: fleet)
+            }
             break
         }
+    }
+
+    /// The security snapshot's counts under the workspace's policy: what summary.json and the
+    /// Security Posture screen take P0, P1 and the score from. Nil without a summary section.
+    private func securityFleet(items: [SecurityReportItem]) -> SecurityFleetCounts? {
+        let policy = config.resolvedSecurityPolicy
+        let hardware = hardwareIndex.value {
+            HardwareEncryption.index(dataDir: dataDir, for: policy)
+        }
+        return SecurityFleetCounts.build(items: items, hardware: hardware, policy: policy)
     }
 
     /// Populate per-control coverage percentages from a security summary.
@@ -2661,54 +2839,77 @@ struct CoreDashboard: Sendable {
         m.firewallPct = data.firewallEnabled.map { Double($0) / Double(total) * 100 }
     }
 
+    /// One row per scored factor under the Security Score: its share of Macs and its points.
+    func scoreFactorRows(_ m: ExecutiveSummaryMetrics) -> [(String, String)] {
+        let score = SecurityScore(
+            value: m.securityScore ?? 0, grade: m.securityGrade ?? .f,
+            parts: m.securityScoreParts, missing: [])
+        let rule = config.staleRule
+        return m.securityScoreParts.map { part in
+            ("Score — \(part.factor.label(staleDays: rule.days, staleBasis: rule.basis))",
+             String(format: "%.1f%% · %.1f pts", part.share, score.points(of: part)))
+        }
+    }
+
     /// Compute the weighted security score, grade, and P0/P1 action item counts.
     private func applySecurityScoreAndActions(
         to m: inout ExecutiveSummaryMetrics,
-        data: SecuritySummaryData,
-        total: Int
+        fleet: SecurityFleetCounts
     ) {
-        var counts: [SecurityScore.Metric: Int] = [:]
-        if let n = data.fileVaultEncrypted { counts[.fileVault] = n }
-        if let n = data.sipEnabled { counts[.sip] = n }
-        if let n = data.firewallEnabled { counts[.firewall] = n }
-        if !counts.isEmpty && total > 0 {
-            let score = SecurityScoreCalculator.score(
-                input: .init(totalDevices: total, compliantCounts: counts)
-            )
-            if !score.available.isEmpty {
-                m.securityScore = score.value
-                m.securityGrade = score.grade
-            }
+        // The same factors and inputs as summary.json's securityScore and the Security
+        // Posture screen.
+        let factors = config.resolvedScoreFactors
+        let score = SecurityScoreCalculator.score(
+            factors: factors,
+            measures: SecurityScoreInputs.measures(
+                for: factors, fleet: fleet,
+                sources: SecurityScoreInputs.load(
+                    dataDir: dataDir, factors: factors, staleRule: config.staleRule),
+                config: config))
+        m.securityScoreParts = score.parts
+        if !score.parts.isEmpty {
+            m.securityScore = score.value
+            m.securityGrade = score.grade
         }
-        if let n = data.fileVaultEncrypted { m.actionItemsP0 = total - n }
-        if let n = data.gatekeeperEnabled { m.actionItemsP1 = total - n }
+        m.actionItemsP0 = fleet.p0
+        m.actionItemsP1 = fleet.p1
+        m.p0NotReported = fleet.p0NotReported
+        m.p1NotReported = fleet.p1NotReported
+        m.fileVaultOffHardwareEncrypted = fleet.fileVaultOffHardwareEncrypted
+    }
+
+    /// One "<control> not reported" row per control with Macs that did not report it, for the
+    /// summary block of the Security Posture sheet.
+    private func notReportedFields(_ fleet: SecurityFleetCounts?) -> [(String, String)] {
+        SecurityControl.allCases.compactMap { control in
+            guard let n = fleet?.controls[control]?.notReported, n > 0 else { return nil }
+            return ("\(CompliancePostureService.label(control)) Not Reported", "\(n)")
+        }
     }
 
     /// Populate patch compliance % from the cached `patch-status` snapshot.
     private func applyPatchMetric(to m: inout ExecutiveSummaryMetrics) {
         guard let rows = loadLatestTyped(names: ["patch-status", "patch_status"],
-                                          as: [PatchStatusRow].self),
-              !rows.isEmpty else { return }
-        let snap = PatchStatusService.Snapshot(
-            titles: rows, failures: [], sourceFile: nil, snapshotDate: nil
-        )
-        m.patchFleetCompliancePct = snap.fleetCompliancePct
+                                          as: [PatchStatusRow].self) else { return }
+        m.patchFleetCompliancePct = PatchStatusService.fleetCompliancePct(rows)
     }
 
     /// Populate managed count + stale tier buckets from the cached `device-compliance` snapshot.
-    /// Uses `days_since_contact` (or legacy `days_since_checkin`) directly — avoids constructing
-    /// `DeviceInventoryRecord` objects, which have a different shape than the JSON source.
+    /// A Mac's tier follows its stale age under the stale rule: the oldest of the dates
+    /// `stale_basis` lists, which is the row's check-in day count (`days_since_contact`, or
+    /// legacy `days_since_checkin`) unless the basis counts more.
     private func applyStaleAndManaged(to m: inout ExecutiveSummaryMetrics) {
-        guard let raw = try? loadLatestJSON(names: ["device-compliance", "device_compliance"]),
-              let items = raw as? [[String: Any]], !items.isEmpty else { return }
-        m.managedCount = items.filter { asBool($0["managed"]) == true }.count
+        guard let items = loadLatestTyped(
+            names: ["device-compliance", "device_compliance"], as: [DeviceComplianceRow].self),
+              !items.isEmpty else { return }
+        m.managedCount = items.filter { $0.managed == true }.count
+        let rule = config.staleRule
+        let computers = computerDates(for: rule)
         var tierCounts: [StaleDeviceService.Tier: Int] = [:]
         for tier in StaleDeviceService.Tier.allCases { tierCounts[tier] = 0 }
         for item in items {
-            let days = asInt(item["days_since_contact"]) ?? asInt(item["days_since_checkin"])
             let tier = StaleDeviceService.Tier.tier(
-                for: days, staleDays: config.thresholds?.resolvedStaleDays ?? 30
-            )
+                forAge: item.staleAge(rule, computers: computers), staleDays: rule.days)
             tierCounts[tier, default: 0] += 1
         }
         m.recentCount = tierCounts[.recent]
@@ -2752,7 +2953,7 @@ struct CoreDashboard: Sendable {
             return "\(n)"
         }
 
-        let metricRows: [(String, String)] = [
+        var metricRows: [(String, String)] = [
             ("Security Score", scoreLabel),
             ("Total Devices", fmtInt(m.totalDevices)),
             ("Managed Devices", fmtInt(m.managedCount)),
@@ -2768,6 +2969,22 @@ struct CoreDashboard: Sendable {
             ("P0 Action Items (FV/SIP/FW gaps)", fmtInt(m.actionItemsP0)),
             ("P1 Action Items (Gatekeeper gaps)", fmtInt(m.actionItemsP1)),
         ]
+        metricRows.insert(contentsOf: scoreFactorRows(m), at: 1)
+        if let n = m.fileVaultOffHardwareEncrypted, n > 0,
+           let at = metricRows.firstIndex(where: { $0.0 == "FileVault Coverage" }) {
+            metricRows.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: at + 1)
+        }
+        // A Mac whose value Jamf did not report is in neither P0 nor P1; say how many.
+        for (after, label, count) in [
+            ("P1 Action Items (Gatekeeper gaps)", "P1 Not Reported (Gatekeeper values)",
+             m.p1NotReported),
+            ("P0 Action Items (FV/SIP/FW gaps)", "P0 Not Reported (FV/SIP/FW values)",
+             m.p0NotReported),
+        ] {
+            if let n = count, n > 0, let at = metricRows.firstIndex(where: { $0.0 == after }) {
+                metricRows.insert((label, "\(n)"), at: at + 1)
+            }
+        }
 
         ws.write("Metric", row: row, col: 0, format: .header)
         ws.write("Value", row: row, col: 1, format: .header)
@@ -2924,14 +3141,15 @@ struct CoreDashboard: Sendable {
                 + "compliance, and staleness.",
             "Policy Health": "Policy counts and config findings from jamf-cli "
                 + "policy-status.",
-            "Profile Status": "Configuration profiles with management status and "
-                + "error counts.",
+            "Profile Status": "Configuration profiles that reported install errors, with "
+                + "error and device counts.",
             "Mobile Config Profiles": "Mobile configuration profiles with category "
                 + "breakdown.",
-            "App Status": "Managed apps: installed vs. total, errors.",
+            "App Status": "Managed apps that reported install errors, with error and "
+                + "device counts.",
             "Software Installs": "Top software titles and install counts.",
-            "Package Lifecycle": "Packages with upload age and size; highlights "
-                + "stale packages.",
+            "Package Lifecycle": "Packages with upload age and size when Jamf reports "
+                + "them; highlights stale packages.",
             "EA Coverage": "Raw EA result values per device (all EAs, all computers).",
             "EA Definitions": "Extension attribute definitions: name, data type, "
                 + "description.",
@@ -2993,46 +3211,45 @@ struct CoreDashboard: Sendable {
             .first(where: { ($0["section"] as? String) == "summary" })?["data"]
             as? [String: Any] ?? [:]
         let totalDevices = asInt(secSummary["total_devices"]) ?? 0
+        let fleet = loadLatestTyped(names: ["security"], as: [SecurityReportItem].self)
+            .flatMap { securityFleet(items: $0) }
 
         // Device compliance snapshot
-        let deviceCompItems = ((try? loadLatestJSON(
-            names: ["device-compliance", "device_compliance"]
-        )) as? [[String: Any]]) ?? []
-        let staleCount = deviceCompItems.filter { asBool($0["stale"]) == true }.count
-        let managedCount = deviceCompItems.filter { asBool($0["managed"]) == true }.count
+        let deviceCompItems = (try? loadDeviceComplianceRows()) ?? []
+        let staleCount = deviceCompItems.filter(isStaleDevice).count
+        let managedCount = deviceCompItems.filter { $0.managed == true }.count
         let deviceTotal = deviceCompItems.count
         let compliancePct: Double = deviceTotal > 0
             ? Double(managedCount) / Double(deviceTotal) * 100 : 0
 
         // Patch compliance snapshot
-        let patchItems = ((try? loadLatestJSON(
-            names: ["patch-status", "patch_status"]
-        )) as? [[String: Any]]) ?? []
-        let patchPct = averagePatchCompliancePct(patchItems)
+        let patchPct = loadLatestTyped(
+            names: ["patch-status", "patch_status"], as: [PatchStatusRow].self
+        ).flatMap(PatchStatusService.fleetCompliancePct)
 
-        // Metric rows: (label, rawValue, pctValue for RAG)
-        let metrics: [(label: String, value: String, pct: Double?)] = [
+        // Metric rows: (label, rawValue, pctValue for RAG, security control the policy grades)
+        let metrics: [(label: String, value: String, pct: Double?, control: SecurityControl?)] = [
             ("Device Compliance (managed %)",
              deviceTotal > 0 ? String(format: "%.0f%%", compliancePct) : "\u{2014}",
-             deviceTotal > 0 ? compliancePct : nil),
+             deviceTotal > 0 ? compliancePct : nil, nil),
             ("FileVault Encrypted",
              percentLabel(asInt(secSummary["filevault_encrypted"]), total: totalDevices),
-             pctFromSummary(secSummary["filevault_encrypted"], total: totalDevices)),
+             nil, .fileVault),
             ("SIP Enabled",
              percentLabel(asInt(secSummary["sip_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["sip_enabled"], total: totalDevices)),
+             nil, .sip),
             ("Firewall Enabled",
              percentLabel(asInt(secSummary["firewall_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["firewall_enabled"], total: totalDevices)),
+             nil, .firewall),
             ("Gatekeeper Enabled",
              percentLabel(asInt(secSummary["gatekeeper_enabled"]), total: totalDevices),
-             pctFromSummary(secSummary["gatekeeper_enabled"], total: totalDevices)),
-            ("Patch Compliance (avg across titles)",
-             patchItems.isEmpty ? "\u{2014}" : String(format: "%.0f%%", patchPct),
-             patchItems.isEmpty ? nil : patchPct),
+             nil, .gatekeeper),
+            ("Patch Compliance (devices on latest)",
+             patchPct.map { String(format: "%.0f%%", $0) } ?? "\u{2014}",
+             patchPct, nil),
             ("Stale Devices (>\(config.thresholds?.resolvedStaleDays ?? 30) days)",
              "\(staleCount)",
-             nil),
+             nil, nil),
         ]
 
         ws.write("Metric", row: row, col: 0, format: .header)
@@ -3041,7 +3258,9 @@ struct CoreDashboard: Sendable {
         row += 1
 
         for metric in metrics {
-            let (statusLabel, statusFmt) = ragStatus(pct: metric.pct)
+            let (statusLabel, statusFmt) = metric.control.map {
+                securityRagStatus($0, fleet: fleet)
+            } ?? ragStatus(pct: metric.pct)
             ws.write(metric.label, row: row, col: 0, format: .cell)
             ws.write(metric.value, row: row, col: 1, format: .cell)
             ws.write(statusLabel, row: row, col: 2, format: statusFmt)
@@ -3053,6 +3272,18 @@ struct CoreDashboard: Sendable {
         ws.write("Compliance bands: GREEN \u{2265}95% \u{00B7} AMBER \u{2265}80% \u{00B7} RED <80%",
                  row: row, col: 0, format: .subtitle)
         row += 1
+        // Under a policy the security rows are graded differently from the bands above.
+        if !config.resolvedSecurityPolicy.gradesLikeTheDefault {
+            ws.write("Security rows follow this workspace's security policy: they are graded on "
+                     + "the Macs not failing, AMBER also covers warnings, and Not counted means "
+                     + "the control is set to ignore or no Mac is left to grade.",
+                     row: row, col: 0, format: .subtitle)
+            row += 1
+        }
+        if let note = notReportedNote(fleet) {
+            ws.write(note, row: row, col: 0, format: .subtitle)
+            row += 1
+        }
         ws.write("Framework: \(framework)", row: row, col: 0, format: .subtitle)
         row += 2
         writePostureDeviceTable(ws: ws, row: row, items: deviceCompItems)
@@ -3062,14 +3293,17 @@ struct CoreDashboard: Sendable {
     private func writePostureDeviceTable(
         ws: Worksheet,
         row startRow: Int,
-        items: [[String: Any]]
+        items: [DeviceComplianceRow]
     ) {
+        // Longest silence first; a Mac with no day count sorts last, then by name so the
+        // order does not change from run to run.
         let worst = items
-            .filter { asBool($0["stale"]) == true || asBool($0["managed"]) == false }
+            .filter { isStaleDevice($0) || $0.managed == false }
             .sorted {
-                let dA = asInt($0["days_since_checkin"]) ?? 0
-                let dB = asInt($1["days_since_checkin"]) ?? 0
-                return dA > dB
+                let dA = $0.resolvedDaysSinceContact ?? -1
+                let dB = $1.resolvedDaysSinceContact ?? -1
+                if dA != dB { return dA > dB }
+                return ($0.name ?? "", $0.serial ?? "") < ($1.name ?? "", $1.serial ?? "")
             }
             .prefix(20)
 
@@ -3084,37 +3318,55 @@ struct CoreDashboard: Sendable {
         for (col, h) in hdrs.enumerated() { ws.write(h, row: row, col: col, format: .header) }
         row += 1
         for item in worst {
-            let isStale = asBool(item["stale"]) ?? false
+            let isStale = isStaleDevice(item)
             let fmt: CellFormat = isStale ? .yellow : .cell
-            ws.write(item["name"] as? String ?? "", row: row, col: 0, format: fmt)
-            ws.write(item["serial"] as? String ?? "", row: row, col: 1, format: fmt)
-            if let days = asInt(item["days_since_checkin"]) {
+            ws.write(item.name ?? "", row: row, col: 0, format: fmt)
+            ws.write(item.serial ?? "", row: row, col: 1, format: fmt)
+            if let days = item.resolvedDaysSinceContact {
                 ws.write(days, row: row, col: 2, format: fmt)
             } else {
                 ws.write("\u{2014}", row: row, col: 2, format: fmt)
             }
             ws.write(isStale ? "Yes" : "No", row: row, col: 3, format: fmt)
-            ws.write(asBool(item["managed"]).map { $0 ? "Yes" : "No" } ?? "",
-                     row: row, col: 4, format: fmt)
+            ws.write(item.managed.map { $0 ? "Yes" : "No" } ?? "", row: row, col: 4, format: fmt)
             row += 1
         }
     }
 
-    /// Average patch compliance % across all titles; returns 0.0 if no data.
-    private func averagePatchCompliancePct(_ items: [[String: Any]]) -> Double {
-        guard !items.isEmpty else { return 0 }
-        let pcts = items.compactMap { item -> Double? in
-            let s = item["compliance_pct"] as? String ?? ""
-            return Double(s.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces))
+    /// "Not reported: SIP 100, Gatekeeper 3" for the controls some Macs did not report, with
+    /// what that means for the rows above; nil when every Mac reported every control.
+    private func notReportedNote(_ fleet: SecurityFleetCounts?) -> String? {
+        let parts = SecurityControl.allCases.compactMap { control -> String? in
+            guard let n = fleet?.controls[control]?.notReported, n > 0 else { return nil }
+            return "\(CompliancePostureService.label(control)) \(n)"
         }
-        guard !pcts.isEmpty else { return 0 }
-        return pcts.reduce(0, +) / Double(pcts.count)
+        guard !parts.isEmpty else { return nil }
+        return "Not reported: " + parts.joined(separator: ", ")
+            + ". Macs whose value Jamf did not report are not counted as failing and are left "
+            + "out of the shares above."
     }
 
-    /// Convert a count/total pair into a percentage Double for RAG banding.
-    private func pctFromSummary(_ value: Any?, total: Int) -> Double? {
-        guard let n = asInt(value), total > 0 else { return nil }
-        return Double(n) / Double(total) * 100
+    /// A security row's status under the workspace's policy: not counted at `ignore` or with
+    /// no Mac left to grade, else
+    /// graded on the share of Macs not failing the control, amber instead of green when some
+    /// Macs only warn.
+    private func securityRagStatus(
+        _ control: SecurityControl, fleet: SecurityFleetCounts?
+    ) -> (String, CellFormat) {
+        if config.resolvedSecurityPolicy.level(for: control) == .ignore {
+            return ("Not counted", .cell)
+        }
+        // Every Mac the hardware rule took out of FileVault's count, or that did not report the
+        // control: none is left to grade. With no Mac in the report there is nothing to say.
+        if let fleet, fleet.totalDevices > 0, fleet.controls[control] != nil,
+           fleet.nonFailingPct(control) == nil {
+            return ("Not counted", .cell)
+        }
+        let status = ragStatus(pct: fleet?.nonFailingPct(control))
+        guard status.0 == "GREEN", (fleet?.controls[control]?.warning ?? 0) > 0 else {
+            return status
+        }
+        return ("AMBER", .yellow)
     }
 
     /// Return RAG (RED/AMBER/GREEN) label and cell format for a percentage.
@@ -3185,6 +3437,20 @@ struct CoreDashboard: Sendable {
     /// enforced strict mode through the Python CLI's `--strict-manifest`
     /// flag).
     private func loadLatestJSONData(names: [String]) throws -> Data {
+        // One ordering rule for every reader: filename stamp first, manifest and
+        // sync-conflict copies excluded.
+        guard let newest = FileManager.newestSnapshot(among: snapshotCandidates(names: names))
+        else {
+            throw CoreDashboardError.noCachedData(names: names)
+        }
+        let data = try Data(contentsOf: newest)
+        SnapshotManifest.verify(snapshot: newest, data: data)
+        return data
+    }
+
+    /// Every JSON file under `dataDir` that could be the snapshot of one of `names`: the
+    /// kind's own directory, and flat `<name>_*.json` files beside it.
+    private func snapshotCandidates(names: [String]) -> [URL] {
         var candidates: [URL] = []
         let fm = FileManager.default
         for name in names {
@@ -3210,16 +3476,7 @@ struct CoreDashboard: Sendable {
                 candidates.append(contentsOf: matching)
             }
         }
-        // One ordering rule for every reader: filename stamp first, manifest and
-        // sync-conflict copies excluded. `newestSnapshot` also replaces a
-        // force-unwrap that only held because `candidates` was checked non-empty
-        // one line above — the filter can now empty it, so the guard does both.
-        guard let newest = FileManager.newestSnapshot(among: candidates) else {
-            throw CoreDashboardError.noCachedData(names: names)
-        }
-        let data = try Data(contentsOf: newest)
-        SnapshotManifest.verify(snapshot: newest, data: data)
-        return data
+        return candidates
     }
 
     private func loadLatestJSON(names: [String]) throws -> Any {
@@ -3278,7 +3535,7 @@ struct CoreDashboard: Sendable {
     private func asInt(_ value: Any?) -> Int? {
         switch value {
         case let n as Int: return n
-        case let d as Double: return Int(d)
+        case let d as Double: return Int(exactly: d.rounded())
         case let s as String: return Int(s)
         case let n as NSNumber: return n.intValue
         default: return nil
@@ -3498,5 +3755,25 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
         case .noCachedData(let names):
             return "No cached jamf-cli snapshot found for: \(names.joined(separator: ", "))"
         }
+    }
+}
+
+// MARK: - OnceCache
+
+/// The hardware index and the computers' dates read and parse the `computers` snapshot, so a
+/// dashboard builds each once however many sheets grade by it.
+private final class OnceCache<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value?
+    private var isStored = false
+
+    func value(_ make: () -> Value) -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        if isStored, let stored { return stored }
+        let made = make()
+        stored = made
+        isStored = true
+        return made
     }
 }

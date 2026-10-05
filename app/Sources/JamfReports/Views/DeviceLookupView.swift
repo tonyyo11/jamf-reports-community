@@ -401,7 +401,8 @@ struct DeviceLookupView: View {
             guard let result else {
                 let base = "jamf-cli could not load the \(kind.displayLabel.lowercased()) detail " +
                     "for ID `\(id)` on profile `\(profile)`. " +
-                    "Run `\(cliCommand(kind: kind, profile: profile, id: id))` in a terminal for the underlying error."
+                    "Run `\(Self.cliCommand(kind: kind, profile: profile, id: id))` in a " +
+                    "terminal for the underlying error."
                 state = .unavailable(lookupDiagnostic.map { "\($0)\n\(base)" } ?? base)
                 return
             }
@@ -478,6 +479,7 @@ struct DeviceLookupView: View {
                 AppLogger.cli.warning(
                     "DeviceLookupView refreshIndex: collect threw — \(error.localizedDescription, privacy: .private)"
                 )
+                if let toast = Self.refreshRefusalToast(for: error) { workspace.toast = toast }
             }
             index.load(profile: profile)
             refreshing = false
@@ -488,15 +490,27 @@ struct DeviceLookupView: View {
         }
     }
 
+    /// A refresh refused because a scheduled run holds the tick lock, or another collect is
+    /// running, says so; any other failure stays in the log, as before.
+    nonisolated static func refreshRefusalToast(for error: Error) -> Toast? {
+        guard CLIBridgeError.isCollectRefusal(error) else { return nil }
+        return WorkspaceStore.collectFailureToast(error, operation: "Refresh")
+    }
+
     private var trimmedTerm: String {
         searchTerm.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func cliCommand(kind: DeviceLookupIndex.Kind, profile: String, id: String) -> String {
+    /// The id comes from the lookup index, so it is quoted like the profile, and `--` ends the
+    /// flags ahead of one that starts with a dash.
+    nonisolated static func cliCommand(
+        kind: DeviceLookupIndex.Kind, profile: String, id: String
+    ) -> String {
         let word = ProfileName.shellWord(profile)
+        let target = (id.hasPrefix("-") ? "-- " : "") + ProfileName.shellWord(id)
         switch kind {
-        case .computer: return "jamf-cli -p \(word) pro device \(id)"
-        case .mobile:   return "jamf-cli -p \(word) pro mobile-devices get \(id)"
+        case .computer: return "jamf-cli -p \(word) pro device \(target)"
+        case .mobile:   return "jamf-cli -p \(word) pro mobile-devices get \(target)"
         }
     }
 

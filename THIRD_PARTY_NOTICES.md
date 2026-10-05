@@ -34,18 +34,6 @@ marks owned by Jamf Software, LLC.
 
 ---
 
-## Loaded at runtime (not bundled)
-
-### Chart.js
-
-- Project: https://www.chartjs.org
-- License: MIT
-- Used for: rendering charts inside the HTML report. The library is loaded
-  from a public CDN at report-viewing time and is not bundled in this
-  project's source or build artifacts.
-
----
-
 ## Build-time dependencies (not redistributed)
 
 The release pipeline uses the following Apple-provided tools, which are

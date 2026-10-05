@@ -179,7 +179,8 @@ struct FleetWorkbookModel: Sendable, Equatable {
                 sipPct: FleetRollup.deviceWeighted(onDate, \.sipPct),
                 firewallPct: FleetRollup.deviceWeighted(onDate, \.firewallPct),
                 gatekeeperPct: FleetRollup.deviceWeighted(onDate, \.gatekeeperPct),
-                patchPct: FleetRollup.deviceWeighted(onDate, \.patchPct),
+                patchPct: FleetRollup.samePatchBasis(onDate)
+                    ? FleetRollup.deviceWeighted(onDate, \.patchPct) : nil,
                 osCurrentPct: FleetRollup.deviceWeighted(onDate, \.osCurrentPct),
                 securityScore: FleetRollup.deviceWeighted(onDate, \.securityScore)
             )

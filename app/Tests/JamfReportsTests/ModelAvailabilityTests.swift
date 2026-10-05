@@ -47,8 +47,20 @@ final class ModelAvailabilityTests: XCTestCase {
         }
         #else
         XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "on_device")), .requiresMacOS27)
-        XCTAssertEqual(ModelAvailability.current(for: AIConfig(tier: "external")), .requiresMacOS27)
         #endif
+    }
+
+    /// There is one model, so the tier in the config never changes the answer:
+    /// a config still naming a removed tier reports exactly what on-device does,
+    /// rather than a state for a model that cannot run.
+    func testRemovedTiersReportTheSameAvailabilityAsOnDevice() {
+        let onDevice = ModelAvailability.current(for: AIConfig(enabled: true, tier: "on_device"))
+        for removed in ["external", "pcc"] {
+            XCTAssertEqual(
+                ModelAvailability.current(for: AIConfig(enabled: true, tier: removed)), onDevice,
+                "a config naming the removed \(removed) tier must resolve like on-device"
+            )
+        }
     }
 
     /// `platformSupported` is the config-free mirror of the check above — it

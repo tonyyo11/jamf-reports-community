@@ -8,9 +8,7 @@ import Foundation
 /// reports on what is on disk — it never invokes jamf-cli. `ReportEngine.collect`
 /// writes these snapshots when the profile's auth method is `platform`.
 ///
-/// Decoded shapes track ``BlueprintStatusRow`` and ``DDMStatusRow`` in
-/// ``JamfCLIDecoder.swift`` so a parser-level field rename is felt in
-/// one place.
+/// Rows decode through the private `RawBlueprint` and `RawDeclaration` structs below.
 struct DDMBlueprintService: Sendable {
 
     /// Everything the view needs to render. `.empty` when the workspace

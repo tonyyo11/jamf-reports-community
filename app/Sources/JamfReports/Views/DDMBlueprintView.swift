@@ -304,8 +304,8 @@ struct DDMBlueprintView: View {
                         DDMBlueprintView.deviceList(entry.devices)
                     } label: {
                         HStack(spacing: 8) {
-                            // Blueprint names cannot be joined: BlueprintStatusRow
-                            // carries no identifier field to join on.
+                            // Blueprint names cannot be joined: the blueprint-status
+                            // snapshot carries no identifier field to join on.
                             Mono(text: entry.identifier)
                                 .lineLimit(1)
                             Spacer()

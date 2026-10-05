@@ -1,19 +1,6 @@
 import Foundation
 import ZIPFoundation
 
-// MARK: - Errors
-
-enum OOXMLError: Error, LocalizedError {
-    case archiveCreationFailed(URL)
-
-    var errorDescription: String? {
-        switch self {
-        case .archiveCreationFailed(let url):
-            return "Failed to create XLSX archive at \(url.path)"
-        }
-    }
-}
-
 // MARK: - Cell value
 
 /// A sanitized, formula-injection-safe cell value.
@@ -55,26 +42,33 @@ enum CellValue: Sendable {
         }
     }
 
-    /// Strip C0 (keeping tab, LF, CR) and C1. Broader than XML 1.0 requires —
-    /// C1 is legal there — so cell values and sheet names sanitize identically.
+    /// Strip C0 (keeping tab, LF, CR), C1, and U+FFFE/U+FFFF, which XML 1.0 forbids.
+    /// Broader than XML 1.0 requires — C1 is legal there — so cell values and sheet
+    /// names sanitize identically. A String holds no unpaired surrogates, so none
+    /// can reach here.
     static func stripControlCharacters(_ raw: String) -> [Unicode.Scalar] {
         raw.unicodeScalars.filter { scalar in
             let v = scalar.value
             let isControl = (v <= 0x1F && v != 0x09 && v != 0x0A && v != 0x0D)
                 || (v >= 0x7F && v <= 0x9F)
+                || v == 0xFFFE || v == 0xFFFF
             return !isControl
         }
     }
 
     private static func sanitizeString(_ raw: String) -> CellValue {
         let filtered = stripControlCharacters(raw)
-        // Excel cell limit: 32,767 characters.
-        let s: String
-        if filtered.count > 32_000 {
-            s = String(String.UnicodeScalarView(filtered.prefix(32_000)))
-        } else {
-            s = String(String.UnicodeScalarView(filtered))
+        // Excel cell limit: 32,767 characters, counted in UTF-16 units. A scalar is at most
+        // two, so only a longer value needs the count.
+        var kept = filtered[...]
+        if filtered.count > 16_000 {
+            var units = 0
+            kept = filtered.prefix(while: { scalar in
+                units += scalar.utf16.count
+                return units <= 32_000
+            })
         }
+        let s = String(String.UnicodeScalarView(kept))
         // Escape formula-injection: cells starting with =, +, -, @ get a leading tab.
         if let first = s.first, "=+-@".contains(first) {
             return .string("\t" + s)
@@ -308,6 +302,15 @@ final class Workbook: @unchecked Sendable {
     func sheet(named name: String) -> Worksheet? {
         let sanitized = sanitizeSheetName(name)
         return sheets.first { $0.name == sanitized }
+    }
+
+    /// Keeps and orders the tabs as `sheets` in config.yaml says. Typed names are cleaned the
+    /// way `addSheet` cleans a tab name, so a custom EA name past 31 characters still matches.
+    func arrange(by settings: SheetsConfig) {
+        func asWritten(_ names: [String]?) -> [String]? { names?.map(sanitizeSheetName) }
+        let typed = SheetsConfig(only: asWritten(settings.only), skip: asWritten(settings.skip),
+                                 order: asWritten(settings.order))
+        sheets = typed.applyTo(sheets.map { (name: $0.name, write: $0) }).map(\.write)
     }
 
     /// Write the workbook to `url` atomically using a temp file + `replaceItem`.
@@ -587,9 +590,11 @@ final class Workbook: @unchecked Sendable {
         return xml
     }
 
+    /// `#RGB` is spread to `RRGGBB`: the styles part takes six digits after the alpha.
     private func rgbFromHex(_ hex: String) -> String {
         let clean = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        return clean.uppercased()
+        let digits = clean.count == 3 ? clean.map { "\($0)\($0)" }.joined() : clean
+        return digits.uppercased()
     }
 
     // MARK: - Shared strings
@@ -853,27 +858,51 @@ final class Workbook: @unchecked Sendable {
         return ["png", "jpg", "jpeg", "gif", "bmp"].contains(ext) ? ext : "png"
     }
 
+    /// Excel counts a sheet name in UTF-16 units and allows 31.
+    private static let maxSheetNameUnits = 31
+
     private func sanitizeSheetName(_ name: String) -> String {
         let invalid = CharacterSet(charactersIn: "[]:*?/\\")
         var s = name.components(separatedBy: invalid).joined(separator: " ")
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: "'"))
         s = String(String.UnicodeScalarView(CellValue.stripControlCharacters(s)))
         if s.isEmpty { s = "Sheet" }
-        return String(s.prefix(31))
+        return Self.truncated(s, toUTF16Units: Self.maxSheetNameUnits)
     }
 
-    /// Disambiguate against existing sheet names — two names colliding after
-    /// the 31-char truncation would emit duplicate `<sheet>`, which ECMA-376
-    /// forbids. The suffixed result stays within 31 characters.
+    /// `text` cut to at most `units` UTF-16 units on a Character boundary, so neither a
+    /// surrogate pair nor a joined emoji sequence is split. A single Character longer than
+    /// the limit is cut on a scalar instead of leaving nothing.
+    private static func truncated(_ text: String, toUTF16Units units: Int) -> String {
+        var used = 0
+        var result = ""
+        for character in text {
+            used += character.utf16.count
+            if used > units { break }
+            result.append(character)
+        }
+        guard result.isEmpty else { return result }
+        used = 0
+        for scalar in text.unicodeScalars {
+            used += scalar.utf16.count
+            if used > units { break }
+            result.unicodeScalars.append(scalar)
+        }
+        return result
+    }
+
+    /// Disambiguate against existing sheet names. Excel compares names without regard to
+    /// case, and two names colliding after the 31-unit truncation would emit duplicate
+    /// `<sheet>`, which ECMA-376 forbids. The suffixed result stays within 31 UTF-16 units.
     private func uniqueSheetName(_ base: String) -> String {
-        let existingNames = Set(sheets.map { $0.name })
-        guard existingNames.contains(base) else { return base }
+        let existingNames = Set(sheets.map { $0.name.lowercased() })
+        guard existingNames.contains(base.lowercased()) else { return base }
         var suffix = 2
         while true {
             let suffixStr = "_\(suffix)"
-            let maxBaseLength = max(0, 31 - suffixStr.count)
-            let candidate = String(base.prefix(maxBaseLength)) + suffixStr
-            if !existingNames.contains(candidate) { return candidate }
+            let maxBaseUnits = max(0, Self.maxSheetNameUnits - suffixStr.utf16.count)
+            let candidate = Self.truncated(base, toUTF16Units: maxBaseUnits) + suffixStr
+            if !existingNames.contains(candidate.lowercased()) { return candidate }
             suffix += 1
         }
     }

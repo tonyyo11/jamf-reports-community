@@ -5,14 +5,19 @@ import Foundation
 /// and `collect` never runs them.
 extension ReportEngine {
 
-    /// The only kinds `collect_skip` can remove — the four per-device-heavy queries
-    /// known to stall on-prem Jamf Pro. Anything else in the list is ignored, so a
-    /// typo or an over-eager list can never stop core inventory from being collected.
+    /// The only kinds `collect_skip` can remove: the four per-device-heavy queries
+    /// known to stall on-prem Jamf Pro, jamf-cli's `dashboard`, which sweeps the
+    /// whole inventory again for a page only the HTML report uses, and `sofa`, the
+    /// one fetch from a third-party host, for a network that must not reach it.
+    /// Anything else in the list is ignored, so a typo or an over-eager list can never
+    /// stop core inventory from being collected.
     static let skippableKinds: Set<String> = [
         "patch-device-failures",
         "profile-status",
         "update-status",
         "update-device-failures",
+        dashboardKind,
+        sofaKind,
     ]
 
     /// `collect_skip` as kind names: trimmed, lowercased, underscores read as hyphens

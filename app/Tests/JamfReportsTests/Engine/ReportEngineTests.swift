@@ -95,7 +95,7 @@ final class ReportEngineTests: XCTestCase {
         let outURL = dataDir.appendingPathComponent("out.xlsx")
 
         do {
-            try await engine.generate(csvURL: nil, outputURL: outURL)
+            try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
             XCTFail("Expected snapshotIntegrityViolation, generate returned cleanly")
         } catch let ReportEngineError.snapshotIntegrityViolation(summary, _) {
             XCTAssertEqual(summary.mismatch, 1)
@@ -130,7 +130,7 @@ final class ReportEngineTests: XCTestCase {
 
         // Should NOT throw snapshotIntegrityViolation. May skip sheets due
         // to schema mismatch — the test goal is "didn't pre-flight-abort."
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Workbook should be written when only .absent results exist")
     }
@@ -243,7 +243,7 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: config, dataDir: dataDir)
         let outURL = dataDir.appendingPathComponent("out.xlsx")
 
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Permissive mode must not abort on mismatch")
     }
@@ -277,7 +277,7 @@ final class ReportEngineTests: XCTestCase {
         }
 
         let capture = LogCapture()
-        try ReportEngine.testableSaveSnapshot(
+        try ReportEngine.saveSnapshot(
             data: Data(#"{"ok":true}"#.utf8), kind: kind, dataDir: dataDir,
             recordManifest: true, onLine: { capture.append($0) }
         )
@@ -316,7 +316,7 @@ final class ReportEngineTests: XCTestCase {
         let engine = ReportEngine(config: config, dataDir: emptyDir)
         let outURL = emptyDir.appendingPathComponent("out.xlsx")
 
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path),
                       "Workbook with Cover sheet should be produced even without data")
     }
@@ -347,7 +347,7 @@ final class ReportEngineTests: XCTestCase {
 
         let engine = ReportEngine(config: config, dataDir: emptyDataDir)
         // CSV-only: no CoreDashboard data, but should succeed because CSV provides sheets.
-        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL)
+        try await engine.generate(csvURL: fixtureCSV, outputURL: outURL, locateJamfCLI: { nil })
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
         let data = try Data(contentsOf: outURL)
@@ -371,7 +371,7 @@ final class ReportEngineTests: XCTestCase {
         let outURL = emptyDir.appendingPathComponent("out.xlsx")
 
         do {
-            try await engine.generate(csvURL: badCSV, outputURL: outURL)
+            try await engine.generate(csvURL: badCSV, outputURL: outURL, locateJamfCLI: { nil })
             XCTFail("Expected csvParseFailed error")
         } catch ReportEngineError.csvParseFailed {
             // Expected.
@@ -496,6 +496,44 @@ final class ReportEngineTests: XCTestCase {
             "staleCount must count B+C (days_since_contact) and D (stale fallback)")
     }
 
+    /// "More than N days": a Mac at exactly the threshold is not counted, one day later is.
+    func testSummaryStaleCountIsMoreThanTheThresholdNotAtIt() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stale-count-boundary-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        try Data("""
+        [{"section":"summary","data":{"total_devices":4,"filevault_encrypted":4,
+          "sip_enabled":4,"firewall_enabled":4,"gatekeeper_enabled":4}}]
+        """.utf8).write(to: secDir.appendingPathComponent("security_\(recentStamp).json"))
+
+        let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: compDir, withIntermediateDirectories: true)
+        try Data("""
+        [
+          {"name":"A","serial":"A1","managed":true,"stale":true,"days_since_contact":"29"},
+          {"name":"B","serial":"B1","managed":true,"stale":true,"days_since_contact":"30"},
+          {"name":"C","serial":"C1","managed":true,"stale":true,"days_since_contact":"31"},
+          {"name":"D","serial":"D1","managed":true,"stale":true,"days_since_contact":"32"}
+        ]
+        """.utf8).write(to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
+
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        ReportEngine(config: ReportConfig(), dataDir: dataDir)
+            .emitSummaryJSON(summariesDir: summariesDir)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let obj = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(contentsOf: summariesDir.appendingPathComponent("summary_\(today).json"))
+            ) as? [String: Any])
+        XCTAssertEqual(obj["staleCount"] as? Int, 2,
+            "31 and 32 days are more than 30; 29 and exactly 30 are not")
+    }
+
     /// staleCount must agree with DeviceInventorySnapshot.staleCount(thresholdDays:) —
     /// the same computation DevicesView uses for its "Stale" stat tile.
     func testSummaryStaleCountAgreesWithDeviceInventorySnapshot() throws {
@@ -506,7 +544,7 @@ final class ReportEngineTests: XCTestCase {
         r1.daysSinceContact = 10
         var r2 = DeviceInventoryRecord.empty(id: "r2", source: "test")
         r2.daysSinceContact = 29
-        // 3 devices at or over the threshold.
+        // One at exactly the threshold (not stale) and two past it.
         var r3 = DeviceInventoryRecord.empty(id: "r3", source: "test")
         r3.daysSinceContact = 30
         var r4 = DeviceInventoryRecord.empty(id: "r4", source: "test")
@@ -522,16 +560,17 @@ final class ReportEngineTests: XCTestCase {
             generatedAt: "", generatedDate: nil, isDemo: false)
         let uiStaleCount = devSnapshot.staleCount(thresholdDays: staleDays)
 
-        // The summary engine uses `daysSinceCheckin >= staleDaysThreshold`.
-        // Synthesize the matching device-compliance rows.
+        // The summary engine counts device-compliance rows through
+        // `DeviceComplianceRow.isStale(atDays:)`. Synthesize the matching rows.
         let compRows = records.compactMap { r -> [String: Any]? in
             guard let d = r.daysSinceContact else { return nil }
             return ["name": r.id, "serial": "", "managed": true,
-                    "stale": d >= staleDays, "days_since_checkin": d]
+                    "stale": d > staleDays, "days_since_contact": String(d)]
         }
-        let engineStaleCount = compRows.filter {
-            ($0["days_since_checkin"] as? Int ?? 0) >= staleDays
-        }.count
+        let decoded = try JSONDecoder().decode(
+            [DeviceComplianceRow].self, from: JSONSerialization.data(withJSONObject: compRows))
+        let engineStaleCount = decoded.filter { $0.isStale(atDays: staleDays) }.count
+        XCTAssertEqual(engineStaleCount, 2, "90 and 200 days are stale; 30 is not")
 
         XCTAssertEqual(engineStaleCount, uiStaleCount,
             "Engine staleCount (\(engineStaleCount)) must match DevicesView stat tile " +
@@ -676,37 +715,39 @@ final class ReportEngineTests: XCTestCase {
         )
     }
 
-    // MARK: - csvEscape formula-injection guard
+    // MARK: - inventoryCSV formula-injection guard
 
-    /// =HYPERLINK(...) contains a double-quote, so after tab-prefixing the whole field is
-    /// RFC-4180 quoted: "\t=...". Assert the raw string (not hasPrefix("\t=")).
-    func testCSVEscapeNeutralizeEqualsHyperlink() {
-        let raw = #"=HYPERLINK("http://x")"#
-        let escaped = ReportEngine.testableCSVEscape(raw)
-        // Tab-prefixed, then quoted due to embedded double-quote.
-        XCTAssertTrue(
-            escaped.hasPrefix("\"\t="),
-            "csvEscape must tab-prefix and RFC4180-quote a cell beginning with '='; got: \(escaped)"
-        )
-    }
+    /// The inventory CSV escapes cells with `StaleDeviceService.csvField`, so a cell starting
+    /// with a tab is neutralised like one starting with `=`, and a clean one passes through.
+    func testInventoryCSVNeutralisesFormulaAndTabCells() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-inventory-csv-\(UUID().uuidString)", isDirectory: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testonly-inventory-csv"
+        let computers = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: computers, withIntermediateDirectories: true)
+        let rows: [[String: String]] = [
+            ["a": "\t=cmd|calc", "b": "=1+1", "c": #"=HYPERLINK("http://x")"#, "d": "MacBook Pro"],
+        ]
+        try JSONSerialization.data(withJSONObject: rows)
+            .write(to: computers.appendingPathComponent("computers_20260101T000000.json"))
+        let output = root.appendingPathComponent("inventory.csv")
 
-    /// Simple = prefix (no special chars) → tab-prefix only, no quoting.
-    func testCSVEscapeNeutralizeSimpleEquals() {
-        let escaped = ReportEngine.testableCSVEscape("=1+1")
-        XCTAssertEqual(escaped, "\t=1+1",
-                       "csvEscape must tab-prefix a cell beginning with '=' when no quoting is needed")
-    }
+        try await ReportEngine.inventoryCSV(
+            profile: profile, workspacePaths: WorkspacePaths.self, outputURL: output)
 
-    /// + prefix → tab-prefixed.
-    func testCSVEscapeNeutralizePlus() {
-        let escaped = ReportEngine.testableCSVEscape("+cmd|calc")
-        XCTAssertEqual(escaped, "\t+cmd|calc")
-    }
-
-    /// Normal value — no injection prefix, no special chars — passes through unchanged.
-    func testCSVEscapePassesThroughCleanValue() {
-        let escaped = ReportEngine.testableCSVEscape("MacBook Pro")
-        XCTAssertEqual(escaped, "MacBook Pro")
+        let lines = try String(contentsOf: output, encoding: .utf8)
+            .components(separatedBy: "\n")
+        XCTAssertEqual(lines.first, "a,b,c,d")
+        XCTAssertEqual(lines.dropFirst().first,
+                       "\t\t=cmd|calc,\t=1+1,\"\t=HYPERLINK(\"\"http://x\"\")\",MacBook Pro")
     }
 
     // MARK: - S2: collectPatchReleaseDates rejects an unsafe title id
@@ -723,23 +764,6 @@ final class ReportEngineTests: XCTestCase {
         XCTAssertFalse(CLIBridge.isSafeDeviceIdentifier(""))
         XCTAssertTrue(CLIBridge.isSafeDeviceIdentifier("123"))
     }
-
-    // MARK: - P3: why XLSXValidator is not wired into generate()
-
-    // `XLSXValidator` has no production call sites. The reason, recorded here
-    // rather than as a test: it treats a sheet with no row elements as invalid
-    // (deliberately — see `testXLSXValidatorDetectsEmptySheetData`), while a
-    // full-instance report with real tenant data legitimately contains empty
-    // sheets, so wiring it as-is would warn on every genuine generate.
-    //
-    // An earlier version of this asserted that engine output DOES trip that
-    // rule. It passed locally and failed on CI, because whether the generated
-    // workbook happens to contain an empty sheet depends on the data present,
-    // not on the code — CI runs with none. That made it a test of incidental
-    // output, so it was removed rather than made conditional. The design
-    // question it guarded (is an empty sheet legitimate output?) is a product
-    // decision; if it is ever answered "no", the validator can be wired and
-    // this comment deleted.
 
     // MARK: - Helpers
 
@@ -878,5 +902,25 @@ final class ReportEngineTests: XCTestCase {
                        "device-compliance has a file but was not in liveKinds → must be 'cache'")
         XCTAssertEqual(sources["patch-status"], "absent",
                        "patch-status has no snapshot → must be 'absent'")
+    }
+
+    // MARK: - initializeWorkspace default config
+
+    func testInitializeWorkspaceDefaultConfigLeavesOptionalColumnsOut() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReportEngineTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try ReportEngine.initializeWorkspace(
+            profile: "init-default", workspacesRoot: root, seedConfigURL: nil, onLine: { _ in })
+
+        let configURL = root.appendingPathComponent("init-default/config.yaml")
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("computer_name: \"\""))
+        for key in ConfigState.optionalColumnKeys {
+            XCTAssertFalse(text.contains("\(key):"), "\(key) must not be written empty")
+        }
+        XCTAssertNoThrow(try ConfigLoader.load(from: configURL))
     }
 }

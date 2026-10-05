@@ -2,17 +2,17 @@ import Foundation
 
 // MARK: - ExecutiveTemplate
 
-/// Executive summary template — the historical default layout.
+/// Executive summary template.
 ///
 /// Audience: Directors, VPs, and CISOs reviewing fleet health at a glance.
-/// Covers KPI tiles, fleet overview, security posture, compliance, and
-/// top-10 patch titles with an executive narrative appendix.
+/// The HTML report is the framing only: the six figures, what needs attention, the jamf-cli
+/// dashboard and the audit appendix, with no detail groups. The workbook carries the detail.
 struct ExecutiveTemplate: ReportTemplate {
 
     let identifier = "executive"
     let displayName = "Executive"
-    let description = "KPI overview for directors and CISOs: security posture, " +
-        "compliance health, top-10 patch titles, and fleet summary."
+    let description = "Summary for directors and CISOs: six figures with their change, " +
+        "what needs attention, and the fleet dashboard. No detail tables in the HTML report."
     let audience = "Directors, VPs, CISOs"
 
     var includedSheets: [SheetID] {
@@ -32,11 +32,10 @@ struct ExecutiveTemplate: ReportTemplate {
     var htmlSections: [SectionID] {
         [
             .aiNarrative,
-            .kpiTiles,
-            .osAdoptionChart,
-            .complianceBands,
-            .execSummary,
-            .orgInfo,
+            .atAGlance,
+            .needsAttention,
+            .jamfDashboard,
+            .auditAppendix,
         ]
     }
 

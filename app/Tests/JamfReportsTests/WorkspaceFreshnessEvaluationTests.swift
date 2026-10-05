@@ -115,4 +115,21 @@ final class WorkspaceFreshnessEvaluationTests: XCTestCase {
         XCTAssertTrue(reportedKinds.contains("patch-device-failures"),
                       "an unlisted heavy kind that never landed is still a gap")
     }
+
+    // MARK: - jamf-cli dashboard
+
+    /// The installed jamf-cli's version reaches `expectedKinds`, so the dashboard is
+    /// expected only where `collect` would run it.
+    func testTheDashboardIsExpectedOnlyWithAJamfCLIThatRunsIt() throws {
+        UserDefaults.standard.set(false, forKey: skipExpensiveKey)
+        try stateStore().record(.landed, report: "overview", at: now)
+
+        func reportsDashboard(_ version: String?) -> Bool {
+            WorkspaceStore.evaluateFreshness(profile: profile, jamfCLIVersion: version, now: now)
+                .contains { $0.snapshotKind == ReportEngine.dashboardKind }
+        }
+        XCTAssertTrue(reportsDashboard("1.31.1"), "never landed on an established workspace")
+        XCTAssertFalse(reportsDashboard("1.30.2"))
+        XCTAssertFalse(reportsDashboard(nil))
+    }
 }

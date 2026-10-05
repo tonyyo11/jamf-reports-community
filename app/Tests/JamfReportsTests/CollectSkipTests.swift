@@ -15,9 +15,12 @@ final class CollectSkipTests: XCTestCase {
         )
     }
 
-    func testAllFourHeavyKindsCanBeSkipped() {
+    /// The four per-device-heavy kinds, plus jamf-cli's dashboard (2.9), which sweeps
+    /// the whole inventory again for a page only the HTML report uses, and the SOFA feed
+    /// fetch, the one call to a third-party host.
+    func testTheHeavyKindsTheDashboardAndSOFACanBeSkipped() {
         let all = ["patch-device-failures", "profile-status", "update-status",
-                   "update-device-failures"]
+                   "update-device-failures", "dashboard", "sofa"]
         XCTAssertEqual(ReportEngine.collectSkipKinds(all), Set(all))
         XCTAssertEqual(ReportEngine.skippableKinds, Set(all))
     }

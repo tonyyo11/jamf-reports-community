@@ -4,7 +4,12 @@
 # Idempotent: removes existing DMG first.
 # Exits 1 on failure.
 #
-# Usage: ./package-dmg.sh "2.1.0"
+# Usage: ./package-dmg.sh ["2.1.0"]
+#
+# The DMG is named from the built app's Info.plist. The version argument is
+# optional and only a check: the script fails when it differs from the app's
+# CFBundleShortVersionString, so a stale build/JamfReports.app is not packaged
+# under a newer version's name.
 #
 # Required environment variables (when SKIP_NOTARIZE is not set):
 #   DEVELOPER_ID_APP  — Developer ID Application signing identity (for DMG codesign)
@@ -28,7 +33,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd -P)"
 # shellcheck source-path=SCRIPTDIR source=lib/versioning.zsh
 source "${SCRIPT_DIR}/lib/versioning.zsh"
 
-readonly VERSION="${1:?Version required (e.g. 2.1.0)}"
+readonly REQUESTED_VERSION="${1:-}"
 APP_PATH_RAW="$(cd -- "$(dirname -- "$0")/../build/JamfReports.app" && pwd -P)"
 readonly APP_PATH="$APP_PATH_RAW"
 WORK_DIR_RAW="$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
@@ -40,25 +45,40 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-# Read release channel and build number from the .app's Info.plist.
+# Read version, release channel and build number from the .app's Info.plist.
 # JRReleaseChannel ("release"/"beta") decides artifact naming; a missing key
 # (older .app) defaults to beta so a release is never mislabeled by accident.
 PLIST="$APP_PATH/Contents/Info.plist"
+APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST") || {
+  echo "✗ could not read CFBundleShortVersionString from $PLIST" >&2
+  exit 1
+}
 APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST") || {
   echo "✗ could not read CFBundleVersion from $PLIST" >&2
   exit 1
 }
 APP_CHANNEL=$(/usr/libexec/PlistBuddy -c "Print :JRReleaseChannel" "$PLIST" 2>/dev/null || echo "beta")
 
-# The same build-number check build-pkg.sh makes, so a beta .dmg never carries a
-# -beta suffix that is not an integer.
+# The same version and build-number checks build-pkg.sh makes, so a .dmg never
+# carries a version that is malformed or a -beta suffix that is not an integer.
+if ! jr_is_valid_marketing_version "$APP_VERSION"; then
+  echo "✗ unexpected CFBundleShortVersionString: '$APP_VERSION' (want N.N or N.N.N)" >&2
+  exit 1
+fi
 if ! jr_is_valid_build_number "$APP_BUILD"; then
   echo "✗ unexpected CFBundleVersion: '$APP_BUILD' (must be a monotonic integer)" >&2
   exit 1
 fi
 
+if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" != "$APP_VERSION" ]]; then
+  echo "✗ version argument '$REQUESTED_VERSION' does not match the app's" \
+    "CFBundleShortVersionString '$APP_VERSION' ($PLIST)" >&2
+  echo "  Rebuild the app at that version, or run without the argument." >&2
+  exit 1
+fi
+
 # JamfReports-<version>-beta<build>.dmg, or JamfReports-<version>.dmg on release.
-DMG_PATH="$(jr_artifact_path "${WORK_DIR}/build" "$VERSION" "$APP_BUILD" "$APP_CHANNEL" dmg)"
+DMG_PATH="$(jr_artifact_path "${WORK_DIR}/build" "$APP_VERSION" "$APP_BUILD" "$APP_CHANNEL" dmg)"
 
 # Clean up old staging and DMG
 if [[ -d "$STAGING_DIR" ]]; then

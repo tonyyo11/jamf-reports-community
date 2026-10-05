@@ -17,7 +17,9 @@ Tier 1 kinds include:
 
 - `ea-results` — one row per device's Extension Attribute result
 - `device-compliance` — one row per device's per-rule compliance failures
-- `computers` (device inventory) and `mobile-device-inventory-details`
+- `computers` (device inventory) and `mobile-devices-list` (mobile inventory); `computers`
+  also supplies the hardware facts the security policy's hardware rule reads (Apple
+  silicon, T2 model identifier)
 - `patch-device-failures` and `update-device-failures` — per-device scan failures
 - `compliance-devices` — Jamf Platform API per-device control compliance
 - `ddm-device-status` — one row per DDM-enabled device's declaration and
@@ -102,10 +104,11 @@ This table shows where each Overview KPI number comes from:
 | Firewall % | Security report firewall enabled / total | 2 |
 | Gatekeeper % | Security report Gatekeeper enabled / total | 2 |
 | Compliance % | EA results (real mSCP/STIG bands) OR 4-control proxy from security report — check config for `complianceIsProxy` | 1 or 2 |
-| Patch % | Unweighted mean of per-title compliance from `patch-status` | 2 |
-| Stale Count | Device-compliance rows with last-check-in older than `stale_device_days` threshold | 1 |
-| OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary | SOFA + 2 |
-| Security Score | Weighted composite of FileVault, SIP, firewall, Gatekeeper, compliance, EDR agent, and other factors — weights configurable in **Customize** | 2 + config |
+| Patch % | Share of devices on the latest version: sum of devices on latest / sum of devices, over titles that have devices; from `patch-status` | 2 |
+| Stale Count | Device-compliance rows whose oldest counted date is more than `stale_device_days` days old; the dates are `thresholds.stale_basis` (default the last check-in; inventory and contact come from the `computers` snapshot) | 1 (+ 2 for inventory or contact) |
+| OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary; can be disabled via `jamf_cli.collect_skip: [sofa]` | SOFA + 2 |
+| Security Score | Weighted share of Macs passing each factor in `security_policy.score_factors` (Config → Scoring; by default the native Jamf Pro factors, plus mSCP and each security agent when configured), over the factors with data, under the workspace's security policy | 2 + config |
+| Action items P0 / P1 | Security report counts under the security policy: P0 = FileVault, SIP or Firewall failing, P1 = Gatekeeper failing, over the Macs that reported the control | 2 + config |
 | mSCP Bands | Pass/Low/Med-Low/Medium/High/No Data distribution from EA results per device | 1 |
 
 ## Zero vs. unknown
@@ -117,7 +120,9 @@ Examples:
 
 - If you have not collected `ea-results` yet, Compliance % shows "—".
 - If you have not collected `patch-status` yet, Patch % shows "—".
-- If a device has no last-check-in date, it does not count toward Stale Count.
+- If a device-compliance row has no day count and jamf-cli does not flag it stale, it does not
+  count toward Stale Count. With `stale_basis` listing `inventory`, a Mac the `computers`
+  snapshot dates but that has no inventory date counts as never inventoried: stale.
 
 This is intentional: missing data does not drag down your health scores. When you add that
 data source to your collection schedule, the metric appears and the index recalculates.
@@ -179,6 +184,12 @@ screen. These include:
 - Group lists (smart-computer-groups, classic-mobile-device-groups) — excel and HTML
   group hygiene analysis
 - Audit and patch release dates — supporting data for trend calculations
+- jamf-cli's dashboard (jamf-cli 1.31.0 or later) — one page of fleet-wide totals across
+  Jamf Pro and, where the profile reaches them, the Jamf Platform API, Jamf Protect and
+  Jamf Security Cloud. It is saved as `.html` under `jamf-cli-data/dashboard/` every two
+  days and shown, open, in the HTML report right after the Needs attention list. With it in
+  the report, the report drops the OS distribution, audit findings and catalog counts it
+  repeats. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
 
 This is intentional. The app focuses on device posture and compliance; detailed policy
 audit trails and app inventories are report outputs, not interactive screens.

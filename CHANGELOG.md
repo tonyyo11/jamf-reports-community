@@ -7,6 +7,630 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-10-05
+
+You choose what the Security Score counts, your organization defines what makes a Mac stale, and
+Macs that MDM reaches but the Jamf binary does not are flagged. Each workspace sets its own security
+policy, a hand-edited config.yaml is understood, Reports gains a Generate sheet, the HTML report is
+shorter and carries jamf-cli's fleet dashboard, and patch compliance is one figure everywhere.
+
+### Added
+
+- Security policy. A `security_policy` block in config.yaml decides, per workspace, whether
+  FileVault, System Integrity Protection, Firewall and Gatekeeper count as failures, count as
+  warnings (amber, not a gap, scored as compliant) or are not counted. It applies on every screen,
+  in every report and in scheduled runs: the Compliance Posture and Security Posture screens,
+  Devices and its risk ratings, the Overview, the daily summary's P0 and P1 and security score,
+  the workbook and the HTML report. Without the block nothing changes. Config > Scoring has a
+  Security Policy card that edits it, and keeps the rest of the file.
+- Hardware-encrypted Macs. `security_policy.filevault_off_hardware_encrypted` sets the level for
+  FileVault off on a Mac whose disk is encrypted by hardware (Apple silicon, or an Intel Mac with
+  a T2 chip). Those Macs are named "FileVault off (hardware-encrypted)" and counted apart. It
+  needs the Mac's hardware details from the latest inventory collect. A Mac is never treated this
+  way when its record disagrees with another record for the same serial number, or when it is a
+  virtual machine.
+- CSV reports can tell a T2 Mac from other Intel Macs. A new `columns.model_identifier` key maps
+  the export's "Model Identifier" column (`columns.model` stays the marketing name), and the
+  default `columns.architecture` is now "Architecture Type", the header Jamf Pro's computer export
+  uses. Scaffold and re-scaffold fill both, and Config Doctor warns when the hardware rule is set,
+  a CSV is present and either one is unmapped.
+- Macs that did not report a security setting are no longer counted as failing it. FileVault, SIP,
+  Firewall and Gatekeeper figures, the security score and the P0 and P1 action items count the
+  Macs measured off, and the Security Posture screen, the workbook and the HTML report show "not
+  reported: N" where some Macs did not report. A tenant where Jamf collects every value sees no
+  change.
+- Your own on and off words. When your organization maps its own extension attribute or CSV
+  column to FileVault, SIP, Firewall or Gatekeeper and it says `Pass` and `Fail`, or `Compliant`
+  and `Non-Compliant`, list those words under `security_policy.on_values` and `off_values` for
+  that control and every screen and report reads them; before, those Macs counted as not
+  measured. A value must match whole, a value in both lists reads as off, and Config > Run check
+  warns about one that is empty, not text or in both. The totals jamf-cli's security report
+  carries keep jamf-cli's words.
+- You choose what the Security Score counts. Config > Scoring lists the score's factors, each
+  with today's share of Macs, its part of the score and a weight: remove one, add one from a
+  menu, or go back to the defaults. Every configured security agent can count, each as its own
+  factor (CrowdStrike, Nessus and Splunk UF together, say). The list is saved to the workspace's
+  `security_policy.score_factors`, so Security Posture, the Overview, Trends, alerts and reports
+  score the same way.
+- The default score counts what Jamf Pro itself reports: FileVault, SIP, Firewall, Gatekeeper,
+  Secure Boot at full security, an escrowed bootstrap token, macOS current (within 30 days of a
+  release), XProtect current (within 14 days), patch compliance and checking in recently. The
+  primary mSCP baseline and each security agent join when they are configured. Security Posture
+  shows each factor's share and points under the score ring, and the workbook's Executive Summary
+  lists them.
+- Your organization decides what makes a Mac stale. Config › Thresholds picks which dates count:
+  last check-in, last inventory, last contact, or any mix (`thresholds.stale_basis`); a Mac is
+  stale when any of them is more than Stale device days old. With nothing set it stays last
+  check-in, so counts do not move until you choose. Every stale count, Offline Outreach's tiers
+  and the security score's check-in factor follow it.
+- Macs MDM can reach but the Jamf binary cannot. Jamf Pro 11.30 records Last Contact, any contact
+  over the binary, MDM or declarative device management. When a Mac's Last Contact is current
+  but its last check-in lags it by more than two weeks (`thresholds.contact_gap_days`), the
+  Health Audit lists it as "Jamf binary silent", and when it checks in but its inventory lags,
+  as "Inventory not updating". Devices can filter them and shows all three dates, the workbook's
+  Check-in Health sheet lists them, and the HTML report counts them under Needs attention.
+- SIP, Firewall and Gatekeeper score cards on the Overview, and trend lines for them on Trends. A
+  control your policy does not count has no card, and the card returns if you count it again.
+- A hand-typed config.yaml is understood. The Config Doctor lists every key the app does not read,
+  with the key you probably meant (`os_version` for `operating_system`), and says when a value you
+  typed was not used as written: an unrecognised provider or detail, a webhook that cannot send, a
+  retention setting that would never remove anything, limits that were clamped, sheet names that
+  match no sheet, dates that are not `yyyy-MM-dd`, thresholds out of order, colours that are not
+  hex, settings that do not fit their type, and a security policy level it could not read (with
+  the level it used instead).
+- The Config screen and the Config Doctor list each line of config.yaml the app did not read as
+  written, by line number: a line indented differently from its neighbours, a line with no
+  `key: value`, a tab in the indentation, a key set twice, a `|` or `>` block value, a `[` or `{`
+  list not closed on its line, and list items with no key above them.
+- The Config screen has a read-only **From config.yaml** tab. It lists the settings no tab edits,
+  the keys the app does not read (with the nearest known key) and the lines it skipped. Anything
+  that looks like a URL, token or password shows `(set)` instead of its value.
+- The Config screen's Columns tab lists the nine optional columns it was missing (full name, asset
+  tag, building, position, last logged-in user, Recovery Lock, battery health, Entra SSO status,
+  purchase date). A mapping in config.yaml shows there, survives a save, and clearing it removes
+  the key. The CSV scaffold recognises the first eight, on first setup and on Re-scaffold from
+  CSV.
+- The Reports screen's **Generate...** opens a sheet to choose a report template or your own set
+  of sheets, the formats (XLSX, HTML, PDF, CSV), whether to collect fresh data first (unchecked
+  when the data is under an hour old) and whether to run a Health Audit first. A run scrolls to
+  its live log and ends on its result, and the log lists the Health Audit's result and a SHA-256
+  for every file written. It replaces the Generate HTML button.
+- On-device insight cards (macOS Golden Gate 27, off until AI insights are turned on for the
+  profile, hidden in demo mode): Trends summarises how your metrics moved over the selected range;
+  Audit says which findings to work first and what changed since the previous audit; Security
+  Posture and Compliance Posture say which control, and on Compliance which macOS version,
+  accounts for most of the gap. The posture cards follow your security policy, so a
+  hardware-encrypted Mac with FileVault off is described as a warning, never as unencrypted.
+- The HTML report includes jamf-cli's fleet dashboard. With jamf-cli 1.31.0 or later,
+  collect saves the dashboard every two days: one page of fleet-wide totals across Jamf Pro
+  and, where your profile reaches them, the Jamf Platform API, Jamf Protect and Jamf Security
+  Cloud, with no device names, serials or usernames. The report shows it as its last section,
+  as jamf-cli made it, with its own filters, in the report's light or dark theme; the PDF export
+  says where to find it. Add `dashboard` to `jamf_cli.collect_skip` to stop collecting it.
+- Write the HTML report with every workbook. Turn on **Write the HTML report with every
+  workbook** on the Customize screen, or set `html.with_workbook: true`, and each run that
+  writes a profile's workbook also writes its HTML report beside it, with the same name: the
+  Generate buttons, scheduled runs that generate, and `jamf-reports generate`. If only the HTML
+  report fails, the workbook is kept and the log says so. When older runs are archived, the
+  HTML report moves with its workbook; other HTML reports stay where they are. The fleet and
+  period workbooks and Jamf School workbooks are not included.
+- The top of every run log says what the run will collect: `[plan]` lines list the sources it will
+  fetch, the ones it leaves alone and why (a `collect_skip` entry, a source that is not due, a
+  tier not selected), and whether the per-device scan runs. This applies to scheduled runs and
+  the command line as well as the app.
+
+### Changed
+
+- The HTML report is shorter to read. It now opens with a header (profile, when the data was
+  collected, jamf-cli version, how many Macs, template, reporting week), six figures with their
+  change since about a week earlier, and a short "Needs attention" list whose lines link to the
+  part of the report that lists them. The jamf-cli dashboard follows, open. Everything else sits
+  in collapsed groups (Security and compliance, Patching, Devices needing intervention, Policies
+  and profiles, Trends, Recent failures) whose headings carry their numbers, and an audit
+  appendix lists the data sources and their dates, what each figure means, the security policy in
+  force and what the report leaves out. Lists show ten rows with the rest under "Show all".
+  Expand all and Collapse all are at the top right; printing and the PDF export show everything.
+- Templates set how much of the HTML report you get. Executive is the header, the figures, the
+  attention list, the dashboard and the appendix. Operational starts with the failure, patch and
+  intervention lists open, Compliance and Security Posture start with Security and compliance
+  open, and Full Instance starts with everything closed.
+- With the jamf-cli dashboard in the report, the report no longer repeats the OS version
+  distribution, the audit findings or the catalog counts. Sections with nothing to show (empty,
+  not configured) are left out and listed in the appendix instead of drawn as empty boxes.
+- The HTML report has no Asset Map or other full device list. A report is forwarded, and the
+  workbook has the inventory. The Asset template's HTML now shows purchase-date cohorts and
+  building and department breakdowns.
+- Policies and profiles list only what is failing: policy findings with errors first,
+  configuration profiles and apps that reported install errors, and a count of the healthy
+  profiles. The Executive Summary paragraphs are gone; the figures and the attention list replace
+  them. The Exception List appears only when `exceptions:` is configured: it used to list custom
+  extension attributes under that heading.
+- The HTML report's two charts, patch compliance and OS versions, are now plain bars drawn by the
+  page itself. A report no longer carries the 200 KB Chart.js library, and PDF exports show the
+  charts instead of "Chart unavailable in PDF".
+- Patch compliance is now one figure everywhere: the share of devices on the latest version,
+  counted over every patch title that has devices. The daily summary, Trends, the workbook's
+  Compliance Posture sheet, the Executive Summary and the Patch screen used three different
+  calculations. Trends works out earlier days again from the daily patch snapshots where they
+  exist, so the chart does not step at the upgrade. The first alert comparison after the upgrade
+  skips a patch-drop rule rather than report the change of definition as a drop, and a period
+  report shows no change for patch compliance across it and says why.
+- `sheets.only`, `skip` and `order` in config.yaml now shape every report workbook: the Jamf Pro
+  tabs, the CSV tabs, the Charts tab and Jamf School workbooks. Before, only the CSV tabs followed
+  them. `order` can put a CSV tab ahead of the Jamf Pro tabs. A non-empty `only` also drops the
+  Charts tab unless "Charts" is listed, and an `only` list that names no tab of the workbook is
+  ignored with a warning.
+- Reports are written to the `output_dir` the Reports library reads: `~` is expanded, an absolute
+  folder outside the workspace is used when `output.allow_absolute_paths` is on (`true`, `yes`,
+  `on` or `1`), and a folder the app will not use is named in the run log with the reason. A
+  folder setting holding a number, `true` or a quoted `null` uses the default folder.
+- `retention.archive_dir` can no longer reach outside the workspace through a relative `../` path,
+  and the run log names a folder it refuses. With `output.allow_absolute_paths` on, an absolute
+  folder can move raw snapshots out of the workspaces folder (system folders stay refused).
+  Without it, an absolute path elsewhere in the workspaces folder, which used to work, falls back
+  to `_archive`.
+- Both reports take an `accent_color` of `#RRGGBB` or `#RGB` and use the default colour for
+  anything else (the HTML report used to accept four- and eight-digit values too).
+- Collect now fetches mobile devices once instead of twice, and asks Jamf for the hardware,
+  security and user sections, so the Mobile Fleet screen and the workbook's mobile sheets show
+  passcode, activation lock, jailbreak and data-protection counts, serials, models and assigned
+  users. Managed apps still show a dash. A snapshot from an earlier collect is read until the next
+  collect.
+- The app runs one collect at a time. A Refresh, Collect now, scan, first collect, Generate with
+  fresh data, Archive now, Device Lookup or setup started while another collect or a scheduled run
+  is collecting says so and starts nothing, instead of opening a second collection against the
+  same Jamf server. Automatic collects wait for the running one, and a scheduled run that comes due
+  meanwhile waits for the next wake instead of being reported overdue. jamf-cli is not updated
+  while a collect runs, and no collect starts while it is being updated.
+- `jamf-reports collect`, `generate`, `html` and `backup`, and `--scheduled-run`, take the same
+  lock as the app. When a collect, a report or a scheduled run holds it, they print one line and
+  exit 75 instead of running alongside it.
+- A collect you start from a button appears in Run History as "Manual collect": Refresh, the
+  Overview prompt, Collect now and the first collect. The last 20 are kept so they do not push
+  scheduled runs out of the list, and a collect turned away leaves no entry. One that finishes
+  with a source missing says "Refresh finished with warnings" and points to Run History; that
+  message and the reminder to allow JamfReports under Login Items are amber, not red.
+- The Config screen keeps more of a hand-edited config.yaml on save: the blank lines and section
+  comments between blocks, keys the screen does not show on a security agent or custom EA, and
+  keys the Notifications and AI panels do not show in their blocks. A `custom_eas` or
+  `security_agents` block typed as something other than a list is left as typed, and the screen
+  says why. A save no longer writes over config.yaml when the file changed on disk after the
+  screen opened it; the screen says so and offers Reload.
+- Before onboarding or `jamf-reports scaffold --out` replaces an existing config.yaml, and on any
+  save that drops comments or unreadable lines inside the blocks it edits, the app keeps a copy as
+  `config.yaml.bak-<date-time>` (the newest five), and says where it is: on the Config screen,
+  and on the Customize screen, the Notifications card, the AI panel and the Scoring tab. Recording
+  a jamf-cli profile in its workspace's config.yaml, and connecting Jamf Protect or Jamf School,
+  keep a copy the same way, named in the run log and on the Protect and School setup screens. A
+  new workspace created from the example configuration is written with its profile already
+  recorded, so it gets no copy.
+- config.yaml indented by 3 or 4 spaces, or a mix, reads as a 2-space file does. A key typed twice
+  is read as its last value everywhere, and a Config screen save changes only that copy. A
+  security policy level can be written `warn`, `failure`, `gap`, `ignored`, `skip` or
+  `not counted`, in any case.
+- A `notify.detail` that is neither `full` nor `minimal` now sends the minimal digest. It sent the
+  full one before.
+- Keys older builds wrote that nothing reads now get a "does not read this key" note:
+  `ai.lock_on_device`, `ai.external`, `collect_cadence`, `columns.warranty_expires`,
+  `output.export_pptx`, `protect.data_dir`, `school_columns`, and six that earlier builds of the
+  Config screen or the scaffold wrote: `jamf_cli.enabled`, `jamf_cli.allow_live_overview`,
+  `charts.os_adoption.enabled`, `branding.accent_dark`, `platform.enabled` and
+  `thresholds.profile_error_critical`. Config Doctor lists them as suggestions, not warnings,
+  worded "No longer read since" the release that dropped them, and a config.yaml that still holds
+  them works as before. A Config save removes settings the app no longer reads, and says so on
+  the screen (a Customize Apply does the same for `charts.os_adoption.enabled`); the file is
+  copied to `config.yaml.bak-<date-time>` first. New configs no longer get
+  `allow_live_overview`.
+- The Config screen no longer has the "Accent dark" colour field, the "Enable Platform API sheets"
+  switch or the "Profile error critical" threshold. None of them changed a report.
+- The Check-in Health sheet counts a Mac as overdue when the dates your stale rule counts are more
+  than `thresholds.checkin_overdue_days` days old (default 7), and its header states that number.
+  It used jamf-cli's own stale flag under a header showing the stale-device threshold, so the two
+  could disagree. The Config screen's "Check-in overdue" field now does what it says. A Mac with no
+  date is still counted from jamf-cli's flag.
+- `charts.compliance_trend.enabled: false` now leaves the compliance band chart out of the Charts
+  tab. The key was read by nothing before.
+- The OS adoption chart is drawn on the Charts tab unless `charts.os_adoption.per_major_charts`
+  is `false`. A workspace with no `charts:` block now gets it, which is what the Customize screen
+  already showed for the switch. `charts.device_state_trend.enabled` is unchanged: that chart
+  still needs an explicit `true`.
+- The AI Insights settings no longer mention Private Cloud Compute, and the never-built
+  `ai.tier: external` option and its `external:` block are removed. A config.yaml that still names
+  `external` (or `pcc`) keeps working and runs on-device; the next save from Settings drops the
+  old keys.
+- Config Doctor names the `entra_sso_status` column by its real key and can suggest a
+  better-matching header for it.
+- Building from source: a build from a shallow git clone stops and says to run
+  `git fetch --unshallow`, `package-dmg.sh` names the DMG from the built app's version,
+  `build-app.sh` prints the Swift and Xcode versions and warns when a release build uses a
+  toolchain older than Swift 6.4 (it has no AI Insights on macOS 27), and `config.example.yaml`
+  documents `exceptions`, `sheets.order`, `compliance.framework`, `html.section_limits` and the
+  extra inventory columns.
+
+### Fixed
+
+- The small lines on the Trends metric buttons showed only the last eight snapshots, stretched
+  to fill the button, so a one-device change looked like a jump and the line could rise while
+  the change beside it fell. Each line now covers the selected range on the chart's own scale.
+- A Health Audit run from the app was saved with a UTC time in its name, which the app reads as
+  local time, so the HTML report's "Data collected" showed a time hours after the report was
+  made, and that audit was taken as newer than later ones. It is now saved in local time.
+- Stale counts agree. Every screen and report counts a Mac as stale when the dates your
+  organization counts are more than Stale device days old (30 by default). The daily summary,
+  Overview, Devices and the HTML report counted a Mac at exactly 30 days while Offline Outreach and
+  the workbook did not (128 against 127 on one fleet), and the workbook's Active Devices,
+  Compliance Posture, Device Compliance and Patch Summary Dashboard counted jamf-cli's 14-day flag
+  under a 30-day label. The Compliance Posture table lists each Mac's days since check-in, longest
+  first, and the Device Compliance sheet fills its days column. The Health Audit's own stale
+  finding still comes from jamf-cli, which counts by calendar date.
+- Two Macs with the same computer name are two Macs. Devices and Offline Outreach merged them
+  into one (663 Macs where Jamf had 664), because inventory rows were joined by name when a
+  serial was not yet known. Rows now join on the Jamf ID, management ID, UDID or
+  serial number, and never by name alone; a row that names more than one Mac and carries no
+  identifier is left out and counted in a Devices warning. The CSV import also reads the
+  `JSS Computer ID`, `UDID` and `Management ID` columns.
+- A report and a collect no longer overlap. Generate (the Overview and the Generate Reports
+  sheet), Export PDF, Export Inventory CSV and Trends' archive are refused while a refresh or a
+  scheduled run collects data, and a Refresh, an automatic collect or a scheduled run asked for
+  while a report is being written waits ("A report is being generated — try again when it
+  finishes"). A report made mid-collect read the morning's summary beside newer snapshots, so
+  its tiles and its text disagreed.
+- PDF exports hold the whole report, not only its first page. Bars and severity labels keep their
+  colours, each section prints as a ruled section, a heading stays with a block that fits on the
+  next page, the five security tiles share one row, a long compliance baseline name wraps inside
+  its tile and the disclosure arrows no longer print. The Compliance and Security Posture
+  templates keep the summary on the first page and start each section on a new one. The HTML
+  report's AI summary no longer crowds the heading under it.
+- The Reports list's "Source schedule" column guessed from file names and called manual reports
+  "Weekly Executive". It is now "Type" (workbook, HTML report, PDF report, inventory CSV, patch
+  compliance CSV, period report) and names a schedule only when that schedule's last run wrote the
+  file. A workbook's device count shows only when the day's summary still matches it.
+- jamf-cli's page progress reads "fetched 147 of 147 records" as an info line in the Logging
+  viewer and Run History, not raw JSON in warning colour.
+- Trends' 26- and 52-week charts label each month once (one month showed twice); the All range
+  labels by year once.
+- Extension Attributes' value bars fill their row with the labels beside them, on screen and in
+  the PNG export; they were hairlines.
+- The Health Audit findings table no longer draws an empty striped row under its last finding.
+- Top failing rules on the Overview keep a long rule ID on one line, cut in the middle, with the
+  whole ID on hover.
+- Backups › Diff shows each changed value as before → after, with the field name when a change
+  touched more than one field; long values are shortened in the middle with the full value on
+  hover.
+- Data Sources explains the Limited / Full Admin label beside the profile name: a note kept on
+  this Mac that changes nothing about the credentials.
+- Config: the Security Agents header lines up with its fields, and the timestamp example under
+  Output shows the current date and time.
+- The HTML report header printed "Profile: —", "jamf-cli: —" and "Enrolled: — devices". It now
+  shows the profile, the installed jamf-cli version and the number of Macs, and leaves out a
+  fact the app does not have.
+- The HTML report's profile list was every configuration profile with zero errors, so a failing
+  profile never showed. It now reads the profile and app install-error reports.
+- Audit findings in the HTML report had blank check, policy and detail columns. They now show the
+  finding's name, category, recommendation and affected count.
+- Severity labels, bar charts and the Cleanup Analysis tabs in the HTML report had no styling.
+  They do now.
+- `html.track_history` did nothing in any report the app produced. With it on, the Trends group
+  now adds the OS adoption trend and keeps the history file.
+- Adding a workspace from the sidebar profile menu no longer crashes the app. Setup looked for
+  jamf-cli while the screen was still being built; it now looks after the screen is up and shows
+  "Checking for jamf-cli" until it has an answer.
+- AI insights no longer call a drop in stale devices a warning, or a 0.1-point FileVault change a
+  regression. Each change reads "up 0.1 pp, better" or "down 2.0 pp, worse", the severity follows
+  better or worse rather than the direction of a number, and a card with nothing earlier to
+  compare with is told not to describe trends at all.
+- AI posture insights state each control once, mention warnings only when a Mac is in a warning
+  state, and label the oldest and newest macOS in the fleet, so Monterey is no longer called the
+  latest. Stale devices are described as devices with no recent check-in, and the model is told
+  the app has no device age to talk about.
+- An AI insight's last bullet no longer stops in the middle of a sentence, and the card's corner
+  label reads "On-Device · Apple Intelligence" instead of "MACOS 27". Settings names the model
+  "On-Device Foundation Model (Apple Intelligence)".
+- Trends shows a percentage metric's change in percentage points with one decimal ("2.0 pp"), not
+  "2% (-3.7%)", colours it by whether up or down is good for that metric, and shows no arrow or
+  colour when the change rounds to nothing. Device counts with no good direction stay grey. The
+  chart legend names the real snapshot cadence, the page header no longer shows a folder path,
+  and the Snapshot Archive note says summaries are written by collect, not by generate runs.
+- Profile Status and App Status list the profiles and apps that reported install errors, with
+  error and device counts, instead of one blank row. Profile Status highlights a profile at
+  `thresholds.profile_error_warning` errors or more. Package Lifecycle drops the upload date, age,
+  bucket and size columns when Jamf reports none of them, and says so, instead of showing
+  "Unknown" on every package.
+- The HTML report no longer says "100% of devices meet all compliance requirements" when Macs
+  have security gaps. The summary names the gaps the tiles show, and the compliance score tile
+  appears only when the data has per-device failure counts. Security Agent Health counts each
+  agent from the extension attribute results, so a fleet with agents connected no longer reads 0
+  of N, and the department and building breakdowns and Asset Map show names instead of
+  "(unassigned)" and a dash.
+- OS Updates reads the update failure scan again. jamf-cli writes an empty list as `null`, which
+  made the whole scan unreadable: the screen said "Failure scan not run" and the chip "never"
+  while the failures sat in the snapshot. The HTML report's Recent Failures lists those plans
+  instead of one empty line, and rows with no date sort after dated ones.
+- Offline Outreach shows when each Mac last contacted Jamf. Last Contact read "Unknown" on every
+  row because the Jamf timestamps carry fractions of a second.
+- Top Failing Rules lists each rule once. The mSCP failed-rules list is one rule per line, which
+  the card read as a single rule; a Mac with no scored baseline ("No Baseline Set", "Multiple
+  Baselines Found") was ranked as a failing rule. The count-versus-list check in Config Doctor
+  no longer reports every Mac as a disagreement.
+- macOS Distribution, the Devices legend, the Security Posture chart and the workbook and HTML OS
+  tables list a release once. Jamf reports it as both `26.7` and `26.7.0`; both now show as
+  `26.7`.
+- A security agent value that says the agent is absent or off ("Not Installed", "not running",
+  "Disconnected") no longer counts as connected because it contains your `connected_value`. The
+  Overview agent card, the daily summary, Devices, the workbook and the HTML report use the same
+  rule.
+- Config > Columns no longer reports a warning that was not there. Every live workspace carried
+  one phantom "Bootstrap Token" warning copied from the demo data, so "Run check" listed three
+  OK lines and nothing about it. A column is now mapped or unmapped by its value alone. Where a
+  warning does show (in demo mode), it names the column it counts, and "1 warning" and "1 column
+  mapped" read correctly in the singular.
+- Settings > Data & Charts names all six per-device commands that "Skip expensive collections"
+  skips (it listed four), and starts with the switch's position ("On: ..." or "Off: ..."), so the
+  text shown with the switch off no longer reads as the opposite of its label. It also says
+  scheduled collects still run them.
+- The Open Source card in Settings no longer says the command-line tool ships independently. It
+  says the app includes its own `jamf-reports` command-line tool, which uses the same config.yaml
+  and report engine, and that jamf-cli is installed separately; the version line is labelled
+  "jamf-cli:".
+- Settings > Sidebar Visibility lists Groups & Searches, so it can be hidden like the other
+  screens. The list is built from the sidebar's own groups, so a screen added later gets a switch
+  too.
+- Config > Branding shows the accent colour you typed in its swatch, instead of always gold. A
+  value that is not `#RGB` or `#RRGGBB` shows the colour the reports use then, `#2D5EA2`.
+- Data Sources: the snapshot families table has set column widths so it no longer shows a stray
+  horizontal scroll bar, and the CSV Inbox folder path and file names shorten in the middle
+  instead of breaking mid-word.
+- Config > Scoring lines up its pickers: the "FileVault off on a hardware-encrypted Mac" picker
+  ends on the same edge as the other four controls' pickers, beside its label when there is room
+  and under it when not, instead of starting at the left edge.
+- A message that appears at the bottom of the window while another is still up now clears after
+  four seconds like the first. Before, it stayed over the page, covering tiles such as Patch on
+  the Overview, until you closed it.
+- The tiles at the top of an Overview drill-down (a security agent, or a metric such as Patch)
+  are all one height, whichever of them carries a caption.
+- Offline Outreach, Patch Compliance titles, Policy findings and Extension Attribute definitions
+  tables use the window's height instead of stopping at about seven rows with empty space below;
+  a short list shows only the rows it has.
+- Health Audit > Command health keeps its "Most failed" label on one line; the command pills wrap
+  to a second line when they do not fit beside it.
+- Devices no longer cuts the Risk pills ("ATTE", "CRIT") or hides the Risk column and the legend
+  under the detail panel. The table's columns have set widths, and in a window too narrow for the
+  table and the panel side by side the panel sits under the table.
+- Backups and Reports headers no longer run their buttons off the window. When the buttons do not
+  fit beside the title they wrap onto a second line under it. In the Backups table, Reveal, Diff
+  Latest and Delete are shown in full on every row, and report file names that are too long to fit
+  shorten in the middle so the date at the end stays visible.
+- Reports shows a dash in the Sheets column for HTML, PDF and CSV reports, which have no sheets,
+  instead of a 0.
+- Backups shows when each backup was made. A backup with no files and no manifest took the date
+  its folder was last touched, so backups from May to August read as early September; it now
+  uses the date in its name. "Diff Latest" and "Diff Selected" are no longer offered on an empty
+  backup, and "Diff Latest" compares with the newest backup that has files.
+- Devices rates each Mac one way. The Risk pill in the list and the detail panel's Priority Risk
+  section showed different ratings (a Mac not seen for 90 days read Critical in the list and Low
+  beside its risk points). Both, the Priority filter, the CSV export and the inventory order now
+  use the risk score's bands: Critical, High, Medium, Low and Clean. Not checking in is still a
+  risk factor, but it is no longer a rating of its own; patch failures keep their own column and
+  filter.
+- Patch compliance and Stability read the same on every screen. Overview and Trends showed the
+  patch figure re-derived from each day's patch snapshot while Fleet Overview, its profile view
+  and the AI insight showed the older recorded figure (35.4% against 31.3% on one fleet, with
+  Stability 59.7 against 58.0). The Overview insight, Fleet Overview, the fleet report and
+  workbook, the period report and metric alerts now use the re-derived figure too.
+- The Overview's EDR score card fills in on the first collect after an update. A day's summary
+  written by an older build had no EDR figure, and later collects that day kept it, so the card
+  read "No value" next to a Security Agents card showing the coverage.
+- Compliance Posture says what each number is out of. The subtitle no longer repeats the first
+  baseline's evaluated count for all of them: it gives the range when baselines evaluate
+  different numbers of Macs (each counts the Macs that report its own column). Each baseline card
+  shows its compliance rate as "465 of 632 evaluated", its evaluated count as "of 664 devices,
+  32 No Data", and the donut legend says its percentages are of all devices, No Data included.
+- Extension Attributes counts match their labels. The "Total EAs" tile counted the attributes
+  that had results (89) under a caption about definitions, next to a definitions table listing
+  147. It is now two tiles, "Defined EAs" and "EAs With Results", and the header gives both.
+- The Overview says what each device count is. The Top Failing Rules card read "across 664 active
+  devices" next to an Active tile of 537; that 664 is the Macs whose compliance results the card
+  read, and it now says "across 664 Macs with results". The security agent detail says "of 665
+  managed Macs".
+- The Overview's security agent detail no longer says "Trend: Flat" for every agent. The first
+  configured agent shows its real direction against the previous snapshot, and the other agents,
+  which have no daily history, show no Trend tile.
+- The Overview's compliance score card keeps one title. It read "mSCP Compliance" until
+  config.yaml loaded and your baseline name after; it now shows the generic "Compliance
+  Benchmark" until a baseline label (or Compliance Benchmarks title) is configured. A long
+  baseline name is held to one line with the full name in a tooltip, so the card's figure stays
+  level with its neighbours. Saving the Config screen no longer writes a baseline label you did
+  not set.
+- Health Audit numbers agree. The summary's "Affected" tile added commands, policies, groups and
+  devices into one figure; it is now "Findings", a count of findings that need a look. The audit
+  counts a stale check-in against your Stale device days setting (30 by default) instead of
+  jamf-cli's own 14, so its finding name and count change on the next audit. When the Command
+  health scan has run, the audit's "Failed MDM commands" row (CRITICAL, 6359 commands in Jamf
+  Pro's whole history) is replaced by the scan's "Devices with failed MDM commands" (WARNING, 217
+  devices), which now mentions the command total, so the same problem is no longer listed twice in
+  two units at two severities.
+- The Security Score counts every factor that has data. The score recorded each day weighed
+  FileVault, SIP and Firewall only, although the Scoring tab listed eight weights, three of which
+  (XProtect, CVE and Secure Boot) nothing in the app measured. Security Posture, the workbook and
+  the daily summary now score the same list of factors the same way. The score steps on the day
+  the new definition starts, and on any day its factors or weights change: earlier days keep
+  their recorded value, the Overview card says the two are not comparable, Trends measures its
+  change from that day and says so, the period report withholds the change, and a "drops more
+  than" alert on the score skips the comparison. The daily summary now records the Secure Boot,
+  bootstrap token and XProtect shares, so alert rules on them can fire.
+- A second collect on the same day updates that day's trend point. Before, the day's first
+  summary stood for the rest of the day, so Overview and Trends showed the morning's numbers
+  after an afternoon collect fetched newer ones. A collect that fetches new data now rebuilds
+  the day's summary from the newest snapshots, keeping any value the morning had that the later
+  run could not measure; one that fetches nothing leaves it alone.
+- Every configured security agent is tracked, not only the first. The daily summary records
+  each agent's coverage (CrowdStrike, Nessus, Splunk and any others you list under Security
+  Agents), the Overview offers a score card per agent in Customize, and Trends lists each one,
+  labelled "<agent> coverage". History for days recorded before this is rebuilt from the dated
+  extension-attribute snapshots of the last 21 days that have one, after the screen has drawn. In
+  Config > Scoring, "Agent the EDR card shows" (or `security_policy.edr_agent`) chooses which
+  agent the Overview's EDR card follows; the score counts each agent as its own factor. A name
+  that matches no agent shows the first, and Config Doctor says so.
+- A metric on the Overview with no data says "No data yet" instead of 0.0% current, 0.0%
+  previous and +0.0pp over 0 summaries.
+- The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when
+  1% of Macs had SIP on). Each device share comes with its other side, changes are given in
+  percentage points and marked better or worse, and System Integrity Protection is named in full.
+  The insight clears when the numbers behind it change, and the card is hidden, not shown as
+  "off", when AI insights are off for a profile.
+- Generate Report on the Overview includes the AI summary paragraph when it collects fresh data
+  first, not only when it reuses recent data. The paragraph is written from the data the collect
+  just gathered.
+- Devices, risk ratings and the workbook read a security value one way. A value Jamf did not
+  collect, or that the Mac cannot report (still encrypting, ineligible, waiting for a restart, SIP
+  not available), is no longer a security gap; off, none, inactive, missing, decrypting, decrypted
+  and a paused encryption now are. "No Partitions Encrypted" no longer counts as encrypted, the
+  CSV export's FileVault partition counts (0/1, 1/1) are read, and "Running", "Connected" and the
+  firewall's "Block all incoming connections" read as on, "Disconnected" and "Unconnected" as off.
+- The Executive Summary's P0 count now includes SIP and Firewall gaps (it counted FileVault only,
+  under a label that names all three). Device Security State shows UNENCRYPTED and a paused
+  encryption as red (they were green) and shows values Jamf could not collect as neutral instead
+  of red. The CSV Security Controls sheet counts values such as "Not collected" as Unknown instead
+  of Non-Compliant, and reads Gatekeeper's "App Store" settings as compliant. The Devices CSV
+  export labels a hardware-encrypted Mac with FileVault off as the screen does, instead of
+  "UNENCRYPTED" beside a risk of OK.
+- On jamf-cli workspaces the Devices screen read bootstrap token escrow from a field Jamf Pro does
+  not send, and fell back to whether escrow is allowed. It reads each Mac's escrow status, so
+  bootstrap gaps and risk points change: a Mac that has not escrowed its token gains them, and a
+  Mac that cannot escrow one shows as unknown. A CSV export's empty "Bootstrap Token Escrowed"
+  cell no longer borrows "Bootstrap Token Allowed".
+- The Compliance and Security Posture screens read their snapshots in the background, so a large
+  fleet no longer stalls them. With the policy's hardware rule at `ignore`, FileVault is graded
+  over the Macs that are counted, as the score is; when no Mac is left, the score card says why.
+- `output.keep_latest_runs` of 0 moved the report just written into the archive, and a negative
+  value crashed. A value below 1 is now treated as 1.
+- Saving a boolean custom EA whose expected value is the word "true" no longer makes config.yaml
+  unreadable. `html.track_history` and `history_file` read as the rest of the file does (`True`,
+  `"true"`, a trailing comment, Windows line endings, `html: {...}`), and the Devices screen reads
+  `stale_device_days` under a `thresholds:` line with a comment, or in `{...}` form.
+- A workbook generated with the shipped default config no longer comes out with no tabs: an empty
+  `sheets.only` list means no restriction.
+- EDR coverage counts Macs that share a computer name as separate Macs, on the Overview's Security
+  Agents card and in the daily summary, so the recorded figure can rise slightly on fleets with
+  repeated names. The card reads "N of M Macs". On Devices, an agent with no connected value set
+  counts any reported value as connected, matching the Overview.
+- Overview: changing profile or sections no longer lets an older read replace the cards. Top
+  Failing Rules says how many Macs it counted, an agent card no longer shows "0 not installed",
+  and the "data is out of date" prompt for inventory and scan data checks every report the profile
+  collects, ignoring reports turned off with `jamf_cli.collect_skip` or the skip-expensive setting
+  and reports that cannot be collected until something changes, such as a missing privilege, which
+  the health banner names.
+- Demo mode no longer runs jamf-cli when the app starts or when you refresh.
+- The weekly scan refreshes DDM status and MDM command health even when Jamf refuses the patch and
+  software-update failure reports (an API role without those read privileges); the run is still
+  reported as failed for those reports, and an unreachable server still stops it before the scan.
+  The background item no longer retries a collect up to three times in a day when every missing
+  source failed in a way a retry cannot fix (Managed Software Update Plans off, a missing
+  permission, a policy refusal); sources rejected for credentials are still retried once you
+  re-authenticate. When the background item cannot save its own schedule state, Run History shows
+  a failed "Background item" run that says why.
+- `jamf-reports` with an unknown or removed command, such as `school-scaffold`, prints an error
+  and exits non-zero instead of opening the app.
+- The workbook's Mobile Fleet Summary and Mobile Inventory sheets agree with the Mobile Fleet
+  screen: a count nobody reported reads "Unknown" instead of 0, devices with no management state
+  are no longer counted as Unmanaged, and model, serial and device family are read from the
+  sections that carry them. A chart label or patch title containing `<!--` can no longer hide the
+  rest of the HTML report, a device name containing U+FFFE or U+FFFF can no longer corrupt the
+  workbook, a corrupt snapshot number outside the integer range no longer crashes report
+  generation, and patch failures without ids show as separate rows.
+- First-launch setup says why a profile failed: a workspace the app could not create is no longer
+  blamed on jamf-cli sign-in. When setup creates no workspace for any profile, the screen stays
+  put with the causes shown and offers Skip. The Platform API connection check gives up after 60
+  seconds and reports that no answer came. Settings no longer drops the "checking..." state of a
+  profile's token check when you switch profiles.
+- Protect shows Full Disk Access as "Unknown" when Jamf Protect has not reported a status, instead
+  of "No", and the Protect alert timeline and Extension Attributes selection reset when you switch
+  profile or demo mode.
+- The built app no longer opts in to automatic or sudden termination, so macOS does not end it
+  mid-run when it looks idle.
+- Extension Attributes → EA Definitions shows each attribute's data type as Jamf Pro names it
+  (Integer, String, Date). It used to label every Integer attribute "percentage".
+- The workbook's EA Definitions sheet fills in the Data Type column, which was blank for data
+  collected with jamf-cli. It uses the same names as the app's EA Definitions screen.
+- Leaving Settings stops its connection checks. It used to keep starting a jamf-cli run for
+  each remaining profile, and switching profiles while Settings was open could mark a
+  connection's token invalid when it wasn't.
+- The Reports screen lists the folder your `output_dir` names. Reports saved to a shared folder
+  (with `output.allow_absolute_paths: true`) used to be missing from the list, and the header,
+  Reveal in Finder, Open, Quick Look and the PDF and CSV save panels pointed at the workspace's
+  Generated Reports folder instead. A folder the app will not use still falls back to Generated
+  Reports, and a system or credentials folder is still never opened.
+- Run History shows a run that has not finished as "Running", not as a warning with no duration,
+  and dates every row at the run's start instead of its last write.
+- The status bar shows a running collect for as long as it runs, including the automatic ones. It
+  no longer goes back to "Ready" when you open Fleet Overview, and Fleet Overview no longer says
+  "Fleet data refreshed" when it only reloads from disk.
+- CSV files saved with Windows line endings import their rows. Before, a csv-assisted report
+  came out with empty CSV sheets and Devices showed no rows from the CSV.
+- A malformed value no longer crashes the app or a scheduled run: an alert threshold or a
+  summary number far out of range, a huge disk-use or failed-rules cell in a CSV, or a
+  config.yaml nested more than 64 levels deep (Config Doctor lists that line). An alert
+  threshold above 1,000,000,000 is ignored and Config Doctor says so, a summary holding an
+  out-of-range number is skipped as corrupt, and a config.yaml over 4 MB is refused with a
+  message naming it.
+- `output.archive_dir` set to the same folder as `output_dir` no longer deletes older reports:
+  the run log warns and nothing is archived.
+- One malformed release in the SOFA feed no longer drops the macOS-current and XProtect-current
+  factors from the Security Score; only that release is skipped.
+- The app no longer hangs at launch or in a scheduled run when jamf-cli prints a long profile
+  list, or when `jamf-cli --version` never answers (it is stopped after 60 seconds).
+- Compliance Benchmark reports work for a profile whose name starts with `-`.
+- Re-scaffold no longer hides a config.yaml edit made after the Config screen opened: Save asks
+  you to reload, as it does after any outside edit.
+- A tick-lock file naming process 0 or 1 no longer holds off scheduled runs, and the health
+  banner ignores a check that finished after you switched profile.
+
+### Security
+
+- Snapshot retention archives or deletes only files named like the app's own snapshots and daily
+  summaries. A `jamf_cli.data_dir` pointed at another folder could have had its files moved into
+  the workspace archive, or deleted.
+- The HTML report and its PDF list at most 100 stale Macs, 25 recent failures and 10
+  least-compliant Macs, as 2.8.3 did; the rest are in the workbook. A shortened list reads
+  "Show 100 of 150". The report is forwarded, and these lists name Macs, serials and users.
+- `html.history_file` must be a `.json` file, and the app adds to it only when it already holds
+  report history. It no longer overwrites any other file it is pointed at, config.yaml included.
+- With `output.allow_absolute_paths` on, report, archive and history paths can no longer reach
+  `/Applications` or a file or folder directly in your home folder whose name starts with a dot
+  (`~/.zshrc`, `~/.netrc`, `~/.docker`), however the path is capitalised and whether or not it
+  exists yet. A workspace root keeps the 2.8.3 rule.
+- jamf-cli must be signed with Jamf's Developer ID certificate. A binary that only carries
+  Jamf's team identifier in an ad-hoc signature is refused.
+- A backup always uses the workspace's own jamf-cli profile. A different `jamf_cli.profile` in
+  config.yaml, which another Mac sharing the folder could set, is ignored with a warning.
+- Copied and exported logs (Run History, Settings › Logging) remove the Jamf server address and
+  the profile's tenant and environment IDs, as diagnostic bundles do. Teams Workflows and Power
+  Automate webhook URLs are masked in logs and bundles. A bundle's config.yaml replaces exception
+  approvers and descriptions with placeholders.
+- `jamf_cli.collect_skip: [sofa]` stops the SOFA feed request, the only one the app makes to a
+  host other than your Jamf servers. The last feed fetched stays in use.
+- CSV exports quote and guard a value holding a Windows line break, so it cannot start a formula
+  row, and the Health Audit CSV gets the formula guard the other exports have. Commands the app
+  shows for copying quote every value.
+- Device detail from jamf-cli is staged in a private temporary file, not a predictable name in
+  the workspace, and jamf-cli never reads from your terminal.
+- The copied email list in Offline Outreach skips an entry that holds more than one address.
+- The jamf-cli dashboard embedded in the HTML report cannot make network requests of its own,
+  change its base address or submit a form: its frame allows only its own inline styles and
+  scripts and `data:` images.
+- With `jamf_cli.require_manifest` on, report generation also checks the saved jamf-cli
+  dashboard page against its manifest, and stops if the page was changed after collect. The
+  page runs in the HTML report, so it gets the same check as every other snapshot.
+- Diagnostic bundles remove the profile's tenant and environment IDs from logs and other captured
+  text, including the ID jamf-cli repeats in "Environment not found" errors.
+- The inventory CSV export guards a cell that starts with a tab or a carriage return the way it
+  already guarded `=`, `+`, `-` and `@`, so a spreadsheet does not read such a cell as a formula.
+
+### Dependencies
+
+- Reviewed jamf-cli 1.32.0 (2026-10-03). Its credential and path hardening, MCP additions and
+  identifier changes do not touch the read-only commands the app runs, so nothing changed here.
+
 ## [2.8.3] - 2026-09-29
 
 Every jamf-cli profile name works in Jamf Reports, whatever it contains: spaces, dots, accented

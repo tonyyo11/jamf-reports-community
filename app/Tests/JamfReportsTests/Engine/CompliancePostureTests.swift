@@ -122,9 +122,9 @@ final class CompliancePostureTests: XCTestCase {
 
         // Seed patch-status snapshot (2 titles)
         let patchJSON: [[String: Any]] = [
-            ["title": "Firefox", "on_latest": 90, "on_other": 10, "total": 100,
+            ["title": "Firefox", "id": "1", "on_latest": 90, "on_other": 10, "total": 100,
              "latest": "130.0", "compliance_pct": "90%"],
-            ["title": "Chrome", "on_latest": 70, "on_other": 30, "total": 100,
+            ["title": "Chrome", "id": "2", "on_latest": 70, "on_other": 30, "total": 100,
              "latest": "120.0", "compliance_pct": "70%"],
         ]
         try seedJSON(patchJSON, name: "patch-status", in: tmp)
@@ -210,18 +210,5 @@ final class CompliancePostureTests: XCTestCase {
 
         let dash = makeDashboard(dataDir: tmp)
         XCTAssertNoThrow(try dash.writeCompliancePosture())
-    }
-
-    // MARK: - Compliance Posture is written via writeAll
-
-    func testCompliancePostureWrittenByWriteAll() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("jrc-cp-all-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-
-        let dash = makeDashboard(dataDir: tmp)
-        let (written, _) = dash.writeAll(selectedNames: ["compliance posture"])
-        XCTAssertEqual(written, ["Compliance Posture"])
     }
 }

@@ -74,6 +74,41 @@ final class ProfileServiceCodesignGateTests: XCTestCase {
         )
     }
 
+    /// Under XCTest the locator finds no jamf-cli, as on CI, so no test can launch the one
+    /// installed on this Mac; other tools still resolve.
+    func testTheLocatorFindsNoJamfCLIUnderTests() {
+        XCTAssertNil(ExecutableLocator.locate("jamf-cli"))
+        XCTAssertNotNil(ExecutableLocator.locate("ls"))
+    }
+
+    /// Nor does the Homebrew lookup, which runs `brew --prefix jamf-cli` and would hand back
+    /// the linked jamf-cli on a Mac that installed it with Homebrew.
+    func testTheHomebrewLookupFindsNoJamfCLIUnderTests() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("brew-lookup-\(UUID().uuidString)", isDirectory: true)
+        let bin = root.appendingPathComponent("prefix/bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let linked = bin.appendingPathComponent("jamf-cli")
+        try "#!/bin/sh\nexit 0\n".write(to: linked, atomically: true, encoding: .utf8)
+        let brew = root.appendingPathComponent("brew")
+        let prefix = root.appendingPathComponent("prefix").path
+        try "#!/bin/sh\necho '\(prefix)'\n".write(to: brew, atomically: true, encoding: .utf8)
+        for file in [linked, brew] {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o755], ofItemAtPath: file.path)
+        }
+        XCTAssertNil(JamfCLIInstaller.homebrewLinkedJamfCLI(using: brew))
+    }
+
+    /// A test that injects no binary runs no jamf-cli and reads no jamf-cli config, so the
+    /// developer's real profiles and install never reach a `WorkspaceStore()` built by a test.
+    func testDiscoveryUnderTestsWithoutABinaryFindsNoProfiles() {
+        XCTAssertTrue(ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]).isEmpty)
+        XCTAssertTrue(WorkspaceStore.liveJamfCLIProfileNames().isEmpty)
+        XCTAssertNil(JamfCLIInstaller.currentInstallation())
+    }
+
     func testDiscoverJamfCLIProfilesSkipsGateForNonJamfCLIBasename() {
         // Gate is keyed on basename == "jamf-cli". An executable with
         // any other basename bypasses the gate. /bin/echo accepts the

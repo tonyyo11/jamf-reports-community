@@ -7,6 +7,8 @@ original 2026-05-18 plan, not the final PR split (PR-24 became the
 `RefreshCoordinator` wiring rather than time-of-day gating).
 **Authors:** Tony Young + Claude (drafted 2026-05-18 session)
 **Date:** 2026-05-18 · implemented 2026-05-20
+**Update (2.9):** `mobile-device-inventory-details` is no longer collected; `mobile-devices-list`
+(Inventory tier) is the one mobile kind. The Scan-tier row below records the original plan.
 
 ---
 

@@ -6,8 +6,6 @@ import XCTest
 //
 // Verifies the Phase 6 addition to ColumnField (purchaseDate):
 //   - YAML decode round-trip through ConfigLoader
-//   - InventoryFieldMatcher scaffold semantic resolution
-//   - Exclusion: "Purchase Order" must NOT resolve to purchase_date
 
 final class ColumnFieldExpansionTests: XCTestCase {
 
@@ -45,31 +43,34 @@ final class ColumnFieldExpansionTests: XCTestCase {
         )
     }
 
-    // MARK: - InventoryFieldMatcher scaffold heuristic
+    // MARK: - model_identifier
 
-    func testMatcherResolvesPurchaseDate() {
-        XCTAssertEqual(
-            InventoryFieldMatcher.matchColumnKey("Acquired Date"),
-            "purchase_date",
-            "Column name 'Acquired Date' should resolve to purchase_date"
-        )
+    /// `model` is the marketing name ("MacBook Pro (16-inch, 2019)"), `model_identifier` the
+    /// hardware identifier ("MacBookPro16,1"); each reads its own key.
+    func testModelIdentifierDecodesApartFromModel() throws {
+        let yaml = """
+        columns:
+          model: "Model"
+          model_identifier: "Model Identifier"
+        """
+        let columns = try XCTUnwrap(ConfigLoader.loadFromString(yaml).columns)
+        XCTAssertEqual(columns.model, "Model")
+        XCTAssertEqual(columns.modelIdentifier, "Model Identifier")
+        XCTAssertEqual(columns.columnName(for: .model), "Model")
+        XCTAssertEqual(columns.columnName(for: .modelIdentifier), "Model Identifier")
     }
 
-    func testMatcherResolvesPODate() {
-        XCTAssertEqual(
-            InventoryFieldMatcher.matchColumnKey("poDate"),
-            "purchase_date"
-        )
+    func testModelIdentifierIsUnmappedWhenTheKeyIsAbsentOrBlank() throws {
+        let absent = try XCTUnwrap(
+            ConfigLoader.loadFromString("columns:\n  model: \"Model\"\n").columns)
+        XCTAssertNil(absent.columnName(for: .modelIdentifier))
+        let blank = try XCTUnwrap(
+            ConfigLoader.loadFromString("columns:\n  model_identifier: \"  \"\n").columns)
+        XCTAssertNil(blank.columnName(for: .modelIdentifier))
     }
 
-    func testMatcherDoesNotResolvePurchaseOrderToPurchaseDate() {
-        // "purchase_order" is a common Jamf field that must NOT map to purchase_date.
-        // The matcher normalises to lowercase with spaces/underscores stripped, so
-        // "Purchase Order" → "purchaseorder" which is absent from the map.
-        let result = InventoryFieldMatcher.matchColumnKey("Purchase Order")
-        XCTAssertNotEqual(
-            result, "purchase_date",
-            "Purchase Order must not resolve to purchase_date"
-        )
+    func testModelIdentifierConfigKey() {
+        XCTAssertEqual(ColumnField.modelIdentifier.configKey, "model_identifier")
+        XCTAssertEqual(ColumnField.model.configKey, "model")
     }
 }

@@ -1,12 +1,14 @@
 import SwiftUI
 
 /// Report options that live outside the Config tab: the two chart settings the
-/// workbook reads, and pointers to where the rest of a report's shape is chosen.
+/// workbook reads, the HTML-with-every-workbook switch, and pointers to where the rest of a
+/// report's shape is chosen.
 ///
 /// Before 2.8.1 this screen also had a grid of sheet toggles, an Executive preset,
 /// a workbook preview and three more chart switches. None of them was saved or
-/// read by any generate path, yet Apply then read "Saved" (#207 G9). The app
-/// generates the Full Instance template; the command-line tool takes `--template`.
+/// read by any generate path, yet Apply then read "Saved" (#207 G9). The Overview
+/// generates the Full Instance template; the Generate sheet (Generated Reports) and the
+/// command-line tool's `--template` make the others.
 struct CustomizeView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
@@ -14,9 +16,12 @@ struct CustomizeView: View {
     @State private var chartPerMajor: Bool = true
     @State private var chartSavePNGs: Bool = false
     @State private var chartsLoaded = false
+    @State private var htmlWithWorkbook: Bool = false
 
     @State private var applySaved = false
     @State private var saveError: String?
+    /// What Apply did not keep (a backup was made), shown while its profile is live.
+    @State private var saveNote: ProfileSaveNote?
     @State private var showGuide = false
 
     /// The smaller templates `jamf-reports generate --template` accepts; the CLI
@@ -35,34 +40,7 @@ struct CustomizeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                if let err = saveError {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .font(.system(size: 13))
-                        Text("Save failed: \(err)")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Text.primary)
-                        Spacer()
-                        Button {
-                            saveError = nil
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Dismiss error banner")
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.red.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Color.red.opacity(0.3), lineWidth: 0.5)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
+                statusBanners
                 HStack(alignment: .top, spacing: 14) {
                     sheetsCard
                     rightRail
@@ -78,32 +56,76 @@ struct CustomizeView: View {
         .onAppear {
             guard !chartsLoaded else { return }
             chartsLoaded = true
-            loadChartOptions()
+            loadOptions()
         }
         // A profile switch or leaving demo mode keeps this view, so the toggles reload.
         // Before, Apply wrote the previous profile's values, or the demo's defaults, into
         // the current profile's config.yaml.
-        .onChange(of: chartSource) { loadChartOptions() }
+        .onChange(of: chartSource) { loadOptions() }
     }
 
     /// Which config the chart options were read from.
     private var chartSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
 
-    /// Both options are config keys, so they come from config.yaml. Before 2.7.0
-    /// they were never loaded or saved at all. Demo mode has no config.yaml to
+    /// Every option here is a config key, so it comes from config.yaml. Before 2.7.0
+    /// the chart options were never loaded or saved at all. Demo mode has no config.yaml to
     /// read, so it shows the defaults.
-    private func loadChartOptions() {
+    private func loadOptions() {
         let charts = workspace.demoMode
             ? ChartsOptions.defaults : ChartsConfigLoader.load(profile: workspace.profile)
         chartSavePNGs = charts.savePNGs
         chartPerMajor = charts.perMajorCharts
+        htmlWithWorkbook = !workspace.demoMode
+            && HTMLReportConfigLoader.withWorkbook(profile: workspace.profile)
+        saveNote = nil
+    }
+
+    /// A failed Apply, and what a saved one did not keep.
+    @ViewBuilder
+    private var statusBanners: some View {
+        if let err = saveError {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.system(size: 13))
+                Text("Save failed: \(err)")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.primary)
+                Spacer()
+                Button {
+                    saveError = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss error banner")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.red.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.3), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        if let line = saveNote?.line(for: workspace.profile) { saveNoteLine(line) }
+    }
+
+    private func saveNoteLine(_ note: String) -> some View {
+        Text(note)
+            .font(.footnote)
+            .foregroundStyle(Theme.Colors.warn)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var header: some View {
         PageHeader(
             kicker: "Report Options",
             title: "Customize Reports",
-            subtitle: "Chart options for generated workbooks, and where to change "
+            subtitle: "Chart and HTML options for generated reports, and where to change "
                 + "what else a report shows"
         ) {
             AnyView(
@@ -116,7 +138,7 @@ struct CustomizeView: View {
                     ) {
                         showGuide = true
                     }
-                    // Apply writes the chart options into config.yaml, which in
+                    // Apply writes the options into config.yaml, which in
                     // demo mode would create one under the demo profile's name.
                     PNPButton(
                         title: applySaved ? "Saved" : "Apply",
@@ -143,8 +165,9 @@ struct CustomizeView: View {
         Card(padding: 16) {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Workbook sheets", style: .body)
-                Text("A workbook generated in the app has every sheet: the Full Instance "
-                     + "report. For a shorter one, generate a smaller template with the "
+                Text("The Overview's Generate makes the Full Instance report, with every "
+                     + "sheet. For a shorter one, choose a template or your own sheets with "
+                     + "Generate\u{2026} on the Generated Reports screen, or use the "
                      + "command-line tool:")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.secondary)
@@ -185,8 +208,14 @@ struct CustomizeView: View {
         VStack(spacing: 12) {
             scoreCardsCard
             chartsCard
+            HTMLWithWorkbookCard(isOn: $htmlWithWorkbook, isDemo: workspace.demoMode)
         }
         .frame(width: 260)
+    }
+
+    /// The selected cards the Overview shows: one whose control the policy ignores is not.
+    private var offeredScoreCardCount: Int {
+        workspace.selectedScoreCards.filter { workspace.isOffered($0) }.count
     }
 
     /// The Overview's score cards and sections are chosen in one editor on the
@@ -198,7 +227,7 @@ struct CustomizeView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Overview", style: .body)
                 Text("Score cards and Overview sections — what shows, in what order — "
-                     + "are chosen on the Overview. \(workspace.selectedScoreCards.count) "
+                     + "are chosen on the Overview. \(offeredScoreCardCount) "
                      + "score cards selected.")
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
@@ -278,11 +307,14 @@ struct CustomizeView: View {
             savePNGs: chartSavePNGs, perMajorCharts: chartPerMajor
         )
         let profile = workspace.profile
+        let withWorkbook = htmlWithWorkbook
         Task {
             do {
-                // Only the chart options. This screen edits nothing else, so it
+                // Only this screen's options. It edits nothing else, so it
                 // no longer saves the Config tab's unsaved edits along with them.
-                try ChartsConfigWriter.save(chartOptions, profile: profile)
+                try Self.writeOptions(
+                    chartOptions, withWorkbook: withWorkbook, profile: profile
+                ) { saveNote = $0 }
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
@@ -291,6 +323,55 @@ struct CustomizeView: View {
                     "CustomizeView: save failed: \(error.localizedDescription, privacy: .private)"
                 )
                 saveError = error.localizedDescription
+            }
+        }
+    }
+}
+
+extension CustomizeView {
+    /// Writes this screen's options, charts first. Each write's note reaches `noting` as soon
+    /// as it is made, so a failed html write does not lose the charts write's note.
+    nonisolated static func writeOptions(
+        _ chartOptions: ChartsOptions, withWorkbook: Bool, profile: String,
+        noting: (ProfileSaveNote) -> Void
+    ) throws {
+        let charts = try ChartsConfigWriter.save(chartOptions, profile: profile)
+        if let saved = charts.report.note(for: profile) { noting(saved) }
+        let html = try HTMLReportConfigWriter.save(withWorkbook: withWorkbook, profile: profile)
+        guard let line = html.report.statusLine else { return }
+        let lines = [charts.report.statusLine, line].compactMap { $0 }
+        noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
+    }
+}
+
+/// The switch for `html.with_workbook`: the HTML report is written with every workbook.
+/// A card of its own, so the chart toggles' row layout is untouched.
+private struct HTMLWithWorkbookCard: View {
+    @Binding var isOn: Bool
+    let isDemo: Bool
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private static let title = "Write the HTML report with every workbook"
+
+    var body: some View {
+        Card(padding: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "HTML report", style: .body)
+                HStack(alignment: .top, spacing: 12) {
+                    Text(Self.title)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.Text.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    PNPToggle(isOn: $isOn, label: Self.title)
+                        .disabled(isDemo)
+                        .help(isDemo ? DemoData.liveOnlyHelp : "")
+                }
+                Text("Scheduled runs and the command-line tool write it too.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

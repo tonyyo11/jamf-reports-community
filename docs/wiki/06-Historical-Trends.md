@@ -8,9 +8,14 @@ snapshots later. Jamf will not reconstruct past state for you on demand.
 
 ![Historical Trends](images/historical-trends.png)
 
-The app's **Trends** screen plots fleet metrics over time — compliance, FileVault rate,
-patch posture, device counts, and a weighted stability index. A metric picker switches
-the hero chart; comparison charts stack compliance bands and overlay multiple series.
+The app's **Trends** screen plots fleet metrics over time — compliance, FileVault, SIP,
+firewall and Gatekeeper rates, patch posture, device counts, and a weighted stability
+index. A metric picker switches the hero chart; comparison charts stack compliance bands
+and overlay multiple series.
+
+Patch compliance is the share of devices on the latest version. Days recorded before 2.9
+used a per-title average; where the daily patch snapshots exist the app works those days
+out again, so the line does not step at the upgrade.
 
 The trend range defaults to four weeks and is configurable in **Settings → Data &
 Charts** (up to roughly a year of history).
@@ -50,7 +55,7 @@ Every collect or generate run writes one `summary.json` file to:
 Each file is a per-day aggregate — date, total devices, compliance percentage, FileVault
 percentage, patch percentage, and related metrics. The Trends screen reads this directory;
 one file equals one point on the timeline. The first run of a given day writes that day's
-summary; later runs the same day leave it in place. See [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance)
+summary; a later run the same day replaces it only when it measured a source the first run could not. See [Data Provenance](https://github.com/tonyyo11/jamf-reports-community/wiki/11-Data-Provenance)
 for details on where each metric comes from.
 
 Because the cadence determines the granularity, **build the collection cadence first**
@@ -74,5 +79,8 @@ not the historical record.
 
 ## HTML report timeline
 
-The self-contained HTML report renders a macOS adoption timeline once two or more
-OS-version snapshots exist for the same instance.
+The self-contained HTML report has a **Trends** group: a chart of FileVault, SIP and
+compliance from the daily summaries, with the daily values in a block of their own under
+"Daily values". With `html.track_history: true` the group also appends each run's OS-version
+snapshot to the history file and draws the OS adoption trend once two or more snapshots
+exist for the same instance.

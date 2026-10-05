@@ -9,28 +9,27 @@ import XCTest
 /// green in CI environments without those resources.
 final class SecurityHardeningTests: XCTestCase {
 
-    // MARK: - P9-A-02 — sanitizedHexColor
+    // MARK: - P9-A-02 — sanitizedAccentColor
 
-    func test_sanitizedHexColor_acceptsValidHex() {
-        XCTAssertEqual(HtmlReport.sanitizedHexColor("#2D5EA2", fallback: "#000"), "#2D5EA2")
-        XCTAssertEqual(HtmlReport.sanitizedHexColor("#FFF", fallback: "#000"), "#FFF")
-        XCTAssertEqual(HtmlReport.sanitizedHexColor("#abcdef12", fallback: "#000"), "#abcdef12")
+    private func accent(_ typed: String) -> String {
+        BrandingConfig(accentColor: typed).sanitizedAccentColor
     }
 
-    func test_sanitizedHexColor_rejectsCSSInjection() {
+    func test_sanitizedAccentColor_acceptsValidHex() {
+        XCTAssertEqual(accent("#2D5EA2"), "#2D5EA2")
+        XCTAssertEqual(accent("#FFF"), "#FFF")
+        XCTAssertEqual(accent("#abcdef"), "#abcdef")
+    }
+
+    func test_sanitizedAccentColor_rejectsCSSInjection() {
         // Classic CSS-injection payload: closes the declaration and inserts a rule.
-        XCTAssertEqual(
-            HtmlReport.sanitizedHexColor("red; } body { display: none; ", fallback: "#2D5EA2"),
-            "#2D5EA2"
-        )
-        // Quotes / parentheses can break the JS string literal in the
-        // Chart.js `backgroundColor: '...'` interpolation.
-        XCTAssertEqual(
-            HtmlReport.sanitizedHexColor("'); alert(1);//", fallback: "#000"),
-            "#000"
-        )
-        XCTAssertEqual(HtmlReport.sanitizedHexColor("", fallback: "#000"), "#000")
-        XCTAssertEqual(HtmlReport.sanitizedHexColor("blue", fallback: "#000"), "#000")
+        XCTAssertEqual(accent("red; } body { display: none; "), "#2D5EA2")
+        // Quotes and parentheses would end the report's CSS value early.
+        XCTAssertEqual(accent("'); alert(1);//"), "#2D5EA2")
+        // A quote and an angle bracket would close the workbook's styles XML.
+        XCTAssertEqual(accent("#ABC\"/><x"), "#2D5EA2")
+        XCTAssertEqual(accent(""), "#2D5EA2")
+        XCTAssertEqual(accent("blue"), "#2D5EA2")
     }
 
     // MARK: - P9-A-03 / P10-B-29 — escapeHTML
@@ -73,25 +72,6 @@ final class SecurityHardeningTests: XCTestCase {
             HtmlSectionFormatters.escapeHTML("hello & <world>"),
             "hello &amp; &lt;world&gt;"
         )
-    }
-
-    // MARK: - P9-A-04 — PDFExporter chart fallback injection
-
-    @MainActor
-    func test_pdfExporter_injectsFallbackBeforeHead() async {
-        let html = "<html><head><title>x</title></head><body>hi</body></html>"
-        let prepared = PDFExporter.preparedHTMLForPDF(html)
-        XCTAssertTrue(prepared.contains("Chart unavailable in PDF"))
-        XCTAssertTrue(prepared.contains(".chart-card canvas"))
-        // Injection must close before </head> so the rule is in scope.
-        XCTAssertTrue(prepared.contains("</head>"))
-    }
-
-    @MainActor
-    func test_pdfExporter_handlesHTMLWithoutHead() async {
-        let html = "<body>just a body</body>"
-        let prepared = PDFExporter.preparedHTMLForPDF(html)
-        XCTAssertTrue(prepared.contains("Chart unavailable in PDF"))
     }
 
     // MARK: - P9-A-06 — WorkspacePaths absolute escape

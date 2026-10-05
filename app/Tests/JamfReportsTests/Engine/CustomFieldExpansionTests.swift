@@ -6,7 +6,7 @@ import XCTest
 /// position, last_logged_in_user, recovery_lock, battery_health, entra_sso_status.
 ///
 /// Verifies YAML round-trip, Device Inventory / Stale Devices column presence when
-/// mapped, omission when unmapped, and scaffold hint detection.
+/// mapped, and omission when unmapped. Scaffold hint detection is in `ScaffoldServiceTests`.
 final class CustomFieldExpansionTests: XCTestCase {
 
     // MARK: - Helpers
@@ -208,71 +208,5 @@ final class CustomFieldExpansionTests: XCTestCase {
         let csv = makeCSV()
         let content = try sheetContent(name: "Stale Devices", config: config, csv: csv)
         XCTAssertFalse(content.contains("Battery Health"))
-    }
-
-    // MARK: - Scaffold hints
-
-    func testScaffoldDetectsFullNameVariants() throws {
-        for header in ["Full Name", "User Full Name", "FullName"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["full_name"], header,
-                           "full_name hint must match header '\(header)'")
-        }
-    }
-
-    func testScaffoldDetectsAssetTagVariants() throws {
-        for header in ["Asset Tag", "AssetTag", "Asset ID"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["asset_tag"], header,
-                           "asset_tag hint must match header '\(header)'")
-        }
-    }
-
-    func testScaffoldDetectsBuildingVariants() throws {
-        for header in ["Building", "Site Building"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["building"], header,
-                           "building hint must match header '\(header)'")
-        }
-    }
-
-    func testScaffoldDetectsPositionVariants() throws {
-        for header in ["Position", "Job Title"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["position"], header,
-                           "position hint must match header '\(header)'")
-        }
-    }
-
-    func testScaffoldDetectsLastLoggedInUserVariants() throws {
-        for header in ["Last Logged In", "Last User", "Logged In User"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["last_logged_in_user"], header,
-                           "last_logged_in_user hint must match header '\(header)'")
-        }
-    }
-
-    func testScaffoldDetectsRecoveryLockVariants() throws {
-        for header in ["Recovery Lock", "RecoveryLock", "Recovery Lock Enabled"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["recovery_lock"], header,
-                           "recovery_lock hint must match header '\(header)'")
-        }
-    }
-
-    func testScaffoldDetectsBatteryHealthVariants() throws {
-        for header in ["Battery Health", "Battery Condition", "Battery Cycle Count"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["battery_health"], header,
-                           "battery_health hint must match header '\(header)'")
-        }
-    }
-
-    func testScaffoldDetectsEntraSSOStatusVariants() throws {
-        for header in ["Entra SSO", "Azure AD Status", "Entra ID SSO"] {
-            let result = ReportEngine.testableScaffoldMappings(from: [header])
-            XCTAssertEqual(result["entra_sso_status"], header,
-                           "entra_sso_status hint must match header '\(header)'")
-        }
     }
 }

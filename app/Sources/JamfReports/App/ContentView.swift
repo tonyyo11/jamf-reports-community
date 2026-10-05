@@ -112,7 +112,7 @@ struct ContentView: View {
                         }
                     }
 
-                    StatusBar(status: workspace.globalStatus)
+                    StatusBar(status: workspace.statusLine)
                 }
             }
             .background(Theme.Colors.winBG.ignoresSafeArea())
@@ -332,12 +332,12 @@ struct ContentView: View {
                 .strokeBorder(Theme.Colors.hairlineStrong, lineWidth: 0.5)
         )
         .padding(.bottom, 40)
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                if workspace.toast?.id == toast.id {
-                    workspace.toast = nil
-                }
-            }
+        // One timer per toast: onAppear ran once, when the first toast appeared, so a toast
+        // that replaced another while it was up never cleared and sat over the page.
+        .task(id: toast.id) {
+            try? await Task.sleep(for: .seconds(Toast.displaySeconds))
+            guard !Task.isCancelled else { return }
+            workspace.dismissToast(ifShowing: toast.id)
         }
     }
 
@@ -345,7 +345,7 @@ struct ContentView: View {
         switch style {
         case .info:    "info.circle.fill"
         case .success: "checkmark.circle.fill"
-        case .danger:  "exclamationmark.triangle.fill"
+        case .warning, .danger: "exclamationmark.triangle.fill"
         }
     }
 
@@ -353,6 +353,7 @@ struct ContentView: View {
         switch style {
         case .info:    Theme.Colors.info
         case .success: Theme.Colors.ok
+        case .warning: Theme.Colors.warn
         case .danger:  Theme.Colors.danger
         }
     }

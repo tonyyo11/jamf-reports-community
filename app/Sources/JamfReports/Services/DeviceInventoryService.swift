@@ -15,6 +15,9 @@ enum DeviceInventoryService {
         /// so the Devices/Outreach screens agree with the Overview/Fleet tiles
         /// and the summary writer at any configured threshold.
         var staleDeviceDays: Int
+        /// `thresholds.stale_basis`: which dates make a Mac stale.
+        var staleBasis: [StaleBasis]
+        var contactGapDays: Int
     }
 
     static func load(profile: String, demoMode: Bool) -> DeviceInventorySnapshot {
@@ -85,10 +88,21 @@ enum DeviceInventoryService {
             warnings: &warnings
         )
 
-        let devices = merger.records.sorted { lhs, rhs in
-            if lhs.risk != rhs.risk { return riskRank(lhs.risk) > riskRank(rhs.risk) }
-            return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
-        }
+        warnings.append(contentsOf: leftOutWarnings(merger.leftOutRows))
+
+        let policy = SecurityPolicyConfigLoader.load(profile: profile)
+        let staleRule = StaleRule(days: config.staleDeviceDays, basis: config.staleBasis)
+        // Scored once per device: scoring reads several values, and the sort compares many
+        // times. The Devices screen re-scores with the security agent's status.
+        let devices = merger.records
+            .map { restatingStale($0, rule: staleRule) }
+            .map { (record: $0, score: RiskScoringService.risk(for: $0, policy: policy).score) }
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score { return lhs.score > rhs.score }
+                return lhs.record.displayName
+                    .localizedStandardCompare(rhs.record.displayName) == .orderedAscending
+            }
+            .map(\.record)
         let uniqueSources = sourceFiles.reduce(into: [String]()) { acc, item in
             if !acc.contains(item) { acc.append(item) }
         }
@@ -100,8 +114,24 @@ enum DeviceInventoryService {
             warnings: warnings,
             generatedAt: formattedDate(newestSourceDate),
             generatedDate: newestSourceDate,
-            isDemo: false
+            isDemo: false,
+            securityPolicy: policy,
+            staleDays: config.staleDeviceDays,
+            staleBasis: staleRule.basis,
+            contactGapDays: config.contactGapDays
         )
+    }
+
+    /// A merged record's `stale` from the stale rule. The merge keeps the newest source's
+    /// dates but ORs the flags, so a Mac an older snapshot saw past the threshold would stay
+    /// stale after a newer one saw it check in. A record with none of the rule's dates keeps
+    /// the flag its sources set.
+    static func restatingStale(
+        _ record: DeviceInventoryRecord, rule: StaleRule, now: Date = Date()
+    ) -> DeviceInventoryRecord {
+        var record = record
+        record.stale = record.isStale(rule, now: now)
+        return record
     }
 
     private static func emptySnapshot(warning: String) -> DeviceInventorySnapshot {
@@ -229,12 +259,14 @@ fileprivate extension DeviceInventoryService {
 
 fileprivate extension DeviceInventoryService {
 
+    /// Reads config.yaml through the engine's loader, so a value reads as the decoder would
+    /// read it.
     static func loadConfigHints(root: URL, warnings: inout [String]) -> ConfigHints {
-        var values: [String: [String: String]] = [:]
+        var values: [String: Any] = [:]
         let configURL = root.appendingPathComponent("config.yaml")
         if let configFile = validatedFile(configURL, root: root),
            let text = readText(configFile, root: root, maxBytes: 256 * 1024, warnings: &warnings) {
-            values = parseSimpleYAML(text)
+            values = (try? ConfigLoader.rawMapping(fromYAML: text)) ?? [:]
         }
 
         let profile = profileName(ofWorkspace: root)
@@ -246,12 +278,19 @@ fileprivate extension DeviceInventoryService {
         return ConfigHints(
             jamfCLIDataDir: jamfCLIDataDir,
             outputDir: resolvedDirectory(
-                values["output"]?["output_dir"],
+                ConfigLoader.rawValue(at: ["output", "output_dir"], in: values) as? String,
                 fallback: "Generated Reports",
                 root: root
             ),
             historicalCSVDir: historicalCSVDir,
-            staleDeviceDays: Int(values["thresholds"]?["stale_device_days"] ?? "") ?? 30
+            staleDeviceDays: ConfigLoader.rawValue(
+                at: ["thresholds", "stale_device_days"], in: values) as? Int ?? 30,
+            staleBasis: StaleBasisSetting(
+                raw: ConfigLoader.rawValue(at: ["thresholds", "stale_basis"], in: values)).resolved,
+            contactGapDays: WholeNumberSetting(
+                raw: ConfigLoader.rawValue(at: ["thresholds", "contact_gap_days"], in: values))?
+                .value.flatMap { ContactGap.dayRange.contains($0) ? $0 : nil }
+                ?? ContactGap.defaultDays
         )
     }
 
@@ -262,29 +301,6 @@ fileprivate extension DeviceInventoryService {
             ? URL(fileURLWithPath: value, isDirectory: true)
             : root.appendingPathComponent(value, isDirectory: true)
         return secureURL(candidate, root: root) ?? root.appendingPathComponent(fallback, isDirectory: true)
-    }
-
-    static func parseSimpleYAML(_ text: String) -> [String: [String: String]] {
-        var result: [String: [String: String]] = [:]
-        var section = ""
-        for rawLine in text.components(separatedBy: .newlines) {
-            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
-            if !rawLine.hasPrefix(" "), trimmed.hasSuffix(":") {
-                section = String(trimmed.dropLast()).trimmingCharacters(in: .whitespaces)
-                result[section] = result[section] ?? [:]
-                continue
-            }
-            guard !section.isEmpty, let colon = trimmed.firstIndex(of: ":") else { continue }
-            let key = String(trimmed[..<colon]).trimmingCharacters(in: .whitespaces)
-            var value = String(trimmed[trimmed.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-            if let comment = value.firstIndex(of: "#") {
-                value = String(value[..<comment]).trimmingCharacters(in: .whitespaces)
-            }
-            value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            result[section]?[key] = value
-        }
-        return result
     }
 }
 
@@ -518,9 +534,11 @@ extension DeviceInventoryService {
     ) -> DeviceInventoryRecord {
         let name = cell(row, ["Computer Name", "Device Name", "Name"])
         let serial = cell(row, ["Serial Number", "Serial"])
-        let jamfID = cell(row, ["Jamf ID", "Computer ID", "ID"])
+        let jamfID = cell(row, ["Jamf ID", "Computer ID", "JSS Computer ID", "ID"])
         var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
         record.jamfID = jamfID
+        record.managementID = nilIfEmpty(cell(row, ["Management ID", "Jamf Management ID"]))
+        record.udid = nilIfEmpty(cell(row, ["UDID"]))
         record.name = name
         record.serial = serial
         record.osVersion = cell(row, ["Operating System", "Operating System Version", "OS Version", "macOS"])
@@ -535,15 +553,22 @@ extension DeviceInventoryService {
         record.managedState = cell(row, ["Managed"])
         record.lastContact = cell(row, ["Last Check-in", "Last Contact", "Last Contact Date"])
         record.lastInventory = cell(row, ["Last Inventory Update", "Last Report", "Report Date"])
+        record.checkInDate = parseDate(record.lastContact)
+        record.inventoryDate = parseDate(record.lastInventory)
         record.daysSinceContact = daysSince(row: row, dateLabel: record.lastContact)
-        record.stale = (record.daysSinceContact ?? 0) >= staleThresholdDays
+        record.stale = (record.daysSinceContact ?? 0) > staleThresholdDays
         record.fileVault = cell(row, ["FileVault Status", "FileVault 2 Status", "FileVault 2 Enabled"])
         record.sip = cell(row, ["System Integrity Protection", "SIP"])
         record.firewall = cell(row, ["Firewall Enabled", "Firewall"])
         record.gatekeeper = cell(row, ["Gatekeeper"])
-        record.bootstrapToken = cell(row, ["Bootstrap Token Escrowed", "Bootstrap Token Allowed"])
+        // Not "Bootstrap Token Allowed": that is whether the server accepts escrow.
+        record.bootstrapToken = cell(row, ["Bootstrap Token Escrowed"])
         record.diskUsage = cell(row, ["Boot Drive Percentage Full", "Disk Usage %"])
         record.failedRules = failureCount(row)
+        record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(
+            appleSilicon: yesNo(cell(row, ["Apple Silicon"])),
+            modelIdentifier: cell(row, ["Model Identifier"]),
+            architecture: cell(row, ["Architecture Type", "Architecture"]))
         return record
     }
 
@@ -561,6 +586,9 @@ extension DeviceInventoryService {
         )
         var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
         record.jamfID = jamfID
+        record.managementID = nilIfEmpty(first(flat, ["general.managementId", "managementId"]))
+        // The MDM UDID, not `hardware.provisioningUdid`, which is a different identifier.
+        record.udid = nilIfEmpty(first(flat, ["udid", "general.udid", "hardware.udid"]))
         record.name = name
         record.serial = serial
         record.osVersion = first(flat, ["operatingSystem.version", "operatingSystemVersion", "general.osVersion"])
@@ -580,13 +608,22 @@ extension DeviceInventoryService {
         // is a separate field, null on most Macs, so it is not a substitute.
         record.lastContact = first(flat, ["general.lastCheckIn", "general.lastContactTime", "general.lastContactDate", "lastContactDate"])
         record.lastInventory = first(flat, ["general.reportDate", "general.lastReportDate", "lastReportDate"])
+        let dates = ComputerDates(item: item)
+        record.checkInDate = dates.checkIn
+        record.inventoryDate = dates.inventory
+        record.contactDate = dates.contact
+        record.carriesDates = true
         record.daysSinceContact = daysSince(label: record.lastContact)
-        record.stale = (record.daysSinceContact ?? 0) >= staleThresholdDays
+        record.stale = (record.daysSinceContact ?? 0) > staleThresholdDays
         record.fileVault = first(flat, ["diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State", "operatingSystem.fileVault2Status", "diskEncryption.fileVault2Enabled"])
         record.sip = first(flat, ["security.sipStatus", "security.systemIntegrityProtection"])
         record.firewall = first(flat, ["security.firewallEnabled", "operatingSystem.activeDirectoryStatus.firewallEnabled"])
         record.gatekeeper = first(flat, ["security.gatekeeperStatus"])
-        record.bootstrapToken = first(flat, ["security.bootstrapTokenEscrowed", "security.bootstrapTokenAllowed"])
+        // Jamf Pro reports escrow as bootstrapTokenEscrowedStatus; the older key only for
+        // snapshots that carry it. bootstrapTokenAllowed says escrow is allowed, not done.
+        record.bootstrapToken = first(
+            flat, ["security.bootstrapTokenEscrowedStatus", "security.bootstrapTokenEscrowed"])
+        record.hardwareEncrypted = HardwareEncryption.isHardwareEncrypted(computer: item)
         return record
     }
 
@@ -604,9 +641,15 @@ extension DeviceInventoryService {
         record.serial = serial
         record.osVersion = clean(item["os_version"]) ?? clean(item["operating_system"]) ?? ""
         record.lastContact = clean(item["last_contact"]) ?? clean(item["last_checkin"]) ?? ""
+        record.checkInDate = parseDate(record.lastContact)
         record.daysSinceContact = intValue(item["days_since_contact"]) ?? daysSince(label: record.lastContact)
         record.managedState = managedLabel(clean(item["managed"]) ?? "")
-        record.stale = boolValue(item["stale"]) || (record.daysSinceContact ?? 0) >= staleThresholdDays
+        // jamf-cli's own `stale` flag is a 14-day cut: it decides only a row with no day count.
+        if let days = record.daysSinceContact {
+            record.stale = days > staleThresholdDays
+        } else {
+            record.stale = boolValue(item["stale"])
+        }
         return record
     }
 
@@ -803,20 +846,25 @@ private extension DeviceInventoryService {
         }
     }
 
+    /// Walks Unicode scalars, not Characters: "\r\n" is ONE Character that equals neither "\r"
+    /// nor "\n", so a CSV saved by Excel or Windows read as a single row with no devices.
+    /// It also avoids `Array(text)`, which copies 16 bytes per Character.
     static func parseCSVTable(_ text: String) -> [[String]] {
-        let chars = Array(text)
+        let scalars = text.unicodeScalars
         var rows: [[String]] = []
         var row: [String] = []
         var field = ""
         var inQuotes = false
-        var i = 0
+        var idx = scalars.startIndex
 
-        while i < chars.count {
-            let ch = chars[i]
+        while idx < scalars.endIndex {
+            let ch = scalars[idx]
+            var next = scalars.index(after: idx)
+            let following = next < scalars.endIndex ? scalars[next] : nil
             if ch == "\"" {
-                if inQuotes, i + 1 < chars.count, chars[i + 1] == "\"" {
-                    field.append("\"")
-                    i += 1
+                if inQuotes, following == "\"" {
+                    field.unicodeScalars.append(ch)
+                    next = scalars.index(after: next)
                 } else {
                     inQuotes.toggle()
                 }
@@ -828,15 +876,56 @@ private extension DeviceInventoryService {
                 if !row.allSatisfy({ $0.isEmpty }) { rows.append(row) }
                 row = []
                 field = ""
-                if ch == "\r", i + 1 < chars.count, chars[i + 1] == "\n" { i += 1 }
+                if ch == "\r", following == "\n" { next = scalars.index(after: next) }
             } else {
-                field.append(ch)
+                field.unicodeScalars.append(ch)
             }
-            i += 1
+            idx = next
         }
         row.append(field)
         if !row.allSatisfy({ $0.isEmpty }) { rows.append(row) }
         return rows
+    }
+}
+
+// MARK: - Timestamps
+
+extension DeviceInventoryService {
+
+    /// The one reader of a device timestamp, shared by Devices and Offline Outreach: ISO 8601
+    /// with or without a fraction of any length, then the CSV export forms.
+    static func parseDate(_ text: String) -> Date? {
+        guard !text.isEmpty else { return nil }
+        if let date = isoFormatter.date(from: text) { return date }
+        // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
+        // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
+        // Mac had no contact age unless device-compliance supplied a day count.
+        if let date = isoFractionalFormatter.date(from: text) { return date }
+        for formatter in exportDateFormatters {
+            if let date = formatter.date(from: text) { return date }
+        }
+        return nil
+    }
+
+    // Built once: this runs several times per CSV row and per computer. As for
+    // `StateFileStore.formatter`, a configured formatter's `date(from:)` is safe to share.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let exportDateFormatters: [DateFormatter] = [
+        "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy",
+    ].map { format in
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = format
+        return formatter
     }
 }
 
@@ -861,16 +950,20 @@ private extension DeviceInventoryService {
         return ""
     }
 
+    /// A Mac has a few hundred rules at most. A cell far past that is a bad export, and the
+    /// risk score multiplies the count by a per-failure weight, which overflows near Int.max.
+    static let maxFailureCount = 1_000_000
+
     static func failureCount(_ row: [String: String]) -> Int {
         let exact = cell(row, ["Failed Rules", "Failed Rules Count", "Failures", "Compliance Failures"])
         if let value = Int(exact.trimmingCharacters(in: CharacterSet(charactersIn: " %"))) {
-            return value
+            return min(max(value, 0), maxFailureCount)
         }
         for (key, value) in row {
             let normalized = normalizeHeader(key)
             if normalized.contains("fail") && (normalized.contains("count") || normalized.contains("rules")),
                let parsed = Int(value.trimmingCharacters(in: CharacterSet(charactersIn: " %"))) {
-                return parsed
+                return min(max(parsed, 0), maxFailureCount)
             }
         }
         return 0
@@ -888,25 +981,6 @@ private extension DeviceInventoryService {
         }
         guard let date = parseDate(trimmed) else { return nil }
         return Calendar.current.dateComponents([.day], from: date, to: Date()).day
-    }
-
-    static func parseDate(_ text: String) -> Date? {
-        guard !text.isEmpty else { return nil }
-        if let date = ISO8601DateFormatter().date(from: text) { return date }
-        // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
-        // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
-        // Mac had no contact age unless device-compliance supplied a day count.
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: text) { return date }
-        let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
-        for format in formats {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = format
-            if let date = formatter.date(from: text) { return date }
-        }
-        return nil
     }
 
     static func flattened(_ dict: [String: Any]) -> [String: Any] {
@@ -989,6 +1063,16 @@ private extension DeviceInventoryService {
         return ["true", "yes", "1", "managed", "stale"].contains(text)
     }
 
+    /// Jamf's CSV `Apple Silicon` column: Yes or No. Nil for anything else, so an empty
+    /// cell leaves the model and architecture to decide.
+    static func yesNo(_ text: String) -> Bool? {
+        switch text.lowercased() {
+        case "yes", "true": true
+        case "no", "false": false
+        default: nil
+        }
+    }
+
     static func managedLabel(_ value: String) -> String {
         let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if ["true", "yes", "1", "managed"].contains(text) { return "Managed" }
@@ -1023,6 +1107,10 @@ fileprivate extension DeviceInventoryService {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    static func nilIfEmpty(_ value: String) -> String? {
+        value.isEmpty ? nil : value
+    }
+
     static func percentLabel(_ numerator: Int, _ denominator: Int) -> String {
         guard denominator > 0 else { return "N/A" }
         return String(format: "%.1f%%", Double(numerator) / Double(denominator) * 100)
@@ -1055,65 +1143,174 @@ fileprivate extension DeviceInventoryService {
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
+}
 
-    static func riskRank(_ risk: DeviceInventoryRecord.Risk) -> Int {
-        switch risk {
-        case .critical: 3
-        case .attention: 2
-        case .unknown: 1
-        case .ok: 0
+// MARK: - Device identity
+
+/// What says two inventory rows are one Mac, strongest first. A computer name is not
+/// here: two Macs can share one.
+enum DeviceIdentifier: CaseIterable, Sendable {
+    case jamfID, managementID, udid, platformID, serial
+
+    /// A serial is the weak one: it can sit on two Jamf records after a logic-board swap.
+    var isStrong: Bool { self != .serial }
+}
+
+extension DeviceInventoryRecord {
+
+    /// The record's value for `kind`, trimmed and lowercased; nil when no source carried one.
+    func identifier(_ kind: DeviceIdentifier) -> String? {
+        let raw: String? = switch kind {
+        case .jamfID: numericJamfID
+        case .managementID: managementID
+        case .udid: udid
+        case .platformID: platformID
+        case .serial: serial
+        }
+        let key = DeviceInventoryService.normalizedKey(raw ?? "")
+        return key.isEmpty ? nil : key
+    }
+
+    var identifiers: [(kind: DeviceIdentifier, value: String)] {
+        DeviceIdentifier.allCases.compactMap { kind in identifier(kind).map { (kind, $0) } }
+    }
+
+    /// True when some identifier both records carry has two values.
+    func disagrees(with other: DeviceInventoryRecord) -> Bool {
+        DeviceIdentifier.allCases.contains { kind in
+            guard let mine = identifier(kind), let theirs = other.identifier(kind) else {
+                return false
+            }
+            return mine != theirs
+        }
+    }
+}
+
+extension DeviceInventoryService {
+
+    /// One line per source whose rows could not be tied to a single Mac. Counts only: the
+    /// warning must not carry a device name.
+    static func leftOutWarnings(_ rows: [String: Int]) -> [String] {
+        rows.sorted { $0.key < $1.key }.map { source, count in
+            "\(source): left out \(count) \(count == 1 ? "row" : "rows") that could not be "
+                + "matched to one Mac, because the serial, ID or name they carry fits more than "
+                + "one. A Serial Number or Jamf ID column lets each row find its Mac."
         }
     }
 }
 
 // MARK: - Merge helper
 
-private struct DeviceRecordMerger {
+/// Folds the inventory sources into one record per Mac.
+///
+/// A row joins an existing record only when they share an identifier (Jamf ID, management
+/// ID, UDID, Platform ID, serial) and no identifier they both carry differs. A computer name
+/// never decides that alone, so two Macs that share a name stay two. A serial does not
+/// outrank a differing Jamf ID either: one serial can sit on two records.
+struct DeviceRecordMerger {
     private(set) var records: [DeviceInventoryRecord] = []
-    private var jamfIDIndex: [String: Int] = [:]
-    private var serialIndex: [String: Int] = [:]
-    private var nameIndex: [String: Int] = [:]
+    /// Rows left out per source file because nothing told which Mac they described.
+    private(set) var leftOutRows: [String: Int] = [:]
+    private var identifierIndex: [DeviceIdentifier: [String: [Int]]] = [:]
+    private var nameIndex: [String: [Int]] = [:]
+    private var usedIDs: Set<String> = []
+
+    private enum Placement { case merge(Int), append, leaveOut }
 
     mutating func upsert(_ record: DeviceInventoryRecord) {
-        let newJamfIDKey = record.numericJamfID
-        let newSerialKey = DeviceInventoryService.normalizedKey(record.serial)
-        let newNameKey = DeviceInventoryService.normalizedKey(record.name)
-
-        if let idx = (!newSerialKey.isEmpty ? serialIndex[newSerialKey] : nil)
-            ?? (newJamfIDKey.map { jamfIDIndex[$0] } ?? nil)
-            ?? (!newNameKey.isEmpty ? nameIndex[newNameKey] : nil) {
-            // Update existing record. Remove stale index entries, merge, then
-            // add updated ones — O(1) instead of O(n) full rebuild.
-            let existing = records[idx]
-            let oldJamfIDKey = existing.numericJamfID
-            let oldSerialKey = DeviceInventoryService.normalizedKey(existing.serial)
-            let oldNameKey = DeviceInventoryService.normalizedKey(existing.name)
-
+        var record = record
+        record.osVersion = OSVersionName.normalized(record.osVersion)
+        switch placement(of: record) {
+        case .merge(let idx):
             records[idx].merge(record)
-
-            let mergedJamfIDKey = records[idx].numericJamfID
-            let mergedSerialKey = DeviceInventoryService.normalizedKey(records[idx].serial)
-            let mergedNameKey = DeviceInventoryService.normalizedKey(records[idx].name)
-
-            if oldJamfIDKey != mergedJamfIDKey {
-                if let old = oldJamfIDKey { jamfIDIndex.removeValue(forKey: old) }
-                if let new = mergedJamfIDKey { jamfIDIndex[new] = idx }
-            }
-            if oldSerialKey != mergedSerialKey {
-                if !oldSerialKey.isEmpty { serialIndex.removeValue(forKey: oldSerialKey) }
-                if !mergedSerialKey.isEmpty { serialIndex[mergedSerialKey] = idx }
-            }
-            if oldNameKey != mergedNameKey {
-                if !oldNameKey.isEmpty { nameIndex.removeValue(forKey: oldNameKey) }
-                if !mergedNameKey.isEmpty { nameIndex[mergedNameKey] = idx }
-            }
-        } else {
-            // New record: append and index in O(1).
-            let idx = records.count
+            index(idx)
+        case .append:
+            record.id = uniqueID(for: record)
+            usedIDs.insert(record.id)
             records.append(record)
-            if let jamfIDKey = newJamfIDKey { jamfIDIndex[jamfIDKey] = idx }
-            if !newSerialKey.isEmpty { serialIndex[newSerialKey] = idx }
-            if !newNameKey.isEmpty { nameIndex[newNameKey] = idx }
+            index(records.count - 1)
+        case .leaveOut:
+            leftOutRows[record.source, default: 0] += 1
         }
+    }
+
+    private func placement(of record: DeviceInventoryRecord) -> Placement {
+        let nameKey = DeviceInventoryService.normalizedKey(record.name)
+        let identifiers = record.identifiers
+        if identifiers.isEmpty { return placementByName(nameKey) }
+        let candidates = compatibleRecords(sharing: identifiers, with: record)
+        if candidates.isEmpty {
+            // A name-only record made earlier is this Mac's only trace: take it over, but only
+            // when it is the one record with that name.
+            let named = nameKey.isEmpty ? [] : nameIndex[nameKey] ?? []
+            if named.count == 1, records[named[0]].identifiers.isEmpty { return .merge(named[0]) }
+            return .append
+        }
+        // Prefer the records that share something other than a serial.
+        let strong = candidates.filter { $0.value }.keys
+        let pool = (strong.isEmpty ? Array(candidates.keys) : Array(strong)).sorted()
+        if pool.count == 1 { return .merge(pool[0]) }
+        // Several records fit (one serial on two Jamf records). The name only chooses among
+        // them because an identifier already ties the row to each.
+        let named = pool.filter {
+            !nameKey.isEmpty && DeviceInventoryService.normalizedKey(records[$0].name) == nameKey
+        }
+        return named.count == 1 ? .merge(named[0]) : .leaveOut
+    }
+
+    /// A row with no identifier joins the one record with its name. With no such record it is
+    /// the only evidence of that Mac. With several, it is one of them and nothing says which, so
+    /// it is left out rather than counted as another Mac.
+    private func placementByName(_ nameKey: String) -> Placement {
+        guard !nameKey.isEmpty else { return .append }
+        let named = nameIndex[nameKey] ?? []
+        switch named.count {
+        case 0: return .append
+        case 1: return .merge(named[0])
+        default: return .leaveOut
+        }
+    }
+
+    /// Records sharing an identifier with `record` and disagreeing on none, each marked with
+    /// whether the shared identifier is more than a serial.
+    private func compatibleRecords(
+        sharing identifiers: [(kind: DeviceIdentifier, value: String)],
+        with record: DeviceInventoryRecord
+    ) -> [Int: Bool] {
+        var sharesStrong: [Int: Bool] = [:]
+        for (kind, value) in identifiers {
+            for idx in identifierIndex[kind]?[value] ?? [] {
+                sharesStrong[idx] = (sharesStrong[idx] ?? false) || kind.isStrong
+            }
+        }
+        return sharesStrong.filter { !records[$0.key].disagrees(with: record) }
+    }
+
+    /// Adds record `idx` to the identifier and name indexes. A merge only fills a blank, never
+    /// changes a value, so nothing needs removing: O(1) per upsert.
+    private mutating func index(_ idx: Int) {
+        for (kind, value) in records[idx].identifiers
+        where !identifierIndex[kind, default: [:]][value, default: []].contains(idx) {
+            identifierIndex[kind, default: [:]][value, default: []].append(idx)
+        }
+        let nameKey = DeviceInventoryService.normalizedKey(records[idx].name)
+        if !nameKey.isEmpty, !nameIndex[nameKey, default: []].contains(idx) {
+            nameIndex[nameKey, default: []].append(idx)
+        }
+    }
+
+    /// `Identifiable` needs a distinct id per row, and two Macs can share the serial or name
+    /// the id is built from.
+    private func uniqueID(for record: DeviceInventoryRecord) -> String {
+        guard usedIDs.contains(record.id) else { return record.id }
+        let tie = record.identifier(.jamfID) ?? record.identifier(.managementID)
+            ?? record.identifier(.udid) ?? "2"
+        var candidate = "\(record.id)#\(tie)"
+        var count = 2
+        while usedIDs.contains(candidate) {
+            count += 1
+            candidate = "\(record.id)#\(count)"
+        }
+        return candidate
     }
 }

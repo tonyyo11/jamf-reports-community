@@ -71,15 +71,15 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         }
     }
 
-    /// Snapshot directory name `RefreshCoordinator` probes for staleness.
-    /// Must be a kind `ReportEngine.collect` actually writes so the mtime
-    /// probe finds real files. Each is the cheapest always-present
-    /// indicator for its tier.
-    var stalenessProbeKind: String {
+    /// Snapshot directory name `RefreshCoordinator` probes for staleness: a
+    /// kind `ReportEngine.collect` actually writes, so the mtime probe finds
+    /// real files. nil for the heavy tiers, which no one kind stands for; the
+    /// Overview prompt reads every kind they are expected to collect
+    /// (`WorkspaceStore.staleTiers`).
+    var stalenessProbeKind: String? {
         switch self {
-        case .refresh:   return "overview"
-        case .inventory: return "computers"
-        case .scan:      return "update-device-failures"
+        case .refresh:           return "overview"
+        case .inventory, .scan:  return nil
         }
     }
 
@@ -130,7 +130,6 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         "categories":                         .inventory,
         "classic-ios-profiles":               .inventory,
         "device-enrollment-instances":        .inventory,
-        "mobile-device-inventory-details":    .inventory,
 
         // Inventory (continued) — per-device posture without --scan-failures fan-out
         "update-status":                  .inventory,
@@ -140,6 +139,9 @@ enum CollectionTier: String, Sendable, Hashable, CaseIterable, Codable {
         // Cheap aggregate query (one fleet-wide inventory fetch, no per-device
         // fan-out) — daily-safe, same class as the four rows above.
         "duplicate-serials":              .inventory,
+        // jamf-cli's HTML dashboard (1.31.0+): about 22 requests plus one per 500
+        // computers, the inventory sweep again with no per-device fan-out.
+        "dashboard":                      .inventory,
 
         // Scan — the two --scan-failures per-device fan-outs only.
         // These enumerate every failing device in detail and are the only

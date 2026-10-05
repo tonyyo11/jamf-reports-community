@@ -2,8 +2,10 @@
 
 The app ships an included `jamf-reports` command-line interface. It is the same
 binary as the GUI — when you run it with a recognized subcommand it executes
-headlessly; with no arguments it opens the app. The CLI uses the native Swift
-report engine, so its output matches what the app produces.
+headlessly; with no arguments it opens the app. An unknown first word (one not
+starting with `-`) prints an error and exits non-zero; a flag the system adds
+(`-psn_…`) still opens the app. The CLI uses the native Swift report engine, so its
+output matches what the app produces.
 
 Use it to script report generation, collect snapshots on a schedule of your own,
 or wire report generation into other automation.
@@ -53,9 +55,9 @@ name as `%2C` and a percent sign as `%25`.
 
 | Command | What it does | Key options |
 |---------|--------------|-------------|
-| `generate` | Generate an `.xlsx` workbook from cached snapshots | `--profile`, `--output <path>`, `--template <id>` |
+| `generate` | Generate an `.xlsx` workbook from cached snapshots (and the HTML report beside it when `html.with_workbook` is `true`) | `--profile`, `--output <path>`, `--template <id>` |
 | `collect` | Collect fresh `jamf-cli` snapshots | `--profile`, `--tiers refresh,inventory,scan`, `--force` |
-| `html` | Generate the self-contained HTML report | `--profile`, `--output <path>` |
+| `html` | Generate the self-contained HTML report (the Full Instance layout: figures and attention list first, collapsed detail groups, audit appendix) | `--profile`, `--output <path>` |
 | `backup` | Back up Jamf Pro config objects (`jamf-cli pro backup`) | `--profile` |
 | `scaffold` | Build a `config.yaml` from a Jamf Pro CSV export, or a minimal jamf-cli-only config with no CSV | `--csv <path>` (optional), `--out <path>` |
 | `check` | Run every config, data-accuracy and workspace check, with a fix for each finding | `--profile`, `--json` |
@@ -97,10 +99,17 @@ full option list of any command.
 
 A few behaviors worth knowing:
 
+- With `html.with_workbook: true` in `config.yaml`, `generate` also writes the HTML report
+  beside the workbook, with the same name and a `.html` extension and the template's HTML
+  sections. The HTML report's own log lines print before the workbook path, which stays the
+  last line on stdout. If the HTML report cannot be written, `generate` still exits `0` with
+  the workbook and prints a `[warn] HTML report not written: …` line to stderr. `html` is a
+  separate command and always writes one HTML report.
 - `collect` runs at most once per profile per day; a second run the same day
   exits successfully without re-collecting. Pass `--force` to override.
 - `scaffold` **overwrites** the `--out` file if it already exists — it's an
-  initial-setup command. To safely update an existing `config.yaml`, use the
+  initial-setup command. It copies the existing file to `<out>.bak-<date-time>`
+  first and prints the path on stderr. To safely update an existing `config.yaml`, use the
   app's re-scaffold (which merges non-destructively) instead. This applies whether
   or not `--csv` is given.
 - `collect` tolerates a missing `config.yaml` and proceeds with defaults; `generate`
@@ -193,12 +202,18 @@ jamf-reports check --profile prod
 
 Commands exit `0` on success and non-zero on failure, following the `jamf-cli`
 convention — notably exit `3` for expired or invalid credentials (re-authenticate
-the profile). Argument and usage errors exit `64`. This makes the commands safe
+the profile). Argument and usage errors exit `64`. Exit code `75` means the command did
+not run because a collect, a report or a scheduled run on this Mac holds the lock; run it
+again when that finishes. This makes the commands safe
 to gate on in a shell script:
 
 ```sh
 jamf-reports collect --profile prod && jamf-reports generate --profile prod
 ```
+
+`collect`, `generate`, `html`, `backup` and `--scheduled-run` take the lock and exit `75`
+when it is held; `schedules run` exits `75` when its run is queued for the background
+item's next wake. Read-only commands such as `check` and `device` take no lock.
 
 ## Scheduling
 

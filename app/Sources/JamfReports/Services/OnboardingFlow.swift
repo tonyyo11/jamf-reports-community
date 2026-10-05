@@ -71,6 +71,19 @@ final class OnboardingFlow {
         }
     }
 
+    /// What setup knows about the installed jamf-cli. It starts at `.checking` and leaves it
+    /// only when the probe answers, so the install step never says "not detected" about a
+    /// probe that is still running.
+    enum JamfCLIStatus: Equatable, Sendable {
+        case checking
+        case installed(version: String?)
+        case missing
+    }
+
+    /// Finds jamf-cli and reads its version. It launches child processes and waits on them,
+    /// so the flow only calls it off the main actor, never during a SwiftUI update.
+    typealias InstallationProbe = @Sendable () -> JamfCLIInstaller.Installation?
+
     enum FlowError: LocalizedError {
         case invalidProfile
         case profileCaseConflict(existing: String)
@@ -149,6 +162,8 @@ final class OnboardingFlow {
     // Platform Gateway additional fields
     var gatewayURL = "https://us.api.jamfcloud.com"
     var platformScope: PlatformScope = .environment
+    /// True once the user picked a scope, so a probe that finishes later keeps their choice.
+    private(set) var platformScopeChosen = false
     var platformScopeID = ""
     var platformClientID = ""
     var platformClientSecret = ""
@@ -165,6 +180,8 @@ final class OnboardingFlow {
     var isConnectingProtect = false
     var protectConnected = false
     var protectConnectionError: String?
+    /// What recording the connection in config.yaml did not keep (a backup was made).
+    var protectConfigNote: String?
 
     // MARK: - Jamf School fields
 
@@ -177,11 +194,12 @@ final class OnboardingFlow {
     var isConnectingSchool = false
     var schoolConnected = false
     var schoolConnectionError: String?
+    /// What recording the connection in config.yaml did not keep (a backup was made).
+    var schoolConfigNote: String?
 
     // MARK: - State flags
 
-    var jamfCLIInstalled = false
-    var jamfCLIVersion: String?
+    private(set) var jamfCLIStatus: JamfCLIStatus = .checking
     var workspaceCreated = false
     var profileRegistered = false
     var connectionValidated = false
@@ -205,7 +223,8 @@ final class OnboardingFlow {
     var csvOutput: [CLIBridge.LogLine] = []
     var firstReportOutput: [CLIBridge.LogLine] = []
 
-    private var installer = JamfCLIInstaller()
+    private let installer = JamfCLIInstaller()
+    private let installationProbe: InstallationProbe
 
     // User data zones accepted by policy for the first CSV export.
     private var allowedCSVRoots: [URL] {
@@ -217,14 +236,30 @@ final class OnboardingFlow {
         ]
     }
 
-    init() {
+    /// Runs no subprocess: `@State` builds this during a view update, and a child-process wait
+    /// there spins the main run loop into a nested layout that aborts AttributeGraph. The
+    /// jamf-cli probe is `refreshJamfCLIStatus()`, which a view starts from `.task`.
+    init(
+        installationProbe: @escaping InstallationProbe = { JamfCLIInstaller.currentInstallation() }
+    ) {
+        self.installationProbe = installationProbe
         if let pending = Self.pendingProductPath {
             productPath = pending
             Self.pendingProductPath = nil
         }
-        refreshJamfCLIStatus()
-        platformScope = PlatformScope.defaultScope(forCLIVersion: jamfCLIVersion)
     }
+
+    var jamfCLIInstalled: Bool {
+        if case .installed = jamfCLIStatus { return true }
+        return false
+    }
+
+    var jamfCLIVersion: String? {
+        if case .installed(let version) = jamfCLIStatus { return version }
+        return nil
+    }
+
+    var isCheckingJamfCLI: Bool { jamfCLIStatus == .checking }
 
     /// The ordered steps for the active `productPath`.
     ///
@@ -335,10 +370,25 @@ final class OnboardingFlow {
         installer.brewInstallCommand()
     }
 
-    func refreshJamfCLIStatus() {
-        installer = JamfCLIInstaller()
-        jamfCLIInstalled = installer.isInstalled
-        jamfCLIVersion = installer.installedVersion
+    /// Looks for jamf-cli off the main actor, then publishes the answer and, unless the user
+    /// already picked one, the Platform API scope that version defaults to.
+    func refreshJamfCLIStatus() async {
+        jamfCLIStatus = .checking
+        let probe = installationProbe
+        let installation = await Task.detached(priority: .userInitiated) { probe() }.value
+        if let installation {
+            jamfCLIStatus = .installed(version: installation.version)
+        } else {
+            jamfCLIStatus = .missing
+        }
+        if !platformScopeChosen {
+            platformScope = PlatformScope.defaultScope(forCLIVersion: installation?.version)
+        }
+    }
+
+    func choosePlatformScope(_ scope: PlatformScope) {
+        platformScope = scope
+        platformScopeChosen = true
     }
 
     func nextStep() {
@@ -474,11 +524,11 @@ final class OnboardingFlow {
             clearClientSecret()
         }
 
+        let noVerify = await noVerifyFlag(binary: binary)
         let result = try await Self.runWithPTY(
             executable: binary,
             arguments: Self.proOAuth2Arguments(
-                profile: profileName.trimmed, url: url.absoluteString,
-                noVerify: noVerifyFlag(binary: binary)
+                profile: profileName.trimmed, url: url.absoluteString, noVerify: noVerify
             ),
             stdin: stdinData
         )
@@ -514,6 +564,7 @@ final class OnboardingFlow {
             clearPlatformSecrets()
         }
 
+        let noVerify = await noVerifyFlag(binary: binary)
         let result = try await Self.runWithPTY(
             executable: binary,
             arguments: Self.platformGatewayArguments(
@@ -521,7 +572,7 @@ final class OnboardingFlow {
                 gatewayURL: gatewayURL.trimmed,
                 scope: platformScope,
                 scopeID: platformScopeID.trimmed,
-                noVerify: noVerifyFlag(binary: binary)
+                noVerify: noVerify
             ),
             stdin: stdinData
         )
@@ -545,6 +596,7 @@ final class OnboardingFlow {
     func registerProtectProfile() async {
         protectConnected = false
         protectConnectionError = nil
+        protectConfigNote = nil
 
         let name = protectProfileName.trimmed
         guard ProfileService.isValid(name) else {
@@ -600,14 +652,18 @@ final class OnboardingFlow {
             return
         }
 
-        // Write protect.enabled + protect.profile into the workspace config.
         do {
-            try writeProtectConfig(profileSlug: profileName.trimmed, protectProfileName: name)
+            try recordProtectConnection(profileSlug: profileName.trimmed, protectProfileName: name)
         } catch {
             protectConnectionError = "Connected, but config update failed: \(error.localizedDescription)"
-            return
         }
+    }
 
+    /// Writes protect.enabled + protect.profile into the workspace config after setup
+    /// succeeded, and keeps what the write did not keep as `protectConfigNote`.
+    func recordProtectConnection(profileSlug: String, protectProfileName: String) throws {
+        protectConfigNote = try writeProtectConfig(
+            profileSlug: profileSlug, protectProfileName: protectProfileName).statusLine
         protectConnected = true
         protectEnabled = true
     }
@@ -615,6 +671,7 @@ final class OnboardingFlow {
     func registerSchoolProfile() async {
         schoolConnected = false
         schoolConnectionError = nil
+        schoolConfigNote = nil
 
         let name = schoolProfileName.trimmed
         guard ProfileService.isValid(name) else {
@@ -670,14 +727,18 @@ final class OnboardingFlow {
             return
         }
 
-        // Write school_cli.enabled + school_cli.profile into the workspace config.
         do {
-            try writeSchoolConfig(profileSlug: profileName.trimmed, schoolProfileName: name)
+            try recordSchoolConnection(profileSlug: profileName.trimmed, schoolProfileName: name)
         } catch {
             schoolConnectionError = "Connected, but config update failed: \(error.localizedDescription)"
-            return
         }
+    }
 
+    /// Writes school_cli.enabled + school_cli.profile into the workspace config after setup
+    /// succeeded, and keeps what the write did not keep as `schoolConfigNote`.
+    func recordSchoolConnection(profileSlug: String, schoolProfileName: String) throws {
+        schoolConfigNote = try writeSchoolConfig(
+            profileSlug: profileSlug, schoolProfileName: schoolProfileName).statusLine
         schoolConnected = true
         schoolEnabled = true
     }
@@ -700,10 +761,17 @@ final class OnboardingFlow {
     /// writing it. `--no-verify` keeps Save a local write on every version, so the
     /// Validate step stays the connection check and a placeholder pair still
     /// registers. The flag is unknown before 1.29 (exit 2), hence the gate.
-    private func noVerifyFlag(binary: URL) -> Bool {
-        JamfCLIInstaller.supportsSpecDerivedNames(
-            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
-        )
+    private func noVerifyFlag(binary: URL) async -> Bool {
+        JamfCLIInstaller.supportsSpecDerivedNames(await installedCLIVersion(binary: binary))
+    }
+
+    /// The probe's version when it has one. Otherwise a fresh read, off the main actor, because
+    /// a registration can start before the probe returns or after it found no version.
+    private func installedCLIVersion(binary: URL) async -> String? {
+        if let jamfCLIVersion { return jamfCLIVersion }
+        return await Task.detached(priority: .userInitiated) {
+            JamfCLIInstaller.installedVersion(at: binary)
+        }.value
     }
 
     // MARK: - Pure argument builders (testable without PTY)
@@ -812,31 +880,6 @@ final class OnboardingFlow {
         return data
     }
 
-    /// Sanitize a human-readable display name into a valid profile slug.
-    /// "Jamf Platform" → "jamf-platform", "My Tenant!" → "my-tenant"
-    static func slugify(_ name: String) -> String {
-        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789-")
-        let lowered = name.lowercased()
-        let result = lowered.unicodeScalars.map { scalar -> Character in
-            if allowed.contains(scalar) {
-                return Character(scalar)
-            } else if scalar == "_" || scalar.value == 0x20 {
-                return "-"
-            } else {
-                return "-"
-            }
-        }
-        // Collapse consecutive hyphens and strip leading/trailing hyphens.
-        var slug = String(result).components(separatedBy: "-")
-            .filter { !$0.isEmpty }
-            .joined(separator: "-")
-        // Ensure first char is lowercase letter or digit.
-        if let first = slug.first, !first.isLowercase && !first.isNumber {
-            slug = "profile-" + slug
-        }
-        return slug.isEmpty ? "profile" : slug
-    }
-
     func validateRegisteredProfile() async {
         validationOutput.removeAll()
         validationExitCode = nil
@@ -883,7 +926,7 @@ final class OnboardingFlow {
             return .undecided(exitCode: nil)
         }
         let specNames = JamfCLIInstaller.supportsSpecDerivedNames(
-            jamfCLIVersion ?? JamfCLIInstaller.installedVersion(at: binary)
+            await installedCLIVersion(binary: binary)
         )
         return await ConnectionCheck.run(profile: profile, specNames: specNames, runner: runner)
     }
@@ -925,6 +968,8 @@ final class OnboardingFlow {
             defer { isScaffoldingCSV = false }
 
             let outputConfig = workspace.appendingPathComponent("config.yaml")
+            // It may be a config.yaml typed by hand, so it is copied aside first.
+            try keepCopy(of: outputConfig)
             // Remove any prior attempt or skip-seeded config so the user can
             // re-enter the mapping step without leaving a half-written file.
             try? FileManager.default.removeItem(at: outputConfig)
@@ -986,6 +1031,7 @@ final class OnboardingFlow {
         let outputConfig = workspace.appendingPathComponent("config.yaml")
         csvOutput.append(.init(timestamp: Date(), level: .info, text: "[info] writing minimal config.yaml…"))
         do {
+            try keepCopy(of: outputConfig)
             try ScaffoldService.writeMinimalConfig(to: outputConfig, profile: profile)
             csvOutput.append(.init(
                 timestamp: Date(), level: .ok,
@@ -996,6 +1042,15 @@ final class OnboardingFlow {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    /// Copies an existing config.yaml aside before setup replaces it, and says where.
+    private func keepCopy(of config: URL) throws {
+        guard let backup = try ConfigService.backUp(config) else { return }
+        csvOutput.append(.init(
+            timestamp: Date(), level: .info,
+            text: "[info] kept a copy of the existing config.yaml as \(backup.lastPathComponent)"
+        ))
     }
 
     /// One first-report stage (collect or generate) for a profile, streaming log lines.
@@ -1021,7 +1076,9 @@ final class OnboardingFlow {
             )
         },
         generate: @escaping FirstReportStep = { profile, onLine in
-            try await CLIBridge().generate(profile: profile, csvPath: nil, onLine: onLine)
+            try await CLIBridge.holdingGenerate {
+                try await CLIBridge().generate(profile: profile, csvPath: nil, onLine: onLine)
+            }
         }
     ) async {
         firstReportOutput.removeAll()
@@ -1243,64 +1300,32 @@ final class OnboardingFlow {
 
     // MARK: - Config wiring helpers
 
-    internal func writeProtectConfig(profileSlug: String, protectProfileName: String) throws {
-        let url = try ConfigService.configURL(for: profileSlug)
-        let manager = FileManager.default
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: url.path) {
-            document = try YAMLCodec.decode(String(contentsOf: url, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
-
-        guard case .mapping(var root) = document.root else {
-            throw ConfigService.ConfigError.invalidTopLevel
-        }
-        var protect = root.value(for: "protect")?.mapping
-            ?? YAMLCodec.YAMLMapping(entries: [])
-        protect.set("enabled", value: .scalar(.bool(true)))
-        protect.set("profile", value: .scalar(.string(protectProfileName)))
-        root.set("protect", value: .mapping(protect))
-        document.root = .mapping(root)
-
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["protect"])
-        let dir = url.deletingLastPathComponent()
-        let tmp = dir.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tmp, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: url.path) {
-            manager.createFile(atPath: url.path, contents: Data())
-        }
-        _ = try manager.replaceItemAt(url, withItemAt: tmp)
+    /// `protect.enabled` and `protect.profile`, through the scoped writer: every other key in
+    /// the block stays, and a comment there is copied out first and named in the report.
+    @discardableResult
+    internal func writeProtectConfig(
+        profileSlug: String, protectProfileName: String
+    ) throws -> ConfigSaveReport {
+        try Self.writeProductBlock("protect", profile: protectProfileName, for: profileSlug)
     }
 
-    internal func writeSchoolConfig(profileSlug: String, schoolProfileName: String) throws {
-        let url = try ConfigService.configURL(for: profileSlug)
-        let manager = FileManager.default
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: url.path) {
-            document = try YAMLCodec.decode(String(contentsOf: url, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
+    /// `school_cli.enabled` and `school_cli.profile`, the same way as `writeProtectConfig`.
+    @discardableResult
+    internal func writeSchoolConfig(
+        profileSlug: String, schoolProfileName: String
+    ) throws -> ConfigSaveReport {
+        try Self.writeProductBlock("school_cli", profile: schoolProfileName, for: profileSlug)
+    }
 
-        guard case .mapping(var root) = document.root else {
-            throw ConfigService.ConfigError.invalidTopLevel
-        }
-        var schoolCli = root.value(for: "school_cli")?.mapping
-            ?? YAMLCodec.YAMLMapping(entries: [])
-        schoolCli.set("enabled", value: .scalar(.bool(true)))
-        schoolCli.set("profile", value: .scalar(.string(schoolProfileName)))
-        root.set("school_cli", value: .mapping(schoolCli))
-        document.root = .mapping(root)
-
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["school_cli"])
-        let dir = url.deletingLastPathComponent()
-        let tmp = dir.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tmp, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: url.path) {
-            manager.createFile(atPath: url.path, contents: Data())
-        }
-        _ = try manager.replaceItemAt(url, withItemAt: tmp)
+    private static func writeProductBlock(
+        _ key: String, profile name: String, for profileSlug: String
+    ) throws -> ConfigSaveReport {
+        try ConfigService.saveBlock(key: key, profile: profileSlug) { root in
+            var block = root.value(for: key)?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
+            block.set("enabled", value: .scalar(.bool(true)))
+            block.set("profile", value: .scalar(.string(name)))
+            root.set(key, value: .mapping(block))
+        }.report
     }
 
     // MARK: - Per-product redaction helpers

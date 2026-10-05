@@ -13,7 +13,8 @@ import Foundation
 /// `summaries/` are never touched unless `include_summaries` is true.
 ///
 /// Non-snapshot subdirectories (`state`, `sofa`) and the archive itself are never
-/// swept. The once-per-day marker lives at the workspace root, OUTSIDE the swept
+/// swept, and inside a swept folder only files named like our snapshots are touched.
+/// The once-per-day marker lives at the workspace root, OUTSIDE the swept
 /// `jamf-cli-data/` tree.
 enum SnapshotRetentionService {
 
@@ -96,7 +97,7 @@ enum SnapshotRetentionService {
             .trimmingCharacters(in: .whitespacesAndNewlines) == today { return 0 }
 
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return 0 }
-        let archiveRoot = resolvedArchiveRoot(config: config, workspace: workspace)
+        let archiveRoot = resolvedArchiveRoot(config: config, workspace: workspace, onLine: onLine)
         let summariesDir = pol.includeSummaries ? try? WorkspacePaths.summariesDir(for: profile) : nil
 
         let result = sweepWithResult(
@@ -125,34 +126,37 @@ enum SnapshotRetentionService {
         return result.acted
     }
 
-    /// Resolved raw-snapshot archive root: `retention.archive_dir` if set, else
+    /// Resolved raw-snapshot archive root: `retention.archive_dir` if set and allowed, else
     /// `<workspace>/_archive`. Distinct from the reports archive
     /// (`output.archive_dir`) so the two never collide.
-    ///
-    /// Absolute `archive_dir` values are confined to `ProfileService.workspacesRoot()`.
-    /// An out-of-bounds absolute path is rejected with a warning and falls back to the
-    /// default, matching the allow-list idiom used by `SystemActions`.
-    static func resolvedArchiveRoot(config: RetentionConfig?, workspace: URL) -> URL {
+    /// A refused folder says why in one `[warn]` line on `onLine`, as `output_dir` does.
+    static func resolvedArchiveRoot(
+        config: RetentionConfig?, workspace: URL,
+        onLine: @Sendable (CLIBridge.LogLine) -> Void = CLIBridge.noOpOnLine
+    ) -> URL {
         let defaultArchive = workspace.appendingPathComponent("_archive", isDirectory: true)
+        do {
+            return try typedArchiveRoot(config: config, workspace: workspace) ?? defaultArchive
+        } catch {
+            let typed = ConfigSchema.displayText(config?.resolvedArchiveDir ?? "")
+            let msg = "[warn] retention.archive_dir \"\(typed)\" is not used: "
+                + "\(WorkspacePaths.refusal(of: error)). Archiving to _archive in the workspace "
+                + "instead."
+            AppLogger.collect.warning("\(msg, privacy: .private)")
+            onLine(.init(timestamp: Date(), level: .warn, text: msg))
+            return defaultArchive
+        }
+    }
+
+    /// `retention.archive_dir` resolved the way `output.archive_dir` is (`WorkspacePaths`):
+    /// nil when unset; throws when it leaves the workspace without
+    /// `output.allow_absolute_paths`, or names a system folder.
+    static func typedArchiveRoot(config: RetentionConfig?, workspace: URL) throws -> URL? {
         let raw = config?.resolvedArchiveDir ?? ""
-        guard !raw.isEmpty else { return defaultArchive }
-        let expanded = (raw as NSString).expandingTildeInPath
-        guard expanded.hasPrefix("/") else {
-            // Relative path — join to workspace; always confined by construction.
-            return workspace.appendingPathComponent(expanded, isDirectory: true)
-        }
-        // Absolute path: confine to workspacesRoot using the SystemActions allow-list idiom.
-        let candidate = URL(fileURLWithPath: expanded, isDirectory: true)
-            .resolvingSymlinksInPath()
-        let allowedRoot = ProfileService.workspacesRoot()
-            .resolvingSymlinksInPath().path
-        if candidate.path == allowedRoot || candidate.path.hasPrefix(allowedRoot + "/") {
-            return URL(fileURLWithPath: expanded, isDirectory: true)
-        }
-        AppLogger.collect.warning(
-            "SnapshotRetentionService: archive_dir '\(expanded, privacy: .public)' is outside workspacesRoot — falling back to default _archive"
-        )
-        return defaultArchive
+        guard !raw.isEmpty else { return nil }
+        return try WorkspacePaths.resolve(
+            rawValue: raw, fallback: "_archive",
+            workspace: workspace.resolvingSymlinksInPath().standardizedFileURL)
     }
 
     private static func loadRetentionConfig(workspace: URL) -> RetentionConfig? {
@@ -212,7 +216,8 @@ enum SnapshotRetentionService {
             if nonSnapshotSubdirs.contains(name) || name.hasPrefix("_") { continue }
             let dirResult = sweepDirectory(
                 subdir, archiveSubpath: "jamf-cli-data/\(name)",
-                archiveRoot: archiveRoot, policy: policy, now: now, fm: fm, onLine: onLine
+                archiveRoot: archiveRoot, policy: policy, now: now, fm: fm,
+                isCandidate: isSnapshotFile, onLine: onLine
             )
             totalActed += dirResult.acted
             totalFailed += dirResult.failed
@@ -223,12 +228,23 @@ enum SnapshotRetentionService {
             // Both include_summaries and enabled must be explicitly opted into (both default false).
             let summaryResult = sweepDirectory(
                 summariesDir, archiveSubpath: "summaries",
-                archiveRoot: archiveRoot, policy: policy, now: now, fm: fm, onLine: onLine
+                archiveRoot: archiveRoot, policy: policy, now: now, fm: fm,
+                isCandidate: { CloudStorage.isCanonicalSummaryFilename($0.lastPathComponent) },
+                onLine: onLine
             )
             totalActed += summaryResult.acted
             totalFailed += summaryResult.failed
         }
         return SweepResult(acted: totalActed, failed: totalFailed)
+    }
+
+    /// A file our writers produced: `<kind>_<yyyyMMddTHHmmss>.json`, or `.html` for the
+    /// dashboard. `jamf_cli.data_dir` can be set to any folder with
+    /// `output.allow_absolute_paths`, so a name we did not write is never swept.
+    /// This also keeps `manifest.json` and a sync provider's conflict copies out.
+    static func isSnapshotFile(_ url: URL) -> Bool {
+        ["json", "html"].contains(url.pathExtension.lowercased())
+            && CloudStorage.snapshotTimestamp(of: url) != nil
     }
 
     private static func sweepDirectory(
@@ -238,6 +254,7 @@ enum SnapshotRetentionService {
         policy: Policy,
         now: Date,
         fm: FileManager,
+        isCandidate: (URL) -> Bool,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) -> SweepResult {
         let keys: [URLResourceKey] = [.contentModificationDateKey, .isRegularFileKey]
@@ -246,10 +263,10 @@ enum SnapshotRetentionService {
         ) else { return SweepResult(acted: 0, failed: 0) }
 
         let files: [(url: URL, modified: Date)] = entries.compactMap { url in
-            // manifest.json is metadata regenerated by the next collect — never a
-            // retention candidate. Being written last (hence always newest), it
-            // would otherwise occupy a keep_count slot and could itself be swept.
-            guard url.lastPathComponent.lowercased() != SnapshotManifest.fileName else { return nil }
+            // Anything else in the folder is not ours to count or remove. That includes
+            // manifest.json, written last and so always newest, which would otherwise
+            // take a keep_count slot.
+            guard isCandidate(url) else { return nil }
             let vals = try? url.resourceValues(forKeys: Set(keys))
             guard vals?.isRegularFile == true, let modified = vals?.contentModificationDate
             else { return nil }

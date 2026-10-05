@@ -151,7 +151,8 @@ struct PatchView: View {
             )
             StatTile(
                 label: "Fleet Compliance",
-                value: String(format: "%.1f%%", snapshot.fleetCompliancePct),
+                value: snapshot.fleetCompliancePct.map { String(format: "%.1f%%", $0) }
+                    ?? "\u{2014}",
                 sub: "Weighted across all devices"
             )
             StatTile(
@@ -280,7 +281,7 @@ struct PatchView: View {
                     }
                     .width(min: 80, ideal: 90)
                 }
-                .frame(minHeight: 200)
+                .pageTableHeight(rows: min(sortedTitles.count, Self.titlesDisplayCap))
                 if sortedTitles.count > Self.titlesDisplayCap {
                     Text("Generated reports include every patch title.")
                         .font(.caption)

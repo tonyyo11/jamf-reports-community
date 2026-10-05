@@ -28,6 +28,14 @@ Raw snapshots, run logs, backups, and `config.yaml` stay local, where their
 permissions and single-writer assumptions still hold. Run Check confirms this
 with a green **"Reports publish to …"** row.
 
+`~` is expanded; a folder the app will not use is named in the run log and
+reports go to `Generated Reports` in the workspace.
+
+The Reports screen lists the folder the reports go to, and Reveal in Finder, Open and
+Quick Look work there for that profile. Nothing else outside the workspace is opened, and a
+system or credentials folder typed as `output_dir` is never used, so it is never opened
+either.
+
 `~/Library` is otherwise off-limits to output paths, but `~/Library/CloudStorage`
 is deliberately carved out — that is where macOS mounts every modern sync
 provider, and it holds user data rather than application state.
@@ -80,6 +88,48 @@ runs only after a Jamf Pro collect that actually collected: when the Pro collect
 stands down for another Mac, or skips because today's collect already ran,
 Protect is skipped with it and the run log says so.
 
+**Every Mac must reach Jamf the same way under the same profile name.** The
+workspace's `config.yaml` names the jamf-cli profile collects use
+(`jamf_cli.profile`), but each Mac looks that name up in its own jamf-cli
+configuration and keychain, which never sync. Give every Mac a jamf-cli
+profile of that name that reaches the same Jamf Pro instance the same way:
+all direct, or all through the Jamf Platform API with the same environment
+ID. If one Mac's profile points elsewhere, its collects either write another
+instance's data into the shared history or fail where the others succeed, and
+each screen shows whichever Mac collected last. Compare `jamf-cli config list`
+on each Mac when you add it.
+
+### Adding another Mac
+
+Once one Mac has its workspace in the shared folder, do this on each Mac that joins it:
+
+1. Install the same app version the other Macs run.
+2. Install `jamf-cli` and create the profile `config.yaml` names in `jamf_cli.profile`,
+   reaching the same instance the same way (above), with this Mac's own credential (see
+   [Multi-Tenant and Team Access](#multi-tenant-and-team-access)). Give its API client the
+   same privileges as the others. Failure counts live in the workspace, so a privilege one
+   Mac lacks shows up as a failing source on every Mac.
+3. Sync the team folder and keep it downloaded (OneDrive's **Always Keep on This Device**,
+   or your provider's equivalent). A file that exists only in the cloud is fetched the first
+   time the app reads it, which slows Trends and report generation and fails offline.
+4. Make sure `config.yaml` holds no absolute path that only exists on the first Mac, such as
+   `/Users/alice/…` in `data_dir`, `output_dir` or an archive folder. Use a path relative to
+   the workspace, or start it with `~/`.
+5. Launch the app. When jamf-cli already has a profile, first launch opens **jamf-cli is
+   already set up**. Under **Already have a workspace folder?**, click **Choose workspace
+   folder…** and pick the folder that contains the profile folders, not a profile folder
+   itself, then confirm the shared-folder notice. Skip **Initialize & run first
+   collection**: the workspace already exists. On a Mac that already uses the app,
+   **Settings → Workspace location** does the same.
+6. Leave automation off. One Mac should run the schedules; see
+   [Several Macs, one workspace](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation#several-macs-one-workspace).
+7. Run **Config → Run check**. It should list the other Macs and raise no version or clock
+   warning.
+
+If first launch shows the Welcome chooser (**Connect Jamf Pro**, **Try the demo first**)
+instead, the app found no jamf-cli profile. Fix jamf-cli rather than running onboarding,
+which creates a separate, empty workspace under `~/Jamf-Reports`.
+
 ### What a shared workspace still costs you
 
 **Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
@@ -106,6 +156,12 @@ made it, and each machine prunes only its own — an unscoped prune would spend
 one machine's retention budget on everyone's backups. Backups made before this
 version carry no ownership record and are never auto-removed, so clear those out
 once by hand.
+
+**Config copies.** Before a save or a scaffold drops text from config.yaml,
+the app copies it to `config.yaml.bak-<date-time>` beside it (the newest five
+are kept). The copy holds whatever the file holds, including a webhook URL,
+and sits in the same folder, so on a synced workspace it syncs like
+config.yaml itself.
 
 **Keep every Mac on the same app version.** Versions before 2.7.0 order
 snapshots by modification date and prune backups without checking whose they
@@ -182,6 +238,12 @@ rather than silently generating a report from tampered data. It does not trigger
 `absent` or `omitted` results, since legacy snapshots and partial collects cannot be
 retroactively verified. Off by default.
 
+**jamf-cli's signature is checked before use.** The app runs jamf-cli, and passes it a
+client secret during setup, only when the binary carries Jamf's Developer ID signature
+(team `483DWKW443`). From 2.9.0 the check asks for a certificate Apple issued to Jamf, so a
+binary that merely names Jamf's team in a self-made signature is refused. If Setup says
+jamf-cli failed its signature check, reinstall it from Jamf's release package or Homebrew.
+
 **Recommendation:** store `config.yaml` in version control (local git, internal GitHub, etc.)
 if your operational security practices require configuration audit trails. Generated reports
 themselves do not need version control — only the input config.
@@ -204,21 +266,28 @@ credential/secret material (always redacted).
 
 ## Diagnostic Bundle Redaction Scope
 
-**`diagnostic-bundle` redacts credentials and most PII, but not bare IP addresses.**
+**`diagnostic-bundle` and run history log export redact credentials and most PII, but not bare IP addresses.**
 
 The diagnostic bundle includes:
 
-- Redacted `config.yaml` (secrets always removed)
-- Recent logs (secrets redacted)
+- Redacted `config.yaml` (secrets and webhook URLs removed; exception approvers and
+  descriptions replaced with placeholders)
+- Recent logs (secrets, webhook URLs, the Jamf server address and the profile's tenant and
+  environment IDs removed)
 - Snapshots (PII redacted with stable hash placeholders: `device-<8hex>`, `serial-<8hex>`)
 - Workspace tree listing (paths visible, but no data)
 
-**Exception:** if your Jamf Pro instance is addressed by IP (e.g., `https://192.168.1.10/`) 
-instead of a hostname, those IPs remain in the bundle. Server URLs are NOT redacted by the
-IP-redaction heuristic (which matches only hostnames with alphabetic TLDs).
+Run History's **Copy log** and **Export log…**, and the export in Settings › Logging, apply
+the same redaction before the text reaches the clipboard or a file: secrets, webhook URLs
+(Slack, Teams, Teams Workflows, Power Automate), the Jamf server address and the profile's
+tenant and environment IDs are removed. The log on screen is not changed.
 
-**Before sharing a bundle**, review it and redact IP addresses or other infrastructure
-details if your security policy requires it:
+**Exception:** if your Jamf Pro instance is addressed by IP (e.g., `https://192.168.1.10/`) 
+instead of a hostname, those IPs remain in the bundle and exports. Server URLs are NOT redacted
+by the IP-redaction heuristic (which matches only hostnames with alphabetic TLDs).
+
+**Before sharing a bundle or log export**, review it and redact IP addresses or other
+infrastructure details if your security policy requires it:
 
 ```bash
 # Inspect the bundle contents
@@ -241,24 +310,58 @@ file, not access-controlled.
   (owner read/write only, no group or world visibility).
 - Use `output.archive_enabled: true` to move older reports into an archive for retention
   governance (they are moved, not deleted, so you can audit/recover them).
+- **The HTML report keeps device lists short because it is forwarded:** it lists at most
+  100 stale Macs, 25 recent failures and 10 least-compliant Macs, and says how many more
+  the workbook has. The workbook's sheets are not capped.
 
 ## Multi-Tenant and Team Access
 
-**Each profile is an isolated workspace; one person can manage multiple profiles.**
+**Credentials belong to one person or one Mac; data can be pooled.** Keep the
+two apart.
 
-For team access to the same Jamf Pro instance without sharing credentials:
+- **Never share a credential.** Give each administrator, or each reporting
+  Mac, its own Jamf Pro API client or Jamf Account integration, with read
+  access only (see
+  [Permissions & Access](https://github.com/tonyyo11/jamf-reports-community/wiki/13-Permissions-and-Access)).
+  Separate credentials keep Jamf's own audit trail attributable and let you
+  revoke one without breaking the rest. The jamf-cli configuration
+  (`~/.config/jamf-cli/`) and its keychain items stay on each Mac; never
+  sync or copy them.
+- **Share data deliberately.** Keep one workspace per person or role (for
+  example `prod-ops` and `prod-audit`), or pool several Macs into one
+  history with a
+  [shared workspace](#shared-workspace-several-macs-one-history). Never copy
+  a workspace folder between machines. A shared workspace also needs every
+  Mac to use the same profile name and connection, described in that
+  section.
+- **Schedules are per Mac.** Recreate them on each Mac with
+  `jamf-reports schedules add` or the Automation screen rather than sharing
+  `schedules.json`; it is per-machine state, not something to check into
+  version control.
 
-1. Create one `config.yaml` and workspace per person or role (e.g., `prod-ops`, `prod-audit`,
-   `prod-dev`).
-2. Authenticate each profile independently via the app's Onboarding flow — each gets its own
-   `jamf-cli` credential.
-3. Recreate the same schedules on each Mac — with `jamf-reports schedules add` or the
-   Automation screen — rather than sharing `schedules.json` itself; it is per-machine
-   state, not something to check into version control.
+**Scope Platform API integrations narrowly.** One Jamf Account can list
+several environments and tenants — test, production, beta, and instances
+hosted in different places — and Jamf Account lets one integration apply to
+more than one of them. Create each JamfReports integration for the single
+environment its profile reports on, with read permissions only. An
+integration spanning every environment, or carrying write permissions, turns
+a secret leaked from one Mac into access to all of them.
 
-Do not share the workspace directory (`~/Jamf-Reports/<profile>/`) or the `jamf-cli` keychain
-credential across team members — use separate profiles and credentials for audit trail
-isolation.
+## External Network Calls
+
+**SOFA feed is the only non-Jamf host the app reaches.** When collecting, the app
+fetches macOS and XProtect release dates from `sofafeed.macadmins.io` to score
+currency in your security posture metrics. If your network must not reach third-party
+hosts, disable this fetch by adding it to `jamf_cli.collect_skip` in `config.yaml`:
+
+```yaml
+jamf_cli:
+  collect_skip: [sofa]   # or: ["sofa", "other", "kinds"]
+```
+
+The last feed fetched stays in use. With none, the macOS-current and XProtect-current
+factors have no data and are left out of the Security Score (never scored as 0). Jamf Pro and Platform API calls are always to your configured
+Jamf Pro server, not a third-party host.
 
 ## Webhook Egress
 
@@ -315,6 +418,13 @@ derived on any host running the app, so there is nothing else to migrate.
 The same Automation screen that hosts this policy also drives the opt-in Notifications
 webhook and shows Automation Health (the dead-man switch for overdue or failing
 schedules) — see [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+
+**Collecting and writing reports never overlap on one Mac.** The app, the background item
+and the command line share one lock. Generate, Export PDF, Export Inventory CSV and Trends'
+archive are refused while a collect runs ("A refresh is already running"), and a Refresh, an
+automatic collect or a scheduled run asked for while a report is being written waits ("A
+report is being generated — try again when it finishes"). The lock is per Mac: Macs sharing
+a workspace coordinate through the shared-workspace claim described above.
 
 ## Known Issues
 

@@ -14,7 +14,7 @@ final class CLIScaffoldTests: XCTestCase {
     /// (correctly) refuses — scaffold writes must target an ordinary user path.
     private func tempDir() throws -> URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-scaffold-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-scaffold-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -36,6 +36,31 @@ final class CLIScaffoldTests: XCTestCase {
         let written = try String(contentsOf: outURL, encoding: .utf8)
         XCTAssertTrue(written.contains("minimal workspace config"))
         XCTAssertNoThrow(try ConfigLoader.load(from: outURL))
+    }
+
+    /// Scaffold still replaces `--out`, but an existing file is copied aside first.
+    func testScaffoldOverAnExistingFileKeepsACopyOfIt() async throws {
+        let dir = try tempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let outURL = dir.appendingPathComponent("config.yaml")
+        func backups() throws -> [String] {
+            try FileManager.default.contentsOfDirectory(atPath: dir.path)
+                .filter { $0.hasPrefix("config.yaml.bak-") }
+        }
+
+        try await Scaffold.parse(["--out", outURL.path]).run()
+        XCTAssertEqual(try backups(), [], "nothing to copy when --out did not exist")
+
+        let typed = "columns:\n  computer_name: Typed by hand\n"
+        try typed.write(to: outURL, atomically: true, encoding: .utf8)
+        try await Scaffold.parse(["--out", outURL.path]).run()
+
+        let names = try backups()
+        XCTAssertEqual(names.count, 1)
+        let copy = dir.appendingPathComponent(try XCTUnwrap(names.first))
+        XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), typed)
+        XCTAssertTrue(try String(contentsOf: outURL, encoding: .utf8)
+            .contains("minimal workspace config"))
     }
 
     // MARK: - Providing --csv is unchanged (regression)

@@ -446,6 +446,14 @@ enum BackupDiffModel {
         .joined(separator: "\n\n")
     }
 
+    /// The field name to print before a variant's before → after pair. A card whose members
+    /// touched one field already names it in its subheading, so the pair stands alone; with
+    /// several fields each pair needs its own, or "333; 667" cannot be told apart.
+    static func fieldLabel(for change: Change, among fields: [String]) -> String? {
+        guard fields.count > 1 else { return nil }
+        return change.path.isEmpty ? "(value)" : change.path
+    }
+
     private static func describe(_ change: Change) -> String {
         let path = change.path.isEmpty ? "(value)" : change.path
         return "\(path): \(change.old ?? "—") → \(change.new ?? "—")"

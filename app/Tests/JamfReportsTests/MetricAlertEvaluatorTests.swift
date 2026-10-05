@@ -20,7 +20,8 @@ final class MetricAlertEvaluatorTests: XCTestCase {
         patchPct: Double? = nil,
         securityScore: Double? = nil,
         actionItemsP0: Int? = nil,
-        complianceIsProxy: Bool? = nil
+        complianceIsProxy: Bool? = nil,
+        patchPctBasis: String? = nil
     ) -> DailySummary {
         DailySummary(
             date: date,
@@ -34,7 +35,8 @@ final class MetricAlertEvaluatorTests: XCTestCase {
             source: "test",
             securityScore: securityScore,
             actionItemsP0: actionItemsP0,
-            complianceIsProxy: complianceIsProxy
+            complianceIsProxy: complianceIsProxy,
+            patchPctBasis: patchPctBasis
         )
     }
 
@@ -175,6 +177,55 @@ final class MetricAlertEvaluatorTests: XCTestCase {
             current: current, prior: prior
         )
         XCTAssertEqual(hits.count, 1, "absent basis on both sides is unchanged — still fires")
+    }
+
+    // MARK: - patch_pct definition guard (epic #207 C1)
+
+    func testPatchPctDropDoesNotFireAcrossADefinitionChange() {
+        // The per-title mean read 80; the device-weighted figure for the same fleet reads
+        // 60. A 20pp "drop" from the first Mac to be collected after the upgrade is the
+        // new definition, not a regression.
+        let current = summary(date: "2026-07-06", patchPct: 60, patchPctBasis: "device")
+        let prior = summary(date: "2026-06-29", patchPct: 80)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "drops_more_than", 5, lookback: 7)],
+            current: current, prior: prior
+        )
+        XCTAssertTrue(hits.isEmpty, "per-title → device-weighted is not a comparable drop")
+    }
+
+    func testPatchPctDropFiresWhenBothAreDeviceWeighted() {
+        let current = summary(date: "2026-07-06", patchPct: 60, patchPctBasis: "device")
+        let prior = summary(date: "2026-06-29", patchPct: 80, patchPctBasis: "device")
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.count, 1, "a real drop on one definition still fires")
+    }
+
+    func testPatchPctDropFiresWhenNeitherRecordsABasis() {
+        let current = summary(date: "2026-07-06", patchPct: 60)
+        let prior = summary(date: "2026-06-29", patchPct: 80)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.count, 1, "absent basis on both sides is unchanged — still fires")
+    }
+
+    /// A threshold rule reads one summary, so a definition change cannot mislead it, and
+    /// another metric's drop is not held back by the patch definition.
+    func testDefinitionChangeOnlyHoldsBackThePatchDropRule() {
+        let current = summary(
+            date: "2026-07-06", fileVaultPct: 70, patchPct: 60, patchPctBasis: "device")
+        let prior = summary(date: "2026-06-29", fileVaultPct: 90, patchPct: 80)
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("patch_pct", "below", 70),
+                    rule("filevault_pct", "drops_more_than", 5)],
+            current: current, prior: prior
+        )
+        XCTAssertEqual(hits.map(\.metricLabel), ["Patch", "FileVault"])
     }
 
     // MARK: - dedup key stability
@@ -410,6 +461,66 @@ final class MetricAlertEvaluatorTests: XCTestCase {
         XCTAssertEqual(resolved.count, 1)
         XCTAssertEqual(resolved.first?.threshold, 90.5)
         XCTAssertEqual(resolved.first?.resolvedComparison, .below)
+    }
+
+    // MARK: - Oversized thresholds and values
+
+    /// `Int(1e19)` traps, so a whole-number Double outside Int's range must format as text.
+    func testTrimDoesNotTrapOutsideIntRange() {
+        XCTAssertEqual(MetricAlertEvaluator.trim(90), "90")
+        XCTAssertEqual(MetricAlertEvaluator.trim(90.25), "90.2")
+        XCTAssertEqual(MetricAlertEvaluator.trim(1e19), "10000000000000000000.0")
+        XCTAssertEqual(MetricAlertEvaluator.trim(-1e30), "-1000000000000000019884624838656.0")
+        XCTAssertEqual(MetricAlertEvaluator.trim(.infinity), "inf")
+        XCTAssertEqual(MetricAlertEvaluator.trim(.nan), "nan")
+    }
+
+    func testHugeSummaryValueFormatsInsteadOfTrapping() {
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("filevault_pct", "above", 90)],
+            current: summary(fileVaultPct: 1e30), prior: nil
+        )
+        XCTAssertEqual(hits.count, 1)
+        XCTAssertTrue(hits.first?.message.contains("above threshold 90") ?? false)
+    }
+
+    func testHugeDropFormatsInsteadOfTrapping() {
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("filevault_pct", "drops_more_than", 5)],
+            current: summary(fileVaultPct: 80), prior: summary(fileVaultPct: 1e30)
+        )
+        XCTAssertEqual(hits.count, 1)
+    }
+
+    func testThresholdAboveTheBoundIsDroppedByResolvedRules() {
+        let bound = AlertRule.maxThreshold
+        let config = AlertsConfig(enabled: true, rules: [
+            AlertRule(metric: "filevault_pct", when: "below", threshold: 1e19),
+            AlertRule(metric: "stale_count", when: "above", threshold: bound + 1),
+            AlertRule(metric: "stale_count", when: "above", threshold: bound),
+        ])
+        XCTAssertEqual(config.resolvedRules.map(\.threshold), [bound])
+    }
+
+    func testHugeThresholdInYAMLIsDroppedAndDoctorNamesIt() throws {
+        let yaml = """
+        alerts:
+          enabled: true
+          rules:
+            - metric: filevault_pct
+              when: below
+              threshold: 1e19
+        """
+        let alerts = try XCTUnwrap(ConfigLoader.loadFromString(yaml).alerts)
+        XCTAssertEqual(alerts.rules?.first?.threshold, 1e19)
+        XCTAssertTrue(alerts.resolvedRules.isEmpty)
+        let rows = ConfigDoctorService.evaluate(
+            config: try ConfigLoader.loadFromString(yaml), parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        let row = try XCTUnwrap(rows.first { $0.id == "alerts.rule.0" })
+        XCTAssertEqual(row.severity, .fail)
+        XCTAssertTrue(row.detail.contains("above 1000000000"), row.detail)
     }
 
     // MARK: - C3 skip logging (never fires, stays deterministic)

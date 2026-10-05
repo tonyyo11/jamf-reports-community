@@ -1,0 +1,508 @@
+import Foundation
+import XCTest
+@testable import JamfReports
+
+final class ConfigSchemaTests: XCTestCase {
+
+    private func unknownKeys(_ yaml: String) throws -> [UnknownKey] {
+        ConfigSchema.unknownKeys(in: try ConfigLoader.rawMapping(fromYAML: yaml))
+    }
+
+    // MARK: - The walk
+
+    func testMisspelledKeysAreReportedWithTheirPathAndNearestKey() throws {
+        let keys = try unknownKeys("""
+        thresholdz:
+          stale_device_days: 30
+          not_a_setting: 1
+        output:
+          output_dir: "Reports"
+          keep_lastest_runs: 5
+        custom_eas:
+          - name: "Disk Use"
+            column: "Boot Drive Percentage Full"
+            type: percentage
+            warning_threshold: 80
+          - name: "Battery Cycles"
+            column: "Battery Cycle Count"
+            type: percentage
+            warning_treshold: 80
+        """)
+        XCTAssertEqual(keys, [
+            UnknownKey(keyPath: "custom_eas[1].warning_treshold", suggestion: "warning_threshold"),
+            UnknownKey(keyPath: "output.keep_lastest_runs", suggestion: "keep_latest_runs"),
+            UnknownKey(keyPath: "thresholdz", suggestion: "thresholds"),
+        ], "an unknown top-level key is reported once, not once per key under it")
+    }
+
+    func testWithWorkbookIsKnownAndAMisspellingNamesIt() throws {
+        XCTAssertEqual(
+            try unknownKeys("html:\n  with_workbook: true\n  track_history: false\n"), [])
+        XCTAssertEqual(try unknownKeys("html:\n  with_workbok: true\n"), [
+            UnknownKey(keyPath: "html.with_workbok", suggestion: "with_workbook"),
+        ])
+    }
+
+    func testACorrectFileHasNoUnknownKeys() throws {
+        let keys = try unknownKeys("""
+        columns:
+          computer_name: "Computer Name"
+          purchase_date: "Purchase Date"
+        output:
+          output_dir: "Reports"
+          allow_absolute_paths: false
+        html:
+          track_history: true
+          history_file: "history.json"
+          section_limits:
+            protect_alerts: 25
+        security_policy:
+          controls:
+            filevault: warning
+          filevault_off_hardware_encrypted: ignore
+          score_factors:
+            - factor: filevault
+              weight: 15
+            - factor: os_current
+              weight: 15
+              grace_days: 30
+            - factor: agent
+              agent: "CrowdStrike Falcon"
+              weight: 5
+            - factor: mscp
+              baseline: "STIG"
+              weight: 10
+        """)
+        XCTAssertEqual(keys, [])
+    }
+
+    func testEveryListOfMappingsIsWalked() throws {
+        let keys = try unknownKeys("""
+        security_agents:
+          - name: "Agent"
+            column: "Agent Status"
+            conected_value: "Running"
+        alerts:
+          rules:
+            - metric: "filevault_pct"
+              when: "below"
+              treshold: 90
+        exceptions:
+          - id: "EX-1"
+            description: "Lab Macs"
+            signed_off_by: "Example Approver"
+            signed_off_date: "2026-01-01"
+            expires: "2027-01-01"
+        compliance:
+          baselines:
+            - name: "Example Baseline"
+              failures_count_column: "Example Failures"
+              rule_cuont: 120
+        charts:
+          compliance_trend:
+            bands:
+              - {label: "Pass", min_failures: 0, max_failures: 0, colour: "#4472C4"}
+        """)
+        XCTAssertEqual(keys, [
+            UnknownKey(keyPath: "alerts.rules[0].treshold", suggestion: "threshold"),
+            UnknownKey(keyPath: "charts.compliance_trend.bands[0].colour", suggestion: "color"),
+            UnknownKey(keyPath: "compliance.baselines[0].rule_cuont", suggestion: "rule_count"),
+            UnknownKey(keyPath: "exceptions[0].expires", suggestion: nil),
+            UnknownKey(keyPath: "security_agents[0].conected_value",
+                       suggestion: "connected_value"),
+        ])
+    }
+
+    func testUnknownKeysInsideSecurityPolicyAreReported() throws {
+        let keys = try unknownKeys("""
+        security_policy:
+          controls:
+            sip: fail
+            antivirus: warning
+          mode: strict
+          score_factors:
+            - factor: sip
+              weight: 5
+              wieght: 10
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), [
+            "security_policy.controls.antivirus",
+            "security_policy.mode",
+            "security_policy.score_factors[0].wieght",
+        ])
+        XCTAssertEqual(keys.last?.suggestion, "weight")
+    }
+
+    /// `score_weights` was replaced by `score_factors` before any release read it: it is
+    /// reported as retired since 2.9 and has no suggestion, not as a typo of another key.
+    func testScoreWeightsIsReportedAsRetired() throws {
+        let keys = try unknownKeys("""
+        security_policy:
+          score_weights:
+            filevault: 15
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), ["security_policy.score_weights"])
+        XCTAssertEqual(keys.first?.retiredSince, "2.9")
+        XCTAssertNil(keys.first?.suggestion)
+    }
+
+    func testTheVocabularyBlocksAreKnownAndTheirUnknownKeysAreReported() throws {
+        let keys = try unknownKeys("""
+        security_policy:
+          on_values:
+            firewall: [Pass]
+            sip: Protected
+            antivirus: [Clean]
+          off_values:
+            filevault: Bare
+            firewal: [Fail]
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), [
+            "security_policy.off_values.firewal",
+            "security_policy.on_values.antivirus",
+        ])
+        XCTAssertEqual(keys.first?.suggestion, "firewall")
+        let policyKeys = ConfigSchema.knownKeys(at: ["security_policy"]) ?? []
+        XCTAssertTrue(policyKeys.isSuperset(of: ["on_values", "off_values"]))
+        for block in ["on_values", "off_values"] {
+            XCTAssertEqual(ConfigSchema.knownKeys(at: ["security_policy", block]),
+                           ["filevault", "sip", "firewall", "gatekeeper"], block)
+        }
+    }
+
+    func testABlockOfTheWrongShapeIsLeftToTheDecoderError() throws {
+        let keys = try unknownKeys("""
+        custom_eas:
+          name: "Disk Use"
+        charts:
+          - enabled: true
+        """)
+        XCTAssertEqual(keys, [], "the decoder already rejects these and names the key path")
+    }
+
+    // MARK: - Suggestions
+
+    func testASuggestionIsTheOnlyKnownKeyWithinTwoEdits() throws {
+        let keys = try unknownKeys("""
+        jamf-cli:
+          profile: "example"
+        Columns:
+          email: "Email"
+        columns:
+          fierwall: "Firewall"
+          asset_number: "Asset"
+        """)
+        XCTAssertEqual(keys, [
+            UnknownKey(keyPath: "Columns", suggestion: "columns"),
+            UnknownKey(keyPath: "columns.asset_number", suggestion: nil),
+            UnknownKey(keyPath: "columns.fierwall", suggestion: "firewall"),
+            UnknownKey(keyPath: "jamf-cli", suggestion: "jamf_cli"),
+        ], "keys are compared as written; a dash for an underscore is one edit")
+    }
+
+    func testTwoEquallyNearKnownKeysGiveNoSuggestion() throws {
+        // `skly` is two edits from both `skip` and `only`.
+        let keys = try unknownKeys("""
+        sheets:
+          skly: []
+          ordr: []
+        """)
+        XCTAssertEqual(keys, [
+            UnknownKey(keyPath: "sheets.ordr", suggestion: "order"),
+            UnknownKey(keyPath: "sheets.skly", suggestion: nil),
+        ])
+    }
+
+    // MARK: - Retired keys
+
+    /// A retired key is one the schema does not read; a key that is read again must leave the list.
+    func testNoRetiredKeyIsOneTheSchemaReads() {
+        XCTAssertFalse(ConfigSchema.retiredKeys.isEmpty)
+        for path in ConfigSchema.retiredKeys.keys {
+            let parts = path.components(separatedBy: ".")
+            let parent = ConfigSchema.knownKeys(at: Array(parts.dropLast()))
+            XCTAssertNotNil(parent, "\(path): the block that held it is still read")
+            XCTAssertFalse(parent?.contains(parts.last ?? "") ?? true, path)
+        }
+    }
+
+    func testARetiredKeyIsMarkedWithItsReleaseAndAnyOtherUnknownKeyIsNot() throws {
+        let keys = try unknownKeys("""
+        branding:
+          accent_dark: "#445566"
+        charts:
+          os_adoption:
+            enabled: false
+        thresholds:
+          profile_error_critical: 80
+          stale_device_dayz: 45
+        """)
+        XCTAssertEqual(keys, [
+            UnknownKey(keyPath: "branding.accent_dark", suggestion: nil, retiredSince: "2.9"),
+            UnknownKey(keyPath: "charts.os_adoption.enabled", suggestion: nil, retiredSince: "2.9"),
+            UnknownKey(keyPath: "thresholds.profile_error_critical", suggestion: nil,
+                       retiredSince: "2.9"),
+            UnknownKey(keyPath: "thresholds.stale_device_dayz", suggestion: "stale_device_days"),
+        ])
+        XCTAssertEqual(keys.map(\.note), [
+            "No longer read since 2.9.", "No longer read since 2.9.",
+            "No longer read since 2.9.", "Did you mean \"stale_device_days\"?",
+        ])
+        XCTAssertNil(UnknownKey(keyPath: "x", suggestion: nil).note)
+    }
+
+    /// Settings earlier builds read or wrote (CHANGELOG 2.3.0 to 2.9) are retired, not misspelled.
+    func testKeysEarlierBuildsReadAreMarkedRetiredWithTheirRelease() throws {
+        let keys = try unknownKeys("""
+        ai:
+          enabled: true
+          lock_on_device: true
+          external:
+            provider: example
+        collect_cadence:
+          preset: cloud
+        columns:
+          warranty_expires: "Warranty"
+        output:
+          export_pptx: true
+        protect:
+          data_dir: jamf-cli-data/protect
+        school_columns:
+          device_name: "Name"
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), [
+            "ai.external", "ai.lock_on_device", "collect_cadence", "columns.warranty_expires",
+            "output.export_pptx", "protect.data_dir", "school_columns",
+        ])
+        XCTAssertEqual(keys.map(\.retiredSince), [
+            "2.9", "2.7.0", "2.3.0", "2.6.1", "2.4.0", "2.8.1", "2.8.1",
+        ])
+        XCTAssertEqual(Set(keys.map(\.suggestion)), [nil], "a retired key has no spelling hint")
+    }
+
+    /// Config Doctor words each as a suggestion with its release, never as "check its spelling".
+    func testDoctorWordsAnOldKeyAsRetiredNotMisspelled() throws {
+        let rows = ConfigDoctorService.unknownKeyRows(
+            try unknownKeys("ai:\n  lock_on_device: true\n"))
+        XCTAssertEqual(rows.map(\.title), ["ai.lock_on_device"])
+        XCTAssertEqual(rows.map(\.severity), [.suggest])
+        XCTAssertEqual(rows.map(\.detail), ["No longer read since 2.7.0."])
+        XCTAssertFalse(rows.map { $0.hint ?? "" }.joined().contains("spelling"))
+    }
+
+    /// The same name under a block where it is not retired is still just unknown.
+    func testARetiredNameElsewhereIsOnlyUnknown() throws {
+        let keys = try unknownKeys("output:\n  enabled: true\nhtml:\n  accent_dark: x\n")
+        XCTAssertEqual(keys.map(\.keyPath), ["html.accent_dark", "output.enabled"])
+        XCTAssertEqual(keys.map(\.retiredSince), [nil, nil])
+    }
+
+    // MARK: - Known misnames
+
+    /// The wrong names CLAUDE.md's "Actual key names" table lists, each with its right key.
+    func testEachKnownMisnameSuggestsTheKeyItMeans() throws {
+        let keys = try unknownKeys("""
+        columns:
+          os_version: "OS"
+          last_contact: "Last Contact"
+          assigned_user_email: "Email"
+        jamf_cli:
+          jamf_profile: "example"
+        security_agents:
+          - name: "Agent"
+            column: "Agent Status"
+            installed_value: "Installed"
+        compliance:
+          failed_count_column: "Failures"
+          failed_list_column: "Failure List"
+        custom_eas:
+          - name: "Disk Use"
+            column: "Boot Drive Percentage Full"
+            type: percentage
+          - name: "Status"
+            column: "Agent Status"
+            type: text
+          - name: "Mixed"
+            column: "Mixed Column"
+            type: boolean
+            compliant_value: "Yes"
+            high_threshold: 90
+            min_version: "15.0"
+            warn_within_days: 30
+        thresholds:
+          inactive_device_days: 60
+        output:
+          directory: "Reports"
+          max_runs: 5
+        charts:
+          snapshot_dir: "snapshots"
+          auto_archive: true
+        """)
+        let suggested = Dictionary(uniqueKeysWithValues: keys.map { ($0.keyPath, $0.suggestion) })
+        XCTAssertEqual(keys.count, 16)
+        XCTAssertEqual(suggested["columns.os_version"], "operating_system")
+        XCTAssertEqual(suggested["columns.last_contact"], "last_checkin")
+        XCTAssertEqual(suggested["columns.assigned_user_email"], "email")
+        XCTAssertEqual(suggested["jamf_cli.jamf_profile"], "profile")
+        XCTAssertEqual(suggested["security_agents[0].installed_value"], "connected_value")
+        XCTAssertEqual(suggested["compliance.failed_count_column"], "failures_count_column")
+        XCTAssertEqual(suggested["compliance.failed_list_column"], "failures_list_column")
+        XCTAssertEqual(suggested["custom_eas[2].compliant_value"], "true_value")
+        XCTAssertEqual(suggested["custom_eas[2].high_threshold"], "critical_threshold")
+        XCTAssertEqual(suggested["custom_eas[2].min_version"], "current_versions")
+        XCTAssertEqual(suggested["custom_eas[2].warn_within_days"], "warning_days")
+        XCTAssertEqual(suggested["thresholds.inactive_device_days"], "stale_device_days")
+        XCTAssertEqual(suggested["output.directory"], "output_dir")
+        XCTAssertEqual(suggested["output.max_runs"], "keep_latest_runs")
+        XCTAssertEqual(suggested["charts.snapshot_dir"], "historical_csv_dir")
+        XCTAssertEqual(suggested["charts.auto_archive"], "archive_current_csv")
+    }
+
+    /// A misname must point at a key the schema knows there, and must not itself be known.
+    func testEveryMisnameNamesAKeyTheSchemaKnowsAtItsPath() {
+        XCTAssertFalse(ConfigSchema.misnames.isEmpty)
+        for (path, pairs) in ConfigSchema.misnames {
+            let known = ConfigSchema.knownKeys(at: path) ?? []
+            let label = path.joined(separator: ".")
+            for (wrong, right) in pairs {
+                XCTAssertTrue(known.contains(right), "\(label): \(right) is not a known key")
+                XCTAssertFalse(known.contains(wrong), "\(label): \(wrong) is a known key")
+            }
+        }
+    }
+
+    // MARK: - Display
+
+    func testAnUnknownKeyIsShownWithoutControlCharactersAndCapped() throws {
+        let long = String(repeating: "k", count: 70)
+        let keys = try unknownKeys(
+            "columns:\n  bad\u{1B}[31m\u{202E}key: \"x\"\n  \(long): \"y\"\n")
+        XCTAssertEqual(keys.map(\.keyPath), [
+            "columns.bad[31mkey",
+            "columns." + String(repeating: "k", count: 59) + "…",
+        ])
+    }
+
+    func testDisplayTextStripsControlCharactersAndCapsAtSixtyCharacters() {
+        XCTAssertEqual(ConfigSchema.displayText("a\u{7}b\nc\t\u{202E}d\u{2028}e"), "abcde")
+        let sixty = String(repeating: "x", count: 60)
+        XCTAssertEqual(ConfigSchema.displayText(sixty), sixty)
+        XCTAssertEqual(ConfigSchema.displayText(sixty + "y"),
+                       String(repeating: "x", count: 59) + "…")
+        XCTAssertEqual(ConfigSchema.displayText(""), "")
+    }
+
+    /// One character can carry thousands of combining marks; the scalar cap bounds it.
+    func testDisplayTextBoundsUnicodeScalarsAtFourTimesTheCharacterCap() {
+        let heavy = "e" + String(repeating: "\u{301}", count: 5_000)
+        let shown = ConfigSchema.displayText(heavy)
+        XCTAssertTrue(shown.hasSuffix("…"))
+        XCTAssertLessThanOrEqual(shown.unicodeScalars.count, 241)
+
+        let fourScalarsEach = String(repeating: "e\u{301}\u{302}\u{303}", count: 60)
+        XCTAssertEqual(ConfigSchema.displayText(fourScalarsEach), fourScalarsEach,
+                       "240 scalars is within the cap")
+        let fiveScalarsEach = String(repeating: "e\u{301}\u{302}\u{303}\u{304}", count: 60)
+        let cut = ConfigSchema.displayText(fiveScalarsEach)
+        XCTAssertTrue(cut.hasSuffix("…"))
+        XCTAssertLessThanOrEqual(cut.unicodeScalars.count, 241)
+    }
+
+    // MARK: - Known keys
+
+    func testKnownKeysAtTheRootAreTheTopLevelBlocks() {
+        let top = ConfigSchema.knownKeys(at: [])
+        XCTAssertEqual(top?.contains("columns"), true)
+        XCTAssertEqual(top?.contains("security_policy"), true)
+        XCTAssertEqual(ConfigSchema.knownKeys(at: ["custom_eas"])?.contains("true_value"), true,
+                       "a list of mappings is addressed by its key")
+    }
+
+    func testKnownKeysIsNilWhereNoMappingIsRead() {
+        XCTAssertNil(ConfigSchema.knownKeys(at: ["columns", "computer_name"]), "a scalar")
+        XCTAssertNil(ConfigSchema.knownKeys(at: ["sheets", "only"]), "a list of names")
+        XCTAssertNil(ConfigSchema.knownKeys(at: ["not_a_block"]), "an unknown key")
+    }
+
+    func testKeysReadOutsideTheDecoderAreKnown() {
+        XCTAssertEqual(ConfigSchema.knownKeys(at: ["output"])?.contains("allow_absolute_paths"),
+                       true)
+        let html = ConfigSchema.knownKeys(at: ["html"]) ?? []
+        XCTAssertTrue(html.isSuperset(of: ["track_history", "history_file", "section_limits"]))
+        XCTAssertEqual(ConfigSchema.knownKeys(at: ["security_policy", "score_factors"]), [
+            "factor", "weight", "grace_days", "agent", "baseline",
+        ])
+    }
+
+    func testEveryKeyTheDecoderReadsIsKnown() {
+        func keys<Key: CodingKey & CaseIterable>(_ type: Key.Type) -> Set<String> {
+            Set(type.allCases.map(\.stringValue))
+        }
+        let decoded: [([String], Set<String>)] = [
+            ([], keys(ReportConfig.CodingKeys.self)),
+            (["columns"], keys(ColumnConfig.CodingKeys.self)),
+            (["mobile_columns"], keys(MobileColumnConfig.CodingKeys.self)),
+            (["security_agents"], keys(SecurityAgentConfig.CodingKeys.self)),
+            (["jamf_cli"], keys(JamfCLIConfig.CodingKeys.self)),
+            (["compliance"], keys(ComplianceConfig.CodingKeys.self)),
+            (["compliance", "baselines"], keys(ComplianceBaselineConfig.CodingKeys.self)),
+            (["custom_eas"], keys(CustomEAConfig.CodingKeys.self)),
+            (["exceptions"], keys(ConfigException.CodingKeys.self)),
+            (["sheets"], keys(SheetsConfig.CodingKeys.self)),
+            (["thresholds"], keys(ThresholdsConfig.CodingKeys.self)),
+            (["output"], keys(OutputConfig.CodingKeys.self)),
+            (["charts"], keys(ChartsConfig.CodingKeys.self)),
+            (["charts", "os_adoption"], keys(OSAdoptionConfig.CodingKeys.self)),
+            (["charts", "compliance_trend"], keys(ComplianceTrendConfig.CodingKeys.self)),
+            (["charts", "compliance_trend", "bands"], keys(ComplianceBandConfig.CodingKeys.self)),
+            (["charts", "device_state_trend"], keys(DeviceStateTrendConfig.CodingKeys.self)),
+            (["branding"], keys(BrandingConfig.CodingKeys.self)),
+            (["platform"], keys(PlatformConfig.CodingKeys.self)),
+            (["protect"], keys(ProtectConfig.CodingKeys.self)),
+            (["school_cli"], keys(SchoolCLIConfig.CodingKeys.self)),
+            (["notify"], keys(NotifyConfig.CodingKeys.self)),
+            (["alerts"], keys(AlertsConfig.CodingKeys.self)),
+            (["alerts", "rules"], keys(AlertRule.CodingKeys.self)),
+            (["retention"], keys(RetentionConfig.CodingKeys.self)),
+            (["shared_workspace"], keys(SharedWorkspaceConfig.CodingKeys.self)),
+            (["ai"], keys(AIConfig.CodingKeys.self)),
+            (["html"], keys(HTMLReportConfig.CodingKeys.self)),
+            (["html", "section_limits"], keys(HTMLSectionLimits.CodingKeys.self)),
+            (["security_policy"], keys(SecurityControlPolicy.CodingKeys.self)),
+            (["security_policy", "controls"], keys(SecurityControlPolicy.ControlKeys.self)),
+            (["security_policy", "on_values"], keys(SecurityControlPolicy.ControlKeys.self)),
+            (["security_policy", "off_values"], keys(SecurityControlPolicy.ControlKeys.self)),
+        ]
+        for (path, expected) in decoded {
+            let label = path.isEmpty ? "<root>" : path.joined(separator: ".")
+            guard let known = ConfigSchema.knownKeys(at: path) else {
+                XCTFail("\(label): the schema has no mapping here")
+                continue
+            }
+            XCTAssertTrue(expected.isSubset(of: known),
+                          "\(label): missing \(expected.subtracting(known).sorted())")
+        }
+    }
+
+    // MARK: - The shipped example
+
+    /// The example documents only keys the app reads, so it must report none.
+    func testTheShippedExampleConfigHasNoUnknownKeys() throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        var example: URL?
+        for _ in 0..<8 {
+            let candidate = dir.appendingPathComponent("config.example.yaml")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                example = candidate
+                break
+            }
+            dir = dir.deletingLastPathComponent()
+        }
+        guard let example else {
+            throw XCTSkip("config.example.yaml not found above \(#filePath)")
+        }
+        let keys = try unknownKeys(String(contentsOf: example, encoding: .utf8))
+        XCTAssertEqual(keys, [])
+        XCTAssertEqual(ConfigDoctorService.unknownKeyRows(keys), [])
+    }
+}

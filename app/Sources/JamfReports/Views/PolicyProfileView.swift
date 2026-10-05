@@ -204,7 +204,7 @@ struct PolicyProfileView: View {
                     }
                     .width(min: 150, ideal: 200)
                 }
-                .frame(minHeight: 200)
+                .pageTableHeight(rows: sortedFindings.count)
             }
         }
     }

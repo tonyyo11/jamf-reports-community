@@ -83,10 +83,19 @@ enum DemoData {
     private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8,
                                                 pinnedLast: coverage(edrInstalled))
     private static let patchTrend = trend(start: 62, end: 84, jitter: 4)
-    /// Ends on the Security Posture ring's 96.6: a summary scores the same three
-    /// controls from the same `pro report security` counts (`securityControls`).
+    /// Ends on the Security Posture ring's score: a summary scores the same factors from
+    /// the same `pro report security` counts (`securityControls`).
     private static let securityScoreTrend = trend(
-        start: 88, end: 96, jitter: 0.8, pinnedLast: 96.6)
+        start: 88, end: 96, jitter: 0.8, pinnedLast: securityScoreValue)
+
+    /// Each control's card ends on its share of the fleet in `securityControls`, the
+    /// counts the Security Posture screen shows.
+    private static let sipTrend = trend(
+        start: 94, end: 99.8, jitter: 0.4, pinnedLast: coverage(securityControls.sip))
+    private static let firewallTrend = trend(
+        start: 86, end: 92, jitter: 1.2, pinnedLast: coverage(securityControls.firewall))
+    private static let gatekeeperTrend = trend(
+        start: 93, end: 97.7, jitter: 0.8, pinnedLast: coverage(securityControls.gatekeeper))
 
     static let stabilityTrend: [Double] = complianceTrend.indices.map { idx in
         let total = Int((totalDevicesTrend[safe: idx] ?? totalDevicesTrend.last ?? 1).rounded())
@@ -141,6 +150,9 @@ enum DemoData {
         .patch:           patchTrend,
         .securityScore:   securityScoreTrend,
         .mscpBandTrend:   mscpBandTrend,
+        .sip:             sipTrend,
+        .firewall:        firewallTrend,
+        .gatekeeper:      gatekeeperTrend,
     ]
 
     /// Labelled the way the live Overview labels a version ("macOS 15.4"), so the
@@ -376,7 +388,7 @@ enum DemoData {
             lastContact: days == 0 ? timestamp(minutesBefore: 47) : "\(days) days ago",
             lastInventory: timestamp(minutesBefore: 0),
             daysSinceContact: days,
-            stale: days >= 30,
+            stale: days > 30,
             fileVault: fileVault,
             sip: "Enabled",
             firewall: "Enabled",

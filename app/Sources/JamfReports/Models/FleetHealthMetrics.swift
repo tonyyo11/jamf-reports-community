@@ -2,52 +2,40 @@ import Foundation
 
 // MARK: - Security score
 
-/// Weighted fleet-wide security score lifted from jamf_reports_cli_v3.5.py
-/// `FleetHealthDashboard._calculate_metrics()`. Weights are configurable;
-/// metrics whose source column is missing are skipped and weights renormalized
-/// so the score remains comparable across tenants with different agent stacks.
+/// The weighted fleet-wide security score: the sum of weight x share over the sum of weights,
+/// across the listed factors that have data (`SecurityScoreCalculator`). A factor with no data
+/// drops out and the rest are rescaled, so tenants with different agent stacks still get a
+/// comparable score.
 struct SecurityScore: Sendable, Equatable {
-    /// 0–100 weighted average over the metrics in `available`.
+    /// 0-100, one decimal.
     let value: Double
     /// Letter grade derived from `value` per `Grade.from(value:)`.
     let grade: Grade
-    /// Metrics whose source data was present and contributed to `value`.
-    let available: [Metric]
-    /// Metrics that had no source data this run and were skipped.
-    let missing: [Metric]
-    /// Weights actually applied (after dropping `missing`).
-    let appliedWeights: [Metric: Double]
+    /// The factors that had data, in list order, with what each measured.
+    let parts: [Part]
+    /// Listed factors with no data this run; their weight is left out.
+    let missing: [SecurityScoreFactor]
 
-    enum Metric: String, CaseIterable, Sendable, Hashable {
-        // .edrAgent keeps the legacy "crowdstrike" raw value — the v3.5 parity
-        // identifier. The user-visible label is config-driven via
-        // `displayLabel(edrAgentName:)`; the generic fallback names no vendor.
-        case fileVault, sip, firewall
-        case edrAgent = "crowdstrike"
-        case mscp, xprotect, cve, secureBoot
+    struct Part: Sendable, Equatable {
+        let factor: SecurityScoreFactor
+        let measure: SecurityScoreMeasure
+        /// 0-100.
+        let share: Double
+    }
 
-        var displayLabel: String {
-            switch self {
-            case .fileVault:  return "FileVault Encryption"
-            case .sip:        return "System Integrity Protection"
-            case .firewall:   return "Firewall Enabled"
-            case .edrAgent:   return "EDR Agent Connected"
-            case .mscp:       return "mSCP Compliance"
-            case .xprotect:   return "XProtect Current"
-            case .cve:        return "CVE Clean"
-            case .secureBoot: return "Secure Boot (Full)"
-            }
-        }
+    static let empty = SecurityScore(value: 0, grade: .f, parts: [], missing: [])
 
-        /// Tenant-specific label: the configured security agent's name (e.g.
-        /// "CrowdStrike Falcon Connected") for `.edrAgent`; the static label
-        /// for everything else.
-        func displayLabel(edrAgentName: String?) -> String {
-            if case .edrAgent = self, let name = edrAgentName, !name.isEmpty {
-                return "\(name) Connected"
-            }
-            return displayLabel
-        }
+    /// Factors that contributed to `value`.
+    var available: [SecurityScoreFactor] { parts.map(\.factor) }
+
+    /// The summary's `securityScoreBasis`; nil when nothing was scored.
+    var basis: String? { parts.isEmpty ? nil : SecurityScoreFactor.basis(available) }
+
+    /// What `part` adds to `value`, in points out of 100.
+    func points(of part: Part) -> Double {
+        let total = parts.reduce(0) { $0 + $1.factor.weight }
+        guard total > 0 else { return 0 }
+        return part.share * part.factor.weight / total
     }
 
     enum Grade: String, Sendable, Equatable {
@@ -76,89 +64,6 @@ struct SecurityScore: Sendable, Equatable {
             case .d:         return 0xFF9F0A
             case .f:         return 0xFF453A
             }
-        }
-    }
-}
-
-/// Per-user override of the SecurityScoreWeights, persisted via @AppStorage.
-/// Stored as a single comma-separated string of integers in the order
-/// `fileVault,sip,firewall,crowdstrike,mscp,xprotect,cve,secureBoot` for
-/// stability. Missing or malformed values fall back to the v3.5 defaults so
-/// a corrupted preference can never break the score.
-struct ScoringConfig: Sendable, Equatable {
-    var weights: SecurityScoreWeights
-
-    static let storageKey = "securityScoreWeights"
-
-    init(weights: SecurityScoreWeights = .defaultWeights) {
-        self.weights = weights
-    }
-
-    static func parse(_ raw: String) -> ScoringConfig {
-        let parts = raw
-            .split(separator: ",")
-            .map { Double($0.trimmingCharacters(in: .whitespaces)) }
-        guard parts.count == 8 else { return ScoringConfig() }
-        // Any nil component falls back to the v3.5 default for that slot —
-        // a user who hand-corrupts the preference still gets a coherent score.
-        let d = SecurityScoreWeights.defaultWeights
-        return ScoringConfig(weights: SecurityScoreWeights(
-            fileVault: parts[0] ?? d.fileVault,
-            sip: parts[1] ?? d.sip,
-            firewall: parts[2] ?? d.firewall,
-            edrAgent: parts[3] ?? d.edrAgent,
-            mscp: parts[4] ?? d.mscp,
-            xprotect: parts[5] ?? d.xprotect,
-            cve: parts[6] ?? d.cve,
-            secureBoot: parts[7] ?? d.secureBoot
-        ))
-    }
-
-    func serialize() -> String {
-        let w = weights
-        return [w.fileVault, w.sip, w.firewall, w.edrAgent,
-                w.mscp, w.xprotect, w.cve, w.secureBoot]
-            .map { String(format: "%g", $0) }
-            .joined(separator: ",")
-    }
-}
-
-/// Configurable per-metric weights. Defaults lifted verbatim from
-/// `jamf_reports_cli_v3.5.py:2961`. Weights sum to 100 by default; the
-/// calculator renormalizes whatever subset is `available` this run.
-struct SecurityScoreWeights: Sendable, Equatable {
-    var fileVault: Double
-    var sip: Double
-    var firewall: Double
-    /// Weight for the EDR/security-agent metric (slot 4 of the positional
-    /// @AppStorage serialization — the order is frozen for compatibility).
-    var edrAgent: Double
-    var mscp: Double
-    var xprotect: Double
-    var cve: Double
-    var secureBoot: Double
-
-    static let defaultWeights = SecurityScoreWeights(
-        fileVault: 15,
-        sip: 15,
-        firewall: 15,
-        edrAgent: 10,
-        mscp: 20,
-        xprotect: 5,
-        cve: 15,
-        secureBoot: 5
-    )
-
-    func weight(for metric: SecurityScore.Metric) -> Double {
-        switch metric {
-        case .fileVault:  return fileVault
-        case .sip:        return sip
-        case .firewall:   return firewall
-        case .edrAgent:   return edrAgent
-        case .mscp:       return mscp
-        case .xprotect:   return xprotect
-        case .cve:        return cve
-        case .secureBoot: return secureBoot
         }
     }
 }

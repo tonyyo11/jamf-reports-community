@@ -7,8 +7,8 @@ import Foundation
 ///
 /// The view consumes a single `Snapshot` value containing both raw counts
 /// (for KPI tiles) and the OS-version distribution (for the donut). The
-/// `SecurityScore` is computed separately by `SecurityScoreCalculator` so
-/// the view can pass user-configurable weights through.
+/// `SecurityScore` is computed by `SecurityScoreCalculator` from the workspace's factors and
+/// what each measured, which `load` reads with the snapshot.
 struct SecurityPostureService: Sendable {
 
     /// Everything the SecurityPostureView needs from a single security
@@ -29,6 +29,16 @@ struct SecurityPostureService: Sendable {
         /// Non-nil only when a snapshot file existed but could not be read/decoded —
         /// a true failure, distinct from `.empty` (no data collected yet).
         var loadError: String? = nil
+        /// The counts under the workspace's policy: P0/P1, the score and the tiles' sub-lines.
+        var fleetCounts: SecurityFleetCounts = .empty
+        var policy: SecurityControlPolicy = .default
+        /// What the score counts (`ReportConfig.resolvedScoreFactors`) and what each factor
+        /// measured (`SecurityScoreInputs.measures`); empty leaves the score with no data.
+        var scoreFactors: [SecurityScoreFactor] = []
+        var scoreMeasures: [String: SecurityScoreMeasure] = [:]
+        /// `thresholds.stale_device_days` and `stale_basis`, for the check-in factor's label.
+        var staleDays: Int?
+        var staleBasis: [StaleBasis] = StaleBasis.default
 
         struct OSVersion: Sendable, Equatable, Identifiable {
             let osVersion: String
@@ -81,8 +91,23 @@ struct SecurityPostureService: Sendable {
         guard let newest = FileManager.newestJSONFile(in: securityDir) else {
             return .empty
         }
+        let policy = SecurityPolicyConfigLoader.load(profile: profile)
+        let hardware = HardwareEncryption.index(dataDir: dir, for: policy)
         do {
-            return try decode(at: newest)
+            var snapshot = try decode(at: newest, policy: policy, hardware: hardware)
+            let config = reportConfig(profile: profile)
+            let factors = config?.resolvedScoreFactors
+                ?? policy.resolvedScoreFactors(agents: [], baselines: [])
+            snapshot.scoreFactors = factors
+            snapshot.scoreMeasures = SecurityScoreInputs.measures(
+                for: factors, fleet: snapshot.fleetCounts,
+                sources: SecurityScoreInputs.load(
+                    dataDir: dir, factors: factors,
+                    staleRule: config?.staleRule ?? StaleRule(days: 30)),
+                config: config)
+            snapshot.staleDays = config?.thresholds?.resolvedStaleDays ?? 30
+            snapshot.staleBasis = config?.thresholds?.resolvedStaleBasis ?? StaleBasis.default
+            return snapshot
         } catch let LoadError.decodeFailed(reason) {
             return .failed("Couldn't read the latest security snapshot — \(reason).")
         } catch {
@@ -90,17 +115,28 @@ struct SecurityPostureService: Sendable {
         }
     }
 
+    /// The workspace's decoded config.yaml; nil when absent or unreadable (the score then
+    /// counts the native factors).
+    private static func reportConfig(profile: String) -> ReportConfig? {
+        guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
+        return try? ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+    }
+
     /// Test seam: load directly from an arbitrary file URL.
-    static func load(from url: URL) throws -> Snapshot {
+    static func load(
+        from url: URL, policy: SecurityControlPolicy, hardware: [String: Bool]
+    ) throws -> Snapshot {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LoadError.noSnapshot
         }
-        return try decode(at: url)
+        return try decode(at: url, policy: policy, hardware: hardware)
     }
 
     // MARK: - Internals
 
-    private static func decode(at url: URL) throws -> Snapshot {
+    private static func decode(
+        at url: URL, policy: SecurityControlPolicy, hardware: [String: Bool]
+    ) throws -> Snapshot {
         guard let data = try? Data(contentsOf: url) else {
             AppLogger.platform.warning(
                 "SecurityPostureService: could not read security file \(url.lastPathComponent, privacy: .public)"
@@ -142,10 +178,16 @@ struct SecurityPostureService: Sendable {
             sipEnabled: summary?.sipEnabled,
             firewallEnabled: summary?.firewallEnabled,
             gatekeeperEnabled: summary?.gatekeeperEnabled,
-            osVersions: osVersions.sorted { $0.osVersion > $1.osVersion },
+            osVersions: OSVersionName.merged(osVersions.map {
+                .init(version: $0.osVersion, count: $0.count, pct: $0.pct)
+            }).map { Snapshot.OSVersion(osVersion: $0.version, count: $0.count, pct: $0.pct) }
+                .sorted { $0.osVersion > $1.osVersion },
             sourceFile: url,
             snapshotDate: mtime,
-            sourceDates: sourceDates
+            sourceDates: sourceDates,
+            fleetCounts: SecurityFleetCounts.build(
+                items: items, hardware: hardware, policy: policy) ?? .empty,
+            policy: policy
         )
     }
 
@@ -154,25 +196,5 @@ struct SecurityPostureService: Sendable {
     private static func parsePct(_ raw: String) -> Double {
         let stripped = raw.trimmingCharacters(in: CharacterSet(charactersIn: "% "))
         return Double(stripped) ?? 0
-    }
-}
-
-// MARK: - SecurityScore convenience
-
-extension SecurityScoreCalculator {
-    /// Build the calculator input directly from a posture snapshot. The mSCP,
-    /// CrowdStrike, XProtect, CVE, and Secure Boot signals are not in the
-    /// `pro security report` JSON — wire those in from EA results or
-    /// `device-compliance` once those services land.
-    static func input(from snapshot: SecurityPostureService.Snapshot) -> Input {
-        var counts: [SecurityScore.Metric: Int] = [:]
-        if let n = snapshot.fileVaultEncrypted { counts[.fileVault] = n }
-        if let n = snapshot.sipEnabled { counts[.sip] = n }
-        if let n = snapshot.firewallEnabled { counts[.firewall] = n }
-        // Note: gatekeeperEnabled exists in the snapshot but is not one of the
-        // SecurityScore.Metric cases. v3.5 weighted Gatekeeper at 5% under the
-        // CVE/Secure Boot bucket — keeping the calculator focused on the 8
-        // canonical metrics and treating Gatekeeper as a per-tile signal only.
-        return Input(totalDevices: snapshot.totalDevices, compliantCounts: counts)
     }
 }

@@ -21,4 +21,10 @@ struct ConfigTabLabelTests {
             #expect(tab.shortLabel.count <= tab.label.count, "\(tab)")
         }
     }
+
+    @Test func fromFileTabComesLastAndShortensToFromFile() {
+        #expect(ConfigView.ConfigTab.allCases.last == .fromFile)
+        #expect(ConfigView.ConfigTab.fromFile.label == "From config.yaml")
+        #expect(ConfigView.ConfigTab.fromFile.shortLabel == "From file")
+    }
 }

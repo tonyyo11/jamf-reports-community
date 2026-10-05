@@ -22,7 +22,6 @@ struct ExtensionAttributeService: Sendable {
         let definitions: [ExtensionAttribute]
         let coverage: [Coverage]
         let totalDevices: Int
-        let totalEAs: Int
         /// Total number of raw EA result rows that were decoded. Useful for
         /// the view to show "Top values shown per EA; full data in reports."
         let totalRowCount: Int
@@ -37,6 +36,14 @@ struct ExtensionAttributeService: Sendable {
         var cacheSource: CacheSource {
             CacheSource.from(snapshotDate: snapshotDate, withinHours: 36)
         }
+
+        /// Extension attributes defined in Jamf Pro (the definitions table's rows).
+        var definedEAs: Int { definitions.count }
+
+        /// Extension attributes with at least one row in the latest results (the coverage
+        /// list's rows). Fewer than `definedEAs` when Jamf has attributes that never
+        /// reported a value, or that `ea-results` leaves out.
+        var reportingEAs: Int { coverage.count }
 
         struct Coverage: Sendable, Equatable, Identifiable {
             let eaName: String
@@ -69,7 +76,6 @@ struct ExtensionAttributeService: Sendable {
             definitions: [],
             coverage: [],
             totalDevices: 0,
-            totalEAs: 0,
             totalRowCount: 0,
             valueDistributions: [],
             sourceFile: nil,
@@ -84,7 +90,6 @@ struct ExtensionAttributeService: Sendable {
             lhs.definitions.map(\.id) == rhs.definitions.map(\.id) &&
             lhs.coverage == rhs.coverage &&
             lhs.totalDevices == rhs.totalDevices &&
-            lhs.totalEAs == rhs.totalEAs &&
             lhs.totalRowCount == rhs.totalRowCount &&
             lhs.valueDistributions == rhs.valueDistributions &&
             lhs.sourceFile == rhs.sourceFile &&
@@ -187,7 +192,6 @@ struct ExtensionAttributeService: Sendable {
                 definitions: [],
                 coverage: [],
                 totalDevices: 0,
-                totalEAs: 0,
                 totalRowCount: 0,
                 valueDistributions: [],
                 sourceFile: sourceFile,
@@ -245,7 +249,6 @@ struct ExtensionAttributeService: Sendable {
         }
 
         let totalDevices = allDeviceIds.count
-        let totalEAs = results.isEmpty ? definitions.count : accumulators.count
         // First definition wins, NOT uniqueKeysWithValues: EA display names come
         // from the server and are not unique — a tenant with two extension
         // attributes sharing a name traps and takes the whole process down. That
@@ -298,7 +301,6 @@ struct ExtensionAttributeService: Sendable {
             definitions: definitions,
             coverage: coverage,
             totalDevices: totalDevices,
-            totalEAs: totalEAs,
             totalRowCount: results.count,
             valueDistributions: distributions,
             sourceFile: sourceFile,

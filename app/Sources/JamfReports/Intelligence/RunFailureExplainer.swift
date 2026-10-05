@@ -106,20 +106,6 @@ struct RunFailureInput: Sendable {
     }
 }
 
-// MARK: - On-device-only rule (ungated, pure — provable on the default toolchain)
-
-/// Whether this config may explain a run failure at all.
-///
-/// Logs are the one input class with residual PII risk, so the explainer runs
-/// on-device or not at all. Apple Foundation Models is on-device only, so the
-/// on-device path is the normal one; a config that explicitly selects the
-/// reserved `external` tier is refused here rather than served off-box.
-///
-/// Ungated so the guarantee is testable without FoundationModels.
-func runFailureGeneratorKind(for config: AIConfig) -> GeneratorKind {
-    GeneratorKind.select(config: config)
-}
-
 // MARK: - Stub (ungated — no model, deterministic)
 
 /// Backs the seam when AI is disabled/unavailable or on a toolchain without
@@ -145,10 +131,9 @@ struct StubRunFailureExplainer: RunFailureExplaining {
 
 /// Picks the conformer for a config + resolved availability.
 ///
-/// PRIVACY: logs are the one input class with residual PII risk, so anything
-/// that does not resolve to the on-device model is served the stub rather than
-/// a real generator — no off-box model type is ever constructed for a log
-/// excerpt. `explain` re-checks the same rule (defense in depth).
+/// PRIVACY: logs are the one input class with residual PII risk. The only model
+/// the real explainer constructs is the on-device `SystemLanguageModel`, so a
+/// log excerpt has no off-box path whatever `tier` says.
 @MainActor
 func makeRunFailureExplainer(
     config: AIConfig,
@@ -156,11 +141,6 @@ func makeRunFailureExplainer(
 ) -> any RunFailureExplaining {
     guard config.isUsable else { return StubRunFailureExplainer(availability: .disabledByConfig) }
     guard availability.isReady else { return StubRunFailureExplainer(availability: availability) }
-    guard runFailureGeneratorKind(for: config) == .onDevice else {
-        return StubRunFailureExplainer(
-            availability: .unknown("Run logs are analyzed on-device only.")
-        )
-    }
 
     #if canImport(FoundationModels) && compiler(>=6.4)
     if #available(macOS 27, *) {
@@ -178,9 +158,8 @@ func makeRunFailureExplainer(
 #if canImport(FoundationModels) && compiler(>=6.4)
 import FoundationModels
 
-/// On-device-ONLY explainer. The factory already refuses a non-on-device
-/// config; `explain` re-checks (defense in depth) — a log excerpt is never sent
-/// to an off-box model.
+/// On-device-ONLY explainer: the one model it constructs is
+/// `SystemLanguageModel.default`, so a log excerpt is never sent off-box.
 @available(macOS 27, *)
 struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
     let config: AIConfig
@@ -194,17 +173,9 @@ struct FoundationModelsRunFailureExplainer: RunFailureExplaining {
     """
 
     func explain(_ input: RunFailureInput) async throws -> RunFailureExplanation {
-        let kind = GeneratorKind.select(config: config)
-        AppLogger.platform.notice("""
-            Run failure explanation requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(config.resolvedTier.rawValue, privacy: .public))
-            """)
-
-        // The factory already refused a non-on-device config — refuse again
-        // (never construct an off-box model) if a caller bypasses the factory.
-        guard kind == .onDevice else {
-            throw FleetInsightError.unavailable(.unknown("Run logs are analyzed on-device only."))
-        }
+        let tier = config.resolvedTier.rawValue
+        AppLogger.platform.notice(
+            "Run failure explanation requested (tier=\(tier, privacy: .public))")
 
         let model = SystemLanguageModel.default
         guard case .available = model.availability else {

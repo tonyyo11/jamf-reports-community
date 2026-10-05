@@ -111,6 +111,33 @@ final class NotifyConfigStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.thresholds?.staleDeviceDays, 30)
     }
 
+    /// The panel models four keys; one it does not model stays in the block a save rewrites.
+    func testSaveKeepsAKeyThePanelDoesNotModel() throws {
+        let profile = profileName()
+        let workspace = try makeWorkspace(profile: profile)
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        try """
+        notify:
+          enabled: false
+          provider: teams
+          mention_group: night-desk
+          url: https://first.example.com
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        try NotifyConfigWriter.save(
+            enabled: true, provider: "slack", url: "https://second.example.com",
+            detail: "minimal", profile: profile
+        )
+
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("  mention_group: night-desk"), text)
+        let reloaded = NotifyConfigLoader.load(profile: profile)
+        XCTAssertTrue(reloaded.isEnabled)
+        XCTAssertEqual(reloaded.resolvedProvider, .slack)
+        XCTAssertEqual(reloaded.resolvedURL, "https://second.example.com")
+        XCTAssertEqual(reloaded.resolvedDetail, .minimal)
+    }
+
     func testSaveOverwritesPreviousNotifyBlockRatherThanDuplicating() throws {
         let profile = profileName()
         let workspace = try makeWorkspace(profile: profile)

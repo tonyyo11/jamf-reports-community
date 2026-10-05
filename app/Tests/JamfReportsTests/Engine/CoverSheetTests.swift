@@ -55,39 +55,6 @@ final class CoverSheetTests: XCTestCase {
         XCTAssertEqual(dash.sheetPlan[2].name, "Compliance Posture")
     }
 
-    // MARK: - Manifest entry count matches sheet plan
-
-    func testManifestEntryCountMatchesSheetPlan() throws {
-        let dash = makeDashboard()
-        let planCount = dash.sheetPlan.count
-        // Cover itself is in sheetPlan, so the manifest should list planCount entries.
-        // We verify this by running writeAll (which calls writeCoverSheet) and counting
-        // sheets written. writeCoverSheet always succeeds, so it will appear in written.
-        let (written, _) = dash.writeAll(selectedNames: ["cover"])
-        XCTAssertEqual(written, ["Cover"],
-                       "writeAll with only 'cover' selected should write exactly Cover")
-        // planCount is the expected manifest row count — we trust it matches since
-        // writeCoverSheet iterates sheetPlan directly.
-        XCTAssertGreaterThan(planCount, 30,
-                             "sheetPlan should have at least 35 entries (Executive Summary + Cover + 33 others)")
-    }
-
-    // MARK: - Cover renders with writeAll (no selection filter)
-
-    func testCoverSheetRendersViaWriteAll() {
-        let dash = makeDashboard()
-        let (written, _) = dash.writeAll()
-        XCTAssertTrue(written.contains("Cover"), "writeAll should write Cover sheet")
-    }
-
-    // MARK: - Empty selection writes nothing
-
-    func testWriteAllWithEmptySelectionWritesNothing() {
-        let dash = makeDashboard()
-        let (written, _) = dash.writeAll(selectedNames: Set<String>())
-        XCTAssertTrue(written.isEmpty, "Empty selection should produce zero written sheets")
-    }
-
     // MARK: - Exec-priority sheet ordering
 
     func testExecPrioritySheetOrder() {

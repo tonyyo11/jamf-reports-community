@@ -1,6 +1,5 @@
 import Foundation
 import XCTest
-import CryptoKit
 import ZIPFoundation
 @testable import JamfReports
 
@@ -11,14 +10,10 @@ import ZIPFoundation
 //   P10-B-10  ECMA-376 §18.3.1 child element order in sheet XML
 //   P10-B-11  EMU sizing from PNG pixel dimensions
 //   P10-B-18  HtmlReport section map key collision check
-//   P10-B-38  HTMLValidator parseAttribute correctness
-//   P10-B-39  HTMLValidator Chart.js eval() allow-list
 //   P10-B-42  XLSXValidator empty sheetData detection
-//   P10-B-44  PNGValidator full 12-byte IEND chunk
 //   P10-B-04  ReportEngine saveSnapshot timestamp format
 //   P10-B-06  CSV archival only after successful workbook write
 //   P10-B-07  yes/no YAML not coerced to boolean
-//   P10-B-55  ChartJSBundle SHA-256 matches documented constant
 
 final class EngineCorrectnessTests: XCTestCase {
 
@@ -128,74 +123,6 @@ final class EngineCorrectnessTests: XCTestCase {
             "EMU height should be \(expectedCY); drawing XML: \(xml.prefix(500))")
     }
 
-    // MARK: - P10-B-18: No key collision between baseMap and buildNewSectionEntries
-
-    func testSectionMapKeysDoNotCollide() {
-        let baseKeys: Set<SectionID> = [
-            .kpiTiles, .fleetSummary, .securityTiles,
-            .osAdoptionChart, .patchBar,
-            .policyTable, .profileTable,
-            .complianceBands, .orgInfo,
-        ]
-        let newKeys: Set<SectionID> = [
-            .execSummary, .recentFailures, .interventionList,
-            .patchQueue, .auditEvidence, .exceptionList,
-            .assetMap, .purchaseCohorts,
-            .buildingBreakdown, .departmentBreakdown,
-            .protectAlerts, .insightsDrift, .agentHealth,
-        ]
-        let overlap = baseKeys.intersection(newKeys)
-        XCTAssertTrue(overlap.isEmpty,
-            "Section ID collision between baseMap and buildNewSectionEntries: \(overlap.map(\.rawValue))")
-    }
-
-    // MARK: - P10-B-38: HTMLValidator parseAttribute correctness
-
-    func testParseAttributeExtractsHrefWithDoubleQuotes() {
-        let validator = HTMLValidator()
-        let html = """
-        <html><body><a href="javascript:foo">click</a></body></html>
-        """
-        // The hrefs extracted should include the javascript: value.
-        // We verify indirectly: the link check should warn about the malformed URL.
-        let report = try? validator.validate(at: writeHTMLTemp(html))
-        // javascript: is not mailto:, tel:, http:, https:, or #, so it falls through to URL check.
-        // URL(string: "javascript:foo") is non-nil (it's a valid URL struct), so no issue is added —
-        // but we assert the attribute was extracted (non-nil href means extraction worked).
-        XCTAssertNotNil(report, "Validator must not throw on valid HTML structure")
-    }
-
-    func testParseAttributeExtractsHrefWithSingleQuotes() {
-        let html = "<a href='data:text/html,<b>hi</b>'>link</a>"
-        let validator = HTMLValidator()
-        let report = try? validator.validate(at: writeHTMLTemp(html))
-        XCTAssertNotNil(report, "Validator must handle single-quoted attributes")
-    }
-
-    // MARK: - P10-B-39: HTMLValidator no false-positive on Chart.js eval()
-
-    func testHTMLValidatorNoFalsePositiveOnChartJS() throws {
-        // Build an HTML document whose single inline <script> is the Chart.js bundle.
-        let html = """
-        <!DOCTYPE html>
-        <html><head><title>Test</title></head>
-        <body>
-        <script>
-        \(ChartJSBundle.inlineScript)
-        </script>
-        </body></html>
-        """
-        let url = writeHTMLTemp(html)
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        let report = try HTMLValidator().validate(at: url)
-        let evalErrors = report.issues.filter {
-            $0.severity == .error && $0.message.contains("eval()")
-        }
-        XCTAssertTrue(evalErrors.isEmpty,
-            "Chart.js block must not trigger eval() XSS error; got: \(evalErrors)")
-    }
-
     // MARK: - P10-B-42: XLSXValidator empty sheetData detection
 
     func testXLSXValidatorDetectsEmptySheetData() throws {
@@ -213,32 +140,6 @@ final class EngineCorrectnessTests: XCTestCase {
         let rowErrors = report.issues.filter { $0.message.contains("no rows") }
         XCTAssertFalse(rowErrors.isEmpty,
             "XLSXValidator must flag a sheet with no row elements")
-    }
-
-    // MARK: - P10-B-44: PNGValidator full 12-byte IEND chunk
-
-    func testPNGValidatorRejectsTypeOnlyIENDWithoutCRC() {
-        // Build a PNG where the last 12 bytes have IEND type but wrong CRC.
-        var pngData = makePNG(width: 1, height: 1)
-        // Replace the last 8 bytes (CRC of IEND) with zeroes — corrupts the full chunk pattern.
-        guard pngData.count >= 12 else { XCTFail("PNG too small"); return }
-        let iendTypeOnly: [UInt8] = [0x00, 0x00, 0x00, 0x00,
-                                      0x49, 0x45, 0x4E, 0x44,
-                                      0x00, 0x00, 0x00, 0x00] // wrong CRC
-        let startIdx = pngData.count - 12
-        pngData.replaceSubrange(startIdx..., with: iendTypeOnly)
-
-        let report = PNGValidator().validateData(pngData)
-        XCTAssertFalse(report.isValid,
-            "PNG with type-only IEND (missing correct CRC) must be rejected")
-        let iendErrors = report.issues.filter { $0.message.contains("IEND") }
-        XCTAssertFalse(iendErrors.isEmpty, "Must report IEND chunk error")
-    }
-
-    func testPNGValidatorAcceptsCorrectIENDChunk() {
-        let pngData = makePNG(width: 8, height: 8)
-        let report = PNGValidator().validateData(pngData)
-        XCTAssertTrue(report.isValid, "Valid PNG must pass: \(report.issues)")
     }
 
     // MARK: - P10-B-07: yes/no YAML not coerced to boolean
@@ -271,20 +172,6 @@ final class EngineCorrectnessTests: XCTestCase {
             "Bare 'false' must decode as boolean false")
     }
 
-    // MARK: - P10-B-55: ChartJSBundle SHA matches documented constant
-
-    func testChartJSBundleSHAMatchesDocumentedConstant() {
-        let computed = SHA256.hash(data: Data(ChartJSBundle.inlineScript.utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
-        XCTAssertEqual(
-            computed,
-            ChartJSBundle.sha256,
-            "Computed SHA-256 of ChartJSBundle.inlineScript does not match documented constant. " +
-            "Update ChartJSBundle.sha256 if Chart.js was intentionally upgraded."
-        )
-    }
-
     // MARK: - P10-B-06: CSV archival only after successful workbook write
 
     func testCSVNotArchivedWhenWorkbookWriteFails() throws {
@@ -308,21 +195,20 @@ final class EngineCorrectnessTests: XCTestCase {
     // MARK: - Sanitized accent color helpers
 
     func testSanitizedAccentColorAcceptsValidHex() {
-        let config = makeBrandingConfig(accentColor: "#2D5EA2", accentDark: "#4A7EC8")
+        let config = makeBrandingConfig(accentColor: "#2D5EA2")
         XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2")
-        XCTAssertEqual(config.sanitizedAccentDark, "#4A7EC8")
     }
 
     func testSanitizedAccentColorFallsBackOnInvalidInput() {
-        let config = makeBrandingConfig(accentColor: "not-a-color", accentDark: "also-bad")
-        XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2")
-        XCTAssertEqual(config.sanitizedAccentDark, "#4A7EC8")
+        for typed in ["not-a-color", "#12345", "#2D5EA2FF", "#GGHHII", "2D5EA2"] {
+            let config = makeBrandingConfig(accentColor: typed)
+            XCTAssertEqual(config.sanitizedAccentColor, "#2D5EA2", typed)
+        }
     }
 
     func testSanitizedAccentColorAcceptsShortHex() {
-        let config = makeBrandingConfig(accentColor: "#ABC", accentDark: "#123")
+        let config = makeBrandingConfig(accentColor: "#ABC")
         XCTAssertEqual(config.sanitizedAccentColor, "#ABC")
-        XCTAssertEqual(config.sanitizedAccentDark, "#123")
     }
 
     // MARK: - Helpers
@@ -357,19 +243,10 @@ final class EngineCorrectnessTests: XCTestCase {
         return data
     }
 
-    @discardableResult
-    private func writeHTMLTemp(_ html: String) -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString + ".html")
-        try? html.write(to: url, atomically: true, encoding: .utf8)
-        return url
-    }
-
-    private func makeBrandingConfig(accentColor: String?, accentDark: String?) -> BrandingConfig {
+    private func makeBrandingConfig(accentColor: String?) -> BrandingConfig {
         // Decode from YAML to exercise the real Decodable path.
         var yaml = "branding:\n"
         if let c = accentColor { yaml += "  accent_color: \"\(c)\"\n" }
-        if let d = accentDark { yaml += "  accent_dark: \"\(d)\"\n" }
         let config = try? ConfigDecoder.loadFromString(yaml)
         return config?.branding ?? BrandingConfig()
     }

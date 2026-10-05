@@ -65,7 +65,7 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.totalDevices, 5, "Should identify 5 unique devices")
-        XCTAssertEqual(snapshot.totalEAs, 3, "Should identify 3 unique EAs")
+        XCTAssertEqual(snapshot.reportingEAs, 3, "Should identify 3 unique EAs")
         XCTAssertEqual(snapshot.totalRowCount, 11, "totalRowCount tracks the raw decoded row count")
         XCTAssertEqual(snapshot.definitions.count, 3, "Should load 3 definitions")
 
@@ -113,8 +113,8 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         XCTAssertEqual(coverageByName["Office Version"]?.0, 1)
     }
 
-    /// Tests that when definitions exist but no results are loaded, totalEAs
-    /// comes from definitions count.
+    /// Tests that when definitions exist but no results are loaded, the defined count is the
+    /// definitions and nothing is reporting.
     func testDefinitionsOnlySnapshot() throws {
         let definitionsJSON = """
         [
@@ -131,7 +131,8 @@ final class ExtensionAttributeServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.totalDevices, 0, "No results, so no devices")
-        XCTAssertEqual(snapshot.totalEAs, 2, "Should count from definitions")
+        XCTAssertEqual(snapshot.definedEAs, 2, "Should count from definitions")
+        XCTAssertEqual(snapshot.reportingEAs, 0, "No results, so nothing is reporting")
         XCTAssertEqual(snapshot.totalRowCount, 0, "No results means zero rows")
         XCTAssertEqual(snapshot.definitions.count, 2)
         XCTAssertTrue(snapshot.coverage.isEmpty, "No results, so no coverage")
@@ -243,7 +244,8 @@ final class ExtensionAttributeServiceTests: XCTestCase {
                        ["ea-results", "computer-extension-attributes"],
                        "on-disk files report freshness dates even with empty content")
         XCTAssertEqual(emptySnapshot.totalDevices, 0)
-        XCTAssertEqual(emptySnapshot.totalEAs, 0)
+        XCTAssertEqual(emptySnapshot.definedEAs, 0)
+        XCTAssertEqual(emptySnapshot.reportingEAs, 0)
         XCTAssertEqual(emptySnapshot.totalRowCount, 0)
         XCTAssertTrue(emptySnapshot.coverage.isEmpty)
         XCTAssertTrue(emptySnapshot.definitions.isEmpty)
@@ -353,6 +355,71 @@ final class ExtensionAttributeServiceTests: XCTestCase {
 
     // MARK: - CacheSource tests
 
+    /// Visual review 2026-10-04: the tile read 89 "across definitions and results" while the
+    /// definitions table listed 147. Jamf defines more attributes than `ea-results` returns
+    /// rows for, so the two counts are separate figures and each tile and the header names its own.
+    func testDefinedAndReportingCountsAreSeparateFigures() throws {
+        let resultsJSON = """
+        [
+          {"device": "d1", "ea_name": "Reports A", "value": "x"},
+          {"device": "d2", "ea_name": "Reports A", "value": "y"},
+          {"device": "d1", "ea_name": "Reports B", "value": "z"}
+        ]
+        """
+        let definitionsJSON = """
+        [
+          {"id": "1", "name": "Reports A", "dataType": "STRING", "enabled": true},
+          {"id": "2", "name": "Reports B", "dataType": "STRING", "enabled": true},
+          {"id": "3", "name": "Never reports", "dataType": "STRING", "enabled": true},
+          {"id": "4", "name": "Also silent", "dataType": "STRING", "enabled": false}
+        ]
+        """
+        let resultsURL = writeTempFile(content: resultsJSON, suffix: "ea-results.json")
+        let definitionsURL = writeTempFile(content: definitionsJSON, suffix: "ea-definitions.json")
+        defer {
+            try? FileManager.default.removeItem(at: resultsURL)
+            try? FileManager.default.removeItem(at: definitionsURL)
+        }
+
+        let snapshot = try XCTUnwrap(
+            ExtensionAttributeService.load(resultsURL: resultsURL, definitionsURL: definitionsURL))
+
+        XCTAssertEqual(snapshot.definedEAs, 4)
+        XCTAssertEqual(snapshot.reportingEAs, 2)
+        XCTAssertEqual(
+            ExtensionAttributesView.subtitle(for: snapshot),
+            "4 Extension Attributes defined, 2 with results across 2 devices.")
+    }
+
+    func testSubtitleWithOnlyOneKindOfData() throws {
+        let empty = ExtensionAttributeService.Snapshot.empty
+        XCTAssertNil(ExtensionAttributesView.subtitle(for: empty))
+
+        let definitionsURL = writeTempFile(
+            content: """
+            [{"id": "1", "name": "Solo", "dataType": "STRING", "enabled": true}]
+            """,
+            suffix: "ea-definitions.json")
+        defer { try? FileManager.default.removeItem(at: definitionsURL) }
+        let defined = try XCTUnwrap(
+            ExtensionAttributeService.load(resultsURL: nil, definitionsURL: definitionsURL))
+        XCTAssertEqual(
+            ExtensionAttributesView.subtitle(for: defined),
+            "1 Extension Attribute defined; no results yet.")
+
+        let resultsURL = writeTempFile(
+            content: """
+            [{"device": "d1", "ea_name": "Solo", "value": "x"}]
+            """,
+            suffix: "ea-results.json")
+        defer { try? FileManager.default.removeItem(at: resultsURL) }
+        let reporting = try XCTUnwrap(
+            ExtensionAttributeService.load(resultsURL: resultsURL, definitionsURL: nil))
+        XCTAssertEqual(
+            ExtensionAttributesView.subtitle(for: reporting),
+            "1 Extension Attribute across 1 device.")
+    }
+
     func testCacheSourceNil() throws {
         let snapshot = ExtensionAttributeService.Snapshot.empty
         XCTAssertEqual(snapshot.cacheSource, .neverFetchedLive)
@@ -364,7 +431,6 @@ final class ExtensionAttributeServiceTests: XCTestCase {
             definitions: [],
             coverage: [],
             totalDevices: 0,
-            totalEAs: 0,
             totalRowCount: 0,
             valueDistributions: [],
             sourceFile: nil,
@@ -379,7 +445,6 @@ final class ExtensionAttributeServiceTests: XCTestCase {
             definitions: [],
             coverage: [],
             totalDevices: 0,
-            totalEAs: 0,
             totalRowCount: 0,
             valueDistributions: [],
             sourceFile: nil,
@@ -444,7 +509,6 @@ private extension ExtensionAttributeService.Snapshot {
             definitions: definitions,
             coverage: coverage,
             totalDevices: totalDevices,
-            totalEAs: totalEAs,
             totalRowCount: totalRowCount,
             valueDistributions: valueDistributions,
             sourceFile: sourceFile,

@@ -22,12 +22,14 @@ enum YAMLCodec {
     struct YAMLMapping: Equatable, Sendable {
         var entries: [YAMLEntry]
 
+        /// The last value set for `key`, the one the report engine's decoder reads.
         func value(for key: String) -> YAMLValue? {
-            entries.first { $0.key == key }?.value
+            entries.last { $0.key == key }?.value
         }
 
+        /// Replaces the value `value(for:)` returns, so an edit lands where it is read.
         mutating func set(_ key: String, value: YAMLValue) {
-            if let index = entries.firstIndex(where: { $0.key == key }) {
+            if let index = entries.lastIndex(where: { $0.key == key }) {
                 entries[index].value = value
             } else {
                 entries.append(.init(key: key, value: value))
@@ -44,7 +46,94 @@ enum YAMLCodec {
         /// documents. Callers should log a warning and re-save to heal the
         /// underlying file.
         var repairedKeys: Set<String> = []
+        /// Lines the reader did not take as written, in line order. Empty for a well-formed file.
+        var parseNotes: [ParseNote] = []
     }
+
+    /// A line the reader did not take as written. `line` counts from 1.
+    struct ParseNote: Equatable, Sendable {
+        enum Kind: Equatable, Sendable {
+            /// Indented `found` spaces where its block's keys sit at `expected`; not read.
+            case indentation(found: Int, expected: Int)
+            /// No `key: value` where a key was expected; not read.
+            case noKey
+            /// A tab in the indentation, which YAML does not allow; read as indented `spaces`.
+            case tab(spaces: Int)
+            /// The key is set again on `readLine`, and that value is the one read.
+            case duplicateKey(String, readLine: Int)
+            /// A `|` or `>` block value, which the reader does not support: the value reads as
+            /// the indicator and the lines under it are not read.
+            case blockScalar(key: String, indicator: String)
+            /// List items with no key above them to belong to; not read.
+            case orphanItems
+            /// A `[` or `{` not closed on its line; the value reads as the line's text.
+            case unclosedFlow
+            /// A `---` after the first content line; what follows reads as the same document.
+            case secondDocument
+            /// Collections nested past `maxNestingDepth`: a flow list or mapping reads as its
+            /// text, a block is not read.
+            case nestingTooDeep
+        }
+
+        let line: Int
+        let kind: Kind
+
+        /// What happened to the line. Keys pass through `ConfigSchema.displayText`; no value
+        /// typed in the file is shown.
+        var detail: String {
+            switch kind {
+            case .indentation(let found, let expected):
+                "indented \(Self.spaces(found)) where \(Self.spaces(expected)) were expected, "
+                    + "so it was not read"
+            case .noKey:
+                "no \"key: value\" on this line, so it was not read"
+            case .tab(let spaces):
+                "a tab in the indentation, which YAML does not allow; read as indented "
+                    + Self.spaces(spaces)
+            case .duplicateKey(let key, let readLine) where readLine == line:
+                "\"\(ConfigSchema.displayText(key))\" is set twice on this line; "
+                    + "the second value is the one read"
+            case .duplicateKey(let key, let readLine):
+                "\"\(ConfigSchema.displayText(key))\" is set again on line \(readLine), "
+                    + "and that value is the one read"
+            case .blockScalar(let key, let indicator):
+                "\"\(ConfigSchema.displayText(key))\" uses a block value (\(indicator)), which "
+                    + "is not supported: it reads as \"\(indicator)\" and the lines under it "
+                    + "are not read"
+            case .orphanItems:
+                "a list item with no key above it, so it was not read"
+            case .unclosedFlow:
+                "a [ or { list not closed on this line, so the value reads as this line's text"
+            case .secondDocument:
+                "a --- starts a second document, but the app reads one: everything after this "
+                    + "line is read as part of the same file"
+            case .nestingTooDeep:
+                "nested more than \(YAMLCodec.maxNestingDepth) levels deep, so what is below "
+                    + "that depth was not read as written"
+            }
+        }
+
+        /// `Line N: <detail>`, as the Config screen lists it.
+        var display: String { "Line \(line): \(detail)" }
+
+        /// The line's text (for a block value, the lines under it) is not in what was read,
+        /// so writing its block afresh loses it.
+        var isUnread: Bool {
+            switch kind {
+            case .indentation, .noKey, .blockScalar, .orphanItems, .secondDocument,
+                 .nestingTooDeep: true
+            case .tab, .duplicateKey, .unclosedFlow: false
+            }
+        }
+
+        private static func spaces(_ count: Int) -> String {
+            count == 1 ? "1 space" : "\(count) spaces"
+        }
+    }
+
+    /// How many collections (mappings, lists, `[` and `{` values) the reader follows into one
+    /// another. Every level is a stack frame, and the file may be written by another Mac.
+    static let maxNestingDepth = 64
 
     enum CodecError: Error, LocalizedError {
         case invalidTopLevel
@@ -57,10 +146,19 @@ enum YAMLCodec {
     }
 
     static func decode(_ text: String) throws -> YAMLDocument {
+        // A byte-order mark is not part of the first key, and a CRLF is one line break: a
+        // note's line number is then the one an editor shows, and `encode` does not write an
+        // empty line after every line it keeps.
+        let text = (text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text)
+            .replacingOccurrences(of: "\r\n", with: "\n")
         var parser = Parser(text: text)
         let root = parser.parseBlock(indent: 0)
         guard case .mapping = root else { throw CodecError.invalidTopLevel }
-        return YAMLDocument(originalText: text, root: root, repairedKeys: parser.repairedKeys)
+        let notes = parser.notes.enumerated()
+            .sorted { ($0.element.line, $0.offset) < ($1.element.line, $1.offset) }
+            .map(\.element)
+        return YAMLDocument(
+            originalText: text, root: root, repairedKeys: parser.repairedKeys, parseNotes: notes)
     }
 
     static func emptyDocument() -> YAMLDocument {
@@ -75,16 +173,15 @@ enum YAMLCodec {
 
         var output: [String] = []
         let lines = document.originalText.components(separatedBy: .newlines)
+        let blocks = replacedBlocks(in: lines, keys: keys, root: root)
         var replaced: Set<String> = []
         var index = 0
 
         while index < lines.count {
-            if let key = topLevelKey(in: lines[index]),
-               keys.contains(key),
-               let value = root.value(for: key) {
-                output.append(contentsOf: emitTopLevel(key: key, value: value))
-                replaced.insert(key)
-                index = endOfTopLevelBlock(in: lines, startingAt: index)
+            if let block = blocks[index], let value = root.value(for: block.key) {
+                output.append(contentsOf: emitTopLevel(key: block.key, value: value))
+                replaced.insert(block.key)
+                index = block.end
             } else {
                 output.append(lines[index])
                 index += 1
@@ -103,6 +200,47 @@ enum YAMLCodec {
         return output.joined(separator: "\n") + "\n"
     }
 
+    /// The lines, counted from 1, that `encode` replaces for `keys`.
+    static func replacedLines(
+        _ document: YAMLDocument, replacingTopLevelKeys keys: Set<String>
+    ) -> [ClosedRange<Int>] {
+        guard case .mapping(let root) = document.root else { return [] }
+        let lines = document.originalText.components(separatedBy: .newlines)
+        return replacedBlocks(in: lines, keys: keys, root: root)
+            .map { ($0.key + 1)...$0.value.end }
+            .sorted { $0.lowerBound < $1.lowerBound }
+    }
+
+    /// Whether any of `ranges` (lines counted from 1) holds a `#` comment, on a line of its own
+    /// or after a value. A replaced block is written afresh, without its comments.
+    static func hasComment(_ document: YAMLDocument, onLines ranges: [ClosedRange<Int>]) -> Bool {
+        let lines = document.originalText.components(separatedBy: .newlines)
+        return ranges.contains { range in
+            range.contains { number in
+                guard number <= lines.count else { return false }
+                let trimmed = lines[number - 1].trimmingCharacters(in: .whitespaces)
+                return stripInlineComment(trimmed) != trimmed
+            }
+        }
+    }
+
+    /// Each key in `keys` that `root` sets, by the line its block starts on (counted from 0),
+    /// with the line after the block. Only the last copy of a repeated key is the one read, so
+    /// only it is rewritten; an earlier copy stays as typed.
+    private static func replacedBlocks(
+        in lines: [String], keys: Set<String>, root: YAMLMapping
+    ) -> [Int: (key: String, end: Int)] {
+        var lastLine: [String: Int] = [:]
+        for (offset, line) in lines.enumerated() {
+            if let key = topLevelKey(in: line), keys.contains(key) { lastLine[key] = offset }
+        }
+        var blocks: [Int: (key: String, end: Int)] = [:]
+        for (key, start) in lastLine where root.value(for: key) != nil {
+            blocks[start] = (key, endOfTopLevelBlock(in: lines, startingAt: start))
+        }
+        return blocks
+    }
+
     private static func topLevelKey(in line: String) -> String? {
         guard !line.isEmpty,
               line.first != " ",
@@ -117,13 +255,23 @@ enum YAMLCodec {
         return parsed.key
     }
 
+    /// The line after the block's last indented or `- ` line. Blank lines and unindented
+    /// comments between it and the next top-level key are not the block's, so a rewrite of the
+    /// block keeps them.
     private static func endOfTopLevelBlock(in lines: [String], startingAt start: Int) -> Int {
+        var end = start + 1
         var index = start + 1
-        while index < lines.count {
-            if topLevelKey(in: lines[index]) != nil { break }
+        while index < lines.count, topLevelKey(in: lines[index]) == nil {
+            if isBlockText(lines[index]) { end = index + 1 }
             index += 1
         }
-        return index
+        return end
+    }
+
+    /// A tab-led line is not: the reader counts spaces only, so it reads at column 0.
+    private static func isBlockText(_ line: String) -> Bool {
+        if line.hasPrefix("- ") || line == "-" { return true }
+        return line.first == " " && !line.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private static func emitTopLevel(key: String, value: YAMLValue) -> [String] {
@@ -181,6 +329,10 @@ enum YAMLCodec {
                 let rest = YAMLMapping(entries: Array(mapping.entries.dropFirst()))
                 lines.append(contentsOf: emitMapping(rest, indent: indent + 2))
             case .sequence(let nested):
+                if nested.isEmpty {
+                    lines.append("\(spaces)- []")
+                    continue
+                }
                 lines.append("\(spaces)-")
                 lines.append(contentsOf: emitSequence(nested, indent: indent + 2))
             }
@@ -197,7 +349,9 @@ enum YAMLCodec {
         case .scalar(let scalar):
             return ["\(spaces)- \(entry.key): \(emitScalar(scalar))"]
         case .mapping(let nested):
-            return ["\(spaces)- \(entry.key):"] + emitMapping(nested, indent: indent + 2)
+            // Two past the item's keys, which sit at indent + 2.
+            if nested.entries.isEmpty { return ["\(spaces)- \(entry.key): {}"] }
+            return ["\(spaces)- \(entry.key):"] + emitMapping(nested, indent: indent + 4)
         case .sequence(let values):
             if values.isEmpty { return ["\(spaces)- \(entry.key): []"] }
             return ["\(spaces)- \(entry.key):"] + emitSequence(values, indent: indent + 2)
@@ -219,7 +373,8 @@ enum YAMLCodec {
             || value.rangeOfCharacter(from: special) != nil
             || value.first?.isWhitespace == true
             || value.last?.isWhitespace == true
-            || value.contains("\n") || value.contains("\r")
+            // Scalars, not Characters: "\r\n" is one Character equal to neither.
+            || value.unicodeScalars.contains(where: { $0 == "\n" || $0 == "\r" })
             || ["true", "false", "null", "~"].contains(value.lowercased())
             || Int(value) != nil
             // A string that LOOKS like flow/block syntax must stay quoted, or the
@@ -257,6 +412,27 @@ enum YAMLCodec {
         }
         return nil
     }
+}
+
+/// `value` up to a `#` that starts a comment (outside quotes, at the start or after a
+/// space), trimmed; `value` unchanged when it has no comment.
+private func stripInlineComment(_ value: String) -> String {
+    var inSingle = false
+    var inDouble = false
+    var previous: Character?
+
+    for index in value.indices {
+        let char = value[index]
+        if char == "'", !inDouble { inSingle.toggle() }
+        if char == "\"", !inSingle, previous != "\\" { inDouble.toggle() }
+        if char == "#", !inSingle, !inDouble {
+            if index == value.startIndex || previous?.isWhitespace == true {
+                return String(value[..<index]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        previous = char
+    }
+    return value
 }
 
 extension YAMLCodec.YAMLValue {
@@ -309,24 +485,64 @@ private struct Parser {
     /// Keys whose orphaned `- item` lines were re-attached during parsing.
     /// See `YAMLCodec.YAMLDocument.repairedKeys`.
     private(set) var repairedKeys: Set<String> = []
+    /// See `YAMLCodec.YAMLDocument.parseNotes`; collected in the order found.
+    private(set) var notes: [YAMLCodec.ParseNote] = []
+    /// The line of the key or item whose value is being read, for a duplicate key inside a
+    /// flow mapping.
+    private var valueLine = 0
+    /// Collections the reader is inside of right now, against `YAMLCodec.maxNestingDepth`.
+    private var depth = 0
 
     init(text: String) {
-        self.lines = text.components(separatedBy: .newlines)
+        var lines = text.components(separatedBy: .newlines)
+        // `---` opening the file marks where the document starts; it is not content.
+        let content = lines.map { $0.trimmingCharacters(in: .whitespaces) }
+        if let first = content.firstIndex(where: { !$0.isEmpty && !$0.hasPrefix("#") }),
+           content[first] == "---" || content[first].hasPrefix("--- #") {
+            lines[first] = ""
+        }
+        self.lines = lines
+        for (offset, line) in lines.enumerated() {
+            let lead = line.prefix { $0 == " " || $0 == "\t" }
+            let content = line.dropFirst(lead.count)
+            guard lead.contains("\t"), !content.isEmpty, !content.hasPrefix("#") else { continue }
+            note(offset + 1, .tab(spaces: indentation(of: line)))
+        }
+    }
+
+    private mutating func note(_ line: Int, _ kind: YAMLCodec.ParseNote.Kind) {
+        notes.append(.init(line: line, kind: kind))
     }
 
     mutating func parseBlock(indent: Int) -> YAMLCodec.YAMLValue {
         skipIgnorable()
         guard index < lines.count else { return .mapping(.init(entries: [])) }
         let line = lines[index]
-        if indentation(of: line) == indent,
-           trimmedContent(line).hasPrefix("- ") {
-            return .sequence(parseSequence(indent: indent))
+        if indentation(of: line) == indent, Self.isListItem(trimmedContent(line)) {
+            return .sequence(parseSequence(indent: indent).items)
         }
         return .mapping(parseMapping(indent: indent))
     }
 
-    private mutating func parseMapping(indent: Int) -> YAMLCodec.YAMLMapping {
+    /// `- item`, or a bare `-` whose item is the block on the lines under it.
+    private static func isListItem(_ trimmed: String) -> Bool {
+        trimmed.hasPrefix("- ") || trimmed == "-"
+    }
+
+    /// `seedKeys` are keys already read for this mapping (a list item's first key, on its `- `
+    /// line), so a repeat of one is noted.
+    private mutating func parseMapping(
+        indent: Int, seedKeys: [String: Int] = [:]
+    ) -> YAMLCodec.YAMLMapping {
+        depth += 1
+        defer { depth -= 1 }
+        if skipsTooDeepBlock(indent: indent) { return .init(entries: []) }
         var entries: [YAMLCodec.YAMLEntry] = []
+        var keyLines = seedKeys
+        // The column of the last key's nested block, where a stray list item belongs, and the
+        // column of that block's keys (for a list, its last item's), where a stray key belongs.
+        var childIndent: Int?
+        var keyColumn: Int?
 
         while index < lines.count {
             skipIgnorable()
@@ -336,97 +552,109 @@ private struct Parser {
             let currentIndent = indentation(of: line)
             let trimmed = trimmedContent(line)
             if currentIndent < indent { break }
-            if trimmed.hasPrefix("- ") {
-                // Sequence items at this mapping's own indent. Well-formed
-                // documents never reach here (zero-indent sequences under a
-                // bare `key:` are consumed by the peek path below), so this
-                // is the corrupt `key: []` + orphaned `- item` pattern from
+            if Self.isListItem(trimmed) {
+                // Sequence items no key took. Well-formed documents never
+                // reach here (a list under a bare `key:` is consumed by
+                // parseNestedValue below), so this is a mis-indented item
+                // or the corrupt `key: []` + orphaned `- item` pattern from
                 // pre-fix GUI builds. Repair by attaching the items to the
                 // previous key when it holds an empty/null value; otherwise
                 // drop them — either way, keep parsing so the keys after the
                 // orphans are not silently lost.
-                let orphans = parseSequence(indent: currentIndent)
+                let orphanLine = index + 1
+                let orphans = parseSequence(indent: currentIndent).items
                 if let last = entries.indices.last,
                    entries[last].value == .sequence([]) || entries[last].value == .scalar(.null) {
                     entries[last].value = .sequence(orphans)
                     repairedKeys.insert(entries[last].key)
+                } else if currentIndent > indent, let childIndent, childIndent != currentIndent {
+                    note(orphanLine, .indentation(found: currentIndent, expected: childIndent))
+                } else {
+                    note(orphanLine, .orphanItems)
                 }
                 continue
             }
             guard currentIndent == indent else {
+                let expected = [keyColumn, childIndent].compactMap { $0 }
+                    .first { $0 != currentIndent } ?? indent
+                note(index + 1, .indentation(found: currentIndent, expected: expected))
                 index += 1
                 continue
             }
             guard let parsed = YAMLCodec.parseKeyValue(stripInlineComment(trimmed)) else {
+                note(index + 1, stripInlineComment(trimmed) == "---" ? .secondDocument : .noKey)
                 index += 1
                 continue
             }
 
+            let keyLine = index + 1
             index += 1
+            valueLine = keyLine
             let value: YAMLCodec.YAMLValue
             if parsed.value.isEmpty {
-                // Accept compact block-sequence syntax where list items share the
-                // parent key's indent (valid YAML, accepted by PyYAML / ruamel):
+                // Compact block-sequence syntax, where list items share the parent key's
+                // indent, is valid YAML (PyYAML / ruamel accept it):
                 //   security_agents:
                 //   - name: foo
-                //   - name: bar
-                // …as well as the conventional indent + 2 form.
-                if let listIndent = peekBlockSequenceIndent(maxIndent: indent + 2) {
-                    value = .sequence(parseSequence(indent: listIndent))
-                } else if !hasChildContent(indent: indent) {
-                    // `key:` with no following child content (next line is a
-                    // sibling/parent key) — emit null rather than an empty
-                    // mapping. An empty mapping would later fail to decode as
-                    // [Element] or Optional<Element>.
-                    value = .scalar(.null)
-                } else {
-                    value = parseBlock(indent: indent + 2)
-                }
+                (value, childIndent, keyColumn) = parseNestedValue(
+                    below: indent, listAtSameColumn: true)
             } else {
                 value = parseScalar(parsed.value)
+                (childIndent, keyColumn) = (nil, nil)
+                skipBlockScalar(parsed.value, key: parsed.key, line: keyLine, indent: indent)
             }
+            if let earlier = keyLines[parsed.key] {
+                note(earlier, .duplicateKey(parsed.key, readLine: keyLine))
+            }
+            keyLines[parsed.key] = keyLine
             entries.append(.init(key: parsed.key, value: value))
         }
 
         return .init(entries: entries)
     }
 
-    /// Returns true if the next non-blank, non-comment content line is indented
-    /// strictly deeper than `indent` — i.e. the current key actually has a
-    /// child value. False when the next line is a sibling or parent key, or EOF.
-    private func hasChildContent(indent: Int) -> Bool {
-        var i = index
-        while i < lines.count {
-            let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") {
-                i += 1
-                continue
-            }
-            return indentation(of: lines[i]) > indent
+    /// A `|` or `>` value is not supported. It keeps reading as the indicator, as before; the
+    /// lines under it, which would each be skipped, are skipped here under one note.
+    private mutating func skipBlockScalar(_ value: String, key: String, line: Int, indent: Int) {
+        guard let first = value.first, first == "|" || first == ">", value.count <= 3,
+              value.dropFirst().allSatisfy({ "+-123456789".contains($0) }) else { return }
+        while index < lines.count,
+              trimmedContent(lines[index]).isEmpty || indentation(of: lines[index]) > indent {
+            index += 1
         }
-        return false
+        note(line, .blockScalar(key: key, indicator: value))
     }
 
-    /// Returns the indent of the next block-sequence item if it begins at
-    /// indent ≤ `maxIndent` and is the next non-blank content line; nil otherwise.
-    private func peekBlockSequenceIndent(maxIndent: Int) -> Int? {
-        var i = index
-        while i < lines.count {
-            let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") {
-                i += 1
-                continue
-            }
-            let lineIndent = indentation(of: lines[i])
-            let content = trimmedContent(lines[i])
-            guard content.hasPrefix("- "), lineIndent <= maxIndent else { return nil }
-            return lineIndent
+    /// The value of a `key:` with nothing after the colon: the block on the following lines, at
+    /// whatever column its first line sits, with that column and the column of its keys (for a
+    /// list, its last item's keys). Null when nothing deeper follows (an empty mapping would
+    /// later fail to decode as `[Element]` or `Optional<Element>`).
+    private mutating func parseNestedValue(
+        below column: Int, listAtSameColumn: Bool
+    ) -> (value: YAMLCodec.YAMLValue, column: Int?, keyColumn: Int?) {
+        guard let next = lines[index...].first(where: {
+            let trimmed = trimmedContent($0)
+            return !trimmed.isEmpty && !trimmed.hasPrefix("#")
+        }) else { return (.scalar(.null), nil, nil) }
+        let child = indentation(of: next)
+        let isList = Self.isListItem(trimmedContent(next))
+        guard child > column || (isList && listAtSameColumn && child == column) else {
+            return (.scalar(.null), nil, nil)
         }
-        return nil
+        guard isList else { return (.mapping(parseMapping(indent: child)), child, child) }
+        let list = parseSequence(indent: child)
+        return (.sequence(list.items), child, list.keyColumn)
     }
 
-    private mutating func parseSequence(indent: Int) -> [YAMLCodec.YAMLValue] {
+    /// The items, and the column of the last item's keys when it is a mapping.
+    private mutating func parseSequence(
+        indent: Int
+    ) -> (items: [YAMLCodec.YAMLValue], keyColumn: Int?) {
+        depth += 1
+        defer { depth -= 1 }
+        if skipsTooDeepBlock(indent: indent) { return ([], nil) }
         var values: [YAMLCodec.YAMLValue] = []
+        var keyColumn: Int?
 
         while index < lines.count {
             skipIgnorable()
@@ -436,33 +664,65 @@ private struct Parser {
             let currentIndent = indentation(of: line)
             let trimmed = trimmedContent(line)
             if currentIndent < indent { break }
-            guard currentIndent == indent, trimmed.hasPrefix("- ") else { break }
+            guard currentIndent == indent, Self.isListItem(trimmed) else { break }
 
-            let restStart = trimmed.index(trimmed.startIndex, offsetBy: 2)
-            let rest = String(trimmed[restStart...]).trimmingCharacters(in: .whitespaces)
+            let afterDash = trimmed.dropFirst()
+            let rest = afterDash.trimmingCharacters(in: .whitespaces)
+            // The column the item's text starts at: `-   name:` puts its keys 4 past the dash.
+            let itemIndent = indent + 1 + afterDash.prefix { $0 == " " }.count
+            let itemLine = index + 1
             index += 1
+            valueLine = itemLine
 
             if rest.isEmpty {
-                values.append(parseBlock(indent: indent + 2))
+                let nested = parseNestedValue(below: indent, listAtSameColumn: false)
+                values.append(nested.value)
+                keyColumn = nested.keyColumn
             } else if rest.hasPrefix("{") || rest.hasPrefix("[") {
                 // Flow-style item (`- {label: …}`). Must run before
                 // parseKeyValue, which would otherwise split on the first
                 // colon inside the braces and fabricate a `{label` key.
                 values.append(parseScalar(rest))
+                keyColumn = nil
             } else if let parsed = YAMLCodec.parseKeyValue(stripInlineComment(rest)) {
-                var entries = [YAMLCodec.YAMLEntry(
-                    key: parsed.key,
-                    value: parsed.value.isEmpty ? parseBlock(indent: indent + 2) : parseScalar(parsed.value)
-                )]
-                let continuation = parseMapping(indent: indent + 2)
+                let first: YAMLCodec.YAMLValue
+                if parsed.value.isEmpty {
+                    first = parseNestedValue(below: itemIndent, listAtSameColumn: true).value
+                } else {
+                    first = parseScalar(parsed.value)
+                    skipBlockScalar(
+                        parsed.value, key: parsed.key, line: itemLine, indent: itemIndent)
+                }
+                var entries = [YAMLCodec.YAMLEntry(key: parsed.key, value: first)]
+                let continuation = parseMapping(
+                    indent: itemIndent, seedKeys: [parsed.key: itemLine])
                 entries.append(contentsOf: continuation.entries)
                 values.append(.mapping(.init(entries: entries)))
+                keyColumn = itemIndent
             } else {
                 values.append(parseScalar(rest))
+                keyColumn = nil
             }
         }
 
-        return values
+        return (values, keyColumn)
+    }
+
+    /// Past `maxNestingDepth` the block at `indent` is skipped under one note instead of read:
+    /// each level is a stack frame, and a file another Mac wrote can nest as deep as it likes.
+    private mutating func skipsTooDeepBlock(indent: Int) -> Bool {
+        guard depth > YAMLCodec.maxNestingDepth else { return false }
+        skipIgnorable()
+        let first = index + 1
+        while index < lines.count {
+            let trimmed = trimmedContent(lines[index])
+            if !trimmed.isEmpty, !trimmed.hasPrefix("#"), indentation(of: lines[index]) < indent {
+                break
+            }
+            index += 1
+        }
+        note(first, .nestingTooDeep)
+        return true
     }
 
     private mutating func skipIgnorable() {
@@ -476,10 +736,19 @@ private struct Parser {
         }
     }
 
-    private func parseScalar(_ raw: String) -> YAMLCodec.YAMLValue {
+    private mutating func parseScalar(_ raw: String) -> YAMLCodec.YAMLValue {
+        depth += 1
+        defer { depth -= 1 }
         let value = stripInlineComment(raw).trimmingCharacters(in: .whitespaces)
         if value == "[]" { return .sequence([]) }
         if value == "{}" { return .mapping(.init(entries: [])) }
+        // Each bracket past this depth would recurse once more, so the rest stays text, with
+        // one note per line.
+        if depth > YAMLCodec.maxNestingDepth, value.first == "[" || value.first == "{" {
+            let tooDeep = YAMLCodec.ParseNote(line: valueLine, kind: .nestingTooDeep)
+            if notes.last != tooDeep { notes.append(tooDeep) }
+            return .scalar(.string(value))
+        }
         // Flow-style collections — `{label: "Pass", min_failures: 0}` /
         // `[a, b]`. config.example.yaml's compliance bands ship in this form,
         // so the block-only parser turned every seeded workspace's config
@@ -493,6 +762,10 @@ private struct Parser {
            let sequence = parseFlowSequence(value) {
             return sequence
         }
+        if value.first == "[" || value.first == "{",
+           value.filter({ "[{".contains($0) }).count > value.filter({ "]}".contains($0) }).count {
+            note(valueLine, .unclosedFlow)
+        }
         if value == "null" || value == "~" { return .scalar(.null) }
         if value.lowercased() == "true" { return .scalar(.bool(true)) }
         if value.lowercased() == "false" { return .scalar(.bool(false)) }
@@ -501,7 +774,7 @@ private struct Parser {
             return .scalar(.string(unescapeDoubleQuoted(String(value.dropFirst().dropLast()))))
         }
         if value.hasPrefix("'"), value.hasSuffix("'"), value.count >= 2 {
-            return .scalar(.string(String(value.dropFirst().dropLast())))
+            return .scalar(.string(unescapeSingleQuoted(String(value.dropFirst().dropLast()))))
         }
         return .scalar(.string(value))
     }
@@ -509,23 +782,30 @@ private struct Parser {
     /// Parse `{key: value, key: value}`. Returns nil when any part is not a
     /// `key: value` pair, so almost-flow text degrades to a string scalar
     /// instead of silently dropping content.
-    private func parseFlowMapping(_ value: String) -> YAMLCodec.YAMLValue? {
+    private mutating func parseFlowMapping(_ value: String) -> YAMLCodec.YAMLValue? {
         let inner = String(value.dropFirst().dropLast())
         var entries: [YAMLCodec.YAMLEntry] = []
+        // Notes for a mapping that degrades to a string are taken back with it.
+        let notesBefore = notes.count
         for part in splitFlowParts(inner) {
             let trimmed = part.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
             guard let parsed = YAMLCodec.parseKeyValue(trimmed), !parsed.value.isEmpty else {
+                notes.removeSubrange(notesBefore...)
                 return nil
             }
-            entries.append(.init(key: unquoteFlowKey(parsed.key), value: parseScalar(parsed.value)))
+            let key = unquoteFlowKey(parsed.key)
+            if entries.contains(where: { $0.key == key }) {
+                note(valueLine, .duplicateKey(key, readLine: valueLine))
+            }
+            entries.append(.init(key: key, value: parseScalar(parsed.value)))
         }
         return .mapping(.init(entries: entries))
     }
 
     /// Parse `[a, b, {k: v}]`. Elements recurse through `parseScalar`, so
     /// nested flow collections work.
-    private func parseFlowSequence(_ value: String) -> YAMLCodec.YAMLValue? {
+    private mutating func parseFlowSequence(_ value: String) -> YAMLCodec.YAMLValue? {
         let inner = String(value.dropFirst().dropLast())
         var values: [YAMLCodec.YAMLValue] = []
         for part in splitFlowParts(inner) {
@@ -574,34 +854,20 @@ private struct Parser {
             return unescapeDoubleQuoted(String(key.dropFirst().dropLast()))
         }
         if key.hasPrefix("'"), key.hasSuffix("'"), key.count >= 2 {
-            return String(key.dropFirst().dropLast())
+            return unescapeSingleQuoted(String(key.dropFirst().dropLast()))
         }
         return key
+    }
+
+    /// Inside single quotes, `''` is one `'`.
+    private func unescapeSingleQuoted(_ value: String) -> String {
+        value.replacingOccurrences(of: "''", with: "'")
     }
 
     private func unescapeDoubleQuoted(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\\"", with: "\"")
             .replacingOccurrences(of: "\\\\", with: "\\")
-    }
-
-    private func stripInlineComment(_ value: String) -> String {
-        var inSingle = false
-        var inDouble = false
-        var previous: Character?
-
-        for index in value.indices {
-            let char = value[index]
-            if char == "'", !inDouble { inSingle.toggle() }
-            if char == "\"", !inSingle, previous != "\\" { inDouble.toggle() }
-            if char == "#", !inSingle, !inDouble {
-                if index == value.startIndex || previous?.isWhitespace == true {
-                    return String(value[..<index]).trimmingCharacters(in: .whitespaces)
-                }
-            }
-            previous = char
-        }
-        return value
     }
 
     private func trimmedContent(_ line: String) -> String {

@@ -60,13 +60,30 @@ struct BackupsView: View {
         backups.first
     }
 
+    /// What "Diff Latest" compares against: the newest backup that has files. An empty newest
+    /// backup would make every diff meaningless.
+    private var diffTarget: BackupRecord? {
+        backups.first { !$0.isEmpty }
+    }
+
+    private var selectionIncludesEmptyBackup: Bool {
+        backups.contains { selectedBackups.contains($0.id) && $0.isEmpty }
+    }
+
     private var diffSelectionHint: String {
         switch selectedBackups.count {
         case 0: "Command-click to select multiple"
         case 1: "Select 1 more to diff"
-        case 2: "Ready to diff"
+        case 2: selectionIncludesEmptyBackup ? "An empty backup cannot be diffed" : "Ready to diff"
         default: "Select exactly 2 to diff"
         }
+    }
+
+    private func diffLatestHelp(for backup: BackupRecord) -> String {
+        if workspace.demoMode { return DemoData.liveOnlyHelp }
+        if backup.isEmpty { return "This backup has no files, so there is nothing to compare." }
+        if diffTarget?.id == backup.id { return "This is the latest backup with files." }
+        return "Compare this backup with the latest one that has files."
     }
 
     private var shouldShowBackupLogBody: Bool {
@@ -115,43 +132,45 @@ struct BackupsView: View {
         PageHeader(
             kicker: "Configuration Backups",
             title: "\(backups.count) backup\(backups.count == 1 ? "" : "s")",
-            subtitle: backupsFolderDisplayPath
+            subtitle: backupsFolderDisplayPath,
+            wrapsTrailing: true
         ) {
             AnyView(
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        backupLabelField
-                        PNPButton(title: "Reveal in Finder", icon: "folder") {
-                            revealBackupsFolder()
-                        }
-                        .disabled(workspace.demoMode)
-                        .help(workspace.demoMode
-                              ? Self.demoRevealHelp
-                              : "Open the backups directory for this workspace in Finder.")
-                        Mono(
-                            text: diffSelectionHint,
-                            size: 10.5,
-                            color: selectedBackups.count == 2 ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
-                        )
-                        PNPButton(
-                            title: isRunningDiff ? "Diffing..." : "Diff Selected",
-                            icon: "arrow.left.arrow.right",
-                            style: .neutral
-                        ) {
-                            diffSelected()
-                        }
-                        .disabled(workspace.demoMode || isRunningBackup || isRunningDiff || selectedBackups.count != 2)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-                        PNPButton(
-                            title: isRunningBackup ? "Backing Up..." : "New Backup",
-                            icon: "externaldrive.badge.plus",
-                            style: .gold
-                        ) {
-                            runBackup()
-                        }
-                        .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
-                        .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                WrappingRow {
+                    backupLabelField
+                    PNPButton(title: "Reveal in Finder", icon: "folder") {
+                        revealBackupsFolder()
                     }
+                    .disabled(workspace.demoMode)
+                    .help(workspace.demoMode
+                          ? Self.demoRevealHelp
+                          : "Open the backups directory for this workspace in Finder.")
+                    Mono(
+                        text: diffSelectionHint,
+                        size: 10.5,
+                        color: selectedBackups.count == 2 && !selectionIncludesEmptyBackup
+                            ? Theme.Colors.ok : Theme.Text.tertiary(contrast)
+                    )
+                    PNPButton(
+                        title: isRunningDiff ? "Diffing..." : "Diff Selected",
+                        icon: "arrow.left.arrow.right",
+                        style: .neutral
+                    ) {
+                        diffSelected()
+                    }
+                    .disabled(
+                        workspace.demoMode || isRunningBackup || isRunningDiff
+                            || selectedBackups.count != 2 || selectionIncludesEmptyBackup)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                    PNPButton(
+                        title: isRunningBackup ? "Backing Up..." : "New Backup",
+                        icon: "externaldrive.badge.plus",
+                        style: .gold
+                    ) {
+                        runBackup()
+                    }
+                    .disabled(workspace.demoMode || isRunningBackup || isRunningDiff)
+                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
                 }
             )
         }
@@ -206,18 +225,24 @@ struct BackupsView: View {
                                 Mono(text: backup.name, size: 10.5)
                             }
                         }
+                        .lineLimit(1)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(backup.accessibilityLabel)
                     }
+                    .width(min: 130, ideal: 200)
                     TableColumn("Created") { backup in
                         Mono(text: backup.createdLabel)
                     }
+                    .width(min: 92, ideal: 104, max: 130)
                     TableColumn("Files") { backup in
                         Mono(text: "\(backup.fileCount)")
                     }
+                    .width(min: 40, ideal: 52, max: 70)
                     TableColumn("Size") { backup in
                         Mono(text: backup.sizeLabel)
                     }
+                    .width(min: 60, ideal: 70, max: 90)
+                    // Reveal, Diff Latest and Delete at their natural widths, so none is cut off.
                     TableColumn("") { backup in
                         HStack(spacing: 6) {
                             PNPButton(title: "Reveal", icon: "folder", size: .sm) {
@@ -226,10 +251,12 @@ struct BackupsView: View {
                             .disabled(workspace.demoMode)
                             .help(workspace.demoMode ? Self.demoRevealHelp : "")
                             PNPButton(title: "Diff Latest", icon: "arrow.left.arrow.right", size: .sm) {
-                                diff(backup, against: latestBackup)
+                                diff(backup, against: diffTarget)
                             }
-                            .disabled(workspace.demoMode || isRunningDiff || latestBackup?.id == backup.id)
-                            .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
+                            .disabled(
+                                workspace.demoMode || isRunningDiff
+                                    || !BackupRecord.canDiff(backup, against: diffTarget))
+                            .help(diffLatestHelp(for: backup))
                             PNPButton(title: "Delete", icon: "trash", style: .danger, size: .sm) {
                                 pendingDelete = backup
                                 showDeleteConfirm = true
@@ -251,6 +278,7 @@ struct BackupsView: View {
                             .disabled(workspace.demoMode || isRunningBackup)
                         }
                     }
+                    .width(min: 284, ideal: 290, max: 320)
                 }
                 .frame(minHeight: 390)
                 .scrollContentBackground(.hidden)
@@ -403,6 +431,16 @@ struct BackupsView: View {
                     .foregroundStyle(Theme.Colors.warn)
                     .padding(.horizontal, 6)
             }
+            if !diffParseFailed {
+                // The quotes inside new_value are jamf-cli's: it sends each changed field as
+                // a JSON string. Raw shows its output as received, so Copy hands a script
+                // the same text.
+                Text("jamf-cli sends each changed field as a JSON string, so quotes inside it "
+                     + "show escaped. Raw is its output unchanged; Summary reads the values.")
+                    .font(Theme.Fonts.mono(10.5))
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .padding(.horizontal, 6)
+            }
             Text(diffRawText)
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Text.secondary)
@@ -478,7 +516,8 @@ struct BackupsView: View {
     }
 
     private func diff(_ backup: BackupRecord, against latest: BackupRecord?) {
-        guard !workspace.demoMode, let latest, latest.id != backup.id else { return }
+        guard !workspace.demoMode, let latest,
+              BackupRecord.canDiff(backup, against: latest) else { return }
         diffOutput.removeAll()
         diffGroups = []
         diffHeadline = ""
@@ -589,7 +628,7 @@ private struct DiffLineView: View {
     }
 }
 
-private struct BackupLibrary {
+struct BackupLibrary {
     func list(profile: String) -> [BackupRecord] {
         guard let root = WorkspacePathGuard.root(for: profile) else { return [] }
         let backupsRoot = root.appendingPathComponent("backups", isDirectory: true)
@@ -613,9 +652,10 @@ private struct BackupLibrary {
         guard let dir = WorkspacePathGuard.validate(url, under: root) else { return nil }
         let manifest = readManifest(dir.appendingPathComponent("manifest.json"), root: root)
         let stats = directoryStats(dir, root: root)
-        let created = manifest.created
-            ?? (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
-            ?? .distantPast
+        let modified = (try? dir.resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate
+        let created = BackupRecord.created(
+            manifest: manifest.created, name: dir.lastPathComponent, modified: modified)
         return BackupRecord(
             name: dir.lastPathComponent,
             label: manifest.label,
@@ -691,20 +731,44 @@ private struct DiffGroupView: View {
 
     @ViewBuilder
     private func changeRow(_ change: BackupDiffModel.Change) -> some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .top, spacing: 8) {
             Text(change.path.isEmpty ? "(value)" : change.path)
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Text.secondary)
-            Text(change.old ?? "—")
-                .font(Theme.Fonts.mono(11))
-                .foregroundStyle(Theme.Colors.danger)
-            Image(systemName: "arrow.right")
-                .font(.system(size: 8))
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-            Text(change.new ?? "—")
-                .font(Theme.Fonts.mono(11))
-                .foregroundStyle(Theme.Colors.ok)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+            DiffValuePair(old: change.old, new: change.new, size: 11)
         }
+    }
+
+    /// One member's change inside a card whose members landed on different values: the
+    /// object names, then each field's before → after, labelled when the card has several.
+    private func variantRow(_ variant: BackupDiffModel.Variant) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            // Cap the inline name list: a variant can legitimately cover a hundred-plus
+            // objects, and joining those into one line would clip to meaningless text.
+            // The full list is under "Show objects".
+            Text(variantLabel(variant))
+                .font(Theme.Fonts.mono(10.5))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .frame(maxWidth: 220, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(variant.changes.enumerated()), id: \.offset) { _, change in
+                    HStack(alignment: .top, spacing: 6) {
+                        let fields = group.fields
+                        if let label = BackupDiffModel.fieldLabel(for: change, among: fields) {
+                            Text(label)
+                                .font(Theme.Fonts.mono(10.5))
+                                .foregroundStyle(Theme.Text.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
+                        }
+                        DiffValuePair(old: change.old, new: change.new, size: 10.5)
+                    }
+                }
+            }
+        }
+        .padding(.leading, 24)
     }
 
     var body: some View {
@@ -734,23 +798,7 @@ private struct DiffGroupView: View {
                     .foregroundStyle(Theme.Text.secondary)
                     .padding(.leading, 12)
                 ForEach(Array(group.variants.enumerated()), id: \.offset) { _, variant in
-                    HStack(alignment: .top, spacing: 6) {
-                        // Cap the inline name list: a variant can legitimately
-                        // cover a hundred-plus objects, and joining those into
-                        // one line would clip to meaningless text. The full list
-                        // is under "Show objects".
-                        Text(variantLabel(variant))
-                            .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                            .frame(maxWidth: 220, alignment: .leading)
-                        Text(
-                            variant.changes.map { $0.new ?? $0.old ?? "—" }
-                                .joined(separator: "; ")
-                        )
-                            .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Colors.ok)
-                    }
-                    .padding(.leading, 24)
+                    variantRow(variant)
                 }
             }
 
@@ -797,5 +845,47 @@ private struct DiffGroupView: View {
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.Colors.gold.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// A before → after pair. Short values share a line; when they do not fit (an icon URL ending
+/// in a 64-digit hash) the old value takes its own line and each value shortens in the middle
+/// with the whole text in its tooltip, instead of wrapping to one character per line.
+private struct DiffValuePair: View {
+    let old: String?
+    let new: String?
+    let size: CGFloat
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private func value(_ text: String?, color: Color) -> some View {
+        Text(text ?? "\u{2014}")
+            .font(Theme.Fonts.mono(size))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(text ?? "")
+    }
+
+    private var arrow: some View {
+        Image(systemName: "arrow.right")
+            .font(.system(size: 8))
+            .foregroundStyle(Theme.Text.tertiary(contrast))
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                value(old, color: Theme.Colors.danger)
+                arrow
+                value(new, color: Theme.Colors.ok)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                value(old, color: Theme.Colors.danger)
+                HStack(spacing: 6) {
+                    arrow
+                    value(new, color: Theme.Colors.ok)
+                }
+            }
+        }
     }
 }

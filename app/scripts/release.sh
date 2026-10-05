@@ -14,6 +14,11 @@ set -euo pipefail
 
 cd "$(cd -- "$(dirname -- "$0")/.." && pwd -P)"
 
+# Artifact naming, shared with build-app.sh, build-pkg.sh and package-dmg.sh
+# (scripts/test-versioning.zsh covers it in CI).
+# shellcheck source-path=SCRIPTDIR source=lib/versioning.zsh
+source "${PWD}/scripts/lib/versioning.zsh"
+
 # Require all release variables upfront
 : "${RELEASE_VERSION:?RELEASE_VERSION env var not set (e.g. 2.1.0)}"
 : "${DEVELOPER_ID_APP:?DEVELOPER_ID_APP env var not set (e.g. Developer ID Application: Tony Young (XXXXXXXXXX))}"
@@ -70,7 +75,9 @@ echo
 
 # Summary
 APP_PATH="$(pwd)/build/JamfReports.app"
-DMG_PATH="$(pwd)/build/JamfReports-${RELEASE_VERSION}.dmg"
+# Step 1 builds with RELEASE=1, so the DMG carries the release name.
+DMG_PATH="$(jr_artifact_path "$(pwd)/build" "${RELEASE_VERSION}" "$(jr_build_number)" \
+  "$(jr_release_channel 1)" dmg)"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Release Complete"

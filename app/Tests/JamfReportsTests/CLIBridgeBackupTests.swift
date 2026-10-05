@@ -49,52 +49,6 @@ final class CLIBridgeBackupTests: XCTestCase {
         )
     }
 
-    /// When the backups/ directory cannot be created (a regular file blocks it),
-    /// backup() must throw `.directoryOperationFailed` and emit an error line.
-    /// No jamf-cli needed — the failure occurs before the binary is invoked.
-    func test_backup_throwsDirectoryOperationFailedWhenBackupsDirBlocked() async throws {
-        guard ExecutableLocator.locate("jamf-cli") != nil else {
-            // The check for executable happens before workspace validation in backup().
-            // Skip on machines without jamf-cli since .executableNotFound fires first.
-            throw XCTSkip("jamf-cli not installed — executableNotFound fires before directory check")
-        }
-        // Build a minimal temp workspace so ProfileService.workspaceURL resolves.
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CLIBridgeBackupTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
-        addTeardownBlock {
-            unsetenv("JRC_TEST_WORKSPACES_ROOT")
-            try? FileManager.default.removeItem(at: root)
-        }
-        let profile = "backup-dirtest-\(UUID().uuidString.prefix(8).lowercased())"
-        let workspace = root.appendingPathComponent(profile, isDirectory: true)
-        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-
-        // Plant a regular file at <workspace>/backups to block createDirectory.
-        let blockingFile = workspace.appendingPathComponent("backups")
-        try "blocking".write(to: blockingFile, atomically: true, encoding: .utf8)
-
-        let bridge = CLIBridge()
-        let collector = LineCollector()
-        do {
-            _ = try await bridge.backup(profile: profile, label: nil) { line in
-                collector.append(line)
-            }
-            XCTFail("backup must throw when backups/ directory cannot be created")
-        } catch let e as CLIBridgeError {
-            if case .directoryOperationFailed = e { /* expected */ } else {
-                XCTFail("Expected .directoryOperationFailed, got \(e)")
-            }
-        } catch {
-            XCTFail("Unexpected error type: \(error)")
-        }
-        XCTAssertTrue(
-            collector.lines.contains(where: { $0.text.contains("could not create backups directory") }),
-            "expected backups-directory error line; got: \(collector.lines.map(\.text))"
-        )
-    }
-
     /// When jamf-cli is absent the backup() path must throw `.executableNotFound`
     /// and emit an error line. Skipped when jamf-cli is installed.
     func test_backup_emitsErrorWhenJamfCLIMissing() async throws {
@@ -225,38 +179,68 @@ final class CLIBridgeBackupTests: XCTestCase {
         )
     }
 
-    // MARK: - jamf-cli profile resolution for -p
+    // MARK: - -p is the workspace's own profile
 
-    /// No config.yaml — fall back to the workspace slug (today's behavior).
-    func test_resolvedCLIProfile_fallsBackToSlugWithoutConfig() throws {
+    /// No config.yaml: nothing to compare, nothing logged.
+    func test_backupConfigProfile_silentWithoutConfig() throws {
         let profile = try makeWorkspace(configYAML: nil)
-        XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), profile)
+        let collector = LineCollector()
+        XCTAssertNoThrow(try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
+        XCTAssertTrue(collector.lines.isEmpty)
     }
 
-    /// A hand-edited multi-tenant config points `jamf_cli.profile` somewhere other
-    /// than the workspace slug; `-p` must follow the config, not the slug.
-    func test_resolvedCLIProfile_usesConfiguredProfile() throws {
+    /// A config that agrees, or sets nothing, is not worth a line.
+    func test_backupConfigProfile_silentWhenConfigMatchesOrIsEmpty() throws {
+        let matching = try makeWorkspace(configYAML: nil)
+        try writeConfig("jamf_cli:\n  profile: \"\(matching)\"\n", for: matching)
+        let empty = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"\"\n")
+        for profile in [matching, empty] {
+            let collector = LineCollector()
+            XCTAssertNoThrow(
+                try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
+            XCTAssertTrue(collector.lines.isEmpty, "\(collector.lines.map(\.text))")
+        }
+    }
+
+    /// Another Mac sharing the workspace can edit config.yaml to name a different tenant; the
+    /// backup stays on the workspace's profile and says the config value is ignored.
+    func test_backupConfigProfile_warnsOnceAndKeepsWorkspaceProfileForAnotherTenant() throws {
         let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"tenant-b\"\n")
-        XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), "tenant-b")
+        let collector = LineCollector()
+        XCTAssertNoThrow(try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
+        XCTAssertEqual(collector.lines.count, 1)
+        let line = try XCTUnwrap(collector.lines.first)
+        XCTAssertEqual(line.level, .warn)
+        XCTAssertTrue(line.text.hasPrefix("[warn]"), line.text)
+        XCTAssertTrue(line.text.contains("tenant-b"), line.text)
+        XCTAssertTrue(line.text.contains(profile), line.text)
     }
 
-    /// An empty value must not become `-p ""`.
-    func test_resolvedCLIProfile_fallsBackWhenConfiguredProfileEmpty() throws {
-        let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"\"\n")
-        XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), profile)
+    /// A case variant shares the folder on a case-insensitive volume: refuse, as collect does.
+    func test_backupConfigProfile_refusesACaseVariant() throws {
+        let profile = try makeWorkspace(configYAML: nil)
+        let owner = profile.uppercased()
+        try writeConfig("jamf_cli:\n  profile: \"\(owner)\"\n", for: profile)
+        let collector = LineCollector()
+        XCTAssertThrowsError(
+            try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) }
+        ) { error in
+            XCTAssertEqual(
+                error as? CLIBridgeError, .profileCaseConflict(profile: profile, owner: owner)
+            )
+        }
+        XCTAssertTrue(
+            collector.lines.contains { $0.level == .fail && $0.text.hasPrefix("[error]") })
     }
 
-    /// A leading dash is a valid jamf-cli name, and jamf-cli reads the argument after `-p`
-    /// as its value (checked against 1.31.1), so it passes through (2.8.3).
-    func test_resolvedCLIProfile_passesALeadingDashProfileThrough() throws {
-        let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"--output\"\n")
-        XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), "--output")
-    }
-
-    /// A name the app can't use (here a tab) falls back to the workspace's own profile.
-    func test_resolvedCLIProfile_fallsBackOnUnusableProfile() throws {
-        let profile = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"tenant\u{9}b\"\n")
-        XCTAssertEqual(CLIBridge.resolvedCLIProfile(forWorkspace: profile), profile)
+    /// `-p` carries the workspace profile whatever it looks like, a leading dash included
+    /// (jamf-cli reads the argument after `-p` as its value).
+    func test_backupArguments_passTheWorkspaceProfile() {
+        XCTAssertEqual(
+            CLIBridge.backupArguments(profile: "--output", outputDirectory: "/tmp/stage"),
+            ["-p", "--output", "--no-input", "pro", "backup",
+             "--format", "json", "--output", "/tmp/stage"]
+        )
     }
 
     // MARK: - Helpers
@@ -280,6 +264,13 @@ final class CLIBridgeBackupTests: XCTestCase {
             )
         }
         return profile
+    }
+
+    private func writeConfig(_ yaml: String, for profile: String) throws {
+        let workspace = try XCTUnwrap(ProfileService.workspaceURL(for: profile))
+        try yaml.write(
+            to: workspace.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8
+        )
     }
 
     private func makeTempDir() throws -> URL {

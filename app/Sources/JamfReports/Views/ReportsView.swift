@@ -7,9 +7,13 @@ struct ReportsView: View {
     @State private var filter: String = "All"
     @State private var selectedReports = Set<Report.ID>()
     @State private var reports: [Report] = []
+    /// Where `output.output_dir` sends reports; nil until the first `reload`.
+    @State private var reportsFolder: URL?
     @State private var reportStats = ReportLibrary.Stats(count: 0, totalBytes: 0, archivedCount: 0)
     @State private var snapshotFamilies: [SnapshotFamily] = []
-    @State private var isGeneratingHTML = false
+    @State private var showGenerate = false
+    /// Read before the Generate sheet opens; see `presentGenerate`.
+    @State private var generateFreshness: SnapshotFreshness.Decision?
     @State private var isGeneratingPDF = false
     @State private var isExportingCSV = false
     @State private var reportError: String?
@@ -21,9 +25,9 @@ struct ReportsView: View {
     @State private var quickLookURL: URL? = nil
 
     private var reportsDirectory: URL {
-        let workspace = ProfileService.workspaceURL(for: workspace.profile)
-            ?? WorkspaceRootStore.defaultRoot
-        return workspace.appendingPathComponent("Generated Reports", isDirectory: true)
+        reportsFolder ?? (ProfileService.workspaceURL(for: workspace.profile)
+            ?? WorkspaceRootStore.defaultRoot)
+            .appendingPathComponent(WorkspacePaths.generatedReportsDirName, isDirectory: true)
     }
 
     /// The header's folder. Demo mode names the demo workspace, not this Mac's
@@ -32,14 +36,13 @@ struct ReportsView: View {
         workspace.demoMode
             ? DemoData.workspaceDisplayPath(
                 profile: DemoData.org.profile, subpath: "Generated Reports") + "/"
-            : WorkspaceRootStore.displayPath(profile: workspace.profile,
-                                             subpath: "Generated Reports") + "/"
+            : WorkspaceRootStore.displayPath(of: reportsDirectory, profile: workspace.profile) + "/"
     }
 
     private func revealReportsFolder() {
         // Demo reports are not on disk; the demo profile's folder could be real.
         guard !workspace.demoMode else { return }
-        SystemActions.openFolder(reportsDirectory)
+        SystemActions.openFolder(reportsDirectory, profile: workspace.profile)
     }
 
     private var filteredReports: [Report] {
@@ -114,19 +117,27 @@ struct ReportsView: View {
                                     .foregroundStyle(Theme.Colors.gold)
                                     .font(.system(size: 11))
                                     .accessibilityHidden(true)
+                                // The date ends the name, so the middle is what gives way.
                                 Mono(text: r.name, color: Theme.Colors.fg)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(r.name)
                             }
-                            .accessibilityLabel(
-                                "\(r.name), \(r.sheets) sheet\(r.sheets == 1 ? "" : "s"), \(r.size)"
-                            )
+                            .accessibilityLabel(r.accessibilityLabel)
                         }
-                        TableColumn("Source schedule") { r in
-                            Text(r.source).font(.footnote)
+                        .width(min: 220, ideal: 360)
+                        TableColumn("Type") { r in
+                            Text(r.source).font(.footnote).lineLimit(1).help(r.source)
                         }
-                        TableColumn("Sheets") { r in Mono(text: "\(r.sheets)") }
+                        .width(min: 110, ideal: 170)
+                        TableColumn("Sheets") { r in Mono(text: r.sheetsLabel) }
+                            .width(min: 44, ideal: 56, max: 72)
                         TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
+                            .width(min: 52, ideal: 64, max: 84)
                         TableColumn("Size") { r in Mono(text: r.size) }
+                            .width(min: 56, ideal: 68, max: 90)
                         TableColumn("Generated") { r in Mono(text: r.date) }
+                            .width(min: 96, ideal: 112, max: 140)
                     }
                     .frame(minHeight: 360)
                     .scrollContentBackground(.hidden)
@@ -142,10 +153,10 @@ struct ReportsView: View {
                             reportName: reportID
                            ) {
                             Button("Reveal in Finder") {
-                                SystemActions.reveal(url)
+                                SystemActions.reveal(url, profile: workspace.profile)
                             }
                             Button("Open") {
-                                SystemActions.open(url)
+                                SystemActions.open(url, profile: workspace.profile)
                             }
                             Button("Copy path") {
                                 SystemActions.copyToClipboard(url.path)
@@ -160,10 +171,15 @@ struct ReportsView: View {
         .sheet(isPresented: $showPeriodReport) {
             PeriodReportSheet()
         }
+        .sheet(isPresented: $showGenerate) {
+            GenerateSheet(
+                profile: workspace.profile, bridge: bridge, freshness: generateFreshness,
+                onGenerated: reload)
+        }
         .sheet(isPresented: $showQuickLook) {
             NavigationStack {
                 if let url = quickLookURL {
-                    QuickLookPreview(url: url)
+                    QuickLookPreview(url: url, profile: workspace.profile)
                         .navigationTitle("Preview")
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) {
@@ -196,74 +212,75 @@ struct ReportsView: View {
                 kicker: "Generated Reports",
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { navigateToOverview() })],
                 title: reports.count == 1 ? "1 report" : "\(reports.count) reports",
-                subtitle: reportsFolderDisplayPath
+                subtitle: reportsFolderDisplayPath,
+                wrapsTrailing: true
             ) {
                 AnyView(
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            PNPButton(title: "Reveal in Finder", icon: "folder") {
-                                revealReportsFolder()
-                            }
-                            .disabled(workspace.demoMode)
-                            .help(workspace.demoMode
-                                  ? "Demo reports are not on disk. Revealing their folder "
-                                    + "needs a live profile."
-                                  : "Open the Generated Reports folder in Finder")
-                            PNPButton(
-                                title: "Period report",
-                                icon: "calendar.badge.clock",
-                                style: .neutral
-                            ) {
-                                // The sheet reads the workspace's summaries.
-                                guard !workspace.demoMode else { return }
-                                showPeriodReport = true
-                            }
-                            .disabled(workspace.demoMode)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Fleet numbers for a period, with start, end and change"
-                            )
-                            PNPButton(
-                                title: isGeneratingHTML ? "Generating..." : "Generate HTML",
-                                icon: "safari",
-                                style: .gold
-                            ) {
-                                generateHTMLReport()
-                            }
-                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Generate a self-contained HTML instance report"
-                            )
-                            PNPButton(
-                                title: isGeneratingPDF ? "Generating..." : "Export PDF",
-                                icon: "doc.richtext",
-                                style: .neutral
-                            ) {
-                                generatePDFReport()
-                            }
-                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Render the HTML report to PDF via WKWebView"
-                            )
-                            PNPButton(
-                                title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
-                                icon: "doc.text",
-                                style: .neutral
-                            ) {
-                                runExportInventoryCSV()
-                            }
-                            .disabled(workspace.demoMode || isGeneratingHTML || isGeneratingPDF || isExportingCSV)
-                            .help(
-                                workspace.demoMode
-                                ? DemoData.liveOnlyHelp
-                                : "Export a wide CSV of all computer inventory"
-                            )
+                    WrappingRow {
+                        PNPButton(title: "Reveal in Finder", icon: "folder") {
+                            revealReportsFolder()
                         }
+                        .disabled(workspace.demoMode)
+                        .help(workspace.demoMode
+                              ? "Demo reports are not on disk. Revealing their folder "
+                                + "needs a live profile."
+                              : "Open the Generated Reports folder in Finder")
+                        PNPButton(
+                            title: "Period report",
+                            icon: "calendar.badge.clock",
+                            style: .neutral
+                        ) {
+                            // The sheet reads the workspace's summaries.
+                            guard !workspace.demoMode else { return }
+                            showPeriodReport = true
+                        }
+                        .disabled(workspace.demoMode)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Fleet numbers for a period, with start, end and change"
+                        )
+                        PNPButton(
+                            title: "Generate\u{2026}",
+                            icon: "doc.badge.plus",
+                            style: .gold
+                        ) {
+                            // The sheet runs jamf-cli against the selected profile.
+                            guard !workspace.demoMode else { return }
+                            Task { await presentGenerate() }
+                        }
+                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Choose a template or sheets and the formats, then generate"
+                        )
+                        PNPButton(
+                            title: isGeneratingPDF ? "Generating..." : "Export PDF",
+                            icon: "doc.richtext",
+                            style: .neutral
+                        ) {
+                            generatePDFReport()
+                        }
+                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Render the HTML report to PDF via WKWebView"
+                        )
+                        PNPButton(
+                            title: isExportingCSV ? "Exporting..." : "Export Inventory CSV",
+                            icon: "doc.text",
+                            style: .neutral
+                        ) {
+                            runExportInventoryCSV()
+                        }
+                        .disabled(workspace.demoMode || isGeneratingPDF || isExportingCSV)
+                        .help(
+                            workspace.demoMode
+                            ? DemoData.liveOnlyHelp
+                            : "Export a wide CSV of all computer inventory"
+                        )
                     }
                 )
             }
@@ -371,7 +388,9 @@ struct ReportsView: View {
             reports = DemoData.generatedReports
             reportStats = DemoData.generatedReportStats
             snapshotFamilies = DemoData.snapshotFamilies(for: DemoData.org.profile)
+            reportsFolder = nil
         } else {
+            reportsFolder = WorkspacePaths.reportsDir(for: workspace.profile, onLine: nil)
             let library = ReportLibrary()
             reports = library.list(profile: workspace.profile)
             reportStats = library.stats(profile: workspace.profile)
@@ -406,108 +425,64 @@ struct ReportsView: View {
     // The generate and export actions run jamf-cli against the selected
     // profile, a fictional one in demo mode; their buttons are disabled there.
 
-    @MainActor
-    private func generateHTMLReport() {
-        guard !workspace.demoMode else { return }
+    /// Reads the snapshots' freshness off the main actor before the Generate sheet opens, so
+    /// its Collect fresh default is right from the first frame instead of flipping when a slow
+    /// read lands on a large workspace.
+    private func presentGenerate() async {
         let profile = workspace.profile
-        let dateStr = ExportNaming.timestamp()
-        let panel = NSSavePanel()
-        let part = ExportNaming.profilePart(profile)
-        panel.nameFieldStringValue = "jamf_report_\(part)_\(dateStr).html"
-        panel.allowedContentTypes = [.html]
-        panel.directoryURL = reportsDirectory
-        panel.begin { response in
-            guard response == .OK, let dest = panel.url else { return }
-            let outPath = dest.path
-            isGeneratingHTML = true
-            workspace.globalStatus = "generate · profile=\(profile)"
-            reportError = nil
-            Task {
-                // T-13 integrity envelope: scrape the engine's sentinel sha256 log line
-                // so we can surface the truncated fingerprint in the toast.
-                let hashBox = HashBox()
-                // Status-bar race guard — see comment in AuditView.runAudit.
-                let code: Int32
-                do {
-                    code = try await bridge.generateHTML(
-                        profile: profile, outFile: outPath
-                    ) { line in
-                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                            Task { @MainActor in hashBox.value = parsed.hash }
-                        }
-                        Task { @MainActor in
-                            guard self.isGeneratingHTML else { return }
-                            workspace.globalStatus = line.text
-                        }
-                    }
-                } catch {
-                    isGeneratingHTML = false
-                    workspace.globalStatus = nil
-                    workspace.toast = Toast(message: "HTML generation failed · \(error.localizedDescription)", style: .danger)
-                    reportError = "HTML generation failed: \(error.localizedDescription)"
-                    return
-                }
-                isGeneratingHTML = false
-                workspace.globalStatus = nil
-                if code == 0 {
-                    let message: String
-                    if let hash = hashBox.value {
-                        let truncated = hash.count > 12 ? String(hash.prefix(12)) + "\u{2026}" : hash
-                        message = "HTML report generated · sha256: \(truncated)"
-                    } else {
-                        message = "HTML report generated"
-                    }
-                    workspace.toast = Toast(message: message, style: .success)
-                    SystemActions.open(dest)
-                    reload()
-                } else {
-                    let msg = CLIBridge.explainExit(code, operation: "HTML report generation")
-                    workspace.toast = Toast(message: msg, style: .danger)
-                    reportError = msg
-                }
-            }
-        }
+        generateFreshness = await Task.detached(priority: .userInitiated) {
+            SnapshotFreshness.evaluate(profile: profile)
+        }.value
+        showGenerate = true
     }
 
     @MainActor
     private func generatePDFReport() {
-        guard !workspace.demoMode else { return }
+        guard !workspace.demoMode, !workspace.reportMustWait() else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        let part = ExportNaming.profilePart(profile)
-        panel.nameFieldStringValue = "jamf_report_\(part)_\(dateStr).pdf"
+        let stem = ExportNaming.stem(for: .pdf, profile: profile, schoolMode: false)
+        panel.nameFieldStringValue = "\(stem)_\(dateStr).pdf"
         panel.allowedContentTypes = [.pdf]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
+            // A collect may have started while the panel was open.
+            guard workspace.beginReportRun(for: profile) else { return }
             let outPath = dest.path
             isGeneratingPDF = true
             workspace.globalStatus = "pdf · profile=\(profile)"
             reportError = nil
             Task {
+                defer { workspace.clearRunInProgress(for: profile) }
                 let code: Int32
                 do {
-                    code = try await bridge.generatePDF(
-                        profile: profile, outFile: outPath
-                    ) { line in
-                        Task { @MainActor in
-                            guard self.isGeneratingPDF else { return }
-                            workspace.globalStatus = line.text
+                    code = try await CLIBridge.holdingGenerate {
+                        try await bridge.generatePDF(
+                            profile: profile, outFile: outPath
+                        ) { line in
+                            Task { @MainActor in
+                                guard self.isGeneratingPDF else { return }
+                                workspace.globalStatus = line.text
+                            }
                         }
                     }
                 } catch {
                     isGeneratingPDF = false
                     workspace.globalStatus = nil
-                    workspace.toast = Toast(message: "PDF generation failed · \(error.localizedDescription)", style: .danger)
-                    reportError = "PDF generation failed: \(error.localizedDescription)"
+                    workspace.toast = WorkspaceStore.exportFailureToast(
+                        error, operation: "PDF generation")
+                    if !CLIBridgeError.isCollectRefusal(error) {
+                        reportError = "PDF generation failed: \(error.localizedDescription)"
+                    }
                     return
                 }
                 isGeneratingPDF = false
                 workspace.globalStatus = nil
                 if code == 0 {
                     workspace.toast = Toast(message: "PDF report generated", style: .success)
-                    SystemActions.open(dest)
+                    SystemActions.open(dest, profile: profile)
                     reload()
                 } else {
                     let msg = CLIBridge.explainExit(code, operation: "PDF report generation")
@@ -520,42 +495,51 @@ struct ReportsView: View {
 
     @MainActor
     private func runExportInventoryCSV() {
-        guard !workspace.demoMode else { return }
+        guard !workspace.demoMode, !workspace.reportMustWait() else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = "inventory_\(ExportNaming.profilePart(profile))_\(dateStr).csv"
+        let stem = ExportNaming.stem(for: .csv, profile: profile, schoolMode: false)
+        panel.nameFieldStringValue = "\(stem)_\(dateStr).csv"
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.directoryURL = reportsDirectory
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
+            // A collect may have started while the panel was open.
+            guard workspace.beginReportRun(for: profile) else { return }
             let outPath = dest.path
             isExportingCSV = true
             workspace.globalStatus = "inventory-csv · profile=\(profile)"
             reportError = nil
             Task {
+                defer { workspace.clearRunInProgress(for: profile) }
                 let code: Int32
                 do {
-                    code = try await bridge.exportInventoryCSV(
-                        profile: profile, outFile: outPath
-                    ) { line in
-                        Task { @MainActor in
-                            guard self.isExportingCSV else { return }
-                            workspace.globalStatus = line.text
+                    code = try await CLIBridge.holdingGenerate {
+                        try await bridge.exportInventoryCSV(
+                            profile: profile, outFile: outPath
+                        ) { line in
+                            Task { @MainActor in
+                                guard self.isExportingCSV else { return }
+                                workspace.globalStatus = line.text
+                            }
                         }
                     }
                 } catch {
                     isExportingCSV = false
                     workspace.globalStatus = nil
-                    workspace.toast = Toast(message: "CSV export failed · \(error.localizedDescription)", style: .danger)
-                    reportError = "Inventory CSV export failed: \(error.localizedDescription)"
+                    workspace.toast = WorkspaceStore.exportFailureToast(
+                        error, operation: "CSV export")
+                    if !CLIBridgeError.isCollectRefusal(error) {
+                        reportError = "Inventory CSV export failed: \(error.localizedDescription)"
+                    }
                     return
                 }
                 isExportingCSV = false
                 workspace.globalStatus = nil
                 if code == 0 {
                     workspace.toast = Toast(message: "Inventory CSV exported", style: .success)
-                    SystemActions.reveal(dest)
+                    SystemActions.reveal(dest, profile: profile)
                     reload()
                 } else {
                     let msg = CLIBridge.explainExit(code, operation: "Inventory CSV export")
@@ -595,6 +579,14 @@ struct ReportsView: View {
         )
     }
 
+    /// What a generated report's name starts with: each `ExportNaming.reportKind` and `_`,
+    /// longest first, so "jamf_report_prod_..." yields "prod", not "report".
+    nonisolated static let reportPrefixes: [String] = Set(
+        GenerateOutputType.allCases.flatMap { type in
+            [false, true].map { ExportNaming.reportKind(for: type, schoolMode: $0) + "_" }
+        }
+    ).sorted { ($0.count, $0) > ($1.count, $1) }
+
     /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
     /// ("report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
     /// prefix and the last date is the profile, decoded with `ProfileName`, so any
@@ -613,12 +605,7 @@ struct ReportsView: View {
             return ProfileName.name(fromPathComponent: String(match.1))
         }
         let lowered = stem.lowercased()
-        // Longest first, so "jamf_report_prod_..." yields "prod", not "report".
-        let knownPrefixes = [
-            "jamf_report_", "school_report_", "school-report_",
-            "report_", "compliance_", "mobile_", "inventory_",
-        ]
-        guard let prefix = knownPrefixes.first(where: { lowered.hasPrefix($0) }) else {
+        guard let prefix = reportPrefixes.first(where: { lowered.hasPrefix($0) }) else {
             return nil
         }
         let rest = String(stem.dropFirst(prefix.count))
@@ -637,13 +624,4 @@ struct ReportsView: View {
 
 extension Notification.Name {
     static let requestOverviewTab = Notification.Name("JamfReports.requestOverviewTab")
-}
-
-/// Mutable single-value reference for capturing the SHA-256 fingerprint from
-/// the engine's log stream so it can be displayed in the report-ready toast.
-/// Boxed so the closure can mutate it across actor hops without needing
-/// `@MainActor`-isolated state on the call site.
-@MainActor
-private final class HashBox {
-    var value: String?
 }

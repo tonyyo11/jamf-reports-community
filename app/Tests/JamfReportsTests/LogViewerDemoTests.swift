@@ -37,7 +37,7 @@ final class LogViewerDemoTests: XCTestCase {
         let newest = try XCTUnwrap(DemoData.runHistory(for: DemoData.org.profile).first)
         XCTAssertEqual(DemoData.diagnosticEvents.map(\.message), newest.lines.map(\.text))
         let last = try XCTUnwrap(DemoData.diagnosticEvents.last?.date)
-        XCTAssertEqual(last.timeIntervalSince(newest.summary.date), 0, accuracy: 0.001)
+        XCTAssertEqual(last.timeIntervalSince(newest.finished), 0, accuracy: 0.001)
         XCTAssertTrue(DemoData.diagnosticEvents.allSatisfy {
             $0.date <= DemoData.referenceDate.addingTimeInterval(0.001)
         })

@@ -15,9 +15,30 @@ final class CLIParsingTests: XCTestCase {
         // ArgumentParser's built-in `help` subcommand, as in `jamf-reports help generate`
         // (docs/wiki/07-Command-Line.md); before this it opened the app instead.
         XCTAssertTrue(JamfReportsCLI.isKnownSubcommand("help"))
-        // Double-click launch passes OS args that must NOT route to the CLI:
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("-NSDocumentRevisionsDebugMode"))
+        // Not a subcommand, but `routesToCLI` still sends it to the CLI (below).
         XCTAssertFalse(JamfReportsCLI.isKnownSubcommand("/some/file.txt"))
+    }
+
+    /// #207 G31: any first argument that is not a flag goes to the CLI, so a removed or
+    /// mistyped subcommand fails there instead of opening the app. Launch Services
+    /// arguments start with `-` and still open it.
+    func testEveryWordRoutesToTheCLIAndLaunchArgumentsDoNot() {
+        for arg in ["school-scaffold", "genrate", "generate", "help", "--help", "-h", "--version"] {
+            XCTAssertTrue(JamfReportsCLI.routesToCLI(arg), arg)
+        }
+        for arg in ["-psn_0_12345", "-NSDocumentRevisionsDebugMode", "-AppleLanguages"] {
+            XCTAssertFalse(JamfReportsCLI.routesToCLI(arg), arg)
+        }
+        // A bare path is a word too: the app declares no document types, so the CLI rejects it.
+        XCTAssertTrue(JamfReportsCLI.routesToCLI("/some/file.txt"))
+    }
+
+    /// What the routed word then gets: ArgumentParser's error and a non-zero exit.
+    func testARemovedSubcommandFailsInTheCLI() {
+        XCTAssertThrowsError(try JamfReportsCLI.parseAsRoot(["school-scaffold"])) { error in
+            XCTAssertNotEqual(JamfReportsCLI.exitCode(for: error), .success)
+        }
     }
 
     func testAllElevenSubcommandsRegistered() {
@@ -117,8 +138,8 @@ final class CLIParsingTests: XCTestCase {
                         "a real config must route School — not the nil-degrades-to-Pro default")
     }
 
-    // MARK: - backupOutputIsPrunable (shared by the scheduled, GUI and CLI
-    // backup paths — they used to spell this rule out separately and drifted)
+    // MARK: - backupOutputIsPrunable (shared by the scheduled and CLI backup
+    // paths — they used to spell this rule out separately and drifted)
 
     func testBackupOutputIsPrunableOnlyForFinalizedExports() {
         // 0 = success, 7 = partial export still finalized to backups/<ts>/.

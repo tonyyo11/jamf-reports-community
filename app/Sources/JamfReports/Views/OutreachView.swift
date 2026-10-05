@@ -45,7 +45,21 @@ struct OutreachView: View {
 
     private var subtitle: String? {
         guard snapshot.totalDevices > 0 else { return nil }
-        return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") bucketed by days since check-in."
+        let count = snapshot.totalDevices
+        return "\(count) device\(count == 1 ? "" : "s") bucketed by "
+            + "days since \(staleRule.basisPhrase)."
+    }
+
+    /// The stale rule the tiers follow: the configured window over the dates `stale_basis` lists.
+    private var staleRule: StaleRule {
+        StaleRule(days: configuredStaleDays, basis: snapshot.staleBasis)
+    }
+
+    /// A Mac's stale age as the table shows it: days, or "never" for a Mac without a date the
+    /// rule counts.
+    private func ageText(_ device: DeviceInventoryRecord) -> String {
+        guard let age = device.staleAge(staleRule) else { return "\(device.daysSinceContact ?? 0)" }
+        return age.days.map(String.init) ?? "never"
     }
 
     /// Configured `thresholds.stale_device_days` (default 30). Tier boundaries
@@ -226,12 +240,13 @@ struct OutreachView: View {
                         .width(min: 100, ideal: 120)
 
                         TableColumn("Days Since") { device in
-                            let days = device.daysSinceContact ?? 0
-                            Text("\(days)")
+                            let age = ageText(device)
+                            Text(age)
                                 .font(Theme.Fonts.mono(11, weight: .semibold))
-                                .foregroundStyle(daysSinceColor(for: days))
+                                .foregroundStyle(daysSinceColor(for: Int(age) ?? .max))
                                 .monospacedDigit()
-                                .accessibilityLabel("\(days) days since check-in")
+                                .accessibilityLabel(
+                                    "\(age) days since \(staleRule.basisPhrase)")
                         }
                         .width(min: 80, ideal: 90)
 
@@ -244,7 +259,7 @@ struct OutreachView: View {
                         }
                         .width(min: 100, ideal: 120)
                     }
-                    .frame(minHeight: 200)
+                    .pageTableHeight(rows: devices.count)
                 } else {
                     Text("No devices in the \(selectedTier.label.lowercased()) tier.")
                         .font(.footnote)
@@ -259,31 +274,26 @@ struct OutreachView: View {
 
     private func copyEmailList() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
-        let emails = devices.compactMap { device -> String? in
-            let trimmed = device.email.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-        let emailString = emails.joined(separator: "; ")
-        copy(text: emailString, then: "Copied \(emails.count) emails")
+        let recipients = StaleDeviceService.recipientList(from: devices.map(\.email))
+        copy(text: recipients.list, then: recipients.confirmation)
     }
 
     private func copyTableCSV() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
-        var csv = "Name,Serial,Email,Department,Days Since Check-in\n"
+        var csv = "Name,Serial,Email,Department,Days Since \(staleRule.basisHeading)\n"
         for device in devices {
             let name = StaleDeviceService.csvField(device.displayName)
             let serial = StaleDeviceService.csvField(device.displaySerial)
             let email = StaleDeviceService.csvField(device.email)
             let dept = StaleDeviceService.csvField(device.department)
-            let days = device.daysSinceContact ?? 0
-            csv += "\(name),\(serial),\(email),\(dept),\(days)\n"
+            csv += "\(name),\(serial),\(email),\(dept),\(ageText(device))\n"
         }
         copy(text: csv, then: "Copied table data")
     }
 
     /// Export all stale-device records (every tier) as a CSV into the workspace's
     /// output directory, then reveal the file in Finder. Gated on the allow-list
-    /// via `SystemActions.reveal` — writes only inside `~/Jamf-Reports/<profile>/`.
+    /// via `SystemActions.reveal`, which allows the workspace and this profile's reports folder.
     private func exportOutreachCSV() {
         guard !workspace.demoMode else { return }
         guard let outputDir = try? WorkspacePaths.outputDir(for: workspace.profile) else {
@@ -307,7 +317,7 @@ struct OutreachView: View {
                 message: "Exported \(snapshot.totalDevices) devices to \(filename)",
                 style: .success
             )
-            SystemActions.reveal(fileURL)
+            SystemActions.reveal(fileURL, profile: workspace.profile)
         } catch {
             workspace.toast = Toast(
                 message: "Could not export CSV: \(error.localizedDescription)",
@@ -340,25 +350,19 @@ struct OutreachView: View {
     }
 
     private func relativeDate(from dateString: String) -> String {
-        guard let date = parseDate(dateString) else { return "Unknown" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.dateTimeStyle = .named
         // Demo ages are measured from the demo's own "now", not today's date.
         let now = workspace.demoMode ? DemoData.referenceDate : Date()
-        return formatter.localizedString(for: date, relativeTo: now)
+        return Self.relativeDate(from: dateString, now: now)
     }
 
-    private func parseDate(_ text: String) -> Date? {
-        guard !text.isEmpty else { return nil }
-        if let date = ISO8601DateFormatter().date(from: text) { return date }
-        let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
-        for format in formats {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = format
-            if let date = formatter.date(from: text) { return date }
-        }
-        return nil
+    /// Jamf timestamps carry millisecond fractions of varying length; the one
+    /// inventory parser reads them, so Last Contact never says "Unknown" for a
+    /// Mac whose Days Since has a value.
+    static func relativeDate(from dateString: String, now: Date) -> String {
+        guard let date = DeviceInventoryService.parseDate(dateString) else { return "Unknown" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter.localizedString(for: date, relativeTo: now)
     }
 
 }

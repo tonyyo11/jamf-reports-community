@@ -36,6 +36,23 @@ final class ChartsConfigStoreTests: XCTestCase {
         try String(contentsOf: try configURL(), encoding: .utf8)
     }
 
+    // MARK: - Customize Apply
+
+    /// Apply writes the charts block, then the html one. A failed html write keeps the note
+    /// the charts write already made.
+    func testApplyKeepsTheChartsNoteWhenTheHTMLWriteFails() throws {
+        try write("charts:\n  # team note\n  save_png: true\nhtml: off\n")
+        var notes: [ProfileSaveNote] = []
+
+        XCTAssertThrowsError(try CustomizeView.writeOptions(
+            ChartsOptions(savePNGs: false, perMajorCharts: true), withWorkbook: true,
+            profile: profile) { notes.append($0) })
+
+        XCTAssertEqual(notes.count, 1)
+        XCTAssertEqual(notes.first?.profile, profile)
+        XCTAssertTrue(notes.first?.line.contains("config.yaml.bak-") ?? false, "\(notes)")
+    }
+
     // MARK: - Round trip
 
     func testSaveThenLoadRoundTripsBothOptions() throws {
@@ -88,22 +105,40 @@ final class ChartsConfigStoreTests: XCTestCase {
         }
     }
 
-    /// Same hazard one level deeper: os_adoption has its own sibling keys.
-    func testSavingPreservesSiblingKeysInsideOSAdoption() throws {
+    /// Same hazard one level deeper: a hand-typed sibling of per_major_charts stays.
+    /// os_adoption.enabled, which nothing reads now, goes, and the save says so.
+    func testSavingPreservesSiblingKeysInsideOSAdoptionAndDropsTheRetiredOne() throws {
         try write("""
         charts:
           os_adoption:
             enabled: true
+            team_note: keep me
             per_major_charts: true
         """)
-        try ChartsConfigWriter.save(
+        let saved = try ChartsConfigWriter.save(
             ChartsOptions(savePNGs: true, perMajorCharts: false), profile: profile)
 
         let text = try readBack()
         XCTAssertTrue(text.contains("os_adoption"))
-        XCTAssertTrue(text.contains("enabled"),
-                      "os_adoption.enabled must survive a per_major_charts write")
+        XCTAssertTrue(text.contains("team_note: keep me"))
+        XCTAssertFalse(text.contains("enabled"), "os_adoption.enabled is no longer read")
         XCTAssertFalse(ChartsConfigLoader.load(profile: profile).perMajorCharts)
+        XCTAssertEqual(saved.report.removedRetiredKeys, ["charts.os_adoption.enabled"])
+        XCTAssertEqual(saved.report.notes.count, 1)
+        XCTAssertTrue(saved.report.notes[0].hasPrefix(
+            "Settings the app no longer reads were removed from config.yaml: "
+                + "charts.os_adoption.enabled (since 2.9)."))
+    }
+
+    /// The options are unchanged here; the retired key alone makes the block worth rewriting.
+    func testApplyingTheSameOptionsStillRemovesTheRetiredKey() throws {
+        try write("charts:\n  save_png: true\n  os_adoption:\n    enabled: false\n"
+            + "    per_major_charts: true\n")
+        try ChartsConfigWriter.save(ChartsOptions.defaults, profile: profile)
+        XCTAssertFalse(try readBack().contains("enabled"))
+
+        let again = try ChartsConfigWriter.save(ChartsOptions.defaults, profile: profile)
+        XCTAssertEqual(again.report, ConfigSaveReport(), "nothing left to change writes nothing")
     }
 
     /// Unrelated top-level blocks must be untouched — the same guarantee

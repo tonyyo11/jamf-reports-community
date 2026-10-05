@@ -143,15 +143,7 @@ enum MetricAlertEvaluator {
         case .dropsMoreThan:
             guard let priorSummary = prior,
                   let priorValue = metric.value(in: priorSummary) else { return nil }
-            // A compliance_pct drop isn't comparable across a measurement-basis
-            // change: the 4-control proxy (~96%) and a real mSCP failure count
-            // (~67%) are different scales, so enabling compliance.baselines would
-            // fabricate a huge false drop. Absent (nil) basis on both sides is
-            // treated as unchanged and still fires.
-            if metric == .compliancePct,
-               current.complianceIsProxy != priorSummary.complianceIsProxy {
-                return nil
-            }
+            guard sameBasis(metric, current, priorSummary) else { return nil }
             let drop = priorValue - value
             guard drop > threshold else { return nil }
             let unit = metric.isPercentage ? "pp" : ""
@@ -160,6 +152,26 @@ enum MetricAlertEvaluator {
             return makeHit(metric: metric, value: value, prior: priorValue,
                            ruleDescription: "drops_more_than \(trim(threshold))",
                            message: msg)
+        }
+    }
+
+    /// Whether a drop in `metric` compares like with like. A compliance_pct drop isn't
+    /// comparable across a measurement-basis change: the 4-control proxy (~96%) and a
+    /// real mSCP failure count (~67%) are different scales, so enabling
+    /// compliance.baselines would fabricate a huge false drop. Likewise a patch_pct drop
+    /// across the per-title mean and the device-weighted figure (`patchPctBasis`, epic
+    /// #207 C1), and a security_score drop across a change in the metrics it weighs
+    /// (`securityScoreBasis`, epic #207 H1): adding EDR coverage to a score moves it without
+    /// the fleet changing. Absent (nil) basis on both sides is treated as unchanged and
+    /// still fires.
+    private static func sameBasis(
+        _ metric: AlertMetric, _ current: DailySummary, _ prior: DailySummary
+    ) -> Bool {
+        switch metric {
+        case .compliancePct: return current.complianceIsProxy == prior.complianceIsProxy
+        case .patchPct: return current.patchPctBasis == prior.patchPctBasis
+        case .securityScore: return current.securityScoreBasis == prior.securityScoreBasis
+        default: return true
         }
     }
 
@@ -187,9 +199,11 @@ enum MetricAlertEvaluator {
         metric.isPercentage ? "\(trim(value))%" : trim(value)
     }
 
-    /// Drop a trailing ".0" so whole numbers read cleanly ("90" not "90.0").
-    private static func trim(_ value: Double) -> String {
-        if value.rounded() == value { return String(Int(value)) }
+    /// Drop a trailing ".0" so whole numbers read cleanly ("90" not "90.0"). `Int(exactly:)` is
+    /// nil outside Int's range and for inf/nan, which a shared summary.json can carry, where
+    /// `Int(_:)` would trap.
+    static func trim(_ value: Double) -> String {
+        if let whole = Int(exactly: value) { return String(whole) }
         return String(format: "%.1f", value)
     }
 }

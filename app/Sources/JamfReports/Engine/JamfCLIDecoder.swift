@@ -176,11 +176,21 @@ struct PatchFailureRow: Decodable, Sendable, Identifiable, Equatable {
     let serial: String
     let osVersion: String
     let username: String
+    /// Index of the row in the array it was decoded from. A `var` with a default
+    /// keeps the memberwise initialiser source-compatible.
+    var position: Int = 0
 
     /// One row per failing device and patch policy. `attempt` stays out of the
     /// identity: it rises as Jamf retries, so the same failure would read as a
-    /// different row from one scan to the next.
-    var id: String { "\(deviceId)-\(policyId)" }
+    /// different row from one scan to the next. A row missing either id would read
+    /// "-" or "-42" and collapse with its neighbours in a SwiftUI table, so it is
+    /// told apart by its other fields and position.
+    var id: String {
+        guard !deviceId.isEmpty, !policyId.isEmpty else {
+            return "no-id-\(position)-\(device)-\(policy)-\(statusDate)-\(serial)"
+        }
+        return "\(deviceId)-\(policyId)"
+    }
 
     private enum CodingKeys: String, CodingKey {
         case policy
@@ -217,6 +227,7 @@ extension PatchFailureRow {
         serial = text(.serial)
         osVersion = text(.osVersion)
         username = text(.username)
+        position = decoder.codingPath.last?.intValue ?? 0
     }
 }
 
@@ -265,6 +276,30 @@ struct UpdateFailuresReport: Decodable, Sendable {
         case planTotal = "plan_total"
         case planStateSummary = "plan_state_summary"
         case failedPlans = "failed_plans"
+    }
+
+    /// jamf-cli marshals an empty Go slice as `null`, and prod's scan has printed
+    /// `"error_devices": null` on every run (a strict array made the whole scan
+    /// undecodable and the screen read it as a summary: "Failure scan not run").
+    /// At least one of the two failure keys must be present, null or not — that
+    /// is what tells a scan from a summary-only snapshot.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard c.contains(.errorDevices) || c.contains(.failedPlans) else {
+            throw DecodingError.keyNotFound(
+                CodingKeys.failedPlans,
+                .init(codingPath: c.codingPath, debugDescription: "not a --scan-failures document"))
+        }
+        total = try c.decode(Int.self, forKey: .total)
+        statusSummary = try c.decodeIfPresent(
+            [UpdateStatusCount].self, forKey: .statusSummary) ?? []
+        errorDevices = try c.decodeIfPresent(
+            [UpdateErrorDevice].self, forKey: .errorDevices) ?? []
+        planTotal = try c.decodeIfPresent(Int.self, forKey: .planTotal)
+        planStateSummary = try c.decodeIfPresent(
+            [UpdateStateCount].self, forKey: .planStateSummary)
+        failedPlans = try c.decodeIfPresent(
+            [UpdateFailedPlan].self, forKey: .failedPlans) ?? []
     }
 }
 
@@ -353,11 +388,18 @@ struct DeviceComplianceRow: Decodable, Sendable {
     /// as a String ("4160") in production but tolerated as a number too (matches
     /// CoreDashboard's `days_since_contact` precedence).
     let daysSinceContact: Int?
+    /// The Jamf ID, when the row carries one (current jamf-cli rows do not).
+    let jamfID: String?
+    /// The last check-in as jamf-cli wrote it (`last_contact`).
+    let lastContact: String?
 
     private enum CodingKeys: String, CodingKey {
         case name, serial, managed, stale
         case daysSinceCheckin = "days_since_checkin"
         case daysSinceContact = "days_since_contact"
+        case id, jamfID = "jamf_id", deviceID = "device_id"
+        case lastContact = "last_contact"
+        case lastCheckin = "last_checkin"
     }
 
     init(from decoder: Decoder) throws {
@@ -370,18 +412,56 @@ struct DeviceComplianceRow: Decodable, Sendable {
         // jamf-cli versions (reuses AnyCodable.intValue like other decoders here).
         daysSinceCheckin = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceCheckin)?.intValue
         daysSinceContact = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceContact)?.intValue
+        // Neither read can fail the row: a value of another type is no ID and no date.
+        jamfID = [CodingKeys.id, .jamfID, .deviceID].lazy
+            .compactMap { (try? c.decodeIfPresent(AnyCodable.self, forKey: $0))??.intValue }
+            .first.map(String.init)
+        lastContact = [CodingKeys.lastContact, .lastCheckin].lazy
+            .compactMap { (try? c.decodeIfPresent(String.self, forKey: $0)) ?? nil }
+            .first { !$0.isEmpty }
     }
 
     /// Resolved day count, preferring the current `days_since_contact` key and
     /// falling back to the legacy `days_since_checkin`.
     var resolvedDaysSinceContact: Int? { daysSinceContact ?? daysSinceCheckin }
 
-    /// Whether the device is stale at `>= threshold` days. Uses the resolved day
-    /// count when present; otherwise falls back to the server-side `stale` flag
-    /// (coarser ~90-100d cadence, but honest when no day count is emitted).
+    /// Whether the device is stale: more than `threshold` days since its last contact, so a
+    /// Mac at exactly `threshold` days is not. Uses the resolved day count when present;
+    /// otherwise falls back to the server-side `stale` flag (coarser ~90-100d cadence, but
+    /// honest when no day count is emitted). This is `isStale(_:computers:)` on the default
+    /// basis, the last check-in alone.
     func isStale(atDays threshold: Int) -> Bool {
-        if let days = resolvedDaysSinceContact { return days >= threshold }
-        return stale == true
+        isStale(StaleRule(days: threshold), computers: nil)
+    }
+
+    /// What the stale rule reads from this row. A row carries only the check-in day count, so
+    /// the inventory and contact dates come from the `computers` snapshot's Mac with the same
+    /// Jamf ID, else the same serial. A row `computers` cannot place counts its check-in alone.
+    func staleInputs(
+        _ rule: StaleRule, computers: ComputerDateIndex?
+    ) -> StaleInputs {
+        var inputs = StaleInputs(checkInDays: resolvedDaysSinceContact, flag: stale == true)
+        guard rule.needsComputers, let match = computers?.match(jamfID: jamfID, serial: serial)
+        else { return inputs }
+        inputs.checkIn = match.checkIn
+        inputs.inventory = match.inventory
+        inputs.contact = match.contact
+        inputs.carriesDates = true
+        return inputs
+    }
+
+    /// Whether the device is stale under `rule`. `computers` is read only when the rule counts
+    /// the inventory or contact date.
+    func isStale(
+        _ rule: StaleRule, computers: ComputerDateIndex?, now: Date = Date()
+    ) -> Bool {
+        rule.isStale(staleInputs(rule, computers: computers), now: now)
+    }
+
+    func staleAge(
+        _ rule: StaleRule, computers: ComputerDateIndex?, now: Date = Date()
+    ) -> StaleAge? {
+        rule.age(of: staleInputs(rule, computers: computers), now: now)
     }
 }
 
@@ -639,63 +719,14 @@ struct ExtensionAttribute: Decodable, Sendable, Identifiable {
         case id, name, dataType, description, inputType, enabled
     }
 
-    /// Maps Jamf `dataType` to a `custom_eas` type string for config.yaml.
-    var inferredEAType: String {
-        switch (dataType ?? "").uppercased() {
-        case "BOOLEAN":  return "boolean"
-        case "DATE":     return "date"
-        // INTEGER → percentage is a heuristic, not a 1:1 mapping: most INTEGER
-        // EAs we've seen in real tenants are percentages (disk usage, battery
-        // capacity). Tenants with raw-count INTEGER EAs should override the
-        // generated `type` in config.yaml.
-        case "INTEGER":  return "percentage"
-        default:         return "text"
-        }
-    }
-}
+    /// Jamf's own name for `dataType` ("Integer", "String", "Date"), as the Jamf Pro console
+    /// shows it.
+    var dataTypeLabel: String { Self.dataTypeLabel(dataType) }
 
-/// Alias retained for any call sites that referenced the old name.
-typealias ExtensionAttributeDefinition = ExtensionAttribute
-
-// MARK: - Software installs
-// `jamf-cli pro report software-installs --output json`
-
-struct SoftwareInstallRow: Decodable, Sendable {
-    let name: String
-    let version: String?
-    let count: Int
-
-    private enum CodingKeys: String, CodingKey {
-        case name, version, count
-    }
-}
-
-// MARK: - App status
-// `jamf-cli pro report app-status --output json`
-
-struct AppStatusRow: Decodable, Sendable {
-    let name: String
-    let version: String?
-    let installed: Int?
-    let managed: Int?
-    let total: Int?
-    let errors: Int?
-}
-
-// MARK: - Smart groups
-// `jamf-cli pro computer-groups-smart-groups list --output json`
-// (`smart-computer-groups` is a retained alias; snapshot key remains "smart-computer-groups")
-
-struct SmartGroupRow: Decodable, Sendable {
-    let id: AnyCodable?
-    let name: String?
-    let membershipCount: AnyCodable?
-    let smart: Bool?
-
-    private enum CodingKeys: String, CodingKey {
-        case id, name
-        case membershipCount
-        case smart
+    /// The one label rule, shared with the workbook's EA Definitions sheet.
+    static func dataTypeLabel(_ dataType: String?) -> String {
+        guard let dataType, !dataType.isEmpty else { return "Unknown" }
+        return dataType.capitalized
     }
 }
 
@@ -751,31 +782,6 @@ struct ProfileFailureRow: Decodable, Sendable {
     }
 }
 
-// MARK: - Checkin health
-// `jamf-cli pro report checkin-status --output json`
-
-struct CheckinStatusRow: Decodable, Sendable {
-    let name: String?
-    let serial: String?
-    let daysSinceCheckin: Int?
-    let status: String?
-
-    private enum CodingKeys: String, CodingKey {
-        case name, serial
-        case daysSinceCheckin = "days_since_checkin"
-        case status
-    }
-}
-
-// MARK: - Hardware models
-// `jamf-cli pro report hardware-models --output json`
-
-struct HardwareModelRow: Decodable, Sendable {
-    let model: String
-    let count: Int
-    let pct: String?
-}
-
 // MARK: - Duplicate serials
 // `jamf-cli pro report duplicate-serials --output json` (v1.23.0+)
 // Shape (bare array, flat, pre-grouped by serial + ordered by numeric id):
@@ -787,9 +793,8 @@ struct HardwareModelRow: Decodable, Sendable {
 
 /// Not Identifiable on purpose — a per-access computed id would abort SwiftUI
 /// Table (#185). `id` is `AnyCodable` because jamf-cli has emitted record ids
-/// as both JSON string and number across versions/commands (the exact
-/// ambiguity `SmartGroupRow` was hardened against) — a strict `String?` would
-/// invalidate the whole snapshot on one number-typed row.
+/// as both JSON string and number across versions/commands — a strict
+/// `String?` would invalidate the whole snapshot on one number-typed row.
 struct DuplicateSerialRow: Decodable, Sendable {
     let serial: String?
     let id: AnyCodable?
@@ -800,20 +805,6 @@ struct DuplicateSerialRow: Decodable, Sendable {
         case serial, id, name
         case lastContact = "last_contact"
     }
-}
-
-// MARK: - Audit
-// `jamf-cli pro audit --output json`
-
-struct AuditItem: Decodable, Sendable {
-    let section: String?
-    let check: String?
-    let severity: String?
-    let status: String?
-    let detail: String?
-    let recommendation: String?
-    let resource: String?
-    let value: AnyCodable?
 }
 
 // MARK: - Advanced mobile device searches
@@ -872,22 +863,10 @@ struct ClassicGroupRow: Decodable, Sendable {
     }
 }
 
-// MARK: - Group hygiene (group-tools analyze)
-
-struct GroupAnalysisRow: Decodable, Sendable {
-    let groupName: AnyCodable?
-    let groupType: AnyCodable?
-    let membershipCount: AnyCodable?
-    let smart: Bool?
-    let unused: Bool?
-
-    private enum CodingKeys: String, CodingKey {
-        case groupName, groupType, membershipCount, smart, unused
-    }
-}
-
-// MARK: - Mobile device (inventory-details)
-// `jamf-cli pro mobile-device-inventory-details list --output json`
+// MARK: - Mobile device inventory
+// `jamf-cli pro mobile-devices list --section GENERAL --section HARDWARE --section SECURITY
+// --section USER_AND_LOCATION --output json` (kind `mobile-devices-list`). A snapshot an older
+// collect wrote as `mobile-device-inventory-details` has the same row shape.
 
 struct MobileDeviceInventoryItem: Decodable, Sendable {
     let mobileDeviceId: String?
@@ -896,9 +875,10 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
     let general: MobileDeviceGeneral?
     let userAndLocation: MobileDeviceUserLocation?
     let applications: [MobileDeviceApplication]?
+    let security: MobileDeviceSecurity?
 
     private enum CodingKeys: String, CodingKey {
-        case mobileDeviceId, deviceType, hardware, general, userAndLocation, applications
+        case mobileDeviceId, deviceType, hardware, general, userAndLocation, applications, security
     }
 
     /// Explicit memberwise init with `hardware` defaulted, so demo/preview call
@@ -910,7 +890,8 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
         hardware: MobileDeviceHardware? = nil,
         general: MobileDeviceGeneral? = nil,
         userAndLocation: MobileDeviceUserLocation? = nil,
-        applications: [MobileDeviceApplication]? = nil
+        applications: [MobileDeviceApplication]? = nil,
+        security: MobileDeviceSecurity? = nil
     ) {
         self.mobileDeviceId = mobileDeviceId
         self.deviceType = deviceType
@@ -918,10 +899,11 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
         self.general = general
         self.userAndLocation = userAndLocation
         self.applications = applications
+        self.security = security
     }
 }
 
-/// Hardware section of a mobile device. Only the form-factor fields are decoded:
+/// Hardware section of a mobile device. Only the form-factor fields and serial are decoded:
 /// jamf-cli's `deviceType` is the OS family ("iOS"), so the iPad-vs-iPhone
 /// distinction lives here in `model` ("iPhone 5 (CDMA)") / `modelIdentifier`
 /// ("iPhone5,2"). Can arrive as `null` when the hardware section wasn't
@@ -929,6 +911,20 @@ struct MobileDeviceInventoryItem: Decodable, Sendable {
 struct MobileDeviceHardware: Decodable, Sendable {
     let model: String?
     let modelIdentifier: String?
+    /// `var` with a default keeps the memberwise initialiser source-compatible.
+    var serialNumber: String? = nil
+}
+
+/// SECURITY section (collect requests it with `--section SECURITY`; a snapshot from an older
+/// collect has none). The Jamf Pro API carries the posture flags here, with the jailbreak
+/// flag spelled `jailBreakDetected`.
+/// Earlier decoders read `passcodeCompliant`, `activationLockEnabled` and a jailbreak
+/// status string under `general`, which `MobileFleetService` keeps as the fallback.
+struct MobileDeviceSecurity: Decodable, Sendable {
+    let activationLockEnabled: Bool?
+    let passcodeCompliant: Bool?
+    let dataProtected: Bool?
+    let jailBreakDetected: Bool?
 }
 
 struct MobileDeviceGeneral: Decodable, Sendable {
@@ -944,6 +940,9 @@ struct MobileDeviceGeneral: Decodable, Sendable {
     let dataProtectionEnabled: Bool?
     let jailbreakDetected: String?
     let enrollmentMethodPrestage: MobileDevicePrestage?
+    /// GENERAL's flag for a Shared iPad. `var` with a default keeps the memberwise
+    /// initialiser source-compatible.
+    var sharedIpad: Bool? = nil
 }
 
 /// ADE prestage detail attached to mobile devices enrolled via Automated Device
@@ -953,10 +952,10 @@ struct MobileDevicePrestage: Decodable, Sendable {
     let profileName: String?
 }
 
-/// Single application entry from `mobile-device-inventory-details`. Only the
-/// fields the UI surfaces (count + display name) are decoded; the upstream
-/// schema carries more (version, managementStatus, size) but they're not
-/// needed yet.
+/// Single application entry from the APPLICATIONS section, which collect does not request
+/// (a snapshot from an older collect or a hand-run command may carry it). Only the fields
+/// the UI surfaces (count + display name) are decoded; the upstream schema carries more
+/// (version, managementStatus, size) but they're not needed yet.
 struct MobileDeviceApplication: Decodable, Sendable {
     let identifier: String?
     let name: String?
@@ -996,101 +995,6 @@ struct MobileConfigProfileRow: Decodable, Sendable {
     let category: String?
     let site: String?
     let description: String?
-}
-
-// MARK: - Groups
-// `jamf-cli pro groups list --output json`
-
-struct GroupRow: Decodable, Sendable {
-    let groupPlatformId: String?
-    let groupJamfProId: String?
-    let groupName: String?
-    let groupType: String?
-    let membershipCount: Int?
-    let smart: Bool?
-}
-
-// MARK: - Packages
-// `jamf-cli pro packages list --output json`
-
-struct PackageRow: Decodable, Sendable {
-    let id: String?
-    let packageName: String?
-    let fileName: String?
-    let notes: String?
-    let size: AnyCodable?
-}
-
-// MARK: - Environment stats
-// `jamf-cli pro report env-stats --output json`
-
-struct EnvStatsReport: Decodable, Sendable {
-    let policies: Int?
-    let configProfiles: Int?
-    let scripts: Int?
-    let packages: Int?
-    let smartGroupsComputer: Int?
-    let smartGroupsMobile: Int?
-    let extensionAttributes: Int?
-    let categories: Int?
-
-    private enum CodingKeys: String, CodingKey {
-        case policies
-        case configProfiles = "config_profiles"
-        case scripts, packages
-        case smartGroupsComputer = "smart_groups_computer"
-        case smartGroupsMobile = "smart_groups_mobile"
-        case extensionAttributes = "extension_attributes"
-        case categories
-    }
-}
-
-// MARK: - Platform compliance devices
-// `jamf-cli pro report compliance-devices --output json`
-
-struct ComplianceDeviceRow: Decodable, Sendable {
-    let device: String?
-    let deviceId: String?
-    let rulesFailed: Int?
-    let rulesPassed: Int?
-    let compliance: String?
-}
-
-// MARK: - Platform compliance rules
-// `jamf-cli pro report compliance-rules --output json`
-
-struct ComplianceRuleRow: Decodable, Sendable {
-    let rule: String?
-    let passed: Int?
-    let failed: Int?
-    let unknown: Int?
-    let devices: Int?
-    let passRate: String?
-}
-
-// MARK: - DDM status
-// `jamf-cli pro report ddm-status --output json`
-
-struct DDMStatusRow: Decodable, Sendable {
-    let source: String?
-    let type: String?
-    let declarations: Int?
-    let devices: Int?
-    let successful: Int?
-    let unsuccessful: Int?
-}
-
-// MARK: - Blueprint status
-// `jamf-cli pro report blueprint-status --output json`
-
-struct BlueprintStatusRow: Decodable, Sendable {
-    let name: String?
-    let state: String?
-    let scope: Int?
-    let steps: Int?
-    let failed: Int?
-    let pending: Int?
-    let succeeded: Int?
 }
 
 // MARK: - Protect overview

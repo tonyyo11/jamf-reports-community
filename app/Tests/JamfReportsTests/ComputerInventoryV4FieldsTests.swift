@@ -105,7 +105,8 @@ final class ComputerInventoryV4FieldsTests: XCTestCase {
             "reportDate": stamp(daysAgo: 90),
         ]]
 
-        let html = report.buildInterventionList(computersInventory: [checkedInRecently, silent])
+        let html = report.buildInterventionList(
+            computersInventory: [checkedInRecently, silent]).html
 
         XCTAssertTrue(html.contains("Silent-Mac"))
         XCTAssertFalse(html.contains("Fresh-Mac"), "checked in 2 days ago, so not stale")

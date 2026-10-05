@@ -89,8 +89,8 @@ extension WorkspaceStore {
     /// refresh prompt and audit data auto-refreshes on launch.
     nonisolated static let heavyTierStaleDays = 2
 
-    /// Populate `staleHeavyTiers` with the .inventory / .scan tiers whose
-    /// newest probe-kind snapshot is older than `heavyTierStaleDays`.
+    /// Populate `staleHeavyTiers` with the .inventory / .scan tiers holding an
+    /// expected kind whose newest snapshot is older than `heavyTierStaleDays`.
     ///
     /// Heavy tiers are never auto-collected — per-device queries can stall
     /// on-prem Jamf Pro for minutes. The Overview prompt's button is the only
@@ -101,10 +101,17 @@ extension WorkspaceStore {
             return
         }
         let activeProfile = profile
+        let jamfCLIVersion = self.jamfCLIVersion
+        let resolveAuth = resolveAuthMethod
         let threshold = TimeInterval(Self.heavyTierStaleDays) * 86_400
         let (stale, noData) = await Task.detached(priority: .utility) {
-            let stale = Self.staleTiers(profile: activeProfile, olderThan: threshold)
-            return (stale, Self.tiersWithNoData(profile: activeProfile, among: stale))
+            let expected = Self.expectedKinds(
+                profile: activeProfile, jamfCLIVersion: jamfCLIVersion,
+                auth: resolveAuth(activeProfile))
+            let stale = Self.staleTiers(profile: activeProfile, olderThan: threshold,
+                                        expectedKinds: expected)
+            return (stale, Self.tiersWithNoData(profile: activeProfile, among: stale,
+                                                expectedKinds: expected, olderThan: threshold))
         }.value
         // Profile may have switched while the probe ran off-actor.
         guard profile == activeProfile else { return }
@@ -126,30 +133,27 @@ extension WorkspaceStore {
     ) async {
         let tiers = staleHeavyTiers
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
+        guard !manualCollectMustWait() else { return }
         let activeProfile = profile
         let labels = tiers.map(\.displayName).joined(separator: " + ")
-        globalStatus = "refreshing \(labels) data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(
+            for: activeProfile, status: "refreshing \(labels) data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
+        let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(activeProfile, Set(tiers), CLIBridge.bufferingOnLine)
+            let (exit, recorded) = try await Self.recordingCollect(
+                profile: activeProfile, honesty: honesty
+            ) { onLine in
+                try await collect(activeProfile, Set(tiers), onLine)
+            }
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "heavy-tier refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
-            if exit == 0 {
-                outcome = Toast(message: "\(labels) data refreshed", style: .success)
-            } else {
-                outcome = Toast(
-                    message: "Refresh finished with exit \(exit) — see Runs for details",
-                    style: .danger
-                )
-            }
+            outcome = Self.refreshToast(
+                "\(labels) data refreshed", exit: exit, incomplete: honesty.incomplete,
+                recorded: recorded)
         } catch {
-            outcome = Toast(
-                message: CLIBridge.explainOperationError(error, operation: "Refresh"),
-                style: .danger
-            )
+            outcome = Self.collectFailureToast(error, operation: "Refresh")
         }
         // Re-probe rather than clear: exit 0 means the run finished, not that each
         // tier's probe kind landed, so clearing on exit 0 hid the prompt for a tier
@@ -178,29 +182,24 @@ extension WorkspaceStore {
         }
     ) async {
         guard !tiers.isEmpty, canRefresh(profileSlug: profile) else { return }
+        guard !manualCollectMustWait() else { return }
         let activeProfile = profile
-        globalStatus = "refreshing data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(for: activeProfile, status: "refreshing data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
+        let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(activeProfile, tiers, CLIBridge.bufferingOnLine)
+            let (exit, recorded) = try await Self.recordingCollect(
+                profile: activeProfile, honesty: honesty
+            ) { onLine in
+                try await collect(activeProfile, tiers, onLine)
+            }
             AppLogger.event(.collect, exit == 0 ? .notice : .error,
                             "refresh \(exit == 0 ? "completed" : "exited \(exit)"): \(activeProfile)")
-            if exit == 0 {
-                outcome = Toast(message: "Data refreshed", style: .success)
-            } else {
-                outcome = Toast(
-                    message: "Refresh finished with exit \(exit) — see Runs for details",
-                    style: .danger
-                )
-            }
+            outcome = Self.refreshToast(
+                "Data refreshed", exit: exit, incomplete: honesty.incomplete, recorded: recorded)
         } catch {
-            outcome = Toast(
-                message: CLIBridge.explainOperationError(error, operation: "Refresh"),
-                style: .danger
-            )
+            outcome = Self.collectFailureToast(error, operation: "Refresh")
         }
         // The Overview scan prompt reads `staleHeavyTiers`, which only the prompt's
         // own button cleared — so a toolbar refresh that collected every tier left
@@ -233,34 +232,23 @@ extension WorkspaceStore {
             toast = Toast(message: "Collect is unavailable for this profile.", style: .info)
             return
         }
+        guard !manualCollectMustWait() else { return }
         let activeProfile = profile
-        globalStatus = "collecting jamf-cli data · profile=\(activeProfile)"
-        defer { globalStatus = nil }
-        beginCollect(for: activeProfile)
+        beginCollect(
+            for: activeProfile, status: "collecting jamf-cli data · profile=\(activeProfile)")
         defer { endCollect(for: activeProfile) }
-        // Record the run so the failure toast's "see Run History" is true —
-        // this in-process collect previously discarded every per-kind line.
-        let recorder = ProfileService.workspaceURL(for: activeProfile).flatMap {
-            ScheduledRunRecorder(workspace: $0, label: Self.firstCollectRunLabel)
-        }
-        if recorder == nil {
-            AppLogger.cli.warning(
-                "First-collect run recorder unavailable — this run will not appear in Run History"
-            )
-        }
+        let honesty = CollectHonestyWatcher()
         let outcome: Toast
         do {
-            let exit = try await collect(activeProfile) { line in
-                recorder?.record(line.text)
+            let (exit, recorded) = try await Self.recordingCollect(
+                profile: activeProfile, honesty: honesty
+            ) { onLine in
+                try await collect(activeProfile, onLine)
             }
-            recorder?.finish(exitCode: exit)
-            outcome = Self.firstCollectToast(exitCode: exit, runRecorded: recorder != nil)
+            outcome = Self.firstCollectToast(
+                exitCode: exit, runRecorded: recorded, incomplete: honesty.incomplete)
         } catch {
-            recorder?.record("[error] \(error.localizedDescription)")
-            recorder?.finish(exitCode: 1)
-            outcome = Toast(
-                message: CLIBridge.explainOperationError(error, operation: "Collect"), style: .danger
-            )
+            outcome = Self.collectFailureToast(error, operation: "Collect")
         }
         await checkHeavyTierStaleness()
         await refreshDataFreshness()
@@ -268,20 +256,197 @@ extension WorkspaceStore {
         toast = outcome
     }
 
-    /// Must carry the LaunchAgent label prefix or `ScheduledRunRecorder.init`
-    /// rejects it and the run silently goes unrecorded.
-    nonisolated static var firstCollectRunLabel: String {
+    // MARK: One collect at a time for manual collects
+
+    /// True, after posting the toast, when a manual collect must not start: another live
+    /// process — the bundled `--tick` agent — holds the tick lock (#226 5c), or a collect is
+    /// already running in this app, for any profile. `CLIBridge.collect` would refuse the
+    /// collect anyway; asking first keeps a refused button from touching any state.
+    func manualCollectMustWait() -> Bool {
+        let refusal = CLIBridge.collectRefusal()
+            ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
+        guard let refusal else { return false }
+        AppLogger.collect.notice(
+            "Manual collect refused: \(refusal.localizedDescription, privacy: .public)")
+        toast = Self.collectFailureToast(refusal, operation: "Refresh")
+        return true
+    }
+
+    /// Why a report must not start now, or nil: a collect or another report running in this
+    /// process, for any profile, or a scheduled run holding the lock. A report made during a
+    /// collect reads the day's summary beside snapshots the collect has already replaced, so
+    /// its figures disagree with each other. A report holds the lock itself
+    /// (`CLIBridge.holdingGenerate`), which is what keeps the next collect out.
+    func generateRefusal() -> CLIBridgeError? {
+        CLIBridge.collectRefusal()
+            ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
+    }
+
+    /// What Generate says when `generateRefusal` stops it.
+    nonisolated static func generateRefusalMessage(_ refusal: CLIBridgeError) -> String {
+        let reason = CLIBridge.explainOperationError(refusal, operation: "Generate")
+        guard refusal != .generateInProgress else { return reason }
+        return reason + ". A report made while data is collected would mix old and new figures."
+    }
+
+    /// True, after posting why as information, when a report must not start now
+    /// (`generateRefusal`). Asked before a save panel opens, so nobody names a file for a run
+    /// that is then refused.
+    func reportMustWait() -> Bool {
+        guard let refusal = generateRefusal() else { return false }
+        toast = Toast(message: Self.generateRefusalMessage(refusal), style: .info)
+        return true
+    }
+
+    /// Starts a report run for `profile`: false, after posting why, when `reportMustWait` or
+    /// when the profile already has a run going. The caller ends it with `clearRunInProgress`
+    /// and takes the lock itself (`CLIBridge.holdingGenerate`).
+    func beginReportRun(for profile: String) -> Bool {
+        guard !reportMustWait() else { return false }
+        guard setRunInProgress(for: profile) else {
+            toast = Toast(
+                message: "Another run is already in progress for profile '\(profile)' — skipped",
+                style: .danger)
+            return false
+        }
+        return true
+    }
+
+    /// The toast for a single-format export (PDF, inventory CSV) that threw: a refusal is
+    /// information, anything else a failure.
+    nonisolated static func exportFailureToast(_ error: Error, operation: String) -> Toast {
+        guard CLIBridgeError.isCollectRefusal(error) else {
+            return Toast(
+                message: "\(operation) failed · \(error.localizedDescription)", style: .danger)
+        }
+        return collectFailureToast(error, operation: operation)
+    }
+
+    /// The toast for a GUI collect that threw. A refusal — a tick holding the lock, or another
+    /// collect running here — is not a failure, so it is not shown as one.
+    nonisolated static func collectFailureToast(_ error: Error, operation: String) -> Toast {
+        let refused = CLIBridgeError.isCollectRefusal(error)
+        return Toast(message: CLIBridge.explainOperationError(error, operation: operation),
+                     style: refused ? .info : .danger)
+    }
+
+    /// Where a GUI collect's warning lines can be read: Run History only for a run a
+    /// `ScheduledRunRecorder` wrote, otherwise the in-app log (`CLIBridge.bufferingOnLine`).
+    enum WarningsDestination: Sendable {
+        case runHistory, settingsLogging
+
+        var pointer: String {
+            switch self {
+            case .runHistory: "see Run History"
+            case .settingsLogging: "see Settings › Logging"
+            }
+        }
+    }
+
+    /// The toast for a GUI collect that exited 0, which does not mean every source landed:
+    /// `incomplete` (`CollectHonestyWatcher`) is what Run History reads as Partial.
+    nonisolated static func collectCompletedToast(
+        _ message: String, incomplete: Bool, warningsAt: WarningsDestination
+    ) -> Toast {
+        guard incomplete else { return Toast(message: message, style: .success) }
+        return Toast(
+            message: "Refresh finished with warnings — \(warningsAt.pointer)", style: .warning)
+    }
+
+    /// `sink`, after feeding each run line to `honesty`.
+    nonisolated static func observing(
+        _ honesty: CollectHonestyWatcher,
+        then sink: @escaping @Sendable (CLIBridge.LogLine) -> Void
+    ) -> @Sendable (CLIBridge.LogLine) -> Void {
+        { line in
+            honesty.observe(line.text)
+            sink(line)
+        }
+    }
+
+    /// Run History label for every collect the app starts itself: the first collect, a Refresh
+    /// button, a heavy-tier prompt and the banner's Collect now. One reserved label with no
+    /// profile part, so it can never be a schedule's (`LaunchAgentWriter.label(for:)` always
+    /// writes `<prefix>.<profile>.<slug>` and `ManagedAutomation` `<prefix>.multi.<slug>`), and
+    /// no schedule's "Last Run", overdue check or retry reads its `_status.json`. Must carry the
+    /// LaunchAgent label prefix or `ScheduledRunRecorder.init` rejects it and the run goes
+    /// unrecorded.
+    nonisolated static var appCollectRunLabel: String {
         "\(LaunchAgentWriter.labelPrefix).manual-collect"
+    }
+
+    /// App-started collect records kept per workspace. Like `TickFailureLog.keptRecords`, a cap
+    /// so a button pressed often cannot push schedule runs out of the recorder's window.
+    nonisolated static let keptAppCollectRuns = 20
+
+    /// Runs a GUI collect with its lines fed to the in-app log, `honesty` and a Run History
+    /// record under `appCollectRunLabel`, which `runFirstCollect` has always written.
+    /// `recorded` is false when the record could not be opened: the run still goes ahead and
+    /// the toast then names the in-app log. A collect that is refused ends no record,
+    /// since nothing ran. Main-actor like its callers, so their non-`Sendable` collect closures
+    /// stay in one isolation domain.
+    @MainActor
+    static func recordingCollect(
+        profile: String,
+        honesty: CollectHonestyWatcher,
+        _ run: (@escaping @Sendable (CLIBridge.LogLine) -> Void) async throws -> Int32
+    ) async throws -> (exit: Int32, recorded: Bool) {
+        if let logs = try? WorkspacePaths.runHistoryDir(for: profile) {
+            ScheduledRunRecorder.pruneRunLogs(
+                in: logs, keep: keptAppCollectRuns - 1, label: appCollectRunLabel)
+        }
+        let recorder = ProfileService.workspaceURL(for: profile).flatMap {
+            ScheduledRunRecorder(workspace: $0, label: appCollectRunLabel)
+        }
+        if recorder == nil {
+            AppLogger.cli.warning(
+                "Collect run recorder unavailable — this run will not appear in Run History"
+            )
+        }
+        do {
+            let exit = try await run(observing(honesty, then: { line in
+                CLIBridge.bufferingOnLine(line)
+                recorder?.record(line.text)
+            }))
+            recorder?.finish(exitCode: exit)
+            return (exit, recorder != nil)
+        } catch {
+            if CLIBridgeError.isCollectRefusal(error) {
+                recorder?.discard()
+            } else {
+                recorder?.record("[error] \(error.localizedDescription)")
+                recorder?.finish(exitCode: 1)
+            }
+            throw error
+        }
+    }
+
+    /// The toast for a finished Refresh: the success or warnings text on exit 0, otherwise the
+    /// exit code and where the run's lines can be read.
+    nonisolated static func refreshToast(
+        _ message: String, exit: Int32, incomplete: Bool, recorded: Bool
+    ) -> Toast {
+        let destination: WarningsDestination = recorded ? .runHistory : .settingsLogging
+        guard exit == 0 else {
+            return Toast(
+                message: "Refresh finished with exit \(exit) — \(destination.pointer)",
+                style: .danger)
+        }
+        return collectCompletedToast(message, incomplete: incomplete, warningsAt: destination)
     }
 
     /// Exit-code triage for the first-collect toast. Only exit 3 blames
     /// credentials — exit 1 is usually partial per-kind failures, and blaming
     /// auth sent the #181 field tester to the wrong page.
-    nonisolated static func firstCollectToast(exitCode: Int32, runRecorded: Bool = true) -> Toast {
+    nonisolated static func firstCollectToast(
+        exitCode: Int32, runRecorded: Bool = true, incomplete: Bool = false
+    ) -> Toast {
         if exitCode == 0 {
             // Context-neutral: this path also serves CollectNowBanner on every
             // collect-fed screen, not just the first-run flow.
-            return Toast(message: "Collection complete", style: .success)
+            return collectCompletedToast(
+                "Collection complete", incomplete: incomplete,
+                warningsAt: runRecorded ? .runHistory : .settingsLogging)
         }
         if exitCode == CLIBridge.exitCodeUnauthorized {
             return Toast(
@@ -341,37 +506,80 @@ extension WorkspaceStore {
         }
     }
 
-    /// Heavy tiers whose newest probe-kind snapshot is older than `threshold`.
-    /// A tier with no snapshots at all is NOT reported — that's the
-    /// not-yet-collected state, which the per-page empty states already cover.
+    /// Heavy tiers holding an expected kind whose newest snapshot is older than
+    /// `threshold`, or that never landed (#181: once the workspace directory
+    /// exists, the prompt is the only heavy-collect affordance a fresh workspace
+    /// has; a missing workspace is the Overview init banner's job). Only
+    /// `expectedKinds` count, and not one whose last failure repeats on retry,
+    /// so neither a kind the profile never collects nor one it cannot collect
+    /// holds the prompt up. A tier with none is never stale.
     nonisolated static func staleTiers(
         profile: String,
-        olderThan threshold: TimeInterval
+        olderThan threshold: TimeInterval,
+        expectedKinds: [String]
     ) -> [CollectionTier] {
-        [CollectionTier.inventory, .scan].filter { tier in
-            guard let age = newestSnapshotAge(profile: profile, kind: tier.stalenessProbeKind) else {
-                // #181: never-collected counts as stale once the workspace
-                // directory exists — the prompt is the only heavy-collect
-                // affordance a fresh workspace has. A missing workspace is the
-                // Overview init banner's job, not this prompt's.
-                return workspaceExists(profile: profile)
-            }
-            return age >= threshold
+        let exists = workspaceExists(profile: profile)
+        return [CollectionTier.inventory, .scan].filter { tier in
+            let stale = staleKinds(profile: profile, tier: tier, expectedKinds: expectedKinds,
+                                   olderThan: threshold)
+            return !stale.aged.isEmpty || (exists && !stale.neverLanded.isEmpty)
         }
     }
 
-    /// Among `tiers`, those whose probe kind has no snapshot at all even
-    /// though the workspace collected recently — i.e. the last collect
+    /// Among `tiers`, those stale only through kinds with no snapshot at all
+    /// even though the workspace collected recently — i.e. the last collect
     /// attempted them and produced no data, as opposed to never-attempted or
     /// aged-out data. Lets the prompt say "couldn't be collected" instead of
     /// the contradictory "missing" right after a successful first collect.
     nonisolated static func tiersWithNoData(
-        profile: String, among tiers: [CollectionTier]
+        profile: String, among tiers: [CollectionTier],
+        expectedKinds: [String], olderThan threshold: TimeInterval
     ) -> Set<CollectionTier> {
         guard workspaceCollectedRecently(profile: profile) else { return [] }
-        return Set(tiers.filter {
-            newestSnapshotAge(profile: profile, kind: $0.stalenessProbeKind) == nil
+        return Set(tiers.filter { tier in
+            let stale = staleKinds(profile: profile, tier: tier, expectedKinds: expectedKinds,
+                                   olderThan: threshold)
+            return !stale.neverLanded.isEmpty && stale.aged.isEmpty
         })
+    }
+
+    /// `tier`'s expected kinds that are stale, split by why. A kind whose last
+    /// failure cannot succeed on retry is left out: the health banner names it
+    /// with its cause, and this prompt's button would only force the tier again.
+    private nonisolated static func staleKinds(
+        profile: String, tier: CollectionTier, expectedKinds: [String],
+        olderThan threshold: TimeInterval
+    ) -> (neverLanded: [String], aged: [String]) {
+        let state = (try? WorkspacePaths.stateDir(for: profile)).map(StateFileStore.init)
+        var neverLanded: [String] = []
+        var aged: [String] = []
+        for kind in expectedKinds where CollectionTier.tier(forReport: kind) == tier {
+            if let state, lastFailureRepeatsOnRetry(kind, in: state) { continue }
+            if let age = newestSnapshotAge(profile: profile, kind: kind) {
+                if age >= threshold { aged.append(kind) }
+            } else {
+                neverLanded.append(kind)
+            }
+        }
+        return (neverLanded, aged)
+    }
+
+    /// The kinds `profile` is expected to collect, from the inputs the health
+    /// strip reads: the skip-expensive toggle, `jamf_cli.collect_skip`, the
+    /// profile's auth method and the jamf-cli version (for the dashboard).
+    nonisolated static func expectedKinds(
+        profile: String, jamfCLIVersion: String?, auth: ProfileAuthMethod.Resolved?
+    ) -> [String] {
+        let config = ProfileService.workspaceURL(for: profile).flatMap {
+            try? ConfigLoader.load(from: $0.appendingPathComponent("config.yaml"))
+        }
+        return expectedKinds(
+            skipExpensive: UserDefaults.standard.bool(forKey: "skipExpensiveCollections"),
+            authMethod: auth?.authMethod,
+            tenantLevel: auth?.isTenantLevel == true,
+            collectSkip: ReportEngine.collectSkipKinds(config?.jamfCli?.collectSkip),
+            dashboardSupported: JamfCLIInstaller.supportsDashboard(jamfCLIVersion)
+        )
     }
 
     /// True when any snapshot kind has a file newer than `interval` —
@@ -401,8 +609,9 @@ extension WorkspaceStore {
             && isDirectory.boolValue
     }
 
-    /// Age in seconds of the newest .json snapshot under
-    /// `<workspace>/jamf-cli-data/<kind>/`, or nil when none exist.
+    /// Age in seconds of the newest snapshot under
+    /// `<workspace>/jamf-cli-data/<kind>/`, or nil when none exist. JSON, except
+    /// jamf-cli's dashboard, the one kind saved as a page.
     nonisolated static func newestSnapshotAge(profile: String, kind: String) -> TimeInterval? {
         guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return nil }
         let dir = dataDir.appendingPathComponent(kind, isDirectory: true)
@@ -411,8 +620,9 @@ extension WorkspaceStore {
             includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return nil }
+        let fileExtension = kind == ReportEngine.dashboardKind ? "html" : "json"
         let newest = entries
-            .filter { $0.pathExtension == "json" }
+            .filter { $0.pathExtension == fileExtension }
             .compactMap {
                 (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate

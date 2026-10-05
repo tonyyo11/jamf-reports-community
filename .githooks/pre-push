@@ -1,7 +1,10 @@
 #!/bin/sh
-# Pre-push gate: the "Pre-push CI parity" check from CLAUDE.md. Builds the app
-# and its test target, and blocks the push when the compiler reports an error,
-# so a break the CI build would catch is caught before it leaves this Mac.
+# Pre-push gate: the "Pre-push CI parity" check from CLAUDE.md. Runs the
+# test-only symbol check, then builds the app and its test target, and blocks
+# the push when either fails, so a break CI would catch is caught before it
+# leaves this Mac.
+# A diagnostic is a line containing ": error: ", the pattern CI's failure listing
+# uses, so a warning that merely mentions "error:" does not block.
 # CI compiles with Swift 6.1 (Xcode 16.4); a newer local Swift is more lenient
 # about actor isolation, so this catches most CI errors, not every one.
 #
@@ -12,6 +15,32 @@ set -eu
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root/app"
 
+# CI runs this check too; it takes about a second, so it goes before the build.
+echo "pre-push: check-test-only-symbols..."
+if zsh "$repo_root/app/scripts/check-test-only-symbols.zsh"; then
+  symbols_status=0
+else
+  symbols_status=$?
+fi
+# 1 is a finding; anything else means the check itself could not run.
+case "$symbols_status" in
+0) ;;
+1)
+  echo "pre-push: symbols used only by tests found, push blocked" >&2
+  exit 1
+  ;;
+2)
+  echo "pre-push: check-test-only-symbols rejected the repo layout or allow-list" \
+    "(exit 2), push blocked" >&2
+  exit 1
+  ;;
+*)
+  echo "pre-push: check-test-only-symbols could not run (exit $symbols_status:" \
+    "zsh or the script is missing, or the check crashed), push blocked" >&2
+  exit 1
+  ;;
+esac
+
 echo "pre-push: swift build --build-tests (CI parity)..."
 if output="$(swift build --build-tests 2>&1)"; then
   build_status=0
@@ -19,13 +48,13 @@ else
   build_status=$?
 fi
 
-errors="$(printf '%s\n' "$output" | grep "error:" || true)"
+errors="$(printf '%s\n' "$output" | grep ": error: " || true)"
 if [ -n "$errors" ]; then
   printf '%s\n' "$errors" >&2
   echo "pre-push: build errors found, push blocked" >&2
   exit 1
 fi
-# A failed build with no "error:" line (no Swift toolchain, a crash) is not a pass.
+# A failed build with no diagnostic line (no Swift toolchain, a crash) is not a pass.
 if [ "$build_status" -ne 0 ]; then
   printf '%s\n' "$output" | tail -n 20 >&2
   echo "pre-push: swift build exited $build_status, push blocked" >&2

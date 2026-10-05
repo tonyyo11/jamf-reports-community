@@ -9,6 +9,9 @@ struct AuditFinding: Identifiable, Codable {
     let category: String
     let recommendation: String
     let severity: String
+    /// The Macs behind the finding, for a finding the app computes from the inventory
+    /// (`contactGapFindings`). `pro audit` returns counts only, so its findings have none.
+    var devices: [String] = []
 
     var driftKey: String {
         [
@@ -36,6 +39,18 @@ struct AuditFinding: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case name, affected, category, recommendation, severity
+    }
+
+    /// The findings as CSV. Finding text comes from jamf-cli, so each cell goes through
+    /// `StaleDeviceService.csvField` (formula sign neutralised, CR/LF/comma/quote quoted).
+    static func csv(_ findings: [AuditFinding]) -> String {
+        let header = "Severity,Name,Category,Affected,Recommendation\n"
+        let body = findings.map { f in
+            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
+                .map(StaleDeviceService.csvField)
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        return header + body
     }
 }
 
@@ -90,6 +105,7 @@ struct AuditView: View {
     @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
     @State private var commandFindings: [AuditFinding] = []
+    @State private var contactGapList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
@@ -99,6 +115,8 @@ struct AuditView: View {
     @State private var selectedCommandFinding: AuditFinding?
     @State private var newFindingKeys: Set<String> = []
     @State private var resolvedFindings: [AuditFinding] = []
+    /// A previous audit snapshot was read, so the two drift values above mean something.
+    @State private var hasPreviousAudit = false
 
     @State private var selectedTab = 0
     @State private var query = ""
@@ -136,9 +154,7 @@ struct AuditView: View {
         findings.filter { $0.severity.uppercased() == "WARNING" }.count
     }
 
-    private var affectedTotal: Int {
-        findings.reduce(0) { $0 + $1.affected }
-    }
+    private var openFindingCount: Int { findings.openCount }
 
     private var categoryCount: Int {
         Set(findings.map { $0.category.lowercased() }).count
@@ -424,6 +440,7 @@ struct AuditView: View {
                 .padding(20)
             } else {
                 auditSummaryStrip
+                aiInsightCard
                 Card(padding: 0) {
                     Table(filteredFindings, sortOrder: $sortOrderAudit) {
                         TableColumn("Finding", value: \.name) { f in
@@ -471,7 +488,8 @@ struct AuditView: View {
                             }
                         }
                     }
-                    .frame(height: tableHeight(rowCount: filteredFindings.count))
+                    .pageTableHeight(
+                        rows: filteredFindings.count, rowHeight: PageTableMetrics.richRowHeight)
                     .popover(item: $selectedFinding) { finding in
                         FindingDetailPopover(finding: finding, tone: pillTone(finding.severity))
                     }
@@ -480,6 +498,26 @@ struct AuditView: View {
             }
             duplicateSerialsSection
             commandHealthSection
+            ContactGapSection(findings: contactGapList)
+        }
+    }
+
+    /// macOS 27, opt-in: which audit findings to work first and what changed since the
+    /// previous audit. The card hides itself while `ai.enabled` is off; the input is built
+    /// only where it can show.
+    @ViewBuilder
+    private var aiInsightCard: some View {
+        if AIInsightCard.isOffered(demoMode: workspace.demoMode) {
+            AIInsightCard(
+                title: "AI Audit Insight",
+                idleText: "Suggest which audit findings to work first and what changed since "
+                    + "the previous audit, using on-device intelligence.",
+                provenanceText: "AI-generated from the audit findings on this screen — verify "
+                    + "against the table below.",
+                input: FleetInsightInput.audit(
+                    findings: findings,
+                    drift: hasPreviousAudit ? (newFindingKeys, resolvedFindings) : nil)
+            )
         }
     }
 
@@ -615,12 +653,15 @@ struct AuditView: View {
                     }
                     if !commandHealth.topFailedCommands.isEmpty {
                         Divider().background(Theme.Colors.hairline)
-                        HStack(spacing: 6) {
+                        // Wraps rather than squeezing the label: the pills do not shrink, so the
+                        // label lost its width and broke one letter to a line.
+                        WrappingRow(spacing: 6, lineSpacing: 6) {
                             Kicker(text: "Most failed")
                             ForEach(commandHealth.topFailedCommands.prefix(3), id: \.name) { c in
                                 Pill(text: "\(c.name) ×\(c.count)", tone: .warn)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
                     }
                 }
@@ -680,7 +721,7 @@ struct AuditView: View {
         HStack(spacing: 10) {
             CompactMetricTile(label: "Critical", value: "\(criticalCount)", tone: .danger)
             CompactMetricTile(label: "Warnings", value: "\(warningCount)", tone: .warn)
-            CompactMetricTile(label: "Affected", value: "\(affectedTotal)", tone: .gold)
+            CompactMetricTile(label: "Findings", value: "\(openFindingCount)", tone: .gold)
             CompactMetricTile(label: "Categories", value: "\(categoryCount)", tone: .teal)
         }
     }
@@ -965,14 +1006,8 @@ struct AuditView: View {
         // "Export Findings" appeared to do nothing on network shares and
         // custom folders.)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let header = "Severity,Name,Category,Affected,Recommendation\n"
-        let body = findings.map { f in
-            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
-                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-                .joined(separator: ",")
-        }.joined(separator: "\n")
         do {
-            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            try AuditFinding.csv(findings).write(to: url, atomically: true, encoding: .utf8)
         } catch {
             exportError = "Could not write \(url.lastPathComponent): \(error.localizedDescription)"
             showExportError = true
@@ -993,6 +1028,7 @@ struct AuditView: View {
             duplicateSerials = DemoData.duplicateSerialsSnapshot
             commandHealth = .empty
             commandFindings = []
+            contactGapList = []
             return
         }
 
@@ -1002,25 +1038,34 @@ struct AuditView: View {
         lastHygieneDate = nil
         newFindingKeys = []
         resolvedFindings = []
+        hasPreviousAudit = false
         await loadIntegritySummary()
         duplicateSerials = DuplicateSerialService.load(profile: workspace.profile)
         commandHealth = MDMCommandHealthService.load(profile: workspace.profile)
-        commandFindings = commandHealthFindings(commandHealth)
 
         let decoder = JSONDecoder()
         let auditSnapshots = await bridge.cachedJSONSnapshots(profile: workspace.profile, type: "audit", limit: 2)
+        let scanned = commandHealth.isDetected
+        var failedCommandTotal: Int?
         if let current = auditSnapshots.first,
-           let decoded = try? decoder.decode([AuditFinding].self, from: current.data) {
+           let decodedAll = try? decoder.decode([AuditFinding].self, from: current.data) {
+            let split = withoutSupersededRows(decodedAll, commandHealthDetected: scanned)
+            let decoded = split.shown
+            failedCommandTotal = split.failedCommandTotal
             findings = decoded
             lastAuditDate = current.modified
 
             let currentKeys = Set(decoded.map(\.driftKey))
             if let previousSnapshot = auditSnapshots.dropFirst().first {
                 do {
-                    let previous = try decoder.decode([AuditFinding].self, from: previousSnapshot.data)
+                    let previousAll = try decoder.decode(
+                        [AuditFinding].self, from: previousSnapshot.data)
+                    let previous = withoutSupersededRows(
+                        previousAll, commandHealthDetected: scanned).shown
                     let previousKeys = Set(previous.map(\.driftKey))
                     newFindingKeys = currentKeys.subtracting(previousKeys)
                     resolvedFindings = previous.filter { !currentKeys.contains($0.driftKey) }
+                    hasPreviousAudit = true
                 } catch {
                     AppLogger.ui.warning(
                         "AuditView: previous snapshot decode failed — \(error, privacy: .private)"
@@ -1030,6 +1075,14 @@ struct AuditView: View {
                 }
             }
         }
+
+        commandFindings = commandHealthFindings(
+            commandHealth, failedCommandTotal: failedCommandTotal)
+        let profile = workspace.profile
+        let inventory = await Task.detached(priority: .userInitiated) {
+            DeviceInventoryService.load(profile: profile, demoMode: false)
+        }.value
+        contactGapList = contactGapFindings(inventory)
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
             profile: workspace.profile,
@@ -1229,7 +1282,7 @@ private struct AffectedBar: View {
     }
 }
 
-private struct FindingDetailPopover: View {
+struct FindingDetailPopover: View {
     let finding: AuditFinding
     let tone: Pill.Tone
     @Environment(\.dismiss) private var dismiss
@@ -1260,6 +1313,8 @@ private struct FindingDetailPopover: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
+
+            if !finding.devices.isEmpty { deviceList }
 
             // `pro audit` returns counts, not device lists — "take action"
             // means routing to the screen that holds the underlying records.
@@ -1301,17 +1356,69 @@ private struct FindingDetailPopover: View {
         .frame(width: 360)
         .background(Theme.Colors.winBG)
     }
+
+    /// The Macs of a finding the app computed itself, in a scroll area so a long list does
+    /// not stretch the popover.
+    private var deviceList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Kicker(text: "Macs (\(finding.devices.count))")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(finding.devices, id: \.self) { device in
+                        Text(device)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 140)
+        }
+    }
+}
+
+extension Array where Element == AuditFinding {
+    /// Findings that need a look (anything not OK): one unit. The summary tile used to add up
+    /// each finding's `affected`, which counts commands, policies, groups and devices alike.
+    var openCount: Int { filter { $0.severity.uppercased() != "OK" }.count }
+}
+
+/// `pro audit`'s "Failed MDM commands" check counts every command in Jamf Pro's history with
+/// an Error status and grades it CRITICAL above 100. The per-device scan counts the devices
+/// with a failure and grades it WARNING. Both rows for one condition, in two units and two
+/// severities, disagreed, so once a scan exists the audit row is dropped from the findings
+/// table and its count moves into the scan's finding (`commandHealthFindings`).
+///
+/// - Returns: the findings to show, and the dropped row's command count (nil when no row was
+///   dropped). Without a scan nothing is dropped.
+func withoutSupersededRows(
+    _ findings: [AuditFinding], commandHealthDetected: Bool
+) -> (shown: [AuditFinding], failedCommandTotal: Int?) {
+    guard commandHealthDetected else { return (findings, nil) }
+    func isFailedCommands(_ finding: AuditFinding) -> Bool {
+        finding.name.trimmingCharacters(in: .whitespaces).lowercased() == "failed mdm commands"
+    }
+    let total = findings.first(where: isFailedCommands)?.affected
+    return (findings.filter { !isFailedCommands($0) }, total)
 }
 
 /// The two "Command health" findings, derived from the per-device scan snapshot
 /// rather than `pro audit`. OK when the fleet is clean, WARNING otherwise, so
-/// they sort like every other finding. Internal for tests.
-func commandHealthFindings(_ snapshot: MDMCommandHealthService.Snapshot) -> [AuditFinding] {
+/// they sort like every other finding. `failedCommandTotal` is the command count of the
+/// `pro audit` row this replaces (`withoutSupersededRows`). Internal for tests.
+func commandHealthFindings(
+    _ snapshot: MDMCommandHealthService.Snapshot, failedCommandTotal: Int? = nil
+) -> [AuditFinding] {
     guard snapshot.isDetected else { return [] }
     let failed = snapshot.devicesWithFailures.count
     let stale = snapshot.devicesWithStalePending.count
     let staleDays = DeviceScanBuilders.pendingAgeThresholdDays
-    let failedRecommendation = "Open the device's Jamf Pro record → Management → "
+    let commandNote = failedCommandTotal.map {
+        "Jamf Pro holds \($0) failed command\($0 == 1 ? "" : "s") in total, across these "
+            + "devices and any no longer enrolled. "
+    } ?? ""
+    let failedRecommendation = commandNote
+        + "Open the device's Jamf Pro record → Management → "
         + "Management Commands, read the failure text, then clear the failed "
         + "command there. The app never flushes commands."
     let staleRecommendation = "A command pending this long usually means the Mac "
@@ -1333,6 +1440,160 @@ func commandHealthFindings(_ snapshot: MDMCommandHealthService.Snapshot) -> [Aud
             severity: stale > 0 ? "WARNING" : "OK"
         ),
     ]
+}
+
+// MARK: - AI insight input
+
+extension FleetInsightInput {
+    /// The Audit insight: `pro audit` findings by severity and category, and what changed
+    /// since the previous audit. `drift` is nil when there was no previous audit to compare,
+    /// which is not the same as nothing having changed. Only counts, check names, categories
+    /// and the severity buckets go out: a finding's recommendation, and any `detail` or
+    /// `resource` text beside it, can name policies, computers or users and stays behind.
+    /// Resolved findings are counted, not named: next to the open ones the on-device model
+    /// read a named one as still open. Nil when there are no findings.
+    static func audit(
+        findings: [AuditFinding],
+        drift: (newKeys: Set<String>, resolved: [AuditFinding])?
+    ) -> FleetInsightInput? {
+        guard !findings.isEmpty else { return nil }
+        let open = findings.filter { AuditSeverity($0.severity) != .passing }
+        let isNew = { (finding: AuditFinding) in drift?.newKeys.contains(finding.driftKey) == true }
+        var facts = auditSeverityFacts(findings)
+        // A passing check that appears or goes missing is no change in risk, so neither counts.
+        let resolved = (drift?.resolved ?? []).filter { AuditSeverity($0.severity) != .passing }
+        if drift != nil {
+            facts.append(Fact(label: "Findings new since the previous audit",
+                              value: .count(open.filter(isNew).count), prior: nil,
+                              polarity: .lowerIsBetter))
+            facts.append(Fact(label: "Findings resolved since the previous audit",
+                              value: .count(resolved.count), prior: nil,
+                              polarity: .higherIsBetter))
+        }
+        if let categories = auditCategoryFact(open) { facts.append(categories) }
+        let listed = Array(open.sorted(by: auditIsMoreUrgent).prefix(maxListedAuditFindings))
+        facts += listed.map { auditFindingFact($0, isNew: isNew($0)) }
+        var notes = ["A finding's count is the objects it affects, as its check name says "
+            + "(devices, policies, ...). Counts of different checks do not add up."]
+        if open.count > listed.count {
+            notes.append("\(open.count - listed.count) lower-priority findings are not listed.")
+        }
+        if drift == nil {
+            notes.append("No previous audit was available, so what changed is unknown.")
+            notes.append(noEarlierDataNote)
+        }
+        return FleetInsightInput(
+            title: "Audit insight",
+            focus: "which categories to work first, and what changed since the previous audit.",
+            facts: facts, notes: notes)
+    }
+
+    private static let maxListedAuditFindings = 10
+    private static let maxAuditCategories = 5
+
+    private static func auditSeverityFacts(_ findings: [AuditFinding]) -> [Fact] {
+        let counts = Dictionary(grouping: findings) { AuditSeverity($0.severity) }
+            .mapValues(\.count)
+        var facts = [Fact(label: "Critical findings", value: .count(counts[.critical] ?? 0),
+                          prior: nil, polarity: .lowerIsBetter),
+                     Fact(label: "Warning findings", value: .count(counts[.warning] ?? 0),
+                          prior: nil, polarity: .lowerIsBetter)]
+        if let informational = counts[.informational] {
+            facts.append(Fact(label: "Informational findings", value: .count(informational),
+                              prior: nil, polarity: .lowerIsBetter))
+        }
+        if let passing = counts[.passing] {
+            facts.append(Fact(label: "Checks passing", value: .count(passing), prior: nil,
+                              polarity: .higherIsBetter))
+        }
+        return facts
+    }
+
+    /// One line ranking the categories with an open finding: the one with the most critical
+    /// findings first, then the most warnings. A line of its own per category made the
+    /// on-device model restate each as a finding.
+    private static func auditCategoryFact(_ open: [AuditFinding]) -> Fact? {
+        let groups = Dictionary(grouping: open) { $0.insightCategory.lowercased() }.values
+        let tallies = groups.map { rows -> (name: String, counts: [Int]) in
+            let bySeverity = Dictionary(grouping: rows) { AuditSeverity($0.severity) }
+            return (rows[0].insightCategory,
+                    [AuditSeverity.critical, .warning, .informational].map {
+                        bySeverity[$0]?.count ?? 0
+                    })
+        }
+        let ranked = tallies.sorted {
+            $0.counts != $1.counts ? $0.counts.lexicographicallyPrecedes($1.counts, by: >)
+                : $0.name < $1.name
+        }.prefix(maxAuditCategories)
+        guard !ranked.isEmpty else { return nil }
+        let words = [("critical", "critical"), ("warning", "warnings"),
+                     ("informational", "informational")]
+        let entries = ranked.map { tally in
+            let parts = zip(tally.counts, words).filter { $0.0 > 0 }
+                .map { "\($0.0) \($0.0 == 1 ? $0.1.0 : $0.1.1)" }
+            return "\(tally.name) (\(parts.joined(separator: ", ")))"
+        }
+        // Whole categories while they fit the field; a first one too long alone is cut.
+        var text = entries[0]
+        for entry in entries.dropFirst() {
+            guard text.count + 2 + entry.count <= FleetInsightInput.fieldLimit else { break }
+            text += "; " + entry
+        }
+        return Fact(label: "Categories to work first, in order", value: .text(text),
+                    prior: nil, polarity: .neutral)
+    }
+
+    /// `pro audit` reports 0 affected when it has no per-device breakdown, so for a finding
+    /// that is not passing a 0 is "not reported", never "nothing affected".
+    private static func auditFindingFact(_ finding: AuditFinding, isNew: Bool) -> Fact {
+        let marker = isNew ? ", this finding is new since the previous audit" : ""
+        let label = "\(finding.name) (\(finding.insightCategory), "
+            + "\(AuditSeverity(finding.severity).word)\(marker))"
+        return Fact(label: label,
+                    value: finding.affected > 0 ? .count(finding.affected)
+                        : .text("count not reported"),
+                    prior: nil, polarity: .lowerIsBetter)
+    }
+
+    private static func auditIsMoreUrgent(_ a: AuditFinding, _ b: AuditFinding) -> Bool {
+        let (left, right) = (AuditSeverity(a.severity), AuditSeverity(b.severity))
+        if left != right { return left < right }
+        if a.affected != b.affected { return a.affected > b.affected }
+        return (a.name, a.category) < (b.name, b.category)
+    }
+}
+
+/// The severity buckets the insight speaks in. The snapshot's own severity text is free
+/// text, so it is mapped to one of these words and never sent itself.
+private enum AuditSeverity: Int, Comparable {
+    case critical, warning, informational, passing
+
+    init(_ raw: String) {
+        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+        case "CRITICAL": self = .critical
+        case "WARNING": self = .warning
+        case "OK": self = .passing
+        default: self = .informational
+        }
+    }
+
+    var word: String {
+        switch self {
+        case .critical: "critical"
+        case .warning: "warning"
+        case .informational: "informational"
+        case .passing: "passing"
+        }
+    }
+
+    static func < (left: Self, right: Self) -> Bool { left.rawValue < right.rawValue }
+}
+
+private extension AuditFinding {
+    var insightCategory: String {
+        let trimmed = category.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "uncategorized" : trimmed
+    }
 }
 
 /// Maps a finding to the screen that can show its underlying records — by
@@ -1357,6 +1618,7 @@ func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: T
     if name.contains("mdm command") { return ("Devices", .devices) }
     switch finding.category.lowercased() {
     case "security": return ("Security Posture", .securityPosture)
+    case "contact gap": return ("Devices", .devices)
     case "compliance": return ("Compliance Posture", .compliancePosture)
     case "hygiene": return ("Policies & Profiles", .policyProfile)
     default: return nil

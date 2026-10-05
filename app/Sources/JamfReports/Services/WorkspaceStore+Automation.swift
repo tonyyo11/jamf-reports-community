@@ -296,7 +296,11 @@ extension WorkspaceStore {
     /// issues to the shared health model, and (once per day) post an overdue
     /// webhook digest when `notify:` is usable. No-op in demo mode. Cheap enough
     /// to call on every reconcile / launch.
-    func refreshAutomationHealth() async {
+    func refreshAutomationHealth(now: Date = Date()) async {
+        // Counted before the demo check, so a request made in demo mode also overtakes a read
+        // still running for the live profile.
+        healthRequests += 1
+        let request = healthRequests
         guard !demoMode else {
             AutomationHealthModel.shared.issues = []
             return
@@ -320,14 +324,24 @@ extension WorkspaceStore {
                 policy: AutomationPolicy.current(),
                 hasHandBuilt: !ScheduleStore().load().isEmpty)
             let inputs = LaunchAgentService.filterHealthInputs(
-                LaunchAgentService.healthInputs(schedules: schedules, statusProfile: profile),
+                LaunchAgentService.healthInputs(
+                    schedules: schedules, statusProfile: profile, now: now),
                 forProfile: profile)
             return (status: status,
                     issues: AutomationHealth.evaluate(
-                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker))
+                        inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now))
         }.value
+        // A later request or a profile switch overtook this read: what it found is for
+        // something else, and the newer request publishes its own.
+        guard request == healthRequests, profile == self.profile else { return }
         tickerStatus = evaluated.status
-        let issues = evaluated.issues
+        // While this process holds the tick lock, and until the wake it turned away has had
+        // its turn, a schedule that came due is waiting, not missed; while a tick holds it,
+        // the schedule is running. Neither the banner nor the digest calls it overdue.
+        let waiting = CLIBridge.tickLockHeldRecently(now: now) || CLIBridge.tickLockHeldElsewhere()
+        let issues = waiting
+            ? evaluated.issues.filter { $0.kind != .overdue }
+            : evaluated.issues
         AutomationHealthModel.shared.issues = issues
 
         await maybeNotifyOverdue(issues: issues, profile: profile)
@@ -353,14 +367,23 @@ extension WorkspaceStore {
     /// foreground) so a kind that quietly stopped landing surfaces without the
     /// operator visiting the screen that reads it.
     func refreshDataFreshness() async {
+        // Counted before the demo check, as in `refreshAutomationHealth`.
+        freshnessRequests += 1
+        let request = freshnessRequests
         guard !demoMode else {
             AutomationHealthModel.shared.freshnessIssues = []
             return
         }
         let profile = self.profile
+        let jamfCLIVersion = self.jamfCLIVersion
+        let resolveAuth = resolveAuthMethod
         let issues = await Task.detached(priority: .utility) {
-            Self.evaluateFreshness(profile: profile)
+            Self.evaluateFreshness(
+                profile: profile, jamfCLIVersion: jamfCLIVersion, resolveAuth: resolveAuth)
         }.value
+        // The banner's Collect now re-collects the tiers behind these issues, so an answer
+        // for another profile, or one a newer request has replaced, must not land.
+        guard request == freshnessRequests, profile == self.profile else { return }
         AutomationHealthModel.shared.freshnessIssues = issues
     }
 
@@ -368,20 +391,18 @@ extension WorkspaceStore {
     /// the file reads happen off the main actor.
     nonisolated static func evaluateFreshness(
         profile: String,
+        jamfCLIVersion: String? = nil,
+        resolveAuth: (String) -> ProfileAuthMethod.Resolved? = {
+            ProfileAuthMethod.resolve(profile: $0)
+        },
         now: Date = Date()
     ) -> [DataFreshnessIssue] {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return [] }
         let store = StateFileStore(directory: stateDir)
-        let skipExpensive = UserDefaults.standard.bool(forKey: "skipExpensiveCollections")
-        let auth = ProfileAuthMethod.resolve(profile: profile)
+        // The Overview's heavy-tier prompt reads the same list.
         let kinds = expectedKinds(
-            skipExpensive: skipExpensive,
-            authMethod: auth?.authMethod,
-            tenantLevel: auth?.isTenantLevel == true,
-            collectSkip: ReportEngine.collectSkipKinds(
-                loadReportConfig(profile: profile)?.jamfCli?.collectSkip)
-        )
+            profile: profile, jamfCLIVersion: jamfCLIVersion, auth: resolveAuth(profile))
         let states = store.collectionStates(for: kinds)
         // "Has this workspace ever collected?" — without it every kind on a
         // brand-new workspace reports as never-landed.
@@ -394,28 +415,32 @@ extension WorkspaceStore {
     /// Which kinds this profile is expected to collect, and so which may be
     /// reported as failing or stale.
     ///
-    /// Four exclusions, all about not alarming on an absence that is intended:
+    /// Five exclusions, all about not alarming on an absence that is intended:
     /// the Settings toggle makes the four per-device kinds deliberately absent
     /// (the false-alarm class `FreshnessChipRow` already guards), a Jamf Pro
     /// instance profile can never serve the Platform-only kinds, a
     /// tenant-level integration can never be granted `environmentLevelKinds`,
-    /// and `collect` never runs a kind listed in `jamf_cli.collect_skip`
-    /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set).
-    /// The last three apply regardless of the `.fail` counters on disk: a
-    /// workspace that ran for months before the collect-side skip has a
-    /// standing pile of them, and reading those back is exactly what kept the
-    /// banner red.
+    /// `collect` never runs a kind listed in `jamf_cli.collect_skip`
+    /// (`collectSkip` takes `ReportEngine.collectSkipKinds`' normalized set),
+    /// and it skips the dashboard on a jamf-cli before 1.31.0
+    /// (`dashboardSupported`, false for an unknown version, as `collect` reads it).
+    /// The Platform, tenant and skip-list rules apply regardless of the `.fail`
+    /// counters on disk: a workspace that ran for months before the collect-side
+    /// skip has a standing pile of them, and reading those back is exactly what
+    /// kept the banner red.
     nonisolated static func expectedKinds(
         skipExpensive: Bool,
         authMethod: String?,
         tenantLevel: Bool = false,
-        collectSkip: Set<String> = []
+        collectSkip: Set<String> = [],
+        dashboardSupported: Bool = false
     ) -> [String] {
         let skipsPlatform = ReportEngine.nonPlatformAuthMethod(authMethod) != nil
         return ReportEngine.knownCollectKinds.filter { kind in
             if skipExpensive, ReportEngine.expensivePerDeviceKinds.contains(kind) {
                 return false
             }
+            if kind == ReportEngine.dashboardKind, !dashboardSupported { return false }
             if tenantLevel, ReportEngine.environmentLevelKinds.contains(kind) {
                 return false
             }
@@ -518,7 +543,7 @@ extension WorkspaceStore {
         let tiers = DataFreshnessHealth.tiersToRemediate(remediable)
         AutomationHealthModel.shared.isRemediating = true
         defer { AutomationHealthModel.shared.isRemediating = false }
-        beginCollect(for: profile)
+        beginCollect(for: profile, status: "re-collecting stale data · profile=\(profile)")
         defer { endCollect(for: profile) }
 
         AppLogger.collect.notice(
@@ -533,10 +558,11 @@ extension WorkspaceStore {
         return true
     }
 
-    /// The two overlaps an automatic collect must yield to: (a) a collect
-    /// already running in this process for one of `profiles`, (b) a `--tick`
-    /// process mid-run, which holds the tick lock. Logged, because a deferred
-    /// pass otherwise looks identical to one that never fired.
+    /// The overlaps an automatic collect must yield to: (a) a collect or generate run already
+    /// in progress in this process for one of `profiles`, (b) any other collect running in
+    /// this process, since the bridge runs one at a time and would refuse this one after the
+    /// hour or day was claimed, (c) a `--tick` process mid-run, which holds the tick lock.
+    /// Logged, because a deferred pass otherwise looks identical to one that never fired.
     func automaticCollectMustWait(for profiles: [String]) -> Bool {
         if let busy = profiles.first(where: { isCollectInFlight(for: $0) }) {
             AppLogger.collect.info(
@@ -547,7 +573,12 @@ extension WorkspaceStore {
             )
             return true
         }
-        if tickLockHeldElsewhere() {
+        if isAnyCollectInFlight {
+            AppLogger.collect.info(
+                "Automatic collect deferred: a collect is already running for another profile")
+            return true
+        }
+        if CLIBridge.tickLockHeldElsewhere() {
             AppLogger.collect.info("Automatic collect deferred: the background tick holds the lock")
             return true
         }
@@ -568,13 +599,7 @@ extension WorkspaceStore {
         guard ProfileService.isValid(profile),
               let stateDir = try? WorkspacePaths.stateDir(for: profile) else { return issues }
         let store = StateFileStore(directory: stateDir)
-        let permanent = issues.filter {
-            let code = store.lastFailureExitCode(for: $0.snapshotKind)
-            return code == CLIBridge.exitCodeUsage
-                || code == CLIBridge.exitCodeUnauthorized
-                || code == CLIBridge.exitCodeRefusedByPolicy
-                || store.cause(for: $0.snapshotKind)?.isPermanent == true
-        }
+        let permanent = issues.filter { lastFailureRepeatsOnRetry($0.snapshotKind, in: store) }
         guard !permanent.isEmpty else { return issues }
         AppLogger.collect.notice(
             """
@@ -586,6 +611,20 @@ extension WorkspaceStore {
         )
         let skip = Set(permanent.map(\.snapshotKind))
         return issues.filter { !skip.contains($0.snapshotKind) }
+    }
+
+    /// The rule above for one kind: its last failure was exit 2, 3 or 8, or carries a
+    /// permanent cause. The background item's same-day retry shares it with
+    /// `countingUnauthorized: false`, so it still reaches an exit-3 kind once someone
+    /// re-authenticates.
+    nonisolated static func lastFailureRepeatsOnRetry(
+        _ kind: String, in store: StateFileStore, countingUnauthorized: Bool = true
+    ) -> Bool {
+        let code = store.lastFailureExitCode(for: kind)
+        return code == CLIBridge.exitCodeUsage
+            || (countingUnauthorized && code == CLIBridge.exitCodeUnauthorized)
+            || code == CLIBridge.exitCodeRefusedByPolicy
+            || store.cause(for: kind)?.isPermanent == true
     }
 
     /// Per-tier collect closure used by `remediateOne`. Matches a one-tier
@@ -629,16 +668,19 @@ extension WorkspaceStore {
         }
     }
 
+    /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultRemediationCollector: RemediationCollector = {
         profile, tiers, config in
-        try await CollectRouter.run(
-            profile: profile,
-            tiers: tiers,
-            skipExpensive: false,
-            force: false,
-            config: config,
-            onLine: CLIBridge.bufferingOnLine
-        )
+        try await CLIBridge.holdingTickLock {
+            try await CollectRouter.run(
+                profile: profile,
+                tiers: tiers,
+                skipExpensive: false,
+                force: false,
+                config: config,
+                onLine: CLIBridge.bufferingOnLine
+            )
+        }
     }
 
     /// One-click "Run now" for a failing/overdue managed row on the
@@ -838,21 +880,25 @@ extension WorkspaceStore {
         guard !targets.isEmpty, !automaticCollectMustWait(for: targets) else { return false }
         Self.lastCatchUpDay = today  // claim the day (no await before this) to prevent re-entry
 
-        targets.forEach { beginCollect(for: $0) }
+        let status = "catching up daily data · profile=\(targets.joined(separator: ", "))"
+        targets.forEach { beginCollect(for: $0, status: status) }
         defer { targets.forEach { endCollect(for: $0) } }
         await Self.runCatchUp(profiles: targets, collect: collect)
         return true
     }
 
+    /// Held like a GUI collect, so a tick cannot start beside this one.
     nonisolated static let defaultCatchUpCollector: CatchUpCollector = { profile, config in
-        try await CollectRouter.run(
-            profile: profile,
-            tiers: [.refresh, .inventory],
-            skipExpensive: false,
-            force: false,  // per-kind cadence filter: no-op if this kind already ran today
-            config: config,
-            onLine: CLIBridge.noOpOnLine
-        )
+        try await CLIBridge.holdingTickLock {
+            try await CollectRouter.run(
+                profile: profile,
+                tiers: [.refresh, .inventory],
+                skipExpensive: false,
+                force: false,  // per-kind cadence filter: no-op if this kind already ran today
+                config: config,
+                onLine: CLIBridge.noOpOnLine
+            )
+        }
     }
 
     /// Profiles eligible for a catch-up collect: only when the policy manages

@@ -42,6 +42,14 @@ enum SnapshotFreshness {
         }
     }
 
+    /// `evaluate(dataDir:)` for `profile`'s data directory; no snapshots for a name that is not
+    /// a profile or whose data directory does not resolve.
+    static func evaluate(profile: String) -> Decision {
+        guard ProfileService.isValid(profile),
+              let dataDir = try? WorkspacePaths.dataDir(for: profile) else { return .noSnapshots }
+        return evaluate(dataDir: dataDir)
+    }
+
     /// Find the newest modification time across all regular files in `dataDir` and its
     /// subdirectories. Hidden files and directories themselves are excluded.
     ///

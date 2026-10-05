@@ -27,8 +27,9 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// decoder's YAML key path + problem (never a filesystem path) so the
     /// user can locate the misconfiguration without log spelunking (#181).
     case configLoadFailed(path: String, detail: String?)
-    /// `.csvAssisted` mode requires a CSV in `csv-inbox/` but none was found.
-    case csvMissing(profile: String)
+    /// config.yaml read fine but writing `key` was refused (`ConfigService.ConfigError`);
+    /// `fix` says what to change. Neither carries a path.
+    case configWriteRefused(key: String, fix: String)
     /// jamf-cli executable was not found on the system.
     case executableNotFound
     /// An argument value is invalid (e.g. leading-dash injection risk).
@@ -36,6 +37,30 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// A required directory could not be created or a file move failed.
     /// `path` is for private logging only — never interpolated into user-visible strings.
     case directoryOperationFailed(path: String)
+    /// Another live process — the bundled `--tick` agent — holds the tick lock, so the
+    /// collect did not start. Nothing is queued.
+    case tickLockHeld
+    /// A collect is already running in this app, for any profile, so this one did not start.
+    /// Nothing is queued.
+    case collectInProgress
+    /// jamf-cli is being installed or updated by this app, so the collect did not start: the
+    /// binary changes under it otherwise. Nothing is queued.
+    case toolUpdateInProgress
+    /// A report is being generated in this app, so the collect (or second report) did not
+    /// start: it would replace snapshots under the report. Nothing is queued.
+    case generateInProgress
+
+    /// True for the ways a collect or report is turned away before it starts. A refusal is
+    /// not a failure: it is shown as information and leaves no Run History record.
+    var isCollectRefusal: Bool {
+        self == .tickLockHeld || self == .collectInProgress || self == .toolUpdateInProgress
+            || self == .generateInProgress
+    }
+
+    /// `isCollectRefusal` for an error of unknown type.
+    static func isCollectRefusal(_ error: Error) -> Bool {
+        (error as? CLIBridgeError)?.isCollectRefusal == true
+    }
 
     var errorDescription: String? {
         switch self {
@@ -65,8 +90,8 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             }
             return "config.yaml could not be parsed — the file may be corrupt. The Config "
                 + "page can restore the default config."
-        case .csvMissing(let profile):
-            return "csv-assisted mode requires a CSV in csv-inbox/ for profile '\(profile)' — none found."
+        case .configWriteRefused(let key, let fix):
+            return "\(key) was not written to config.yaml: \(fix)"
         case .executableNotFound:
             return "jamf-cli not found — install via Homebrew: brew install jamf-cli"
         case .invalidArgument(let detail):
@@ -74,6 +99,14 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
         case .directoryOperationFailed:
             // Path omitted: may contain the home directory or workspace layout.
             return "A required directory could not be created or moved — check available disk space and folder permissions."
+        case .tickLockHeld:
+            return "A scheduled run is in progress — try again when it finishes"
+        case .collectInProgress:
+            return "A refresh is already running — try again when it finishes"
+        case .toolUpdateInProgress:
+            return "jamf-cli is being updated — try again when it finishes"
+        case .generateInProgress:
+            return "A report is being generated — try again when it finishes"
         }
     }
 }
@@ -91,18 +124,20 @@ struct GenerateAllResult: Sendable {
 
 @MainActor
 extension CLIBridge {
-    /// Run the full generate cycle for a given set of output types.
-    /// Iterates through ALL requested types, capturing per-type results —
-    /// does NOT abort on first failure.
+    /// Generate every requested output type from the cached snapshots. Iterates
+    /// through ALL requested types, capturing per-type results — does NOT abort
+    /// on first failure. A caller that wants fresh data collects first (the
+    /// Generate sheet does, through `runCollectThenGenerate`).
     ///
     /// - Parameter schoolMode: When `true`, XLSX generation calls the school-generate
     ///   CLI command instead of the standard generate command. Other output types
     ///   (HTML, PDF) still use their standard paths — school HTML/PDF are not yet wired.
     /// - Parameter aiNarrative: F3 GUI-only AI executive narrative, threaded to the
     ///   XLSX and HTML generators (school/PDF/CSV paths ignore it). Default nil.
+    /// - Note: With `html.with_workbook` on, the XLSX step writes the HTML report too, unless
+    ///   `types` has `.html`: that run's HTML comes from the HTML step, once.
     func generateAll(
         types: Set<GenerateOutputType>,
-        collectFresh: Bool,
         outputDir: URL?,
         profile: String,
         schoolMode: Bool = false,
@@ -112,28 +147,30 @@ extension CLIBridge {
     ) async -> GenerateAllResult {
         await Self.runGenerateAll(
             types: types,
-            collectFresh: collectFresh,
-            profile: profile,
             onLine: onLine,
-            collect: { try await self.collect(profile: profile, force: true, onLine: onLine) },
             generateXLSX: {
                 if schoolMode {
                     return try await self.schoolGenerate(profile: profile, csvPath: nil, onLine: onLine)
                 }
+                // A chosen HTML format is the run's one HTML report; `html.with_workbook`
+                // would write a second.
                 return try await self.generate(
                     profile: profile, csvPath: nil, template: template,
-                    outputDir: outputDir, aiNarrative: aiNarrative, onLine: onLine
+                    outputDir: outputDir, aiNarrative: aiNarrative,
+                    htmlWithWorkbook: !types.contains(.html), onLine: onLine
                 )
             },
             generateHTML: {
-                let outURL = self.htmlOutputURL(profile: profile, outputDir: outputDir)
+                let outURL = self.reportFileURL(
+                    profile: profile, outputDir: outputDir, type: .html, onLine: onLine)
                 return try await self.generateHTML(
                     profile: profile, outFile: outURL.path, template: template,
                     aiNarrative: aiNarrative, onLine: onLine
                 )
             },
             generatePDF: {
-                let outURL = self.pdfOutputURL(profile: profile, outputDir: outputDir)
+                let outURL = self.reportFileURL(
+                    profile: profile, outputDir: outputDir, type: .pdf, onLine: onLine)
                 return try await self.generatePDF(
                     profile: profile, outFile: outURL.path, template: template, onLine: onLine
                 )
@@ -148,15 +185,14 @@ extension CLIBridge {
     }
 
     /// Orchestration core of `generateAll`, with the side-effecting operations
-    /// (`collect`, the XLSX/HTML generators, the permission sweep) injected as
+    /// (the XLSX/HTML/PDF/CSV generators, the permission sweep) injected as
     /// closures. `generateAll` wires the real `CLIBridge` methods; tests inject
-    /// stubs returning synthetic exit codes to exercise the collect-fallback
-    /// (exit 3/5/6) and partial-success branches without a live jamf-cli.
+    /// stubs returning synthetic exit codes to exercise the partial-success
+    /// branches without a live jamf-cli.
     ///
     /// Contract: every type in `types` ends up in exactly one of
-    /// `result.succeeded` or `result.failed`. A collect failure records ALL
-    /// requested types as failed; a generator throw records that type as failed
-    /// and execution continues to the next format.
+    /// `result.succeeded` or `result.failed`. A generator throw records that
+    /// type as failed and execution continues to the next format.
     ///
     /// `CLIBridge` is `final` and its generator methods are intentionally not
     /// behind the `CLICommand`/`CLIExecutor` protocol (ADR-W21 Hybrid scope), so
@@ -164,79 +200,14 @@ extension CLIBridge {
     /// signatures and no call sites (Epic #102, item #3).
     static func runGenerateAll(
         types: Set<GenerateOutputType>,
-        collectFresh: Bool,
-        profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void,
-        collect: () async throws -> Int32,
         generateXLSX: () async throws -> Int32,
         generateHTML: () async throws -> Int32,
         generatePDF: () async throws -> Int32,
         generateCSV: () async throws -> Int32,
-        tighten: () -> Void,
-        cacheAge: (() async -> String)? = nil
+        tighten: () -> Void
     ) async -> GenerateAllResult {
-        // Cache-age lookup is injectable so tests can exercise both the
-        // warn-and-proceed (cache exists) and fatal (no cache) branches
-        // without touching the real filesystem. Empty string = no cache.
-        let resolveCacheAge: () async -> String =
-            cacheAge ?? { await Self.describeCacheAge(for: profile) }
         var result = GenerateAllResult()
-
-        // Collect fresh snapshots first if requested.
-        // Exit 3 = HTTP 401 — hard fail; do not brute-force with bad credentials.
-        // Exit 5 = HTTP 403 — permission gap; user must fix API role before retrying.
-        // Exit 6 = HTTP 429 — rate-limited; transient, safe to use cached data.
-        // All other non-zero codes: warn and continue with cached data.
-        if collectFresh {
-            let code: Int32
-            do {
-                code = try await collect()
-            } catch {
-                onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                    text: "[fatal] collect failed: \(error.localizedDescription)"))
-                // -1: no process exit code (pre-spawn failure). All requested types fail.
-                for t in types { result.failed.append((t, -1)) }
-                return result
-            }
-            if code == CLIBridge.exitCodeUnauthorized {
-                for t in types { result.failed.append((t, code)) }
-                return result
-            }
-            if code == CLIBridge.exitCodePermissionDenied {
-                let cacheAge = await resolveCacheAge()
-                if cacheAge.isEmpty {
-                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                        text: "[fatal] collect permission denied (exit 5) and no cached data available"))
-                    for t in types { result.failed.append((t, code)) }
-                    return result
-                } else {
-                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
-                        text: "[warn] collect permission denied (exit 5) — generating from cached data that is \(cacheAge)"))
-                }
-            } else if code == CLIBridge.exitCodeRateLimited {
-                let cacheAge = await resolveCacheAge()
-                if cacheAge.isEmpty {
-                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                        text: "[fatal] collect rate-limited (exit 6) and no cached data available"))
-                    for t in types { result.failed.append((t, code)) }
-                    return result
-                } else {
-                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
-                        text: "[warn] collect rate-limited (exit 6) — generating from cached data that is \(cacheAge)"))
-                }
-            } else if code != 0 {
-                let cacheAge = await resolveCacheAge()
-                if cacheAge.isEmpty {
-                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .fail,
-                        text: "[fatal] collect failed (exit \(code)) and no cached data available"))
-                    for t in types { result.failed.append((t, code)) }
-                    return result
-                } else {
-                    onLine(CLIBridge.LogLine(timestamp: Date(), level: .warn,
-                        text: "[warn] collect exited \(code); proceeding with cached data that is \(cacheAge)"))
-                }
-            }
-        }
 
         // XLSX is the canonical workbook output.
         if types.contains(.xlsx) {
@@ -327,112 +298,36 @@ extension CLIBridge {
 
     // MARK: - Private helpers
 
+    /// `<ExportNaming.stem>_<time>.<ext>` in the folder the Generate sheet chose, else in the
+    /// folder the workbook goes to (`WorkspacePaths.reportsDir`), so one Generate puts every
+    /// file in one place.
     @MainActor
-    private func htmlOutputURL(profile: String, outputDir: URL?) -> URL {
-        let dir: URL
-        if let outputDir {
-            dir = outputDir
-        } else if let workspace = ProfileService.workspaceURL(for: profile) {
-            dir = workspace.appendingPathComponent(
-                WorkspacePaths.generatedReportsDirName, isDirectory: true)
-        } else {
-            dir = FileManager.default.temporaryDirectory
-        }
+    private func reportFileURL(
+        profile: String, outputDir: URL?, type: GenerateOutputType,
+        onLine: @Sendable @escaping (LogLine) -> Void
+    ) -> URL {
+        let dir = outputDir
+            ?? WorkspacePaths.reportsDir(for: profile, onLine: onLine)
+            ?? FileManager.default.temporaryDirectory
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             let path = dir.path
             let desc = error.localizedDescription
-            AppLogger.cli.warning(
-                "htmlOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
+            AppLogger.cli.warning("""
+                reportFileURL: could not create \(path, privacy: .private): \
+                \(desc, privacy: .private)
+                """)
         }
-        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
-        return dir.appendingPathComponent("\(stem).html")
-    }
-
-    @MainActor
-    private func pdfOutputURL(profile: String, outputDir: URL?) -> URL {
-        let dir: URL
-        if let outputDir {
-            dir = outputDir
-        } else if let workspace = ProfileService.workspaceURL(for: profile) {
-            dir = workspace.appendingPathComponent(
-                WorkspacePaths.generatedReportsDirName, isDirectory: true)
-        } else {
-            dir = FileManager.default.temporaryDirectory
-        }
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        } catch {
-            let path = dir.path
-            let desc = error.localizedDescription
-            AppLogger.cli.warning(
-                "pdfOutputURL: could not create output directory \(path, privacy: .private): \(desc, privacy: .private)")
-        }
-        let stem = "jamf_report_\(ExportNaming.profilePart(profile))_\(htmlTimestamp())"
-        return dir.appendingPathComponent("\(stem).pdf")
+        let stem = ExportNaming.stem(for: type, profile: profile, schoolMode: false)
+        let ext = type.rawValue.lowercased()
+        return dir.appendingPathComponent("\(stem)_\(htmlTimestamp()).\(ext)")
     }
 
     private nonisolated func htmlTimestamp() -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd_HHmmss"
         return f.string(from: Date())
-    }
-
-    /// Describes the age of the newest cached snapshot for the given profile.
-    /// Returns an empty string if no cached data exists at all.
-    static func describeCacheAge(for profile: String) async -> String {
-        guard let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-            return ""
-        }
-        return describeCacheAge(inDirectory: dataDir)
-    }
-
-    /// Scans `dir` for the newest regular file and returns a human-readable
-    /// age string ("X.X hours old" / "X.X days old"). Returns `""` when the
-    /// directory doesn't exist, is empty, or contains no regular files.
-    ///
-    /// `internal` so tests can inject a tmp directory without going through
-    /// `WorkspacePaths.dataDir`, which requires a real profile workspace.
-    static func describeCacheAge(inDirectory dir: URL) -> String {
-        guard let enumerator = FileManager.default.enumerator(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return ""
-        }
-
-        var newestDate: Date?
-        while let item = enumerator.nextObject() {
-            guard let fileURL = item as? URL else { continue }
-            guard let values = try? fileURL.resourceValues(
-                    forKeys: [.contentModificationDateKey, .isRegularFileKey]),
-                  values.isRegularFile == true,
-                  let mtime = values.contentModificationDate else {
-                continue
-            }
-
-            if let current = newestDate {
-                if mtime > current { newestDate = mtime }
-            } else {
-                newestDate = mtime
-            }
-        }
-
-        guard let newestDate else {
-            return ""  // Empty string signals no cached data
-        }
-
-        let ageSeconds = Date().timeIntervalSince(newestDate)
-        let ageDays = ageSeconds / (24 * 3600)
-
-        if ageDays >= 1 {
-            return String(format: "%.1f days old", ageDays)
-        } else {
-            let ageHours = ageSeconds / 3600
-            return String(format: "%.1f hours old", ageHours)
-        }
     }
 
 }

@@ -69,6 +69,61 @@ final class AIConfigPersistenceTests: XCTestCase {
         XCTAssertFalse(text.contains("lock_on_device"), text)
     }
 
+    /// A block written while `external:` was reserved comes back from the next
+    /// Settings save as the normalised on-device block, with the stale sub-block
+    /// gone from disk.
+    func testSavingAStaleExternalBlockDropsIt() throws {
+        let profile = "ai-test-\(UUID().uuidString.lowercased())"
+        let workspace = try makeWorkspace(profile: profile)
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        try """
+        ai:
+          enabled: true
+          tier: external
+          reasoning_level: light
+          external:
+            provider: openai_compatible
+            endpoint: https://llm.example.invalid/v1
+            keychain_key: stale-item
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        try AIConfigWriter.save(AIConfigLoader.load(profile: profile), profile: profile)
+
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("tier: on_device"), text)
+        XCTAssertFalse(text.contains("external"), text)
+        XCTAssertFalse(text.contains("endpoint"), text)
+        XCTAssertFalse(text.contains("keychain_key"), text)
+        XCTAssertEqual(AIConfigLoader.load(profile: profile).isEnabled, true)
+    }
+
+    /// Settings models three keys; one it does not model stays in the block a save rewrites.
+    /// The retired `external:` and `lock_on_device` still go (see the test above).
+    func testSaveKeepsAKeyTheSettingsPanelDoesNotModel() throws {
+        let profile = "ai-test-\(UUID().uuidString.lowercased())"
+        let workspace = try makeWorkspace(profile: profile)
+        let configURL = workspace.appendingPathComponent("config.yaml")
+        try """
+        ai:
+          enabled: false
+          insight_style: brief
+          lock_on_device: true
+          tier: on_device
+        """.write(to: configURL, atomically: true, encoding: .utf8)
+
+        var config = AIConfig()
+        config.enabled = true
+        config.reasoningLevel = "deep"
+        try AIConfigWriter.save(config, profile: profile)
+
+        let text = try String(contentsOf: configURL, encoding: .utf8)
+        XCTAssertTrue(text.contains("  insight_style: brief"), text)
+        XCTAssertFalse(text.contains("lock_on_device"), text)
+        let reloaded = AIConfigLoader.load(profile: profile)
+        XCTAssertTrue(reloaded.isEnabled)
+        XCTAssertEqual(reloaded.resolvedReasoningLevel, .deep)
+    }
+
     func testSavePreservesUnrelatedTopLevelKeys() throws {
         let profile = "ai-test-\(UUID().uuidString.lowercased())"
         let workspace = try makeWorkspace(profile: profile)
@@ -107,11 +162,11 @@ final class AIConfigPersistenceTests: XCTestCase {
 
         var second = AIConfig()
         second.enabled = true
-        second.tier = "external"
+        second.reasoningLevel = "deep"
         try AIConfigWriter.save(second, profile: profile)
 
         let reloaded = AIConfigLoader.load(profile: profile)
-        XCTAssertEqual(reloaded.resolvedTier, .external)
+        XCTAssertEqual(reloaded.resolvedReasoningLevel, .deep)
 
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             return XCTFail("expected a valid workspace URL")

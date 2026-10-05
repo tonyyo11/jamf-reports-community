@@ -159,7 +159,7 @@ final class TemplatedEngineTests: XCTestCase {
         let engine = ReportEngine(config: ReportConfig(), dataDir: tmpDir)
         let outURL = tmpDir.appendingPathComponent("default.xlsx")
         // No data directory → should produce a workbook (graceful Cover-sheet path).
-        try await engine.generate(csvURL: nil, outputURL: outURL)
+        try await engine.generate(csvURL: nil, outputURL: outURL, locateJamfCLI: { nil })
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
     }
 
@@ -169,7 +169,8 @@ final class TemplatedEngineTests: XCTestCase {
         let engine = ReportEngine(config: ReportConfig(), dataDir: tmpDir)
         let outURL = tmpDir.appendingPathComponent("operational.xlsx")
         do {
-            try await engine.generate(csvURL: nil, outputURL: outURL, template: OperationalTemplate())
+            try await engine.generate(csvURL: nil, outputURL: outURL,
+                                      template: OperationalTemplate(), locateJamfCLI: { nil })
             XCTFail("Expected noCachedData when empty dataDir + no CSV + non-cover template")
         } catch ReportEngineError.noCachedData {
             // Expected — OperationalTemplate's sheets all require cached data.
@@ -185,7 +186,8 @@ final class TemplatedEngineTests: XCTestCase {
         try await engine.generate(
             csvURL: nil,
             outputURL: outURL,
-            template: ComplianceTemplate()
+            template: ComplianceTemplate(),
+            locateJamfCLI: { nil }
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
         let data = try Data(contentsOf: outURL)
@@ -198,7 +200,8 @@ final class TemplatedEngineTests: XCTestCase {
         let engine = ReportEngine(config: ReportConfig(), dataDir: tmpDir)
         let outURL = tmpDir.appendingPathComponent("asset.xlsx")
         do {
-            try await engine.generate(csvURL: nil, outputURL: outURL, template: AssetTemplate())
+            try await engine.generate(csvURL: nil, outputURL: outURL,
+                                      template: AssetTemplate(), locateJamfCLI: { nil })
             XCTFail("Expected noCachedData when empty dataDir + no CSV + non-cover template")
         } catch ReportEngineError.noCachedData {
             // Expected.
@@ -214,9 +217,25 @@ final class TemplatedEngineTests: XCTestCase {
         try await engine.generate(
             csvURL: nil,
             outputURL: outURL,
-            template: SecurityPostureTemplate()
+            template: SecurityPostureTemplate(),
+            locateJamfCLI: { nil }
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: outURL.path))
+    }
+
+    /// generate finds jamf-cli only through its seam, so a test passing `{ nil }` runs none.
+    func testGenerateFindsJamfCLIThroughItsSeam() async throws {
+        final class Asked: @unchecked Sendable {
+            private let lock = NSLock()
+            private var count = 0
+            func record() { lock.lock(); count += 1; lock.unlock() }
+            var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+        }
+        let asked = Asked()
+        try await ReportEngine(config: ReportConfig(), dataDir: tmpDir).generate(
+            csvURL: nil, outputURL: tmpDir.appendingPathComponent("seam.xlsx"),
+            template: ComplianceTemplate(), locateJamfCLI: { asked.record(); return nil })
+        XCTAssertEqual(asked.value, 1)
     }
 
     // MARK: - applyPagination
@@ -239,10 +258,11 @@ final class TemplatedEngineTests: XCTestCase {
     func testSectionPerPagePaginationInjectsAlwaysBreak() {
         let html = "<html><head></head><body><section>C</section></body></html>"
         let result = ReportEngine.applyPagination(html: html, strategy: .sectionPerPage)
-        XCTAssertTrue(result.contains("page-break-after: always"),
-                      ".sectionPerPage must inject page-break-after: always")
-        XCTAssertTrue(result.contains("page-break-after: avoid"),
-                      ".sectionPerPage must suppress break on last section")
+        XCTAssertTrue(result.contains(
+            "main > section.group-section:has(> details.group) { page-break-before: always; }"),
+            ".sectionPerPage starts each detail group on a new page")
+        XCTAssertFalse(result.contains("page-break-after"),
+                       "a break before each group leaves no empty page after the last one")
     }
 
     func testPaginationPreservesHTMLStructure() {
@@ -281,19 +301,15 @@ final class TemplatedEngineTests: XCTestCase {
         }
         let mainBody = String(content[mainStart.upperBound..<mainEnd.lowerBound])
 
-        // Within <main>, ComplianceTemplate puts kpiTiles BEFORE complianceBands.
-        // kpiTiles renders "tiles-row"; complianceBands renders "compliance-hero-value".
-        // Check their relative positions only when both are present (no-data = not rendered).
+        // Within <main>, the security controls come BEFORE the compliance posture, as the
+        // security group lists them. The controls render "tiles-row"; the posture renders
+        // "compliance-hero-value". Check their positions only when both are present.
         let tilesRange = mainBody.range(of: "tiles-row")
         let heroRange = mainBody.range(of: "compliance-hero-value")
 
         if let tiles = tilesRange, let hero = heroRange {
-            let kpiIndex = template.htmlSections.firstIndex(of: .kpiTiles)!
-            let compIndex = template.htmlSections.firstIndex(of: .complianceBands)!
-            if kpiIndex < compIndex {
-                XCTAssertLessThan(tiles.lowerBound, hero.lowerBound,
-                                  "kpiTiles must appear before complianceBands in <main>")
-            }
+            XCTAssertLessThan(tiles.lowerBound, hero.lowerBound,
+                              "securityTiles must appear before complianceBands in <main>")
         }
     }
 

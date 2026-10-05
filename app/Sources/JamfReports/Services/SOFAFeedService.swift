@@ -328,7 +328,7 @@ struct SOFAFeedService: Sendable {
     }
 
     /// Lexicographic compare on Int arrays.  Returns 0 if equal, >0 if a > b, <0 if a < b.
-    private static func compareTuples(_ a: [Int], _ b: [Int]) -> Int {
+    static func compareTuples(_ a: [Int], _ b: [Int]) -> Int {
         let len = max(a.count, b.count)
         for i in 0..<len {
             let av = i < a.count ? a[i] : 0

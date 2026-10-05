@@ -14,11 +14,11 @@ final class SecurityAgentCoverageTests: XCTestCase {
     func testCountsInstalledAndReportingMacsOncePerMac() throws {
         let data = try rows("""
         [
-          {"device": "mac-1", "ea_name": "Falcon - Status", "value": "Running"},
-          {"device": "MAC-1", "ea_name": "falcon - status", "value": "running"},
-          {"device": "mac-2", "ea_name": "Falcon - Status", "value": "Stopped"},
-          {"device": "mac-3", "ea_name": "Falcon - Status", "value": ""},
-          {"device": "mac-4", "ea_name": "Other EA", "value": "Running"}
+          {"computer_id": "1", "ea_name": "Falcon - Status", "value": "Running"},
+          {"computer_id": "1", "ea_name": "falcon - status", "value": "running"},
+          {"computer_id": "2", "ea_name": "Falcon - Status", "value": "Stopped"},
+          {"computer_id": "3", "ea_name": "Falcon - Status", "value": ""},
+          {"computer_id": "4", "ea_name": "Other EA", "value": "Running"}
         ]
         """)
 
@@ -27,7 +27,26 @@ final class SecurityAgentCoverageTests: XCTestCase {
         XCTAssertEqual(result, [
             .init(name: "CrowdStrike Falcon", column: "Falcon - Status",
                   installed: 1, reporting: 2)
-        ], "mac-1 counts once; an empty value is not reporting; other EAs are ignored")
+        ], "Mac 1 counts once; an empty value is not reporting; other EAs are ignored")
+    }
+
+    /// The Overview card and the summary's EDR figure read "Not Installed" as connected
+    /// when `connected_value` was "Installed": 665 of 665 on prod, which had four Macs without it.
+    func testANegatedValueIsNotConnected() throws {
+        let nessus = SecurityAgentConfig(
+            name: "Nessus", column: "Nessus Status", connectedValue: "Installed")
+        let data = try rows("""
+        [
+          {"computer_id": "1", "ea_name": "Nessus Status", "value": "Installed"},
+          {"computer_id": "2", "ea_name": "Nessus Status", "value": "Installed"},
+          {"computer_id": "3", "ea_name": "Nessus Status", "value": "Not Installed"}
+        ]
+        """)
+
+        let result = SecurityAgentCoverage.compute(rows: data, agents: [nessus])
+
+        XCTAssertEqual(result.map(\.installed), [2])
+        XCTAssertEqual(result.map(\.reporting), [3], "a Mac with the value still reported")
     }
 
     func testAnAgentWithoutAColumnIsSkipped() throws {
@@ -69,5 +88,45 @@ final class SecurityAgentCoverageTests: XCTestCase {
     /// briefly exceed a fleet that shrank in between.
     func testPercentNeverPassesOneHundred() {
         XCTAssertEqual(SecurityAgentCoverage.percent(installed: 12, fleet: 10), 100)
+    }
+
+    /// jamf-cli 1.31.1 rows carry `{definition_id, device, ea_name, value}` and no id, so
+    /// keying by `device` (the computer name) counted two Macs called "MacBook Pro" as one.
+    func testRowsWithoutAnIDAreSeparateMacs() throws {
+        let data = try rows("""
+        [
+          {"definition_id": "4", "device": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"definition_id": "4", "device": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"definition_id": "4", "device": "mac-3",
+           "ea_name": "Falcon - Status", "value": "Stopped"},
+          {"definition_id": "4", "device": "mac-4", "ea_name": "Falcon - Status", "value": ""}
+        ]
+        """)
+
+        let result = SecurityAgentCoverage.compute(rows: data, agents: [falcon])
+
+        XCTAssertEqual(result.first?.installed, 2, "two Macs share a name; both are connected")
+        XCTAssertEqual(result.first?.reporting, 3, "an empty value is still not reporting")
+    }
+
+    /// A row that carries a computer id still counts once per id, however many rows it has.
+    func testRowsWithAnIDCountOncePerID() throws {
+        let data = try rows("""
+        [
+          {"computer_id": "7", "computer_name": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"computer_id": "7", "computer_name": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Running"},
+          {"computer_id": "8", "computer_name": "MacBook Pro",
+           "ea_name": "Falcon - Status", "value": "Stopped"}
+        ]
+        """)
+
+        let result = SecurityAgentCoverage.compute(rows: data, agents: [falcon])
+
+        XCTAssertEqual(result.first?.installed, 1)
+        XCTAssertEqual(result.first?.reporting, 2)
     }
 }

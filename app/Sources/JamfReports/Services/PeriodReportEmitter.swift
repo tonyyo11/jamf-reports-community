@@ -142,6 +142,16 @@ enum PeriodReportEmitter {
         if !m.period.start.isAdrift && !m.period.end.isAdrift && truncated.isEmpty {
             ws.write("Both period boundaries landed on days with collected data.",
                      row: r, col: 0, format: .cell)
+            r += 1
+        }
+        let notes = m.rows.filter(\.definitionChanged)
+            .compactMap { PeriodReportModel.definitionNote(for: $0.metricID) }
+        if !notes.isEmpty {
+            r += 1
+            ws.write("Definitions", row: r, col: 0, format: .title); r += 1
+            for note in notes {
+                ws.write(note, row: r, col: 0, format: .cell); r += 1
+            }
         }
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 52)

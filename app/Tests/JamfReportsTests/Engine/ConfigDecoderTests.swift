@@ -190,6 +190,38 @@ final class ConfigDecoderTests: XCTestCase {
         }
     }
 
+    /// A config.yaml may sit in a folder other Macs write; a file past the cap is refused before
+    /// it is read, with an error that names the file and its size.
+    func testLoadRefusesAConfigOverTheSizeCap() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConfigDecoderTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("config.yaml")
+        let size = ConfigLoader.maxConfigBytes + 1
+        try Data(repeating: UInt8(ascii: "#"), count: size).write(to: url)
+        XCTAssertThrowsError(try ConfigLoader.load(from: url)) { error in
+            guard case ConfigLoader.LoadError.fileTooLarge = error else {
+                return XCTFail("Expected LoadError.fileTooLarge, got \(error)")
+            }
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains(url.path), message)
+            XCTAssertTrue(message.contains("\(size) bytes"), message)
+        }
+    }
+
+    func testLoadReadsAConfigAtTheSizeCap() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConfigDecoderTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("config.yaml")
+        var text = "columns:\n  computer_name: \"Mac Name\"\n"
+        text += String(repeating: "#", count: ConfigLoader.maxConfigBytes - text.utf8.count)
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertNoThrow(try ConfigLoader.load(from: url))
+    }
+
     /// A valid (but minimal) config.yaml succeeds and merges defaults.
     func testLoadFromValidYAMLSucceeds() throws {
         let dir = FileManager.default.temporaryDirectory
@@ -202,6 +234,45 @@ final class ConfigDecoderTests: XCTestCase {
         XCTAssertEqual(config.columns?.computerName, "Mac Name")
         // withDefaults() must have run — thresholds should be non-nil.
         XCTAssertNotNil(config.thresholds)
+    }
+
+    // MARK: - html.with_workbook
+
+    private func withWorkbook(_ yaml: String) throws -> Bool? {
+        try ConfigLoader.loadFromString(yaml).html?.withWorkbook
+    }
+
+    func testWithWorkbookIsOffWhenTheKeyOrTheBlockIsAbsent() throws {
+        XCTAssertNil(try ConfigLoader.loadFromString("columns:\n  computer_name: Name\n").html)
+        XCTAssertFalse(HTMLReportConfig().writesWithWorkbook)
+        let config = try ConfigLoader.loadFromString("html:\n  track_history: true\n")
+        XCTAssertNil(config.html?.withWorkbook)
+        XCTAssertEqual(config.html?.writesWithWorkbook, false)
+    }
+
+    func testWithWorkbookReadsTrueFalseAndTheQuotedForms() throws {
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: true\n"), true)
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: \"true\"\n"), true)
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: False\n"), false)
+        XCTAssertEqual(try withWorkbook("html:\n  with_workbook: \"false\"\n"), false)
+        XCTAssertEqual(
+            try ConfigLoader.loadFromString("html:\n  with_workbook: true\n")
+                .html?.writesWithWorkbook, true)
+    }
+
+    /// A switch with a wrong shape is off. It must not fail the decode of the whole file, or a
+    /// scheduled run would stop over it; the sibling keys still read.
+    func testAMistypedWithWorkbookReadsAsOffAndLeavesTheRestOfTheBlock() throws {
+        for typed in ["maybe", "yes", "1", "[true]", "{on: true}", "2.5"] {
+            let config = try ConfigLoader.loadFromString("""
+                html:
+                  with_workbook: \(typed)
+                  section_limits:
+                    protect_alerts: 50
+                """)
+            XCTAssertEqual(config.html?.writesWithWorkbook, false, typed)
+            XCTAssertEqual(config.html?.sectionLimits?.protectAlerts, 50, typed)
+        }
     }
 
     // MARK: - Helper

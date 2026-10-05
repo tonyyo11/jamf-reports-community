@@ -189,11 +189,11 @@ extension TrendSeries.Metric {
             "Needs the device-compliance report."
         case .compliance:
             "Needs jamf-cli's security report, or a compliance EA mapped in Config."
-        case .fileVault, .securityScore:
+        case .fileVault, .securityScore, .sip, .firewall, .gatekeeper:
             "Needs jamf-cli's security report."
         case .osCurrent:
             "Needs the inventory summary and the SOFA feed."
-        case .edrAgent:
+        case .edrAgent, .agent:
             "Needs a security agent in Config and extension-attribute results."
         case .patch:
             "Needs the patch-status report."
@@ -202,6 +202,25 @@ extension TrendSeries.Metric {
         case .managedDevices:
             "Needs a collected inventory."
         }
+    }
+
+    /// The security-policy control this card reports on; nil for any other card.
+    var securityControl: SecurityControl? {
+        switch self {
+        case .fileVault: .fileVault
+        case .sip: .sip
+        case .firewall: .firewall
+        case .gatekeeper: .gatekeeper
+        default: nil
+        }
+    }
+
+    /// False only for a card whose control the policy does not count: there is
+    /// nothing to report on, so the Overview and its editor leave the card out.
+    /// A stored selection naming it is kept, and shows again if the policy changes.
+    func isOffered(under policy: SecurityControlPolicy) -> Bool {
+        guard let control = securityControl else { return true }
+        return policy.level(for: control) != .ignore
     }
 }
 
@@ -216,5 +235,14 @@ extension Array where Element: Equatable {
         copy.remove(at: from)
         copy.insert(element, at: to)
         return copy
+    }
+
+    /// A copy with `element` moved to where `neighbour` sits. Steps over anything
+    /// hidden between the two, which `moving(_:by:)` would swap with instead.
+    func moving(_ element: Element, to neighbour: Element) -> [Element] {
+        guard let from = firstIndex(of: element), let to = firstIndex(of: neighbour) else {
+            return self
+        }
+        return moving(element, by: to - from)
     }
 }

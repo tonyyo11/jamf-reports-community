@@ -18,7 +18,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
 
     func testInstalledLabelUsesProvidedFleetCount() {
         let label = agentInstalledOverTotalLabel(installed: 47, fleetCount: 100)
-        XCTAssertEqual(label, "47 / 100",
+        XCTAssertEqual(label, "47 of 100 Macs",
                        "Inline progress label must use the provided fleetCount, not a hardcoded value")
     }
 
@@ -28,7 +28,7 @@ final class OverviewViewFleetCountTests: XCTestCase {
         // every agent which is internally inconsistent with the rest of
         // demo mode (Recent Activity card line 478 shows "of 524").
         let label = agentInstalledOverTotalLabel(installed: 488, fleetCount: 524)
-        XCTAssertEqual(label, "488 / 524")
+        XCTAssertEqual(label, "488 of 524 Macs")
         XCTAssertFalse(label.contains("502"),
                        "Demo-mode label must reflect the actual demo fleet total (524), not a stale 502")
     }
@@ -92,10 +92,13 @@ final class OverviewViewFleetCountTests: XCTestCase {
     // MARK: - Failing-rules subtitle
 
     func testFailingRulesSubtitleUsesProvidedFleetCount() {
-        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", fleetCount: 100)
-        XCTAssertEqual(subtitle, "Compliance Benchmark · across 100 active devices")
+        let subtitle = failingRulesSubtitle(
+            baseline: "Compliance Benchmark", macsWithResults: 100)
+        XCTAssertEqual(subtitle, "Compliance Benchmark · across 100 Macs with results")
         XCTAssertFalse(subtitle.contains("502"),
-                       "Subtitle must reflect the live fleet count, not a stale 502")
+                       "Subtitle must reflect the live count, not a stale 502")
+        XCTAssertFalse(subtitle.contains("active"),
+                       "The count is the Macs that reported results, not the active Macs")
     }
 
     // MARK: - Unknown-fleet placeholder behavior
@@ -105,9 +108,9 @@ final class OverviewViewFleetCountTests: XCTestCase {
     // nonsensical "47 / 0" or "across 0 active devices".
 
     func testInstalledLabelDropsDenominatorWhenFleetUnknown() {
-        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: 0), "47",
-                       "fleetCount=0 must render the count alone, not '47 / 0'")
-        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: -1), "47",
+        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: 0), "47 Macs",
+                       "fleetCount=0 must render the count alone, not '47 of 0 Macs'")
+        XCTAssertEqual(agentInstalledOverTotalLabel(installed: 47, fleetCount: -1), "47 Macs",
                        "Negative fleetCount is treated as unknown")
     }
 
@@ -128,9 +131,21 @@ final class OverviewViewFleetCountTests: XCTestCase {
                        "Gap clause must be omitted when fleet is unknown: '\(label)'")
     }
 
+    /// The card printed "0 not installed" under an at-risk agent when its denominator was
+    /// unknown, which reads as a finding.
+    func testNotInstalledLineIsOmittedWithoutAGap() {
+        XCTAssertNil(agentNotInstalledLabel(installed: 47, fleetCount: 0))
+        XCTAssertNil(agentNotInstalledLabel(installed: 10, fleetCount: 10))
+        XCTAssertNil(agentNotInstalledLabel(installed: 12, fleetCount: 10))
+        XCTAssertEqual(agentNotInstalledLabel(installed: 47, fleetCount: 100), "53 not installed")
+    }
+
     func testFailingRulesSubtitleDropsAcrossClauseWhenFleetUnknown() {
-        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", fleetCount: 0)
+        let subtitle = failingRulesSubtitle(baseline: "Compliance Benchmark", macsWithResults: 0)
         XCTAssertEqual(subtitle, "Compliance Benchmark",
-                       "fleetCount=0 must render the baseline alone, not 'across 0 active devices'")
+                       "0 must render the baseline alone, not 'across 0 Macs with results'")
+        XCTAssertEqual(
+            failingRulesSubtitle(baseline: "Compliance Benchmark", macsWithResults: 1),
+            "Compliance Benchmark · across 1 Mac with results")
     }
 }

@@ -6,7 +6,8 @@ import Foundation
 enum ConnectionCheck {
 
     typealias Attempt = (exitCode: Int32, stdout: Data)
-    /// Runs jamf-cli with these arguments; nil when the process never launched.
+    /// Runs jamf-cli with these arguments; nil when the process never launched. A call that
+    /// timed out reports `CLIBridge.exitCodeTimedOut`, whatever output it left.
     typealias Runner = @Sendable ([String]) async -> Attempt?
 
     enum Verdict: Equatable, Sendable {
@@ -42,6 +43,11 @@ enum ConnectionCheck {
 
     static func verdict(version: Attempt?, probe: Attempt?) -> Verdict {
         guard let version else { return .undecided(exitCode: nil) }
+        // Output cut off by the timeout can hold a refusal; a call that never finished decided
+        // nothing, so it must not block setup as a rejected ID.
+        if version.exitCode == CLIBridge.exitCodeTimedOut {
+            return .undecided(exitCode: version.exitCode)
+        }
         if version.exitCode == 0 {
             return .accepted(jamfProVersion: jamfProVersion(in: version.stdout))
         }
@@ -51,6 +57,9 @@ enum ConnectionCheck {
         }
         guard needsProbe(version) else { return .undecided(exitCode: version.exitCode) }
         guard let probe else { return .undecided(exitCode: nil) }
+        if probe.exitCode == CLIBridge.exitCodeTimedOut {
+            return .undecided(exitCode: probe.exitCode)
+        }
         if probe.exitCode == 0 { return .noJamfPro }
         let second = FailureCause.classify(exitCode: probe.exitCode, stdout: probe.stdout)
         switch second.kind {
@@ -89,10 +98,19 @@ enum ConnectionCheck {
     /// jamf-cli on PATH with the app's child environment; nil when it is not installed.
     static func liveRunner() -> Runner? {
         guard let binary = ExecutableLocator.locate("jamf-cli") else { return nil }
-        return { arguments in
+        return runner(binary: binary)
+    }
+
+    /// Seconds each of the check's two calls may run. A server that accepts the connection and
+    /// never answers would otherwise leave Validate spinning with no way out.
+    static let timeout: TimeInterval = 60
+
+    static func runner(binary: URL, timeout: TimeInterval = ConnectionCheck.timeout) -> Runner {
+        { arguments in
             guard let (exitCode, stdout) = try? await CLIBridge().runAndCapture(
                 executable: binary, arguments: arguments,
-                environment: CLIBridge.environmentForJamfCLI(), onLine: CLIBridge.noOpOnLine
+                environment: CLIBridge.environmentForJamfCLI(), timeout: timeout,
+                onLine: CLIBridge.noOpOnLine
             ) else { return nil }
             return (exitCode: exitCode, stdout: stdout)
         }
@@ -124,8 +142,10 @@ extension ConnectionCheck.Verdict {
                 + "Pro screens stay empty unless the ID is for the environment that holds your "
                 + "Jamf Pro tenant."
         case .undecided(let exitCode):
-            return "The connection check could not confirm the ID"
-                + (exitCode.map { " (exit \($0))" } ?? "")
+            let cause = exitCode == CLIBridge.exitCodeTimedOut
+                ? " (no answer within \(Int(ConnectionCheck.timeout)) seconds)"
+                : exitCode.map { " (exit \($0))" } ?? ""
+            return "The connection check could not confirm the ID" + cause
                 + ". You can continue; if screens stay empty after the first collect, check the "
                 + "ID with Update credentials in Data Sources."
         }

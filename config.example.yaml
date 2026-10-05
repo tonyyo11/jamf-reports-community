@@ -11,7 +11,9 @@
 #
 # Column names in this file must exactly match your Jamf Pro CSV headers,
 # including capitalization and spaces. The Config screen's Health Audit flags
-# any mapping that no longer matches a CSV header.
+# any mapping that no longer matches a CSV header. Config Doctor also lists keys
+# the app does not read, with the nearest known key, and lines it skipped; the
+# Config screen's From config.yaml tab shows them.
 
 
 # =============================================================================
@@ -62,8 +64,8 @@ columns:
 
   # --- Security controls (optional — each drives a row in Security Controls sheet) ---
 
-  # FileVault 2 encryption status. Prefer the detailed FileVault 2 status column
-  # over summary/count-style columns such as "FileVault Status" with values like "1/1".
+  # FileVault 2 encryption status. Prefer the detailed FileVault 2 status column;
+  # a count column such as "FileVault Status" ("1/1", "0/1") also works.
   filevault: "FileVault 2 Status"
 
   # System Integrity Protection status. Typical values: "Enabled", "Disabled".
@@ -87,11 +89,19 @@ columns:
 
   # --- Hardware info (optional) ---
 
-  # Processor architecture. Typical values: "Apple M3 Pro", "Intel Core i9".
-  architecture: "Architecture"
+  # security_policy's hardware rule on a CSV needs architecture (Apple silicon) and
+  # model_identifier (T2 Macs); without them hardware is unknown and FileVault off keeps the
+  # control's own level.
+
+  # Processor architecture, as Jamf exports it. Typical values: "arm64", "x86_64".
+  architecture: "Architecture Type"
 
   # The human-readable model name (e.g., "MacBook Pro (16-inch, 2021)").
   model: "Model"
+
+  # The hardware model identifier (e.g., "Mac16,6", "MacBookPro16,1"). Used with architecture
+  # to tell Apple silicon and T2 Macs apart for security_policy.filevault_off_hardware_encrypted.
+  model_identifier: "Model Identifier"
 
   # --- Enrollment / MDM (optional) ---
 
@@ -101,6 +111,45 @@ columns:
   # MDM configuration profile expiration date.
   # Used with custom_eas type: date to flag expiring/expired profiles.
   mdm_expiry: "MDM Profile Expiration Date"
+
+  # --- Extra inventory columns (optional) ---
+  #
+  # Each key you map adds one column to the Device Inventory and Stale Devices
+  # sheets, in the order listed here. A key left empty adds nothing. The Config
+  # screen lists these after the columns above; clearing one there removes its key.
+
+  # The assigned user's full name.
+  full_name: ""
+
+  # The computer's asset tag.
+  asset_tag: ""
+
+  # The building the computer is assigned to.
+  building: ""
+
+  # The assigned user's position or job title.
+  position: ""
+
+  # The user who last logged in to the computer.
+  last_logged_in_user: ""
+
+  # Recovery Lock status.
+  recovery_lock: ""
+
+  # Battery health or condition.
+  battery_health: ""
+
+  # Microsoft Entra SSO registration status.
+  entra_sso_status: ""
+
+  # Purchase date. Read; no report uses it yet (adds no column).
+  # purchase_date: ""
+
+  # Last Inventory Update (Jamf's export header). Read only when
+  # thresholds.stale_basis lists inventory: it is a CSV row's inventory date. A CSV
+  # without it has no inventory date, so inventory does not apply to its rows; a blank
+  # cell in a mapped column counts as never inventoried.
+  # last_inventory: "Last Inventory Update"
 
 
 # =============================================================================
@@ -149,7 +198,11 @@ mobile_columns:
 #   name            - Display label in the report
 #   column          - Exact EA column name in your CSV
 #   connected_value - The string that means "installed / running"
-#                     (case-insensitive substring match)
+#                     (case-insensitive substring match). A value that says the
+#                     agent is absent or off never matches, even when it contains
+#                     this text: "Not Installed", "Uninstalled", "not running",
+#                     "Disconnected", "Inactive". Leave it blank and any
+#                     non-empty value counts as connected.
 #
 # Comment out any agents your org does not deploy.
 
@@ -203,9 +256,6 @@ security_agents:
 # Relative paths here resolve from the folder containing config.yaml.
 
 jamf_cli:
-  # Master switch for jamf-cli integration. Set false for a strict CSV-only
-  # run that ignores both live jamf-cli commands and cached jamf-cli JSON.
-  enabled: true
   # Directory where jamf-cli JSON snapshots are stored.
   data_dir: "jamf-cli-data"
   # Optional jamf-cli profile name, equivalent to passing -p/--profile to
@@ -223,9 +273,6 @@ jamf_cli:
   # ancient cache surfaces as "no data" instead of rendering stale-forever.
   # Set 0 (or any value <= 0) to keep cache forever (legacy behavior).
   max_cache_age_hours: 168
-  # Fetch Fleet Overview live by default. Set false if you want overview to use
-  # cached JSON only for a specific tenant or troubleshooting scenario.
-  allow_live_overview: true
   # Hard-fail on snapshot integrity violations (SHA-256 mismatch or corrupt
   # manifest). When true, every collected snapshot is also recorded in a
   # per-kind manifest.json (2.6), so tamper detection works end-to-end:
@@ -236,9 +283,12 @@ jamf_cli:
   # Report types collect never runs — a stall guard for on-prem Jamf Pro. Accepts
   # any of patch-device-failures, profile-status, update-status and
   # update-device-failures, the per-device-heavy queries known to stall an
-  # on-prem server; underscores and hyphens are interchangeable. Anything else is
+  # on-prem server, and dashboard, jamf-cli's HTML fleet dashboard (1.31.0+),
+  # which reads the whole inventory again for the HTML report's dashboard
+  # section; underscores and hyphens are interchangeable. Anything else is
   # ignored, so core inventory always runs. A listed source is skipped even by a
   # manual collect and is left out of the data freshness strip.
+  # sofa stops the fetch from sofafeed.macadmins.io; a cached feed stays in use.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
 
@@ -247,8 +297,18 @@ jamf_cli:
 # Workbook sheet selection (optional)
 # ---------------------------------------------------------------------------
 sheets:
-  # When non-empty, only the named workbook tabs are written.
-  # This takes precedence over skip.
+  # only, skip and order apply to every report workbook: the Jamf Pro tabs,
+  # the CSV tabs (custom EA tabs included), the Charts tab, and the tabs of a
+  # Jamf School workbook. The period and fleet workbooks do not read them.
+  # The report template picks its sheets first; these lists work on what it
+  # picked, so only never adds a sheet the template left out. Names match the
+  # tab label, case-insensitively, and a name that matches no tab is ignored.
+
+  # When non-empty, only the named workbook tabs are written, the Charts tab
+  # included: list "Charts" to keep it. A tab named in both only and skip is
+  # not written: skip is applied first. An only list that names no tab of the
+  # workbook is ignored as a whole, with a warning in the run log, so a typo
+  # never leaves a workbook empty.
   #
   # Example:
   #   only:
@@ -256,19 +316,24 @@ sheets:
   #     - "Patch Failures"
   only: []
 
-  # Skip named workbook tabs during generate and school-generate.
-  # Matching is case-insensitive against the final tab label.
+  # Tabs left out of the workbook.
   #
   # Example:
   #   skip:
   #     - "Update Status"
   #     - "Update Failures"
-  #     - "Report Sources"
-  #
-  # This applies to Jamf Pro sheets, CSV-backed sheets, Jamf School sheets,
-  # custom EA tabs, and the auxiliary "Report Sources" / "Charts" tabs when
-  # they would otherwise be created.
   skip: []
+
+  # Tab order. The tabs named here come first, in this order, wherever they
+  # come from (a CSV tab can go ahead of the Jamf Pro tabs); every other tab
+  # follows in its default order. only and skip still apply, so a skipped
+  # tab stays out.
+  #
+  # Example:
+  #   order:
+  #     - "Fleet Overview"
+  #     - "Patch Compliance"
+  order: []
 
 
 # ---------------------------------------------------------------------------
@@ -277,37 +342,59 @@ sheets:
 branding:
   # Your organisation's name. When set, it is prepended to every sheet title
   # in the Excel workbook (e.g. "Acme Corp — Fleet Overview") and shown in
-  # the HTML report header and PPTX title slide.
+  # the HTML report header.
   org_name: ""
 
-  # Path to a PNG or JPEG logo file (relative to this config file, or absolute).
-  # The logo is embedded as a base64 image in the self-contained HTML report,
-  # and inserted on the Report Sources sheet of the Excel workbook.
+  # Path to a PNG logo file. Only the workbook built from a Jamf Pro CSV export
+  # uses it: the logo is placed at the top left of each of that workbook's
+  # sheets. A relative path resolves from the folder the app or command runs
+  # in, not from this file, so write an absolute path. Other image formats are
+  # skipped with a warning; the HTML report shows no logo.
   logo_path: ""
 
   # Hex colour used for Excel column headers and the HTML report's primary
   # accent colour (topbar, links, stat-card values).  Default: #2D5EA2
+  # Write it as #RRGGBB or #RGB; both reports use the default for anything else.
   accent_color: "#2D5EA2"
 
-  # Darker variant of accent_color — used for the HTML topbar background and
-  # dark-mode accent elements.  Default: #004165
-  accent_dark:  "#004165"
-
 
 # =============================================================================
-# HTML REPORT HISTORY
+# HTML REPORT
 # =============================================================================
+# with_workbook: when true, every run that writes a report workbook also writes
+#   that profile's HTML report beside it, with the same name and a .html
+#   extension, from the same report template's sections. That covers the app's
+#   Generate buttons, scheduled runs that generate (jamf-cli-only,
+#   jamf-cli-full and csv-assisted) and `jamf-reports generate`. The fleet and
+#   period workbooks and Jamf School workbooks are not included. A run that
+#   already writes the HTML report as a format of its own writes that one only.
+#   If the HTML report cannot be written the workbook stays, and the log gets one
+#   [warn] line. track_history applies to it as to any HTML report. Default: false.
+#
 # When track_history is true, every `html` run appends an OS-version snapshot
-# to the history file.  Once two or more snapshots exist for an instance URL, a
-# macOS Adoption Timeline chart appears in the HTML report.
+# to the history file.  Once two or more snapshots exist for an instance URL, an
+# OS adoption trend appears in the HTML report's Trends group.
 #
 # history_file: path to the JSON file that persists snapshots across runs.
-#   Relative paths resolve from this config file's directory.
-#   Default (when blank): ~/.jamf-report-history.json
+#   Relative paths resolve from this config file's directory and must stay
+#   inside it. An absolute path outside the workspace needs
+#   output.allow_absolute_paths: true; system and credentials folders are never
+#   used. Default (when blank or refused): html_history.json beside the report.
 #
 html:
+  with_workbook: false
   track_history: false
   history_file: ""
+
+  # Display caps for the Jamf Protect sections of the HTML report. A value
+  # outside its range is clamped to it, with a warning in the log.
+  section_limits:
+    # Most alerts the Protect Alerts section lists, highest severity first.
+    # Range 1-200.
+    protect_alerts: 25
+    # Number of recent Protect insight snapshots the Insights Drift section
+    # compares, one column each. Range 1-12.
+    insights_drift_snapshots: 2
 
 
 # =============================================================================
@@ -341,8 +428,7 @@ protect:
 # =============================================================================
 # Post a short "report generated" digest to a Microsoft Teams or Slack incoming
 # webhook after a scheduled run. OFF by default — set enabled: true and supply a
-# provider + https URL. The Python CLI also accepts --notify <url> as an
-# override (provider still read from here). Never commit a real webhook URL.
+# provider + https URL. Never commit a real webhook URL.
 notify:
   enabled: false
   provider: "teams"   # teams | slack
@@ -351,7 +437,7 @@ notify:
   # text, and schedule names in cards; "minimal" sends event facts only
   # ("2 alert rules tripped", "run failed", "1 schedule overdue" — no values,
   # no free text). Use minimal for headless/high-security deployments where
-  # the webhook is a doorbell, not a data channel.
+  # the webhook is a doorbell, not a data channel. Any other value sends minimal.
   detail: "full"      # full | minimal
 
 # =============================================================================
@@ -393,6 +479,87 @@ alerts:
   #   - {metric: "stale_count", when: "above", threshold: 50}
 
 # =============================================================================
+# SECURITY POLICY — what counts as a security gap, for every screen, report and
+# scheduled run of this workspace. fail (default): a gap — action items, the
+# per-device gap count, risk points and the score, shown red. warning: shown
+# amber, not a gap, does not lower the score. ignore: not evaluated; its score
+# weight is dropped. Percentages (FileVault on, SIP on, ...) are facts and never
+# change. Omit the block, or any key, for the default.
+# =============================================================================
+security_policy:
+  controls:
+    filevault: fail      # fail | warning | ignore
+    sip: fail
+    firewall: fail
+    gatekeeper: fail
+  # Also read: failure/gap = fail, warn = warning, ignored/skip/not counted = ignore.
+  # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
+  # silicon, or Intel with the T2 chip). Omit to use the filevault level.
+  # filevault_off_hardware_encrypted: warning
+  # The security_agents entry the Overview's EDR card and its trend follow (its name, as
+  # written under security_agents). Omit to use the first agent. A name that matches no
+  # agent also uses the first, and Config Doctor warns. Every agent is tracked and shown
+  # (an Overview card and a Trends series each); the score counts them through
+  # score_factors below.
+  # edr_agent: "CrowdStrike Falcon"
+  # Your own words for on and off, for an extension attribute or CSV column mapped
+  # to filevault, sip, firewall or gatekeeper: a list, or one string, per control.
+  # Checked in order: off_values, on_values (a value in both reads off), then the
+  # built-in words. A whole value must match, in any case, with - and _ read as
+  # spaces. They apply to each Mac's own value; the totals jamf-cli's security
+  # report carries keep jamf-cli's words.
+  # on_values:
+  #   firewall: ["Pass", "Compliant"]
+  # off_values:
+  #   firewall: ["Fail", "Non-Compliant"]
+  # What the Security Score counts: a list of factors, each with a weight from 0 to 100.
+  # The score is the weighted share of Macs that pass each factor; a factor with no data
+  # drops out and the rest are rescaled, so weights need not add up to 100. Omit the list
+  # for the defaults below, which also add mscp at 10 when compliance.baselines has an
+  # entry and one agent entry at 5 per security_agents entry. Listed, it is exactly what
+  # is scored. Config > Scoring edits it.
+  #   filevault, sip, firewall, gatekeeper  the control is on (security report, this policy)
+  #   secure_boot        Secure Boot at full security (Apple silicon and T2 Macs)
+  #   bootstrap_token    the bootstrap token is escrowed
+  #   os_current         macOS at least the newest release of its major version that came
+  #                      out grace_days or more ago (SOFA feed; default 30)
+  #   xprotect_current   XProtect at the newest version, or that version is younger than
+  #                      grace_days (SOFA feed; default 14)
+  #   patch_compliance   devices on the latest version of their patch title
+  #   checked_in         every date thresholds.stale_basis lists (by default the last
+  #                      check-in) within thresholds.stale_device_days
+  #   mscp               a compliance.baselines entry passes (baseline: its name; default
+  #                      the first)
+  #   agent              a security_agents entry reports connected (agent: its name)
+  # score_factors:
+  #   - factor: filevault
+  #     weight: 15
+  #   - factor: sip
+  #     weight: 10
+  #   - factor: firewall
+  #     weight: 10
+  #   - factor: gatekeeper
+  #     weight: 5
+  #   - factor: secure_boot
+  #     weight: 5
+  #   - factor: bootstrap_token
+  #     weight: 5
+  #   - factor: os_current
+  #     weight: 15
+  #     grace_days: 30
+  #   - factor: xprotect_current
+  #     weight: 5
+  #   - factor: patch_compliance
+  #     weight: 10
+  #   - factor: checked_in
+  #     weight: 5
+  #   - factor: mscp
+  #     weight: 10
+  #   - factor: agent
+  #     agent: "CrowdStrike Falcon"
+  #     weight: 5
+
+# =============================================================================
 # SNAPSHOT RETENTION (admin-controlled; OFF by default)
 # =============================================================================
 # Raw jamf-cli snapshots under jamf-cli-data/ are a reporting input (per-device
@@ -410,7 +577,7 @@ retention:
   snapshot_keep_days: 365    # archive/delete raw snapshots older than this (<=0 = no age rule)
   snapshot_keep_count: 0     # always keep at least N newest per kind (0 = no count floor)
   include_summaries: false   # leave the trend summaries alone
-  archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir)
+  archive_dir: ""            # default: <workspace>/_archive (distinct from output.archive_dir); outside the workspace needs output.allow_absolute_paths
 
 # =============================================================================
 # SHARED WORKSPACE (multi-Mac coordination; auto-detected)
@@ -448,24 +615,21 @@ retention:
 # =============================================================================
 # AI INSIGHTS (macOS 27+; opt-in; OFF by default)
 # =============================================================================
-# Turn already-collected fleet data (the daily summary) into a plain-language
-# insight card using Apple's on-device Foundation Model. OFF by default and
+# Turn already-collected fleet data (the daily summary) into plain-language
+# insight cards on the Overview, Trends, Audit, Security Posture and Compliance
+# Posture screens, using Apple's on-device Foundation Model. OFF by default and
 # inert on any macOS below 27 — set enabled: true to opt in per profile.
 #
 # Apple Foundation Models is on-device only, so tier: "on_device" is the
-#   default and the only built behaviour — no fleet data leaves the Mac, and
-#   there is nothing to configure to keep it that way. "external" is RESERVED —
-#   not yet built.
-# A config still naming the removed "pcc" tier (or a stale lock_on_device key)
-#   keeps working: the tier falls back to on_device and the dead key is ignored.
+#   default and the only behaviour — no fleet data leaves the Mac, and there is
+#   nothing to configure to keep it that way.
+# A config still naming a removed tier ("pcc" or "external"), or carrying a stale
+#   lock_on_device key or external: block, keeps working: the tier falls back to
+#   on_device and the dead keys are ignored. The next Settings save drops them.
 ai:
   enabled: false            # opt-in; inert on macOS < 27
-  tier: "on_device"         # on_device | external (external not yet built)
+  tier: "on_device"         # on_device (the only tier)
   reasoning_level: "light"  # light | moderate | deep
-  external:                 # RESERVED — ignored until the external tier ships (P5)
-    provider: ""            # anthropic | google | openai_compatible
-    endpoint: ""            # https-only, for openai_compatible / self-hosted
-    keychain_key: ""        # name of a system-keychain item; secret never stored here
 
 # =============================================================================
 # JAMF PLATFORM API
@@ -494,9 +658,6 @@ ai:
 # Compliance Benchmarks screen shows one benchmark at a time.
 
 platform:
-  # Written by the Config screen's "Enable Platform API sheets" switch. Neither
-  # collect nor the reports read it: the profile's auth method decides.
-  enabled: false
   # List of benchmark titles for the Platform compliance sheets.
   # Empty collects every benchmark; listed titles narrow it (exact, case-sensitive).
   compliance_benchmarks:
@@ -510,19 +671,31 @@ platform:
 # Tracks mSCP (macOS Security Compliance Project) audit results or any other
 # compliance framework your org reports on.
 #
-# The mSCP EA scripts write a failed-rules count and a pipe-delimited list of
-# failed rule IDs to two separate EAs. Configure both below.
+# The mSCP EA scripts write a failed-rules count and a list of failed rule IDs
+# (one per line) to two separate EAs. Configure both below.
 #
 # Set enabled: false to skip the Compliance sheet entirely.
 
 compliance:
   enabled: true
   baseline_label: "mSCP Compliance"
+  # The framework your compliance results are reported against. The Compliance
+  # Posture sheet shows it as typed ("Framework: ..."). The heading of the HTML
+  # report's Exception List writes a recognised name in this form, matched
+  # case-insensitively (short forms such as "stig" or "cis-l1" also match), and
+  # any other text as typed:
+  #   "NIST 800-53r5 Moderate", "NIST 800-53r5 High", "DISA STIG macOS",
+  #   "CIS Level 1", "CIS Level 2", "CMMC Level 2", "FedRAMP Moderate", "Custom"
+  # Empty names no framework.
+  framework: ""
   # EA column containing the integer count of failed rules.
   # Used as the single-baseline shorthand when `baselines` is absent.
   failures_count_column: "Compliance - Failed mSCP Results Count - NIST 800-53r5"
-  # EA column containing the pipe-delimited list of failed rule IDs.
+  # EA column containing the list of failed rule IDs. One rule ID per line; a
+  # comma, semicolon or pipe between IDs also works.
   # Example cell value: "os_filevault_enable|os_screensaver_timeout|..."
+  # A status such as "No Baseline Set" or "Multiple Baselines Found" in this
+  # column means the Mac was not evaluated: it is not read as a rule.
   failures_list_column: "Compliance - Failed mSCP Result List - NIST 800-53r5"
 
   # Per-baseline list for multi-baseline mSCP/STIG tracking.
@@ -545,7 +718,7 @@ compliance:
   #   rule_count           - optional; total rules in the baseline. When set, a
   #                          failure count above it is rejected as a garbage EA
   #                          value (No Data) instead of banding the device High.
-  #   failures_list_column - optional; the pipe-delimited failed-rule-ID EA.
+  #   failures_list_column - optional; the failed-rule-ID list EA.
   #                          Enables the count-vs-list accuracy cross-check.
   # baselines:
   #   - name: "NIST 800-53r5"
@@ -556,6 +729,29 @@ compliance:
   #     failures_count_column: "Compliance - Failed mSCP Results Count - DISA STIG"
   #     failures_list_column: "Compliance - Failed mSCP Result List - DISA STIG"
   #     rule_count: 280
+
+
+# =============================================================================
+# COMPLIANCE EXCEPTIONS
+# =============================================================================
+# Documented waivers for the HTML report's Exception List section, headed with
+# compliance.framework above. Each entry needs id, description, signed_off_by and
+# signed_off_date, all shown as written; an entry missing one stops config.yaml
+# loading. expires_date and linked_finding are optional, and an expires_date in
+# yyyy-MM-dd form that has passed shows an "Expired" pill on its row.
+#
+# With no entries the Exception List falls back to a table of the custom_eas
+# below and a hint to add this block; with neither, it says none are configured.
+
+exceptions: []
+# exceptions:
+#   - id: "EXC-001"
+#     description: "Lab Macs stay on the previous macOS for a vendor tool"
+#     signed_off_by: "Security Officer"
+#     signed_off_date: "2026-01-15"
+#     expires_date: "2026-07-15"
+#     linked_finding: "os_version_current"
+#     control_id: "AC-2"   # read; no report uses it yet
 
 
 # =============================================================================
@@ -651,8 +847,9 @@ custom_eas:
 
 thresholds:
 
-  # Devices not checked in within this many days are treated as inactive
-  # and excluded from compliance/security agent counts.
+  # A Mac is stale when any date listed in stale_basis (below) is MORE than this many
+  # whole days old: a Mac at exactly this many days is not stale. Stale Macs are treated
+  # as inactive and excluded from compliance/security agent counts.
   #
   # Also bounds how old a dropped csv-inbox/ export may be before the Devices
   # and Outreach screens stop treating it as current inventory: a CSV cannot
@@ -661,9 +858,33 @@ thresholds:
   # report over a longer window.
   stale_device_days: 30
 
-  # Devices not checked in within this many days are flagged overdue on the
-  # Check-in Health sheet. Separate from stale_device_days — this is a shorter
-  # operational threshold (default 7 days) vs the longer stale window.
+  # Which of the three dates Jamf Pro keeps for a Mac count toward stale. A list of:
+  #   check_in   Last Check-in: the Jamf binary checking in
+  #   inventory  Last Inventory Update: the Jamf binary submitting inventory (recon)
+  #   contact    Last Contact (Jamf Pro 11.30 and later): any contact, including MDM and
+  #              declarative device management
+  # A Mac is stale when ANY listed date is more than stale_device_days old, so
+  # [check_in, inventory] means "not checking in or not inventorying beyond 30 days". A
+  # single word reads as a one-item list. A word that is not one of these is skipped and
+  # named by Config Doctor, and a list with none uses the default. A Mac with no
+  # check-in or inventory date on record, in a source that dates every Mac (the
+  # computers snapshot), counts as never: stale. A Mac with no Last Contact is not
+  # judged by it. A Mac with none of the listed dates falls back to jamf-cli's stale
+  # flag. device-compliance rows carry only the check-in, so inventory and contact are
+  # read from the computers snapshot (matched by Jamf ID, then serial). A CSV has the
+  # inventory date only through columns.last_inventory. Absent means [check_in].
+  stale_basis: [check_in]
+
+  # A Mac whose Last Contact is current while its Last Check-in, or its Last Inventory
+  # Update, is more than this many days behind that Last Contact is a Mac MDM reaches
+  # and the Jamf binary does not (or not for inventory). The Health Audit lists both
+  # kinds, Devices has a Contact gap filter and the HTML report names them under Needs
+  # attention. A whole number from 1 to 365; anything else uses 14.
+  contact_gap_days: 14
+
+  # The Check-in Health sheet counts a Mac as overdue when a date listed in stale_basis
+  # is more than this many days old. A Mac with none of them is overdue only when
+  # jamf-cli flags it stale.
   checkin_overdue_days: 7
 
   # Default disk usage thresholds used when not set per-EA.
@@ -673,10 +894,8 @@ thresholds:
   # Default certificate/date expiry warning window (days).
   cert_warning_days: 90
 
-  # Error count thresholds for jamf-cli Profile Status and App Status sheets.
-  # Rows with error counts at or above profile_error_critical are highlighted red;
-  # at or above profile_error_warning, yellow.
-  profile_error_critical: 50
+  # Error count thresholds for the jamf-cli Profile Status sheet. Rows with
+  # error counts at or above profile_error_warning are highlighted yellow.
   profile_error_warning: 10
 
 
@@ -688,6 +907,9 @@ output:
 
   # Directory where report files are written. Relative paths resolve from the
   # folder containing config.yaml. Created automatically if it does not exist.
+  # A leading ~ is expanded. A folder the app will not use (outside the workspace
+  # without allow_absolute_paths, or a system folder) is named in the run log and
+  # reports go to "Generated Reports" in the workspace.
   output_dir: "Generated Reports"
 
   # Append a local date/time stamp to generated filenames unless they already
@@ -702,10 +924,15 @@ output:
   archive_dir: ""
 
   # Number of recent timestamped runs to keep in the main output folder for
-  # each report family before older runs are moved into archive_dir.
+  # each report family before older runs are moved into archive_dir. A value
+  # below 1 is read as 1. A run is a workbook: the HTML report that
+  # html.with_workbook writes beside it (same name, .html) moves with it and is
+  # not counted. An HTML report with no workbook of that name, such as the
+  # Generate sheet's HTML format or `jamf-reports html` output, is never moved.
   keep_latest_runs: 10
 
-  # Allow output_dir / archive_dir to point OUTSIDE the workspace.
+  # Allow output_dir / archive_dir (and retention.archive_dir) to point OUTSIDE
+  # the workspace.
   #
   # Off by default: an absolute path outside the workspace is refused, which
   # keeps every generated file under a directory this app controls. Turn it on
@@ -724,6 +951,8 @@ output:
   #
   # Sensitive locations (/etc, /System, ~/.ssh, the rest of ~/Library, ...) stay
   # refused even with this enabled.
+  #
+  # true, yes, on and 1 all opt in; write true.
   allow_absolute_paths: false
 
 
@@ -771,13 +1000,15 @@ charts:
   # Uses CSV snapshots when available and falls back to jamf-cli
   # inventory-summary snapshot history for jamf-cli-only workflows.
   os_adoption:
-    enabled: true
-    # Also generate one chart per major macOS version (drilldown to minor/patch).
+    # Draw the OS adoption by major version chart on the Charts tab. A missing
+    # key means true, as the Customize screen shows it; set false to leave it out.
     per_major_charts: true
 
   # Compliance trend: stacked area chart bucketing devices by failure count.
   # Requires compliance.failures_count_column to be configured.
   compliance_trend:
+    # Set to false to leave this chart out of the Charts tab. The bands below
+    # are read either way.
     enabled: true
     # Failure count bands — labels, thresholds, and colors.
     bands:

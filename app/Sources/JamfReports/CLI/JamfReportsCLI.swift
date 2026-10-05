@@ -2,10 +2,10 @@ import ArgumentParser
 import Foundation
 
 /// Root of the included `jamf-reports` command-line interface (v2.4.0). The same
-/// binary launches the GUI on no-args; `App/main.swift` routes a recognized
-/// subcommand here. Each subcommand is a thin shell over an existing engine
-/// entry point. xlsx + HTML only — PDF stays a GUI feature (WKWebView needs an
-/// AppKit run loop a headless CLI lacks).
+/// binary launches the GUI on no-args; `App/main.swift` routes here when
+/// `routesToCLI` accepts the first argument. Each subcommand is a thin shell over
+/// an existing engine entry point. xlsx + HTML only — PDF stays a GUI feature
+/// (WKWebView needs an AppKit run loop a headless CLI lacks).
 ///
 /// The availability annotation is required because we invoke `main()` manually
 /// (the binary is GUI-first, so there's no `@main` to synthesize it); without
@@ -22,9 +22,8 @@ struct JamfReportsCLI: AsyncParsableCommand {
         ]
     )
 
-    /// Recognized subcommand names — `App/main.swift` checks `argv[1]` against
-    /// this (plus `help` and the help/version flags) to decide CLI-vs-GUI, so
-    /// double-click launch (which passes non-subcommand OS args) still opens the GUI.
+    /// Recognized subcommand names. With `help` and the help/version flags they make up
+    /// `isKnownSubcommand`, which is how `routesToCLI` still sends `--help` to the CLI.
     static let subcommandNames: Set<String> = [
         "generate", "collect", "html", "backup", "scaffold", "check",
         "capabilities", "diagnostic-bundle", "device", "school-check", "schedules",
@@ -35,6 +34,14 @@ struct JamfReportsCLI: AsyncParsableCommand {
     /// subcommands this root declares.
     static func isKnownSubcommand(_ arg: String) -> Bool {
         subcommandNames.contains(arg) || ["help", "--help", "-h", "--version"].contains(arg)
+    }
+
+    /// `App/main.swift`'s CLI-vs-GUI test for `argv[1]`: a known subcommand or help flag, or
+    /// any word that is not a flag, so ArgumentParser rejects a removed or mistyped subcommand
+    /// instead of the app opening (#207 G31). Launch Services arguments (`-psn_…`, `-NS…`,
+    /// `-Apple…`) start with `-` and still open the GUI.
+    static func routesToCLI(_ firstArgument: String) -> Bool {
+        isKnownSubcommand(firstArgument) || !firstArgument.hasPrefix("-")
     }
 }
 
@@ -55,6 +62,22 @@ enum CLIRun {
         let stream: FileHandle = (line.level == .fail || line.level == .warn)
             ? .standardError : .standardOutput
         stream.write(Data((line.text + "\n").utf8))
+    }
+
+    /// Runs `body` holding the tick lock, as a GUI collect, a report and the tick do, so this
+    /// command cannot overlap one of them or another command. When another live process holds
+    /// it, nothing runs: one line on stderr and exit `TickRunner.queuedExitCode`, the code a
+    /// tick turned away by the lock exits with. `fail` exits without unwinding, so a command
+    /// that ends with a failure exit returns what it would have exited with and fails after.
+    static func exclusively<T: Sendable>(
+        lock: TickLock = TickLock(url: TickLock.defaultURL),
+        _ body: () async throws -> T
+    ) async throws -> T {
+        guard let result = try await lock.holdingForRun(body) else {
+            FileHandle.standardError.write(Data("error: \(TickLock.busyMessage)\n".utf8))
+            throw ExitCode(TickRunner.queuedExitCode)
+        }
+        return result
     }
 
     /// Print an error to stderr and exit with the given code (jamf-cli convention).

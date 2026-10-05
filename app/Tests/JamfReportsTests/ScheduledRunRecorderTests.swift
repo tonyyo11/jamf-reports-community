@@ -45,6 +45,25 @@ final class ScheduledRunRecorderTests: XCTestCase {
         XCTAssertTrue(text.contains("[info] exit 0 after"))
     }
 
+    /// A run that never began (a collect the tick lock refused) leaves no log, and the
+    /// status file of the run before it is not touched.
+    func testDiscardRemovesTheLogAndKeepsThePreviousStatus() throws {
+        let workspace = try makeWorkspace()
+        let first = try XCTUnwrap(ScheduledRunRecorder(
+            workspace: workspace, label: label, now: Date(timeIntervalSinceNow: -60)))
+        first.finish(exitCode: 0)
+        let status = try Data(contentsOf: first.statusURL)
+
+        let refused = try XCTUnwrap(ScheduledRunRecorder(workspace: workspace, label: label))
+        XCTAssertNotEqual(refused.logURL, first.logURL)
+        refused.discard()
+        refused.record("[warn] a line after discard is dropped")
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: refused.logURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: first.logURL.path))
+        XCTAssertEqual(try Data(contentsOf: first.statusURL), status)
+    }
+
     /// jamf-cli error text rides in `[warn]` lines; a newline inside it must not
     /// forge a second log entry that the reversed tail scan could read as the footer.
     func testRecordFlattensEmbeddedNewlinesSoOneRecordIsOneLine() throws {

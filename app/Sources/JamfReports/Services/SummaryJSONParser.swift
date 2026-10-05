@@ -57,7 +57,15 @@ struct DailySummary: Codable, Identifiable, Sendable {
              // shared workspace, where "whose collect was this?" is a real
              // diagnostic question — one Mac with a stale CSV or a misconfigured
              // tenant otherwise poisons a pooled history invisibly.
-             collectedByHost
+             collectedByHost,
+             // How `patchPct` was computed. Absent on a summary written before
+             // the device-weighted definition (epic #207 C1).
+             patchPctBasis,
+             // Which inputs `securityScore` was computed from (epic #207 H1).
+             securityScoreBasis,
+             // Every configured agent's coverage, by name (`crowdstrikePct` is the agent the
+             // score counts as EDR).
+             securityAgentCoverage
     }
 
     var id: String { date }
@@ -78,10 +86,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// TrendStore so the chart skips the point rather than emitting a misleading 0%.
     let osCurrentPct: Double?
     /// Omitted by Python when the source is `"jamf-cli"` (CSV-only metric).
-    let crowdstrikePct: Double?
+    private(set) var crowdstrikePct: Double?
     /// Omitted when source data is absent or fails to decode; nil propagates to
     /// TrendStore so the chart skips the point rather than emitting a misleading 0%.
-    let patchPct: Double?
+    private(set) var patchPct: Double?
     let source: String
     /// Optional run provenance (run-ID, jamf-cli version, tenant URL, operator).
     /// Absent in legacy Python-emitted summaries; present in Swift-emitted ones.
@@ -129,9 +137,107 @@ struct DailySummary: Codable, Identifiable, Sendable {
     /// Machine that collected this day's data. Present only on a shared
     /// workspace; nil everywhere else, where the answer is trivially "this Mac".
     let collectedByHost: String?
+    /// `deviceWeightedPatchBasis` when `patchPct` is `Σ on_latest / Σ total` over the
+    /// titles that have devices. Nil on a summary written before 2.9, whose `patchPct`
+    /// is the unweighted mean of each title's percentage — the two do not compare.
+    private(set) var patchPctBasis: String?
+    /// The metrics `securityScore` weighed, by `SecurityScore.Metric` raw value in score
+    /// order, comma-separated (`SecurityScoreInputs.basis`). Nil on a summary written before
+    /// 2.9, which scored FileVault, SIP and Firewall only; two scores compare only when the
+    /// bases are equal.
+    let securityScoreBasis: String?
+    /// Percent of the fleet each configured `security_agents` entry reports connected, by
+    /// agent name: `SecurityAgentCoverage` over `totalDevices`, one decimal, like
+    /// `crowdstrikePct` (which is the entry the score counts as EDR, and stays for older
+    /// readers). An agent no Mac reports is absent, not 0. Nil on a summary written before 2.9.
+    private(set) var securityAgentCoverage: [String: Double]?
+
+    /// Value of `patchPctBasis` for the device-weighted definition.
+    static let deviceWeightedPatchBasis = "device"
+
+    /// This day on the device-weighted patch definition, with `patchPct` replaced by the
+    /// figure re-derived from its `patch-status` snapshot (`TrendStore.resolvingPatch`).
+    func withDeviceWeightedPatch(_ pct: Double) -> DailySummary {
+        var resolved = self
+        resolved.patchPct = pct
+        resolved.patchPctBasis = Self.deviceWeightedPatchBasis
+        return resolved
+    }
 
     var parsedDate: Date {
         SummaryJSONParser.dateFormatter.date(from: date) ?? Date.distantPast
+    }
+
+    /// This summary with every value it lacks taken from `older`, the same day's earlier
+    /// summary: a rebuild from the newest snapshots must not turn a value known this morning
+    /// into nil because this run did not fetch its source. Values that belong together move
+    /// together (a figure and its basis; the compliance figure, its bands and its proxy flag),
+    /// and real mSCP compliance is never replaced by the control-gap proxy. A value this
+    /// summary has always wins, and so do `date`, `totalDevices` and `source`;
+    /// `collectionSources` is left to the caller (`ReportEngine.mergedSources`).
+    /// This day with per-agent coverage taken from its dated `ea-results` snapshot
+    /// (`TrendStore.resolvingAgentCoverage`), for a summary written before the app recorded
+    /// it. A value the summary already has wins; `edrAgent` fills `crowdstrikePct` when that
+    /// is missing too.
+    func withBackfilledAgentCoverage(
+        _ coverage: [String: Double], edrAgent: String?
+    ) -> DailySummary {
+        var resolved = self
+        resolved.securityAgentCoverage = coverage.merging(
+            securityAgentCoverage ?? [:]) { _, own in own }
+        if crowdstrikePct == nil, let edrAgent { resolved.crowdstrikePct = coverage[edrAgent] }
+        return resolved
+    }
+
+    /// Each agent's coverage: this run's where it measured the agent, else the earlier one's.
+    private func mergedAgentCoverage(_ older: [String: Double]?) -> [String: Double]? {
+        guard let older else { return securityAgentCoverage }
+        let merged = older.merging(securityAgentCoverage ?? [:]) { _, new in new }
+        return merged.isEmpty ? nil : merged
+    }
+
+    func filling(from older: DailySummary) -> DailySummary {
+        let olderIsReal = older.complianceIsProxy == false && complianceIsProxy != false
+        let olderComplianceWins = older.compliancePct != nil
+            && (compliancePct == nil || olderIsReal)
+        let patchFromOlder = patchPct == nil
+        let scoreFromOlder = securityScore == nil
+        return DailySummary(
+            date: date,
+            totalDevices: totalDevices,
+            fileVaultPct: fileVaultPct ?? older.fileVaultPct,
+            compliancePct: olderComplianceWins ? older.compliancePct : compliancePct,
+            staleCount: staleCount ?? older.staleCount,
+            osCurrentPct: osCurrentPct ?? older.osCurrentPct,
+            crowdstrikePct: crowdstrikePct ?? older.crowdstrikePct,
+            patchPct: patchFromOlder ? older.patchPct : patchPct,
+            source: source,
+            provenance: provenance ?? older.provenance,
+            sipPct: sipPct ?? older.sipPct,
+            firewallPct: firewallPct ?? older.firewallPct,
+            gatekeeperPct: gatekeeperPct ?? older.gatekeeperPct,
+            secureBootPct: secureBootPct ?? older.secureBootPct,
+            bootstrapPct: bootstrapPct ?? older.bootstrapPct,
+            xprotectPct: xprotectPct ?? older.xprotectPct,
+            cvePct: cvePct ?? older.cvePct,
+            mscpScorePct: olderComplianceWins
+                ? older.mscpScorePct : mscpScorePct ?? older.mscpScorePct,
+            securityScore: scoreFromOlder ? older.securityScore : securityScore,
+            actionItemsP0: actionItemsP0 ?? older.actionItemsP0,
+            actionItemsP1: actionItemsP1 ?? older.actionItemsP1,
+            actionItemsP2: actionItemsP2 ?? older.actionItemsP2,
+            noBaselineActive: noBaselineActive ?? older.noBaselineActive,
+            complianceIsProxy: olderComplianceWins ? older.complianceIsProxy : complianceIsProxy,
+            mscpBands: olderComplianceWins ? older.mscpBands : mscpBands ?? older.mscpBands,
+            mscpBandColumns: olderComplianceWins
+                ? older.mscpBandColumns : mscpBandColumns ?? older.mscpBandColumns,
+            collectionSources: collectionSources,
+            mobileDeviceCount: mobileDeviceCount ?? older.mobileDeviceCount,
+            collectedByHost: collectedByHost ?? older.collectedByHost,
+            patchPctBasis: patchFromOlder ? older.patchPctBasis : patchPctBasis,
+            securityScoreBasis: scoreFromOlder ? older.securityScoreBasis : securityScoreBasis,
+            securityAgentCoverage: mergedAgentCoverage(older.securityAgentCoverage)
+        )
     }
 
     init(
@@ -163,7 +269,10 @@ struct DailySummary: Codable, Identifiable, Sendable {
         mscpBandColumns: [String: String]? = nil,
         collectionSources: [String: String]? = nil,
         mobileDeviceCount: Int? = nil,
-        collectedByHost: String? = nil
+        collectedByHost: String? = nil,
+        patchPctBasis: String? = nil,
+        securityScoreBasis: String? = nil,
+        securityAgentCoverage: [String: Double]? = nil
     ) {
         self.date = date
         self.totalDevices = totalDevices
@@ -194,6 +303,9 @@ struct DailySummary: Codable, Identifiable, Sendable {
         self.collectionSources = collectionSources
         self.mobileDeviceCount = mobileDeviceCount
         self.collectedByHost = collectedByHost
+        self.patchPctBasis = patchPctBasis
+        self.securityScoreBasis = securityScoreBasis
+        self.securityAgentCoverage = securityAgentCoverage
     }
 
     init(from decoder: Decoder) throws {
@@ -230,6 +342,11 @@ struct DailySummary: Codable, Identifiable, Sendable {
             [String: String].self, forKey: .collectionSources)
         mobileDeviceCount = try container.decodeIfPresent(Int.self, forKey: .mobileDeviceCount)
         collectedByHost = try container.decodeIfPresent(String.self, forKey: .collectedByHost)
+        patchPctBasis = try container.decodeIfPresent(String.self, forKey: .patchPctBasis)
+        securityScoreBasis = try container.decodeIfPresent(
+            String.self, forKey: .securityScoreBasis)
+        securityAgentCoverage = try container.decodeIfPresent(
+            [String: Double].self, forKey: .securityAgentCoverage)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -263,6 +380,30 @@ struct DailySummary: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(collectionSources, forKey: .collectionSources)
         try container.encodeIfPresent(mobileDeviceCount, forKey: .mobileDeviceCount)
         try container.encodeIfPresent(collectedByHost, forKey: .collectedByHost)
+        try container.encodeIfPresent(patchPctBasis, forKey: .patchPctBasis)
+        try container.encodeIfPresent(securityScoreBasis, forKey: .securityScoreBasis)
+        try container.encodeIfPresent(securityAgentCoverage, forKey: .securityAgentCoverage)
+    }
+}
+
+extension DailySummary {
+    /// False when any number is non-finite or past `SummaryJSONParser.maxSummaryNumber`.
+    var numbersAreInRange: Bool {
+        let limit = SummaryJSONParser.maxSummaryNumber
+        let percents = [
+            fileVaultPct, compliancePct, osCurrentPct, crowdstrikePct, patchPct, sipPct,
+            firewallPct, gatekeeperPct, secureBootPct, bootstrapPct, xprotectPct, cvePct,
+            mscpScorePct, securityScore,
+        ].compactMap { $0 } + Array((securityAgentCoverage ?? [:]).values)
+        let bands = (mscpBands ?? [:]).values.flatMap {
+            [$0.pass, $0.low, $0.medLow, $0.medium, $0.high, $0.noData]
+        }
+        let counts = [totalDevices] + bands + [
+            staleCount, actionItemsP0, actionItemsP1, actionItemsP2, noBaselineActive,
+            mobileDeviceCount,
+        ].compactMap { $0 }
+        return percents.allSatisfy { $0.isFinite && abs($0) <= Double(limit) }
+            && counts.allSatisfy { (-limit...limit).contains($0) }
     }
 }
 
@@ -280,14 +421,31 @@ struct SummaryJSONParser {
     /// other software can write to).
     static let maxSummaryFileBytes = 2 * 1024 * 1024
 
+    /// A summary number past this magnitude is corrupt or hostile: percentages sit in 0...100
+    /// and counts are devices. Screens round these to an Int for labels (`Int(1e30)` traps) and
+    /// add counts across profiles (two of `Int.max` overflow), and never see the file.
+    static let maxSummaryNumber = 1_000_000_000
+
+    struct NumberOutOfRange: LocalizedError {
+        var errorDescription: String? {
+            "a number is outside ±\(SummaryJSONParser.maxSummaryNumber)"
+        }
+    }
+
     static func parse(_ url: URL) throws -> DailySummary {
         if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
            size > maxSummaryFileBytes {
             throw CocoaError(.fileReadTooLarge, userInfo: [NSFilePathErrorKey: url.path])
         }
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        return try decoder.decode(DailySummary.self, from: data)
+        return try decode(try Data(contentsOf: url))
+    }
+
+    /// The summary in `data`; throws when it does not decode or holds a number past
+    /// `maxSummaryNumber`.
+    static func decode(_ data: Data) throws -> DailySummary {
+        let summary = try JSONDecoder().decode(DailySummary.self, from: data)
+        guard summary.numbersAreInRange else { throw NumberOutOfRange() }
+        return summary
     }
 
     static func parseDirectory(_ dir: URL) -> [DailySummary] {

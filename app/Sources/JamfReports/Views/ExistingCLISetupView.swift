@@ -33,7 +33,8 @@ struct ExistingCLISetupView: View {
                 profilesCard
                 automationCard
                 runCard
-                skipFootnote
+                // The run card already offers Skip after a run that created no workspace.
+                if !flow.canRetry { skipFootnote }
             }
             .padding(EdgeInsets(top: 56, leading: 60, bottom: 40, trailing: 60))
             .frame(maxWidth: 920)
@@ -64,7 +65,7 @@ struct ExistingCLISetupView: View {
                 PNPButton(title: "Choose workspace folder…", icon: "folder", size: .sm) {
                     chooseExistingRoot()
                 }
-                .disabled(flow.isRunning || isFinishing || flow.didComplete)
+                .disabled(isLocked || isFinishing)
                 .help("Use a folder that already holds \(WorkspaceRootStore.displayRoot)-style "
                     + "profile workspaces.")
                 if let existingRootMessage {
@@ -136,7 +137,7 @@ struct ExistingCLISetupView: View {
                 ForEach(flow.profileNames, id: \.self) { name in
                     Toggle(name, isOn: selectionBinding(name))
                         .toggleStyle(.checkbox)
-                        .disabled(flow.isRunning || flow.didComplete || flow.unusable[name] != nil)
+                        .disabled(isLocked || flow.unusable[name] != nil)
                     if let reason = flow.unusable[name] {
                         Text("\(name) can't be used. \(reason.explanation)")
                             .font(.footnote)
@@ -165,7 +166,7 @@ struct ExistingCLISetupView: View {
                     Text("Keep data fresh automatically").font(.callout.weight(.semibold))
                 }
                 .toggleStyle(.switch)
-                .disabled(flow.isRunning || flow.didComplete)
+                .disabled(isLocked)
                 Text("A daily collect keeps dashboards and Trends current; a weekly deep scan "
                     + "runs the two per-device queries. Adjust anytime from the Automation tab.")
                     .font(.footnote)
@@ -179,7 +180,7 @@ struct ExistingCLISetupView: View {
                     }
                     .pickerStyle(.menu)
                     .frame(maxWidth: 260, alignment: .leading)
-                    .disabled(flow.isRunning || flow.didComplete)
+                    .disabled(isLocked)
                     Picker("Generate reports", selection: $flow.reportsCadence) {
                         Text("Off").tag(AutomationPolicy.ReportsCadence.off)
                         Text("Daily").tag(AutomationPolicy.ReportsCadence.daily)
@@ -187,13 +188,13 @@ struct ExistingCLISetupView: View {
                         Text("Monthly").tag(AutomationPolicy.ReportsCadence.monthly)
                     }
                     .pickerStyle(.segmented)
-                    .disabled(flow.isRunning || flow.didComplete)
+                    .disabled(isLocked)
                     HStack {
                         Text("Run automation at")
                         TextField("06:00", text: $flow.runTime)
                             .frame(width: 80)
                             .textFieldStyle(.roundedBorder)
-                            .disabled(flow.isRunning || flow.didComplete)
+                            .disabled(isLocked)
                     }
                     .font(.callout)
                 }
@@ -223,6 +224,8 @@ struct ExistingCLISetupView: View {
 
                 if flow.didComplete {
                     completionSummary
+                }
+                if flow.canContinue {
                     PNPButton(
                         title: isFinishing ? "Finishing…" : "Continue to dashboard",
                         icon: "arrow.right", style: .gold, size: .lg
@@ -230,7 +233,8 @@ struct ExistingCLISetupView: View {
                     .disabled(isFinishing)
                 } else {
                     PNPButton(
-                        title: flow.isRunning ? "Collecting…" : "Initialize & run first collection",
+                        title: flow.isRunning ? "Collecting…"
+                            : (flow.canRetry ? "Try again" : "Initialize & run first collection"),
                         icon: flow.isRunning ? "hourglass" : "play.fill",
                         style: .gold, size: .lg
                     ) {
@@ -238,6 +242,12 @@ struct ExistingCLISetupView: View {
                         Task { await flow.run() }
                     }
                     .disabled(flow.isRunning || flow.selected.isEmpty)
+                    if flow.canRetry {
+                        PNPButton(
+                            title: "Skip — set up later", icon: "arrow.right",
+                            style: .ghost, size: .lg
+                        ) { skip() }
+                    }
                 }
             }
         }
@@ -318,19 +328,11 @@ struct ExistingCLISetupView: View {
     }
 
     private var completionSummary: some View {
-        let summary = flow.selectionSummary
-        let text: String
-        if summary.failed == 0 {
-            text = "All \(summary.succeeded) profile" + (summary.succeeded == 1 ? "" : "s")
-                + " collected — dashboards are populated and the first trend point is saved."
-        } else {
-            text = "\(summary.succeeded) succeeded, \(summary.failed) failed. Failed profiles "
-                + "can re-collect from the Overview banner once jamf-cli auth is fixed "
-                + "(Sources page shows connection status)."
-        }
-        return Text(text)
+        Text(flow.completionText)
             .font(.footnote)
-            .foregroundStyle(summary.failed == 0 ? Theme.Colors.ok : Theme.Colors.warnSoft)
+            .foregroundStyle(
+                flow.selectionSummary.failed == 0 ? Theme.Colors.ok : Theme.Colors.warnSoft
+            )
     }
 
     private var skipFootnote: some View {
@@ -340,9 +342,7 @@ struct ExistingCLISetupView: View {
             Text("Not now?")
                 .font(.footnote)
                 .foregroundStyle(Theme.Text.tertiary(contrast))
-            Button("Skip — set up later from the dashboard") {
-                outcomeRaw = ExistingCLISetupFlow.SetupOutcome.skipped.rawValue
-            }
+            Button("Skip — set up later from the dashboard") { skip() }
                 .buttonStyle(.link)
                 .font(.footnote)
                 .disabled(flow.isRunning || isFinishing)
@@ -372,12 +372,20 @@ struct ExistingCLISetupView: View {
         )
     }
 
+    /// Choices settle while a run is going and once one has created a workspace. After a run
+    /// that created none they stay open: another folder or profile choice is the likely fix.
+    private var isLocked: Bool { flow.isRunning || flow.canContinue }
+
+    private func skip() {
+        outcomeRaw = ExistingCLISetupFlow.SetupOutcome.skipped.rawValue
+    }
+
     /// Persist the automation policy (when enabled), apply it (registers the
     /// ticker), and only then record the completed outcome that re-routes
     /// ContentView to the shell — an unawaited apply would race the view
     /// swap (see the AutomationTab relocation note, 6101086).
     private func finish() {
-        guard !isFinishing else { return }
+        guard flow.canContinue, !isFinishing else { return }
         isFinishing = true
         Task {
             if flow.enableAutomation {
@@ -395,7 +403,7 @@ struct ExistingCLISetupView: View {
                     workspace.toast = Toast(
                         message: "Setup finished — allow JamfReports under Login Items › "
                             + "Allow in the Background to start automation",
-                        style: .danger
+                        style: .warning
                     )
                 }
             }

@@ -131,7 +131,7 @@ final class SystemActionsAllowListTests: XCTestCase {
 
     // MARK: - Symlink traversal: symlink inside allowed root pointing outside
 
-    /// A symlink located inside ~/Jamf-Reports that points to a directory outside
+    /// A symlink located inside the workspaces root that points to a directory outside
     /// the allow-list must be rejected after canonicalization resolves the link.
     ///
     /// This creates real temp directories and a symlink to exercise the
@@ -144,31 +144,24 @@ final class SystemActionsAllowListTests: XCTestCase {
         try fm.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 
-        // Create the symlink inside a temp area that lives under ~/Jamf-Reports
-        // to satisfy the allow-list name prefix — we need the link's parent path to
-        // start with the allowed root, so we create a real subdirectory there.
-        let allowedRoot = home.appendingPathComponent("Jamf-Reports")
+        // The link's parent must sit under an allowed root. Under XCTest
+        // `ProfileService.workspacesRoot()` is this process's own temp folder, so
+        // nothing is written to the real ~/Jamf-Reports.
+        let allowedRoot = ProfileService.workspacesRoot()
         let testSubdir = allowedRoot.appendingPathComponent(
             "AllowListTest-\(UUID().uuidString)", isDirectory: true
         )
         let linkURL = testSubdir.appendingPathComponent("malicious-link")
 
-        do {
-            try fm.createDirectory(at: testSubdir, withIntermediateDirectories: true)
-            addTeardownBlock { try? FileManager.default.removeItem(at: testSubdir) }
-            try fm.createSymbolicLink(at: linkURL, withDestinationURL: outside)
-            addTeardownBlock { try? FileManager.default.removeItem(at: linkURL) }
-        } catch {
-            // If ~/Jamf-Reports doesn't exist yet (fresh CI box), the symlink
-            // traversal path can't be created — skip rather than fail the suite.
-            throw XCTSkip("Could not create symlink under ~/Jamf-Reports: \(error)")
-        }
+        try fm.createDirectory(at: testSubdir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: testSubdir) }
+        try fm.createSymbolicLink(at: linkURL, withDestinationURL: outside)
 
         // The symlink lives inside the allowed root path-prefix-wise, but its
         // resolved target is outside. The gate must reject it.
         XCTAssertFalse(
             SystemActions.isURLAllowed(linkURL),
-            "Symlink inside ~/Jamf-Reports pointing outside must be rejected; " +
+            "Symlink inside the workspaces root pointing outside must be rejected; " +
             "link=\(linkURL.path), target=\(outside.path)"
         )
     }

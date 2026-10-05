@@ -65,7 +65,10 @@ jobs:
 
       - name: Build Swift app
         working-directory: app
-        run: swift build
+        shell: zsh {0}
+        run: |
+          set -e -o pipefail
+          swift build 2>&1 | tee "$RUNNER_TEMP/swift-build.log"
 
       - name: Run Swift tests
         working-directory: app
@@ -75,12 +78,15 @@ jobs:
           swift test 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
 
       # A test run logs thousands of lines and the tail is what a log viewer
-      # shows, so on failure repeat just the compiler errors and failed tests.
+      # shows, so on failure repeat just the compiler errors and failed tests,
+      # from the build log too: when the build fails the test step never runs.
+      # -s: the test log does not exist when the build step failed.
       - name: List test failures
         if: failure()
         shell: zsh {0}
         run: |
-          grep -E ": error: |error: -\[|' failed \(|✘ " "$RUNNER_TEMP/swift-test.log" \
+          grep -hsE ": error: |error: -\[|' failed \(|✘ " \
+            "$RUNNER_TEMP/swift-build.log" "$RUNNER_TEMP/swift-test.log" \
             | awk '!seen[$0]++' | head -n 200 || true
 
   shellcheck:
@@ -105,6 +111,8 @@ jobs:
             app/build-pkg.sh \
             app/scripts/lib/versioning.zsh \
             app/scripts/test-versioning.zsh \
+            app/scripts/check-test-only-symbols.zsh \
+            app/scripts/test-check-test-only-symbols.zsh \
             app/scripts/release.sh \
             app/scripts/package-dmg.sh \
             app/scripts/notarize-release.sh \
@@ -120,3 +128,12 @@ jobs:
 
       - name: Test version, channel and artifact naming
         run: zsh app/scripts/test-versioning.zsh
+
+      # A type or func in app/Sources that only app/Tests reference is code the
+      # tests keep alive. The check needs only zsh and awk, so it runs here too.
+      # Deliberate test seams go in app/scripts/test-only-symbols.allow.
+      - name: Test the test-only symbol check
+        run: zsh app/scripts/test-check-test-only-symbols.zsh
+
+      - name: Check for symbols only tests reference
+        run: zsh app/scripts/check-test-only-symbols.zsh

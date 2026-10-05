@@ -244,6 +244,132 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertFalse(out.contains("Fleet-Mac-4999"))
     }
 
+    // MARK: - Scope IDs
+
+    // The message shape is the tester's log line used in ConnectionCheckTests and
+    // FailureCauseTests; the ID is a made-up value in the same position.
+    private static let environmentID = "7c1e5a90-3b2d-4f68-9a14-d2e8b6f05c37"
+    private static let notFoundLine =
+        "[warn] benchmarks: API request failed with status 404 Not Found, traceId 0000000000000000 "
+        + "(method=GET, url=https://us.api.jamfcloud.com/compliance-benchmarks/v1/benchmarks): "
+        + "[ENVIRONMENT_NOT_FOUND] Environment '\(environmentID)' not found."
+
+    func testSeededScopeIDIsPlaceholderedInErrorText() {
+        let r = DiagnosticRedactor()
+        r.seedScopeIDs([Self.environmentID])
+        let out = r.redactText(Self.notFoundLine)
+        XCTAssertFalse(out.contains(Self.environmentID))
+        XCTAssertTrue(out.contains("Environment 'org-"), "got: \(out)")
+        XCTAssertTrue(out.contains("' not found."), "the rest of the message stays readable")
+    }
+
+    func testSeededScopeIDMatchesAnyCaseWithOnePlaceholder() {
+        let r = DiagnosticRedactor()
+        r.seedScopeIDs([Self.environmentID])
+        let lower = r.redactText("Environment '\(Self.environmentID)' not found.")
+        let upper = r.redactText("Environment '\(Self.environmentID.uppercased())' not found.")
+        XCTAssertFalse(upper.contains(Self.environmentID.uppercased()))
+        XCTAssertEqual(lower, upper, "one ID is one placeholder, whatever its case")
+    }
+
+    /// Other UUIDs are identifiers the bundle's readers match up (a host's file under
+    /// automation/hosts/ is named by its hardware UUID), so only the seeded IDs are removed.
+    func testUnseededUUIDsAreLeftAlone() {
+        let r = DiagnosticRedactor()
+        r.seedScopeIDs([Self.environmentID])
+        let hostID = "9B1D4E52-6A07-4C83-A1F9-0E3D7B58C246"
+        let out = r.redactText("automation/hosts/\(hostID).json")
+        XCTAssertTrue(out.contains(hostID), "got: \(out)")
+        let unseeded = DiagnosticRedactor().redactText(Self.notFoundLine)
+        XCTAssertTrue(unseeded.contains(Self.environmentID), "nothing is removed unless seeded")
+    }
+
+    /// The serial pattern matches a UUID's last segment when it is digits only, so the seeded ID
+    /// has to be replaced before that pass runs.
+    func testScopeIDWithADigitOnlyLastSegmentIsReplacedWhole() {
+        let id = "5d3b9e70-2c14-4a86-b0f7-310584269731"
+        let r = DiagnosticRedactor()
+        r.seedScopeIDs([id])
+        let out = r.redactText("Environment '\(id)' not found.")
+        XCTAssertTrue(out.hasPrefix("Environment 'org-"), "got: \(out)")
+        XCTAssertFalse(out.contains("serial-"), "got: \(out)")
+        XCTAssertFalse(out.contains("5d3b9e70"), "got: \(out)")
+    }
+
+    func testScopeIDSeedIgnoresBlankAndTooShortValues() {
+        let r = DiagnosticRedactor()
+        r.seedScopeIDs(["", "   ", "ab"])
+        XCTAssertEqual(r.redactText("ab and more"), "ab and more")
+    }
+
+    // The layout is the one ProfileSlugCaseTests reads. `config list` reports `tenant-id` and
+    // `environment-id` as JSON keys; the same names in the YAML config file are inferred from
+    // those, not seen in a Platform profile's file.
+    private static let jamfCLIConfig = """
+        default-profile: Acme
+        profiles:
+            Acme:
+                url: https://acme.example.invalid
+                auth-method: platform
+                environment-id: "\(environmentID)"
+            Other Tenant:
+                url: https://other.example.invalid
+                auth-method: platform
+                tenant-id: 2f6a8c13-5d94-4be0-8c71-a9035e1d47b2  # legacy scope
+            Plain:
+                url: https://plain.example.invalid
+                auth-method: oauth2
+        """
+
+    func testScopeIDsAreReadFromTheNamedProfilesBlockOnly() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let config = dir.appendingPathComponent("config.yaml")
+        try Self.jamfCLIConfig.write(to: config, atomically: true, encoding: .utf8)
+
+        XCTAssertEqual(
+            DiagnosticBundleService.scopeIDs(profile: "Acme", configURL: config),
+            [Self.environmentID])
+        XCTAssertEqual(
+            DiagnosticBundleService.scopeIDs(profile: "Other Tenant", configURL: config),
+            ["2f6a8c13-5d94-4be0-8c71-a9035e1d47b2"])
+        XCTAssertEqual(DiagnosticBundleService.scopeIDs(profile: "Plain", configURL: config), [])
+        XCTAssertEqual(DiagnosticBundleService.scopeIDs(profile: "Absent", configURL: config), [])
+    }
+
+    func testScopeIDsAreEmptyWhenJamfCLIHasNoConfigFile() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        XCTAssertEqual(
+            DiagnosticBundleService.scopeIDs(
+                profile: "Acme", configURL: dir.appendingPathComponent("missing.yaml")),
+            [])
+    }
+
+    func testBuildBundleRemovesSeededScopeIDsFromLogs() throws {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace.root) }
+        try Self.notFoundLine.write(
+            to: workspace.sources.logsDir.appendingPathComponent("collect.log"),
+            atomically: true, encoding: .utf8)
+        var sources = workspace.sources
+        sources.scopeIDs = [Self.environmentID]
+        let outputDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: outputDir) }
+
+        let zip = try DiagnosticBundleService.buildBundle(
+            sources: sources, outputDir: outputDir,
+            profileSlug: "scope", options: .init(), now: Date())
+        let extracted = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: extracted) }
+        try unzip(zip, into: extracted)
+
+        let log = try String(
+            contentsOf: extracted.appendingPathComponent("logs/collect.log"), encoding: .utf8)
+        XCTAssertFalse(log.contains(Self.environmentID))
+        XCTAssertTrue(log.contains("Environment 'org-"), "got: \(log)")
+    }
+
     // MARK: - Bundle structure
 
     func testStageFilesProducesRedactedTree() throws {
@@ -475,6 +601,113 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertEqual(policy["enabled"] as? Bool, false)
     }
 
+    // MARK: - Free text in the staged config
+
+    private func stagedConfig(
+        _ yaml: String, redactor: DiagnosticRedactor = DiagnosticRedactor()
+    ) throws -> String {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace.root) }
+        try yaml.write(to: workspace.sources.configURL, atomically: true, encoding: .utf8)
+        let staging = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        _ = try DiagnosticBundleService.stageFiles(
+            sources: workspace.sources, into: staging,
+            redactor: redactor, options: .init(), now: Date())
+        return try String(
+            contentsOf: staging.appendingPathComponent("config.yaml"), encoding: .utf8)
+    }
+
+    /// `signed_off_by` and `description` are typed by an admin: a person's name and a
+    /// justification, which no pattern can find. Everything else in the entry, and every line
+    /// outside the `exceptions:` block, stays as written.
+    func testStagedConfigReplacesTheFreeTextOfAnException() throws {
+        let config = try stagedConfig("""
+        # Harbor tenant
+        jamf_cli:
+          profile: harbor
+        exceptions:
+          - id: EX-1
+            description: Kiosk app cannot run on Tahoe until the vendor ships 3.2
+            signed_off_by: Jane Q. Admin
+            signed_off_date: 2026-03-01
+            expires_date: 2026-12-31
+            control_id: AC-2
+        thresholds:
+          stale_device_days: 30
+
+        """)
+
+        XCTAssertFalse(config.contains("Jane Q. Admin"), config)
+        XCTAssertFalse(config.contains("Kiosk app"), config)
+        XCTAssertTrue(config.contains("description: org-"), config)
+        XCTAssertTrue(config.contains("signed_off_by: user-"), config)
+        for kept in ["# Harbor tenant", "  profile: harbor", "- id: EX-1",
+                     "signed_off_date: 2026-03-01", "expires_date: 2026-12-31",
+                     "control_id: AC-2", "thresholds:", "  stale_device_days: 30"] {
+            XCTAssertTrue(config.contains(kept), "\(kept) missing from: \(config)")
+        }
+    }
+
+    func testTheSamePersonGetsTheSamePlaceholderAcrossEntries() throws {
+        let config = try stagedConfig("""
+        exceptions:
+          - id: EX-1
+            description: One
+            signed_off_by: Jane Q. Admin
+            signed_off_date: 2026-03-01
+          - id: EX-2
+            description: Two
+            signed_off_by: Jane Q. Admin
+            signed_off_date: 2026-03-02
+        """)
+
+        let placeholders = config.split(separator: "\n")
+            .filter { $0.contains("signed_off_by:") }.map(String.init)
+        XCTAssertEqual(placeholders.count, 2)
+        XCTAssertEqual(Set(placeholders.map { $0.trimmingCharacters(in: .whitespaces) }).count, 1,
+                       "one signer is one placeholder: \(placeholders)")
+        XCTAssertFalse(config.contains("Jane"), config)
+    }
+
+    /// A flow mapping and a block scalar are forms an admin can type; neither may carry the
+    /// text through, and the lines under a `|` are not part of what the app reads.
+    func testFlowAndBlockScalarFormsDoNotCarryTheTextThrough() throws {
+        let config = try stagedConfig("""
+        exceptions:
+          - {id: EX-1, description: "Printer driver pinned", signed_off_by: "Sam Roe"}
+          - id: EX-2
+            description: |
+              Waiver for the lab Macs,
+              approved by Pat Doe
+            signed_off_by: 'Pat Doe'
+            signed_off_date: 2026-03-02
+        """)
+
+        for leaked in ["Printer driver", "Sam Roe", "lab Macs", "Pat Doe"] {
+            XCTAssertFalse(config.contains(leaked), "\(leaked) leaked into: \(config)")
+        }
+        XCTAssertTrue(config.contains("EX-1") && config.contains("EX-2"))
+    }
+
+    func testAConfigWithNoExceptionsIsStagedAsBefore() throws {
+        let config = try stagedConfig("# note\nclient_secret: topsecret123\nfoo: bar\n\n\n")
+        XCTAssertEqual(config, "# note\nclient_secret: REDACTED_CLIENT_SECRET\nfoo: bar\n\n\n")
+    }
+
+    func testKeepUsernamesKeepsTheSignerButNotTheDescription() throws {
+        let redactor = DiagnosticRedactor(redactUsernames: false)
+        let config = try stagedConfig("""
+        exceptions:
+          - id: EX-1
+            description: Kiosk app
+            signed_off_by: Jane Q. Admin
+        """, redactor: redactor)
+
+        XCTAssertTrue(config.contains("Jane Q. Admin"), config)
+        XCTAssertFalse(config.contains("Kiosk app"), config)
+    }
+
     // MARK: - Fixtures
 
     private func makeTempDir() throws -> URL {
@@ -572,5 +805,32 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         let yaml = "  url: https://contoso.webhook.office.com/webhookb2/\(secret)/IncomingWebhook/x"
         let out = r.redactText(yaml)
         XCTAssertFalse(out.contains(secret))
+    }
+
+    // MARK: - Teams Workflows and Power Automate webhooks
+
+    func testWorkflowWebhookURLsAreRedactedWhateverTheContext() {
+        let r = DiagnosticRedactor()
+        let urls = [
+            "https://prod-12.westus.logic.azure.com:443/workflows/0a1b/triggers/manual/paths/"
+                + "invoke?api-version=2016-06-01&sig=Zm9vYmFyU0lH",
+            "https://prod-03.usgovvirginia.logic.azure.us/workflows/9f8e/triggers/manual/paths/"
+                + "invoke?api-version=2016-06-01&sig=Zm9vYmFyU0lH",
+            "https://env0123.4.environment.api.powerplatform.com/powerautomate/automations/"
+                + "direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9v",
+            "https://env0123.4.environment.api.powerplatform.us/powerautomate/automations/"
+                + "direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9v",
+        ]
+        for url in urls {
+            XCTAssertEqual(
+                r.redactText("POST to \(url) returned 202"),
+                "POST to REDACTED_WEBHOOK_URL returned 202", url)
+        }
+    }
+
+    func testSignatureQueryValueIsRedactedOnAnyHost() {
+        let out = DiagnosticRedactor().redactText("GET /invoke?api-version=1&sig=Zm9vYmFyU0lH&x=1")
+        XCTAssertFalse(out.contains("Zm9vYmFyU0lH"))
+        XCTAssertTrue(out.contains("sig=REDACTED_SIG&x=1"))
     }
 }

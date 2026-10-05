@@ -37,7 +37,9 @@ struct SecurityPostureTemplate: ReportTemplate {
 
     var htmlSections: [SectionID] {
         [
-            .kpiTiles,
+            .atAGlance,
+            .needsAttention,
+            .jamfDashboard,
             .securityTiles,
             .protectAlerts,
             .insightsDrift,
@@ -46,7 +48,14 @@ struct SecurityPostureTemplate: ReportTemplate {
             .complianceBands,
             .patchBar,
             .exceptionList,
+            .auditAppendix,
         ]
+    }
+
+    /// The security and compliance group starts open: it is what this template is for.
+    var htmlOpenSections: [SectionID] {
+        [.securityTiles, .protectAlerts, .insightsDrift, .agentHealth, .auditEvidence,
+         .complianceBands, .exceptionList]
     }
 
     let pdfPagination: PaginationStrategy = .sectionPerPage

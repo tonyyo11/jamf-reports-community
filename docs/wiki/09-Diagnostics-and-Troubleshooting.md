@@ -29,7 +29,7 @@ Every action logs through the unified `os.Logger` under subsystem
 `collect`, `report`, `auth`, `schedule`, `webhook`, `platform`, `ui` — so you can filter
 to the area you care about in Console.app or the in-app viewer.
 
-**Settings → Diagnostics → Logging** controls verbosity and shows recent entries:
+**Settings → Logging** controls verbosity and shows recent entries:
 
 - **Persist verbose logs** — keeps `debug`/`info` entries in the local log store (off by
   default; the OS otherwise persists only `notice` and above). Interpolated values stay
@@ -107,6 +107,13 @@ expected:
 Both are suggestions rather than failures, and both stay quiet once the workspace has
 history. Only failures reach a scheduled run's log, so neither can turn a healthy run red.
 
+**Hand-edited values.** Warns for each key the app does not read (with the nearest known
+key), each line the reader skipped (by line number), and each value you typed that was
+replaced, clamped or ignored, saying what the app uses instead; keys it reads that nothing
+uses are suggestions. Security policy values it could not read are named with the level
+used. These are warnings, never failures, so a typo cannot turn a healthy scheduled run
+red.
+
 The same checks run headlessly as `jamf-reports check` (and `check --json` for a CI gate)
 — see [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line).
 
@@ -124,12 +131,17 @@ which jamf-cli
 The app falls back to CSV-only / cached-snapshot mode when jamf-cli is absent and shows a
 notice.
 
-**`401 Unauthorized` / token expired.** The OAuth token jamf-cli stored has expired or
-been revoked. Re-authenticate:
+**`401 Unauthorized` / token expired.** The OAuth token jamf-cli stored has
+expired or been revoked. Re-authenticate from **Data Sources → Connection
+health → Update credentials…**, or in Terminal:
 
 ```bash
 jamf-cli pro setup --url https://your-instance.jamfcloud.com
 ```
+
+For a Jamf Platform API profile, use **Update credentials…**, which also checks
+the environment or tenant ID. A Jamf Account integration is valid for six
+months; an expired one needs a replacement in Jamf Account first.
 
 **Profile name rejected.** The app uses any name jamf-cli accepts (spaces, dots, accented
 letters and punctuation included) except one with a line break or tab, one that starts or ends
@@ -166,6 +178,40 @@ never retried automatically, because they fail identically every time. See
 source served cached data, the run stood down for another Mac on a shared workspace, or
 the day's summary could not be written. The line names which.
 
+**"A scheduled run is in progress".** A background run holds the lock the app takes for
+every collect it starts. Wait for it to finish, then try again; the app starts nothing
+while the lock is held.
+
+**"A refresh is already running".** The app runs one collect at a time, for every profile, so
+a second Refresh, Collect now, scan prompt, Generate with fresh data or first collect is turned
+away rather than started beside the first, which would double the load on the Jamf server. The
+status bar names the collect that is running. Wait for it to finish, then try again; nothing is
+queued, and the click leaves no Run History entry.
+
+**"jamf-cli is being updated".** An update of jamf-cli holds the same lock as a collect, so
+neither starts while the other runs and the binary never changes under a collect. Updating from
+Settings while a refresh or a scheduled run is going says so and changes nothing; update again
+when it finishes.
+
+**The top of a run log says what it will collect.** Every run log starts with `[plan]` lines:
+the sources it will fetch (`[plan] profile <name> — collecting N sources: …`), the ones it
+leaves alone grouped by reason (`jamf_cli.collect_skip`, a Platform API profile required, tier
+not selected, not due, and so on), and whether the per-device scan runs. Each skipped source
+still has its own `[skip]` line with the detail, such as when it last ran.
+
+**A run in Run History says Running.** A run whose log has no exit line yet and is still being
+written shows a RUNNING pill; press Refresh to update it. A run with no exit line that nothing
+is writing any more (the Mac slept through it, or the app was quit) shows WARN, as before. Rows
+are dated at the run's start.
+
+**"Refresh finished with warnings".** The collect exited 0 but a source did not land. The toast is
+amber, not red, and Run History has the `[partial]` line under "Manual collect"; if the run
+could not be recorded the toast says Settings → Logging instead.
+
+**"config.yaml changed on disk since this screen loaded it".** The file changed after the
+Config screen loaded it, so the save was refused. Reload on the Config screen, then repeat
+your edit.
+
 **`[skip]` lines in run output.** A sub-step skipped because the cached data it needed
 was stale or absent. Normal in the first day after enabling schedules. If `[skip]` lines
 persist, force a collection — in the app, "Run now" on a `jamf-cli-full` schedule.
@@ -182,6 +228,11 @@ sidebar profile chip, check `jamf_cli.data_dir` in `config.yaml`, and regenerate
 **Column not found / empty CSV-sourced sheets.** A column name in `config.yaml` does not
 match the CSV. Open the Config screen, re-scaffold against your CSV export, and confirm
 each mapping resolves to the right header.
+
+**CSV line endings.** A CSV saved by Excel or on Windows ends its lines with CR LF. Before
+2.9.0 the app read such a file as one row with no data, so a csv-assisted report had empty
+CSV sheets and Devices showed no rows from the CSV. From 2.9.0, LF, CR LF and CR all read
+the same way; there is nothing to convert.
 
 **Notarization warning on first launch.** A local build is ad-hoc signed, not
 Developer-ID notarized. Right-click the app in Finder, choose Open, and confirm — macOS
@@ -211,6 +262,19 @@ Classic command on a Platform gateway profile, or a Platform-only command on an 
 profile. The remedy is a different profile, not another attempt, so the automatic
 re-collect leaves that source alone. `jamf-cli commands -o json` lists what the binary in
 hand refuses.
+
+### App-level exit codes (jamf-reports CLI)
+
+The `jamf-reports` command-line tool also returns its own exit codes:
+
+| Code | Meaning |
+|---|---|
+| 75 | Not run — a collect, a report or a scheduled run on this Mac holds the lock. Run it again when that finishes. |
+
+Collecting and writing reports share one lock on each Mac, so they never overlap. If you
+run `jamf-reports collect`, `generate`, `html` or `backup`, or `--scheduled-run`, while the
+app or the background item is collecting or writing a report, the command prints one line
+and exits 75 without doing anything.
 
 ## Report integrity envelope
 

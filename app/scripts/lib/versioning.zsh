@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Version, release-channel and artifact-naming rules shared by build-app.sh
-# (the build number and channel it stamps into Info.plist), build-pkg.sh and
-# scripts/package-dmg.sh (the names they give the .pkg and .dmg). One copy, so
-# the three cannot drift apart; scripts/test-versioning.zsh covers it in CI.
+# (the build number and channel it stamps into Info.plist, and its Swift
+# toolchain check), build-pkg.sh and scripts/package-dmg.sh (the names they give
+# the .pkg and .dmg), and scripts/release.sh (the DMG path it prints). One copy,
+# so they cannot drift apart; scripts/test-versioning.zsh covers it in CI.
 #
 # Sourced, never executed. It defines jr_* functions and nothing else (no
 # variables, no `set` options), so the caller's shell is left as it was. It
@@ -20,14 +21,39 @@ jr_release_channel() {
   fi
 }
 
+# jr_package_channel <build configuration> <app channel>
+# Prints the channel a package is named by: "release" only for the "release"
+# configuration of a release-channel app, "beta" for anything else. A
+# non-release package is neither signature-checked nor notarized, so it must
+# not carry a release name just because the app it wraps was built with RELEASE=1.
+jr_package_channel() {
+  if (( $# != 2 )); then
+    printf 'jr_package_channel: want 2 args (configuration channel), got %d\n' "$#" >&2
+    return 2
+  fi
+  if [[ "$1" == "release" && "$2" == "release" ]]; then
+    printf 'release\n'
+  else
+    printf 'beta\n'
+  fi
+}
+
 # jr_build_number
 # Prints the build number (CFBundleVersion): $BUILD_NUMBER when it is set and
 # non-empty, otherwise the commit count of the git repository around the
-# current directory, otherwise 0.
+# current directory, otherwise 0. Fails (status 1, message on stderr) in a
+# shallow clone, whose commit count is the fetched depth and not the history.
 jr_build_number() {
   if [[ -n "${BUILD_NUMBER:-}" ]]; then
     printf '%s\n' "$BUILD_NUMBER"
     return 0
+  fi
+  # Prints "false" outside a shallow repository and nothing (an error) outside
+  # any repository, which falls through to 0 below.
+  if [[ "$(git rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
+    printf 'jr_build_number: %s is a shallow clone, so its commit count is not\n' "$PWD" >&2
+    printf 'the build number; run "git fetch --unshallow" or set BUILD_NUMBER\n' >&2
+    return 1
   fi
   local count
   if count="$(git rev-list --count HEAD 2>/dev/null)" && [[ -n "$count" ]]; then
@@ -90,4 +116,26 @@ jr_artifact_path() {
   local name
   name="$(jr_artifact_name "$2" "$3" "$4" "$5")" || return
   printf '%s/%s\n' "${1%/}" "$name"
+}
+
+# jr_swift_at_least <major.minor> <swift --version text>
+# Succeeds when the "Swift version N.M" in the text is at least <major.minor>,
+# fails with status 1 when it is older, and with status 2 when the text has no
+# readable version or the arguments are wrong, so a caller can tell "old" from
+# "could not tell". Works on text, not on the `swift` binary, so it is testable.
+jr_swift_at_least() {
+  if (( $# != 2 )); then
+    printf 'jr_swift_at_least: want 2 args (major.minor text), got %d\n' "$#" >&2
+    return 2
+  fi
+  local want="$1" text="$2" rest ver major minor
+  [[ "$want" =~ ^[0-9]+[.][0-9]+$ ]] || return 2
+  rest="${text#*Swift version }"
+  [[ "$rest" != "$text" ]] || return 2
+  ver="${rest%%[!0-9.]*}"
+  [[ "$ver" =~ ^[0-9]+[.][0-9]+ ]] || return 2
+  major="${ver%%.*}"
+  minor="${ver#*.}"
+  minor="${minor%%.*}"
+  (( major > ${want%%.*} || (major == ${want%%.*} && minor >= ${want#*.}) ))
 }

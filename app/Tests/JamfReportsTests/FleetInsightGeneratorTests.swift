@@ -1,10 +1,9 @@
 import XCTest
 @testable import JamfReports
 
-/// Phase 1b: the seam (protocol + stub + factory) and the lock_on_device
-/// guarantee. All assertions run on the default toolchain: they exercise the
-/// UNGATED seam/stub/factory and the pure `GeneratorKind.select` truth table,
-/// never constructing a FoundationModels type.
+/// Phase 1b: the seam (protocol + stub + factory). All assertions run on the
+/// default toolchain: they exercise the UNGATED seam/stub/factory and never
+/// construct a FoundationModels type.
 final class FleetInsightGeneratorTests: XCTestCase {
 
     private func summary(_ date: String = "2026-06-06") -> DailySummary {
@@ -19,7 +18,7 @@ final class FleetInsightGeneratorTests: XCTestCase {
 
     func testStubReturnsDeterministicPlaceholder() async throws {
         let result = try await StubInsightGenerator().generate(
-            FleetInsightInput(current: summary(), previous: nil)
+            .fleet(current: summary(), previous: nil)
         )
         XCTAssertTrue(result.bullets.isEmpty)
         XCTAssertFalse(result.headline.isEmpty)
@@ -27,7 +26,7 @@ final class FleetInsightGeneratorTests: XCTestCase {
 
     func testStubSurfacesAvailabilityMessage() async throws {
         let result = try await StubInsightGenerator(availability: .disabledByConfig).generate(
-            FleetInsightInput(current: summary(), previous: nil)
+            .fleet(current: summary(), previous: nil)
         )
         XCTAssertEqual(result.headline, ModelAvailability.disabledByConfig.message)
     }
@@ -44,15 +43,6 @@ final class FleetInsightGeneratorTests: XCTestCase {
     func testFactoryReturnsStubWhenUnavailable() {
         let generator = makeInsightGenerator(
             config: AIConfig(enabled: true), availability: .requiresMacOS27
-        )
-        XCTAssertTrue(generator is StubInsightGenerator)
-    }
-
-    @MainActor
-    func testFactoryReturnsStubForExternalTier() {
-        // External tier is specced but not built — always the stub for now.
-        let generator = makeInsightGenerator(
-            config: AIConfig(enabled: true, tier: "external"), availability: .available
         )
         XCTAssertTrue(generator is StubInsightGenerator)
     }
@@ -75,35 +65,22 @@ final class FleetInsightGeneratorTests: XCTestCase {
         }
     }
 
-    // MARK: - Selection truth table
+    // MARK: - Removed tiers
 
-    func testSelectOnDeviceTierResolvesOnDevice() {
-        XCTAssertEqual(GeneratorKind.select(config: AIConfig(tier: "on_device")), .onDevice)
-    }
-
-    func testSelectDefaultsToOnDeviceWhenNoTierIsSet() {
-        XCTAssertEqual(GeneratorKind.select(config: AIConfig()), .onDevice)
-    }
-
-    func testSelectExternalTierResolvesExternal() {
-        XCTAssertEqual(
-            GeneratorKind.select(config: AIConfig(tier: "external")), .external
-        )
-    }
-
-    /// Backward compatibility: Apple Foundation Models is on-device only, so the
-    /// `pcc` tier and the `lock_on_device` override that existed to refuse it
-    /// were removed. A workspace whose config.yaml still names the old tier must
-    /// keep working — `resolvedTier`'s unknown-value fallback lands it on
-    /// on-device, which is now the only behaviour anyway.
-    func testLegacyPCCTierFallsBackToOnDevice() {
-        XCTAssertEqual(
-            GeneratorKind.select(config: AIConfig(tier: "pcc")), .onDevice,
-            "a config still naming the removed pcc tier must run on-device, not break"
-        )
-    }
-
-    func testUnknownTierFallsBackToOnDevice() {
-        XCTAssertEqual(GeneratorKind.select(config: AIConfig(tier: "nonsense")), .onDevice)
+    /// Apple Foundation Models is on-device only: `pcc` was removed in 2.7.0 and
+    /// `external` was never built. A workspace whose config.yaml still names
+    /// either, or any other unknown tier, must keep working — `resolvedTier`'s
+    /// unknown-value fallback gives it the same generator as a default config.
+    @MainActor
+    func testRemovedAndUnknownTiersGetTheOnDeviceGenerator() {
+        for tier in ["external", "pcc", "nonsense"] {
+            let generator = makeInsightGenerator(
+                config: AIConfig(enabled: true, tier: tier), availability: .available
+            )
+            XCTAssertEqual(
+                generator is StubInsightGenerator, !ModelAvailability.platformSupported,
+                "a config naming the \(tier) tier must be served like a default config"
+            )
+        }
     }
 }

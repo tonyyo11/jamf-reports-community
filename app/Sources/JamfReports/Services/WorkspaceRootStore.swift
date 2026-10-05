@@ -55,6 +55,10 @@ enum WorkspaceRootStore {
     /// 3. The stored preference.
     /// 4. `~/Jamf-Reports`.
     ///
+    /// In DEBUG, a test process reading the standard preferences gets a temporary
+    /// folder of its own in place of 3 and 4, as `AppSupport` does, so a test that
+    /// sets no root never writes the real one.
+    ///
     /// A stored path that has become unusable (share unmounted, folder deleted)
     /// is **not** silently swapped for the default: doing so would start a
     /// second, empty history beside the real one. The path is returned as
@@ -72,6 +76,13 @@ enum WorkspaceRootStore {
         if let path = environment[environmentKey], !path.isEmpty {
             return refusingSensitive(URL(fileURLWithPath: path, isDirectory: true))
         }
+
+        #if DEBUG
+        // A test that checks resolution passes its own preferences suite.
+        if NSClassFromString("XCTestCase") != nil, defaults === UserDefaults.standard {
+            return testProcessRoot
+        }
+        #endif
 
         if let stored = defaults.string(forKey: defaultsKey),
            !stored.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -92,7 +103,7 @@ enum WorkspaceRootStore {
     /// Silently substituting the default there would start a second, empty
     /// history beside the real one and read as total data loss.
     private static func refusingSensitive(_ url: URL) -> URL {
-        guard WorkspacePaths.isSensitiveAbsolutePath(url) else { return url }
+        guard WorkspacePaths.isSensitiveAbsolutePath(url, workspaceRoot: true) else { return url }
         AppLogger.platform.error(
             """
             workspace root \(url.path, privacy: .public) is a reserved location \
@@ -101,6 +112,12 @@ enum WorkspaceRootStore {
         )
         return defaultRoot
     }
+
+    #if DEBUG
+    /// One per test process, so what a test writes early in a run is read back later in it.
+    private static let testProcessRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("jrc-workspaces-\(UUID().uuidString)", isDirectory: true)
+    #endif
 
     /// `~/Jamf-Reports` — the value used when nothing is configured.
     static var defaultRoot: URL {
@@ -127,6 +144,22 @@ enum WorkspaceRootStore {
         return subpath.isEmpty ? base : "\(base)/\(subpath)"
     }
 
+    /// Display path for a folder a profile's reports go to: under its workspace it reads as
+    /// `displayPath(profile:subpath:)` does, elsewhere (`output.output_dir` on a shared folder)
+    /// it is the folder's own path with `~` for the home folder.
+    static func displayPath(of folder: URL, profile: String) -> String {
+        let path = folder.standardizedFileURL.path
+        if let workspace = ProfileService.workspaceURL(for: profile)?
+            .resolvingSymlinksInPath().standardizedFileURL.path {
+            if path == workspace { return displayPath(profile: profile) }
+            if path.hasPrefix(workspace + "/") {
+                return displayPath(profile: profile,
+                                   subpath: String(path.dropFirst(workspace.count + 1)))
+            }
+        }
+        return (path as NSString).abbreviatingWithTildeInPath
+    }
+
     /// True when the operator has moved the root off its default.
     static func isCustomised(defaults: UserDefaults = .standard) -> Bool {
         guard let stored = defaults.string(forKey: defaultsKey), !stored.isEmpty else {
@@ -145,7 +178,9 @@ enum WorkspaceRootStore {
         // at a system directory or a credential store. The CloudStorage
         // carve-out in isSensitiveAbsolutePath is what lets a provider mount
         // under ~/Library/CloudStorage through.
-        if WorkspacePaths.isSensitiveAbsolutePath(resolved) { return .sensitiveLocation }
+        if WorkspacePaths.isSensitiveAbsolutePath(resolved, workspaceRoot: true) {
+            return .sensitiveLocation
+        }
 
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: resolved.path, isDirectory: &isDirectory) else {

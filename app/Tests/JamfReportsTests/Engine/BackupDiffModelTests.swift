@@ -360,3 +360,42 @@ final class BackupDiffModelTests: XCTestCase {
         XCTAssertTrue(text.contains("Excel"))
     }
 }
+
+// MARK: - Field labels for variant rows
+
+extension BackupDiffModelTests {
+
+    /// "333; 667" could not be told apart without knowing which field each value was for.
+    func testVariantPairsAreLabelledOnlyWhenTheCardTouchedSeveralFields() {
+        let licenses = BackupDiffModel.Change(path: "used_vpp_licenses", old: "660", new: "667")
+        let replaced = BackupDiffModel.Change(path: "", old: "a", new: "b")
+
+        XCTAssertNil(BackupDiffModel.fieldLabel(for: licenses, among: ["used_vpp_licenses"]))
+        XCTAssertEqual(
+            BackupDiffModel.fieldLabel(
+                for: licenses, among: ["remaining_vpp_licenses", "used_vpp_licenses"]),
+            "used_vpp_licenses")
+        XCTAssertEqual(BackupDiffModel.fieldLabel(for: replaced, among: ["x", "y"]), "(value)")
+    }
+
+    /// Both sides survive grouping, so the view can show before → after for a variant.
+    func testVariantChangesKeepBothSides() throws {
+        let rows = [
+            ("modified", "version", "App A", #"{"version":"5.3"}"#, #"{"version":"5.4"}"#),
+            ("modified", "version", "App B", #"{"version":"12.3"}"#, #"{"version":"12.4"}"#),
+        ].map { entry in
+            [
+                "change": entry.0, "field": entry.1, "name": entry.2,
+                "old_value": entry.3, "new_value": entry.4, "resource": "mac-apps",
+            ]
+        }
+        let data = try JSONSerialization.data(withJSONObject: rows)
+        let groups = BackupDiffModel.group(try XCTUnwrap(BackupDiffModel.parse(data)))
+
+        let variants = try XCTUnwrap(groups.first?.variants)
+        XCTAssertEqual(variants.count, 2)
+        XCTAssertEqual(
+            Set(variants.flatMap(\.changes).map { "\($0.old ?? "-")>\($0.new ?? "-")" }),
+            ["5.3>5.4", "12.3>12.4"])
+    }
+}

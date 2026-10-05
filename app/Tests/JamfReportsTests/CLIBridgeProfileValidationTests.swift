@@ -144,20 +144,6 @@ final class CLIBridgeProfileValidationTests: XCTestCase {
         }
     }
 
-    func test_runNow_rejectsInvalidProfile() async {
-        let bridge = CLIBridge()
-        for profile in invalidProfiles {
-            do {
-                _ = try await bridge.runNow(profile: profile, mode: .jamfCLIOnly) { _ in }
-                XCTFail("runNow must throw for profile: '\(profile)'")
-            } catch let e as CLIBridgeError {
-                XCTAssertEqual(e, .invalidProfile(profile), "runNow must throw .invalidProfile for: '\(profile)'")
-            } catch {
-                XCTFail("Unexpected error type for profile \(profile): \(error)")
-            }
-        }
-    }
-
     // MARK: - B-03: device identifier reaching argv as a bare positional
 
     /// The identifier is fleet data — a device's own name or serial out of the

@@ -4,6 +4,7 @@ import Charts
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
@@ -358,6 +359,7 @@ struct OverviewView: View {
             TrendStore.computeSnapshot(profile: profile)
         }.value
         trendStore.apply(snapshot, profile: profile, range: range, generation: generation)
+        await trendStore.backfillAgentCoverage(profile: profile)
     }
 
     /// First-load overlay: shown only while the initial scan runs with no cached
@@ -585,10 +587,7 @@ struct OverviewView: View {
         }
 
         let profile = workspace.profile
-        guard workspace.setRunInProgress(for: profile) else {
-            workspace.toast = Toast(message: "Another run is already in progress for profile '\(profile)' — skipped", style: .danger)
-            return
-        }
+        guard workspace.beginReportRun(for: profile) else { return }
 
         isRunning = true
         defer {
@@ -597,11 +596,7 @@ struct OverviewView: View {
         }
 
         let freshnessDecision = await Task.detached(priority: .utility) {
-            guard ProfileService.isValid(profile),
-                  let dataDir = try? WorkspacePaths.dataDir(for: profile) else {
-                return SnapshotFreshness.Decision.noSnapshots
-            }
-            return SnapshotFreshness.evaluate(dataDir: dataDir)
+            SnapshotFreshness.evaluate(profile: profile)
         }.value
 
         let shouldSkipCollect: Bool
@@ -640,6 +635,14 @@ struct OverviewView: View {
                 }
             }
 
+            // F3: GUI-only AI executive narrative, time-boxed (nil = section omitted). Both
+            // branches ask the same way; the collect branch asks after its collect, so the
+            // paragraph describes the snapshots the report is built from.
+            let makeNarrative: () async -> String? = {
+                if workspace.demoMode { return nil }
+                return await ReportNarrative.makeForGUIGenerate(profile: profile)
+            }
+
             let exit: Int32
             if shouldSkipCollect {
                 // Emit a durable-intent message through the live log channel so the
@@ -656,19 +659,26 @@ struct OverviewView: View {
                 await MainActor.run { workspace.globalStatus = skipMessage }
                 AppLogger.cli.info("\(skipMessage, privacy: .public)")
 
-                // F3: GUI-only AI executive narrative, time-boxed (nil = section omitted).
-                let narrative = workspace.demoMode ? nil : await ReportNarrative.makeForGUIGenerate(profile: profile)
-                exit = try await bridge.generate(profile: profile, csvPath: nil, aiNarrative: narrative) { [weak workspace] line in
-                    Task { @MainActor in
-                        guard let workspace, self.isRunning else { return }
-                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                            self.generatedHashes[parsed.filename] = parsed.hash
+                // The report is built from snapshots a collect would replace, so it holds
+                // the lock from the narrative on, as `collectThenGenerate` does.
+                exit = try await CLIBridge.holdingGenerate {
+                    let narrative = await makeNarrative()
+                    return try await bridge.generate(
+                        profile: profile, csvPath: nil, aiNarrative: narrative
+                    ) { [weak workspace] line in
+                        Task { @MainActor in
+                            guard let workspace, self.isRunning else { return }
+                            if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                                self.generatedHashes[parsed.filename] = parsed.hash
+                            }
+                            workspace.globalStatus = line.text
                         }
-                        workspace.globalStatus = line.text
                     }
                 }
             } else {
-                exit = try await bridge.collectThenGenerate(profile: profile, csvPath: nil) { [weak workspace] line in
+                exit = try await bridge.collectThenGenerate(
+                    profile: profile, csvPath: nil, narrative: makeNarrative
+                ) { [weak workspace] line in
                     Task { @MainActor in
                         guard let workspace, self.isRunning else { return }
                         // PR-15: capture T-13 SHA-256 fingerprints from the live log
@@ -704,17 +714,29 @@ struct OverviewView: View {
             }
         } catch {
             workspace.globalStatus = nil
-            AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
-            workspace.toast = Toast(message: "Generate failed — \(error.localizedDescription)", style: .danger)
+            // The bridge logs a refusal itself, as a notice.
+            if !CLIBridgeError.isCollectRefusal(error) {
+                AppLogger.cli.error("collectThenGenerate failed: \(error, privacy: .private)")
+            }
+            workspace.toast = Self.generateFailureToast(error)
             generatedHashes.removeAll()
         }
+    }
+
+    /// A scheduled run holding the tick lock, or another collect running, is a refusal, shown
+    /// as information.
+    nonisolated static func generateFailureToast(_ error: Error) -> Toast {
+        WorkspaceStore.collectFailureToast(error, operation: "Generate")
     }
 
     /// Format the first artifact's 12-char short fingerprint for the toast.
     /// Empty when no `[ok] sha256:` lines were captured (e.g., legacy engine
     /// path or an engine that doesn't emit the T-13 sentinel).
+    /// The workbook's fingerprint when there is one: with `html.with_workbook` on, the HTML
+    /// report's is in the dictionary too, and `first` would pick either.
     private func firstFingerprintSummary() -> String {
-        guard let first = generatedHashes.first else { return "" }
+        let workbook = generatedHashes.first { $0.key.hasSuffix(".xlsx") }
+        guard let first = workbook ?? generatedHashes.first else { return "" }
         let short = String(first.value.prefix(12))
         return "sha256: \(short)…"
     }
@@ -726,7 +748,7 @@ struct OverviewView: View {
     private var renderedSections: [OverviewSection] {
         workspace.overviewLayout.visible.filter { section in
             switch section {
-            case .aiInsight: return !workspace.demoMode && ModelAvailability.platformSupported
+            case .aiInsight: return AIInsightCard.isOffered(demoMode: workspace.demoMode)
             case .workspaceStatus: return !workspace.demoMode
             default: return true
             }
@@ -786,8 +808,16 @@ struct OverviewView: View {
     /// Why a section has nothing to show on this profile; nil when it has.
     /// Demo mode always has content.
     private func unavailableReason(_ section: OverviewSection) -> OverviewUnavailable? {
-        if section == .scoreCards, workspace.selectedScoreCards.isEmpty {
-            return OverviewUnavailable(reason: "No score cards are selected.")
+        if section == .scoreCards {
+            if workspace.selectedScoreCards.isEmpty {
+                return OverviewUnavailable(reason: "No score cards are selected.")
+            }
+            if offeredScoreCards.isEmpty {
+                return OverviewUnavailable(
+                    reason: "Every selected score card is a control the security policy "
+                        + "does not count. Its levels are on Config › Scoring.",
+                    remedy: .config)
+            }
         }
         guard !workspace.demoMode else { return nil }
         switch section {
@@ -876,17 +906,23 @@ struct OverviewView: View {
         return "\(workspace.profile)|\(workspace.demoMode)|\(sections)"
     }
 
-    /// Reads the data-driven sections off the main thread, like the trend scan.
+    /// Reads the data-driven sections off the main thread, in the calling task:
+    /// `.task(id:)` cancels a read whose profile or sections went out of date.
     private func loadLiveSectionsOffMain() async {
         guard !workspace.demoMode else { return }
         let profile = workspace.profile
         let sections = visibleLiveSections
-        let fleet = overviewFleetCount
-        let data = await Task.detached(priority: .userInitiated) {
-            OverviewLiveDataLoader.load(profile: profile, sections: sections, fleetCount: fleet)
-        }.value
-        // A profile switch mid-read must not paint the previous tenant's data.
-        guard profile == workspace.profile, !workspace.demoMode else { return }
+        let data: OverviewLiveData
+        do {
+            data = try await OverviewLiveDataLoader.load(profile: profile, sections: sections)
+        } catch {
+            // Only cancellation is thrown; the read that replaced this one paints.
+            return
+        }
+        // A read started before a profile switch or a Customize change must not paint:
+        // the refresh paths run in plain Tasks that `.task(id:)` does not cancel.
+        guard !Task.isCancelled, profile == workspace.profile, !workspace.demoMode,
+              sections == visibleLiveSections else { return }
         live = data
         liveLoaded = true
     }
@@ -925,19 +961,17 @@ struct OverviewView: View {
         return workspace.complianceBenchmarkLabel ?? "Compliance Benchmark"
     }
 
-    /// Live coverage is re-expressed against the fleet count the cards print
-    /// ("installed / fleet") once the trend summaries have loaded.
+    /// The Macs the failing-rules card counted: the demo fleet, or live, the
+    /// Macs whose results it read.
+    private var failingRulesMacCount: Int {
+        workspace.demoMode ? DemoData.totalDevices : live.failingRulesReportingMacs
+    }
+
     private var agents: [SecurityAgent] {
         guard !workspace.demoMode else { return DemoData.securityAgents }
-        let fleet = overviewFleetCount
-        guard fleet > 0 else { return live.agents }
-        return live.agents.map { agent in
-            SecurityAgent(
-                name: agent.name, installed: agent.installed,
-                pct: SecurityAgentCoverage.percent(installed: agent.installed, fleet: fleet)
-                    ?? agent.pct,
-                column: agent.column, trend: agent.trend)
-        }
+        return OverviewLiveDataLoader.agents(
+            live.agents, overFleet: overviewFleetCount, edrAgentName: workspace.edrAgentName,
+            edrSeries: trendStore.values(metric: .edrAgent))
     }
 
     private var recentRows: [RecentDeviceRow] {
@@ -949,15 +983,19 @@ struct OverviewView: View {
     // MARK: - Sections
 
     /// v2.5 (macOS 27, opt-in): the daily digest as a plain-language insight.
-    /// `platformSupported` is a synchronous, config-free check, so a Mac that
-    /// cannot run it never lists or renders this section.
+    /// The card hides itself where `AIInsightCard.isOffered` is false and while
+    /// `ai.enabled` is off.
     private var aiInsightCard: some View {
-        AIInsightCard(
-            profile: workspace.profile,
-            current: trendStore.filteredSummaries.last,
-            previous: trendStore.filteredSummaries.count >= 2
-                ? FleetReportEmitter.priorSummary(trendStore.filteredSummaries, lookbackDays: 1)
-                : nil
+        let summaries = trendStore.filteredSummaries
+        return AIInsightCard(
+            title: "AI Fleet Insight",
+            idleText: "Turn today's fleet data into a plain-language summary using "
+                + "on-device intelligence.",
+            provenanceText: "AI-generated from the daily digest — verify against the tiles below.",
+            input: summaries.last.map { current in
+                .fleet(current: current, previous: summaries.count >= 2
+                    ? FleetReportEmitter.priorSummary(summaries, lookbackDays: 1) : nil)
+            }
         )
     }
 
@@ -1004,7 +1042,7 @@ struct OverviewView: View {
     /// tops out of line.
     private var statRow: some View {
         EqualHeightTileGrid(minTileWidth: 220) {
-            ForEach(workspace.selectedScoreCards) { metric in
+            ForEach(offeredScoreCards) { metric in
                 let hasData = !metricValues(metric).isEmpty
                 let isDanger = hasData && scoreCardTrend(for: metric) == .down && metric != .stale
                 Button {
@@ -1021,6 +1059,12 @@ struct OverviewView: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// The selection without the cards whose control the security policy does not
+    /// count. The stored selection is not edited, so a card returns with its control.
+    private var offeredScoreCards: [TrendSeries.Metric] {
+        workspace.selectedScoreCards.filter { workspace.isOffered($0) }
     }
 
     private func scoreCardTrend(for metric: TrendSeries.Metric) -> StatTile.Trend {
@@ -1060,7 +1104,10 @@ struct OverviewView: View {
         let lastValue = values.last
         let current = lastValue ?? 0
         let prev = values.count > 1 ? values[values.count - 2] : current
-        let diff = current - prev
+        // Two scores on different definitions (`securityScoreBasis`) have no change between them.
+        let comparable = metric != .securityScore || workspace.demoMode
+            || trendStore.latestSecurityScoresComparable
+        let diff = comparable ? current - prev : 0
 
         let valueStr: String = {
             guard let val = lastValue else { return "--" }
@@ -1073,6 +1120,7 @@ struct OverviewView: View {
 
         let deltaStr: String = {
             guard lastValue != nil, values.count >= 2 else { return "No Data" }
+            guard comparable else { return "Not comparable" }
             let absDiff = abs(diff)
             if metric.unit == "%" {
                 return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"
@@ -1101,19 +1149,12 @@ struct OverviewView: View {
         // range the operator picked does not change which day it lands on.
         // Naming the day is both shorter and true.
         //
-        // Patch compliance in the daily summary is the average of per-title
-        // percentages, while the Patch screen's figure is device-weighted; the
-        // caption keeps the two from reading as a contradiction (epic #207 C1).
         // A card with no value says so rather than showing a bare "--".
         let subText: String? = {
             guard lastValue != nil else { return "Not reported by this profile" }
             var parts: [String] = []
             if metric == .activeDevices {
-                let days = Int(workspace.configState.staleDeviceDays) ?? 30
-                parts.append("Checked in within \(days)d")
-            }
-            if metric == .patch {
-                parts.append("Avg per title")
+                parts.append(workspace.configState.staleRule.checkedInLabel(shortUnit: true))
             }
             if values.count >= 2, let comparisonDate {
                 parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
@@ -1121,11 +1162,12 @@ struct OverviewView: View {
             return parts.isEmpty ? nil : parts.joined(separator: " · ")
         }()
 
+        let title = metric.displayLabel(
+            benchmarkLabel: workspace.complianceBenchmarkLabel,
+            edrAgentName: workspace.edrAgentName
+        )
         return StatTile(
-            label: metric.displayLabel(
-                benchmarkLabel: workspace.complianceBenchmarkLabel,
-                edrAgentName: workspace.edrAgentName
-            ),
+            label: title,
             value: valueStr,
             sub: subText,
             delta: values.count >= 2 ? deltaStr : nil,
@@ -1135,15 +1177,25 @@ struct OverviewView: View {
             fillsHeight: true,
             // Two lines hold "Security Score (Weighted)" or "CrowdStrike Falcon
             // Installed" at 220 pt and the default text size; the row shares its
-            // tallest tile's height, so a wrapped title stays aligned.
-            labelLineLimit: 2
+            // tallest tile's height, so a wrapped title stays aligned. The compliance
+            // title is the operator's baseline label, often one long audit-plist file name
+            // with no break to wrap at; it takes one line so its figure stays level with
+            // its neighbours, and the tooltip carries the whole name.
+            labelLineLimit: Self.scoreCardLabelLineLimit(for: metric)
         )
+        .help(title)
         // The label can be an operator-configured string (compliance baseline
         // name, EDR agent name) with no length guarantee — in the field these
         // are sometimes a raw audit-plist filename — so past two lines it elides
         // rather than growing the row. The caption keeps to one line.
         .lineLimit(1)
         .truncationMode(.tail)
+    }
+
+    /// Lines a score card's title may take: two for the fixed titles, one for the compliance
+    /// card, whose title is whatever the operator named the baseline.
+    static func scoreCardLabelLineLimit(for metric: TrendSeries.Metric) -> Int {
+        metric == .compliance ? 1 : 2
     }
 
     // MARK: macOS distribution + Top failing rules
@@ -1206,7 +1258,7 @@ struct OverviewView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             SectionHeader(title: "Top Failing Rules")
                             Text(failingRulesSubtitle(
-                                baseline: failingRulesLabel, fleetCount: overviewFleetCount))
+                                baseline: failingRulesLabel, macsWithResults: failingRulesMacCount))
                                 .font(.caption)
                                 .foregroundStyle(Theme.Text.tertiary(contrast))
                         }
@@ -1266,6 +1318,14 @@ struct OverviewView: View {
         ))
     }
 
+    /// Lines a failing rule's ID may take. An ID is one unbroken token, so two lines split it
+    /// mid-word; at ordinary sizes it takes one and is cut in the middle (its tooltip has the
+    /// whole ID). At accessibility sizes it may wrap, as #118 let this card's labels reflow
+    /// rather than clip.
+    static func failingRuleLineLimit(for size: DynamicTypeSize) -> Int {
+        size.isAccessibilitySize ? 2 : 1
+    }
+
     private var failingRulesBars: some View {
         let rules = failingRules.prefix(6)
         let maxFails = rules.map(\.fails).max() ?? 1
@@ -1276,7 +1336,9 @@ struct OverviewView: View {
                         .font(Theme.Fonts.mono(11.5))
                         .foregroundStyle(Theme.Colors.fg2)
                         .frame(minWidth: 260, alignment: .leading)
-                        .lineLimit(2)
+                        .lineLimit(Self.failingRuleLineLimit(for: dynamicTypeSize))
+                        .truncationMode(.middle)
+                        .help(r.ruleID)
                     GeometryReader { geo in
                         let w = CGFloat(r.fails) / CGFloat(maxFails) * geo.size.width
                         ZStack(alignment: .leading) {
@@ -1490,7 +1552,10 @@ struct OverviewView: View {
         let dates = workspace.demoMode ? [] : trendStore.points(metric: metric).map(\.date)
         let current = values.last ?? 0
         let first = values.first ?? current
-        let previous = values.count > 1 ? values[values.count - 2] : current
+        let figures = MetricDetailFigures.make(
+            values: values,
+            value: { metricValueLabel($0, metric: metric) },
+            delta: { metricDeltaLabel($0, metric: metric) })
         // Same reasoning as the Overview tiles: name the day rather than imply
         // a fixed cadence. "Previous" alone gave no way to tell yesterday from
         // three weeks ago after a run of missed collects.
@@ -1500,23 +1565,29 @@ struct OverviewView: View {
         let firstLabel = dates.first.map(Self.comparisonDateFormatter.string(from:))
         return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
-                kicker: metric.displayLabel,
+                kicker: metricDetailTitle(metric),
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
-                title: metric.displayLabel,
-                subtitle: "\(values.count) summaries · \(workspace.profile)"
+                title: metricDetailTitle(metric),
+                subtitle: MetricDetailFigures.summaryCount(values.count)
+                    + " · \(workspace.profile)"
             )
-            HStack(spacing: 12) {
-                StatTile(label: "Current", value: metricValueLabel(current, metric: metric))
-                StatTile(label: "Previous", value: metricValueLabel(previous, metric: metric),
-                         sub: previousLabel)
-                StatTile(label: "Change", value: metricDeltaLabel(current - first, metric: metric),
-                         sub: firstLabel.map { "Since \($0)" } ?? "Since first snapshot")
+            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth; same fix as
+            // the security-agent drill-down: one height for the row.
+            EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
+                StatTile(label: "Current", value: figures.current, fillsHeight: true)
+                StatTile(label: "Previous", value: figures.previous, sub: previousLabel,
+                         fillsHeight: true)
+                StatTile(label: "Change", value: figures.change,
+                         sub: figures.hasChange
+                            ? firstLabel.map { "Since \($0)" } ?? "Since first snapshot"
+                            : nil,
+                         fillsHeight: true)
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeader(title: "Snapshot Values")
                     if values.isEmpty {
-                        Text("No trend summaries are available for this metric yet.")
+                        Text("No data yet: no trend summary has a value for this metric.")
                             .font(.footnote)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     } else {
@@ -1618,17 +1689,27 @@ struct OverviewView: View {
     }
 
     private func securityAgentDetail(_ agent: SecurityAgent) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let fleet = overviewFleetCount
+        return VStack(alignment: .leading, spacing: 16) {
             PageHeader(
                 kicker: agent.name,
                 breadcrumbs: [Breadcrumb(label: "Overview", action: { popDrillDown() })],
                 title: agent.name,
                 subtitle: "\(agent.installed) installed · mapped from \(agent.column)"
             )
-            HStack(spacing: 12) {
-                StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%")
-                StatTile(label: "Installed", value: "\(agent.installed)", sub: overviewFleetCount > 0 ? "of \(overviewFleetCount) tracked devices" : "tracked devices")
-                StatTile(label: "Trend", value: agent.trend.rawValue.capitalized)
+            // DRAFT — needs visual verification at PageScaffold.minSupportedWidth. An HStack
+            // left the tile without a caption shorter than its neighbour; the grid gives
+            // the row one height, three across at the minimum width (3 x 180 + 2 x 12).
+            EqualHeightTileGrid(minTileWidth: 180, spacing: 12) {
+                StatTile(label: "Coverage", value: "\(String(format: "%.1f", agent.pct))%",
+                         fillsHeight: true)
+                StatTile(label: "Installed", value: "\(agent.installed)",
+                         sub: fleet > 0 ? "of \(fleet) managed Macs" : "managed Macs",
+                         fillsHeight: true)
+                if let trend = agent.trend {
+                    StatTile(label: "Trend", value: trend.rawValue.capitalized,
+                             sub: "vs the previous snapshot", fillsHeight: true)
+                }
             }
             Card(padding: 18) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1716,8 +1797,10 @@ struct OverviewView: View {
                 staleMeasured: latest?.staleCount != nil
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
-            "Excludes devices stale beyond \(Int(workspace.configState.staleDeviceDays) ?? 30)d. " +
-            "Open Devices to inspect records contributing to this count."
+            "Excludes devices stale beyond \(workspace.configState.staleRule.days)d"
+            + (workspace.configState.staleRule.usesDefaultBasis
+                ? "" : " (\(workspace.configState.staleRule.basisPhrase))")
+            + ". Open Devices to inspect records contributing to this count."
         case .compliance:
             latest?.complianceIsProxy == true
                 ? "Control-gap proxy (FileVault/SIP/Firewall/Gatekeeper). Configure a Compliance EA for true mSCP banding."
@@ -1726,7 +1809,7 @@ struct OverviewView: View {
             "Open Devices to inspect FileVault state on individual Macs."
         case .osCurrent:
             "Open Devices to inspect macOS versions and filter inventory."
-        case .edrAgent:
+        case .edrAgent, .agent:
             "Open Devices or Config to review security-agent tracking."
         case .stale:
             "Open Devices to focus on stale inventory records."
@@ -1738,6 +1821,8 @@ struct OverviewView: View {
             "Per-baseline mSCP compliance band trends over time. Open Compliance Posture for current distribution."
         case .managedDevices:
             "Historical computers-vs-mobile split. Open Devices or Mobile Fleet to inspect current records."
+        case .sip, .firewall, .gatekeeper:
+            "Open Security Posture for the per-control breakdown."
         }
         return Text(text)
             .font(.footnote)
@@ -1752,11 +1837,20 @@ struct OverviewView: View {
             return [.devices]
         case .compliance, .securityScore, .mscpBandTrend:
             return [.securityPosture, .compliancePosture]
-        case .edrAgent:
+        case .edrAgent, .agent:
             return [.devices, .config]
         case .managedDevices:
             return [.devices, .mobileFleet]
+        case .sip, .firewall, .gatekeeper:
+            return [.securityPosture, .devices]
         }
+    }
+
+    /// The drill-down's title: the tenant's own label, as on the card it was opened from.
+    private func metricDetailTitle(_ metric: TrendSeries.Metric) -> String {
+        metric.displayLabel(
+            benchmarkLabel: workspace.complianceBenchmarkLabel,
+            edrAgentName: workspace.edrAgentName)
     }
 
     private func metricValues(_ metric: TrendSeries.Metric) -> [Double] {
@@ -1994,7 +2088,8 @@ struct AgentCardView: View {
         let barColor: Color = pct > 90 ? Theme.Colors.ok :
                               pct > 80 ? Theme.Colors.gold : Theme.Colors.warn
         let trackColor: Color = isAtRisk ? Theme.Colors.warn.opacity(0.15) : Color.white.opacity(0.05)
-        let gap = max(0, fleetCount - agent.installed)
+        let notInstalled = agentNotInstalledLabel(
+            installed: agent.installed, fleetCount: fleetCount)
 
         return VStack(alignment: .leading, spacing: 4) {
             Text(agent.name).font(.footnote.weight(.semibold))
@@ -2020,8 +2115,8 @@ struct AgentCardView: View {
             }
             .padding(.top, 4)
             .accessibilityHidden(true)
-            if isAtRisk {
-                Mono(text: "\(gap) not installed", size: 10, color: Theme.Text.tertiary(contrast))
+            if isAtRisk, let notInstalled {
+                Mono(text: notInstalled, size: 10, color: Theme.Text.tertiary(contrast))
                     .padding(.top, 2)
             }
         }
@@ -2054,13 +2149,14 @@ struct AgentCardView: View {
 // take the fleet count as an explicit parameter — a future hardcode
 // would fail `OverviewViewFleetCountTests`.
 
-/// Inline label rendered as "<installed> / <fleetCount>" beside an
-/// agent's coverage percentage. `fleetCount <= 0` signals "fleet total
-/// unknown" (e.g. live mode before any trend snapshot lands) — render
-/// the count alone rather than nonsensical "47 / 0".
+/// Inline label rendered as "<installed> of <fleetCount> Macs" beside an
+/// agent's coverage percentage, so the card says what the share is of: every
+/// Mac, as the daily summary counts it. `fleetCount <= 0` signals "fleet total
+/// unknown" (e.g. live mode before any trend snapshot lands) — render the
+/// count alone rather than nonsensical "47 of 0 Macs".
 func agentInstalledOverTotalLabel(installed: Int, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return "\(installed)" }
-    return "\(installed) / \(fleetCount)"
+    guard fleetCount > 0 else { return "\(installed) Macs" }
+    return "\(installed) of \(fleetCount) Macs"
 }
 
 /// Composite accessibility label announcing coverage and gap.
@@ -2075,17 +2171,29 @@ func agentCardAccessibilityLabel(agent: SecurityAgent, fleetCount: Int) -> Strin
         parts.append("\(agent.installed) installed")
     }
     if agent.trend == .up { parts.append("trending up") }
-    let gap = max(0, fleetCount - agent.installed)
-    if fleetCount > 0, gap > 0 { parts.append("\(gap) not installed") }
+    if let notInstalled = agentNotInstalledLabel(
+        installed: agent.installed, fleetCount: fleetCount) {
+        parts.append(notInstalled)
+    }
     return parts.joined(separator: ", ")
 }
 
-/// "Top Failing Rules" card subtitle — "<baseline> · across <N> active devices".
-/// `fleetCount <= 0` falls back to the baseline alone rather than
-/// "across 0 active devices".
-func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
-    guard fleetCount > 0 else { return baseline }
-    return "\(baseline) · across \(fleetCount) active devices"
+/// "<N> not installed" under an at-risk agent card; nil when the denominator is
+/// unknown or nothing is missing, where "0 not installed" read as a finding.
+func agentNotInstalledLabel(installed: Int, fleetCount: Int) -> String? {
+    let gap = fleetCount - installed
+    guard fleetCount > 0, gap > 0 else { return nil }
+    return "\(gap) not installed"
+}
+
+/// "Top Failing Rules" card subtitle — "<baseline> · across <N> Macs with results".
+/// N is the Macs whose results the card read, not the managed or the active count, so it
+/// differs from the other tiles. `macsWithResults <= 0` falls back to the baseline alone
+/// rather than "across 0 Macs with results".
+func failingRulesSubtitle(baseline: String, macsWithResults: Int) -> String {
+    guard macsWithResults > 0 else { return baseline }
+    let macs = "\(macsWithResults) Mac\(macsWithResults == 1 ? "" : "s")"
+    return "\(baseline) · across \(macs) with results"
 }
 
 /// Pure "set up a schedule" coverage rule for `reloadChecklist`. A profile is
@@ -2093,4 +2201,39 @@ func failingRulesSubtitle(baseline: String, fleetCount: Int) -> String {
 /// profiles dynamically) as long as it hasn't been excluded.
 func scheduleCovered(hasAgent: Bool, policyIsManaged: Bool, excluded: Bool) -> Bool {
     hasAgent || (policyIsManaged && !excluded)
+}
+
+
+/// The Current, Previous and Change tiles of a metric drill-down. A value that does not exist
+/// is not shown as 0: with no values every tile says so, and with one there is a current
+/// figure but no previous one and no change.
+struct MetricDetailFigures: Equatable {
+    let current: String
+    let previous: String
+    let change: String
+    /// Whether `change` is a figure rather than a dash.
+    let hasChange: Bool
+
+    static let noData = "No data yet"
+
+    static func make(
+        values: [Double], value: (Double) -> String, delta: (Double) -> String
+    ) -> MetricDetailFigures {
+        guard let latest = values.last, let first = values.first else {
+            return MetricDetailFigures(
+                current: noData, previous: noData, change: "—", hasChange: false)
+        }
+        guard values.count > 1 else {
+            return MetricDetailFigures(
+                current: value(latest), previous: "—", change: "—", hasChange: false)
+        }
+        return MetricDetailFigures(
+            current: value(latest), previous: value(values[values.count - 2]),
+            change: delta(latest - first), hasChange: true)
+    }
+
+    /// "1 summary", "0 summaries".
+    static func summaryCount(_ count: Int) -> String {
+        count == 1 ? "1 summary" : "\(count) summaries"
+    }
 }

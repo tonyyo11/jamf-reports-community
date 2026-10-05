@@ -111,4 +111,16 @@ final class ComplianceBandingServiceTests: XCTestCase {
         XCTAssertEqual(fourteenByLabel["Low"], 1)
         XCTAssertEqual(fourteenByLabel["High"], 1)
     }
+
+    /// One name per major for the Per-OS Breakdown and the posture insight, in the project's
+    /// `macOS <Name> <major>` form; a major without a name stays bare.
+    func testOSLabelNamesEachMajor() {
+        XCTAssertEqual(ComplianceBandingService.osLabel(12), "macOS Monterey 12")
+        XCTAssertEqual(ComplianceBandingService.osLabel(13), "macOS Ventura 13")
+        XCTAssertEqual(ComplianceBandingService.osLabel(14), "macOS Sonoma 14")
+        XCTAssertEqual(ComplianceBandingService.osLabel(15), "macOS Sequoia 15")
+        XCTAssertEqual(ComplianceBandingService.osLabel(26), "macOS Tahoe 26")
+        XCTAssertEqual(ComplianceBandingService.osLabel(27), "macOS Golden Gate 27")
+        XCTAssertEqual(ComplianceBandingService.osLabel(11), "macOS 11")
+    }
 }

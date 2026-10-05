@@ -67,10 +67,11 @@ private struct GuideRow: Identifiable {
             id: "templates",
             icon: "doc.badge.plus",
             title: "Report templates",
-            description: "The app generates the Full Instance report, with every sheet. The "
-                + "command-line tool generates the smaller Executive, Operational, Compliance, "
-                + "Asset, Security Posture and School templates; install it from Settings.",
-            destination: .settings
+            description: "Generate\u{2026} on the Generated Reports screen makes the Executive, "
+                + "Operational, Compliance, Asset, Security Posture or School template, or "
+                + "your own choice of sheets. The Overview's Generate makes the Full Instance "
+                + "report, with every sheet; the command-line tool takes the same templates.",
+            destination: .reports
         ),
         GuideRow(
             id: "charts",

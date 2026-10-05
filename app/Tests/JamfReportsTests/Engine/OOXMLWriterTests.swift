@@ -64,6 +64,14 @@ final class OOXMLWriterTests: XCTestCase {
         XCTAssertLessThanOrEqual(s.count, 32_000)
     }
 
+    /// Excel's cell limit counts UTF-16 units, so 32,000 emoji (two units each) are over it.
+    func testSafeCapsACellAtTheUTF16LimitWithoutSplittingAPair() {
+        let emoji = String(repeating: "\u{1F600}", count: 20_000)
+        guard case .string(let s) = CellValue.safe(emoji) else { XCTFail(); return }
+        XCTAssertLessThanOrEqual(s.utf16.count, 32_000)
+        XCTAssertEqual(s.unicodeScalars.count, 16_000, "cut on a scalar, not between a pair")
+    }
+
     // MARK: - Workbook write to URL
 
     func testWorkbookWritesValidZIPFile() throws {
@@ -134,5 +142,40 @@ final class OOXMLWriterTests: XCTestCase {
                           "Names colliding only past the 31-char limit must not collide")
         XCTAssertLessThanOrEqual(ws1.name.count, 31)
         XCTAssertLessThanOrEqual(ws2.name.count, 31)
+    }
+
+    /// Excel compares sheet names without regard to case, so "Cover" and "cover" collide.
+    func testAddSheetUniquifiesNamesThatDifferOnlyInCase() {
+        let workbook = Workbook()
+        let ws1 = workbook.addSheet("Cover")
+        let ws2 = workbook.addSheet("cover")
+        let ws3 = workbook.addSheet("COVER")
+        XCTAssertEqual(ws1.name, "Cover")
+        XCTAssertNotEqual(ws1.name.lowercased(), ws2.name.lowercased())
+        XCTAssertEqual(
+            Set([ws1.name, ws2.name, ws3.name].map { $0.lowercased() }).count, 3)
+    }
+
+    /// Excel counts a sheet name in UTF-16 units: 31 emoji are 62 units.
+    func testAddSheetCutsANameAtThirtyOneUTF16Units() {
+        let workbook = Workbook()
+        let ws = workbook.addSheet(String(repeating: "\u{1F600}", count: 31))
+        XCTAssertLessThanOrEqual(ws.name.utf16.count, 31)
+        XCTAssertEqual(ws.name, String(repeating: "\u{1F600}", count: 15),
+                       "a surrogate pair is kept whole or dropped")
+        let family = workbook.addSheet(
+            String(repeating: "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}", count: 4))
+        XCTAssertLessThanOrEqual(family.name.utf16.count, 31)
+        XCTAssertEqual(family.name.count, 3, "a joined sequence is kept whole or dropped")
+    }
+
+    /// The numbered suffix of a repeated name also stays inside 31 UTF-16 units.
+    func testAddSheetKeepsASuffixedNameInsideThirtyOneUnits() {
+        let workbook = Workbook()
+        let name = String(repeating: "\u{1F600}", count: 31)
+        _ = workbook.addSheet(name)
+        let second = workbook.addSheet(name)
+        XCTAssertLessThanOrEqual(second.name.utf16.count, 31)
+        XCTAssertTrue(second.name.hasSuffix("_2"), second.name)
     }
 }

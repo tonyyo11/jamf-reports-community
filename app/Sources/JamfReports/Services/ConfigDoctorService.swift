@@ -84,8 +84,16 @@ enum ConfigDoctorService {
             csvFamily: csvFamily,
             eaCoverageNames: eaNames
         )
+        rows += unknownKeyRows(profile: profile, workspaceRoot: workspaceRoot)
+        rows += readerRows(profile: profile, workspaceRoot: workspaceRoot)
         if let config, parseError == nil {
+            rows += valueRows(profile: profile, config: config, workspaceRoot: workspaceRoot)
             rows += accuracyRows(config: config, profile: profile)
+            rows += securityPolicyRows(profile: profile, config: config)
+            rows += csvHardwareColumnRows(
+                config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
+            rows += csvInventoryColumnRows(
+                config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
@@ -506,7 +514,7 @@ enum ConfigDoctorService {
 
     /// Validates the `alerts:` block. Only emitted when the block is present at
     /// all (an unopted-in workspace gets no rows). Each malformed rule (unknown
-    /// metric/when, absent/non-finite/negative threshold — the same criteria as
+    /// metric/when, absent/non-finite/negative/oversized threshold — the same criteria as
     /// `AlertsConfig.resolvedRules`) gets its own error row; an enabled-but-
     /// undeliverable configuration warns; a healthy configuration confirms.
     private static func alertsRows(_ config: ReportConfig) -> [DoctorRow] {
@@ -564,10 +572,361 @@ enum ConfigDoctorService {
         guard let threshold = rule.threshold else {
             return "no threshold set"
         }
+        return thresholdFailure(threshold)
+    }
+
+    private static func thresholdFailure(_ threshold: Double) -> String? {
         guard threshold.isFinite, threshold >= 0 else {
             return "threshold \(threshold) is not a valid non-negative number"
         }
+        guard threshold <= AlertRule.maxThreshold else {
+            return "threshold \(threshold) is above \(Int(AlertRule.maxThreshold)), "
+                + "the largest the app accepts"
+        }
         return nil
+    }
+
+    // MARK: - Unknown keys
+
+    private static let unknownKeyCap = 20
+
+    /// Reads the profile's config.yaml as the decoder sees it, whether or not it decodes: a
+    /// misspelled required key is the likeliest reason it does not. Nothing for a file that is
+    /// missing or is not YAML.
+    static func unknownKeyRows(profile: String, workspaceRoot: URL? = nil) -> [DoctorRow] {
+        guard let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot),
+              let text = try? String(contentsOf: url, encoding: .utf8),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
+        else { return [] }
+        return unknownKeyRows(ConfigSchema.unknownKeys(in: root))
+    }
+
+    /// One warning per unknown key, titled with its key path. The value is never shown: it can
+    /// be a webhook URL under a misspelled key. A key the app once wrote and no longer reads
+    /// gets a suggestion of its own instead (`retiredKeyRows`), so it is reported once.
+    static func unknownKeyRows(_ allKeys: [UnknownKey]) -> [DoctorRow] {
+        let keys = allKeys.filter { $0.retiredSince == nil }
+        var rows = keys.prefix(unknownKeyCap).enumerated().map { index, key in
+            DoctorRow(
+                id: "config.unknown_key.\(index)", severity: .warn, title: key.keyPath,
+                detail: "The app does not read this key."
+                    + (key.suggestion.map { " Did you mean \"\($0)\"?" } ?? ""),
+                hint: "Remove it from config.yaml, or check its spelling: keys are case-sensitive."
+            )
+        }
+        if keys.count > unknownKeyCap {
+            let more = keys.count - unknownKeyCap
+            rows.append(DoctorRow(
+                id: "config.unknown_key.more", severity: .warn,
+                title: "More keys the app does not read",
+                detail: "\(more) more key\(more == 1 ? "" : "s") in config.yaml that the app "
+                    + "does not read.",
+                hint: "Fix the keys above, then run the check again to see the rest."
+            ))
+        }
+        return rows + retiredKeyRows(allKeys.compactMap { key in
+            key.retiredSince.map { (key.keyPath, $0) }
+        })
+    }
+
+    /// One suggestion per retired key (path, release): nothing is broken, the app just stopped
+    /// reading it, and only `.fail` rows reach the run log. The hint says what removes it.
+    private static func retiredKeyRows(_ keys: [(path: String, since: String)]) -> [DoctorRow] {
+        keys.enumerated().map { index, key in
+            let block = key.path.components(separatedBy: ".").first ?? ""
+            let hint = ConfigService.retiredKeyRemover(inBlock: block)
+                .map { "The next \($0) removes it." } ?? "Delete the line from config.yaml."
+            return DoctorRow(
+                id: "config.retired_key.\(index)", severity: .suggest, title: key.path,
+                detail: "No longer read since \(key.since).", hint: hint)
+        }
+    }
+
+    // MARK: - What the reader did not take as written
+
+    /// Reads the profile's config.yaml whether or not it decodes: a skipped line can be why it
+    /// does not. Nothing for a file that is missing or is not YAML.
+    static func readerRows(profile: String, workspaceRoot: URL? = nil) -> [DoctorRow] {
+        guard let url = try? ConfigService.configURL(for: profile, workspaceRoot: workspaceRoot),
+              let text = try? String(contentsOf: url, encoding: .utf8),
+              let document = try? YAMLCodec.decode(text),
+              let root = try? ConfigLoader.rawMapping(fromYAML: text)
+        else { return [] }
+        return parseNoteRows(document.parseNotes) + fileReadBooleanRows(root)
+    }
+
+    private static let parseNoteCap = 20
+
+    /// One warning per line the reader did not take as written, titled with its line number.
+    static func parseNoteRows(_ notes: [YAMLCodec.ParseNote]) -> [DoctorRow] {
+        var rows = notes.prefix(parseNoteCap).enumerated().map { index, note in
+            DoctorRow(
+                id: "config.parse_note.\(index)", severity: .warn,
+                title: "config.yaml line \(note.line)",
+                detail: note.detail.prefix(1).uppercased() + note.detail.dropFirst() + ".",
+                hint: parseNoteHint(note.kind)
+            )
+        }
+        if notes.count > parseNoteCap {
+            let more = notes.count - parseNoteCap
+            rows.append(DoctorRow(
+                id: "config.parse_note.more", severity: .warn,
+                title: "More lines the app did not read as written",
+                detail: more == 1
+                    ? "1 more line in config.yaml was not read as written."
+                    : "\(more) more lines in config.yaml were not read as written.",
+                hint: "Fix the lines above, then run the check again to see the rest."
+            ))
+        }
+        return rows
+    }
+
+    private static func parseNoteHint(_ kind: YAMLCodec.ParseNote.Kind) -> String {
+        switch kind {
+        case .indentation: "Line it up with the other keys of its block."
+        case .noKey: "Write it as key: value, or remove it."
+        case .tab: "Replace the tab with spaces."
+        case .duplicateKey: "Remove one of the two lines."
+        case .blockScalar: "Put the value on the same line, in quotes."
+        case .orphanItems: "Put the list under the key it belongs to, or remove it."
+        case .unclosedFlow: "Close it on the same line, or put one item per line under the key."
+        case .secondDocument: "Remove the --- line; config.yaml holds one document."
+        case .nestingTooDeep: "Flatten it; no setting is nested that deep."
+        }
+    }
+
+    /// true/false keys the decoder does not model, and `html.with_workbook`, which it reads
+    /// as off for any other value instead of failing the decode.
+    /// `output.allow_absolute_paths` also takes yes, on and 1 (`WorkspacePaths.optIn`);
+    /// `html.track_history` and `html.with_workbook` take only true and false.
+    static func fileReadBooleanRows(_ root: [String: Any]) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+        if let value = typedNonBoolean(at: ["output", "allow_absolute_paths"], in: root) {
+            switch WorkspacePaths.optIn(value) {
+            case true?:
+                rows.append(DoctorRow(
+                    id: "config.value.output.allow_absolute_paths", severity: .suggest,
+                    title: "output.allow_absolute_paths",
+                    detail: "\(typedText(value)) opts in, as true does.",
+                    hint: "Write true: the rest of config.yaml reads only true and false."))
+            case false?: break
+            case nil: rows.append(readsAsFalseRow("output.allow_absolute_paths", value))
+            }
+        }
+        for key in ["track_history", "with_workbook"] {
+            if let value = typedNonBoolean(at: ["html", key], in: root) {
+                rows.append(readsAsFalseRow("html.\(key)", value))
+            }
+        }
+        return rows
+    }
+
+    /// The value at `path` unless it is absent, null, true or false.
+    private static func typedNonBoolean(at path: [String], in root: [String: Any]) -> Any? {
+        guard let value = ConfigLoader.rawValue(at: path, in: root),
+              !(value is NSNull), !(value is Bool) else { return nil }
+        return value
+    }
+
+    private static func typedText(_ value: Any) -> String {
+        ((value as? String) ?? (value as? Int).map { String($0) })
+            .map { "\"\(ConfigSchema.displayText($0))\"" } ?? "This value"
+    }
+
+    private static func readsAsFalseRow(_ keyPath: String, _ value: Any) -> DoctorRow {
+        DoctorRow(
+            id: "config.value.\(keyPath)", severity: .warn, title: keyPath,
+            detail: "\(typedText(value)) is not true or false, so the app reads it as false.",
+            hint: "Write true or false."
+        )
+    }
+
+    // MARK: - Security policy (hand-typed values)
+
+    /// Reads what the workspace's `security_policy:` block says that the app did not use as
+    /// written. Warnings only: a typo must not turn a healthy scheduled run red.
+    static func securityPolicyRows(profile: String, config: ReportConfig) -> [DoctorRow] {
+        let policy = config.resolvedSecurityPolicy
+        let hardware = (try? WorkspacePaths.dataDir(for: profile))
+            .map { HardwareEncryption.index(dataDir: $0, for: policy) } ?? [:]
+        return securityPolicyRows(
+            issues: SecurityPolicyConfigLoader.issues(profile: profile),
+            policy: policy, hardware: hardware)
+            + edrAgentRows(policy: policy, agents: config.securityAgents ?? [])
+            + scoreFactorRows(config: config)
+    }
+
+    /// Listed score factors the score cannot count: an agent no `security_agents` entry names,
+    /// a baseline `compliance.baselines` does not have (or mSCP with no baseline), and an empty
+    /// list, which scores nothing. A control set to `ignore` is left out by the policy, not
+    /// by a mistake, so it is not named.
+    static func scoreFactorRows(config: ReportConfig) -> [DoctorRow] {
+        let policy = config.resolvedSecurityPolicy
+        guard let listed = policy.scoreFactors else { return [] }
+        let path = SecurityPolicyConfigLoader.factorsPath
+        guard !listed.isEmpty else {
+            return [DoctorRow(
+                id: "security_policy.score_factors.empty", severity: .warn, title: path,
+                detail: "The list is empty, so the security score counts nothing.",
+                hint: "Add factors in Config > Scoring, or remove the key to use the defaults.")]
+        }
+        let kept = Set(config.resolvedScoreFactors.map(\.key))
+        return listed.filter { $0.kind.control == nil && !kept.contains($0.key) }
+            .enumerated().map { index, factor in
+                let name = ConfigSchema.displayText(factor.target ?? "")
+                let detail = factor.kind == .agent
+                    ? "\"\(name)\" matches no security_agents entry, so it is not scored."
+                    : factor.target == nil
+                        ? "No compliance.baselines entry is configured, so mSCP is not scored."
+                        : "\"\(name)\" matches no compliance.baselines entry, so it is not scored."
+                return DoctorRow(
+                    id: "security_policy.score_factors.unmatched.\(index)", severity: .warn,
+                    title: path, detail: detail,
+                    hint: "Write the name exactly as configured, or remove the factor in "
+                        + "Config > Scoring.")
+            }
+    }
+
+    /// `security_policy.edr_agent` names an agent the score would count as EDR; a name that
+    /// matches no `security_agents` entry leaves the first agent counting.
+    static func edrAgentRows(
+        policy: SecurityControlPolicy, agents: [SecurityAgentConfig]
+    ) -> [DoctorRow] {
+        guard let chosen = policy.edrAgent,
+              SecurityScoreInputs.edrAgent(among: agents, chosen: chosen)?.name
+                  .trimmingCharacters(in: .whitespacesAndNewlines)
+                  .caseInsensitiveCompare(chosen) != .orderedSame
+        else { return [] }
+        let counted = SecurityScoreInputs.edrAgent(among: agents, chosen: nil)?.name
+        return [DoctorRow(
+            id: "security_policy.edr_agent", severity: .warn,
+            title: SecurityPolicyConfigLoader.edrAgentPath,
+            detail: "\"\(ConfigSchema.displayText(chosen))\" matches no security_agents entry, so "
+                + (counted.map { "\"\(ConfigSchema.displayText($0))\" counts as the EDR agent" }
+                    ?? "no agent counts as the EDR agent")
+                + ".",
+            hint: "Write the agent's name exactly as under security_agents, or pick it in "
+                + "Config > Scoring."
+        )]
+    }
+
+    /// One warning per value the app did not use as written, titled with its key path, plus
+    /// one when the hardware rule is set but no Mac has hardware facts yet (the value is valid,
+    /// so it is no issue). A key the app does not read (an empty `used`) is left to
+    /// `unknownKeyRows`, so it is reported once.
+    static func securityPolicyRows(
+        issues: [SecurityPolicyIssue], policy: SecurityControlPolicy, hardware: [String: Bool]
+    ) -> [DoctorRow] {
+        var rows = issues.filter { !$0.used.isEmpty }.enumerated().map { index, issue in
+            DoctorRow(
+                id: "security_policy.issue.\(index)", severity: .warn, title: issue.keyPath,
+                detail: securityPolicyDetail(issue), hint: securityPolicyHint(issue)
+            )
+        }
+        if policy.usesHardwareRule, hardware.isEmpty {
+            rows.append(DoctorRow(
+                id: "security_policy.hardware_facts", severity: .warn,
+                title: "security_policy.filevault_off_hardware_encrypted",
+                detail: "No hardware information yet — the rule applies after an inventory "
+                    + "collect. Until then FileVault off counts at the FileVault level.",
+                hint: "Run a collect for this profile."
+            ))
+        }
+        return rows
+    }
+
+    /// On a CSV the hardware rule reads Apple silicon from `columns.architecture` and T2 Macs
+    /// from `columns.model_identifier` (`columns.model` is the marketing name). A mapped column
+    /// the export lacks already gets a `columns.<key>` row; this names one that is not mapped.
+    static func csvHardwareColumnRows(
+        config: ReportConfig, csvHeaders: [String]?, csvFamily: CSVFamily?
+    ) -> [DoctorRow] {
+        guard config.resolvedSecurityPolicy.usesHardwareRule, csvHeaders != nil,
+              csvFamily != .mobile else { return [] }
+        let candidates: [(field: ColumnField, header: String)] = [
+            (field: .modelIdentifier, header: "Model Identifier"),
+            (field: .architecture, header: "Architecture Type"),
+        ]
+        let unmapped = candidates.filter { config.columns?.columnName(for: $0.field) == nil }
+        guard !unmapped.isEmpty else { return [] }
+        let keys = unmapped.map { "columns.\($0.field.configKey)" }
+        let headers = unmapped.map { "'\($0.header)'" }
+        return [DoctorRow(
+            id: "security_policy.csv_hardware_columns", severity: .warn,
+            title: "security_policy.filevault_off_hardware_encrypted",
+            detail: "\(keys.joined(separator: " and ")) "
+                + "\(keys.count == 1 ? "is" : "are") not mapped, so a CSV report cannot tell "
+                + "which Macs are hardware-encrypted. FileVault off counts at the FileVault "
+                + "level for them.",
+            hint: "Map \(keys.count == 1 ? "it" : "them") in Config, or re-run scaffold, "
+                + "to the export's \(headers.joined(separator: " and ")) "
+                + "\(headers.count == 1 ? "column" : "columns")."
+        )]
+    }
+
+    /// A `stale_basis` that counts the inventory date needs the CSV's Last Inventory Update
+    /// column, mapped as `columns.last_inventory`. Without it the CSV sheets leave the
+    /// inventory date out of the rule, which this row says.
+    static func csvInventoryColumnRows(
+        config: ReportConfig, csvHeaders: [String]?, csvFamily: CSVFamily?
+    ) -> [DoctorRow] {
+        guard config.thresholds?.resolvedStaleBasis.contains(.inventory) == true,
+              csvHeaders != nil, csvFamily != .mobile,
+              config.columns?.columnName(for: .lastInventory) == nil else { return [] }
+        return [DoctorRow(
+            id: "thresholds.stale_basis.csv_inventory_column", severity: .warn,
+            title: "thresholds.stale_basis",
+            detail: "stale_basis counts inventory, but columns.last_inventory is not mapped, so "
+                + "a CSV report has no inventory date: inventory does not apply to its rows.",
+            hint: "Map columns.last_inventory to the export's 'Last Inventory Update' column "
+                + "in Config.")]
+    }
+
+    private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
+        if issue.keyPath == SecurityPolicyConfigLoader.edrAgentPath {
+            return "Expected the name of a security agent, found \"\(issue.value)\" — "
+                + "using \(issue.used)"
+        }
+        if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
+            return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
+        }
+        if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
+            return issue.value.isEmpty
+                ? "This entry is \(issue.used)" : "\"\(issue.value)\" — \(issue.used)"
+        }
+        if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
+            return securityVocabularyDetail(issue)
+        }
+        return "\"\(issue.value)\" is not fail, warning or ignore — using \(issue.used)"
+    }
+
+    private static func securityVocabularyDetail(_ issue: SecurityPolicyIssue) -> String {
+        let list = issue.keyPath.hasPrefix(SecurityPolicyConfigLoader.onValuesPath)
+            ? "on_values" : "off_values"
+        if issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff {
+            return "\"\(issue.value)\" is listed in both on_values and off_values — "
+                + "reading it as off"
+        }
+        if issue.value.isEmpty { return "An empty value in \(list) is skipped" }
+        return "\"\(issue.value)\" in \(list) is not text — skipped"
+    }
+
+    private static func securityPolicyHint(_ issue: SecurityPolicyIssue) -> String {
+        if issue.keyPath == SecurityPolicyConfigLoader.edrAgentPath {
+            return "Write the agent's name as text, or remove the line."
+        }
+        if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
+            return "Write it as indented key: value lines in config.yaml, or remove it."
+        }
+        if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
+            return "Fix the entry in config.yaml, or edit the factors in Config > Scoring."
+        }
+        if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
+            return issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff
+                ? "Remove it from on_values, or from off_values, in config.yaml."
+                : "Write each value as text, such as \"Pass\" (quote a number), or remove it."
+        }
+        return "Set it to fail, warning or ignore in config.yaml, or remove the line."
     }
 
     // MARK: - Column-mapping helpers
@@ -577,7 +936,7 @@ enum ConfigDoctorService {
     private static func computerMappings(_ config: ReportConfig) -> [Mapping] {
         guard let columns = config.columns else { return [] }
         return ColumnField.allCases.compactMap { field in
-            columns.columnName(for: field).map { (field.rawValue.snakeCased, $0) }
+            columns.columnName(for: field).map { (field.configKey, $0) }
         }
     }
 
@@ -958,25 +1317,6 @@ extension ConfigDoctorService {
                 hint: nil
             )
         }
-    }
-}
-
-// MARK: - Logical-field naming
-
-private extension String {
-    /// camelCase → snake_case, matching `config.yaml` logical column keys
-    /// (e.g. `operatingSystem` → `operating_system`).
-    var snakeCased: String {
-        var out = ""
-        for ch in self {
-            if ch.isUppercase {
-                out += "_"
-                out += ch.lowercased()
-            } else {
-                out.append(ch)
-            }
-        }
-        return out
     }
 }
 

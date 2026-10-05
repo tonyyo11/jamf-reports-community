@@ -53,7 +53,7 @@ struct ExtensionAttributesView: View {
                     expectedKinds: ["ea-results", "computer-extension-attributes"]
                 )
             }
-            if snapshot.totalEAs == 0 {
+            if snapshot.definedEAs == 0 && snapshot.reportingEAs == 0 {
                 emptyState
             } else {
                 kpiGrid
@@ -67,15 +67,33 @@ struct ExtensionAttributesView: View {
         }
         .tint(Theme.Colors.goldBright)
         .onAppear(perform: loadIfNeeded)
-        .onChange(of: workspace.profile) { _, _ in reload() }
+        .onChange(of: dataSource) { _, _ in
+            // The picked attribute belongs to the old source; reload picks the new default.
+            selectedEA = nil
+            reload()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshActiveTab)) { _ in
             reload()
         }
     }
 
+    /// Changes when the profile does, and when demo mode flips under the same profile name.
+    private var dataSource: String { "\(workspace.demoMode)|\(workspace.profile)" }
+
     private var subtitle: String? {
-        guard snapshot.totalEAs > 0 else { return nil }
-        return "\(snapshot.totalEAs) Extension Attribute\(snapshot.totalEAs == 1 ? "" : "s") across \(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s")."
+        Self.subtitle(for: snapshot)
+    }
+
+    /// What the header counts, by the same two figures as the tiles.
+    static func subtitle(for snapshot: ExtensionAttributeService.Snapshot) -> String? {
+        let defined = snapshot.definedEAs
+        let reporting = snapshot.reportingEAs
+        guard defined > 0 || reporting > 0 else { return nil }
+        let devices = "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s")"
+        let noun = { (count: Int) in "Extension Attribute\(count == 1 ? "" : "s")" }
+        if defined == 0 { return "\(reporting) \(noun(reporting)) across \(devices)." }
+        if reporting == 0 { return "\(defined) \(noun(defined)) defined; no results yet." }
+        return "\(defined) \(noun(defined)) defined, \(reporting) with results across \(devices)."
     }
 
     // MARK: - Data loading
@@ -141,7 +159,6 @@ struct ExtensionAttributesView: View {
                     populatedDevices: entry.devices, totalDevices: fleet)
             },
             totalDevices: fleet,
-            totalEAs: definitions.count,
             // One row per Mac for each attribute, as `pro report ea-results --all` writes.
             totalRowCount: fleet * definitions.count,
             valueDistributions: [
@@ -240,9 +257,14 @@ struct ExtensionAttributesView: View {
         let columns = [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 12)]
         return LazyVGrid(columns: columns, spacing: 12) {
             StatTile(
-                label: "Total EAs",
-                value: "\(snapshot.totalEAs)",
-                sub: "Across definitions and results"
+                label: "Defined EAs",
+                value: snapshot.definedEAs > 0 ? "\(snapshot.definedEAs)" : "--",
+                sub: snapshot.definedEAs > 0 ? "In Jamf Pro" : "Definitions not collected"
+            )
+            StatTile(
+                label: "EAs With Results",
+                value: "\(snapshot.reportingEAs)",
+                sub: "In the latest results"
             )
             StatTile(
                 label: "Total Devices",
@@ -442,7 +464,10 @@ struct ExtensionAttributesView: View {
                         }
                     }
                     .chartYAxis {
-                        AxisMarks(position: .leading) { _ in
+                        // The default draws each value inside the plot, above its bar, so with
+                        // ten or more values a bar kept a pixel or two of its row (macOS 15
+                        // and 27); aligned puts the values in a gutter and the bar gets the row.
+                        AxisMarks(preset: .aligned, position: .leading) { _ in
                             AxisValueLabel()
                                 .font(.caption2)
                         }
@@ -498,10 +523,10 @@ struct ExtensionAttributesView: View {
                         }
                         .width(min: 150, ideal: 200)
 
-                        TableColumn("Type") { definition in
+                        TableColumn("Data Type") { definition in
                             Pill(
-                                text: definition.inferredEAType,
-                                tone: pillTone(for: definition.inferredEAType)
+                                text: definition.dataTypeLabel,
+                                tone: pillTone(for: definition.dataType)
                             )
                         }
                         .width(min: 80, ideal: 100)
@@ -521,7 +546,8 @@ struct ExtensionAttributesView: View {
                         }
                         .width(min: 60, ideal: 80)
                     }
-                    .frame(minHeight: 200)
+                    .pageTableHeight(
+                        rows: min(snapshot.definitions.count, Self.definitionsDisplayCap))
                     if snapshot.definitions.count > Self.definitionsDisplayCap {
                         Text("Generated reports include every definition.")
                             .font(.caption)
@@ -532,13 +558,11 @@ struct ExtensionAttributesView: View {
         }
     }
 
-    private func pillTone(for eaType: String) -> Pill.Tone {
-        switch eaType {
-        case "boolean":    return .teal
-        case "date":       return .gold
-        case "percentage": return .warn
-        case "text":       return .muted
-        default:           return .muted
+    private func pillTone(for dataType: String?) -> Pill.Tone {
+        switch (dataType ?? "").uppercased() {
+        case "INTEGER": return .teal
+        case "DATE":    return .gold
+        default:        return .muted
         }
     }
 
@@ -652,7 +676,7 @@ private struct BarChartExportView: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .leading) { _ in
+                AxisMarks(preset: .aligned, position: .leading) { _ in
                     AxisValueLabel()
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.Chart.textPrimary)

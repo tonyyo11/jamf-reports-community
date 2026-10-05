@@ -2,9 +2,11 @@ import XCTest
 @testable import JamfReports
 
 /// v2.2.0 EDR genericization: a community app must not hardcode a vendor name.
-/// The metric identifier keeps the legacy "crowdstrike" raw value (persistence
+/// The trend metric identifier keeps the legacy "crowdstrike" raw value (persistence
 /// + summary.json schema compatibility); every user-visible label is either the
-/// generic "EDR Agent …" or the tenant's configured security_agents name.
+/// generic "EDR agent coverage" or the tenant's configured security_agents name. The score's
+/// agent factors are named by the agent, and an earlier build's `crowdstrike` basis word reads
+/// as the EDR agent.
 final class EDRAgentLabelTests: XCTestCase {
 
     // MARK: - Raw-value compatibility
@@ -27,25 +29,59 @@ final class EDRAgentLabelTests: XCTestCase {
         )
     }
 
-    func testSecurityScoreMetricKeepsLegacyRawValue() {
-        XCTAssertEqual(SecurityScore.Metric.edrAgent.rawValue, "crowdstrike")
+    /// The three security controls join after `managedDevices` (the order is pinned in
+    /// `testCaseIterableOrderUnchangedByRename`) under their own raw values.
+    func testSecurityControlMetricsKeepTheirRawValues() {
+        XCTAssertEqual(TrendSeries.Metric(rawValue: "sip"), .sip)
+        XCTAssertEqual(TrendSeries.Metric(rawValue: "firewall"), .firewall)
+        XCTAssertEqual(TrendSeries.Metric(rawValue: "gatekeeper"), .gatekeeper)
+    }
+
+    /// A selection that names a control card persists and reloads as stored.
+    func testPersistedSecurityControlSelectionRoundTrips() {
+        defer { UserDefaults.standard.removeObject(forKey: WorkspaceStore.scoreCardsKey) }
+
+        UserDefaults.standard.set("sip,firewall", forKey: WorkspaceStore.scoreCardsKey)
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), [.sip, .firewall])
+
+        WorkspaceStore.persistScoreCards([.stability, .gatekeeper, .sip])
+        XCTAssertEqual(WorkspaceStore.loadPersistedScoreCards(), [.stability, .gatekeeper, .sip])
+    }
+
+    func testSecurityControlMetricsCarryTheirOwnLabelUnitAndColour() {
+        let expected: [(TrendSeries.Metric, String, UInt32)] = [
+            (.sip, "System Integrity Protection", 0x64D2FF),
+            (.firewall, "Firewall Enabled", 0x5E5CE6),
+            (.gatekeeper, "Gatekeeper Enabled", 0xAC8E68),
+        ]
+        for (metric, label, colour) in expected {
+            XCTAssertEqual(metric.displayLabel, label)
+            XCTAssertEqual(
+                metric.displayLabel(benchmarkLabel: "Benchmark", edrAgentName: "Agent"), label)
+            XCTAssertEqual(metric.unit, "%")
+            XCTAssertEqual(metric.minY, 60)
+            XCTAssertEqual(metric.maxY, 100)
+            XCTAssertEqual(metric.colorHex, colour)
+        }
     }
 
     // MARK: - Generic fallback labels (no vendor names)
 
     func testGenericLabelsContainNoVendorName() {
-        XCTAssertEqual(TrendSeries.Metric.edrAgent.displayLabel, "EDR Agent Installed")
-        XCTAssertEqual(SecurityScore.Metric.edrAgent.displayLabel, "EDR Agent Connected")
+        XCTAssertEqual(TrendSeries.Metric.edrAgent.displayLabel, "EDR agent coverage")
+        XCTAssertEqual(SecurityScoreFactor.labels(inBasis: "crowdstrike"), ["EDR agent"])
+        XCTAssertEqual(SecurityScoreFactor(.agent, weight: 5).label(), "Agent connected")
         for metric in TrendSeries.Metric.allCases {
             XCTAssertFalse(
                 metric.displayLabel.localizedCaseInsensitiveContains("crowdstrike"),
                 "\(metric) label must not hardcode a vendor name"
             )
         }
-        for metric in SecurityScore.Metric.allCases {
+        for kind in SecurityScoreFactor.Kind.allCases {
             XCTAssertFalse(
-                metric.displayLabel.localizedCaseInsensitiveContains("crowdstrike"),
-                "\(metric) label must not hardcode a vendor name"
+                SecurityScoreFactor(kind, weight: 1).label()
+                    .localizedCaseInsensitiveContains("crowdstrike"),
+                "\(kind) label must not hardcode a vendor name"
             )
         }
     }
@@ -57,11 +93,11 @@ final class EDRAgentLabelTests: XCTestCase {
             TrendSeries.Metric.edrAgent.displayLabel(
                 benchmarkLabel: nil, edrAgentName: "CrowdStrike Falcon"
             ),
-            "CrowdStrike Falcon Installed"
+            "CrowdStrike Falcon coverage"
         )
         XCTAssertEqual(
             TrendSeries.Metric.edrAgent.displayLabel(benchmarkLabel: nil, edrAgentName: nil),
-            "EDR Agent Installed"
+            "EDR agent coverage"
         )
         // Other metrics ignore the agent name.
         XCTAssertEqual(
@@ -72,26 +108,24 @@ final class EDRAgentLabelTests: XCTestCase {
         )
     }
 
-    func testSecurityScoreMetricLabelUsesConfiguredAgentName() {
+    func testScoreFactorLabelUsesTheConfiguredAgentName() {
         XCTAssertEqual(
-            SecurityScore.Metric.edrAgent.displayLabel(edrAgentName: "SentinelOne"),
-            "SentinelOne Connected"
-        )
-        XCTAssertEqual(
-            SecurityScore.Metric.edrAgent.displayLabel(edrAgentName: ""),
-            "EDR Agent Connected"
+            SecurityScoreFactor(.agent, weight: 5, target: "SentinelOne").label(),
+            "SentinelOne connected"
         )
     }
 
-    // MARK: - Scoring weights serialization compatibility
-
-    func testScoringConfigPositionalSerializationUnchanged() {
-        // Slot 4 is the EDR weight regardless of the property rename — a
-        // pre-rename persisted preference must parse identically.
-        let parsed = ScoringConfig.parse("15,15,15,10,20,5,15,5")
-        XCTAssertEqual(parsed.weights.edrAgent, 10)
-        XCTAssertEqual(parsed.weights, SecurityScoreWeights.defaultWeights)
-        XCTAssertEqual(ScoringConfig().serialize(), "15,15,15,10,20,5,15,5")
+    /// A summary written before the factors named its EDR input `crowdstrike`, whoever the
+    /// agent was; the Trends note reads it as the configured agent.
+    func testAnEarlierBuildsEDRBasisWordReadsAsTheConfiguredAgent() {
+        XCTAssertEqual(
+            SecurityScoreFactor.labels(inBasis: "crowdstrike", edrAgentName: "SentinelOne"),
+            ["SentinelOne connected"]
+        )
+        XCTAssertEqual(
+            SecurityScoreFactor.labels(inBasis: "crowdstrike", edrAgentName: ""),
+            ["EDR agent"]
+        )
     }
 
     // MARK: - Metric ordering preserved
@@ -100,9 +134,7 @@ final class EDRAgentLabelTests: XCTestCase {
         XCTAssertEqual(TrendSeries.Metric.allCases, [
             .stability, .activeDevices, .compliance, .fileVault, .osCurrent,
             .edrAgent, .stale, .patch, .securityScore, .mscpBandTrend, .managedDevices,
-        ])
-        XCTAssertEqual(SecurityScore.Metric.allCases, [
-            .fileVault, .sip, .firewall, .edrAgent, .mscp, .xprotect, .cve, .secureBoot,
+            .sip, .firewall, .gatekeeper,
         ])
     }
 }

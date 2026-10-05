@@ -312,12 +312,12 @@ struct FleetOverviewView: View {
                     StatTile(
                         label: "Stale",
                         value: row.summary?.staleCount.map { "\($0)" } ?? "--",
-                        sub: "30d+ since contact"
+                        sub: ">30d since contact"
                     )
                     StatTile(
                         label: "Patch",
                         value: row.summary?.patchPct.map { "\(String(format: "%.1f", $0))%" } ?? "--",
-                        sub: "Avg per title"
+                        sub: "Devices on latest"
                     )
                 }
 
@@ -558,12 +558,10 @@ struct FleetOverviewView: View {
     }
 
     private func load() async {
+        // A reload from disk: nothing is collected, so it neither writes the shared status
+        // line (a running collect owns it) nor claims the data was refreshed.
         isLoading = true
-        workspace.globalStatus = "Aggregating multi-profile summaries..."
-        defer { 
-            isLoading = false
-            workspace.globalStatus = nil
-        }
+        defer { isLoading = false }
 
         if workspace.demoMode {
             rows = demoRows()
@@ -574,8 +572,7 @@ struct FleetOverviewView: View {
         let profiles = workspace.initializedProfiles
         rows = await Task.detached(priority: .utility) {
             profiles.map { profile in
-                let summaries = (try? WorkspacePaths.summariesDir(for: profile.name))
-                    .map { SummaryJSONParser.parseDirectory($0) } ?? []
+                let summaries = TrendStore.readSummaries(profile: profile.name)
                 return FleetProfileOverview(
                     profile: profile.name,
                     summary: summaries.last,
@@ -584,9 +581,6 @@ struct FleetOverviewView: View {
             }
         }.value
 
-        if !rows.isEmpty {
-            workspace.toast = Toast(message: "Fleet data refreshed", style: .success)
-        }
         clearDrillDownIfProfileMissing()
     }
 
@@ -872,7 +866,7 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     if let staleCount = summary.staleCount, staleCount > 0 {
         issues.append(FleetProfileIssue(
             reason: "\(staleCount) stale device\(staleCount == 1 ? "" : "s")",
-            explanation: "Devices that have not checked in for 30+ days. Offline "
+            explanation: "Devices that have not checked in for more than 30 days. Offline "
                 + "Outreach buckets them by how long they have been quiet.",
             actionLabel: "Open Offline Outreach",
             tab: .outreach
@@ -892,11 +886,8 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     if let patchPct = summary.patchPct, patchPct < 80 {
         issues.append(FleetProfileIssue(
             reason: "Patch \(String(format: "%.1f", patchPct))% (below 80%)",
-            // patchPct is the unweighted mean of per-title compliance, not a share
-            // of titles or of devices (epic #207 C1).
-            explanation: "Average across patch titles of the share of each title's devices "
-                + "on its latest version, in the latest patch snapshot. The Patch screen's "
-                + "figure weights every device equally, so the two can differ.",
+            explanation: "Share of devices on the latest version of their patch titles, "
+                + "in the latest patch snapshot.",
             actionLabel: "Open Patch Compliance",
             tab: .patch
         ))

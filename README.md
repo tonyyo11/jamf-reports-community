@@ -36,7 +36,15 @@ Every non-core dashboard is toggleable, so unused screens disappear from the sid
 ### Highlights
 
 - **Configurable Security Score** — a weighted posture score (FileVault, SIP, firewall,
-  Gatekeeper, and more), with the weights editable in the app.
+  Gatekeeper, and more), with the weights editable in the app and a per-workspace
+  security policy that decides what counts as a gap.
+- **Security policy** — decide per workspace whether FileVault, SIP, Firewall and
+  Gatekeeper failures count as gaps, warnings or nothing, with a rule for
+  hardware-encrypted Macs. See
+  [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates).
+- **A config.yaml you can edit by hand** — the app lists the keys and lines it did not read,
+  keeps your comments outside the blocks it edits, and copies the file before a save drops
+  text.
 - **Historical Trends** — Swift Charts over archived `summary.json` snapshots, with a
   configurable trend range.
 - **Period reports** — a workbook covering a quarter, a month, or any window you pick:
@@ -76,9 +84,10 @@ Every non-core dashboard is toggleable, so unused screens disappear from the sid
 - **Patch adoption velocity** — track how many days each patch title lags its release
   date and how long it took to reach 50%/90% fleet adoption. See
   [Patch Velocity](https://github.com/tonyyo11/jamf-reports-community/wiki/06b-Patch-Velocity).
-- **On-device AI insights** — an optional plain-language fleet insight card powered by
-  Apple's on-device Foundation Model. macOS Golden Gate 27 or later only, off by default,
-  and hidden entirely on earlier macOS. See
+- **On-device AI insights** — optional plain-language insight cards on Overview, Trends,
+  Audit, Security Posture and Compliance Posture, powered by Apple's on-device Foundation
+  Model. macOS Golden Gate 27 or later only, off by default, and hidden entirely on earlier
+  macOS. See
   [AI Insights](https://github.com/tonyyo11/jamf-reports-community/wiki/03b-AI-Insights).
 - **Multi-baseline mSCP tracking** — configure more than one compliance baseline (for
   example NIST 800-53r5 and DISA STIG) and get an independent compliance-band trend
@@ -96,7 +105,7 @@ config, schedules, and generated reports, switchable from the sidebar.
 macOS 15 or later. [jamf-cli](https://github.com/Jamf-Concepts/jamf-cli) is optional — it
 powers live collection, but the app also works from CSV exports and cached snapshots.
 Minimum supported version is v1.18.0, v1.19.0+ is recommended for full partial-failure
-handling (exit code 7), and this project currently tracks v1.30.0. The prebuilt `.pkg`/`.dmg`
+handling (exit code 7), and this project currently tracks v1.31.1. The prebuilt `.pkg`/`.dmg`
 are Apple silicon (arm64) only — on an Intel Mac, build from source.
 
 Download the latest notarized `.dmg` or `.pkg` from the
@@ -124,6 +133,11 @@ jamf-reports generate --profile prod
 It produces `.xlsx` and HTML reports (PDF stays GUI-only). See the
 [Command Line](https://github.com/tonyyo11/jamf-reports-community/wiki/07-Command-Line) wiki
 page for the full command reference.
+
+To get the HTML report with every workbook, set `html.with_workbook: true` in `config.yaml`
+or turn on **Write the HTML report with every workbook** on the Customize screen. Each
+Generate button, each scheduled run that generates and `jamf-reports generate` then write the
+HTML report beside the workbook.
 
 ### OS currency and patch release dates
 

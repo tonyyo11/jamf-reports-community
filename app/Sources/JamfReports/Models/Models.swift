@@ -254,7 +254,9 @@ struct SecurityAgent: Identifiable, Sendable {
     let installed: Int
     let pct: Double
     let column: String
-    let trend: Trend
+    /// Direction of the agent's coverage over the summary series; nil when no series exists
+    /// to say (only the first configured agent's coverage is recorded day by day).
+    let trend: Trend?
 }
 
 // MARK: - Compliance bands
@@ -284,11 +286,26 @@ struct Report: Identifiable, Sendable, Equatable {
     let name: String
     let size: String
     let date: String
+    /// What the file is ("Workbook"), then " · " and the schedule that wrote it when a
+    /// schedule's status file names this file (`ReportLibrary.sourceLabel`).
     let source: String
     let sheets: Int
-    /// Device count sourced from the matching summary.json. Nil when the summary
-    /// is absent, the filename carries no date, or totalDevices is non-numeric.
+    /// Device count from the matching summary.json. Nil when the summary is absent, the
+    /// filename carries no date, totalDevices is non-numeric, or a later collect rewrote the
+    /// summary after the workbook (`ReportLibrary.deviceCount`).
     let devices: Int?
+
+    /// Only a workbook has sheets; html, pdf and csv reports carry a 0 that is not a count.
+    var hasSheets: Bool { URL(fileURLWithPath: name).pathExtension.lowercased() == "xlsx" }
+
+    /// The Sheets column's text: the count for a workbook, a dash for any other format.
+    var sheetsLabel: String { hasSheets ? "\(sheets)" : "—" }
+
+    /// VoiceOver label for a report row.
+    var accessibilityLabel: String {
+        let sheetText = hasSheets ? "\(sheets) sheet\(sheets == 1 ? "" : "s"), " : ""
+        return "\(name), \(sheetText)\(size)"
+    }
 }
 
 struct BackupRecord: Identifiable, Sendable, Hashable {
@@ -303,6 +320,35 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
     var createdLabel: String { FileDisplay.date(created) }
     var sizeLabel: String { FileDisplay.size(sizeBytes) }
 
+    /// A backup with no files: an interrupted run, or one whose contents were cleared.
+    var isEmpty: Bool { fileCount == 0 }
+
+    /// A diff compares the contents of two backups, so both need files and they must differ.
+    static func canDiff(_ backup: BackupRecord, against other: BackupRecord?) -> Bool {
+        guard let other else { return false }
+        return backup.id != other.id && !backup.isEmpty && !other.isEmpty
+    }
+
+    /// When a backup was made. The manifest's `created_at` is exact; without one (an empty or
+    /// older backup) the date in the folder name is, and the folder's modification date is the
+    /// last resort, because a clean-up or a copy resets it to the day it happened.
+    static func created(manifest: Date?, name: String, modified: Date?) -> Date {
+        manifest ?? dateInName(name) ?? modified ?? .distantPast
+    }
+
+    /// The date in a backup folder's name: `yyyyMMdd'T'HHmmss` in UTC as `CLIBridge.backup`
+    /// writes it (`-2` follows a repeat within one second), or `backup_yyyyMMdd_HHmmss` in local
+    /// time as the older tool wrote it. Nil for any other name.
+    static func dateInName(_ name: String) -> Date? {
+        guard let match = name.wholeMatch(
+            of: #/(backup_)?(\d{8})[T_](\d{6})(?:-\d+)?/#) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = match.output.1 == nil ? TimeZone(identifier: "UTC") : .current
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        return formatter.date(from: String(match.output.2) + String(match.output.3))
+    }
+
     /// VoiceOver label for a backup row: display name, file count, size, date.
     var accessibilityLabel: String {
         let displayName = label.isEmpty ? name : label
@@ -314,15 +360,6 @@ struct BackupRecord: Identifiable, Sendable, Hashable {
         let displayName = label.isEmpty ? name : label
         return "Configuration backup: \(displayName), \(fileCount) files, created \(createdLabel)"
     }
-}
-
-// MARK: - Sheet item (CustomizationWizard, TemplateApplier tests)
-
-struct SheetItem: Identifiable, Sendable {
-    var id: String { name }
-    let name: String
-    let req: String   // "csv" | "cli" | "cli-1.2+" | "chart" | "platform"
-    var on: Bool
 }
 
 // MARK: - Column mappings (Config screen)
@@ -407,10 +444,6 @@ struct DeviceOSSummary: Identifiable, Sendable, Hashable {
 }
 
 struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
-    enum Risk: String, Sendable {
-        case ok, attention, critical, unknown
-    }
-
     var id: String
     var jamfID: String?
     var name: String
@@ -425,6 +458,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var ipAddress: String
     var assetTag: String
     var managedState: String
+    /// The Mac's last check-in as the source wrote it (the name predates Jamf Pro's separate
+    /// Last Contact, which `contactDate` holds).
     var lastContact: String
     var lastInventory: String
     var daysSinceContact: Int?
@@ -438,6 +473,23 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var failedRules: Int
     var patchFailures: [DevicePatchFailure]
     var source: String
+    /// Whether the internal volume is hardware-encrypted (`HardwareEncryption`); nil unknown.
+    var hardwareEncrypted: Bool? = nil
+    /// Identifiers that, with `jamfID` and `serial`, say two rows are one Mac
+    /// (`DeviceRecordMerger`). Nil when no source carried one. Nothing fills
+    /// `platformID` yet: no Devices source reads the Platform API's device ID.
+    var managementID: String? = nil
+    var udid: String? = nil
+    var platformID: String? = nil
+    /// The three Jamf Pro dates as dates, for `StaleRule` and `ContactGap`: Last Check-in
+    /// (`lastContact` is its text), Last Inventory Update (`lastInventory`) and Last Contact,
+    /// which counts MDM and declarative device management too. Nil when no source carried it.
+    var checkInDate: Date? = nil
+    var inventoryDate: Date? = nil
+    var contactDate: Date? = nil
+    /// True when a source that dates every Mac (the `computers` snapshot) described this one,
+    /// so a missing check-in or inventory date means it never had one.
+    var carriesDates = false
 
     var displayName: String { name.isEmpty ? "Unknown device" : name }
     var displaySerial: String { serial.isEmpty ? "No serial" : serial }
@@ -451,21 +503,17 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         return trimmed
     }
 
-    var securityGapCount: Int {
-        [fileVault, sip, firewall, gatekeeper, bootstrapToken].filter(Self.statusLooksBad).count
-    }
-
-    var risk: Risk {
-        if failedRules > 30 || patchFailureCount > 2 || daysSinceContact ?? 0 > 90 {
-            return .critical
-        }
-        if failedRules > 0 || patchFailureCount > 0 || stale || securityGapCount > 0 {
-            return .attention
-        }
-        if source.isEmpty {
-            return .unknown
-        }
-        return .ok
+    /// Controls the policy counts as failing, plus a bootstrap token that is not escrowed,
+    /// which the policy does not govern.
+    func securityGapCount(policy: SecurityControlPolicy) -> Int {
+        let controls = policy.gapCount(
+            fileVault: fileVaultEnabled(policy: policy),
+            sip: policy.reading(sip, for: .sip),
+            firewall: policy.reading(firewall, for: .firewall),
+            gatekeeper: policy.reading(gatekeeper, for: .gatekeeper),
+            hardwareEncrypted: hardwareEncrypted) ?? 0
+        let bootstrap = SecurityControlPolicy.reading(bootstrapToken)
+        return controls + (bootstrap == false ? 1 : 0)
     }
 
     var searchableText: String {
@@ -479,6 +527,13 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
 
     mutating func merge(_ other: DeviceInventoryRecord) {
         jamfID = firstNonEmpty(jamfID, other.jamfID)
+        managementID = firstNonEmpty(managementID, other.managementID)
+        udid = firstNonEmpty(udid, other.udid)
+        platformID = firstNonEmpty(platformID, other.platformID)
+        checkInDate = [checkInDate, other.checkInDate].compactMap { $0 }.max()
+        inventoryDate = [inventoryDate, other.inventoryDate].compactMap { $0 }.max()
+        contactDate = [contactDate, other.contactDate].compactMap { $0 }.max()
+        carriesDates = carriesDates || other.carriesDates
         name = firstNonEmpty(name, other.name)
         serial = firstNonEmpty(serial, other.serial)
         osVersion = firstNonEmpty(osVersion, other.osVersion)
@@ -502,6 +557,12 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         bootstrapToken = firstNonEmpty(bootstrapToken, other.bootstrapToken)
         diskUsage = firstNonEmpty(diskUsage, other.diskUsage)
         failedRules = max(failedRules, other.failedRules)
+        // Sources that disagree are not a guess either way (the hardware index's rule).
+        if let mine = hardwareEncrypted, let theirs = other.hardwareEncrypted {
+            hardwareEncrypted = mine == theirs ? mine : nil
+        } else {
+            hardwareEncrypted = hardwareEncrypted ?? other.hardwareEncrypted
+        }
         for failure in other.patchFailures where !patchFailures.contains(failure) {
             patchFailures.append(failure)
         }
@@ -545,15 +606,35 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         )
     }
 
-    private static func statusLooksBad(_ value: String) -> Bool {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "_", with: " ")
-        guard !text.isEmpty else { return false }
-        if text.contains("not ") || text.contains("disabled") {
-            return true
-        }
-        return ["false", "no", "0", "unencrypted", "not escrowed"].contains(text)
+    /// What the stale rule reads from this record.
+    var staleInputs: StaleInputs {
+        StaleInputs(
+            checkInDays: daysSinceContact, checkIn: checkInDate, inventory: inventoryDate,
+            contact: contactDate, carriesDates: carriesDates, flag: stale)
+    }
+
+    /// Whether the Mac is stale under `rule`: its oldest counted date is more than `rule.days`
+    /// old, so a Mac at exactly the threshold is not. A record with none of those dates keeps
+    /// the `stale` flag its sources set.
+    func isStale(_ rule: StaleRule, now: Date = Date()) -> Bool {
+        rule.isStale(staleInputs, now: now)
+    }
+
+    /// `isStale` on the default basis, the last check-in alone.
+    func isStale(atDays thresholdDays: Int) -> Bool {
+        isStale(StaleRule(days: thresholdDays))
+    }
+
+    /// How old the oldest counted date is; nil when the record has none of them.
+    func staleAge(_ rule: StaleRule, now: Date = Date()) -> StaleAge? {
+        rule.age(of: staleInputs, now: now)
+    }
+
+    /// The contact gap the Mac shows, if any (`ContactGap.of`).
+    func contactGap(rule: StaleRule, gapDays: Int, now: Date = Date()) -> ContactGap? {
+        ContactGap.of(
+            checkIn: checkInDate, inventory: inventoryDate, contact: contactDate,
+            staleDays: rule.days, gapDays: gapDays, now: now)
     }
 }
 
@@ -565,6 +646,13 @@ struct DeviceInventorySnapshot: Sendable {
     var generatedAt: String
     var generatedDate: Date?
     var isDemo: Bool
+    /// The workspace's `security_policy`, which every gap and risk on the screen follows.
+    var securityPolicy: SecurityControlPolicy = .default
+    /// `thresholds.stale_device_days`, `stale_basis` and `contact_gap_days`, which the screens'
+    /// stale counts and contact-gap lists follow.
+    var staleDays = 30
+    var staleBasis: [StaleBasis] = StaleBasis.default
+    var contactGapDays = ContactGap.defaultDays
 
     static let empty = DeviceInventorySnapshot(
         devices: [], patchTitles: [], sourceFiles: [], warnings: [],
@@ -573,22 +661,47 @@ struct DeviceInventorySnapshot: Sendable {
 
     var totalDevices: Int { devices.count }
     var patchIssueCount: Int { devices.filter { $0.patchFailureCount > 0 }.count }
-    var securityGapCount: Int { devices.filter { $0.securityGapCount > 0 }.count }
+    var securityGapCount: Int {
+        devices.filter { $0.securityGapCount(policy: securityPolicy) > 0 }.count
+    }
 
-    func staleCount(thresholdDays: Int) -> Int {
-        devices.filter { device in
-            if let days = device.daysSinceContact {
-                return days >= thresholdDays
-            }
-            return device.stale
+    /// Macs with FileVault off that the hardware rule keeps out of the FileVault gaps.
+    var fileVaultOffHardwareEncryptedCount: Int {
+        devices.filter {
+            securityPolicy.hardwareRuleLowers(
+                fileVaultReading: $0.fileVaultEnabled(policy: securityPolicy),
+                hardwareEncrypted: $0.hardwareEncrypted)
         }.count
     }
 
-    var fileVaultPercent: Double {
-        let known = devices.filter { !$0.fileVault.isEmpty }
-        guard !known.isEmpty else { return 0 }
-        let encrypted = known.filter { valueLooksGood($0.fileVault) }.count
-        return Double(encrypted) / Double(known.count) * 100
+    func staleCount(thresholdDays: Int) -> Int {
+        staleCount(StaleRule(days: thresholdDays, basis: staleBasis))
+    }
+
+    func staleCount(_ rule: StaleRule, now: Date = Date()) -> Int {
+        devices.filter { $0.isStale(rule, now: now) }.count
+    }
+
+    /// The Macs MDM reaches whose check-in or inventory has fallen behind, by kind.
+    func contactGaps(
+        staleDays: Int, now: Date = Date()
+    ) -> [ContactGap: [DeviceInventoryRecord]] {
+        let rule = StaleRule(days: staleDays, basis: staleBasis)
+        var found: [ContactGap: [DeviceInventoryRecord]] = [:]
+        for device in devices {
+            if let gap = device.contactGap(rule: rule, gapDays: contactGapDays, now: now) {
+                found[gap, default: []].append(device)
+            }
+        }
+        return found
+    }
+
+    /// The share of Macs whose FileVault value reads as on, over those whose value reads as
+    /// on or off; nil when none does, so no reading shows as unknown rather than 0%.
+    var fileVaultPercent: Double? {
+        let readings = devices.compactMap { $0.fileVaultEnabled(policy: securityPolicy) }
+        guard !readings.isEmpty else { return nil }
+        return Double(readings.filter { $0 }.count) / Double(readings.count) * 100
     }
 
     var osDistribution: [DeviceOSSummary] {
@@ -831,74 +944,12 @@ private func newestDateLabel(_ lhs: String, _ rhs: String) -> String {
 }
 
 extension DeviceInventoryRecord {
-    /// FileVault as yes or no, read as the Devices table reads it (`SecurityValueState`); nil
-    /// when the inventory carried no value or neither answer, such as ENCRYPTING or UNKNOWN,
-    /// so the Overview's Recent Activity shows "—" instead of a guess.
-    var fileVaultEnabled: Bool? {
-        switch SecurityValueState(fileVault) {
-        case .good: true
-        case .bad: false
-        case .unknown: nil
-        }
-    }
-}
-
-private func valueLooksGood(_ value: String) -> Bool {
-    let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        .lowercased()
-        .replacingOccurrences(of: "_", with: " ")
-    guard !text.isEmpty else { return false }
-    if text.contains("not ") || text.contains("disabled") || text.contains("unencrypted") {
-        return false
-    }
-    return text.contains("enabled")
-        || text.contains("encrypted")
-        || text.contains("escrowed")
-        || ["true", "yes", "1", "managed"].contains(text)
-}
-
-/// Whether an inventory security value (FileVault, SIP, firewall, Gatekeeper,
-/// bootstrap token) reads as good, bad or unknown, for the Devices table and
-/// detail panel. Unknown and negative forms are checked before positive ones,
-/// because most negatives contain their positive word: "UNENCRYPTED",
-/// "NOT_ENCRYPTED", "Not Enabled", "NOT_ESCROWED", "inactive".
-enum SecurityValueState: Equatable, Sendable {
-    case good, bad, unknown
-
-    init(_ value: String) {
-        let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-            .replacingOccurrences(of: "_", with: " ")
-        self = Self.classify(text)
-    }
-
-    /// Jamf did not collect the value, or the Mac cannot report it.
-    private static let unknownMarkers = [
-        "not collected", "not available", "not supported", "unknown", "pending",
-    ]
-    private static let badMarkers = [
-        "not ", "disabled", "unencrypted", "inactive", "decrypt", "missing",
-    ]
-    private static let badValues: Set<String> = ["false", "no", "0", "off", "none"]
-    /// Gatekeeper reports its setting ("APP_STORE_AND_IDENTIFIED_DEVELOPERS"),
-    /// not a yes or no.
-    private static let goodMarkers = [
-        "enabled", "encrypted", "escrowed", "installed", "active", "app store",
-        "identified developers",
-    ]
-    private static let goodValues: Set<String> = ["true", "yes", "1", "on"]
-
-    private static func classify(_ text: String) -> SecurityValueState {
-        if text.isEmpty || unknownMarkers.contains(where: { text.contains($0) }) {
-            return .unknown
-        }
-        if badValues.contains(text) || badMarkers.contains(where: { text.contains($0) }) {
-            return .bad
-        }
-        if goodValues.contains(text) || goodMarkers.contains(where: { text.contains($0) }) {
-            return .good
-        }
-        return .unknown
+    /// FileVault as on or off under the workspace's vocabulary
+    /// (`SecurityControlPolicy.reading(_:for:)`); nil when the inventory carried no value or
+    /// neither answer, such as ENCRYPTING or UNKNOWN, so the Overview's Recent Activity shows
+    /// "—" instead of a guess.
+    func fileVaultEnabled(policy: SecurityControlPolicy) -> Bool? {
+        policy.reading(fileVault, for: .fileVault)
     }
 }
 
@@ -966,13 +1017,13 @@ struct TokenStatus: Sendable, Codable {
 // MARK: - Trend metric
 
 struct TrendSeries: Identifiable, Sendable {
-    enum Metric: String, CaseIterable, Identifiable, Sendable {
+    enum Metric: CaseIterable, Identifiable, Hashable, Sendable, RawRepresentable {
         // .edrAgent keeps the legacy "crowdstrike" raw value so persisted
         // score-card selections and the summary.json field name stay valid.
-        // The user-visible name is config-driven (security_agents → first
-        // entry's name); the generic fallback is "EDR Agent Installed".
+        // The user-visible name is config-driven (`security_policy.edr_agent`, else the
+        // first security_agents entry); the generic fallback is "EDR agent coverage".
         case stability, activeDevices, compliance, fileVault, osCurrent
-        case edrAgent = "crowdstrike"
+        case edrAgent
         case stale, patch
         /// Weighted security score (0–100), read from summary.json.
         case securityScore
@@ -986,7 +1037,72 @@ struct TrendSeries: Identifiable, Sendable {
         /// (computer count — Jamf Pro itself can't answer "how many managed
         /// Macs did we have on <past date>", but every archived summary can).
         case managedDevices
+        /// Share of Macs with each control on, read from the summary's own shares.
+        /// Appended last so `allCases` keeps every older position.
+        case sip, firewall, gatekeeper
+        /// Coverage of one configured security agent, read from the summary's
+        /// `securityAgentCoverage`. The agent the score counts as EDR is `.edrAgent`, so a
+        /// workspace offers `.agent` only for the others. Its raw value is `agent:<name>`.
+        case agent(String)
+
+        /// Every metric that does not depend on the workspace, in their original order. The
+        /// agent metrics come from `security_agents`, so they are not listed here.
+        static let allCases: [Metric] = [
+            .stability, .activeDevices, .compliance, .fileVault, .osCurrent, .edrAgent, .stale,
+            .patch, .securityScore, .mscpBandTrend, .managedDevices, .sip, .firewall,
+            .gatekeeper,
+        ]
+
+        static let agentPrefix = "agent:"
+
         var id: String { rawValue }
+
+        var rawValue: String {
+            switch self {
+            case .stability: return "stability"
+            case .activeDevices: return "activeDevices"
+            case .compliance: return "compliance"
+            case .fileVault: return "fileVault"
+            case .osCurrent: return "osCurrent"
+            case .edrAgent: return "crowdstrike"
+            case .stale: return "stale"
+            case .patch: return "patch"
+            case .securityScore: return "securityScore"
+            case .mscpBandTrend: return "mscpBandTrend"
+            case .managedDevices: return "managedDevices"
+            case .sip: return "sip"
+            case .firewall: return "firewall"
+            case .gatekeeper: return "gatekeeper"
+            case .agent(let name): return Self.agentPrefix + Self.encoded(name)
+            }
+        }
+
+        /// A saved value: a fixed metric by its raw value, or `agent:<name>`. Anything else is
+        /// nil, so a selection from a newer or older build drops the key and keeps the rest.
+        init?(rawValue: String) {
+            if rawValue.hasPrefix(Self.agentPrefix) {
+                let name = Self.decoded(String(rawValue.dropFirst(Self.agentPrefix.count)))
+                guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+                self = .agent(name)
+                return
+            }
+            guard let match = Self.allCases.first(where: { $0.rawValue == rawValue }) else {
+                return nil
+            }
+            self = match
+        }
+
+        /// A saved list is comma-separated, so a name's `%` and `,` are escaped.
+        private static func encoded(_ name: String) -> String {
+            name.replacingOccurrences(of: "%", with: "%25")
+                .replacingOccurrences(of: ",", with: "%2C")
+        }
+
+        private static func decoded(_ text: String) -> String {
+            text.replacingOccurrences(of: "%2C", with: ",")
+                .replacingOccurrences(of: "%25", with: "%")
+        }
+
         var displayLabel: String {
             switch self {
             case .stability:     return "Stability Index"
@@ -994,22 +1110,26 @@ struct TrendSeries: Identifiable, Sendable {
             case .compliance:    return "Compliance Benchmark"
             case .fileVault:     return "FileVault Encryption"
             case .osCurrent:     return "On Current macOS"
-            case .edrAgent:      return "EDR Agent Installed"
-            case .stale:         return "Stale Devices (30d+)"
+            case .edrAgent:      return "EDR agent coverage"
+            case .stale:         return "Stale Devices (>30d)"
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
             case .mscpBandTrend: return "mSCP Compliance Bands"
             case .managedDevices: return "Managed Devices"
+            case .sip:           return "System Integrity Protection"
+            case .firewall:      return "Firewall Enabled"
+            case .gatekeeper:    return "Gatekeeper Enabled"
+            case .agent(let name): return "\(name) coverage"
             }
         }
 
         /// Returns the tenant-specific label when one is configured; otherwise
         /// the metric's static `displayLabel`. `.compliance` follows
-        /// `compliance.baseline_label`; `.edrAgent` follows the first
-        /// `security_agents` entry's name (e.g. "CrowdStrike Falcon Installed").
+        /// `compliance.baseline_label`; `.edrAgent` follows the agent the score counts as EDR
+        /// (e.g. "CrowdStrike Falcon coverage").
         func displayLabel(benchmarkLabel: String?, edrAgentName: String? = nil) -> String {
             if case .compliance = self, let b = benchmarkLabel, !b.isEmpty { return b }
-            if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) Installed" }
+            if case .edrAgent = self, let e = edrAgentName, !e.isEmpty { return "\(e) coverage" }
             return displayLabel
         }
         var unit: String {
@@ -1018,14 +1138,27 @@ struct TrendSeries: Identifiable, Sendable {
             default: return "%"
             }
         }
+
+        /// Fewer stale devices is better; a device count has no good direction; every other
+        /// metric is a share or score where higher is better. No default, so a new metric
+        /// needs a decision here. Read by the Trends colours and the AI trend input alike.
+        var polarity: FleetInsightInput.Polarity {
+            switch self {
+            case .stale: .lowerIsBetter
+            case .activeDevices, .mscpBandTrend, .managedDevices: .neutral
+            case .stability, .compliance, .fileVault, .osCurrent, .edrAgent, .agent, .patch,
+                 .securityScore, .sip, .firewall, .gatekeeper: .higherIsBetter
+            }
+        }
         var minY: Double {
             switch self {
             case .activeDevices, .mscpBandTrend, .managedDevices: return 0
             case .stability:     return 40
             case .compliance:    return 40
-            case .fileVault:     return 60
+            case .fileVault, .sip, .firewall, .gatekeeper: return 60
             case .osCurrent:     return 30
             case .edrAgent:      return 70
+            case .agent:         return 50
             case .stale:         return 0
             case .patch:         return 40
             case .securityScore: return 60
@@ -1052,7 +1185,19 @@ struct TrendSeries: Identifiable, Sendable {
             case .securityScore: return 0xFF453A
             case .mscpBandTrend: return 0xC9970A  // Same as compliance (gold)
             case .managedDevices: return 0x4472C4  // Matches the Computers series line
+            case .sip:           return 0x64D2FF
+            case .firewall:      return 0x5E5CE6
+            case .gatekeeper:    return 0xAC8E68
+            case .agent(let name): return Self.agentColor(name)
             }
+        }
+
+        /// One of a few agent colours, chosen from the name alone so an agent keeps its
+        /// colour on every screen and run.
+        private static func agentColor(_ name: String) -> UInt32 {
+            let palette: [UInt32] = [0x2AA198, 0x6C71C4, 0xCB4B16, 0x859900, 0xD33682, 0x268BD2]
+            let sum = name.utf8.reduce(0) { ($0 &* 31 &+ Int($1)) % 9973 }
+            return palette[sum % palette.count]
         }
     }
 
@@ -1158,7 +1303,8 @@ struct CustomSheetGroup: Sendable {
     let sheets: [SheetID]
 
     /// All sheet groups organized by functional area.
-    /// Order matches the sidebar grouping in the main app for consistency.
+    /// Order matches the sidebar grouping in the main app for consistency. Together they
+    /// list every `SheetID` once; a test holds that when a sheet is added.
     static let allGroups: [CustomSheetGroup] = [
         CustomSheetGroup(name: "Executive", sheets: [
             .executiveSummary,
@@ -1177,6 +1323,7 @@ struct CustomSheetGroup: Sendable {
             .patchCompliance,
             .patchFailures,
             .patchSummaryDashboard,
+            .patchVelocity,
             .updateStatus,
             .updateFailures,
             .policyHealth,
@@ -1185,6 +1332,8 @@ struct CustomSheetGroup: Sendable {
             .eaCoverage,
             .eaDefinitions,
             .ddmStatus,
+            .ddmDeviceStatus,
+            .mdmCommandHealth,
             .blueprintStatus,
         ]),
         CustomSheetGroup(name: "Fleet", sheets: [

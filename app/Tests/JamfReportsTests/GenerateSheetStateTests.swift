@@ -71,6 +71,17 @@ final class GenerateSheetStateTests: XCTestCase {
                       "Expected fallback to end in 'Generated Reports', got: \(dir.path)")
     }
 
+    /// With no folder chosen, the folder `output.output_dir` names, where the generators write.
+    func testResolvedOutputDirIsTheConfiguredFolderWhenNoneIsChosen() {
+        let state = GenerateSheetState()
+        let configured = URL(fileURLWithPath: "/Users/Shared/Team Reports", isDirectory: true)
+        state.configuredOutputDir = configured
+        XCTAssertEqual(state.resolvedOutputDir(for: "any-profile"), configured)
+        let custom = URL(fileURLWithPath: "/tmp/my-reports")
+        state.customOutputDir = custom
+        XCTAssertEqual(state.resolvedOutputDir(for: "any-profile"), custom, "a chosen folder wins")
+    }
+
     func testResolvedOutputDirUsesCustomWhenSet() {
         let state = GenerateSheetState()
         let custom = URL(fileURLWithPath: "/tmp/my-reports")
@@ -192,6 +203,46 @@ final class GenerateSheetStateTests: XCTestCase {
         XCTAssertNil(message, "empty result (nothing requested) must return nil message")
     }
 
+    /// A failed format reads its cause, as other screens do, once per exit code.
+    func testFailedFormatsAreExplainedByTheirExitCode() {
+        let result = GenerateAllResult(succeeded: [.pdf], failed: [(.xlsx, 1), (.csv, 3), (.html, 1)])
+        let (count, message) = GenerateSheetState.summarize(result)
+        XCTAssertEqual(count, 1)
+        XCTAssertEqual(message, "Generated PDF. "
+            + CLIBridge.explainExit(1, operation: "XLSX, HTML generation") + " "
+            + CLIBridge.explainExit(3, operation: "CSV generation"))
+    }
+
+    // MARK: - Footer and the audit line
+
+    /// The dismiss button keeps its own label while a run goes; only Generate says Running.
+    func testOnlyGenerateSaysRunningWhileARunGoes() {
+        let running = GenerateSheetState.footerTitles(isRunning: true)
+        XCTAssertEqual(running.dismiss, "Done")
+        XCTAssertEqual(running.generate, "Running\u{2026}")
+        let idle = GenerateSheetState.footerTitles(isRunning: false)
+        XCTAssertEqual(idle.dismiss, "Done")
+        XCTAssertEqual(idle.generate, "Generate")
+    }
+
+    func testAnAuditThatExitsZeroEndsWithAnOkLine() {
+        let line = GenerateSheetState.auditResultLine(exitCode: 0)
+        XCTAssertEqual(line.level, .ok)
+        XCTAssertTrue(line.text.hasPrefix("[ok] health audit finished"), line.text)
+    }
+
+    /// Any other exit still lets the generate go on, and the log says why the audit is stale.
+    func testAnAuditThatFailsOrIsPartialEndsWithAWarnNamingTheCause() {
+        let partial = GenerateSheetState.auditResultLine(exitCode: CLIBridge.exitCodePartialFailure)
+        XCTAssertEqual(partial.level, .warn)
+        XCTAssertTrue(partial.text.contains("partial results (exit 7)"), partial.text)
+        let rejected = GenerateSheetState.auditResultLine(exitCode: CLIBridge.exitCodeUnauthorized)
+        XCTAssertEqual(rejected.level, .warn)
+        XCTAssertTrue(rejected.text.contains("health audit failed: authentication failed (401)"),
+                      rejected.text)
+        XCTAssertTrue(rejected.text.hasSuffix("Continuing with the cached audit data."))
+    }
+
     // MARK: - Custom template selection
 
     func testDefaultSelectedTemplateIDIsFullInstance() {
@@ -200,6 +251,8 @@ final class GenerateSheetStateTests: XCTestCase {
     }
 
     func testCustomSelectedSheetsStartsEmpty() {
+        // A selection left by an interrupted run would persist into this one.
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
         let state = GenerateSheetState()
         XCTAssertTrue(state.customSelectedSheets.isEmpty)
     }
@@ -216,6 +269,7 @@ final class GenerateSheetStateTests: XCTestCase {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = [.executiveSummary, .securityPosture]
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         let template = state.resolvedTemplate
         XCTAssertEqual(template.identifier, "custom")
         if let customTemplate = template as? CustomTemplate {
@@ -225,10 +279,26 @@ final class GenerateSheetStateTests: XCTestCase {
         }
     }
 
+    /// The engine writes a template's sheets in its order, so Custom must not take a Set's
+    /// hash order, which changes from run to run.
+    func testCustomTemplateListsTheSelectionInStoredOrder() {
+        let state = GenerateSheetState()
+        state.selectedTemplateID = "custom"
+        let picked: [SheetID] = [
+            .patchVelocity, .executiveSummary, .osCurrency, .activeDevices,
+            .securityPosture, .cover, .mdmCommandHealth, .hardwareModels,
+        ]
+        state.customSelectedSheets = Set(picked)
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+        XCTAssertEqual(state.resolvedTemplate.includedSheets,
+                       picked.sorted { $0.rawValue < $1.rawValue })
+    }
+
     func testResolvedTemplateWithCustomTemplateAndEmptySheetsFallsBackToExecutive() {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = []
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         let template = state.resolvedTemplate
         XCTAssertEqual(template.identifier, "executive")
         XCTAssertTrue(template is ExecutiveTemplate)
@@ -238,6 +308,7 @@ final class GenerateSheetStateTests: XCTestCase {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = [.executiveSummary]
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         XCTAssertTrue(state.canGenerate)
     }
 
@@ -245,6 +316,7 @@ final class GenerateSheetStateTests: XCTestCase {
         let state = GenerateSheetState()
         state.selectedTemplateID = "custom"
         state.customSelectedSheets = []
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
         XCTAssertFalse(state.canGenerate)
     }
 
@@ -270,4 +342,34 @@ final class GenerateSheetStateTests: XCTestCase {
         // Clean up
         UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
     }
+
+    /// Every sheet the engine writes can be picked for Custom, and only once.
+    func testTheCustomListOffersEverySheetOnce() {
+        let listed = CustomSheetGroup.allGroups.flatMap(\.sheets)
+        XCTAssertEqual(listed.count, Set(listed).count, "a sheet is listed twice")
+        let missing = Set(SheetID.allCases).subtracting(listed)
+        XCTAssertTrue(missing.isEmpty,
+                      "not offered: \(missing.map(\.rawValue).sorted().joined(separator: ", "))")
+    }
+
+    /// A tap must redraw the checkmark, the "N sheets selected" line and Generate, so a
+    /// change to the selection has to reach the view's observation, and still be saved.
+    func testATappedSheetReachesObserversAndIsSaved() {
+        UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey)
+        defer { UserDefaults.standard.removeObject(forKey: GenerateSheetState.customSheetsKey) }
+        let state = GenerateSheetState()
+        let changed = ObservedChange()
+        withObservationTracking {
+            _ = state.customSelectedSheets
+        } onChange: {
+            changed.seen = true
+        }
+        state.customSelectedSheets.insert(.cover)
+        XCTAssertTrue(changed.seen, "the view would not redraw")
+        XCTAssertEqual(GenerateSheetState().customSelectedSheets, [.cover])
+    }
+}
+
+private final class ObservedChange: @unchecked Sendable {
+    var seen = false
 }

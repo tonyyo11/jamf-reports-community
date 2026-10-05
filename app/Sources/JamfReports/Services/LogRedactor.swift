@@ -3,9 +3,10 @@ import Foundation
 /// Redacts credential patterns from free-text log lines before they leave the host
 /// (clipboard exports, on-disk exports, UI display).
 ///
-/// Secret-only redaction tier — PII patterns (hostnames/serials/emails) are
-/// out of scope for run-log redaction because jamf-cli output rarely contains
-/// raw PII and the false-positive cost on log noise is high.
+/// `redact` is the secret-only tier used for display — PII patterns (hostnames/serials/emails)
+/// are out of scope there because jamf-cli output rarely contains raw PII and the
+/// false-positive cost on log noise is high. Text that leaves the host goes through
+/// `redactedForSharing`, which adds the diagnostic bundle's PII and scope-ID pass.
 ///
 /// Patterns (always on):
 /// - OAuth `client_secret` in YAML or JSON form
@@ -23,6 +24,21 @@ import Foundation
 enum LogRedactor {
 
     // MARK: - Patterns
+
+    /// Incoming-webhook endpoints, as `https?://` URL patterns: Slack, Teams connectors and
+    /// Workflows (Logic Apps, Power Automate, commercial and US Government clouds) and Discord.
+    /// Shared with `DiagnosticRedactor`; a host added here reaches both, so the two cannot drift.
+    static let webhookURLPatterns: [String] = [
+        #"hooks\.slack\.com/services"#,
+        #"[A-Za-z0-9.\-]+\.webhook\.office\.com/"#,
+        #"[A-Za-z0-9.\-]+\.logic\.azure\.(?:com|us)(?::\d+)?/"#,
+        #"[A-Za-z0-9.\-]+\.api\.powerplatform\.(?:com|us)(?::\d+)?/"#,
+        #"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#,
+    ].map { #"https?://"# + $0 + #"[^\s"',}]*"# }
+
+    /// A `sig=` query value: the signature a Workflows trigger or an Azure SAS URL is signed with.
+    static let signatureQueryPattern = #"([?&]sig=)[^\s&"',}]+"#
+    static let signatureQueryTemplate = "$1REDACTED_SIG"
 
     private struct Pattern {
         let regex: NSRegularExpression
@@ -116,22 +132,21 @@ enum LogRedactor {
         // The key-based rule above misses this app's own webhook: NotifyConfig
         // stores it at `notify.url`, i.e. a bare `url:`, not `webhook_url:`. An
         // incoming-webhook URL is a posting credential whose SECRET IS THE PATH,
-        // so match the endpoint shape and drop the whole value. Kept in step with
-        // DiagnosticRedactor (DiagnosticBundleService) — when one gains a webhook
-        // host, so must the other, or the two drift apart again.
-        for host in [
-            #"hooks\.slack\.com/services"#,
-            #"[A-Za-z0-9.\-]+\.webhook\.office\.com/"#,
-            #"(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks"#
-        ] {
+        // so match the endpoint shape and drop the whole value.
+        for pattern in webhookURLPatterns {
             built.append(Pattern(
-                regex: try! NSRegularExpression(
-                    pattern: #"https?://"# + host + #"[^\s"',}]*"#,
-                    options: [.caseInsensitive]
-                ),
+                regex: try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
                 template: "REDACTED_WEBHOOK_URL"
             ))
         }
+
+        // A signature query value survives where the host is not a known webhook host, such
+        // as a URL cut short or echoed by a proxy.
+        built.append(Pattern(
+            regex: try! NSRegularExpression(
+                pattern: signatureQueryPattern, options: [.caseInsensitive]),
+            template: signatureQueryTemplate
+        ))
 
         // Password fields (generic; redact the value, keep the key). The optional
         // `["']?` after the key name catches the JSON shape `"password": "value"`.
@@ -160,6 +175,20 @@ enum LogRedactor {
     }()
 
     // MARK: - Public API
+
+    /// The text for a clipboard copy or a saved export: `redact`, then the diagnostic bundle's
+    /// `DiagnosticRedactor` seeded with `profile`'s tenant and environment IDs, so the Jamf host
+    /// and the IDs jamf-cli echoes in its error lines ("Environment '<uuid>' not found") leave
+    /// as placeholders. A nil `profile` seeds no IDs (demo mode never reads a real config).
+    static func redactedForSharing(
+        _ text: String,
+        profile: String?,
+        scopeIDs: (String) -> [String] = { DiagnosticBundleService.scopeIDs(profile: $0) }
+    ) -> String {
+        let redactor = DiagnosticRedactor()
+        if let profile { redactor.seedScopeIDs(scopeIDs(profile)) }
+        return redactor.redactText(redact(text))
+    }
 
     /// Apply all credential patterns to a single line of text. Returns the
     /// redacted line; preserves input if no pattern matches.

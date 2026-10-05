@@ -48,13 +48,14 @@ struct DevicesView: View {
     }
 
     private enum DeviceFilter: String, CaseIterable, Identifiable {
-        case all, stale, patch, security, priorityAction
+        case all, stale, contactGap, patch, security, priorityAction
         var id: String { rawValue }
 
         var label: String {
             switch self {
             case .all:            "All"
             case .stale:          "Stale"
+            case .contactGap:     "Contact gap"
             case .patch:          "Patch"
             case .security:       "Security"
             case .priorityAction: "Priority"
@@ -65,6 +66,7 @@ struct DevicesView: View {
             switch self {
             case .all:            "list.bullet"
             case .stale:          "clock.badge.exclamationmark"
+            case .contactGap:     "wifi.exclamationmark"
             case .patch:          "square.and.arrow.down.badge.clock"
             case .security:       "lock.shield"
             case .priorityAction: "exclamationmark.triangle.fill"
@@ -72,9 +74,17 @@ struct DevicesView: View {
         }
     }
 
-    /// True when the page width is too narrow to show every inventory column at
-    /// full fidelity. Drives the responsive Device + User column behavior.
-    private var isCompact: Bool { pageWidth < 1200 }
+    /// True when the table sits beside the detail panel at a width too narrow to show every
+    /// inventory column at full fidelity. Drives the responsive Device + User column behavior.
+    /// Under the panel the table has the whole page, so it is never compact.
+    private var isCompact: Bool {
+        pageWidth < 1200 && Self.detailFitsBeside(pageWidth: pageWidth)
+    }
+
+    /// The User column's widths: a sliver when compact (the column is empty then), else flexible.
+    private var userColumnWidth: (min: CGFloat, ideal: CGFloat, max: CGFloat?) {
+        isCompact ? (8, 8, 8) : (90, 130, nil)
+    }
 
     /// One label column for every detail-panel section. Fixed rather than a minimum,
     /// so LAST INVENTORY (the widest label, about 102 pt) no longer pushes its value
@@ -92,28 +102,29 @@ struct DevicesView: View {
             case .all:
                 return true
             case .stale:
-                if let days = device.daysSinceContact { return days >= staleDays }
-                return device.stale
+                return isStale(device)
+            case .contactGap:
+                return contactGap(of: device) != nil
             case .patch:
                 return device.patchFailureCount > 0
             case .security:
-                return device.securityGapCount > 0 || device.failedRules > 0
+                return device.securityGapCount(policy: activeSnapshot.securityPolicy) > 0
+                    || device.failedRules > 0
             case .priorityAction:
-                // Devices that score in the v3.5 Critical or High band
-                // via the configurable RiskScoringService. Note: the inline
-                // `device.risk` enum is a legacy heuristic; this is the
-                // authoritative scorer used by the new Priority Action List.
-                let risk = priorityRisk(for: device)
-                return risk.level >= .high
+                // The Critical or High band of the same score the Risk pill shows.
+                return priorityRisk(for: device).level >= .high
             }
         }.sorted(using: sortOrder)
     }
 
-    /// Authoritative per-device risk via `RiskScoringService`. Memoizing
-    /// would help if the filter cost showed up in profiling, but the live
-    /// table re-renders on selection change rather than per filter pass.
+    /// The one rating of a Mac, from `RiskScoringService`: the Risk pill, the detail panel,
+    /// the Priority filter and the CSV all read it. Memoizing would help if the filter cost
+    /// showed up in profiling, but the live table re-renders on selection change rather
+    /// than per filter pass.
     private func priorityRisk(for device: DeviceInventoryRecord) -> DeviceRisk {
-        RiskScoringService.score(input: .from(record: device, agentCheck: agentCheck(for: device)))
+        RiskScoringService.risk(
+            for: device, agentCheck: agentCheck(for: device),
+            policy: activeSnapshot.securityPolicy)
     }
 
     /// The device's status against the tenant's configured security agent, or
@@ -186,15 +197,7 @@ struct DevicesView: View {
                 } else {
                     controls
                     summary
-                    HStack(alignment: .top, spacing: 14) {
-                        inventoryTable
-                        VStack(spacing: 14) {
-                            detailPanel(selectedDevice)
-                            osDistributionCard
-                            sourceCard
-                        }
-                        .frame(width: 360)
-                    }
+                    inventoryAndDetail
                 }
             }
             .padding(EdgeInsets(top: Theme.Metrics.pagePadTop,
@@ -230,6 +233,42 @@ struct DevicesView: View {
             isSearchFocused = true
         }
         .searchable(text: $query, placement: .toolbar, prompt: "Search devices")
+    }
+
+    /// The table with the detail panel beside it when the page is wide enough for both, and
+    /// the panel under it when not. Squeezed beside a 360 pt panel the table was narrower than
+    /// its columns and ran underneath it, hiding the Risk column and the legend.
+    @ViewBuilder
+    private var inventoryAndDetail: some View {
+        let sidePanels = VStack(spacing: 14) {
+            detailPanel(selectedDevice)
+            osDistributionCard
+            sourceCard
+        }
+        if Self.detailFitsBeside(pageWidth: pageWidth) {
+            HStack(alignment: .top, spacing: 14) {
+                inventoryTable
+                sidePanels.frame(width: Self.detailPanelWidth)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                inventoryTable
+                sidePanels
+            }
+        }
+    }
+
+    nonisolated static let detailPanelWidth: CGFloat = 360
+    private nonisolated static let panelGap: CGFloat = 14
+    /// The widths of the inventory table's columns at their minimums, plus room for the
+    /// cell padding between them.
+    nonisolated static let minInventoryTableWidth: CGFloat = 700
+
+    /// Whether the table keeps `minInventoryTableWidth` with the panel beside it. `pageWidth`
+    /// includes the page padding, as the width the view measures does.
+    nonisolated static func detailFitsBeside(pageWidth: CGFloat) -> Bool {
+        let content = pageWidth - 2 * Theme.Metrics.pagePadH
+        return content - panelGap - detailPanelWidth >= minInventoryTableWidth
     }
 
     private var header: some View {
@@ -271,7 +310,8 @@ struct DevicesView: View {
             range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
             prefix: "Stale",
             suffix: "d",
-            help: "Devices with no jamf-cli check-in for at least this many days are flagged stale."
+            help: "Devices with no \(staleRule.basisPhrase) for more than this many days are "
+                + "flagged stale."
         )
     }
 
@@ -368,13 +408,28 @@ struct DevicesView: View {
         HStack(spacing: 12) {
             StatTile(label: "Devices", value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
-            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(thresholdDays: staleDays))",
-                     sub: "\(staleDays)+ days since contact")
+            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(staleRule))",
+                     sub: ">\(staleDays) days since \(staleRule.basisPhrase)")
             StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
-            StatTile(label: "FileVault", value: "\(Int(activeSnapshot.fileVaultPercent.rounded()))%",
-                     sub: "\(activeSnapshot.securityGapCount) security gaps")
+            StatTile(label: "FileVault",
+                     value: Self.fileVaultTileValue(activeSnapshot.fileVaultPercent),
+                     sub: fileVaultTileSub)
         }
+    }
+
+    /// "—" when no Mac's FileVault value reads as on or off.
+    nonisolated static func fileVaultTileValue(_ percent: Double?) -> String {
+        percent.map { "\(Int($0.rounded()))%" } ?? "—"
+    }
+
+    /// Macs the hardware rule took out of the gaps are named, so the share and the gap
+    /// count do not look as if they disagree.
+    private var fileVaultTileSub: String {
+        let gaps = activeSnapshot.securityGapCount
+        let moved = activeSnapshot.fileVaultOffHardwareEncryptedCount
+        guard moved > 0 else { return "\(gaps) security gaps" }
+        return "\(gaps) security gaps · \(moved) more hardware-encrypted, FileVault off"
     }
 
     private var inventoryTable: some View {
@@ -423,14 +478,18 @@ struct DevicesView: View {
                             }
                         }
                     }
+                    .width(min: 140, ideal: 200)
                     TableColumn("Serial", value: \.serial) { device in
                         Mono(text: device.displaySerial)
                             .textSelection(.enabled)
                     }
+                    .width(min: 100, ideal: 112, max: 140)
                     TableColumn("macOS", value: \.osVersion) { device in
                         Mono(text: device.osVersion.isEmpty ? "Unknown" : device.osVersion)
                     }
-                    TableColumn("User", value: \.user) { device in
+                    .width(min: 64, ideal: 72, max: 96)
+                    // Empty when compact, so it keeps a sliver rather than a share of the row.
+                    TableColumn(isCompact ? "" : "User", value: \.user) { device in
                         if !isCompact {
                             Text(device.user.isEmpty ? "Unassigned" : device.user)
                                 .font(.footnote)
@@ -438,7 +497,10 @@ struct DevicesView: View {
                                 .lineLimit(1)
                         }
                     }
-                    TableColumn("Last Contact") { device in
+                    .width(
+                        min: userColumnWidth.min, ideal: userColumnWidth.ideal,
+                        max: userColumnWidth.max)
+                    TableColumn("Last Check-in") { device in
                         HStack(spacing: 4) {
                             if isStale(device) {
                                 Image(systemName: "clock.badge.exclamationmark")
@@ -450,10 +512,16 @@ struct DevicesView: View {
                                  color: isStale(device) ? Theme.Colors.warn : Theme.Text.tertiary(contrast))
                         }
                     }
+                    .width(min: 90, ideal: 110, max: 160)
                     TableColumn("Patch") { device in patchPill(device) }
+                        .width(min: 60, ideal: 66, max: 90)
                     TableColumn("Security") { device in securityIndicators(for: device) }
                         .width(min: 70, ideal: 78, max: 90)
-                    TableColumn("Risk") { device in riskPill(device.risk) }
+                    // Wide enough for the longest band, Critical.
+                    TableColumn("Risk") { device in
+                        riskPill(priorityRisk(for: device).level)
+                    }
+                    .width(min: 84, ideal: 92, max: 110)
                 }
                 .frame(minHeight: 430)
                 .scrollContentBackground(.hidden)
@@ -491,9 +559,11 @@ struct DevicesView: View {
 
     private var riskLegend: some View {
         HStack(spacing: 8) {
-            legendDot(color: Theme.Colors.danger, label: "Critical")
-            legendDot(color: Theme.Colors.warn, label: "Attention")
-            legendDot(color: Theme.Colors.ok, label: "OK")
+            legendDot(color: Theme.Colors.danger, label: DeviceRisk.Level.critical.displayLabel)
+            legendDot(color: Theme.Colors.warn, label: DeviceRisk.Level.high.displayLabel)
+            legendDot(color: Theme.Colors.gold, label: DeviceRisk.Level.medium.displayLabel)
+            legendDot(color: Theme.Colors.fgMuted, label: DeviceRisk.Level.low.displayLabel)
+            legendDot(color: Theme.Colors.ok, label: DeviceRisk.Level.clean.displayLabel)
         }
         .fixedSize()
     }
@@ -509,15 +579,17 @@ struct DevicesView: View {
                                 .textSelection(.enabled)
                         }
                         Spacer()
-                        riskPill(device.risk)
+                        riskPill(priorityRisk(for: device).level)
                     }
 
                     detailSection("Inventory", rows: [
                         ("Model", device.model),
                         ("macOS", device.osVersion),
                         ("Managed", device.managedState),
-                        ("Last contact", device.lastContact),
+                        ("Last check-in", device.lastContact),
                         ("Last inventory", device.lastInventory),
+                        ("Last contact", Self.contactText(device)),
+                        ("Contact gap", contactGap(of: device)?.label ?? ""),
                         ("User", userLabel(device)),
                         ("Department", device.department),
                         ("Site", device.site),
@@ -835,12 +907,16 @@ struct DevicesView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeader(title: "Security State")
             VStack(spacing: 0) {
-                securityRow("FileVault", value: device.fileVault)
-                securityRow("SIP", value: device.sip)
-                securityRow("Firewall", value: device.firewall)
-                securityRow("Gatekeeper", value: device.gatekeeper)
+                securityRow("FileVault", value: fileVaultText(device, short: true),
+                            tone: securityTone(.fileVault, of: device))
+                securityRow("SIP", value: device.sip, tone: securityTone(.sip, of: device))
+                securityRow("Firewall", value: device.firewall,
+                            tone: securityTone(.firewall, of: device))
+                securityRow("Gatekeeper", value: device.gatekeeper,
+                            tone: securityTone(.gatekeeper, of: device))
                 if !device.bootstrapToken.isEmpty {
-                    securityRow("Bootstrap", value: device.bootstrapToken)
+                    securityRow("Bootstrap", value: device.bootstrapToken,
+                                tone: bootstrapTone(device.bootstrapToken))
                 }
                 HStack(alignment: .firstTextBaseline) {
                     Text("FAILED RULES")
@@ -875,8 +951,8 @@ struct DevicesView: View {
                     SectionHeader(title: "Priority Risk")
                     Spacer()
                     Pill(
-                        text: "\(risk.level.displayLabel) · \(risk.score)",
-                        tone: priorityRiskTone(for: risk.level)
+                        text: Self.priorityRiskBadgeText(risk),
+                        tone: Self.riskTone(for: risk.level)
                     )
                 }
                 VStack(alignment: .leading, spacing: 6) {
@@ -994,17 +1070,28 @@ struct DevicesView: View {
         }
     }
 
-    private func priorityRiskTone(for level: DeviceRisk.Level) -> Pill.Tone {
+    /// The band's colour on the Risk pill, the panel's Priority Risk badge and the legend.
+    nonisolated static func riskTone(for level: DeviceRisk.Level) -> Pill.Tone {
         switch level {
-        case .clean, .low: return .muted
-        case .medium:      return .gold
-        case .high:        return .warn
-        case .critical:    return .danger
+        case .clean:    return .teal
+        case .low:      return .muted
+        case .medium:   return .gold
+        case .high:     return .warn
+        case .critical: return .danger
         }
     }
 
+    /// The Risk pill's text: the band alone. The panel's badge adds the score.
+    nonisolated static func riskPillText(_ level: DeviceRisk.Level) -> String {
+        level.displayLabel
+    }
+
+    nonisolated static func priorityRiskBadgeText(_ risk: DeviceRisk) -> String {
+        "\(riskPillText(risk.level)) · \(risk.score)"
+    }
+
     @ViewBuilder
-    private func securityRow(_ label: String, value: String) -> some View {
+    private func securityRow(_ label: String, value: String, tone: Pill.Tone) -> some View {
         if !value.isEmpty {
             HStack(alignment: .firstTextBaseline) {
                 Text(label.uppercased())
@@ -1012,44 +1099,68 @@ struct DevicesView: View {
                     .tracking(1.0)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
                     .frame(width: Self.detailLabelWidth, alignment: .leading)
-                Pill(text: value, tone: securityTone(for: value))
+                Pill(text: value, tone: tone)
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 4)
         }
     }
 
-    /// Positive words used to be matched first, so "UNENCRYPTED" and "Not Enabled"
-    /// showed a green check; `SecurityValueState` checks the negative forms first.
-    private func securityTone(for value: String) -> Pill.Tone {
-        switch SecurityValueState(value) {
-        case .good: return .teal
-        case .bad: return .danger
-        case .unknown: return .muted
+    /// The workspace's verdict sets the tone, so a control the policy calls a warning
+    /// reads amber, and an ignored or unmeasured one grey.
+    private func securityTone(
+        _ control: SecurityControl, of device: DeviceInventoryRecord
+    ) -> Pill.Tone {
+        let value = switch control {
+        case .fileVault: device.fileVault
+        case .sip: device.sip
+        case .firewall: device.firewall
+        case .gatekeeper: device.gatekeeper
+        }
+        let verdict = activeSnapshot.securityPolicy.verdict(
+            for: control, value: value, hardwareEncrypted: device.hardwareEncrypted)
+        switch verdict {
+        case .pass: return .teal
+        case .fail: return .danger
+        case .warning: return .warn
+        case .ignored, .unknown: return .muted
         }
     }
 
+    /// The policy does not govern the bootstrap token, so its tone is the value read alone.
+    private func bootstrapTone(_ value: String) -> Pill.Tone {
+        switch SecurityControlPolicy.reading(value) {
+        case true?: return .teal
+        case false?: return .danger
+        case nil: return .muted
+        }
+    }
+
+    /// `short` for the detail pill, which already sits under a "FileVault" label.
+    private func fileVaultText(_ device: DeviceInventoryRecord, short: Bool = false) -> String {
+        activeSnapshot.securityPolicy.fileVaultLabel(
+            device.fileVault, hardwareEncrypted: device.hardwareEncrypted, short: short)
+    }
+
     // Per-control glyph row for the inventory table. Five tight icons:
-    // FV / SIP / FW / GK / BT. Reuses `securityTone` so the table and the
-    // detail panel agree on what counts as good/bad/unknown.
+    // FV / SIP / FW / GK / BT. Uses the detail panel's tones so the two agree.
     @ViewBuilder
     private func securityIndicators(for device: DeviceInventoryRecord) -> some View {
-        let controls: [(String, String)] = [
-            ("FV", device.fileVault),
-            ("SIP", device.sip),
-            ("FW", device.firewall),
-            ("GK", device.gatekeeper),
-            ("BT", device.bootstrapToken),
+        let controls: [(String, String, Pill.Tone)] = [
+            ("FV", fileVaultText(device), securityTone(.fileVault, of: device)),
+            ("SIP", device.sip, securityTone(.sip, of: device)),
+            ("FW", device.firewall, securityTone(.firewall, of: device)),
+            ("GK", device.gatekeeper, securityTone(.gatekeeper, of: device)),
+            ("BT", device.bootstrapToken, bootstrapTone(device.bootstrapToken)),
         ]
         HStack(spacing: 3) {
-            ForEach(controls, id: \.0) { (label, value) in
-                securityGlyph(label: label, value: value)
+            ForEach(controls, id: \.0) { (label, value, tone) in
+                securityGlyph(label: label, value: value, tone: tone)
             }
         }
     }
 
-    private func securityGlyph(label: String, value: String) -> some View {
-        let tone = securityTone(for: value)
+    private func securityGlyph(label: String, value: String, tone: Pill.Tone) -> some View {
         let symbol: String
         let color: Color
         switch tone {
@@ -1059,6 +1170,9 @@ struct DevicesView: View {
         case .danger:
             symbol = "xmark.circle.fill"
             color = Theme.Colors.danger
+        case .warn:
+            symbol = "exclamationmark.circle.fill"
+            color = Theme.Colors.warn
         default:
             symbol = "minus.circle"
             color = Theme.Colors.fgMuted
@@ -1071,13 +1185,8 @@ struct DevicesView: View {
             .accessibilityLabel("\(label) \(display)")
     }
 
-    private func riskPill(_ risk: DeviceInventoryRecord.Risk) -> Pill {
-        switch risk {
-        case .critical:  Pill(text: "Critical", tone: .danger)
-        case .attention: Pill(text: "Attention", tone: .warn)
-        case .ok:        Pill(text: "OK", tone: .teal)
-        case .unknown:   Pill(text: "Unknown", tone: .muted)
-        }
+    private func riskPill(_ level: DeviceRisk.Level) -> Pill {
+        Pill(text: Self.riskPillText(level), tone: Self.riskTone(for: level))
     }
 
     private func patchPill(_ device: DeviceInventoryRecord) -> Pill {
@@ -1097,9 +1206,24 @@ struct DevicesView: View {
         }
     }
 
+    /// The stale rule the screen follows: its window picker over the workspace's
+    /// `stale_basis`.
+    private var staleRule: StaleRule {
+        StaleRule(days: staleDays, basis: activeSnapshot.staleBasis)
+    }
+
     private func isStale(_ device: DeviceInventoryRecord) -> Bool {
-        if let days = device.daysSinceContact { return days >= staleDays }
-        return device.stale
+        device.isStale(staleRule)
+    }
+
+    private func contactGap(of device: DeviceInventoryRecord) -> ContactGap? {
+        device.contactGap(rule: staleRule, gapDays: activeSnapshot.contactGapDays)
+    }
+
+    /// Jamf Pro's Last Contact, which counts MDM and declarative device management, written as
+    /// the check-in and inventory dates are: an ISO 8601 timestamp.
+    nonisolated static func contactText(_ device: DeviceInventoryRecord) -> String {
+        device.contactDate.map { ISO8601DateFormatter().string(from: $0) } ?? ""
     }
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {
@@ -1219,21 +1343,35 @@ struct DevicesView: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         isExportingCSV = true
         defer { isExportingCSV = false }
-        let rows = filteredDevices
-        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
-        let body = rows.map { d in
-            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
-             d.fileVault, d.lastContact, d.risk.rawValue]
-                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-                .joined(separator: ",")
-        }.joined(separator: "\n")
+        let text = Self.exportCSV(
+            devices: filteredDevices, policy: activeSnapshot.securityPolicy,
+            riskLevel: { priorityRisk(for: $0).level })
         do {
-            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            try text.write(to: url, atomically: true, encoding: .utf8)
             // Path is user-confirmed via NSSavePanel — safe to reveal directly.
             NSWorkspace.shared.activateFileViewerSelecting([url])
         } catch {
             exportError = error.localizedDescription
         }
+    }
+
+    /// The filtered list as CSV, one row per device, each field through
+    /// `StaleDeviceService.csvField` so a typed formula opens as text. FileVault is labelled
+    /// as on screen, so a Mac the hardware rule lowered does not read UNENCRYPTED beside its
+    /// risk. `riskLevel` is the screen's own rating, so the Risk column matches the pill.
+    nonisolated static func exportCSV(
+        devices: [DeviceInventoryRecord], policy: SecurityControlPolicy,
+        riskLevel: (DeviceInventoryRecord) -> DeviceRisk.Level
+    ) -> String {
+        let header = "Name,Serial,OS Version,User,Email,Department,FileVault,Last Check-in,Risk\n"
+        let body = devices.map { d in
+            [d.name, d.serial, d.osVersion, d.user, d.email, d.department,
+             policy.fileVaultLabel(d.fileVault, hardwareEncrypted: d.hardwareEncrypted),
+             d.lastContact, riskLevel(d).rawValue]
+                .map(StaleDeviceService.csvField)
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        return header + body
     }
 }
 

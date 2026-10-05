@@ -119,14 +119,26 @@ enum ScaffoldService {
         "secure_boot":      ["secure boot level", "secure boot"],
         "bootstrap_token":  ["bootstrap token escrowed", "bootstrap token is escrowed"],
         "disk_percent_full": ["boot drive percentage full", "percentage full", "disk percent full"],
-        "architecture":     ["architecture", "arch", "cpu type"],
+        "architecture":     ["architecture type", "architecture", "arch", "cpu type"],
         "model":            ["model", "hardware model", "device model"],
+        "model_identifier": ["model identifier", "model id"],
         "last_enrollment":  ["last enrollment", "enrollment date", "enrolled"],
         "mdm_expiry":       ["mdm profile expiration date", "mdm expiry", "profile expiration date"],
+        // Optional inventory columns; hints come from the retired ReportEngine scaffold.
+        "full_name":        ["full name", "fullname", "user full name"],
+        "asset_tag":        ["asset tag", "assettag", "asset id"],
+        "building":         ["building", "site building"],
+        "position":         ["position", "job title"],
+        "last_logged_in_user": ["last logged in", "last user", "logged in user"],
+        "recovery_lock":    ["recovery lock", "recoverylock", "recovery lock enabled"],
+        "battery_health":   ["battery health", "battery condition", "battery cycle"],
+        "entra_sso_status": ["entra sso", "azure ad", "entra id sso"],
     ]
 
     private static let columnExcludes: [String: [String]] = [
         "manager":          ["managed", "unmanaged"],
+        // "Model Identifier" is model_identifier's column; `model` is the marketing name.
+        "model":            ["identifier"],
         "secure_boot":      ["external boot"],
         "bootstrap_token":  ["allowed"],
         "disk_percent_full": ["available mb", "capacity mb", "free mb"],
@@ -322,8 +334,9 @@ enum ScaffoldService {
 
     /// Write a populated `config.yaml` to `url` based on scaffold results.
     ///
-    /// Matched columns are placed in the `columns:` section. Unmatched columns
-    /// are listed as empty strings. Compliance columns go in `compliance:`.
+    /// Matched columns are placed in the `columns:` section. An unmatched base column is
+    /// listed as an empty string; an unmatched optional one (`ConfigState.optionalColumnKeys`)
+    /// is left out. Compliance columns go in `compliance:`.
     /// - Parameters:
     ///   - url: Destination file URL. Parent directory must already exist.
     ///   - result: Column matches returned by `matchColumns(from:profile:)`.
@@ -351,6 +364,59 @@ enum ScaffoldService {
             [.posixPermissions: NSNumber(value: Int16(0o600))],
             ofItemAtPath: url.path
         )
+    }
+
+    /// Re-scaffold: detect column mappings from `csvURL` and merge them into profile's existing
+    /// config.yaml through `mergeColumns`, then save. Agents, custom EAs and thresholds are not
+    /// touched. The report counts what reached the file; `state` is what was saved;
+    /// `saveReport` is what the save left as typed or did not keep; `readStamp` is the file
+    /// as the merge read it, for a Config screen to tell whether it merged what it loaded.
+    ///
+    /// - Throws: If the CSV cannot be read or the config cannot be loaded or saved.
+    static func mergeIntoConfig(
+        csvURL: URL,
+        profile: String,
+        workspaceRoot: URL? = nil
+    ) throws -> (
+        report: ColumnMergeReport, familyLabel: String, state: ConfigState,
+        saveReport: ConfigSaveReport, readStamp: ConfigFileStamp
+    ) {
+        let sample = try readSample(from: csvURL)
+        let result = try matchColumns(from: csvURL, profile: profile)
+        var loaded = try ConfigService.load(profile: profile, workspaceRoot: workspaceRoot)
+        let isMobile = result.family == .mobile
+        let detected = isMobile ? result.mobileColumns : result.columns
+        let existing = isMobile ? loaded.state.mobileColumns : loaded.state.columns
+        let merge = mergeColumns(existing: existing, detected: detected, csvHeaders: sample.headers)
+        var report = merge.report
+        if isMobile { loaded.state.mobileColumns = merge.merged }
+        else { loaded.state.columns = merge.merged }
+
+        // Compliance columns (computer family only) merge the same way — they live in two
+        // scalar fields, not the columns dict.
+        if !isMobile {
+            let existingCompliance = [
+                "failures_count_column": loaded.state.failuresCountColumn,
+                "failures_list_column": loaded.state.failuresListColumn,
+            ]
+            let cMerge = mergeColumns(
+                existing: existingCompliance, detected: result.complianceColumns,
+                csvHeaders: sample.headers)
+            loaded.state.failuresCountColumn =
+                cMerge.merged["failures_count_column"] ?? loaded.state.failuresCountColumn
+            loaded.state.failuresListColumn =
+                cMerge.merged["failures_list_column"] ?? loaded.state.failuresListColumn
+            report.added += cMerge.report.added
+            report.repaired += cMerge.report.repaired
+            report.keptCount += cMerge.report.keptCount
+            report.staleUnresolved += cMerge.report.staleUnresolved
+        }
+        let saved = try ConfigService.save(
+            profile: profile, state: loaded.state, existingDocument: loaded.document,
+            workspaceRoot: workspaceRoot)
+        return (
+            report, isMobile ? "mobile device export" : "computer export", loaded.state,
+            saved.report, loaded.stamp)
     }
 
     // MARK: - Private helpers
@@ -459,7 +525,8 @@ enum ScaffoldService {
         "computer_name", "serial_number", "operating_system", "last_checkin",
         "department", "manager", "email",
         "filevault", "sip", "firewall", "gatekeeper", "secure_boot", "bootstrap_token",
-        "disk_percent_full", "architecture", "model", "last_enrollment", "mdm_expiry",
+        "disk_percent_full", "architecture", "model", "model_identifier", "last_enrollment",
+        "mdm_expiry",
     ]
 
     // Mobile column key order matches Python DEFAULT_CONFIG["mobile_columns"].
@@ -478,7 +545,6 @@ enum ScaffoldService {
             "  data_dir: \"jamf-cli-data\"",
             "  profile: \"\(yamlEscape(profile))\"",
             "  use_cached_data: true",
-            "  allow_live_overview: true",
             "",
             "columns:",
         ]
@@ -487,6 +553,11 @@ enum ScaffoldService {
         for key in orderedColumnKeys {
             let value = isMobile ? "" : yamlEscape(result.columns[key] ?? "")
             lines.append("  \(key): \"\(value)\"")
+        }
+        // Optional columns are written only when the CSV matched one, as ConfigService does.
+        for key in ConfigState.optionalColumnKeys {
+            guard !isMobile, let header = result.columns[key], !header.isEmpty else { continue }
+            lines.append("  \(key): \"\(yamlEscape(header))\"")
         }
 
         lines += [
@@ -540,7 +611,6 @@ enum ScaffoldService {
             "  data_dir: \"jamf-cli-data\"",
             "  profile: \"\(yamlEscape(profile))\"",
             "  use_cached_data: true",
-            "  allow_live_overview: true",
             "",
             "columns:",
         ]
@@ -587,7 +657,8 @@ enum ScaffoldService {
         "computer name", "device name", "display name", "hostname", "name",
         "serial number", "serial", "udid", "jss computer id", "jss mobile device id",
         "device id", "asset tag", "model", "model identifier", "processor type",
-        "apple silicon", "architecture", "operating system version", "os version",
+        "apple silicon", "architecture", "architecture type", "operating system version",
+        "os version",
         "build", "last inventory update", "last check-in", "last checkin",
         "last contact", "last enrollment", "enrollment date", "managed", "supervised",
         "ip address", "last reported ip address", "mac address", "wi-fi mac address",

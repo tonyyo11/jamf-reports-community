@@ -139,6 +139,32 @@ final class CoreDashboardTests: XCTestCase {
         }
     }
 
+    /// A corrupt count outside Int's range must not trap the Hardware Models sheet.
+    func testWriteHardwareModelsSurvivesOutOfRangeCount() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        createdTempDirs.append(tmp)
+        let kindDir = tmp.appendingPathComponent("inventory-summary")
+        try FileManager.default.createDirectory(at: kindDir, withIntermediateDirectories: true)
+        let json = """
+        [{"model": "MacBookPro18,3", "os_version": "15.1", "count": 5},
+         {"model": "Corrupt", "os_version": "15.1", "count": 1e300}]
+        """
+        try json.write(
+            to: kindDir.appendingPathComponent("inventory-summary.json"),
+            atomically: true, encoding: .utf8
+        )
+
+        let dash = makeDashboard(dataDir: tmp)
+        try dash.writeHardwareModels()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "Hardware Models"))
+        let counts = ws.dedupedCells.compactMap { cell -> Int? in
+            guard cell.col == 1, case .int(let n) = cell.value else { return nil }
+            return n
+        }
+        XCTAssertEqual(counts.sorted(), [0, 5])
+    }
+
     // MARK: - Mobile Inventory
 
     func testWriteMobileInventory() throws {
@@ -193,7 +219,7 @@ final class CoreDashboardTests: XCTestCase {
         }?.row)
         let headers = rowText(ws, row: headerRow, columns: 20)
         let column = try XCTUnwrap(headers.firstIndex(of: "Shared iPad"))
-        // Rows sort by family ("Mobile" for all three), then by name.
+        // Rows sort by family ("Unknown" for all three), then by name.
         let values = (1...3).map { rowText(ws, row: headerRow + $0, columns: 20)[column] }
         XCTAssertEqual(values, ["Yes", "No", ""])
     }
@@ -268,6 +294,99 @@ final class CoreDashboardTests: XCTestCase {
 
         let dash = makeDashboard(dataDir: dataDir)
         XCTAssertNoThrow(try dash.writeCheckinHealth())
+    }
+
+    /// `thresholds.checkin_overdue_days` decides the count; jamf-cli's `stale` flag does not.
+    func testCheckinHealthCountsAgainstTheConfiguredDays() throws {
+        let rows = [
+            // Either side of 7 days; each flag disagrees with the date.
+            row("recent-flagged", days: "6", stale: true),
+            row("edge", days: "7", stale: true),
+            row("late-unflagged", days: "8", stale: false),
+            row("late-flagged", days: "30", stale: true),
+            // No day count at all: jamf-cli's flag decides, as it did before the key was read.
+            row("undated-flagged", days: nil, stale: true),
+            row("undated-clear", days: nil, stale: false),
+        ]
+        let sheet = try checkinSheet(rows: rows, checkinOverdueDays: 7)
+
+        XCTAssertTrue(try XCTUnwrap(text(sheet, row: 1, col: 0)).hasPrefix(subtitlePrefix(7)))
+        XCTAssertEqual(count(in: sheet, label: "Total Devices"), 6)
+        XCTAssertEqual(count(in: sheet, label: "Checked In (within 7 days)"), 3)
+        XCTAssertEqual(count(in: sheet, label: "Overdue (>7 days)"), 3)
+    }
+
+    func testCheckinHealthMovesWithTheConfiguredThreshold() throws {
+        let rows = [row("a", days: "3", stale: false), row("b", days: "10", stale: false)]
+
+        let tight = try checkinSheet(rows: rows, checkinOverdueDays: 2)
+        XCTAssertTrue(try XCTUnwrap(text(tight, row: 1, col: 0)).hasPrefix(subtitlePrefix(2)))
+        XCTAssertEqual(count(in: tight, label: "Overdue (>2 days)"), 2)
+
+        let loose = try checkinSheet(rows: rows, checkinOverdueDays: 14)
+        XCTAssertEqual(count(in: loose, label: "Overdue (>14 days)"), 0)
+    }
+
+    /// With no `thresholds` block the sheet uses the key's own default, not `stale_device_days`.
+    func testCheckinHealthDefaultsToSevenDaysNotTheStaleDeviceThreshold() throws {
+        var config = ReportConfig()
+        var thresholds = ThresholdsConfig()
+        thresholds.staleDeviceDays = 60
+        config.thresholds = thresholds
+        let sheet = try checkinSheet(
+            rows: [row("a", days: "10", stale: false)], config: config)
+        XCTAssertEqual(count(in: sheet, label: "Overdue (>7 days)"), 1)
+    }
+
+    private func row(_ name: String, days: String?, stale: Bool) -> [String: Any] {
+        var item: [String: Any] = ["name": name, "managed": true, "stale": stale]
+        if let days { item["days_since_contact"] = days }
+        return item
+    }
+
+    private func checkinSheet(
+        rows: [[String: Any]], checkinOverdueDays: Int
+    ) throws -> Worksheet {
+        var config = ReportConfig()
+        var thresholds = ThresholdsConfig()
+        thresholds.checkinOverdueDays = checkinOverdueDays
+        config.thresholds = thresholds
+        return try checkinSheet(rows: rows, config: config)
+    }
+
+    private func checkinSheet(rows: [[String: Any]], config: ReportConfig) throws -> Worksheet {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-checkin-\(UUID().uuidString)")
+        let kind = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: kind, withIntermediateDirectories: true)
+        createdTempDirs.append(dataDir)
+        try JSONSerialization.data(withJSONObject: rows)
+            .write(to: kind.appendingPathComponent("device-compliance.json"))
+
+        let workbook = Workbook()
+        try CoreDashboard(config: config, dataDir: dataDir, workbook: workbook)
+            .writeCheckinHealth()
+        return try XCTUnwrap(workbook.sheet(named: "Check-in Health"))
+    }
+
+    private func subtitlePrefix(_ days: Int) -> String { "Threshold: \(days) days | Generated: " }
+
+    private func text(_ sheet: Worksheet, row: Int, col: Int) -> String? {
+        for cell in sheet.cells where cell.row == row && cell.col == col {
+            if case .string(let value) = cell.value { return value }
+        }
+        return nil
+    }
+
+    /// The Count column of the line whose label is `label`.
+    private func count(in sheet: Worksheet, label: String) -> Int? {
+        guard let line = sheet.cells.first(where: {
+            $0.col == 0 && text(sheet, row: $0.row, col: 0) == label
+        })?.row else { return nil }
+        for cell in sheet.cells where cell.row == line && cell.col == 1 {
+            if case .int(let value) = cell.value { return value }
+        }
+        return nil
     }
 
     // MARK: - Active Devices
@@ -472,40 +591,6 @@ final class CoreDashboardTests: XCTestCase {
         XCTAssertEqual(items[0].userAndLocation?.department, "IT")
     }
 
-    func testGroupRowDecoding() throws {
-        let json = """
-        [{"groupPlatformId":"abc-123","groupJamfProId":"67",
-          "groupName":"All Macs","groupType":"COMPUTER","membershipCount":42,"smart":true}]
-        """
-        let rows = try JSONDecoder().decode([GroupRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0].groupName, "All Macs")
-        XCTAssertEqual(rows[0].membershipCount, 42)
-        XCTAssertEqual(rows[0].smart, true)
-    }
-
-    func testPackageRowDecoding() throws {
-        let json = """
-        [{"id":"1","packageName":"Firefox.pkg","fileName":"Firefox.pkg","notes":"Test","size":10485760}]
-        """
-        let rows = try JSONDecoder().decode([PackageRow].self, from: Data(json.utf8))
-        XCTAssertEqual(rows.count, 1)
-        XCTAssertEqual(rows[0].packageName, "Firefox.pkg")
-    }
-
-    func testEnvStatsReportDecoding() throws {
-        let json = """
-        {"policies":42,"config_profiles":18,"scripts":7,"packages":55,
-         "smart_groups_computer":30,"smart_groups_mobile":5,
-         "extension_attributes":12,"categories":8}
-        """
-        let report = try JSONDecoder().decode(EnvStatsReport.self, from: Data(json.utf8))
-        XCTAssertEqual(report.policies, 42)
-        XCTAssertEqual(report.configProfiles, 18)
-        XCTAssertEqual(report.smartGroupsComputer, 30)
-        XCTAssertEqual(report.extensionAttributes, 12)
-    }
-
     func testMobileConfigProfileRowDecoding() throws {
         let json = """
         [{"id":1,"name":"WiFi Profile","category":"Network","site":"Main","description":"Corp WiFi"}]
@@ -528,32 +613,6 @@ final class CoreDashboardTests: XCTestCase {
         guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
         let data = try Data(contentsOf: first)
         XCTAssertNoThrow(try JSONDecoder().decode([MobileDeviceInventoryItem].self, from: data))
-    }
-
-    func testGroupsFixtureDecoding() throws {
-        let fixtureURL = fixturesDir.appendingPathComponent("jamf-cli-data/groups")
-        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
-            throw XCTSkip("Fixture not available")
-        }
-        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
-        guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
-        let data = try Data(contentsOf: first)
-        let rows = try JSONDecoder().decode([GroupRow].self, from: data)
-        XCTAssertFalse(rows.isEmpty)
-        XCTAssertNotNil(rows[0].groupName)
-    }
-
-    func testPackagesFixtureDecoding() throws {
-        let fixtureURL = fixturesDir.appendingPathComponent("jamf-cli-data/packages")
-        guard FileManager.default.fileExists(atPath: fixtureURL.path) else {
-            throw XCTSkip("Fixture not available")
-        }
-        let files = TestFixtures.listDir(fixtureURL).filter { $0.pathExtension == "json" }
-        guard let first = files.first else { throw XCTSkip("No JSON files in fixture") }
-        let data = try Data(contentsOf: first)
-        let rows = try JSONDecoder().decode([PackageRow].self, from: data)
-        XCTAssertFalse(rows.isEmpty)
-        XCTAssertNotNil(rows[0].packageName)
     }
 
     // MARK: - Platform compliance + DDM/Blueprint writers
@@ -631,6 +690,50 @@ final class CoreDashboardTests: XCTestCase {
             }
         }
         return text
+    }
+
+    /// jamf-cli writes `dataType`; the sheet read `data_type` and left the column blank.
+    func testWriteEADefinitionsReadsDataType() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        let subdir = tmp.appendingPathComponent("computer-extension-attributes", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let json = """
+        [{"id":"7","name":"Battery Cycle Count","description":"Cycles","dataType":"INTEGER",
+          "inputType":"SCRIPT","enabled":true}]
+        """
+        try Data(json.utf8).write(
+            to: subdir.appendingPathComponent("computer-extension-attributes.json")
+        )
+
+        let dash = makeDashboard(dataDir: tmp)
+        try dash.writeEADefinitions()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "EA Definitions"))
+        XCTAssertEqual(rowText(ws, row: 3, columns: 4), ["ID", "Name", "Data Type", "Description"])
+        XCTAssertEqual(rowText(ws, row: 4, columns: 4),
+                       ["7", "Battery Cycle Count", "Integer", "Cycles"],
+                       "the label the app's EA Definitions screen shows")
+    }
+
+    /// The legacy `ea-definitions` kind spells it `data_type`; no type reads Unknown.
+    func testWriteEADefinitionsReadsLegacyDataType() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-test-\(UUID().uuidString)")
+        let subdir = tmp.appendingPathComponent("ea-definitions", isDirectory: true)
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let json = """
+        [{"id":"8","name":"Cert Expiry","description":"Cert","data_type":"DATE"},
+         {"id":"9","name":"No Type","description":"None"}]
+        """
+        try Data(json.utf8).write(to: subdir.appendingPathComponent("ea-definitions.json"))
+
+        let dash = makeDashboard(dataDir: tmp)
+        try dash.writeEADefinitions()
+        let ws = try XCTUnwrap(dash.workbook.sheet(named: "EA Definitions"))
+        XCTAssertEqual(rowText(ws, row: 4, columns: 4), ["8", "Cert Expiry", "Date", "Cert"])
+        XCTAssertEqual(rowText(ws, row: 5, columns: 4), ["9", "No Type", "Unknown", "None"])
     }
 
     /// No `protect-overview` fixture exists in the corpus, so write jamf-cli's overview

@@ -79,8 +79,8 @@ struct StubReportNarrativeGenerator: ReportNarrativeGenerating {
 // MARK: - Factory (ungated signature; FM branch is gated)
 
 /// Picks the conformer for a config + resolved availability. Same shape as
-/// `makeInsightGenerator`. The narrative input is aggregates-only (like the
-/// insight card), so it resolves via the normal `GeneratorKind.select`.
+/// `makeInsightGenerator`. The narrative input is aggregates-only, like the
+/// insight card's.
 @MainActor
 func makeReportNarrativeGenerator(
     config: AIConfig,
@@ -92,11 +92,6 @@ func makeReportNarrativeGenerator(
     guard availability.isReady else {
         return StubReportNarrativeGenerator(availability: availability)
     }
-    // `external` tier is specced but not built; the stub throws → section omitted.
-    if GeneratorKind.select(config: config) == .external {
-        return StubReportNarrativeGenerator(availability: .requiresMacOS27)
-    }
-
     #if canImport(FoundationModels) && compiler(>=6.4)
     if #available(macOS 27, *) {
         return FoundationModelsReportNarrativeGenerator(config: config)
@@ -179,8 +174,8 @@ enum ReportNarrative {
 #if canImport(FoundationModels) && compiler(>=6.4)
 import FoundationModels
 
-/// Narrative generator: aggregates-only input, resolved through the normal
-/// `GeneratorKind.select` (same guards as `FoundationModelsInsightGenerator`).
+/// Narrative generator: aggregates-only input, same availability guards as
+/// `FoundationModelsInsightGenerator`.
 @available(macOS 27, *)
 struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
     let config: AIConfig
@@ -198,26 +193,16 @@ struct FoundationModelsReportNarrativeGenerator: ReportNarrativeGenerating {
     private static let options = GenerationOptions(temperature: 0.1)
 
     func narrative(_ input: ReportNarrativeInput) async throws -> String {
-        let kind = GeneratorKind.select(config: config)
-        AppLogger.platform.notice("""
-            Report narrative requested via \(String(describing: kind), privacy: .public) \
-            (tier=\(config.resolvedTier.rawValue, privacy: .public))
-            """)
+        AppLogger.platform.notice(
+            "Report narrative requested (tier=\(config.resolvedTier.rawValue, privacy: .public))")
 
         do {
-            switch kind {
-            case .onDevice:
-                let model = SystemLanguageModel.default
-                guard case .available = model.availability else {
-                    throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
-                }
-                let prompt = input.promptContext(maxApproxTokens: model.contextSize / 4)
-                return try await respond(model: model, prompt: prompt)
-
-            case .external:
-                // The factory never routes here — guard, never construct.
-                throw FleetInsightError.unavailable(.requiresMacOS27)
+            let model = SystemLanguageModel.default
+            guard case .available = model.availability else {
+                throw FleetInsightError.unavailable(ModelAvailability.map(model.availability))
             }
+            let prompt = input.promptContext(maxApproxTokens: model.contextSize / 4)
+            return try await respond(model: model, prompt: prompt)
         } catch let error as FleetInsightError {
             throw error
         } catch {
