@@ -109,6 +109,11 @@ final class WorkspaceStore {
     /// `private`) so the `WorkspaceStore+Refresh.swift` extension can set it —
     /// Swift's `private` is file-scoped, not type-scoped, across extensions.
     var autoAuditRefreshInFlight: Bool = false
+    /// Count of `refreshDataFreshness` and `refreshAutomationHealth` requests. Each read runs
+    /// off the main actor and publishes only if no later request or profile switch overtook it.
+    /// Internal for the `WorkspaceStore+Automation.swift` extension.
+    var freshnessRequests = 0
+    var healthRequests = 0
     /// UserDefaults key for "user has explicitly chosen demo mode."
     /// Persisted by `setDemoMode(_:)`; consulted by `init` and
     /// `reloadFromDisk` to decide whether to enter demo on no-profiles.
