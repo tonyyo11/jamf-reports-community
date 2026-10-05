@@ -846,20 +846,25 @@ private extension DeviceInventoryService {
         }
     }
 
+    /// Walks Unicode scalars, not Characters: "\r\n" is ONE Character that equals neither "\r"
+    /// nor "\n", so a CSV saved by Excel or Windows read as a single row with no devices.
+    /// It also avoids `Array(text)`, which copies 16 bytes per Character.
     static func parseCSVTable(_ text: String) -> [[String]] {
-        let chars = Array(text)
+        let scalars = text.unicodeScalars
         var rows: [[String]] = []
         var row: [String] = []
         var field = ""
         var inQuotes = false
-        var i = 0
+        var idx = scalars.startIndex
 
-        while i < chars.count {
-            let ch = chars[i]
+        while idx < scalars.endIndex {
+            let ch = scalars[idx]
+            var next = scalars.index(after: idx)
+            let following = next < scalars.endIndex ? scalars[next] : nil
             if ch == "\"" {
-                if inQuotes, i + 1 < chars.count, chars[i + 1] == "\"" {
-                    field.append("\"")
-                    i += 1
+                if inQuotes, following == "\"" {
+                    field.unicodeScalars.append(ch)
+                    next = scalars.index(after: next)
                 } else {
                     inQuotes.toggle()
                 }
@@ -871,11 +876,11 @@ private extension DeviceInventoryService {
                 if !row.allSatisfy({ $0.isEmpty }) { rows.append(row) }
                 row = []
                 field = ""
-                if ch == "\r", i + 1 < chars.count, chars[i + 1] == "\n" { i += 1 }
+                if ch == "\r", following == "\n" { next = scalars.index(after: next) }
             } else {
-                field.append(ch)
+                field.unicodeScalars.append(ch)
             }
-            i += 1
+            idx = next
         }
         row.append(field)
         if !row.allSatisfy({ $0.isEmpty }) { rows.append(row) }
@@ -891,21 +896,36 @@ extension DeviceInventoryService {
     /// with or without a fraction of any length, then the CSV export forms.
     static func parseDate(_ text: String) -> Date? {
         guard !text.isEmpty else { return nil }
-        if let date = ISO8601DateFormatter().date(from: text) { return date }
+        if let date = isoFormatter.date(from: text) { return date }
         // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
         // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
         // Mac had no contact age unless device-compliance supplied a day count.
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: text) { return date }
-        let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
-        for format in formats {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = format
+        if let date = isoFractionalFormatter.date(from: text) { return date }
+        for formatter in exportDateFormatters {
             if let date = formatter.date(from: text) { return date }
         }
         return nil
+    }
+
+    // Built once: this runs several times per CSV row and per computer. As for
+    // `StateFileStore.formatter`, a configured formatter's `date(from:)` is safe to share.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let exportDateFormatters: [DateFormatter] = [
+        "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy",
+    ].map { format in
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = format
+        return formatter
     }
 }
 
@@ -930,16 +950,20 @@ private extension DeviceInventoryService {
         return ""
     }
 
+    /// A Mac has a few hundred rules at most. A cell far past that is a bad export, and the
+    /// risk score multiplies the count by a per-failure weight, which overflows near Int.max.
+    static let maxFailureCount = 1_000_000
+
     static func failureCount(_ row: [String: String]) -> Int {
         let exact = cell(row, ["Failed Rules", "Failed Rules Count", "Failures", "Compliance Failures"])
         if let value = Int(exact.trimmingCharacters(in: CharacterSet(charactersIn: " %"))) {
-            return value
+            return min(max(value, 0), maxFailureCount)
         }
         for (key, value) in row {
             let normalized = normalizeHeader(key)
             if normalized.contains("fail") && (normalized.contains("count") || normalized.contains("rules")),
                let parsed = Int(value.trimmingCharacters(in: CharacterSet(charactersIn: " %"))) {
-                return parsed
+                return min(max(parsed, 0), maxFailureCount)
             }
         }
         return 0

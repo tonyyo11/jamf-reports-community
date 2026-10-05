@@ -305,6 +305,24 @@ final class HtmlCleanupAndTimelineTests: XCTestCase {
         XCTAssertEqual(snapshots.first?.sipPct, 1.0)
     }
 
+    func testLoadSummarySnapshotsSkipsATotalOutsideIntRange() throws {
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let summariesDir = tmp.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        // `Int(1e30)` traps; the file counts as skipped, like any other unreadable one.
+        let summary: [String: Any] = ["date": "2026-05-31", "totalDevices": 1e30]
+        try JSONSerialization.data(withJSONObject: summary)
+            .write(to: summariesDir.appendingPathComponent("summary_2026-05-31.json"))
+
+        let dataDir = tmp.appendingPathComponent("jamf-cli-data", isDirectory: true)
+        let report = HtmlReport(config: ReportConfig().withDefaults(), dataDir: dataDir)
+        let (snapshots, skipped) = report.loadSummarySnapshots()
+
+        XCTAssertTrue(snapshots.isEmpty)
+        XCTAssertEqual(skipped, 1)
+    }
+
     func testLoadSummarySnapshotsSortedOldestFirst() throws {
         let tmp = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: tmp) }

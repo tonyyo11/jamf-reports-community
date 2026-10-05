@@ -292,6 +292,15 @@ final class ConfigFileSectionsTests: XCTestCase {
         XCTAssertEqual(sections.skipped.count, 1)
     }
 
+    func testAValueNestedPastTheCapIsListedAsSkipped() throws {
+        let deep = String(repeating: "[", count: 100) + String(repeating: "]", count: 100)
+        let sections = try build("sheets:\n  skip: \(deep)\n")
+        XCTAssertEqual(sections.skipped, [
+            "Line 2: nested more than 64 levels deep, so what is below that depth was not "
+                + "read as written",
+        ])
+    }
+
     func testAValueOfTheWrongShapeIsNotListed() throws {
         let yaml = "thresholds: 5\ncolumns:\n  - a\n  - b\njamf_cli:\n  data_dir:\n    x: 1\n"
         XCTAssertEqual(summary(try build(yaml)), [])

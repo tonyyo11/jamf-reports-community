@@ -70,6 +70,9 @@ enum YAMLCodec {
             case unclosedFlow
             /// A `---` after the first content line; what follows reads as the same document.
             case secondDocument
+            /// Collections nested past `maxNestingDepth`: a flow list or mapping reads as its
+            /// text, a block is not read.
+            case nestingTooDeep
         }
 
         let line: Int
@@ -104,6 +107,9 @@ enum YAMLCodec {
             case .secondDocument:
                 "a --- starts a second document, but the app reads one: everything after this "
                     + "line is read as part of the same file"
+            case .nestingTooDeep:
+                "nested more than \(YAMLCodec.maxNestingDepth) levels deep, so what is below "
+                    + "that depth was not read as written"
             }
         }
 
@@ -114,7 +120,8 @@ enum YAMLCodec {
         /// so writing its block afresh loses it.
         var isUnread: Bool {
             switch kind {
-            case .indentation, .noKey, .blockScalar, .orphanItems, .secondDocument: true
+            case .indentation, .noKey, .blockScalar, .orphanItems, .secondDocument,
+                 .nestingTooDeep: true
             case .tab, .duplicateKey, .unclosedFlow: false
             }
         }
@@ -123,6 +130,10 @@ enum YAMLCodec {
             count == 1 ? "1 space" : "\(count) spaces"
         }
     }
+
+    /// How many collections (mappings, lists, `[` and `{` values) the reader follows into one
+    /// another. Every level is a stack frame, and the file may be written by another Mac.
+    static let maxNestingDepth = 64
 
     enum CodecError: Error, LocalizedError {
         case invalidTopLevel
@@ -479,6 +490,8 @@ private struct Parser {
     /// The line of the key or item whose value is being read, for a duplicate key inside a
     /// flow mapping.
     private var valueLine = 0
+    /// Collections the reader is inside of right now, against `YAMLCodec.maxNestingDepth`.
+    private var depth = 0
 
     init(text: String) {
         var lines = text.components(separatedBy: .newlines)
@@ -521,6 +534,9 @@ private struct Parser {
     private mutating func parseMapping(
         indent: Int, seedKeys: [String: Int] = [:]
     ) -> YAMLCodec.YAMLMapping {
+        depth += 1
+        defer { depth -= 1 }
+        if skipsTooDeepBlock(indent: indent) { return .init(entries: []) }
         var entries: [YAMLCodec.YAMLEntry] = []
         var keyLines = seedKeys
         // The column of the last key's nested block, where a stray list item belongs, and the
@@ -634,6 +650,9 @@ private struct Parser {
     private mutating func parseSequence(
         indent: Int
     ) -> (items: [YAMLCodec.YAMLValue], keyColumn: Int?) {
+        depth += 1
+        defer { depth -= 1 }
+        if skipsTooDeepBlock(indent: indent) { return ([], nil) }
         var values: [YAMLCodec.YAMLValue] = []
         var keyColumn: Int?
 
@@ -689,6 +708,23 @@ private struct Parser {
         return (values, keyColumn)
     }
 
+    /// Past `maxNestingDepth` the block at `indent` is skipped under one note instead of read:
+    /// each level is a stack frame, and a file another Mac wrote can nest as deep as it likes.
+    private mutating func skipsTooDeepBlock(indent: Int) -> Bool {
+        guard depth > YAMLCodec.maxNestingDepth else { return false }
+        skipIgnorable()
+        let first = index + 1
+        while index < lines.count {
+            let trimmed = trimmedContent(lines[index])
+            if !trimmed.isEmpty, !trimmed.hasPrefix("#"), indentation(of: lines[index]) < indent {
+                break
+            }
+            index += 1
+        }
+        note(first, .nestingTooDeep)
+        return true
+    }
+
     private mutating func skipIgnorable() {
         while index < lines.count {
             let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
@@ -701,9 +737,18 @@ private struct Parser {
     }
 
     private mutating func parseScalar(_ raw: String) -> YAMLCodec.YAMLValue {
+        depth += 1
+        defer { depth -= 1 }
         let value = stripInlineComment(raw).trimmingCharacters(in: .whitespaces)
         if value == "[]" { return .sequence([]) }
         if value == "{}" { return .mapping(.init(entries: [])) }
+        // Each bracket past this depth would recurse once more, so the rest stays text, with
+        // one note per line.
+        if depth > YAMLCodec.maxNestingDepth, value.first == "[" || value.first == "{" {
+            let tooDeep = YAMLCodec.ParseNote(line: valueLine, kind: .nestingTooDeep)
+            if notes.last != tooDeep { notes.append(tooDeep) }
+            return .scalar(.string(value))
+        }
         // Flow-style collections — `{label: "Pass", min_failures: 0}` /
         // `[a, b]`. config.example.yaml's compliance bands ship in this form,
         // so the block-only parser turned every seeded workspace's config

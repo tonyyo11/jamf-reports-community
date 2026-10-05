@@ -396,6 +396,73 @@ final class YAMLParseNoteTests: XCTestCase {
                        "[Draft] Report")
     }
 
+    // MARK: - Nesting depth
+
+    /// How many `[` levels deep the value reads, counting down the first item each time.
+    private func sequenceDepth(_ value: YAMLCodec.YAMLValue?) -> (levels: Int, leaf: YAMLCodec.YAMLValue?) {
+        var levels = 0
+        var node = value
+        while case .sequence(let items)? = node, let first = items.first {
+            levels += 1
+            node = first
+        }
+        return (levels, node)
+    }
+
+    /// Each bracket is a stack frame in the reader, and the file may be written by another Mac.
+    /// Past the cap the rest of the value stays text and one note says so.
+    func testAFlowListNestedPastTheCapKeepsTheRestAsTextWithOneNote() throws {
+        let deep = String(repeating: "[", count: 200) + String(repeating: "]", count: 200)
+        let document = try YAMLCodec.decode("x: \(deep)\ny: 1\n")
+        XCTAssertEqual(document.parseNotes, [Note(line: 1, kind: .nestingTooDeep)])
+        let (levels, leaf) = sequenceDepth(document.root.mapping?.value(for: "x"))
+        XCTAssertEqual(levels, YAMLCodec.maxNestingDepth - 1, "the top-level mapping is level one")
+        guard case .scalar(.string(let text))? = leaf else {
+            return XCTFail("expected the remainder as a string, got \(String(describing: leaf))")
+        }
+        XCTAssertTrue(text.hasPrefix("[["))
+        XCTAssertEqual(document.root.mapping?.value(for: "y")?.intValue, 1,
+                       "the key after the deep value is still read")
+    }
+
+    func testAVeryDeepFlowListDoesNotOverflowTheStack() throws {
+        let deep = String(repeating: "[", count: 50_000) + String(repeating: "]", count: 50_000)
+        let document = try YAMLCodec.decode("x: \(deep)\n")
+        XCTAssertEqual(document.parseNotes.map(\.kind), [.nestingTooDeep])
+    }
+
+    func testAFlowMappingNestedPastTheCapIsNotedToo() throws {
+        let deep = String(repeating: "{a: ", count: 200) + "1" + String(repeating: "}", count: 200)
+        let document = try YAMLCodec.decode("x: \(deep)\n")
+        XCTAssertEqual(document.parseNotes.map(\.kind), [.nestingTooDeep])
+    }
+
+    /// One indent level per key: the block below the cap is skipped under one note, and the
+    /// keys after it, back at the top level, are still read.
+    func testABlockNestedPastTheCapIsSkippedUnderOneNote() throws {
+        var lines = (0..<100).map { String(repeating: " ", count: $0) + "k\($0):" }
+        lines.append(String(repeating: " ", count: 100) + "leaf: 1")
+        lines.append("after: 2")
+        let document = try YAMLCodec.decode(lines.joined(separator: "\n") + "\n")
+        XCTAssertEqual(document.parseNotes.map(\.kind), [.nestingTooDeep])
+        XCTAssertEqual(document.parseNotes.first?.line, YAMLCodec.maxNestingDepth + 1)
+        XCTAssertEqual(document.root.mapping?.value(for: "after")?.intValue, 2)
+    }
+
+    func testNestingAtTheCapIsStillRead() throws {
+        var lines = (0..<(YAMLCodec.maxNestingDepth - 1)).map {
+            String(repeating: " ", count: $0) + "k\($0):"
+        }
+        lines.append(String(repeating: " ", count: YAMLCodec.maxNestingDepth - 1) + "leaf: 1")
+        XCTAssertEqual(try notes(lines.joined(separator: "\n") + "\n"), [])
+    }
+
+    func testTheNoteSaysHowDeepTheReaderGoes() {
+        XCTAssertEqual(Note(line: 4, kind: .nestingTooDeep).display,
+                       "Line 4: nested more than 64 levels deep, so what is below that depth "
+                       + "was not read as written")
+    }
+
     /// `---` opening the file marks the start of the document; a later one has its own note.
     func testADocumentStartMarkerAtTheTopIsNotNoted() throws {
         for yaml in ["---\nthresholds:\n  stale_device_days: 45\n",
