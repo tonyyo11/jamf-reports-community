@@ -2964,8 +2964,9 @@ struct ReportEngine: Sendable {
 
         // Build CSV text.
         var lines: [String] = []
-        lines.append(columns.map { csvEscape($0.hasPrefix("ea:") ? String($0.dropFirst(3)) : $0) }
-            .joined(separator: ","))
+        lines.append(columns.map { column in
+            StaleDeviceService.csvField(column.hasPrefix("ea:") ? String(column.dropFirst(3)) : column)
+        }.joined(separator: ","))
         for row in rows {
             let cells = columns.map { col -> String in
                 let val = row[col]
@@ -2977,7 +2978,7 @@ struct ReportEngine: Sendable {
                 case let b as Bool: str = b ? "true" : "false"
                 default: str = ""
                 }
-                return csvEscape(str)
+                return StaleDeviceService.csvField(str)
             }
             lines.append(cells.joined(separator: ","))
         }
@@ -3864,22 +3865,6 @@ struct ReportEngine: Sendable {
             }
             return merged
         }
-    }
-
-    private static func csvEscape(_ value: String) -> String {
-        // Formula-injection neutralization: tab-prefix cells beginning with =, +, -, @.
-        // Mirrors PatchStatusService.csvField and Python's _csv_injection_safe.
-        var field = value
-        if let first = field.first, "=+-@".contains(first) {
-            field = "\t" + field
-        }
-        guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
-        return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
-    }
-
-    /// Internal entry point for injection-guard testing.
-    static func testableCSVEscape(_ value: String) -> String {
-        csvEscape(value)
     }
 
     // MARK: - Default config

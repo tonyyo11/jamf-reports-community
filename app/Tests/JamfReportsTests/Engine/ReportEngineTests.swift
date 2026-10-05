@@ -676,37 +676,39 @@ final class ReportEngineTests: XCTestCase {
         )
     }
 
-    // MARK: - csvEscape formula-injection guard
+    // MARK: - inventoryCSV formula-injection guard
 
-    /// =HYPERLINK(...) contains a double-quote, so after tab-prefixing the whole field is
-    /// RFC-4180 quoted: "\t=...". Assert the raw string (not hasPrefix("\t=")).
-    func testCSVEscapeNeutralizeEqualsHyperlink() {
-        let raw = #"=HYPERLINK("http://x")"#
-        let escaped = ReportEngine.testableCSVEscape(raw)
-        // Tab-prefixed, then quoted due to embedded double-quote.
-        XCTAssertTrue(
-            escaped.hasPrefix("\"\t="),
-            "csvEscape must tab-prefix and RFC4180-quote a cell beginning with '='; got: \(escaped)"
-        )
-    }
+    /// The inventory CSV escapes cells with `StaleDeviceService.csvField`, so a cell starting
+    /// with a tab is neutralised like one starting with `=`, and a clean one passes through.
+    func testInventoryCSVNeutralisesFormulaAndTabCells() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-inventory-csv-\(UUID().uuidString)", isDirectory: true)
+        let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        defer {
+            if let saved { setenv("JRC_TEST_WORKSPACES_ROOT", saved, 1) }
+            else { unsetenv("JRC_TEST_WORKSPACES_ROOT") }
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testonly-inventory-csv"
+        let computers = try WorkspacePaths.dataDir(for: profile)
+            .appendingPathComponent("computers", isDirectory: true)
+        try FileManager.default.createDirectory(at: computers, withIntermediateDirectories: true)
+        let rows: [[String: String]] = [
+            ["a": "\t=cmd|calc", "b": "=1+1", "c": #"=HYPERLINK("http://x")"#, "d": "MacBook Pro"],
+        ]
+        try JSONSerialization.data(withJSONObject: rows)
+            .write(to: computers.appendingPathComponent("computers_20260101T000000.json"))
+        let output = root.appendingPathComponent("inventory.csv")
 
-    /// Simple = prefix (no special chars) → tab-prefix only, no quoting.
-    func testCSVEscapeNeutralizeSimpleEquals() {
-        let escaped = ReportEngine.testableCSVEscape("=1+1")
-        XCTAssertEqual(escaped, "\t=1+1",
-                       "csvEscape must tab-prefix a cell beginning with '=' when no quoting is needed")
-    }
+        try await ReportEngine.inventoryCSV(
+            profile: profile, workspacePaths: WorkspacePaths.self, outputURL: output)
 
-    /// + prefix → tab-prefixed.
-    func testCSVEscapeNeutralizePlus() {
-        let escaped = ReportEngine.testableCSVEscape("+cmd|calc")
-        XCTAssertEqual(escaped, "\t+cmd|calc")
-    }
-
-    /// Normal value — no injection prefix, no special chars — passes through unchanged.
-    func testCSVEscapePassesThroughCleanValue() {
-        let escaped = ReportEngine.testableCSVEscape("MacBook Pro")
-        XCTAssertEqual(escaped, "MacBook Pro")
+        let lines = try String(contentsOf: output, encoding: .utf8)
+            .components(separatedBy: "\n")
+        XCTAssertEqual(lines.first, "a,b,c,d")
+        XCTAssertEqual(lines.dropFirst().first,
+                       "\t\t=cmd|calc,\t=1+1,\"\t=HYPERLINK(\"\"http://x\"\")\",MacBook Pro")
     }
 
     // MARK: - S2: collectPatchReleaseDates rejects an unsafe title id

@@ -514,6 +514,8 @@ compliance is now one figure everywhere.
   page runs in the HTML report, so it gets the same check as every other snapshot.
 - Diagnostic bundles remove the profile's tenant and environment IDs from logs and other captured
   text, including the ID jamf-cli repeats in "Environment not found" errors.
+- The inventory CSV export guards a cell that starts with a tab or a carriage return the way it
+  already guarded `=`, `+`, `-` and `@`, so a spreadsheet does not read such a cell as a formula.
 
 ## [2.8.3] - 2026-09-29
 
