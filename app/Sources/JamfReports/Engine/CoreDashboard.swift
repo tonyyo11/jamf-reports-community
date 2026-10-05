@@ -2669,6 +2669,8 @@ struct CoreDashboard: Sendable {
         var managedCount: Int?
         var securityScore: Double?
         var securityGrade: SecurityScore.Grade?
+        /// The scored factors, listed under the score.
+        var securityScoreParts: [SecurityScore.Part] = []
         var patchFleetCompliancePct: Double?
         var fileVaultPct: Double?
         var sipPct: Double?
@@ -2742,18 +2744,34 @@ struct CoreDashboard: Sendable {
         m.firewallPct = data.firewallEnabled.map { Double($0) / Double(total) * 100 }
     }
 
+    /// One row per scored factor under the Security Score: its share of Macs and its points.
+    func scoreFactorRows(_ m: ExecutiveSummaryMetrics) -> [(String, String)] {
+        let score = SecurityScore(
+            value: m.securityScore ?? 0, grade: m.securityGrade ?? .f,
+            parts: m.securityScoreParts, missing: [])
+        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        return m.securityScoreParts.map { part in
+            ("Score — \(part.factor.label(staleDays: staleDays))",
+             String(format: "%.1f%% · %.1f pts", part.share, score.points(of: part)))
+        }
+    }
+
     /// Compute the weighted security score, grade, and P0/P1 action item counts.
     private func applySecurityScoreAndActions(
         to m: inout ExecutiveSummaryMetrics,
         fleet: SecurityFleetCounts
     ) {
-        // The same inputs as summary.json's securityScore and the Security Posture screen.
-        let extras = SecurityScoreInputs.load(dataDir: dataDir, config: config)
+        // The same factors and inputs as summary.json's securityScore and the Security
+        // Posture screen.
+        let factors = config.resolvedScoreFactors
         let score = SecurityScoreCalculator.score(
-            input: SecurityScoreInputs.input(fleet: fleet, extras: extras),
-            weights: config.resolvedSecurityPolicy.resolvedScoreWeights
-        )
-        if !score.available.isEmpty {
+            factors: factors,
+            measures: SecurityScoreInputs.measures(
+                for: factors, fleet: fleet,
+                sources: SecurityScoreInputs.load(dataDir: dataDir, factors: factors),
+                config: config))
+        m.securityScoreParts = score.parts
+        if !score.parts.isEmpty {
             m.securityScore = score.value
             m.securityGrade = score.grade
         }
@@ -2853,6 +2871,7 @@ struct CoreDashboard: Sendable {
             ("P0 Action Items (FV/SIP/FW gaps)", fmtInt(m.actionItemsP0)),
             ("P1 Action Items (Gatekeeper gaps)", fmtInt(m.actionItemsP1)),
         ]
+        metricRows.insert(contentsOf: scoreFactorRows(m), at: 1)
         if let n = m.fileVaultOffHardwareEncrypted, n > 0,
            let at = metricRows.firstIndex(where: { $0.0 == "FileVault Coverage" }) {
             metricRows.insert((SecurityFleetCounts.hardwareEncryptedRowLabel, "\(n)"), at: at + 1)

@@ -73,9 +73,12 @@ final class GoldenFleetTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(s.firewallPct), 98.0, accuracy: 0.001)
         // 248 / 250 * 100 = 99.2
         XCTAssertEqual(try XCTUnwrap(s.gatekeeperPct), 99.2, accuracy: 0.001)
-        // Only fileVault/sip/firewall present → weights 15/15/15 renormalize to a
-        // plain mean of their pcts: (96.0 + 100.0 + 98.0) / 3 = 98.0
-        XCTAssertEqual(try XCTUnwrap(s.securityScore), 98.0, accuracy: 0.001)
+        // Only the four controls and patch compliance have data → the default factors'
+        // weights 15/10/10/5/10 renormalize over 50:
+        // (96.0 x 15 + 100 x 10 + 98.0 x 10 + 99.2 x 5 + 80.0 x 10) / 50 = 4716 / 50 = 94.3
+        XCTAssertEqual(try XCTUnwrap(s.securityScore), 94.3, accuracy: 0.001)
+        XCTAssertEqual(s.securityScoreBasis,
+                       "filevault=15,sip=10,firewall=10,gatekeeper=5,patch_compliance=10")
         // P0 = (250-240) + (250-250) + (250-245) = 10 + 0 + 5 = 15
         XCTAssertEqual(s.actionItemsP0, 15)
         // P1 = (250-248) = 2

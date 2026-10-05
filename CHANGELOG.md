@@ -43,10 +43,18 @@ compliance is now one figure everywhere.
   measured. A value must match whole, a value in both lists reads as off, and Config > Run check
   warns about one that is empty, not text or in both. The totals jamf-cli's security report
   carries keep jamf-cli's words.
-- Security Score weights are saved in the workspace's `security_policy.score_weights`, so the
-  Security Posture screen, the Overview, Trends, alerts and reports score with the same weights.
-  Weights set on this Mac earlier are shown on the Scoring tab and apply to a workspace once you
-  change one. A workspace with custom weights sees its score step on the day they are saved.
+- You choose what the Security Score counts. Config > Scoring lists the score's factors, each
+  with today's share of Macs, its part of the score and a weight: remove one, add one from a
+  menu, or go back to the defaults. Every configured security agent can count, each as its own
+  factor (CrowdStrike, Nessus and Splunk UF together, say). The list is saved to the workspace's
+  `security_policy.score_factors`, so Security Posture, the Overview, Trends, alerts and reports
+  score the same way.
+- The default score counts what Jamf Pro itself reports: FileVault, SIP, Firewall, Gatekeeper,
+  Secure Boot at full security, an escrowed bootstrap token, macOS current (within 30 days of a
+  release), XProtect current (within 14 days), patch compliance and checking in recently. The
+  primary mSCP baseline and each security agent join when they are configured. Security Posture
+  shows each factor's share and points under the score ring, and the workbook's Executive Summary
+  lists them.
 - SIP, Firewall and Gatekeeper score cards on the Overview, and trend lines for them on Trends. A
   control your policy does not count has no card, and the card returns if you count it again.
 - A hand-typed config.yaml is understood. The Config Doctor lists every key the app does not read,
@@ -414,14 +422,15 @@ compliance is now one figure everywhere.
   Pro's whole history) is replaced by the scan's "Devices with failed MDM commands" (WARNING, 217
   devices), which now mentions the command total, so the same problem is no longer listed twice in
   two units at two severities.
-- The Security Score counts every input that has data. The score recorded each day, and shown on
-  the Overview and Trends, weighed FileVault, SIP and Firewall only, although the Scoring tab
-  lists eight weights. It now also weighs the EDR agent (the first configured security agent's
-  coverage) and the primary mSCP baseline's pass share, and drops XProtect, CVE and Secure Boot,
-  which nothing in the app measures. Security Posture, the workbook and the daily summary compute
-  it the same way. The score steps on the day the new definition starts: earlier days keep their
-  recorded value, Trends and the period report say so, and a "drops more than" alert on the score
-  skips the comparison across that day.
+- The Security Score counts every factor that has data. The score recorded each day weighed
+  FileVault, SIP and Firewall only, although the Scoring tab listed eight weights, three of which
+  (XProtect, CVE and Secure Boot) nothing in the app measured. Security Posture, the workbook and
+  the daily summary now score the same list of factors the same way. The score steps on the day
+  the new definition starts, and on any day its factors or weights change: earlier days keep
+  their recorded value, the Overview card says the two are not comparable, Trends measures its
+  change from that day and says so, the period report withholds the change, and a "drops more
+  than" alert on the score skips the comparison. The daily summary now records the Secure Boot,
+  bootstrap token and XProtect shares, so alert rules on them can fire.
 - A second collect on the same day updates that day's trend point. Before, the day's first
   summary stood for the rest of the day, so Overview and Trends showed the morning's numbers
   after an afternoon collect fetched newer ones. A collect that fetches new data now rebuilds
@@ -432,9 +441,9 @@ compliance is now one figure everywhere.
   Agents), the Overview offers a score card per agent in Customize, and Trends lists each one,
   labelled "<agent> coverage". History for days recorded before this is rebuilt from the dated
   extension-attribute snapshots of the last 21 days that have one, after the screen has drawn. In
-  Config > Scoring, "Agent counted as EDR" (or `security_policy.edr_agent`) chooses which agent
-  the Security Score and the EDR card follow; the others are shown but do not change the score.
-  A name that matches no agent counts the first, and Config Doctor says so.
+  Config > Scoring, "Agent the EDR card shows" (or `security_policy.edr_agent`) chooses which
+  agent the Overview's EDR card follows; the score counts each agent as its own factor. A name
+  that matches no agent shows the first, and Config Doctor says so.
 - A metric on the Overview with no data says "No data yet" instead of 0.0% current, 0.0%
   previous and +0.0pp over 0 summaries.
 - The AI Fleet Insight no longer reads a percentage backwards (it said "SIP disabled on 1%" when

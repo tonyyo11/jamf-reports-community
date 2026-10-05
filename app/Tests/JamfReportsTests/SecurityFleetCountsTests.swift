@@ -48,14 +48,15 @@ final class SecurityFleetCountsTests: XCTestCase {
 
     /// The fixture is the dummy tenant: 101 Macs, FileVault 100, SIP 1, Firewall 0, Gatekeeper
     /// 100 in the summary; its rows say SIP is NOT_COLLECTED on 100 Macs (not reported, so not
-    /// failing) and Gatekeeper is DISABLED on one. P0 = 1 + 0 + 101; P1 = 1; score = mean of
-    /// 99.0, 100 (the one Mac that reported SIP) and 0.0 percent. Before 2.9 counted only Macs
+    /// failing) and Gatekeeper is DISABLED on one. P0 = 1 + 0 + 101; P1 = 1. Shares: FileVault
+    /// 99.0, SIP 100 (the one Mac that reported it), Firewall 0.0, Gatekeeper 99.0, at weights
+    /// 15, 10, 10 and 5: (1485.1 + 1000 + 0 + 495.0) / 40 = 74.5. Before 2.9 counted only Macs
     /// measured off, P0 was 202 and the score 33.3.
     func testSecurityFixtureThroughTheSummaryWriterCountsOnlyMeasuredMacs() throws {
         let summary = try writtenSummary()
         XCTAssertEqual(summary.actionItemsP0, 102)
         XCTAssertEqual(summary.actionItemsP1, 1)
-        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 66.3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 74.5, accuracy: 0.001)
     }
 
     /// A security summary with the counts only, in the `pro report security` shape.
@@ -65,7 +66,8 @@ final class SecurityFleetCountsTests: XCTestCase {
 
     /// No `total_devices`: the writer takes the total from inventory-summary (the real
     /// fixture, 101 Macs) and counts the gaps against it, as before.
-    /// P0 = 11 + 0 + 30; P1 = 1; score = (89.11 + 100 + 70.30) / 3.
+    /// P0 = 11 + 0 + 30; P1 = 1; shares 89.11, 100, 70.30 and 99.01 at 15, 10, 10 and 5:
+    /// (1336.6 + 1000 + 703.0 + 495.0) / 40 = 88.4.
     func testSummaryWithoutATotalUsesTheInventoryTotal() throws {
         let summary = try writtenSummary(
             security: summaryOnly([
@@ -77,11 +79,12 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(summary.totalDevices, 101)
         XCTAssertEqual(summary.actionItemsP0, 41)
         XCTAssertEqual(summary.actionItemsP1, 1)
-        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 86.5, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 88.4, accuracy: 0.001)
     }
 
     /// No `firewall_enabled`: P0 counts FileVault and SIP only and the score leaves the
-    /// firewall out, as before. P0 = 11 + 0; score = (89.11 + 100) / 2.
+    /// firewall out, as before. P0 = 11 + 0; score = (89.11 x 15 + 100 x 10 + 99.01 x 5) / 30
+    /// = (1336.6 + 1000 + 495.0) / 30 = 94.4.
     func testSummaryWithoutAFirewallCountLeavesItOut() throws {
         let summary = try writtenSummary(security: summaryOnly([
             "total_devices": 101, "filevault_encrypted": 90, "sip_enabled": 101,
@@ -89,7 +92,7 @@ final class SecurityFleetCountsTests: XCTestCase {
         ]))
         XCTAssertEqual(summary.actionItemsP0, 11)
         XCTAssertEqual(summary.actionItemsP1, 1)
-        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 94.6, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 94.4, accuracy: 0.001)
         XCTAssertNil(summary.firewallPct)
     }
 
@@ -107,8 +110,11 @@ final class SecurityFleetCountsTests: XCTestCase {
 
     private func score(_ fleet: SecurityFleetCounts, _ policy: SecurityControlPolicy)
         -> SecurityScore {
-        SecurityScoreCalculator.score(
-            input: fleet.scoreInput(), weights: policy.effectiveScoreWeights(.defaultWeights))
+        SecurityScoreTestSupport.score(fleet, policy: policy)
+    }
+
+    private func measure(_ passing: Int, of evaluated: Int) -> SecurityScoreMeasure {
+        SecurityScoreMeasure(passing: passing, evaluated: evaluated)
     }
 
     private func controls(_ yaml: String) throws -> SecurityControlPolicy {
@@ -137,20 +143,22 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(fleet.p0NotReported, 0)
         XCTAssertEqual(fleet.p1, 1)
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 0)
-        XCTAssertEqual(fleet.scoreInput(), SecurityScoreCalculator.Input(
-            totalDevices: 101, compliantCounts: [.fileVault: 100, .sip: 1, .firewall: 0]))
-        XCTAssertEqual(SecurityControlPolicy.default.effectiveScoreWeights(.defaultWeights),
-                       .defaultWeights)
-        XCTAssertEqual(score(fleet, .default).value, 33.3, accuracy: 0.001)
+        XCTAssertEqual(fleet.scoreMeasure(for: .fileVault), measure(100, of: 101))
+        XCTAssertEqual(fleet.scoreMeasure(for: .sip), measure(1, of: 101))
+        XCTAssertEqual(fleet.scoreMeasure(for: .firewall), measure(0, of: 101))
+        XCTAssertEqual(fleet.scoreMeasure(for: .gatekeeper), measure(100, of: 101))
+        // (99.01 x 15 + 0.99 x 10 + 0 x 10 + 99.01 x 5) / 40 = 1990.1 / 40 = 49.75
+        XCTAssertEqual(score(fleet, .default).value, 49.8, accuracy: 0.001)
 
-        // GoldenFleet case A's counts: P0 = 10 + 0 + 5, P1 = 2, score (96 + 100 + 98) / 3.
+        // GoldenFleet case A's counts: P0 = 10 + 0 + 5, P1 = 2, score
+        // (96 x 15 + 100 x 10 + 98 x 10 + 99.2 x 5) / 40 = 3916 / 40.
         let golden = SecurityFleetCounts.build(
             totalDevices: 250,
             onCounts: [.fileVault: 240, .sip: 250, .firewall: 245, .gatekeeper: 248],
             devices: [], hardware: [:], policy: .default)
         XCTAssertEqual(golden.p0, 15)
         XCTAssertEqual(golden.p1, 2)
-        XCTAssertEqual(score(golden, .default).value, 98.0, accuracy: 0.001)
+        XCTAssertEqual(score(golden, .default).value, 97.9, accuracy: 0.001)
     }
 
     func testOnCountsReadTheSummaryKeys() throws {
@@ -174,7 +182,8 @@ final class SecurityFleetCountsTests: XCTestCase {
             totalDevices: 10, onCounts: [.fileVault: 7, .sip: 9], devices: [], hardware: [:],
             policy: .default)
         XCTAssertEqual(withFileVault.p0, 4)
-        XCTAssertTrue(score(withFileVault, .default).missing.contains(.firewall))
+        XCTAssertTrue(score(withFileVault, .default).missing.contains { $0.kind == .firewall })
+        XCTAssertNil(withFileVault.scoreMeasure(for: .firewall), "no count: no measure")
     }
 
     func testBuildFromItemsIsNilWithoutASummarySection() throws {
@@ -206,10 +215,10 @@ final class SecurityFleetCountsTests: XCTestCase {
             Control(level: .warning, on: 1, fail: 0, warning: 0, notReported: 100),
             "the 100 Macs that did not report SIP are not warnings either")
         XCTAssertEqual(fleet.p0, 1 + 101, "FileVault and Firewall only")
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.sip], 1, "the one Mac that reported")
-        XCTAssertEqual(fleet.scoreInput().metricTotals[.sip], 1)
-        // (99.01 + 100 + 0) / 3
-        XCTAssertEqual(score(fleet, policy).value, 66.3, accuracy: 0.001)
+        XCTAssertEqual(fleet.scoreMeasure(for: .sip), measure(1, of: 1),
+                       "the one Mac that reported")
+        // (99.01 x 15 + 100 x 10 + 0 x 10 + 99.01 x 5) / 40 = 2980.2 / 40 = 74.5
+        XCTAssertEqual(score(fleet, policy).value, 74.5, accuracy: 0.001)
     }
 
     func testFirewallAtIgnoreHasNoWeightAndIsNotMissing() throws {
@@ -218,26 +227,29 @@ final class SecurityFleetCountsTests: XCTestCase {
         XCTAssertEqual(fleet.controls[.firewall],
                        Control(level: .ignore, on: 0, fail: 0, warning: 0))
         XCTAssertEqual(fleet.p0, 1, "FileVault only: SIP's 100 Macs did not report")
-        let weights = policy.effectiveScoreWeights(.defaultWeights)
-        XCTAssertEqual(weights.firewall, 0)
-        var others = weights
-        others.firewall = SecurityScoreWeights.defaultWeights.firewall
-        XCTAssertEqual(others, .defaultWeights, "only the ignored control's weight changes")
+        XCTAssertEqual(
+            policy.resolvedScoreFactors(agents: [], baselines: []).map(\.id),
+            SecurityScoreFactor.nativeDefaults.map(\.id).filter { $0 != "firewall" },
+            "only the ignored control's factor goes")
         let result = score(fleet, policy)
-        XCTAssertFalse(result.missing.contains(.firewall))
-        XCTAssertEqual(result.available, [.fileVault, .sip])
-        // (99.01 + 100) / 2
-        XCTAssertEqual(result.value, 99.5, accuracy: 0.001)
+        XCTAssertFalse(result.missing.contains { $0.kind == .firewall })
+        XCTAssertEqual(result.available.map(\.id), ["filevault", "sip", "gatekeeper"])
+        // (99.01 x 15 + 100 x 10 + 99.01 x 5) / 30 = 2980.2 / 30
+        XCTAssertEqual(result.value, 99.3, accuracy: 0.001)
     }
 
-    func testEachIgnoredScoredControlLosesItsWeight() {
+    func testEachIgnoredControlLosesItsFactor() {
         let policy = SecurityControlPolicy(
             fileVault: .ignore, sip: .ignore, firewall: .warning, gatekeeper: .ignore)
-        let weights = policy.effectiveScoreWeights(.defaultWeights)
-        XCTAssertEqual(weights.fileVault, 0)
-        XCTAssertEqual(weights.sip, 0)
-        XCTAssertEqual(weights.firewall, SecurityScoreWeights.defaultWeights.firewall)
-        XCTAssertEqual(weights.mscp, SecurityScoreWeights.defaultWeights.mscp)
+        let ids = policy.resolvedScoreFactors(agents: [], baselines: []).map(\.id)
+        XCTAssertEqual(ids, [
+            "firewall", "secure_boot", "bootstrap_token", "os_current", "xprotect_current",
+            "patch_compliance", "checked_in",
+        ], "Gatekeeper's level counts for the score too")
+        let firewall = policy.resolvedScoreFactors(agents: [], baselines: [])
+            .first { $0.kind == .firewall }
+        XCTAssertEqual(firewall, SecurityScoreFactor.nativeDefaults[2],
+                       "a warning keeps its factor and weight")
     }
 
     func testGatekeeperLevelsMoveP1() {
@@ -306,8 +318,8 @@ final class SecurityFleetCountsTests: XCTestCase {
                        Control(level: .fail, on: 1, fail: 1, warning: 3))
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 3)
         XCTAssertEqual(fleet.p0, 1)
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 4)
-        XCTAssertEqual(fleet.scoreInput().metricTotals, [:], "a share of the whole fleet")
+        XCTAssertEqual(fleet.scoreMeasure(for: .fileVault), measure(4, of: 5),
+                       "a share of the whole fleet")
     }
 
     /// The rule finds the Macs whose FileVault is off by the workspace's own off values; the
@@ -335,8 +347,7 @@ final class SecurityFleetCountsTests: XCTestCase {
                        Control(level: .fail, on: 1, fail: 1, warning: 0))
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 3)
         XCTAssertEqual(fleet.p0, 1)
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 1)
-        XCTAssertEqual(fleet.scoreInput().metricTotals, [.fileVault: 2])
+        XCTAssertEqual(fleet.scoreMeasure(for: .fileVault), measure(1, of: 2))
     }
 
     /// Not counted means not counted in the score either: FileVault's share is the same as
@@ -348,9 +359,10 @@ final class SecurityFleetCountsTests: XCTestCase {
             totalDevices: 2,
             onCounts: [.fileVault: 1, .sip: 2, .firewall: 2, .gatekeeper: 2],
             devices: [], hardware: [:], policy: policy), policy)
-        XCTAssertEqual(withDropped, without)
-        // (50 + 100 + 100) / 3
-        XCTAssertEqual(withDropped.value, 83.3, accuracy: 0.001)
+        XCTAssertEqual(withDropped.value, without.value, accuracy: 0.0001)
+        XCTAssertEqual(withDropped.parts.map(\.share), without.parts.map(\.share))
+        // (50 x 15 + 100 x 10 + 100 x 10 + 100 x 5) / 40 = 81.25, rounded to a tenth
+        XCTAssertEqual(withDropped.value, 81.3, accuracy: 0.001)
     }
 
     /// Every Mac hardware-encrypted with FileVault off and dropped: FileVault has no share
@@ -369,12 +381,12 @@ final class SecurityFleetCountsTests: XCTestCase {
             items: JSONDecoder().decode([SecurityReportItem].self, from: json),
             hardware: HardwareEncryption.index(computers: computers), policy: policy))
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 2)
-        XCTAssertNil(fleet.scoreInput().compliantCounts[.fileVault])
+        XCTAssertNil(fleet.scoreMeasure(for: .fileVault)?.share, "no Mac is left to judge")
         let result = score(fleet, policy)
-        XCTAssertEqual(result.available, [.sip, .firewall])
-        XCTAssertTrue(result.missing.contains(.fileVault))
-        // (100 + 50) / 2
-        XCTAssertEqual(result.value, 75.0, accuracy: 0.001)
+        XCTAssertEqual(result.available.map(\.id), ["sip", "firewall", "gatekeeper"])
+        XCTAssertTrue(result.missing.contains { $0.kind == .fileVault })
+        // (100 x 10 + 50 x 10 + 100 x 5) / 25
+        XCTAssertEqual(result.value, 80.0, accuracy: 0.001)
     }
 
     /// A typed hardware level stricter than FileVault's moves those Macs to fail, and the
@@ -387,8 +399,8 @@ final class SecurityFleetCountsTests: XCTestCase {
                        Control(level: .warning, on: 1, fail: 3, warning: 1))
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 0)
         XCTAssertEqual(fleet.p0, 3)
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 2)
-        XCTAssertEqual(fleet.scoreInput().metricTotals, [:], "a share of the whole fleet")
+        XCTAssertEqual(fleet.scoreMeasure(for: .fileVault), measure(2, of: 5),
+                       "a share of the whole fleet")
     }
 
     func testFileVaultAtIgnoreWithTheRuleMovesNothing() throws {
@@ -434,14 +446,15 @@ final class SecurityFleetCountsTests: XCTestCase {
         let summary = try writtenSummary(config: config)
         XCTAssertEqual(summary.actionItemsP0, 1 + 101, "FileVault and Firewall; SIP is a warning")
         XCTAssertEqual(summary.actionItemsP1, 0)
-        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 66.3, accuracy: 0.001)
+        // Gatekeeper is not scored: (99.01 x 15 + 100 x 10 + 0 x 10) / 35 = 71.0
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 71.0, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(summary.sipPct), 1.0, accuracy: 0.05, "facts stay facts")
 
         let ignored = try writtenSummary(config: ConfigLoader.loadFromString(
             "security_policy:\n  controls:\n    firewall: ignore\n"))
         XCTAssertEqual(ignored.actionItemsP0, 1, "SIP's 100 Macs did not report")
-        // Firewall carries no weight: (99.01 + 100) / 2.
-        XCTAssertEqual(try XCTUnwrap(ignored.securityScore), 99.5, accuracy: 0.001)
+        // Firewall is not scored: (99.01 x 15 + 100 x 10 + 99.01 x 5) / 30.
+        XCTAssertEqual(try XCTUnwrap(ignored.securityScore), 99.3, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(ignored.firewallPct), 0, accuracy: 0.001)
     }
 
@@ -452,8 +465,9 @@ final class SecurityFleetCountsTests: XCTestCase {
         let summary = try writtenSummary(
             config: config, security: hardwareFleetJSON(), computers: computers)
         XCTAssertEqual(summary.actionItemsP0, 1, "only the Intel Mac")
-        // FileVault 4 of 5 compliant, SIP and Firewall 5 of 5: (80 + 100 + 100) / 3.
-        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 93.3, accuracy: 0.001)
+        // FileVault 4 of 5 compliant, SIP, Firewall and Gatekeeper 5 of 5:
+        // (80 x 15 + 100 x 10 + 100 x 10 + 100 x 5) / 40 = 92.5.
+        XCTAssertEqual(try XCTUnwrap(summary.securityScore), 92.5, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(summary.compliancePct), 80, accuracy: 0.01)
         XCTAssertEqual(try XCTUnwrap(summary.fileVaultPct), 20, accuracy: 0.01)
 
@@ -462,8 +476,9 @@ final class SecurityFleetCountsTests: XCTestCase {
                 "security_policy:\n  filevault_off_hardware_encrypted: ignore\n"),
             security: hardwareFleetJSON(), computers: computers)
         XCTAssertEqual(ignored.actionItemsP0, 1)
-        // FileVault 1 of the 2 Macs left counted: (50 + 100 + 100) / 3.
-        XCTAssertEqual(try XCTUnwrap(ignored.securityScore), 83.3, accuracy: 0.001)
+        // FileVault 1 of the 2 Macs left counted: (50 x 15 + 100 x 10 + 100 x 10 + 100 x 5) / 40
+        // = 81.25, to a tenth.
+        XCTAssertEqual(try XCTUnwrap(ignored.securityScore), 81.3, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(ignored.fileVaultPct), 20, accuracy: 0.01, "the fact")
     }
 

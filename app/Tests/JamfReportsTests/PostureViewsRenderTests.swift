@@ -101,8 +101,10 @@ final class PostureViewsRenderTests: XCTestCase {
     /// over, so the hero card gives it its own reason instead of calling it missing.
     func testMissingTextSaysWhyFileVaultIsNotScored() {
         typealias Control = SecurityFleetCounts.Control
-        let notInReport = "No data for EDR Agent Connected, "
-            + "mSCP Compliance, XProtect Current, CVE Clean, Secure Boot (Full), so not scored."
+        // Only the security report is collected, so the other factors have no data.
+        let rest = "Secure Boot at full security, Bootstrap token escrowed, "
+            + "macOS current (30-day grace), XProtect current (14-day grace), "
+            + "Patch compliance, Checked in recently"
         let policy = SecurityControlPolicy(fileVaultOffHardwareEncrypted: .ignore)
         let on = Control(level: .fail, on: 2, fail: 0, warning: 0)
         let allDropped = SecurityFleetCounts(
@@ -110,21 +112,28 @@ final class PostureViewsRenderTests: XCTestCase {
             controls: [.fileVault: Control(level: .fail, on: 0, fail: 0, warning: 0),
                        .sip: on, .firewall: on],
             fileVaultOffHardwareEncrypted: 2)
-        let dropped = SecurityScoreCalculator.score(
-            input: allDropped.scoreInput(), weights: policy.effectiveScoreWeights(.defaultWeights))
-        XCTAssertTrue(dropped.missing.contains(.fileVault))
+        let dropped = SecurityScoreTestSupport.score(allDropped, policy: policy)
+        XCTAssertTrue(dropped.missing.contains { $0.kind == .fileVault })
         XCTAssertEqual(
-            SecurityPostureView.missingText(dropped, fleet: allDropped, edrAgentName: nil),
-            notInReport + " FileVault is not scored: every Mac with it off is hardware-encrypted "
+            SecurityPostureView.missingText(dropped, fleet: allDropped),
+            "No data for Gatekeeper, \(rest), so not scored. "
+                + "FileVault is not scored: every Mac with it off is hardware-encrypted "
                 + "and not counted by this workspace's policy.")
 
         let noFileVault = SecurityFleetCounts(
             totalDevices: 2, controls: [.sip: on, .firewall: on], fileVaultOffHardwareEncrypted: 0)
-        let absent = SecurityScoreCalculator.score(input: noFileVault.scoreInput())
+        let absent = SecurityScoreTestSupport.score(noFileVault)
         XCTAssertEqual(
-            SecurityPostureView.missingText(absent, fleet: noFileVault, edrAgentName: nil),
-            "No data for FileVault Encryption, EDR Agent Connected, mSCP Compliance, "
-                + "XProtect Current, CVE Clean, Secure Boot (Full), so not scored.")
+            SecurityPostureView.missingText(absent, fleet: noFileVault),
+            "No data for FileVault, Gatekeeper, \(rest), so not scored.")
+    }
+
+    /// The check-in factor is named for the workspace's own stale window.
+    func testMissingTextNamesTheCheckInWindow() {
+        let score = SecurityScoreTestSupport.score(.empty)
+        XCTAssertTrue(
+            SecurityPostureView.missingText(score, fleet: .empty, staleDays: 45)
+                .contains("Checked in within 45 days"))
     }
 
     // MARK: - Reading off the main actor
@@ -284,17 +293,14 @@ final class PostureViewsRenderTests: XCTestCase {
         XCTAssertEqual(snapshot.fleetCounts.p0, 25)
         XCTAssertEqual(snapshot.fleetCounts.p1, 10)
 
-        // SecurityScoreCalculator should still produce a useful score from
-        // the limited counts even though several score-bearing metrics are
-        // absent from this snapshot (mSCP, CrowdStrike, etc.).
-        let score = SecurityScoreCalculator.score(
-            input: snapshot.fleetCounts.scoreInput(),
-            weights: snapshot.policy.effectiveScoreWeights(.defaultWeights)
-        )
-        // (95 + 100 + 80) / 3
-        XCTAssertEqual(score.value, 91.7, accuracy: 0.001)
-        XCTAssertFalse(score.available.isEmpty)
-        XCTAssertTrue(score.missing.contains(.mscp))
-        XCTAssertTrue(score.missing.contains(.edrAgent))
+        // The score is still useful from the limited counts even though most factors have no
+        // data in this snapshot: the four controls at 15, 10, 10 and 5 over 95, 100, 80 and 90
+        // percent, (1425 + 1000 + 800 + 450) / 40 = 91.875, shown to a tenth.
+        let score = SecurityScoreTestSupport.score(snapshot.fleetCounts, policy: snapshot.policy)
+        XCTAssertEqual(score.value, 91.9, accuracy: 0.001)
+        XCTAssertEqual(score.available.map(\.id), ["filevault", "sip", "firewall", "gatekeeper"])
+        XCTAssertTrue(score.missing.contains { $0.kind == .secureBoot })
+        XCTAssertFalse(score.missing.contains { $0.kind == .mscp },
+                       "no baseline is configured, so mSCP is not a factor to be missing")
     }
 }

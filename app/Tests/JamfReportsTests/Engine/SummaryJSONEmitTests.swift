@@ -343,12 +343,13 @@ final class SummaryJSONEmitTests: XCTestCase {
         return try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first)
     }
 
-    /// With no `security_policy` block the writer reads no `computers` snapshot: the
-    /// proxy is today's number and `computers` is not one of the digest's sources.
-    func testProxyWithoutAPolicyIgnoresHardwareAndComputers() throws {
+    /// With no `security_policy` block the proxy ignores the hardware: it is today's number.
+    /// The writer still reads the `computers` snapshot, for the Secure Boot, bootstrap token,
+    /// XProtect and macOS factors, so `computers` is one of the digest's sources.
+    func testProxyWithoutAPolicyIgnoresHardware() throws {
         let s = try hardwareProxySummary(policyYAML: nil)
         XCTAssertEqual(try XCTUnwrap(s.compliancePct), 0, accuracy: 0.01)
-        XCTAssertNil(s.collectionSources?["computers"])
+        XCTAssertEqual(s.collectionSources?["computers"], "live")
         XCTAssertEqual(s.collectionSources?["security"], "live")
     }
 
@@ -361,10 +362,9 @@ final class SummaryJSONEmitTests: XCTestCase {
         """)
         XCTAssertEqual(try XCTUnwrap(s.compliancePct), 50, accuracy: 0.01)
         XCTAssertEqual(s.complianceIsProxy, true)
-        XCTAssertEqual(s.collectionSources?["security"], "live",
-                       "sources are recorded, so the nil check below is not vacuous")
-        XCTAssertNil(s.collectionSources?["computers"],
-                     "the hardware index is read straight from disk, not through cachedData")
+        XCTAssertEqual(s.collectionSources?["security"], "live")
+        XCTAssertEqual(s.collectionSources?["computers"], "live",
+                       "the score's factors read the snapshot through cachedData")
     }
 
     // MARK: - EDR coverage (crowdstrikePct)
@@ -472,7 +472,7 @@ final class SummaryJSONEmitTests: XCTestCase {
         XCTAssertNil(s.crowdstrikePct, "A column no Mac reports is unknown, not 0%")
     }
 
-    // MARK: - Score weights from the security policy
+    // MARK: - Score factors from the security policy
 
     /// GoldenFleet case A's security summary (250 Macs; FileVault 240, SIP 250, Firewall 245,
     /// Gatekeeper 248) under the given config: the score the summary writer records.
@@ -493,19 +493,21 @@ final class SummaryJSONEmitTests: XCTestCase {
             try XCTUnwrap(SummaryJSONParser.parseDirectory(summaries).first).securityScore)
     }
 
-    /// With no `score_weights` the weights are 15/15/15 over the three measured controls:
-    /// (96.0 + 100.0 + 98.0) / 3 = 98.0, as before the weights moved into the policy.
-    func testSummaryScoreWithNoWeightsBlockIsTodaysNumber() throws {
+    /// With no `score_factors` the defaults apply, and only the four controls have data:
+    /// weights 15/10/10/5 over 96.0, 100.0, 98.0 and 99.2, (1440 + 1000 + 980 + 496) / 40
+    /// = 97.9. Before the factors the three controls at 15 each made it 98.0.
+    func testSummaryScoreWithNoFactorsIsTheDefaultFactorsScore() throws {
         XCTAssertEqual(try goldenFleetScore(policyYAML: "thresholds:\n  stale_device_days: 30\n"),
-                       98.0, accuracy: 0.001)
+                       97.9, accuracy: 0.001)
         XCTAssertEqual(try goldenFleetScore(policyYAML: "security_policy:\n  controls:\n"
-                                            + "    sip: warning\n"), 98.0, accuracy: 0.001)
+                                            + "    sip: warning\n"), 97.9, accuracy: 0.001)
     }
 
-    /// FileVault 30 against SIP 15 and Firewall 15 (total 60):
+    /// FileVault 30 against SIP 15 and Firewall 15 (total 60), Gatekeeper not listed:
     /// (96.0 * 30 + 100.0 * 15 + 98.0 * 15) / 60 = (2880 + 1500 + 1470) / 60 = 97.5.
-    func testSummaryScoreUsesTheWorkspacesScoreWeights() throws {
-        let yaml = "security_policy:\n  score_weights:\n    filevault: 30\n"
+    func testSummaryScoreUsesTheWorkspacesScoreFactors() throws {
+        let yaml = "security_policy:\n  score_factors:\n    - {factor: filevault, weight: 30}\n"
+            + "    - {factor: sip, weight: 15}\n    - {factor: firewall, weight: 15}\n"
         XCTAssertEqual(try goldenFleetScore(policyYAML: yaml), 97.5, accuracy: 0.001)
     }
 

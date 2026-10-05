@@ -130,13 +130,13 @@ final class SecurityValueVocabularyTests: XCTestCase {
         security_policy:
           controls:
             firewall: ignore
-          score_weights:
-            filevault: 20
+          score_factors:
+            - {factor: filevault, weight: 20}
           on_values:
             sip: Protected
         """)
         XCTAssertEqual(decoded.firewall, .ignore)
-        XCTAssertEqual(decoded.scoreWeights?.fileVault, 20)
+        XCTAssertEqual(decoded.scoreFactors, [SecurityScoreFactor(.fileVault, weight: 20)])
         XCTAssertEqual(decoded.onValues, [.sip: ["protected"]])
     }
 

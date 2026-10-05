@@ -296,25 +296,29 @@ final class AdversarialPinTests: XCTestCase {
     // MARK: - Pin 9 — security-score clamp + renormalization
 
     /// A compliant count exceeding the device total contributes exactly 100
-    /// (clamped, not 109); the score renormalizes over only the available metrics.
+    /// (clamped, not 109); the score renormalizes over only the available factors.
     func testPin9_SecurityScoreClampAndRenormalization() {
+        func fleet(_ onCounts: [SecurityControl: Int]) -> SecurityFleetCounts {
+            SecurityFleetCounts.build(
+                totalDevices: 600, onCounts: onCounts, devices: [], hardware: [:],
+                policy: .default)
+        }
         // Clamp in isolation: 655 / 600 = 109.17% → clamped 100.
-        // Single metric → score = (100 * 15) / 15 = 100.0 (an unclamped value
+        // Single factor → score = (100 * 15) / 15 = 100.0 (an unclamped value
         // would surface 109.17).
-        let clampOnly = SecurityScoreCalculator.score(
-            input: .init(totalDevices: 600, compliantCounts: [.fileVault: 655]))
+        let clampOnly = SecurityScoreTestSupport.score(fleet([.fileVault: 655]))
         XCTAssertEqual(clampOnly.value, 100.0, accuracy: 0.001,
                        "655/600 clamps to 100, not 109.17")
-        XCTAssertEqual(clampOnly.available, [.fileVault])
+        XCTAssertEqual(clampOnly.available.map(\.id), ["filevault"])
 
-        // Renormalization: fileVault (clamped 100, weight 15) + sip (50, weight 15).
-        // score = (100*15 + 50*15) / (15 + 15) = 2250 / 30 = 75.0 over the two
-        // AVAILABLE metrics only (the other six weights are dropped).
-        let renorm = SecurityScoreCalculator.score(
-            input: .init(totalDevices: 600, compliantCounts: [.fileVault: 655, .sip: 300]))
-        XCTAssertEqual(renorm.value, 75.0, accuracy: 0.001)
+        // Renormalization: fileVault (clamped 100, weight 15) + sip (50, weight 10).
+        // score = (100*15 + 50*10) / (15 + 10) = 2000 / 25 = 80.0 over the two
+        // AVAILABLE factors only (the other eight weights are dropped).
+        let renorm = SecurityScoreTestSupport.score(fleet([.fileVault: 655, .sip: 300]))
+        XCTAssertEqual(renorm.value, 80.0, accuracy: 0.001)
         XCTAssertEqual(renorm.available.count, 2)
-        XCTAssertEqual(renorm.missing.count, 6, "six metrics absent → dropped from the denominator")
+        XCTAssertEqual(renorm.missing.count, 8,
+                       "eight factors absent → dropped from the denominator")
     }
 
     // MARK: - Pin 10 — salvage byte-scanner adversarial fixtures

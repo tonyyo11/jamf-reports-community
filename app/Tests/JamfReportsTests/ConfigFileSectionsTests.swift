@@ -170,9 +170,18 @@ final class ConfigFileSectionsTests: XCTestCase {
             sip: warning
             firewall: ignore
           filevault_off_hardware_encrypted: warning
-          score_weights:
-            filevault: 20
-            sip: 10
+          score_factors:
+            - factor: filevault
+              weight: 20
+            - factor: os_current
+              weight: 10
+              grace_days: 14
+            - factor: agent
+              agent: Falcon
+              weight: 5
+            - factor: mscp
+              baseline: STIG
+              weight: 10
         """
         let sections = try build(yaml)
         XCTAssertEqual(summary(sections), [])

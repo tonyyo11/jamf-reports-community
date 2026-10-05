@@ -64,11 +64,8 @@ extension HtmlReport {
     private func definitionList(_ inputs: Inputs, glance: Glance?) -> String {
         let f = HtmlSectionFormatters.self
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
-        let policy = config.resolvedSecurityPolicy
-        let weights = policy.resolvedScoreWeights
-        let weightText = SecurityScoreWeights.configSlots.map { slot -> String in
-            let label = Self.weightLabels[slot.key] ?? slot.key
-            return "\(label) \(Self.weightText(weights[keyPath: slot.path]))"
+        let factorText = config.resolvedScoreFactors.map {
+            "\($0.label(staleDays: staleDays)) \(SecurityScoreFactor.weightText($0.weight))"
         }.joined(separator: ", ")
         let compliance: String
         switch inputs.summaries.last?.complianceIsProxy {
@@ -92,8 +89,9 @@ extension HtmlReport {
             ("P0 security gap", "A Mac measured off for FileVault, SIP or Firewall at the Fail "
                 + "level, counted once per control."),
             ("P1 security gap", "A Mac measured off for Gatekeeper at the Fail level."),
-            ("Security score", "A weighted share of the controls that pass. Weights: "
-                + "\(weightText). A metric with no value is dropped and the rest renormalised."),
+            ("Security score", "A weighted share of the Macs that pass each factor. Factors and "
+                + "weights: \(factorText). A factor with no data is dropped and the rest "
+                + "renormalised."),
             ("Patch compliance", "Devices on the latest version of their patch title, over all "
                 + "devices on tracked titles. Not an average of the titles' percentages."),
             ("On current macOS", "A Mac running the newest release of its own major version, "
@@ -107,18 +105,8 @@ extension HtmlReport {
         return "<dl class=\"definitions\">\n\(items)\n</dl>"
     }
 
-    private static let weightLabels: [String: String] = [
-        "filevault": "FileVault", "sip": "SIP", "firewall": "Firewall",
-        "edr_agent": "EDR agent", "mscp": "mSCP", "xprotect": "XProtect", "cve": "CVE",
-        "secure_boot": "Secure Boot",
-    ]
-
-    private static func weightText(_ weight: Double) -> String {
-        weight == weight.rounded() ? String(format: "%.0f", weight) : String(weight)
-    }
-
     /// Each control's level under `security_policy`, the hardware rule and where the score
-    /// weights came from. A level other than Fail is the reader's cue that a gap is not
+    /// factors came from. A level other than Fail is the reader's cue that a gap is not
     /// counted the way the report's headings might suggest.
     private func securityPolicyTable() -> String {
         let policy = config.resolvedSecurityPolicy
@@ -132,8 +120,8 @@ extension HtmlReport {
                 : "Same as FileVault",
         ])
         rows.append([
-            "Score weights",
-            policy.scoreWeights == nil ? "Defaults" : "Set in security_policy.score_weights",
+            "Score factors",
+            policy.scoreFactors == nil ? "Defaults" : "Set in security_policy.score_factors",
         ])
         return HtmlSectionFormatters.renderTable(headers: ["Setting", "Level"], rows: rows)
     }

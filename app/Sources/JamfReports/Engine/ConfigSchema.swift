@@ -54,6 +54,7 @@ enum ConfigSchema {
         "columns.warranty_expires": "2.6.1",
         "jamf_cli.allow_live_overview": "2.9",
         "jamf_cli.enabled": "2.9",
+        "security_policy.score_weights": "2.9",
         "output.export_pptx": "2.4.0",
         "platform.enabled": "2.9",
         "protect.data_dir": "2.8.1",
@@ -228,10 +229,7 @@ enum ConfigSchema {
             "controls": Node(SecurityControlPolicy.ControlKeys.self),
             "on_values": Node(SecurityControlPolicy.ControlKeys.self),
             "off_values": Node(SecurityControlPolicy.ControlKeys.self),
-            "score_weights": Node(names: [
-                "filevault", "sip", "firewall", "edr_agent", "mscp", "xprotect", "cve",
-                "secure_boot",
-            ]),
+            "score_factors": Node(SecurityControlPolicy.FactorKeys.self, list: true),
         ]),
     ])
 }

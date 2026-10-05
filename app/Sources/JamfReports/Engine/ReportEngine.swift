@@ -761,9 +761,11 @@ struct ReportEngine: Sendable {
         // nil (not 0) when device-compliance was never collected — unknown is
         // not zero, and a 0 here renders as a measured "0 stale devices".
         var staleCount: Int? = nil
+        var complianceRows: [DeviceComplianceRow]? = nil
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
             staleCount = rows.filter { $0.isStale(atDays: staleDaysThreshold) }.count
+            complianceRows = rows
         }
 
         // OS current % — SOFA-driven: a device is "current" when its OS version is
@@ -784,9 +786,11 @@ struct ReportEngine: Sendable {
         // Patch % — device-weighted (`PatchStatusService.fleetCompliancePct`); nil when
         // patch-status is absent or no title has devices (not the same as 0%).
         var patchPct: Double? = nil
+        var patchRows: [PatchStatusRow]? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
             patchPct = PatchStatusService.fleetCompliancePct(rows)
+            patchRows = rows
         }
 
         // Real mSCP compliance from ea-results — overrides the proxy when the
@@ -818,10 +822,8 @@ struct ReportEngine: Sendable {
                 )
             }
         }
-        var primaryMSCP: MSCPComplianceService.BaselineResult?
         if !eaBaselines.isEmpty, let eaRows {
             let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
-            primaryMSCP = results.first
             if let primary = results.first, let realPct = primary.compliancePct {
                 complianceFinalPct = realPct
                 complianceIsRealData = true
@@ -858,11 +860,10 @@ struct ReportEngine: Sendable {
                 agentCoveragePct[SecurityScoreInputs.agentKey(coverage.name)] = pct
             }
         }
-        // The same two figures feed the security score below, through the one function the
-        // Security Posture screen and the workbook use, so a fleet has one score everywhere.
-        let scoreExtras = SecurityScoreInputs.extras(edr: edrCoverage, mscp: primaryMSCP)
-        let edrConnectedPct = scoreExtras.edrConnected.flatMap {
-            SecurityAgentCoverage.percent(installed: $0, fleet: totalDevices)
+        let edrConnectedPct = edrCoverage.flatMap { coverage in
+            coverage.reporting > 0
+                ? SecurityAgentCoverage.percent(installed: coverage.installed, fleet: totalDevices)
+                : nil
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -880,15 +881,25 @@ struct ReportEngine: Sendable {
         let fleet = SecurityFleetCounts.build(
             totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
             hardware: hardware, policy: securityPolicy)
-        // Every input that has data this run: FileVault, SIP and Firewall from the security
-        // report, the EDR agent and the primary mSCP baseline from ea-results. A metric
-        // without data drops out of the denominator.
+        // The workspace's score factors, through the one function the Security Posture screen
+        // and the workbook use, so a fleet has one score everywhere. A factor without data
+        // drops out of the denominator.
+        let scoreFactors = config.resolvedScoreFactors
+        let scoreSources = Self.scoreSources(
+            dataDir: dataDir, computers: cachedData(kind: "computers"),
+            patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows)
         let score = SecurityScoreCalculator.score(
-            input: SecurityScoreInputs.input(fleet: fleet, extras: scoreExtras),
-            weights: securityPolicy.resolvedScoreWeights
-        )
-        // Score is only meaningful when at least one metric contributed.
-        let securityScore: Double? = score.available.isEmpty ? nil : score.value
+            factors: scoreFactors,
+            measures: SecurityScoreInputs.measures(
+                for: scoreFactors, fleet: fleet, sources: scoreSources, config: config))
+        // Score is only meaningful when at least one factor contributed.
+        let securityScore: Double? = score.parts.isEmpty ? nil : score.value
+        let facts = SecurityScoreInputs.measures(
+            for: Self.summaryFactFactors(scoreFactors), fleet: fleet, sources: scoreSources,
+            config: config)
+        func factPct(_ kind: SecurityScoreFactor.Kind) -> Double? {
+            facts[kind.rawValue]?.share.map(round1)
+        }
 
         // complianceIsProxy:
         //   nil   — no compliance data at all (neither proxy nor real)
@@ -916,6 +927,9 @@ struct ReportEngine: Sendable {
             sipPct: sipPct.map(round1),
             firewallPct: firewallPct.map(round1),
             gatekeeperPct: gatekeeperPct.map(round1),
+            secureBootPct: factPct(.secureBoot),
+            bootstrapPct: factPct(.bootstrapToken),
+            xprotectPct: factPct(.xprotectCurrent),
             // Real baseline data only: the proxy is the controls above again.
             mscpScorePct: complianceIsRealData ? complianceFinalPct.map(round1) : nil,
             securityScore: securityScore.map(round1),
@@ -931,9 +945,34 @@ struct ReportEngine: Sendable {
             // a hostname to a file that never needed one.
             collectedByHost: Self.collectingHostLabel(dataDir: dataDir),
             patchPctBasis: DailySummary.deviceWeightedPatchBasis,
-            securityScoreBasis: securityScore == nil ? nil : SecurityScoreInputs.basis(of: score),
+            securityScoreBasis: score.basis,
             securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct
         )
+    }
+
+    /// The score's sources from what the summary writer already read, plus the `computers`
+    /// snapshot and the SOFA feed, which the summary's Secure Boot, bootstrap token and
+    /// XProtect figures need whatever the score lists.
+    private static func scoreSources(
+        dataDir: URL, computers: Data?,
+        patchRows: [PatchStatusRow]?, complianceRows: [DeviceComplianceRow]?,
+        eaRows: [EAResultRow]?
+    ) -> SecurityScoreInputs.Sources {
+        var sources = SecurityScoreInputs.Sources(
+            patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows)
+        sources.computers = computers.flatMap(ComputerScoreFacts.decodeSnapshot)
+        sources.sofa = SOFAScoreFeed.load(dataDir: dataDir)
+        return sources
+    }
+
+    /// The summary records Secure Boot, bootstrap token and XProtect shares whether or not the
+    /// score lists them; XProtect with the listed grace period, if any.
+    private static func summaryFactFactors(
+        _ listed: [SecurityScoreFactor]
+    ) -> [SecurityScoreFactor] {
+        [.secureBoot, .bootstrapToken, .xprotectCurrent].map { kind in
+            listed.first { $0.kind == kind } ?? SecurityScoreFactor(kind, weight: 1)
+        }
     }
 
     /// This machine's display name when the workspace is shared, else nil.

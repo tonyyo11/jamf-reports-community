@@ -81,10 +81,9 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         XCTAssertEqual(fleet.p1NotReported, 0)
         XCTAssertEqual(try XCTUnwrap(fleet.nonFailingPct(.sip)), 100, accuracy: 0.001)
         // Out of the score's SIP share too: the one Mac that reported is on.
-        let input = fleet.scoreInput()
-        XCTAssertEqual(input.compliantCounts[.sip], 1)
-        XCTAssertEqual(input.metricTotals[.sip], 1)
-        XCTAssertEqual(SecurityScoreCalculator.score(input: input).value, 100, accuracy: 0.001)
+        XCTAssertEqual(fleet.scoreMeasure(for: .sip),
+                       SecurityScoreMeasure(passing: 1, evaluated: 1))
+        XCTAssertEqual(SecurityScoreTestSupport.score(fleet).value, 100, accuracy: 0.001)
     }
 
     func testOnlyMacsMeasuredOffAreFailures() throws {
@@ -99,8 +98,8 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         XCTAssertEqual(fleet.p0NotReported, 3)
         // 4 of the 7 Macs that reported.
         XCTAssertEqual(try XCTUnwrap(fleet.nonFailingPct(.sip)), 400.0 / 7, accuracy: 0.001)
-        XCTAssertEqual(fleet.scoreInput().metricTotals[.sip], 7)
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.sip], 4)
+        XCTAssertEqual(fleet.scoreMeasure(for: .sip),
+                       SecurityScoreMeasure(passing: 4, evaluated: 7))
     }
 
     /// At warning the measured-off Macs warn, the others are still not reported, and the
@@ -114,8 +113,8 @@ final class SecurityFleetNotReportedTests: XCTestCase {
                 + rows(3, prefix: "NONE") { row($0, sip: "") }, policy: policy)
         XCTAssertEqual(fleet.controls[.sip],
                        Control(level: .warning, on: 4, fail: 0, warning: 3, notReported: 3))
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.sip], 7)
-        XCTAssertEqual(fleet.scoreInput().metricTotals[.sip], 7)
+        XCTAssertEqual(fleet.scoreMeasure(for: .sip),
+                       SecurityScoreMeasure(passing: 7, evaluated: 7))
     }
 
     /// With every Mac measured nothing is unreported: the same counts as the summary alone.
@@ -132,9 +131,10 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         XCTAssertEqual(withRows, summaryOnly)
         XCTAssertEqual(withRows.p0, 4 + 3 + 2)
         XCTAssertEqual(withRows.p0NotReported, 0)
-        XCTAssertEqual(withRows.scoreInput().metricTotals, [:])
         for control in SecurityControl.allCases {
             XCTAssertEqual(withRows.controls[control]?.notReported, 0, "\(control)")
+            XCTAssertEqual(withRows.scoreMeasure(for: control)?.evaluated, 10,
+                           "\(control): a share of the whole fleet")
         }
     }
 
@@ -187,24 +187,25 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         XCTAssertEqual(fleet.controls[.sip],
                        Control(level: .fail, on: 0, fail: 0, warning: 0, notReported: 4))
         XCTAssertNil(fleet.nonFailingPct(.sip))
-        XCTAssertNil(fleet.scoreInput().compliantCounts[.sip])
-        let score = SecurityScoreCalculator.score(input: fleet.scoreInput())
-        XCTAssertTrue(score.missing.contains(.sip))
+        XCTAssertNil(fleet.scoreMeasure(for: .sip)?.share, "no Mac is left to judge")
+        let score = SecurityScoreTestSupport.score(fleet)
+        XCTAssertTrue(score.missing.contains { $0.kind == .sip })
     }
 
-    /// An ignored control keeps its count so the score does not call it missing; its
-    /// unreported Macs are information only.
+    /// An ignored control keeps its count, and its unreported Macs stay in that count as
+    /// information only. The policy drops its factor, so the score neither scores it nor calls
+    /// it missing.
     func testAnIgnoredControlKeepsItsUnreportedCountAsInformation() throws {
         let policy = SecurityControlPolicy(sip: .ignore)
         let fleet = try counts(dummyLikeReport(), policy: policy)
         XCTAssertEqual(fleet.controls[.sip],
                        Control(level: .ignore, on: 1, fail: 0, warning: 0, notReported: 100))
         XCTAssertEqual(fleet.p0NotReported, 0, "SIP is not counted, so P0 leaves out nothing")
-        XCTAssertNil(fleet.scoreInput().metricTotals[.sip])
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.sip], 1)
-        let score = SecurityScoreCalculator.score(
-            input: fleet.scoreInput(), weights: policy.effectiveScoreWeights(.defaultWeights))
-        XCTAssertFalse(score.missing.contains(.sip))
+        XCTAssertEqual(fleet.scoreMeasure(for: .sip),
+                       SecurityScoreMeasure(passing: 1, evaluated: 101))
+        let score = SecurityScoreTestSupport.score(fleet, policy: policy)
+        XCTAssertFalse(score.missing.contains { $0.kind == .sip })
+        XCTAssertFalse(score.available.contains { $0.kind == .sip })
         XCTAssertNil(fleet.nonFailingPct(.sip))
     }
 
@@ -237,8 +238,8 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 2)
         // 7 Macs reported; the 2 warned ones are not failing.
         XCTAssertEqual(try XCTUnwrap(fleet.nonFailingPct(.fileVault)), 100, accuracy: 0.001)
-        XCTAssertEqual(fleet.scoreInput().metricTotals[.fileVault], 7)
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 7)
+        XCTAssertEqual(fleet.scoreMeasure(for: .fileVault),
+                       SecurityScoreMeasure(passing: 7, evaluated: 7))
     }
 
     /// At ignore the two moved Macs leave the share and the three that did not report leave
@@ -249,8 +250,8 @@ final class SecurityFleetNotReportedTests: XCTestCase {
         XCTAssertEqual(fleet.controls[.fileVault],
                        Control(level: .fail, on: 5, fail: 0, warning: 0, notReported: 3))
         XCTAssertEqual(fleet.fileVaultOffHardwareEncrypted, 2)
-        XCTAssertEqual(fleet.scoreInput().metricTotals[.fileVault], 5)
-        XCTAssertEqual(fleet.scoreInput().compliantCounts[.fileVault], 5)
+        XCTAssertEqual(fleet.scoreMeasure(for: .fileVault),
+                       SecurityScoreMeasure(passing: 5, evaluated: 5))
         XCTAssertEqual(try XCTUnwrap(fleet.nonFailingPct(.fileVault)), 100, accuracy: 0.001)
     }
 
@@ -315,7 +316,8 @@ final class SecurityFleetNotReportedTests: XCTestCase {
             SecurityPostureView.actionCaption("Gatekeeper gaps", notReported: fleet.p1NotReported),
             "Gatekeeper gaps")
         XCTAssertEqual(SecurityPostureView.p0TileCount(fleet), 0)
-        XCTAssertEqual(SecurityPostureView.score(snapshot).value, 100, accuracy: 0.001)
+        XCTAssertEqual(
+            SecurityPostureView.score(snapshot.scoredFromReportAlone()).value, 100, accuracy: 0.001)
     }
 
     func testTheKPITileLeavesAnIgnoredControlsNoteAlone() throws {
