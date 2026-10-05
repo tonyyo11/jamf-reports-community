@@ -238,6 +238,12 @@ compliance is now one figure everywhere.
 - A Health Audit run from the app was saved with a UTC time in its name, which the app reads as
   local time, so the HTML report's "Data collected" showed a time hours after the report was
   made, and that audit was taken as newer than later ones. It is now saved in local time.
+- Two Macs with the same computer name are two Macs. Devices and Offline Outreach merged them
+  into one (663 Macs where Jamf had 664), because inventory rows were joined by name when a
+  serial was not yet known. Rows now join on the Jamf ID, management ID, UDID or
+  serial number, and never by name alone; a row that names more than one Mac and carries no
+  identifier is left out and counted in a Devices warning. The CSV import also reads the
+  `JSS Computer ID`, `UDID` and `Management ID` columns.
 - Generating a report while a refresh or a scheduled run collects data is refused, from the
   Generate Reports sheet and from the Overview's Generate Report, with a note to try again when it
   finishes. A report made mid-collect read the morning's summary beside newer snapshots, so its
