@@ -194,11 +194,14 @@ struct TickLock: Sendable {
 
     /// The test `acquire()` refuses on: the file names a live pid other than
     /// `pid` and is not stale. Read-only — never writes or touches the lock.
+    /// A pid of 1 or below is no holder: `kill(0, 0)` and `kill(-1, 0)` signal whole process
+    /// groups and succeed, and pid 1 is launchd, so a lock file naming one would read as alive
+    /// until its date went stale.
     func isHeldByAnotherLiveProcess(
         pid: Int32 = getpid(),
         isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM }
     ) -> Bool {
-        guard let holder = holder() else { return false }
+        guard let holder = holder(), holder > 1 else { return false }
         return holder != pid && isAlive(holder) && !isStale()
     }
 
