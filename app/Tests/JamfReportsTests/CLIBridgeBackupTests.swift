@@ -196,7 +196,8 @@ final class CLIBridgeBackupTests: XCTestCase {
         let empty = try makeWorkspace(configYAML: "jamf_cli:\n  profile: \"\"\n")
         for profile in [matching, empty] {
             let collector = LineCollector()
-            XCTAssertNoThrow(try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
+            XCTAssertNoThrow(
+                try CLIBridge.checkBackupConfigProfile(profile) { collector.append($0) })
             XCTAssertTrue(collector.lines.isEmpty, "\(collector.lines.map(\.text))")
         }
     }
@@ -228,7 +229,8 @@ final class CLIBridgeBackupTests: XCTestCase {
                 error as? CLIBridgeError, .profileCaseConflict(profile: profile, owner: owner)
             )
         }
-        XCTAssertTrue(collector.lines.contains { $0.level == .fail && $0.text.hasPrefix("[error]") })
+        XCTAssertTrue(
+            collector.lines.contains { $0.level == .fail && $0.text.hasPrefix("[error]") })
     }
 
     /// `-p` carries the workspace profile whatever it looks like, a leading dash included

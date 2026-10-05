@@ -57,7 +57,7 @@ final class ProbeOutputDrainTests: XCTestCase {
             done.leave()
         }
         guard done.wait(timeout: .now() + Self.deadline) == .success else {
-            XCTFail("\(label) did not return within \(Int(Self.deadline)) s: a child blocked on a full pipe")
+            XCTFail("\(label) did not return in \(Int(Self.deadline)) s: a child blocked on a pipe")
             return nil
         }
         return slot.value
@@ -69,7 +69,8 @@ final class ProbeOutputDrainTests: XCTestCase {
                 + "\"auth-method\":\"oauth2\",\"default\":false}"
         }
         let url = tempDir.appendingPathComponent("profiles.json")
-        try ("[" + rows.joined(separator: ",") + "]").write(to: url, atomically: true, encoding: .utf8)
+        let json = "[" + rows.joined(separator: ",") + "]"
+        try json.write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
@@ -134,7 +135,8 @@ final class ProbeOutputDrainTests: XCTestCase {
     }
 
     func testProvenanceVersionReadsMoreThanAPipeBufferOfStdout() throws {
-        let stub = try makeStub("echo 'jamf-cli version 1.29.0'\nhead -c \(Self.flood) /dev/zero | tr '\\0' x")
+        let stub = try makeStub(
+            "echo 'jamf-cli version 1.29.0'\nhead -c \(Self.flood) /dev/zero | tr '\\0' x")
         XCTAssertEqual(provenanceVersion(of: stub), .some("jamf-cli version 1.29.0"))
     }
 

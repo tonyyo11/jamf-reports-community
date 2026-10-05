@@ -153,9 +153,8 @@ final class CodeSignVerifierTests: XCTestCase {
     func testVerifyRejectsPlainAdHocBinaryForAnyTeamID() throws {
         let binary = try adHocSignedCopy(teamIdentifier: nil)
         XCTAssertFalse(CodeSignVerifier.verify(url: binary, expectedTeamID: "ABCDE12345"))
-        XCTAssertFalse(
-            CodeSignVerifier.verify(url: binary, expectedTeamID: CodeSignVerifier.teamID(of: binary) ?? "")
-        )
+        let ownTeamID = CodeSignVerifier.teamID(of: binary) ?? ""
+        XCTAssertFalse(CodeSignVerifier.verify(url: binary, expectedTeamID: ownTeamID))
     }
 
     func testVerifyRejectsTeamIDsThatCouldInjectRequirementSyntax() throws {

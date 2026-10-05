@@ -1207,8 +1207,9 @@ final class CLIBridge {
                         )
                     }
                 } catch {
+                    let reason = error.localizedDescription
                     AppLogger.cli.warning(
-                        "deviceDetail: could not read staged output: \(error.localizedDescription, privacy: .private)"
+                        "deviceDetail: could not read staged output: \(reason, privacy: .private)"
                     )
                 }
             }
@@ -1226,8 +1227,9 @@ final class CLIBridge {
                 [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: cache.path)
             return true
         } catch {
+            let reason = error.localizedDescription
             AppLogger.cli.warning(
-                "deviceDetail: could not cache \(cache.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+                "deviceDetail: cache write failed: \(reason, privacy: .private)"
             )
             return false
         }

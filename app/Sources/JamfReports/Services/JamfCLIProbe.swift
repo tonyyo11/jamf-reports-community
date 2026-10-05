@@ -62,8 +62,9 @@ enum JamfCLIProbe {
             // A grandchild may still hold the pipes; do not wait for their EOF.
             stdoutDrainer.cancel()
             stderrDrainer.cancel()
+            let name = executable.lastPathComponent
             AppLogger.cli.warning(
-                "JamfCLIProbe: \(executable.lastPathComponent, privacy: .public) stopped after \(timeout, privacy: .public)s"
+                "JamfCLIProbe: \(name, privacy: .public) timed out at \(timeout, privacy: .public)s"
             )
             return nil
         }
