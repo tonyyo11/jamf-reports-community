@@ -2175,48 +2175,44 @@ final class CLIBridge {
 
     /// Refuses a workspace recorded for a case variant of `profile`: the two
     /// share the folder on a case-insensitive volume, and rebinding it would
-    /// collect a second tenant into the first one's data.
+    /// collect a second tenant into the first one's data. Records `profile` in
+    /// `jamf_cli.profile` through `ConfigService.saveBlock`, which keeps every other
+    /// key in the block and copies the file first when the block held a comment.
     private func reconcileConfigProfile(
         config: URL,
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) throws {
         do {
-            let text = try String(contentsOf: config, encoding: .utf8)
-            var document = try YAMLCodec.decode(text)
-            guard case .mapping(var root) = document.root else { return }
-            var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
-            let current = jamfCLI.value(for: "profile")?.stringValue?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let document = try YAMLCodec.decode(String(contentsOf: config, encoding: .utf8))
+            guard case .mapping(let root) = document.root else { return }
+            let current = root.value(for: "jamf_cli")?.mapping?.value(for: "profile")?
+                .stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard current != profile else { return }
             guard !ProfileService.isCaseVariant(current, of: profile) else {
                 throw CLIBridgeError.profileCaseConflict(profile: profile, owner: current)
             }
 
-            jamfCLI.set("profile", value: .scalar(.string(profile)))
-            root.set("jamf_cli", value: .mapping(jamfCLI))
-            document.root = .mapping(root)
-            let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["jamf_cli"])
-            let permissions = (try? FileManager.default.attributesOfItem(atPath: config.path))
-                .flatMap { $0[.posixPermissions] as? NSNumber }
-            try encoded.write(to: config, atomically: true, encoding: .utf8)
-            if let permissions {
-                do {
-                    try FileManager.default.setAttributes(
-                        [.posixPermissions: permissions],
-                        ofItemAtPath: config.path
-                    )
-                } catch {
-                    AppLogger.cli.warning(
-                        "reconcileConfigProfile: could not restore permissions on \(config.path): \(error)"
-                    )
-                }
-            }
+            let report = try ConfigService.saveBlock(
+                key: "jamf_cli", profile: profile,
+                workspaceRoot: config.deletingLastPathComponent().deletingLastPathComponent()
+            ) { root in
+                var jamfCLI = root.value(for: "jamf_cli")?.mapping
+                    ?? YAMLCodec.YAMLMapping(entries: [])
+                jamfCLI.set("profile", value: .scalar(.string(profile)))
+                root.set("jamf_cli", value: .mapping(jamfCLI))
+            }.report
             onLine(.init(
                 timestamp: Date(),
                 level: .info,
                 text: "[info] set jamf_cli.profile to \(profile) in \(config.path)"
             ))
+            if let copy = report.backupName {
+                onLine(.init(
+                    timestamp: Date(), level: .info,
+                    text: "[info] jamf_cli held comments or lines the app does not keep; "
+                        + "a copy of config.yaml as it was is at \(copy)"))
+            }
         } catch let conflict as CLIBridgeError {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))
@@ -2230,6 +2226,10 @@ final class CLIBridge {
             // The workspace exists; what failed is reading or writing its config.
             if error is YAMLCodec.CodecError {
                 throw CLIBridgeError.configLoadFailed(path: config.path, detail: nil)
+            }
+            if let refused = error as? ConfigService.ConfigError {
+                throw CLIBridgeError.configLoadFailed(
+                    path: config.path, detail: refused.localizedDescription)
             }
             throw CLIBridgeError.directoryOperationFailed(path: config.path)
         }

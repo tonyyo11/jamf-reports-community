@@ -245,6 +245,35 @@ final class ProfileSlugCaseTests: XCTestCase {
         }
     }
 
+    // MARK: - Binding records the profile through the scoped writer
+
+    /// Binding rewrites `jamf_cli:` to record the profile. A comment there is not kept, so the
+    /// file is copied first and the run log names the copy; a key the app does not read stays.
+    func testBindingBacksUpACommentInsideJamfCLIAndSaysWhere() async throws {
+        let workspace = tempRoot.appendingPathComponent("acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let config = workspace.appendingPathComponent("config.yaml")
+        try Data("jamf_cli:\n  # tenant A\n  profile: \"\"\n  team_key: keep\n".utf8)
+            .write(to: config)
+        let lines = CaseTestBox<[String]>([])
+
+        _ = try await CLIBridge().initializeWorkspace(profile: "acme") { line in
+            lines.value.append(line.text)
+        }
+
+        let text = try String(contentsOf: config, encoding: .utf8)
+        XCTAssertTrue(text.contains("profile: acme") || text.contains("profile: \"acme\""), text)
+        XCTAssertTrue(text.contains("team_key: keep"), text)
+        let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
+            .filter { $0.hasPrefix("config.yaml.bak-") }
+        XCTAssertEqual(copies.count, 1, "\(copies)")
+        let copy = try XCTUnwrap(copies.first)
+        let copied = try String(
+            contentsOf: workspace.appendingPathComponent(copy), encoding: .utf8)
+        XCTAssertTrue(copied.contains("# tenant A"), copied)
+        XCTAssertTrue(lines.value.contains { $0.contains(copy) }, "\(lines.value)")
+    }
+
     // MARK: - Case variants never share a workspace
 
     #if DEBUG

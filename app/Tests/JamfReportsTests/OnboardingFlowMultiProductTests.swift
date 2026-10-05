@@ -415,6 +415,41 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertEqual(protectMapping?.value(for: "enabled")?.boolValue, true)
     }
 
+    /// The onboarding writes go through the scoped writer: a key the app does not read inside
+    /// `protect:` or `school_cli:` stays, and a comment there is backed up and reported.
+    func test_productWrites_keepUnknownKeysAndBackUpComments() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MPTest-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testproducts"
+        let url = try ConfigService.configURL(for: profile)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        protect:
+          # second tenant
+          team_note: keep me
+        school_cli:
+          site_note: keep me too
+        """.write(to: url, atomically: true, encoding: .utf8)
+        let flow = OnboardingFlow()
+
+        let protect = try flow.writeProtectConfig(
+            profileSlug: profile, protectProfileName: "my-protect")
+        let school = try flow.writeSchoolConfig(profileSlug: profile, schoolProfileName: "edu")
+
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(text.contains("team_note: keep me"), text)
+        XCTAssertTrue(text.contains("site_note: keep me too"), text)
+        let backup = try XCTUnwrap(protect.backupName)
+        XCTAssertTrue(protect.statusLine?.contains(backup) ?? false)
+        XCTAssertNil(school.backupName, "nothing in school_cli was dropped")
+    }
+
     func test_writeSchoolConfig_setsEnabledAndProfile() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("MPTest-\(UUID().uuidString)", isDirectory: true)

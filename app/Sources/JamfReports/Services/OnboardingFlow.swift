@@ -1284,64 +1284,32 @@ final class OnboardingFlow {
 
     // MARK: - Config wiring helpers
 
-    internal func writeProtectConfig(profileSlug: String, protectProfileName: String) throws {
-        let url = try ConfigService.configURL(for: profileSlug)
-        let manager = FileManager.default
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: url.path) {
-            document = try YAMLCodec.decode(String(contentsOf: url, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
-
-        guard case .mapping(var root) = document.root else {
-            throw ConfigService.ConfigError.invalidTopLevel
-        }
-        var protect = root.value(for: "protect")?.mapping
-            ?? YAMLCodec.YAMLMapping(entries: [])
-        protect.set("enabled", value: .scalar(.bool(true)))
-        protect.set("profile", value: .scalar(.string(protectProfileName)))
-        root.set("protect", value: .mapping(protect))
-        document.root = .mapping(root)
-
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["protect"])
-        let dir = url.deletingLastPathComponent()
-        let tmp = dir.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tmp, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: url.path) {
-            manager.createFile(atPath: url.path, contents: Data())
-        }
-        _ = try manager.replaceItemAt(url, withItemAt: tmp)
+    /// `protect.enabled` and `protect.profile`, through the scoped writer: every other key in
+    /// the block stays, and a comment there is copied out first and named in the report.
+    @discardableResult
+    internal func writeProtectConfig(
+        profileSlug: String, protectProfileName: String
+    ) throws -> ConfigSaveReport {
+        try Self.writeProductBlock("protect", profile: protectProfileName, for: profileSlug)
     }
 
-    internal func writeSchoolConfig(profileSlug: String, schoolProfileName: String) throws {
-        let url = try ConfigService.configURL(for: profileSlug)
-        let manager = FileManager.default
-        var document: YAMLCodec.YAMLDocument
-        if manager.fileExists(atPath: url.path) {
-            document = try YAMLCodec.decode(String(contentsOf: url, encoding: .utf8))
-        } else {
-            document = YAMLCodec.emptyDocument()
-        }
+    /// `school_cli.enabled` and `school_cli.profile`, the same way as `writeProtectConfig`.
+    @discardableResult
+    internal func writeSchoolConfig(
+        profileSlug: String, schoolProfileName: String
+    ) throws -> ConfigSaveReport {
+        try Self.writeProductBlock("school_cli", profile: schoolProfileName, for: profileSlug)
+    }
 
-        guard case .mapping(var root) = document.root else {
-            throw ConfigService.ConfigError.invalidTopLevel
-        }
-        var schoolCli = root.value(for: "school_cli")?.mapping
-            ?? YAMLCodec.YAMLMapping(entries: [])
-        schoolCli.set("enabled", value: .scalar(.bool(true)))
-        schoolCli.set("profile", value: .scalar(.string(schoolProfileName)))
-        root.set("school_cli", value: .mapping(schoolCli))
-        document.root = .mapping(root)
-
-        let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["school_cli"])
-        let dir = url.deletingLastPathComponent()
-        let tmp = dir.appendingPathComponent(".config.yaml.\(UUID().uuidString).tmp")
-        try encoded.write(to: tmp, atomically: true, encoding: .utf8)
-        if !manager.fileExists(atPath: url.path) {
-            manager.createFile(atPath: url.path, contents: Data())
-        }
-        _ = try manager.replaceItemAt(url, withItemAt: tmp)
+    private static func writeProductBlock(
+        _ key: String, profile name: String, for profileSlug: String
+    ) throws -> ConfigSaveReport {
+        try ConfigService.saveBlock(key: key, profile: profileSlug) { root in
+            var block = root.value(for: key)?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
+            block.set("enabled", value: .scalar(.bool(true)))
+            block.set("profile", value: .scalar(.string(name)))
+            root.set(key, value: .mapping(block))
+        }.report
     }
 
     // MARK: - Per-product redaction helpers
