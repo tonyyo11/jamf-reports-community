@@ -516,11 +516,12 @@ screen, report and scheduled run of the workspace.
 *see also: Security Score, Hardware-encrypted Mac.*
 
 ### Security Score
-A fleet-level 0–100 weighted score across FileVault, SIP, Firewall,
-CrowdStrike (or equivalent EDR), mSCP, XProtect, CVE, Secure Boot. Missing
-metrics drop from the denominator and the result is renormalized.
-Configurable in Config → Scoring. Weights are saved in the workspace's
-`security_policy.score_weights`. *see also: Risk Score, Stability
+A fleet-level 0–100 weighted share of Macs passing each of a list of
+factors: by default FileVault, SIP, Firewall, Gatekeeper, Secure Boot,
+bootstrap token, macOS and XProtect currency, patch compliance and check-in,
+plus mSCP and each security agent when configured. A factor with no data
+drops out and the rest are rescaled. Configurable in Config → Scoring; the
+list is saved in the workspace's `security_policy.score_factors`. *see also: Risk Score, Stability
 Index.*
 
 ### Shared workspace

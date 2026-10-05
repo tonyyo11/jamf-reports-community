@@ -30,7 +30,7 @@ In the app, the **Config** screen edits `config.yaml` through eight tabs:
 | Thresholds | stale-device days, disk-usage and compliance bands |
 | Platform API | opt-in Jamf Platform API reporting |
 | Output & Branding | output directory, archiving, run retention, report branding |
-| Scoring | the Security Policy card, the weighted Security Score and risk-score weights |
+| Scoring | the Security Policy card and the Security Score's factors and weights |
 | From config.yaml | read-only: settings no tab edits, keys the app does not read, lines it skipped |
 
 ## Reviewing column mappings
@@ -123,8 +123,12 @@ security_policy:
     firewall: ["Pass", "Compliant"]
   off_values:            # optional: your own words for off, per control
     firewall: ["Fail", "Non-Compliant"]
-  score_weights:         # 0-100 each; omit for the defaults
-    filevault: 15
+  score_factors:         # what the score counts; omit for the defaults
+    - factor: filevault
+      weight: 15
+    - factor: agent
+      agent: "CrowdStrike Falcon"
+      weight: 5
 ```
 
 **Hardware-encrypted Macs.** An Apple silicon Mac, or an Intel Mac with a T2 chip, always
@@ -158,11 +162,31 @@ Mac's own value. The totals that jamf-cli's security report carries (the counts 
 Security Posture screen) keep jamf-cli's words. Config → Run check warns about a value that
 is not text, an empty value, and a value listed in both.
 
-**Score weights.** Weights are saved in the workspace (`score_weights`), so the Security
-Posture screen, the Overview, Trends, alerts and reports all score the same way. Weights
-set on this Mac before 2.9 show on the Scoring tab and apply to a workspace once you
-change one. A policy or weight change shows in the daily summary, and so on the Overview
-and Trends, from the next day's first collect.
+**Score factors.** The Security Score is the weighted share of Macs that pass each factor.
+Config → Scoring lists the factors with today's share, their part of the score and a weight;
+remove one, add one from the menu, or use the defaults. The list is saved in the workspace
+(`score_factors`), so the Security Posture screen, the Overview, Trends, alerts and reports all
+score the same way. Weights need not add up to 100: a factor with no data drops out and the
+rest are rescaled.
+
+| Factor | A Mac passes when |
+|---|---|
+| `filevault`, `sip`, `firewall`, `gatekeeper` | the control is on under this policy (a warning passes) |
+| `secure_boot` | Secure Boot is at full security (Macs without Secure Boot are left out) |
+| `bootstrap_token` | the bootstrap token is escrowed |
+| `os_current` | macOS is at least the newest release of its major version that came out `grace_days` (30) or more days ago, per the SOFA feed |
+| `xprotect_current` | XProtect is at the newest version, or that version came out less than `grace_days` (14) ago |
+| `patch_compliance` | (per device and title) the device has the title's latest version |
+| `checked_in` | it checked in within `thresholds.stale_device_days` |
+| `mscp` | it passes the baseline (`baseline:` names one; default the first) |
+| `agent` | the agent (`agent:` names a `security_agents` entry) reports connected, over the whole fleet |
+
+With no list, the score counts the ten native factors (FileVault 15, SIP 10, Firewall 10,
+Gatekeeper 5, Secure Boot 5, bootstrap token 5, macOS current 15, XProtect current 5, patch
+compliance 10, checked in 5), mSCP at 10 when a baseline is configured, and each security agent
+at 5. A control set to `ignore` is not scored. A policy or factor change shows in the daily
+summary, and so on the Overview and Trends, from the next collect; the Overview and Trends do
+not compare a score with one counted differently.
 
 A level written as `warn`, `failure`, `gap`, `ignored`, `skip` or `not counted` is read,
 in any case. A value the app cannot read leaves that control at `fail` (the hardware rule
@@ -465,7 +489,7 @@ enough. From the top it has:
    section with nothing to show is not drawn.
 6. **The audit appendix**, collapsed: each data source with its snapshot date, what every
    figure means, the `security_policy` in force (levels other than Fail, the hardware rule
-   and the score weights) and a list of what the report leaves out and why: empty, not
+   and the score factors) and a list of what the report leaves out and why: empty, not
    configured, shown in the dashboard, or the device inventory.
 
 Printing opens every group first, and the PDF export is written with every group open. The

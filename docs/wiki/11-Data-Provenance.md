@@ -107,7 +107,7 @@ This table shows where each Overview KPI number comes from:
 | Patch % | Share of devices on the latest version: sum of devices on latest / sum of devices, over titles that have devices; from `patch-status` | 2 |
 | Stale Count | Device-compliance rows with last-check-in older than `stale_device_days` threshold | 1 |
 | OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary | SOFA + 2 |
-| Security Score | Weighted composite of FileVault, SIP, firewall, EDR agent, mSCP, XProtect, CVE and Secure Boot, over the metrics measured, under the workspace's security policy and `security_policy.score_weights` (Config → Scoring) | 2 + config |
+| Security Score | Weighted share of Macs passing each factor in `security_policy.score_factors` (Config → Scoring; by default the native Jamf Pro factors, plus mSCP and each security agent when configured), over the factors with data, under the workspace's security policy | 2 + config |
 | Action items P0 / P1 | Security report counts under the security policy: P0 = FileVault, SIP or Firewall failing, P1 = Gatekeeper failing, over the Macs that reported the control | 2 + config |
 | mSCP Bands | Pass/Low/Med-Low/Medium/High/No Data distribution from EA results per device | 1 |
 
