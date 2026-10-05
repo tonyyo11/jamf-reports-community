@@ -299,6 +299,24 @@ for the layout choices and what a shared folder costs you, and
 [Configuration & Templates](https://github.com/tonyyo11/jamf-reports-community/wiki/04-Configuration-and-Templates)
 for the `shared_workspace` keys.
 
+**Run schedules on one Mac.** Turn automation on for one Mac per shared workspace and leave
+it off on the others. Coordination keeps two Macs from collecting the same data twice; it
+does not stop the rest of a schedule running on both:
+
+- A scheduled report run defers only to a Mac that is writing at that moment, not to one
+  that generated earlier. Two Macs that both schedule reports both write them, and both send
+  the success notification when `notify` is set.
+- Each Mac runs its own scheduled backup, so the folder gets one backup per Mac each cycle.
+- Automation Health on a Mac watches only that Mac's schedules.
+
+A Mac without schedules still notices when the scheduling Mac stops. The data freshness
+strip reads the workspace, so every Mac shows a source that has stopped landing. While the
+app is open it re-collects sources that fell behind, at most once an hour and only when no
+other Mac has collected inside `min_collect_interval_hours`. To move scheduling to another
+Mac, turn automation off on the old one before turning it on for the new one.
+[Adding another Mac](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations#adding-another-mac)
+has the setup steps.
+
 ## See also
 
 - [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust) — dead-man detection, metric alerts, and
