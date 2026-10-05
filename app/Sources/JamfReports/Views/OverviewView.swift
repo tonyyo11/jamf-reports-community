@@ -4,6 +4,7 @@ import Charts
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
@@ -1311,6 +1312,14 @@ struct OverviewView: View {
         ))
     }
 
+    /// Lines a failing rule's ID may take. An ID is one unbroken token, so two lines split it
+    /// mid-word; at ordinary sizes it takes one and is cut in the middle (its tooltip has the
+    /// whole ID). At accessibility sizes it may wrap, as #118 let this card's labels reflow
+    /// rather than clip.
+    static func failingRuleLineLimit(for size: DynamicTypeSize) -> Int {
+        size.isAccessibilitySize ? 2 : 1
+    }
+
     private var failingRulesBars: some View {
         let rules = failingRules.prefix(6)
         let maxFails = rules.map(\.fails).max() ?? 1
@@ -1321,7 +1330,9 @@ struct OverviewView: View {
                         .font(Theme.Fonts.mono(11.5))
                         .foregroundStyle(Theme.Colors.fg2)
                         .frame(minWidth: 260, alignment: .leading)
-                        .lineLimit(2)
+                        .lineLimit(Self.failingRuleLineLimit(for: dynamicTypeSize))
+                        .truncationMode(.middle)
+                        .help(r.ruleID)
                     GeometryReader { geo in
                         let w = CGFloat(r.fails) / CGFloat(maxFails) * geo.size.width
                         ZStack(alignment: .leading) {

@@ -472,7 +472,8 @@ struct AuditView: View {
                             }
                         }
                     }
-                    .frame(height: tableHeight(rowCount: filteredFindings.count))
+                    .pageTableHeight(
+                        rows: filteredFindings.count, rowHeight: PageTableMetrics.richRowHeight)
                     .popover(item: $selectedFinding) { finding in
                         FindingDetailPopover(finding: finding, tone: pillTone(finding.severity))
                     }
