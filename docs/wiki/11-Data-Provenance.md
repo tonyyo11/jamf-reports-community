@@ -106,7 +106,7 @@ This table shows where each Overview KPI number comes from:
 | Compliance % | EA results (real mSCP/STIG bands) OR 4-control proxy from security report — check config for `complianceIsProxy` | 1 or 2 |
 | Patch % | Share of devices on the latest version: sum of devices on latest / sum of devices, over titles that have devices; from `patch-status` | 2 |
 | Stale Count | Device-compliance rows whose oldest counted date is more than `stale_device_days` days old; the dates are `thresholds.stale_basis` (default the last check-in; inventory and contact come from the `computers` snapshot) | 1 (+ 2 for inventory or contact) |
-| OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary | SOFA + 2 |
+| OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary; can be disabled via `jamf_cli.collect_skip: [sofa]` | SOFA + 2 |
 | Security Score | Weighted share of Macs passing each factor in `security_policy.score_factors` (Config → Scoring; by default the native Jamf Pro factors, plus mSCP and each security agent when configured), over the factors with data, under the workspace's security policy | 2 + config |
 | Action items P0 / P1 | Security report counts under the security policy: P0 = FileVault, SIP or Firewall failing, P1 = Gatekeeper failing, over the Macs that reported the control | 2 + config |
 | mSCP Bands | Pass/Low/Med-Low/Medium/High/No Data distribution from EA results per device | 1 |

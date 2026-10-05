@@ -9,17 +9,20 @@ import Foundation
 /// refused with `CLIBridgeError.collectInProgress` instead of fanning a second set of
 /// jamf-cli calls out at the same server. A jamf-cli install or update holds the same lock
 /// (`HoldPurpose.toolUpdate`), so neither starts while the other runs and the binary never
-/// changes under a collect. Nothing nests today, so a hold started inside another is
-/// refused too.
+/// changes under a collect. A report run holds it too (`holdingGenerate`), so no collect
+/// replaces snapshots under a report being built. Holds do not nest: one started inside
+/// another is refused, except the collect a report run asks for itself.
 extension CLIBridge {
     /// What a hold is for. Decides which refusal the next caller gets.
     enum HoldPurpose: Sendable {
         case collect
+        case generate
         case toolUpdate
 
         var label: String {
             switch self {
             case .collect: "Collect"
+            case .generate: "Report"
             case .toolUpdate: "jamf-cli update"
             }
         }
@@ -40,6 +43,13 @@ extension CLIBridge {
     /// That hold has the lock file, which it does not when the file cannot be written.
     private(set) static var holdsTickLock = false
 
+    /// Counts holds taken, so `generateHoldID` can name the one a task belongs to.
+    private(set) static var holdSerial = 0
+
+    /// The report hold the running task is inside, which lets the collect that run asks for
+    /// through. Task-local, so a collect started from anywhere else is still refused.
+    @TaskLocal private static var generateHoldID: Int?
+
     /// When the last hold ended.
     private(set) static var tickLockReleasedAt: Date?
 
@@ -59,9 +69,15 @@ extension CLIBridge {
     private static var runningHoldRefusal: CLIBridgeError? {
         switch holdPurpose {
         case .collect: .collectInProgress
+        case .generate: .generateInProgress
         case .toolUpdate: .toolUpdateInProgress
         case nil: nil
         }
+    }
+
+    /// The task is inside the report hold that is running now, not one that ended.
+    private static var isInsideRunningGenerateHold: Bool {
+        holdPurpose == .generate && generateHoldID == holdSerial
     }
 
     /// True while this process holds the lock, and for one tick wake plus a minute after its
@@ -73,22 +89,25 @@ extension CLIBridge {
         return now.timeIntervalSince(released) < TickLock.wakeInterval + 60
     }
 
-    /// Runs `body` holding the tick lock, touching it every `beatEvery` for up to the tick's
-    /// six hours. Throws, without running `body`, `CLIBridgeError.collectInProgress` or
-    /// `.toolUpdateInProgress` when another hold is running in this process, and
-    /// `CLIBridgeError.tickLockHeld` when another live process holds the lock.
-    static func holdingTickLock<T: Sendable>(
-        purpose: HoldPurpose = .collect,
-        beatEvery interval: Duration = TickLock.heartbeatInterval,
-        _ body: @Sendable () async throws -> T
-    ) async throws -> T {
-        // Checked and set with no suspension between, so two callers cannot both pass.
+    /// What `beginHold` took, for `endHold`.
+    private struct Hold {
+        let id: Int
+        /// Nil when the lock file could not be written: the hold still keeps the app's own
+        /// collects apart.
+        let claimed: (lock: TickLock, beats: Task<Void, Never>)?
+    }
+
+    /// Checked and set with no suspension between, so two callers cannot both pass.
+    private static func beginHold(
+        purpose: HoldPurpose, beatEvery interval: Duration
+    ) throws -> Hold {
         if let running = runningHoldRefusal {
             AppLogger.event(
                 .collect, .notice, "\(purpose.label) refused: \(running.localizedDescription)")
             throw running
         }
         let lock = tickLock()
+        let claimed: (lock: TickLock, beats: Task<Void, Never>)?
         switch lock.claim() {
         case .heldElsewhere:
             AppLogger.event(
@@ -96,21 +115,48 @@ extension CLIBridge {
             throw CLIBridgeError.tickLockHeld
         case .writeFailed:
             // `claim` logged why. A tick needs the same file, so none can start beside this.
-            holdPurpose = purpose
-            defer { holdPurpose = nil }
-            return try await body()
+            claimed = nil
         case .acquired:
-            holdPurpose = purpose
             holdsTickLock = true
-            let beats = lock.heartbeat(every: interval)
-            defer {
-                beats.cancel()
-                holdPurpose = nil
-                holdsTickLock = false
-                lock.release()
-                tickLockReleasedAt = Date()
-            }
-            return try await body()
+            claimed = (lock, lock.heartbeat(every: interval))
         }
+        holdPurpose = purpose
+        holdSerial += 1
+        return Hold(id: holdSerial, claimed: claimed)
+    }
+
+    private static func endHold(_ hold: Hold) {
+        holdPurpose = nil
+        guard let claimed = hold.claimed else { return }
+        claimed.beats.cancel()
+        holdsTickLock = false
+        claimed.lock.release()
+        tickLockReleasedAt = Date()
+    }
+
+    /// Runs `body` holding the tick lock, touching it every `beatEvery` for up to the tick's
+    /// six hours. Throws, without running `body`, `CLIBridgeError.collectInProgress`,
+    /// `.generateInProgress` or `.toolUpdateInProgress` when another hold is running in this
+    /// process, and `CLIBridgeError.tickLockHeld` when another live process holds the lock.
+    /// A collect inside `holdingGenerate` runs under that hold instead.
+    static func holdingTickLock<T: Sendable>(
+        purpose: HoldPurpose = .collect,
+        beatEvery interval: Duration = TickLock.heartbeatInterval,
+        _ body: @Sendable () async throws -> T
+    ) async throws -> T {
+        if purpose == .collect, isInsideRunningGenerateHold { return try await body() }
+        let hold = try beginHold(purpose: purpose, beatEvery: interval)
+        defer { endHold(hold) }
+        return try await body()
+    }
+
+    /// Runs `body`, a report run (the collect it asks for, the narrative and every format),
+    /// holding the tick lock throughout, so a collect, a tick or a second report never
+    /// replaces snapshots or summary.json under it. One hold for the whole run: it is never
+    /// released between the collect and the report. Throws as `holdingTickLock` does.
+    static func holdingGenerate<T>(_ body: () async throws -> T) async throws -> T {
+        let hold = try beginHold(purpose: .generate, beatEvery: TickLock.heartbeatInterval)
+        defer { endHold(hold) }
+        return try await $generateHoldID.withValue(hold.id, operation: body)
     }
 }

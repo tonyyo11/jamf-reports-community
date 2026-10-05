@@ -45,7 +45,7 @@ final class RetentionArchiveDirTests: XCTestCase {
 
     func testAnAbsoluteArchiveDirOutsideTheWorkspaceNeedsAllowAbsolutePaths() throws {
         let outside = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-retention-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-retention-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: outside) }
         try withWorkspace { root, workspace in
             let sibling = root.appendingPathComponent("shared-archive").path
@@ -106,7 +106,7 @@ final class RetentionArchiveDirTests: XCTestCase {
     /// under /private, which the path rules refuse for any absolute path.
     private func withWorkspace(_ body: (URL, URL) throws -> Void) throws {
         let root = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-retention-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-retention-\(UUID().uuidString)", isDirectory: true)
         let workspace = root.appendingPathComponent(profile, isDirectory: true)
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]

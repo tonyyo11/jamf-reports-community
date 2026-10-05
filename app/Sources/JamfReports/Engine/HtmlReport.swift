@@ -341,7 +341,8 @@ struct HtmlReport: Sendable {
             body: HtmlSectionFormatters.renderCappedTable(
                 headers: ["Device Name", "Serial", "Days Since Check-in", "Failure Count",
                           "Top Failure"],
-                rows: rows, expanded: expandAll))
+                rows: rows, maxRows: HtmlSectionFormatters.maxNonCompliantRows,
+                expanded: expandAll))
     }
 
     /// Parse an ISO-8601 or `yyyy-MM-dd` date string and return the number of days since today.
@@ -538,7 +539,8 @@ struct HtmlReport: Sendable {
     /// `html.history_file`, which the report writes to, under the rules for every path
     /// config.yaml names (`WorkspacePaths.resolve`): relative to the workspace and inside it,
     /// an absolute path outside it only with `output.allow_absolute_paths`, never a system or
-    /// credentials folder. Blank or refused, it is `html_history.json` beside the report; a
+    /// credentials folder. It must also end in `.json`, so it cannot name config.yaml or a
+    /// shell profile. Blank or refused, it is `html_history.json` beside the report; a
     /// refused path is one `[warn]` line.
     func resolvedHistoryPath(_ configured: String, outputURL: URL) -> URL {
         let fallback = outputURL.deletingLastPathComponent()
@@ -547,18 +549,26 @@ struct HtmlReport: Sendable {
         guard !trimmed.isEmpty else { return fallback }
         let workspace = dataDir.deletingLastPathComponent()
             .resolvingSymlinksInPath().standardizedFileURL
+        let refusal: String
         do {
             let resolved = try WorkspacePaths.resolve(
                 rawValue: trimmed, fallback: fallback.path, workspace: workspace)
-            return URL(fileURLWithPath: resolved.path, isDirectory: false)
+            if resolved.pathExtension.lowercased() == "json" {
+                return URL(fileURLWithPath: resolved.path, isDirectory: false)
+            }
+            refusal = "the history file must end in .json"
         } catch {
-            let msg = "[warn] html.history_file \"\(ConfigSchema.displayText(trimmed))\" is not "
-                + "used: \(WorkspacePaths.refusal(of: error)). Writing the history to "
-                + "\(fallback.lastPathComponent) beside the report instead."
-            AppLogger.report.warning("\(msg, privacy: .private)")
-            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
-            return fallback
+            refusal = WorkspacePaths.refusal(of: error)
         }
+        warn("[warn] html.history_file \"\(ConfigSchema.displayText(trimmed))\" is not "
+            + "used: \(refusal). Writing the history to \(fallback.lastPathComponent) "
+            + "beside the report instead.")
+        return fallback
+    }
+
+    private func warn(_ msg: String) {
+        AppLogger.report.warning("\(msg, privacy: .private)")
+        onLine?(.init(timestamp: Date(), level: .warn, text: msg))
     }
 
     struct HistoryEntry: Sendable {
@@ -583,9 +593,20 @@ struct HtmlReport: Sendable {
             "versions": versions.map { ["v": $0.0, "c": $0.1] },
         ]
 
+        // A file that is not our history array is not ours to replace: the path is whatever
+        // config.yaml names, and it may be a file that already holds something else.
         var history: [[String: Any]] = []
-        if let existing = try? Data(contentsOf: path),
-           let parsed = try? JSONSerialization.jsonObject(with: existing) as? [[String: Any]] {
+        if FileManager.default.fileExists(atPath: path.path) {
+            guard let existing = try? Data(contentsOf: path),
+                  let parsed = try? JSONSerialization.jsonObject(with: existing)
+                    as? [[String: Any]],
+                  parsed.allSatisfy({ $0["ts"] is String && $0["versions"] is [Any] })
+            else {
+                let name = ConfigSchema.displayText(path.lastPathComponent)
+                warn("[warn] html.history_file \"\(name)\" is not written: it exists and "
+                    + "is not an HTML report history.")
+                return
+            }
             history = parsed
         }
         history.append(entry)

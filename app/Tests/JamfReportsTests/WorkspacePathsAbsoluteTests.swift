@@ -35,7 +35,7 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
         // and other system roots, including the macOS temp dir which
         // canonicalizes under /private/var).
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-outside-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-outside-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 
@@ -58,7 +58,7 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
         // and other system roots, including the macOS temp dir which
         // canonicalizes under /private/var).
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-outside-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-outside-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 
@@ -95,7 +95,7 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
 
     func test_historicalDir_absolutePath_rejectedByDefault() throws {
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-hist-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-hist-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 
@@ -114,7 +114,7 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
 
     func test_historicalDir_absolutePath_acceptedWithOptIn() throws {
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-hist-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-hist-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 
@@ -175,7 +175,7 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
 
     func test_archiveDir_absolutePath_rejectedByDefault() throws {
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-archive-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-archive-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 
@@ -194,7 +194,7 @@ final class WorkspacePathsAbsoluteTests: XCTestCase {
 
     func test_archiveDir_absolutePath_acceptedWithOptIn() throws {
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-archive-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-archive-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 

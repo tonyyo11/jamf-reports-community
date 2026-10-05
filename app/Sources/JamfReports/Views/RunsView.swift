@@ -172,7 +172,8 @@ struct RunsView: View {
     private func runListItemContextMenu(_ run: RunHistoryService.RunSummary) -> some View {
         Button {
             let text = lines(for: run).map(\.text).joined(separator: "\n")
-            SystemActions.copyToClipboard(text)
+            SystemActions.copyToClipboard(
+                LogRedactor.redactedForSharing(text, profile: sharingProfile))
         } label: {
             Label("Copy log", systemImage: "doc.on.doc")
         }
@@ -405,8 +406,12 @@ struct RunsView: View {
 
     private func copyLog() {
         let text = logLines.map(\.text).joined(separator: "\n")
-        SystemActions.copyToClipboard(text)
+        SystemActions.copyToClipboard(
+            LogRedactor.redactedForSharing(text, profile: sharingProfile))
     }
+
+    /// The profile whose tenant and environment IDs a copy or export removes; none in demo mode.
+    private var sharingProfile: String? { workspace.demoMode ? nil : workspace.profile }
 
     private func revealLog() {
         guard !workspace.demoMode else { return }
@@ -432,13 +437,13 @@ struct RunsView: View {
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
             do {
-                // Redact secrets before writing the export. The raw .log file
-                // at `url` is intentionally left untouched on disk — that's
+                // Redact secrets, the Jamf host and tenant IDs before writing the export. The
+                // raw .log file at `url` is intentionally left untouched on disk — that's
                 // the audit trail. Only the exported copy is sanitized so a
                 // misbehaving subprocess or future debug-mode flag cannot
                 // exfiltrate Bearer tokens / OAuth secrets via accidental
                 // shared file. Matches the clipboard path (copyLog).
-                let text = RunsView.renderExport(from: url)
+                let text = RunsView.renderExport(from: url, profile: sharingProfile)
                 try text.write(to: dest, atomically: true, encoding: .utf8)
             } catch {
                 Task { @MainActor in
@@ -453,8 +458,9 @@ struct RunsView: View {
     /// should produce. Same shape as `copyLog` (one line per text). Extracted
     /// to a static helper so tests can drive the redaction path without
     /// having to instantiate a SwiftUI view or call the NSSavePanel.
-    static func renderExport(from url: URL) -> String {
-        RunHistoryService.loadLog(url).map(\.text).joined(separator: "\n")
+    static func renderExport(from url: URL, profile: String?) -> String {
+        let text = RunHistoryService.loadLog(url).map(\.text).joined(separator: "\n")
+        return LogRedactor.redactedForSharing(text, profile: profile)
     }
 
     // MARK: - Helpers

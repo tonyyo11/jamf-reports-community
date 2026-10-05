@@ -66,6 +66,23 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
         })
 }
 
+/// `runSchedule` for a process that is not the tick: `--scheduled-run` from an external
+/// scheduler. It holds the tick lock as the tick does, so it cannot overlap a GUI collect or
+/// report, a tick or a CLI command. Nil, with one line on stderr and nothing run, when another
+/// live process holds the lock; the caller exits `TickRunner.queuedExitCode`, as a tick does.
+@Sendable
+func runScheduleExclusively(
+    _ schedule: Schedule,
+    verbose: Bool,
+    lock: TickLock = TickLock(url: TickLock.defaultURL)
+) async -> ScheduleRunOutcome? {
+    let outcome = await lock.holdingForRun { await runSchedule(schedule, verbose: verbose) }
+    if outcome == nil {
+        fputs("[info] scheduled-run: \(TickLock.busyMessage)\n", stderr)
+    }
+    return outcome
+}
+
 /// The per-schedule half of a tick. Its effects are passed in so the stamp and
 /// marker ordering can be tested without the lock, the state file or a real run.
 enum TickLoop {

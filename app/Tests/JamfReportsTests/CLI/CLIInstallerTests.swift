@@ -78,4 +78,29 @@ final class CLIInstallerTests: XCTestCase {
         guard case .failed = outcome else { return XCTFail("expected .failed, got \(outcome)") }
         XCTAssertEqual(try String(contentsOf: dest, encoding: .utf8), "real file")
     }
+
+    func testManualCommandQuotesEveryPath() {
+        let command = CLIInstaller.manualCommand(
+            source: URL(
+                fileURLWithPath: "/Applications/Jamf Reports.app/Contents/MacOS/JamfReports"),
+            targetDir: URL(fileURLWithPath: "/usr/local/bin", isDirectory: true))
+        XCTAssertEqual(
+            command,
+            "sudo mkdir -p '/usr/local/bin' && sudo ln -sf "
+                + "'/Applications/Jamf Reports.app/Contents/MacOS/JamfReports' "
+                + "'/usr/local/bin/jamf-reports'")
+    }
+
+    /// Double quotes still run `$(…)` and backticks, so a path holding either ran code when
+    /// the copied command was pasted into a terminal.
+    func testManualCommandKeepsAHostilePathInsideSingleQuotes() {
+        let command = CLIInstaller.manualCommand(
+            source: URL(fileURLWithPath: "/tmp/$(touch pwned)/`id`/a\"b'c/JamfReports"),
+            targetDir: URL(fileURLWithPath: "/opt/$(id)/bin", isDirectory: true))
+        XCTAssertEqual(
+            command,
+            "sudo mkdir -p '/opt/$(id)/bin' && sudo ln -sf "
+                + "'/tmp/$(touch pwned)/`id`/a\"b'\\''c/JamfReports' "
+                + "'/opt/$(id)/bin/jamf-reports'")
+    }
 }

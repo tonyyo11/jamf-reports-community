@@ -302,9 +302,10 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Report kinds `collect` never runs — the on-prem stall guard. Only the four
-    /// per-device-heavy kinds count (`ReportEngine.collectSkipKinds`); the GUI does
-    /// not write this key, and a Config screen save keeps it.
+    /// Report kinds `collect` never runs — the on-prem stall guard, and `sofa` for a network
+    /// that must not reach the SOFA host. Only `ReportEngine.skippableKinds` count
+    /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
+    /// screen save keeps it.
     var collectSkip: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -979,15 +980,16 @@ struct AlertsConfig: Decodable, Sendable {
     /// no metric, no operator, an unknown metric/operator, or no usable
     /// threshold — so a half-edited rule silently no-ops rather than mis-firing.
     /// A threshold must be finite (rejects a "nan"/"inf" string that parsed to a
-    /// non-finite Double) and non-negative (a negative threshold is meaningless
+    /// non-finite Double), non-negative (a negative threshold is meaningless
     /// for every operator: below/above on 0–100 metrics and drops_more_than
-    /// expects a positive drop).
+    /// expects a positive drop) and at most `AlertRule.maxThreshold`.
     var resolvedRules: [AlertRule] {
         (rules ?? []).filter { rule in
             guard let metric = rule.metric, AlertMetric(rawValue: metric) != nil,
                   let when = rule.when, AlertRule.Comparison(rawValue: when) != nil,
                   let threshold = rule.threshold,
-                  threshold.isFinite, threshold >= 0 else { return false }
+                  threshold.isFinite, threshold >= 0,
+                  threshold <= AlertRule.maxThreshold else { return false }
             return true
         }
     }
@@ -1001,6 +1003,11 @@ struct AlertRule: Decodable, Sendable, Equatable {
         case below, above
         case dropsMoreThan = "drops_more_than"
     }
+
+    /// The largest threshold a rule may carry. Percent metrics top out at 100 and the count
+    /// metrics (stale, P0, total devices) at a fleet's size, so a billion is far past any real
+    /// rule: a larger value is a typo (`1e19`), and the rule is dropped.
+    static let maxThreshold: Double = 1_000_000_000
 
     var metric: String?
     var when: String?
@@ -1372,11 +1379,15 @@ enum ConfigLoader {
         case fileNotFound(URL)
         case encodingError(URL)
         case decodeError(String, Error)
+        case fileTooLarge(URL, bytes: Int)
 
         var errorDescription: String? {
             switch self {
             case .fileNotFound(let u): return "config.yaml not found at \(u.path)"
             case .encodingError(let u): return "Could not read config.yaml at \(u.path)"
+            case .fileTooLarge(let u, let bytes):
+                return "config.yaml at \(u.path) is \(bytes) bytes, over the "
+                    + "\(ConfigLoader.maxConfigBytes / 1_048_576) MB limit"
             case .decodeError(let ctx, let e):
                 if let detail = ConfigLoader.describeDecodingFailure(e) {
                     return "Config decode failed (\(ctx)): \(detail)"
@@ -1434,10 +1445,18 @@ enum ConfigLoader {
         }
     }
 
+    /// The largest config.yaml `load` reads. Real files are a few KB; the folder may be shared
+    /// with other Macs and sync tools.
+    static let maxConfigBytes = 4 * 1_048_576
+
     /// Load and decode `config.yaml` at `url`, merging defaults via `withDefaults()`.
     static func load(from url: URL) throws -> ReportConfig {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LoadError.fileNotFound(url)
+        }
+        if let bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+           bytes > maxConfigBytes {
+            throw LoadError.fileTooLarge(url, bytes: bytes)
         }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             throw LoadError.encodingError(url)

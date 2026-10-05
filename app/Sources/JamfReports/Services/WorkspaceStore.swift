@@ -109,6 +109,11 @@ final class WorkspaceStore {
     /// `private`) so the `WorkspaceStore+Refresh.swift` extension can set it —
     /// Swift's `private` is file-scoped, not type-scoped, across extensions.
     var autoAuditRefreshInFlight: Bool = false
+    /// Count of `refreshDataFreshness` and `refreshAutomationHealth` requests. Each read runs
+    /// off the main actor and publishes only if no later request or profile switch overtook it.
+    /// Internal for the `WorkspaceStore+Automation.swift` extension.
+    var freshnessRequests = 0
+    var healthRequests = 0
     /// UserDefaults key for "user has explicitly chosen demo mode."
     /// Persisted by `setDemoMode(_:)`; consulted by `init` and
     /// `reloadFromDisk` to decide whether to enter demo on no-profiles.
@@ -878,7 +883,12 @@ final class WorkspaceStore {
     /// config and its saved baseline, and rebuilds the Columns tab. Other unsaved edits stay.
     /// Before, the Columns tab kept the old mappings, and the Save the re-scaffold toast asks
     /// for wrote them back over the merge.
-    func adoptScaffoldedColumns(from saved: ConfigState) {
+    ///
+    /// The file's stamp moves with the write only when the merge read the file this screen
+    /// loaded (`readStamp`, from `ScaffoldService.mergeIntoConfig`). If it had changed on disk
+    /// since, the screen's other values are still the old ones, so the stamp stays and the
+    /// next Save refuses (`changedOnDisk`) until the screen reloads.
+    func adoptScaffoldedColumns(from saved: ConfigState, readStamp: ConfigFileStamp) {
         guard !demoMode else { return }
         configState.columns = saved.columns
         configState.mobileColumns = saved.mobileColumns
@@ -888,7 +898,8 @@ final class WorkspaceStore {
         _savedState?.mobileColumns = saved.mobileColumns
         _savedState?.failuresCountColumn = saved.failuresCountColumn
         _savedState?.failuresListColumn = saved.failuresListColumn
-        if let reloaded = try? ConfigService.load(profile: profile) {
+        if _loadedStamp?.isSameFile(as: readStamp) == true,
+           let reloaded = try? ConfigService.load(profile: profile) {
             _loadedDoc = reloaded.document
             _loadedStamp = reloaded.stamp
         }
@@ -1191,8 +1202,8 @@ final class WorkspaceStore {
 
     /// True while any collect runs in this process, for any profile: one this store marked
     /// (`beginCollect`, including the automatic ones) or one holding the bridge's lock, as a
-    /// jamf-cli update does too. A manual collect does not start while it is true; a generate
-    /// run that has not reached its collect does not count.
+    /// jamf-cli update and a report run do too. A manual collect does not start while it is
+    /// true.
     var isAnyCollectInFlight: Bool {
         collectsInFlight.values.contains { $0 > 0 } || CLIBridge.holdPurpose != nil
     }

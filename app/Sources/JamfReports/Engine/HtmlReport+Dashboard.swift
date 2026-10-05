@@ -46,9 +46,11 @@ extension HtmlReport {
     /// The frame's page runs scripts, so this keeps it from reaching anything outside
     /// itself: no requests, no frames, no fonts, images only as `data:` URIs. jamf-cli's
     /// page is one inline `<style>` and `<script>` with inline handlers and no resources.
+    /// `default-src` does not cover `base-uri` or `form-action`, so a `<base>` or a form
+    /// could still redirect relative URLs or submit data out of the frame.
     static let dashboardContentSecurityPolicy =
         "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-        + "img-src data:"
+        + "img-src data:; base-uri 'none'; form-action 'none'"
 
     /// Shows the cards and rings without their animation (jamf-cli's
     /// `dashboard_html.go`: `.section` starts at opacity 0 and `.ring` at `--rv: 0`),

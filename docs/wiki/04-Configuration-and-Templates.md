@@ -333,10 +333,13 @@ panel.
 
 - **`collect_skip`** (default empty) — report types a collect never runs, a stall guard
   for on-premise Jamf Pro: any of `patch-device-failures`, `profile-status`,
-  `update-status` and `update-device-failures`, the per-device-heavy queries known to
-  stall a server (underscores work in place of hyphens). Anything else in the list is
-  ignored, so core inventory always runs. A listed source is skipped even by a manual
-  collect, the run log says so, and the data freshness strip does not wait for it.
+  `update-status`, `update-device-failures` (the per-device-heavy queries known to
+  stall a server), `dashboard`, and `sofa` (the one fetch from `sofafeed.macadmins.io`,
+  for networks that must not reach third-party hosts). Underscores work in place of
+  hyphens. Anything else in the list is ignored, so core inventory always runs. A listed
+  source is skipped even by a manual collect, the run log says so, and the data
+  freshness strip does not wait for it. Skipping SOFA leaves the cached feed in use;
+  without cache, the macOS currency score factors have no data.
 - **`max_cache_age_hours`** (default 168, one week) — how old a cached snapshot can be
   before the daily summary digest treats it as absent rather than serving it as
   current. `0` (or any value `<= 0`) keeps cache forever. This only affects the daily

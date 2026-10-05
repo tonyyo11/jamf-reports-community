@@ -182,9 +182,9 @@ final class ReportsFolderFollowsOutputDirTests: XCTestCase {
     private func makeLayout(config: (URL) -> String) throws -> Layout {
         let home = fm.homeDirectoryForCurrentUser
         let token = UUID().uuidString
-        let root = home.appendingPathComponent(".jrc-test-reports-root-\(token)")
-        let published = home.appendingPathComponent(".jrc-test-reports-published-\(token)")
-        let elsewhere = home.appendingPathComponent(".jrc-test-reports-elsewhere-\(token)")
+        let root = home.appendingPathComponent("jrc-test-reports-root-\(token)")
+        let published = home.appendingPathComponent("jrc-test-reports-published-\(token)")
+        let elsewhere = home.appendingPathComponent("jrc-test-reports-elsewhere-\(token)")
         let workspace = root.appendingPathComponent(profile, isDirectory: true)
         for dir in [workspace, published, elsewhere] {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)

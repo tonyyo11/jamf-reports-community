@@ -53,6 +53,25 @@ final class EAParseHealthServiceTests: XCTestCase {
         XCTAssertEqual(health.parseable, 1)
     }
 
+    /// `^\d+(\.\d+)*([\w.-]*)$` backtracks quadratically on a long value that nearly matches,
+    /// and an EA value can be any size. A value past the cap is simply not a version.
+    func testALongNearMissVersionIsRejectedWithoutBacktracking() {
+        let value = String(repeating: "1.", count: 12_000) + "1!"
+        let started = Date()
+        let health = Service.assess(column: "App Version", values: [value], type: .version)
+        XCTAssertEqual(health.nonEmpty, 1)
+        XCTAssertEqual(health.parseable, 0)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.0)
+    }
+
+    func testAVersionPastTheLengthCapIsNotAVersionAndOneAtTheCapIs() {
+        let atCap = String(repeating: "1", count: 256)
+        let pastCap = String(repeating: "1", count: 257)
+        let health = Service.assess(
+            column: "App Version", values: [atCap, pastCap], type: .version)
+        XCTAssertEqual(health.parseable, 1)
+    }
+
     // MARK: - date (engine formats)
 
     func testDateParsesEngineFormats() {

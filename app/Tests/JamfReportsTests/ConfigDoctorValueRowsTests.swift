@@ -186,7 +186,13 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                 + "guard does not apply to it.")
         XCTAssertTrue(found.first?.hint?.contains("patch-device-failures") == true,
                       "the hint lists what can be skipped")
+        XCTAssertTrue(found.first?.hint?.contains("sofa") == true, "sofa can be skipped")
         XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [update_status, Profile-Status]\n"), [])
+    }
+
+    /// `sofa` was reported as "not a kind collect can skip" until it became skippable.
+    func testSOFAInCollectSkipIsNotWarnedAbout() throws {
+        XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [sofa, SOFA]\n"), [])
     }
 
     func testAKeepLatestRunsBelowOneIsStatedAsOne() throws {
@@ -521,7 +527,7 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
     /// refuse for any absolute path, so an absolute path inside a temp workspace reads as outside.
     private func withWorkspacesRoot(_ body: (URL, URL) throws -> Void) throws {
         let root = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-values-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-test-values-\(UUID().uuidString)", isDirectory: true)
         let workspace = root.appendingPathComponent("values", isDirectory: true)
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]

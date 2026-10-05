@@ -96,6 +96,49 @@ final class SOFAScoreFeedTests: XCTestCase {
         XCTAssertEqual(feed.releasesByMajor[26]?.count, 1)
     }
 
+    /// One release with a number for `ProductVersion` is skipped on its own; the synthesized
+    /// decoder failed the whole feed, which silently dropped both currency factors.
+    func testAReleaseOfTheWrongTypeCostsOnlyThatRelease() throws {
+        let feed = try feed("""
+            {"OSVersions": [
+               {"Latest": {"ProductVersion": 26.7, "ReleaseDate": "2026-09-28T17:00:00Z"},
+                "SecurityReleases": [
+                  {"ProductVersion": "26.6.2", "ReleaseDate": "2026-08-17T17:00:00Z"},
+                  {"ProductVersion": 26.6, "ReleaseDate": "2026-07-06T17:00:00Z"},
+                  {"ProductVersion": "26.5", "ReleaseDate": 20260601},
+                  null, "26.4", [1]]},
+               {"Latest": {"ProductVersion": "15.7.9", "ReleaseDate": "2026-09-01T17:00:00Z"}}],
+             "XProtectPlistConfigData": {"com.apple.XProtect": "5363"}}
+            """)
+        XCTAssertEqual(feed.releasesByMajor[26]?.map(\.version), ["26.6.2"])
+        XCTAssertEqual(feed.releasesByMajor[15]?.map(\.version), ["15.7.9"])
+        XCTAssertEqual(feed.xprotectVersion, 5363)
+        XCTAssertEqual(feed.isCurrent("26.6.2", graceDays: 30, now: Self.now), true)
+    }
+
+    func testAnEntryOrListOfTheWrongShapeCostsOnlyThatPart() throws {
+        let feed = try feed("""
+            {"OSVersions": [
+               7,
+               {"Latest": "26.7.1", "SecurityReleases": {"ProductVersion": "26.7.1"}},
+               {"Latest": {"ProductVersion": "15.7.9", "ReleaseDate": "2026-09-01T17:00:00Z"},
+                "SecurityReleases": "none"}],
+             "XProtectPlistConfigData": {"com.apple.XProtect": "5363"}}
+            """)
+        XCTAssertNil(feed.releasesByMajor[26])
+        XCTAssertEqual(feed.releasesByMajor[15]?.map(\.version), ["15.7.9"])
+        XCTAssertEqual(feed.xprotectVersion, 5363)
+    }
+
+    func testOSVersionsOfTheWrongTypeCostsOnlyTheReleases() throws {
+        let feed = try feed("""
+            {"OSVersions": {"Latest": "x"},
+             "XProtectPlistConfigData": {"com.apple.XProtect": "5363"}}
+            """)
+        XCTAssertTrue(feed.releasesByMajor.isEmpty)
+        XCTAssertEqual(feed.xprotectVersion, 5363)
+    }
+
     func testNotAFeedDecodesToNil() {
         XCTAssertNil(SOFAScoreFeed.decode(Data("not json".utf8)))
         XCTAssertNil(SOFAScoreFeed.decode(Data("[1, 2]".utf8)))

@@ -128,11 +128,78 @@ final class HtmlReportTests: XCTestCase {
         }
     }
 
+    /// Runs the history section for a workspace that tracks history into `file`, after
+    /// writing `seed` (name to text) into the workspace.
+    private func runHistory(
+        file: String, seed: [String: String] = [:]
+    ) throws -> (workspace: URL, output: URL, lines: Lines) {
+        let (dataDir, outputURL) = try historyWorkspace(
+            config: "html:\n  track_history: true\n  history_file: \(file)\n")
+        let workspace = dataDir.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        for (name, text) in seed {
+            try text.write(to: workspace.appendingPathComponent(name), atomically: true,
+                           encoding: .utf8)
+        }
+        let lines = Lines()
+        var report = makeReport(dataDir: dataDir)
+        report.onLine = { lines.add($0.text) }
+        _ = report.buildHistorySection(security: [], outputURL: outputURL)
+        return (workspace, outputURL, lines)
+    }
+
+    private func historyEntryCount(_ url: URL) throws -> Int {
+        let parsed = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
+        return try XCTUnwrap(parsed as? [[String: Any]]).count
+    }
+
+    /// config.yaml sits inside the workspace, so only the extension keeps it from being replaced.
+    func testAHistoryFileThatIsNotJSONIsNotWritten() throws {
+        let config = "html:\n  track_history: true\n  history_file: config.yaml\n"
+        let (workspace, output, lines) = try runHistory(file: "config.yaml")
+        XCTAssertEqual(
+            try String(contentsOf: workspace.appendingPathComponent("config.yaml"),
+                       encoding: .utf8), config)
+        XCTAssertEqual(lines.all.count, 1, "\(lines.all)")
+        XCTAssertTrue(lines.all.first?.hasPrefix("[warn] html.history_file") == true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: output
+            .deletingLastPathComponent().appendingPathComponent("html_history.json").path))
+    }
+
+    /// An existing file that is not the history array is never read as an empty history.
+    func testAnExistingFileThatIsNotHistoryIsLeftAlone() throws {
+        for text in ["not json at all", "[{\"name\": \"a\"}]", "{\"ts\": \"x\", \"versions\": []}",
+                     "[{\"ts\": \"x\"}]"] {
+            let (workspace, _, lines) = try runHistory(
+                file: "notes.json", seed: ["notes.json": text])
+            XCTAssertEqual(
+                try String(contentsOf: workspace.appendingPathComponent("notes.json"),
+                           encoding: .utf8), text)
+            XCTAssertEqual(lines.all.count, 1, "\(text): \(lines.all)")
+            XCTAssertTrue(lines.all.first?.hasPrefix("[warn] html.history_file") == true)
+        }
+    }
+
+    func testHistoryIsAppendedToAnExistingHistoryAndCreatedWhenAbsent() throws {
+        let entry = #"{"ts": "2026-01-01T00:00:00Z", "versions": [{"v": "15.0", "c": 3}]}"#
+        for (seed, expected) in [("[\(entry)]", 2), ("[]", 1)] {
+            let (workspace, _, lines) = try runHistory(
+                file: "history.json", seed: ["history.json": seed])
+            XCTAssertEqual(
+                try historyEntryCount(workspace.appendingPathComponent("history.json")), expected)
+            XCTAssertTrue(lines.all.isEmpty, "\(lines.all)")
+        }
+        let (workspace, _, lines) = try runHistory(file: "fresh.json")
+        XCTAssertEqual(try historyEntryCount(workspace.appendingPathComponent("fresh.json")), 1)
+        XCTAssertTrue(lines.all.isEmpty, "\(lines.all)")
+    }
+
     func testTheSensitiveFoldersStayRefusedWithTheOptIn() throws {
         let (dataDir, outputURL) = try historyWorkspace(
             config: "output:\n  allow_absolute_paths: true\n")
         let report = makeReport(dataDir: dataDir)
-        let away = "~/.jrc-history-\(UUID().uuidString)/history.json"
+        let away = "~/jrc-history-\(UUID().uuidString)/history.json"
         XCTAssertEqual(report.resolvedHistoryPath(away, outputURL: outputURL).path,
                        NSString(string: away).expandingTildeInPath)
         XCTAssertEqual(
@@ -369,13 +436,10 @@ final class HtmlReportTests: XCTestCase {
             computersInventory: []
         )
         XCTAssertTrue(html.contains("Top non-compliant devices (15)"))
-        let (shown, rest) = HtmlSectionTests.splitAtShowAll(html)
         // Mac-15 has the highest failure count and should appear first
-        XCTAssertTrue(shown.contains("Mac-15"))
-        // Mac-1 has the lowest: it is not among the top ten shown, but stays behind Show all.
-        XCTAssertFalse(shown.contains("<td>Mac-1</td>"),
-                       "Mac-1 (lowest count) is not in the top 10")
-        XCTAssertTrue(rest.contains("<td>Mac-1</td>"))
+        XCTAssertTrue(html.contains("Mac-15"))
+        // Mac-1 has the lowest: it is not among the top ten, so the report omits it.
+        XCTAssertFalse(html.contains("<td>Mac-1</td>"), "Mac-1 (lowest count) is not in the top 10")
         // Table should have the 5 required columns
         XCTAssertTrue(html.contains("Device Name"))
         XCTAssertTrue(html.contains("Serial"))
@@ -384,6 +448,8 @@ final class HtmlReportTests: XCTestCase {
         XCTAssertTrue(html.contains("Top Failure"))
     }
 
+    /// The list names Macs in a forwarded file, so it holds 2.8.3's ten rows and says how many
+    /// more the workbook has; there is nothing to put behind "Show all".
     func testTopNonCompliantTableMaxTenRows() {
         let report = makeReport()
         let devices: [[String: Any]] = (1...20).map { i -> [String: Any] in
@@ -393,9 +459,10 @@ final class HtmlReportTests: XCTestCase {
             deviceCompliance: devices,
             computersInventory: []
         )
-        let (shown, rest) = HtmlSectionTests.splitAtShowAll(html)
-        XCTAssertEqual(HtmlSectionTests.bodyRows(shown), 10, "ten rows show")
-        XCTAssertEqual(HtmlSectionTests.bodyRows(rest), 10, "the other ten sit behind Show all")
+        XCTAssertEqual(HtmlSectionTests.bodyRows(html), 10)
+        XCTAssertFalse(html.contains("<details class=\"show-all\""))
+        XCTAssertTrue(html.contains("10 more rows are in the workbook."))
+        XCTAssertTrue(html.contains("Top non-compliant devices (20)"))
     }
 
     // MARK: - Task 3: Light mode default + print CSS

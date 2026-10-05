@@ -488,4 +488,15 @@ final class SchoolDashboardTests: XCTestCase {
         XCTAssertTrue(ints(in: "Stale Devices", of: workbook).contains(40),
                        "days-since-checkin parses jamf-cli's \"yyyy-MM-dd HH:mm:ss\" format")
     }
+
+    func testClassesCountOutsideIntRangeReadsAsZero() throws {
+        let json = #"[{"name": "A", "studentCount": 1e30, "teacherCount": 2.9}]"#
+        let dataDir = try tempDataDir(writing: json, kind: "school-classes")
+        let workbook = Workbook()
+        let dash = SchoolDashboard(config: ReportConfig(), dataDir: dataDir, workbook: workbook)
+        XCTAssertNoThrow(try dash.writeSchoolClasses())
+        let counts = ints(in: "Classes", of: workbook)
+        XCTAssertTrue(counts.contains(0), "1e30 is no count; Int(_:) would trap")
+        XCTAssertTrue(counts.contains(2), "a fractional count still truncates")
+    }
 }

@@ -190,6 +190,38 @@ final class ConfigDecoderTests: XCTestCase {
         }
     }
 
+    /// A config.yaml may sit in a folder other Macs write; a file past the cap is refused before
+    /// it is read, with an error that names the file and its size.
+    func testLoadRefusesAConfigOverTheSizeCap() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConfigDecoderTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("config.yaml")
+        let size = ConfigLoader.maxConfigBytes + 1
+        try Data(repeating: UInt8(ascii: "#"), count: size).write(to: url)
+        XCTAssertThrowsError(try ConfigLoader.load(from: url)) { error in
+            guard case ConfigLoader.LoadError.fileTooLarge = error else {
+                return XCTFail("Expected LoadError.fileTooLarge, got \(error)")
+            }
+            let message = error.localizedDescription
+            XCTAssertTrue(message.contains(url.path), message)
+            XCTAssertTrue(message.contains("\(size) bytes"), message)
+        }
+    }
+
+    func testLoadReadsAConfigAtTheSizeCap() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ConfigDecoderTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("config.yaml")
+        var text = "columns:\n  computer_name: \"Mac Name\"\n"
+        text += String(repeating: "#", count: ConfigLoader.maxConfigBytes - text.utf8.count)
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        XCTAssertNoThrow(try ConfigLoader.load(from: url))
+    }
+
     /// A valid (but minimal) config.yaml succeeds and merges defaults.
     func testLoadFromValidYAMLSucceeds() throws {
         let dir = FileManager.default.temporaryDirectory

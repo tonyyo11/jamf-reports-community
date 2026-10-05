@@ -144,7 +144,7 @@ final class ReportLibrarySourceTests: XCTestCase {
     /// path rules refuse), hidden and removed at teardown.
     private func makeWorkspace() throws -> URL {
         let root = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-test-reportsource-\(UUID().uuidString)")
+            .appendingPathComponent("jrc-test-reportsource-\(UUID().uuidString)")
         let workspace = root.appendingPathComponent(profile, isDirectory: true)
         try fm.createDirectory(at: workspace, withIntermediateDirectories: true)
         let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]

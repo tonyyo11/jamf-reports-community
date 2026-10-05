@@ -7,18 +7,23 @@ struct Backup: AsyncParsableCommand {
 
     func run() async throws {
         guard ProfileService.isValid(profile) else { CLIRun.fail("invalid profile '\(profile)'") }
-        let bridge = await MainActor.run { CLIBridge() }
-        // Label like the GUI/scheduled path so a cron'd `backup` participates in
-        // the same "keep newest 10" retention instead of growing unbounded.
-        let label = "scheduled-\(BackupMaintenance.dateStamp())"
-        let code = try await bridge.backup(profile: profile, label: label, onLine: CLIRun.printLogLine)
-        // Run housekeeping BEFORE the possible CLIRun.fail below (which exits the
-        // process) so an exit-7 partial export is pruned like any other backup —
-        // CLIRun.fail never returns, so housekeeping is otherwise unreachable.
-        // Second caller of the shared housekeeping (the scheduled run is the other):
-        // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
-        if CLIBridge.backupOutputIsPrunable(exit: code) {
-            BackupMaintenance.performPostSuccessHousekeeping(profile: profile, onLine: CLIRun.printLogLine)
+        let code = try await CLIRun.exclusively { () -> Int32 in
+            let bridge = await MainActor.run { CLIBridge() }
+            // Label like the GUI/scheduled path so a cron'd `backup` participates in
+            // the same "keep newest 10" retention instead of growing unbounded.
+            let label = "scheduled-\(BackupMaintenance.dateStamp())"
+            let code = try await bridge.backup(
+                profile: profile, label: label, onLine: CLIRun.printLogLine)
+            // Run housekeeping BEFORE the possible CLIRun.fail below (which exits the
+            // process) so an exit-7 partial export is pruned like any other backup —
+            // CLIRun.fail never returns, so housekeeping is otherwise unreachable.
+            // Second caller of the shared housekeeping (the scheduled run is the other):
+            // prune old scheduled backups and sweep abandoned `.tmp-*` staging dirs.
+            if CLIBridge.backupOutputIsPrunable(exit: code) {
+                BackupMaintenance.performPostSuccessHousekeeping(
+                    profile: profile, onLine: CLIRun.printLogLine)
+            }
+            return code
         }
         // Explain the exit code (cause + remediation) rather than printing a bare
         // integer — same translation the GUI and the scheduled path use.

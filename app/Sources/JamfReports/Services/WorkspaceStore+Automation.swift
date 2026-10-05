@@ -297,6 +297,10 @@ extension WorkspaceStore {
     /// webhook digest when `notify:` is usable. No-op in demo mode. Cheap enough
     /// to call on every reconcile / launch.
     func refreshAutomationHealth(now: Date = Date()) async {
+        // Counted before the demo check, so a request made in demo mode also overtakes a read
+        // still running for the live profile.
+        healthRequests += 1
+        let request = healthRequests
         guard !demoMode else {
             AutomationHealthModel.shared.issues = []
             return
@@ -327,6 +331,9 @@ extension WorkspaceStore {
                     issues: AutomationHealth.evaluate(
                         inputs: inputs, tickerStatus: status, wantsTicker: wantsTicker, now: now))
         }.value
+        // A later request or a profile switch overtook this read: what it found is for
+        // something else, and the newer request publishes its own.
+        guard request == healthRequests, profile == self.profile else { return }
         tickerStatus = evaluated.status
         // While this process holds the tick lock, and until the wake it turned away has had
         // its turn, a schedule that came due is waiting, not missed; while a tick holds it,
@@ -360,6 +367,9 @@ extension WorkspaceStore {
     /// foreground) so a kind that quietly stopped landing surfaces without the
     /// operator visiting the screen that reads it.
     func refreshDataFreshness() async {
+        // Counted before the demo check, as in `refreshAutomationHealth`.
+        freshnessRequests += 1
+        let request = freshnessRequests
         guard !demoMode else {
             AutomationHealthModel.shared.freshnessIssues = []
             return
@@ -371,6 +381,9 @@ extension WorkspaceStore {
             Self.evaluateFreshness(
                 profile: profile, jamfCLIVersion: jamfCLIVersion, resolveAuth: resolveAuth)
         }.value
+        // The banner's Collect now re-collects the tiers behind these issues, so an answer
+        // for another profile, or one a newer request has replaced, must not land.
+        guard request == freshnessRequests, profile == self.profile else { return }
         AutomationHealthModel.shared.freshnessIssues = issues
     }
 

@@ -46,6 +46,18 @@ final class ReportLibraryDeviceCountTests: XCTestCase {
         XCTAssertEqual(result, 524)
     }
 
+    // MARK: - totalDevices outside Int's range → nil
+
+    func testDeviceCountReturnsNilWhenTotalDevicesIsOutsideIntRange() throws {
+        // `Int(1e30)` traps, and the Reports screen reads this for every listed workbook.
+        try writeSummary(date: "2024-06-02", json: ["totalDevices": 1e30])
+
+        let reportURL = URL(fileURLWithPath: "report_prod_2024-06-02_060000.xlsx")
+        let result = library.deviceCount(forReportURL: reportURL, summariesDir: summariesDir)
+
+        XCTAssertNil(result)
+    }
+
     // MARK: - Missing summary → nil
 
     func testDeviceCountReturnsNilWhenSummaryFileMissing() {

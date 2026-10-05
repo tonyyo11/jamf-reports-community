@@ -113,20 +113,31 @@ enum HtmlSectionFormatters {
     /// the workbook has, so one report cannot swell without bound.
     nonisolated static let maxTableRows = 500
 
+    /// Row caps for the lists that name Macs. The report is forwarded, so these hold the
+    /// 2.8.3 limits instead of `maxTableRows`.
+    nonisolated static let maxInterventionRows = 100
+    nonisolated static let maxFailureRows = 25
+    nonisolated static let maxNonCompliantRows = 10
+
     /// A table of the first `limit` rows and, when there are more, the rest inside a nested
-    /// `<details>` headed "Show all N" (N is the full count). Every row up to `maxTableRows`
-    /// stays in the file.
+    /// `<details>` headed "Show all N" (N is the full count). Every row up to `maxRows`
+    /// stays in the file; past that the block reads "Show M of N" and a note gives the count
+    /// the workbook holds.
     nonisolated static func renderCappedTable(
         headers: [String],
         rows: [[String]],
         rowClasses: [String?]? = nil,
         limit: Int = visibleRowLimit,
+        maxRows: Int = maxTableRows,
         expanded: Bool = false
     ) -> String {
-        let kept = Array(rows.prefix(maxTableRows))
+        let kept = Array(rows.prefix(maxRows))
         let classes = rowClasses.map { Array($0.prefix(kept.count)) }
+        let omitted = rows.count - kept.count
+        let more = omitted > 0
+            ? "<p class=\"empty\">\(omitted) more rows are in the workbook.</p>" : ""
         guard kept.count > limit else {
-            return renderTable(headers: headers, rows: kept, rowClasses: classes)
+            return renderTable(headers: headers, rows: kept, rowClasses: classes) + more
         }
         let head = renderTable(
             headers: headers, rows: Array(kept.prefix(limit)),
@@ -134,10 +145,8 @@ enum HtmlSectionFormatters {
         let rest = renderTable(
             headers: headers, rows: Array(kept.dropFirst(limit)),
             rowClasses: classes.map { Array($0.dropFirst(limit)) })
-        let more = rows.count > maxTableRows
-            ? "<p class=\"empty\">\(rows.count - maxTableRows) more rows are in the workbook.</p>"
-            : ""
-        return head + showAll(count: rows.count, body: rest + more, expanded: expanded)
+        let label = omitted > 0 ? "Show \(kept.count) of \(rows.count)" : "Show all \(rows.count)"
+        return head + disclosure(label: label, body: rest + more, expanded: expanded)
     }
 
     /// Rows that are already markup (a `<tr>` each), capped like `renderCappedTable`.

@@ -141,10 +141,28 @@ extension ReportEngine {
     static let sofaKind = "sofa"
     static let patchReleaseDatesKind = "patch-release-dates"
 
+    /// Fetches the SOFA feeds into `<dataDir>/sofa`; a test passes a stub so no collect
+    /// reaches the network.
+    typealias SOFARefresh = @Sendable (URL) async -> (SOFAFeedService.Snapshot, [String])
+    static let defaultSOFARefresh: SOFARefresh = { await SOFAFeedService.refresh(dataDir: $0) }
+
     /// The sources `finalizeCollect` fetches once the matrix is done. They have no cadence of
     /// their own: the tier set alone decides, so every collect that includes the Refresh
-    /// tier fetches both, forced or not.
-    static func sourcesAfterMatrix(tiers: Set<CollectionTier>) -> [String] {
+    /// tier fetches both, forced or not, unless `jamf_cli.collect_skip` lists one.
+    static func sourcesAfterMatrix(
+        tiers: Set<CollectionTier>, collectSkip: Set<String>
+    ) -> [String] {
+        selectedAfterMatrix(tiers: tiers).filter { !collectSkip.contains($0) }
+    }
+
+    /// The after-matrix sources this run's tier set selects that `collect_skip` turns off.
+    static func skippedAfterMatrix(
+        tiers: Set<CollectionTier>, collectSkip: Set<String>
+    ) -> [String] {
+        selectedAfterMatrix(tiers: tiers).filter { collectSkip.contains($0) }
+    }
+
+    private static func selectedAfterMatrix(tiers: Set<CollectionTier>) -> [String] {
         [sofaKind, patchReleaseDatesKind].filter { kind in
             CollectionTier.tier(forReport: kind).map(tiers.contains) ?? false
         }
@@ -155,7 +173,8 @@ extension ReportEngine {
     /// Writes the plan at the top of the run: Settings' per-device switch in the line it has
     /// always had, then the `[plan]` block.
     static func logCollectPlan(
-        profile: String, plan: [PlannedKind], afterMatrix: [String], deviceScan: DeviceScanPlan,
+        profile: String, plan: [PlannedKind], afterMatrix: [String],
+        afterMatrixSkipped: [String] = [], deviceScan: DeviceScanPlan,
         onLine: @Sendable (CLIBridge.LogLine) -> Void
     ) {
         let perDevice = plan.filter { $0.skip == .settingsSkipExpensive }.map(\.kind)
@@ -167,9 +186,16 @@ extension ReportEngine {
             ))
         }
         let lines = collectPlanLines(
-            profile: profile, plan: plan, afterMatrix: afterMatrix, deviceScan: deviceScan)
+            profile: profile, plan: plan, afterMatrix: afterMatrix,
+            afterMatrixSkipped: afterMatrixSkipped, deviceScan: deviceScan)
         for line in lines {
             onLine(.init(timestamp: Date(), level: .info, text: line))
+        }
+        // A skipped matrix kind gets its `[skip]` line from the loop; these have no loop.
+        for kind in afterMatrixSkipped {
+            onLine(.init(
+                timestamp: Date(), level: .info,
+                text: "[skip] \(kind): \(CollectSkipReason.collectSkip.skipDetail ?? "")"))
         }
     }
 
@@ -177,19 +203,25 @@ extension ReportEngine {
     private static let planLineLimit = 180
 
     /// The `[plan]` lines for a Jamf Pro collect: the sources that run (the matrix's, then
-    /// `afterMatrix`), the ones left alone grouped by reason, and the device scan.
+    /// `afterMatrix`), the ones left alone grouped by reason (`afterMatrixSkipped` being
+    /// the after-matrix sources `collect_skip` turned off), and the device scan.
     static func collectPlanLines(
         profile: String, plan: [PlannedKind], afterMatrix: [String] = [],
-        deviceScan: DeviceScanPlan
+        afterMatrixSkipped: [String] = [], deviceScan: DeviceScanPlan
     ) -> [String] {
         var groups: [(label: String, kinds: [String])] = []
-        for item in plan {
-            guard let skip = item.skip else { continue }
-            if let index = groups.firstIndex(where: { $0.label == skip.planLabel }) {
-                groups[index].kinds.append(item.kind)
+        func add(_ kind: String, under label: String) {
+            if let index = groups.firstIndex(where: { $0.label == label }) {
+                groups[index].kinds.append(kind)
             } else {
-                groups.append((skip.planLabel, [item.kind]))
+                groups.append((label, [kind]))
             }
+        }
+        for item in plan {
+            if let skip = item.skip { add(item.kind, under: skip.planLabel) }
+        }
+        for kind in afterMatrixSkipped {
+            add(kind, under: CollectSkipReason.collectSkip.planLabel)
         }
         return collectPlanLines(
             profile: profile, running: plan.filter { $0.skip == nil }.map(\.kind) + afterMatrix,
