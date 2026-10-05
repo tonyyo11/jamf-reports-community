@@ -106,7 +106,7 @@ final class JamfCLIProbeTests: XCTestCase {
 
     /// Runs `body` with this process's fd 0 pointing at a pipe, so a child that inherits it is
     /// distinguishable from one given /dev/null whatever the harness started with.
-    private func withStdinAPipe<T>(_ body: () async throws -> T) async rethrows -> T {
+    private func withStdinAPipe<T>(_ body: @MainActor () async throws -> T) async rethrows -> T {
         let saved = dup(0)
         var fds: [Int32] = [0, 0]
         XCTAssertEqual(pipe(&fds), 0)
