@@ -202,18 +202,18 @@ jamf-reports check --profile prod
 
 Commands exit `0` on success and non-zero on failure, following the `jamf-cli`
 convention — notably exit `3` for expired or invalid credentials (re-authenticate
-the profile). Argument and usage errors exit `64`. Exit code `75` means the command
-was queued because another operation (a collect, a report run, or the scheduled
-background item) holds the lock; try again in a few moments. This makes the commands safe
+the profile). Argument and usage errors exit `64`. Exit code `75` means the command did
+not run because a collect, a report or a scheduled run on this Mac holds the lock; run it
+again when that finishes. This makes the commands safe
 to gate on in a shell script:
 
 ```sh
 jamf-reports collect --profile prod && jamf-reports generate --profile prod
 ```
 
-The `75` exit is specific to writing commands (`collect`, `generate`, `backup`,
-`schedules run`, and `--scheduled-run`); read-only commands like `check` and `device`
-never queue.
+`collect`, `generate`, `html`, `backup` and `--scheduled-run` take the lock and exit `75`
+when it is held; `schedules run` exits `75` when its run is queued for the background
+item's next wake. Read-only commands such as `check` and `device` take no lock.
 
 ## Scheduling
 

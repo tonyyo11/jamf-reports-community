@@ -229,12 +229,10 @@ sidebar profile chip, check `jamf_cli.data_dir` in `config.yaml`, and regenerate
 match the CSV. Open the Config screen, re-scaffold against your CSV export, and confirm
 each mapping resolves to the right header.
 
-**CSV line-ending compatibility.** CSV exports from Windows or Excel sometimes use carriage-return-linefeed
-(CRLF, `\r\n`) line endings instead of the Unix standard linefeed (`\n`). The app parses both
-formats transparently — you do not need to convert the file. If the app reads your CSV as a single
-row with no data, your line endings are likely not being recognized; check the file with `file` or
-reopen it in a text editor and save it without line-ending conversion, or use `dos2unix` to clean it
-up.
+**CSV line endings.** A CSV saved by Excel or on Windows ends its lines with CR LF. Before
+2.9.0 the app read such a file as one row with no data, so a csv-assisted report had empty
+CSV sheets and Devices showed no rows from the CSV. From 2.9.0, LF, CR LF and CR all read
+the same way; there is nothing to convert.
 
 **Notarization warning on first launch.** A local build is ad-hoc signed, not
 Developer-ID notarized. Right-click the app in Finder, choose Open, and confirm — macOS
@@ -271,12 +269,12 @@ The `jamf-reports` command-line tool also returns its own exit codes:
 
 | Code | Meaning |
 |---|---|
-| 75 | Queued — a scheduled run or another operation holds the lock; your command was not started. Try again in a few minutes. |
+| 75 | Not run — a collect, a report or a scheduled run on this Mac holds the lock. Run it again when that finishes. |
 
-Collection and report generation run under an exclusive lock so they never overlap. If
-you run `jamf-reports collect`, `jamf-reports generate` or `jamf-reports schedules run`
-while another operation is active (a tick wake, a scheduled run, or a report generation
-on the same Mac), your command exits 75 and queues for the next opportunity.
+Collecting and writing reports share one lock on each Mac, so they never overlap. If you
+run `jamf-reports collect`, `generate`, `html` or `backup`, or `--scheduled-run`, while the
+app or the background item is collecting or writing a report, the command prints one line
+and exits 75 without doing anything.
 
 ## Report integrity envelope
 

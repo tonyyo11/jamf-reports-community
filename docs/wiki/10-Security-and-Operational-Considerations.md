@@ -207,13 +207,11 @@ rather than silently generating a report from tampered data. It does not trigger
 `absent` or `omitted` results, since legacy snapshots and partial collects cannot be
 retroactively verified. Off by default.
 
-**jamf-cli is code-signature verified before use.** The app verifies that the jamf-cli
-binary installed on your Mac (whether from Homebrew or `/usr/local/bin`) is signed by
-Jamf before passing credentials to it. A shim at a user-writable path like Homebrew's
-cellar would otherwise receive your API client secret. The check is transparent but
-is logged on failure — if Setup reports a failed jamf-cli signature, re-install jamf-cli
-through Homebrew and try again. On an air-gapped or test environment without a valid
-signature, you can use the CLI commands directly; the app will still verify.
+**jamf-cli's signature is checked before use.** The app runs jamf-cli, and passes it a
+client secret during setup, only when the binary carries Jamf's Developer ID signature
+(team `483DWKW443`). From 2.9.0 the check asks for a certificate Apple issued to Jamf, so a
+binary that merely names Jamf's team in a self-made signature is refused. If Setup says
+jamf-cli failed its signature check, reinstall it from Jamf's release package or Homebrew.
 
 **Recommendation:** store `config.yaml` in version control (local git, internal GitHub, etc.)
 if your operational security practices require configuration audit trails. Generated reports
@@ -241,15 +239,17 @@ credential/secret material (always redacted).
 
 The diagnostic bundle includes:
 
-- Redacted `config.yaml` (secrets, webhook URLs and scope IDs always removed)
-- Recent logs (secrets and webhook URLs redacted)
+- Redacted `config.yaml` (secrets and webhook URLs removed; exception approvers and
+  descriptions replaced with placeholders)
+- Recent logs (secrets, webhook URLs, the Jamf server address and the profile's tenant and
+  environment IDs removed)
 - Snapshots (PII redacted with stable hash placeholders: `device-<8hex>`, `serial-<8hex>`)
 - Workspace tree listing (paths visible, but no data)
 
-Run History's **Copy** button and **Export…** function apply the same redaction to log entries
-before they reach the clipboard or file — secrets, webhook egress URLs (Slack/Teams), and
-scope IDs are masked. Configuration block exports from Settings remove description text and
-signed-off-by fields as placeholders (only facts like configuration names remain).
+Run History's **Copy log** and **Export log…**, and the export in Settings › Logging, apply
+the same redaction before the text reaches the clipboard or a file: secrets, webhook URLs
+(Slack, Teams, Teams Workflows, Power Automate), the Jamf server address and the profile's
+tenant and environment IDs are removed. The log on screen is not changed.
 
 **Exception:** if your Jamf Pro instance is addressed by IP (e.g., `https://192.168.1.10/`) 
 instead of a hostname, those IPs remain in the bundle and exports. Server URLs are NOT redacted
@@ -279,10 +279,9 @@ file, not access-controlled.
   (owner read/write only, no group or world visibility).
 - Use `output.archive_enabled: true` to move older reports into an archive for retention
   governance (they are moved, not deleted, so you can audit/recover them).
-- **HTML reports cap device lists for very large fleets:** failure rows show 25 devices,
-  intervention rows show 100, and non-compliant rows show 10. If your fleet exceeds these
-  counts, the report notes the total and directs you to the Excel sheet for the full list.
-  The Excel sheets themselves are not capped.
+- **The HTML report keeps device lists short because it is forwarded:** it lists at most
+  100 stale Macs, 25 recent failures and 10 least-compliant Macs, and says how many more
+  the workbook has. The workbook's sheets are not capped.
 
 ## Multi-Tenant and Team Access
 
@@ -329,9 +328,8 @@ jamf_cli:
   collect_skip: [sofa]   # or: ["sofa", "other", "kinds"]
 ```
 
-Without this feed, macOS and XProtect currency factors have no data and are dropped
-from the security score (the score weights them at 0). Cached versions, if they exist,
-continue to be used. Jamf Pro and Platform API calls are always to your configured
+The last feed fetched stays in use. With none, the macOS-current and XProtect-current
+factors have no data and are left out of the Security Score (never scored as 0). Jamf Pro and Platform API calls are always to your configured
 Jamf Pro server, not a third-party host.
 
 ## Webhook Egress
@@ -390,13 +388,12 @@ The same Automation screen that hosts this policy also drives the opt-in Notific
 webhook and shows Automation Health (the dead-man switch for overdue or failing
 schedules) — see [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
 
-**Collection and report generation never overlap.** Both the app and scheduled runs
-hold an exclusive lock during collection and report generation, so a manual refresh,
-a scheduled collect, and a scheduled report run are never concurrent — one waits for the
-prior to finish. A report on demand (GUI "Generate") will be refused with "A refresh is
-already running" while a collect is active, or "A report is being generated" while a
-report run is active. This serialization preserves the single-writer assumption for the
-shared workspace and keeps historical trends consistent on multi-Mac setups.
+**Collecting and writing reports never overlap on one Mac.** The app, the background item
+and the command line share one lock. Generate, Export PDF, Export Inventory CSV and Trends'
+archive are refused while a collect runs ("A refresh is already running"), and a Refresh, an
+automatic collect or a scheduled run asked for while a report is being written waits ("A
+report is being generated — try again when it finishes"). The lock is per Mac: Macs sharing
+a workspace coordinate through the shared-workspace claim described above.
 
 ## Known Issues
 
