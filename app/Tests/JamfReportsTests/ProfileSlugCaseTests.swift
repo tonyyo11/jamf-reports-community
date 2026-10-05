@@ -274,6 +274,30 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertTrue(lines.value.contains { $0.contains(copy) }, "\(lines.value)")
     }
 
+    /// A `jamf_cli` typed as a single value is left as typed, and the error names the key and
+    /// the fix: not "could not be parsed" (the file parsed), and no path.
+    func testBindingRefusesAJamfCLIBlockTypedAsAValue() async throws {
+        let workspace = tempRoot.appendingPathComponent("acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let config = workspace.appendingPathComponent("config.yaml")
+        let typed = Data("jamf_cli: off\ncolumns:\n  serial_number: Serial\n".utf8)
+        try typed.write(to: config)
+
+        do {
+            _ = try await CLIBridge().initializeWorkspace(
+                profile: "acme", onLine: CLIBridge.noOpOnLine)
+            XCTFail("a jamf_cli typed as a value must not be bound")
+        } catch let error as CLIBridgeError {
+            guard case .configWriteRefused = error else { return XCTFail("got \(error)") }
+            let text = error.localizedDescription
+            XCTAssertTrue(text.contains("jamf_cli"), text)
+            XCTAssertFalse(text.contains("parsed"), text)
+            XCTAssertFalse(text.contains(tempRoot.path), text)
+            XCTAssertFalse(text.contains(".."), text)
+        }
+        XCTAssertEqual(try Data(contentsOf: config), typed)
+    }
+
     /// A workspace seeded from the shipped example is written with the profile recorded, so
     /// binding it writes nothing and no backup of a file the app just made is kept.
     func testBindingASeededWorkspaceKeepsNoBackupOfTheSeed() async throws {

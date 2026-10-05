@@ -27,6 +27,9 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// decoder's YAML key path + problem (never a filesystem path) so the
     /// user can locate the misconfiguration without log spelunking (#181).
     case configLoadFailed(path: String, detail: String?)
+    /// config.yaml read fine but writing `key` was refused (`ConfigService.ConfigError`);
+    /// `fix` says what to change. Neither carries a path.
+    case configWriteRefused(key: String, fix: String)
     /// jamf-cli executable was not found on the system.
     case executableNotFound
     /// An argument value is invalid (e.g. leading-dash injection risk).
@@ -83,6 +86,8 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             }
             return "config.yaml could not be parsed — the file may be corrupt. The Config "
                 + "page can restore the default config."
+        case .configWriteRefused(let key, let fix):
+            return "\(key) was not written to config.yaml: \(fix)"
         case .executableNotFound:
             return "jamf-cli not found — install via Homebrew: brew install jamf-cli"
         case .invalidArgument(let detail):

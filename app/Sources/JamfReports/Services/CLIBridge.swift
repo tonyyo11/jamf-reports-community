@@ -2228,11 +2228,31 @@ final class CLIBridge {
                 throw CLIBridgeError.configLoadFailed(path: config.path, detail: nil)
             }
             if let refused = error as? ConfigService.ConfigError {
-                throw CLIBridgeError.configLoadFailed(
-                    path: config.path, detail: refused.localizedDescription)
+                throw Self.refusedWrite(refused, key: "jamf_cli.profile")
             }
             throw CLIBridgeError.directoryOperationFailed(path: config.path)
         }
+    }
+
+    /// The error for a config.yaml write `ConfigService` refused, saying what to change.
+    private static func refusedWrite(
+        _ error: ConfigService.ConfigError, key: String
+    ) -> CLIBridgeError {
+        let fix: String
+        switch error {
+        case .notASettingsBlock(let block):
+            fix = "\(block) is typed as a single value; write its settings indented under "
+                + "\"\(block):\", or remove that line."
+        case .symlinkDestination:
+            fix = "the file is a symbolic link; replace it with the file it points to."
+        case .credentialKey(let name):
+            fix = "it holds a credential-shaped key (\(ConfigSchema.displayText(name))); "
+                + "remove it, since jamf-cli keeps secrets in the keychain."
+        default:
+            fix = "the file could not be updated; check that the workspace's config.yaml is a "
+                + "set of top-level settings."
+        }
+        return .configWriteRefused(key: key, fix: fix)
     }
 
     private func bundledSeedConfig() -> URL? {
