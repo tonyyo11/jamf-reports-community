@@ -274,6 +274,36 @@ struct TickLock: Sendable {
         return result
     }
 
+    /// The line a run turned away by `holdingForRun` prints, after its own prefix.
+    static let busyMessage =
+        "another collect, report or scheduled run is in progress — try again when it finishes"
+
+    /// Runs `body` holding this lock, kept fresh while it runs, for a process other than the
+    /// tick that collects or writes a report (`--scheduled-run` from an external scheduler, the
+    /// included CLI): it cannot overlap a GUI collect or report, a tick or another such process.
+    /// Nil, without running `body`, when another live process holds the lock. A lock file that
+    /// cannot be written runs `body` without it, as a GUI collect does: refusing would turn a
+    /// broken Application Support into a dead command, and a tick needs the same file.
+    func holdingForRun<T>(
+        beatEvery interval: Duration = TickLock.heartbeatInterval,
+        isolation: isolated (any Actor)? = #isolation,
+        _ body: () async throws -> T
+    ) async rethrows -> T? {
+        switch claim() {
+        case .heldElsewhere:
+            return nil
+        case .writeFailed:
+            return try await body()
+        case .acquired:
+            let beats = heartbeat(every: interval)
+            defer {
+                beats.cancel()
+                release()
+            }
+            return try await body()
+        }
+    }
+
     /// `keepingAlive`'s beats, for a holder whose body runs on the main actor and so
     /// cannot be handed over: touches the lock every `interval` until cancelled or `limit`.
     func heartbeat(
