@@ -1461,7 +1461,8 @@ final class CLIBridge {
                 dataDir: dataDir,
                 outputURL: outputURL,
                 profileName: profile,
-                template: template
+                template: template,
+                onLine: onLine
             )
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] PDF report written: \(outputURL.lastPathComponent)"))
@@ -1518,6 +1519,9 @@ final class CLIBridge {
                 workspacePaths: WorkspacePaths.self,
                 outputURL: outputURL
             )
+            // No sidecar or manifest for a CSV; the hash line is what lists it as a file the
+            // run wrote.
+            if let line = ReportEngine.sha256LogLine(for: outputURL) { onLine(line) }
             onLine(.init(timestamp: Date(), level: .ok,
                          text: "[ok] inventory CSV written: \(outputURL.lastPathComponent)"))
             tightenOnSuccess(0, profile: profile)
