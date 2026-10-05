@@ -357,6 +357,16 @@ failing; group member counts in `group-tools` and `audit` read from the correct 
 object. No code change: the app's only `--all` is `pro report ea-results --all`, where it
 includes devices with empty EA values rather than paging. The app runs `pro group-tools analyze
 --unused` and `pro audit` (`CLIBridge`), whose member counts are correct from 1.31.1.
+**v1.32.0 (2026-10-03) — Security hardening, MCP catalog, identifier resolution.** Breaking
+changes: `--set` refuses credential fields in Pro, Platform, and Security Cloud update commands;
+device secrets are kept off the command line and out of `-vvv`/`--dry-run` output; JCDS
+downloads refuse server file names that escape the target directory; `--computer`/
+`--mobile-device` scope flags now resolve to an ID before being sent. No code change: the app
+never uses `--set` on device records (read-only data collection), never embeds credentials in
+jamf-cli arguments (PTY stdin only; persistent secrets in the system keychain), and the
+per-device scan addresses computers by the numeric `id` field from the inventory snapshot —
+ID-based addressing is unaffected by name-resolution changes. The MCP catalog additions
+(`list_commands`, `run_command`) are not used by the app.
 
 ### notify config (v2.2.0 — opt-in webhook digest)
 
