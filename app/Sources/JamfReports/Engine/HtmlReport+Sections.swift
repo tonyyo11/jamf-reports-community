@@ -127,7 +127,8 @@ extension HtmlReport {
             title: "Recent failures (\(rows.count))",
             body: HtmlSectionFormatters.renderCappedTable(
                 headers: ["Device", "Serial", "Title", "Source", "Age"],
-                rows: tableRows, expanded: expandAll)))
+                rows: tableRows, maxRows: HtmlSectionFormatters.maxFailureRows,
+                expanded: expandAll)))
     }
 
     // MARK: - interventionList
@@ -188,7 +189,8 @@ extension HtmlReport {
                 + "(\(stale.count))",
             body: HtmlSectionFormatters.renderCappedTable(
                 headers: ["Device", "Serial", "Primary User", "Days Since \(rule.basisHeading)"],
-                rows: tableRows, expanded: expandAll)))
+                rows: tableRows, maxRows: HtmlSectionFormatters.maxInterventionRows,
+                expanded: expandAll)))
     }
 
     // MARK: - patchQueue

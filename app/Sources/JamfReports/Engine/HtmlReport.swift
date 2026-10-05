@@ -341,7 +341,8 @@ struct HtmlReport: Sendable {
             body: HtmlSectionFormatters.renderCappedTable(
                 headers: ["Device Name", "Serial", "Days Since Check-in", "Failure Count",
                           "Top Failure"],
-                rows: rows, expanded: expandAll))
+                rows: rows, maxRows: HtmlSectionFormatters.maxNonCompliantRows,
+                expanded: expandAll))
     }
 
     /// Parse an ISO-8601 or `yyyy-MM-dd` date string and return the number of days since today.
