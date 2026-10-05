@@ -289,6 +289,39 @@ extension WorkspaceStore {
         return reason + ". A report made while data is collected would mix old and new figures."
     }
 
+    /// True, after posting why as information, when a report must not start now
+    /// (`generateRefusal`). Asked before a save panel opens, so nobody names a file for a run
+    /// that is then refused.
+    func reportMustWait() -> Bool {
+        guard let refusal = generateRefusal() else { return false }
+        toast = Toast(message: Self.generateRefusalMessage(refusal), style: .info)
+        return true
+    }
+
+    /// Starts a report run for `profile`: false, after posting why, when `reportMustWait` or
+    /// when the profile already has a run going. The caller ends it with `clearRunInProgress`
+    /// and takes the lock itself (`CLIBridge.holdingGenerate`).
+    func beginReportRun(for profile: String) -> Bool {
+        guard !reportMustWait() else { return false }
+        guard setRunInProgress(for: profile) else {
+            toast = Toast(
+                message: "Another run is already in progress for profile '\(profile)' — skipped",
+                style: .danger)
+            return false
+        }
+        return true
+    }
+
+    /// The toast for a single-format export (PDF, inventory CSV) that threw: a refusal is
+    /// information, anything else a failure.
+    nonisolated static func exportFailureToast(_ error: Error, operation: String) -> Toast {
+        guard CLIBridgeError.isCollectRefusal(error) else {
+            return Toast(
+                message: "\(operation) failed · \(error.localizedDescription)", style: .danger)
+        }
+        return collectFailureToast(error, operation: operation)
+    }
+
     /// The toast for a GUI collect that threw. A refusal — a tick holding the lock, or another
     /// collect running here — is not a failure, so it is not shown as one.
     nonisolated static func collectFailureToast(_ error: Error, operation: String) -> Toast {

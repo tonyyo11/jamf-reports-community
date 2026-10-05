@@ -1447,6 +1447,8 @@ struct TrendsView: View {
         // one in demo mode; the button is disabled there too.
         guard !workspaceStore.demoMode else { return }
         let profile = workspaceStore.profile
+        guard workspaceStore.beginReportRun(for: profile) else { return }
+        defer { workspaceStore.clearRunInProgress(for: profile) }
         isArchiving = true
         workspaceStore.globalStatus = "collect + generate · profile=\(profile)"
         // Status-bar race guard — see AuditView.runAudit comment.

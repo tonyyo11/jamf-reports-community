@@ -586,17 +586,8 @@ struct OverviewView: View {
             return
         }
 
-        if let refusal = workspace.generateRefusal() {
-            workspace.toast = Toast(
-                message: WorkspaceStore.generateRefusalMessage(refusal), style: .info)
-            return
-        }
-
         let profile = workspace.profile
-        guard workspace.setRunInProgress(for: profile) else {
-            workspace.toast = Toast(message: "Another run is already in progress for profile '\(profile)' — skipped", style: .danger)
-            return
-        }
+        guard workspace.beginReportRun(for: profile) else { return }
 
         isRunning = true
         defer {
