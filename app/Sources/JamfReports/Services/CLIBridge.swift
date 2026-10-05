@@ -1728,6 +1728,12 @@ final class CLIBridge {
             onLine(.init(timestamp: Date(), level: .fail, text: "[error] no workspace for profile '\(profile)'"))
             throw CLIBridgeError.workspaceMissing(profile: profile)
         }
+        // `-p` is the workspace's own profile, as for collect, generate and audit. A shared
+        // (synced) workspace's config.yaml can be edited from another Mac, so honouring
+        // `jamf_cli.profile` here would export a different tenant's config objects into
+        // this folder from an unattended job. Checked before anything is created, so a
+        // refusal leaves no staging directory behind.
+        try Self.checkBackupConfigProfile(profile, onLine: onLine)
         let backupsRoot = workspace.appendingPathComponent("backups", isDirectory: true)
         let fm = FileManager.default
         do {
@@ -1760,18 +1766,7 @@ final class CLIBridge {
             throw CLIBridgeError.directoryOperationFailed(path: validatedTemp.path)
         }
 
-        // jamf-cli's `-p` names the CLI profile, which is not necessarily the
-        // workspace slug: `jamf_cli.profile` exists "for multi-tenant use" and can
-        // point elsewhere. ScaffoldService writes the two equal at onboarding, so
-        // they diverge only on a hand-edited config — but backup is the one call
-        // site here wired to an unattended scheduled job, where a wrong `-p` pins a
-        // permanently red automation-health row instead of an error the operator
-        // sees and reacts to immediately. Same idiom as the config-validate path.
-        // ONLY the -p value changes — every path below still derives from the
-        // workspace slug, and an absent/unreadable config keeps today's behavior.
-        let cliProfile = Self.resolvedCLIProfile(forWorkspace: profile)
-        let args = ["-p", cliProfile, "--no-input", "pro", "backup",
-                    "--format", "json", "--output", validatedTemp.path]
+        let args = Self.backupArguments(profile: profile, outputDirectory: validatedTemp.path)
         let exit = try await run(
             executable: bin,
             arguments: args,
@@ -1881,23 +1876,38 @@ final class CLIBridge {
         return exit
     }
 
-    /// The jamf-cli profile to pass as `-p` for a workspace: `jamf_cli.profile`
-    /// when the config sets a usable one, otherwise the workspace slug.
-    ///
-    /// Best-effort by design — a missing, unreadable, or profile-less config falls
-    /// back to the slug, which is the pre-existing behavior. An empty or unusable value
-    /// (`ProfileService.isValid`) falls back too. A leading `-` is fine: jamf-cli takes the
-    /// argument after `-p` as its value. Never used for path construction.
-    nonisolated static func resolvedCLIProfile(forWorkspace profile: String) -> String {
+    /// The jamf-cli arguments for a backup of `profile` into `outputDirectory`.
+    nonisolated static func backupArguments(profile: String, outputDirectory: String) -> [String] {
+        ["-p", profile, "--no-input", "pro", "backup",
+         "--format", "json", "--output", outputDirectory]
+    }
+
+    /// Compares the workspace's `jamf_cli.profile` with `profile` before a backup. A case
+    /// variant is refused like `CollectRouter.run` refuses it: the two share the folder on a
+    /// case-insensitive volume. Any other name is ignored with one warning, because the
+    /// backup always runs as `profile`. A missing or undecodable config has nothing to compare.
+    nonisolated static func checkBackupConfigProfile(
+        _ profile: String,
+        onLine: @Sendable (LogLine) -> Void
+    ) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile),
               let config = try? ConfigLoader.load(
                   from: workspace.appendingPathComponent("config.yaml")
-              ),
-              let candidate = config.jamfCli?.resolvedProfile,
-              ProfileService.isValid(candidate) else {
-            return profile
+              ) else { return }
+        let owner = config.jamfCli?.resolvedProfile ?? ""
+        guard !owner.isEmpty, owner != profile else { return }
+        guard !ProfileService.isCaseVariant(owner, of: profile) else {
+            let conflict = CLIBridgeError.profileCaseConflict(profile: profile, owner: owner)
+            onLine(.init(timestamp: Date(), level: .fail,
+                         text: "[error] \(conflict.localizedDescription)"))
+            throw conflict
         }
-        return candidate
+        onLine(.init(
+            timestamp: Date(), level: .warn,
+            text: "[warn] backup: config.yaml sets jamf_cli.profile to "
+                + "\(ConfigSchema.displayText(owner)); ignored, backing up this workspace's "
+                + "profile \(ConfigSchema.displayText(profile))"
+        ))
     }
 
     /// Backup directory name for `base`, appending `-2`, `-3`, … when a directory
