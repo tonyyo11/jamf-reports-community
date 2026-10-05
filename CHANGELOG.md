@@ -238,6 +238,10 @@ compliance is now one figure everywhere.
 - A Health Audit run from the app was saved with a UTC time in its name, which the app reads as
   local time, so the HTML report's "Data collected" showed a time hours after the report was
   made, and that audit was taken as newer than later ones. It is now saved in local time.
+- Generating a report while a refresh or a scheduled run collects data is refused, from the
+  Generate Reports sheet and from the Overview's Generate Report, with a note to try again when it
+  finishes. A report made mid-collect read the morning's summary beside newer snapshots, so its
+  tiles and its text disagreed.
 - PDF exports: a long compliance baseline name wraps inside its tile, the disclosure arrows no
   longer print, the five security tiles share one row, a heading stays with a block that fits on
   the next page, and each section prints as a ruled section rather than a card split across

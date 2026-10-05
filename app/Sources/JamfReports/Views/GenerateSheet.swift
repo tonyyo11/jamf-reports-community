@@ -937,6 +937,11 @@ struct GenerateSheet: View {
     private func runGenerate() async {
         // A demo profile's name can match a real workspace; the presenter disables Generate too.
         guard !workspace.demoMode else { return }
+        if let refusal = workspace.generateRefusal() {
+            state.reset()
+            state.errorMessage = WorkspaceStore.generateRefusalMessage(refusal)
+            return
+        }
         guard workspace.setRunInProgress(for: profile) else {
             state.errorMessage = "Another run is already in progress for profile '\(profile)' — skipped"
             return

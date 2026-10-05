@@ -272,6 +272,21 @@ extension WorkspaceStore {
         return true
     }
 
+    /// Why a report must not start now, or nil: a collect running in this process, for any
+    /// profile, or a scheduled run holding the lock. A report made during a collect reads the
+    /// day's summary beside snapshots the collect has already replaced, so its figures disagree
+    /// with each other.
+    func generateRefusal() -> CLIBridgeError? {
+        CLIBridge.collectRefusal()
+            ?? (isAnyCollectInFlight ? CLIBridgeError.collectInProgress : nil)
+    }
+
+    /// What Generate says when `generateRefusal` stops it.
+    nonisolated static func generateRefusalMessage(_ refusal: CLIBridgeError) -> String {
+        CLIBridge.explainOperationError(refusal, operation: "Generate")
+            + ". A report made while data is collected would mix old and new figures."
+    }
+
     /// The toast for a GUI collect that threw. A refusal — a tick holding the lock, or another
     /// collect running here — is not a failure, so it is not shown as one.
     nonisolated static func collectFailureToast(_ error: Error, operation: String) -> Toast {
