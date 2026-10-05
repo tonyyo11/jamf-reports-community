@@ -1233,51 +1233,21 @@ struct TrendsView: View {
         return "\(label), \(direction), \(change.pillText) change"
     }
 
-    /// X-axis label stride (in days) per range. Holds ~6–13 labels regardless
-    /// of how wide the visible window is, so labels don't collide.
-    /// `.all` returns 0 as a sentinel — the builder switches to `.automatic`
-    /// because the visible span depends on how much history exists.
-    private func xAxisStrideDays(for range: TrendRange) -> Int {
-        switch range {
-        case .w4:  return 7
-        case .w12: return 14
-        case .w26: return 28
-        case .w52: return 56
-        case .all: return 0
-        }
-    }
-
-    /// Date format that scales with range width.
-    /// - .w4/.w12: "Apr 1" — month + day
-    /// - .w26/.w52: "Apr '26" — month + 2-digit year
-    /// - .all: "2026" — year only
-    private func xAxisDateFormat(for range: TrendRange) -> Date.FormatStyle {
-        switch range {
-        case .w4, .w12:
-            return .dateTime.month(.abbreviated).day()
-        case .w26, .w52:
-            return .dateTime.month(.abbreviated).year(.twoDigits)
-        case .all:
-            return .dateTime.year()
-        }
-    }
-
-    /// Shared X-axis marks for all three trend charts. Stride scales with
-    /// range; `.all` defers to Swift Charts' automatic spacing with a
-    /// desired-count hint so multi-year data stays readable.
+    /// Shared X-axis marks for all three trend charts. The step and label format come from
+    /// `TrendAxis`; `.all` defers to Swift Charts' automatic spacing and its own label format,
+    /// since the visible span depends on how much history exists.
     @AxisContentBuilder
     private func trendXAxisMarks(for range: TrendRange) -> some AxisContent {
-        let format = xAxisDateFormat(for: range)
         // WCAG 1.4.4: .caption.monospaced() is a Dynamic Type style; scales with text size.
-        if range == .all {
-            AxisMarks(values: .automatic(desiredCount: 8)) { _ in
+        if let step = TrendAxis.step(for: range), let format = TrendAxis.dateFormat(for: range) {
+            AxisMarks(values: .stride(by: step.component, count: step.count)) { _ in
                 AxisValueLabel(format: format)
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
         } else {
-            AxisMarks(values: .stride(by: .day, count: xAxisStrideDays(for: range))) { _ in
-                AxisValueLabel(format: format)
+            AxisMarks(values: .automatic(desiredCount: 8)) { _ in
+                AxisValueLabel()
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
             }
@@ -1899,6 +1869,34 @@ private struct TrendsAIInsightCard: View {
                 points: { trendStore.points(metric: $0) },
                 label: { $0.displayLabel(
                     benchmarkLabel: benchmarkLabel, edrAgentName: edrAgentName) })
+        }
+    }
+}
+
+/// The step and label format of the trend charts' X axis. A tick lands once per month on the
+/// long ranges, because a 28-day step put two ticks in one month and two labels read
+/// "Jun 26"; the year is four digits because "Jun 26" also reads as the 26th of June.
+enum TrendAxis {
+    /// The calendar step between labels, holding about 6 to 13 labels however wide the range
+    /// is. Nil for `.all`, whose spacing Charts chooses.
+    static func step(for range: TrendRange) -> (component: Calendar.Component, count: Int)? {
+        switch range {
+        case .w4:  (.day, 7)
+        case .w12: (.day, 14)
+        case .w26: (.month, 1)
+        case .w52: (.month, 2)
+        case .all: nil
+        }
+    }
+
+    /// "Apr 1" while a label is a day, "Apr 2026" once it is a month; nil for `.all`, where the
+    /// default label follows whatever step Charts picks (a fixed one printed "2026" at every
+    /// tick).
+    static func dateFormat(for range: TrendRange) -> Date.FormatStyle? {
+        switch range {
+        case .w4, .w12: .dateTime.month(.abbreviated).day()
+        case .w26, .w52: .dateTime.month(.abbreviated).year()
+        case .all: nil
         }
     }
 }
