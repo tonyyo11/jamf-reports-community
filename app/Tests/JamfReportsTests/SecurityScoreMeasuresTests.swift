@@ -277,13 +277,24 @@ final class SecurityScoreMeasuresTests: XCTestCase {
         }
     }
 
-    /// `isStale(atDays:)` decides: the day count when there is one (30 days is stale at a
-    /// 30-day window), else the server's `stale` flag. A row with neither is left out.
-    /// a, d pass; b, c, f fail; e is not judged.
+    /// `isStale(atDays:)` decides: the day count when there is one (30 days is not stale at a
+    /// 30-day window, 31 is), else the server's `stale` flag. A row with neither is left out.
+    /// a, d, f pass; b, c fail; e is not judged.
     func testCheckedInUsesTheStaleRuleAndLeavesOutRowsWithNeitherFigure() throws {
         let sources = Sources(complianceRows: try complianceRows)
         let result = try measures([Factor(.checkedIn, weight: 5)], sources: sources)
-        XCTAssertEqual(result["checked_in"], Measure(passing: 2, evaluated: 5))
+        XCTAssertEqual(result["checked_in"], Measure(passing: 3, evaluated: 5))
+    }
+
+    func testCheckedInPassesAtExactlyTheWindowAndFailsOneDayLater() throws {
+        let rows = try decode([DeviceComplianceRow].self, """
+            [{"name": "at", "days_since_contact": "30"},
+             {"name": "past", "days_since_contact": "31"}]
+            """)
+        let result = try measures(
+            [Factor(.checkedIn, weight: 5)], sources: Sources(complianceRows: rows))
+        XCTAssertEqual(result["checked_in"], Measure(passing: 1, evaluated: 2),
+                       "30 days is within a 30-day window; 31 is not")
     }
 
     func testCheckedInFollowsTheConfiguredStaleWindow() throws {
@@ -291,7 +302,7 @@ final class SecurityScoreMeasuresTests: XCTestCase {
         let result = try measures(
             [Factor(.checkedIn, weight: 5)], sources: sources,
             yaml: "thresholds:\n  stale_device_days: 45\n")
-        // b (40 days) and f (30 days) now pass; c still fails on the stale flag.
+        // b (40 days) now passes too; c still fails on the stale flag.
         XCTAssertEqual(result["checked_in"], Measure(passing: 4, evaluated: 5))
     }
 

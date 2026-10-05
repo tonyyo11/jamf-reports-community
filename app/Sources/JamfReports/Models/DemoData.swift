@@ -388,7 +388,7 @@ enum DemoData {
             lastContact: days == 0 ? timestamp(minutesBefore: 47) : "\(days) days ago",
             lastInventory: timestamp(minutesBefore: 0),
             daysSinceContact: days,
-            stale: days >= 30,
+            stale: days > 30,
             fileVault: fileVault,
             sip: "Enabled",
             firewall: "Enabled",

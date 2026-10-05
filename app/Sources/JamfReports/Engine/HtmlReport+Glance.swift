@@ -49,7 +49,7 @@ extension HtmlReport {
                        comparable: { $0.patchPctBasis == $1.patchPctBasis }),
             FigureSpec(label: "On current macOS", unit: "%", polarity: .higherIsBetter,
                        read: { $0.osCurrentPct }, format: percent, comparable: always),
-            FigureSpec(label: "Stale Macs (\(staleDays)+ days)", unit: "",
+            FigureSpec(label: "Stale Macs (>\(staleDays) days)", unit: "",
                        polarity: .lowerIsBetter, read: { $0.staleCount.map(Double.init) },
                        format: { String(format: "%.0f", $0) }, comparable: always),
             FigureSpec(label: complianceLabel(isProxy: current.complianceIsProxy), unit: "%",
@@ -163,7 +163,7 @@ extension HtmlReport {
     }
 
     /// One sentence per rule, each only while its count is above zero:
-    /// - Macs with no check-in for `thresholds.stale_device_days` or more,
+    /// - Macs with no check-in for more than `thresholds.stale_device_days`,
     /// - P0 security gaps (FileVault, SIP or Firewall off at the `fail` level),
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
@@ -184,8 +184,8 @@ extension HtmlReport {
         let stale = latest?.staleCount ?? (inputs.computers.isEmpty ? 0 : inputs.staleMacCount)
         if stale > 0 {
             add(.interventionList, .devices, stale == 1
-                ? "1 Mac has not checked in for \(staleDays) days or more."
-                : "\(stale) Macs have not checked in for \(staleDays) days or more.")
+                ? "1 Mac has not checked in for more than \(staleDays) days."
+                : "\(stale) Macs have not checked in for more than \(staleDays) days.")
         }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {

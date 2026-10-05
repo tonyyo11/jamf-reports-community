@@ -390,8 +390,8 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
         ])
         XCTAssertEqual(Set(found.map(\.id)).count, found.count)
         XCTAssertEqual(detail(found, "thresholds.stale_device_days"),
-                       "0 is not above 0. The app uses it as written, so every Mac counts as "
-                       + "stale.")
+                       "0 is not above 0. The app uses it as written, so a Mac counts as stale "
+                       + "as soon as a day passes without a check-in.")
         XCTAssertEqual(detail(found, "thresholds.warning_disk_percent"),
                        "warning_disk_percent (95) is above critical_disk_percent (90), so the "
                        + "warning band never applies.")

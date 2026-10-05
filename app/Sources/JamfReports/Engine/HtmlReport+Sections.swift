@@ -132,15 +132,15 @@ extension HtmlReport {
 
     // MARK: - interventionList
 
-    /// The Macs whose last check-in is `thresholds.stale_device_days` or more days old, oldest
-    /// first, each with its age. A Mac with no readable check-in date is not counted.
+    /// The Macs whose last check-in is more than `thresholds.stale_device_days` days old,
+    /// oldest first, each with its age. A Mac with no readable check-in date is not counted.
     func staleComputers(
         _ computers: [[String: Any]]
     ) -> [(item: [String: Any], days: Int)] {
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         return computers
             .map { (item: $0, days: daysAgo(from: inventoryLastContact($0))) }
-            .filter { $0.days >= staleDays }
+            .filter { $0.days > staleDays }
             .sorted { $0.days > $1.days }
     }
 
@@ -151,7 +151,7 @@ extension HtmlReport {
         let stale = staleComputers(computersInventory)
         guard !stale.isEmpty else {
             return .omitted(
-                "no Mac has gone \(staleDays) days or more without a check-in")
+                "no Mac has gone more than \(staleDays) days without a check-in")
         }
         let tableRows = stale.map { entry -> [String] in
             [inventoryName(entry.item), inventorySerial(entry.item),
@@ -159,7 +159,7 @@ extension HtmlReport {
         }
         return .shown(HtmlSectionFormatters.block(
             id: "intervention-list",
-            title: "Macs with no check-in for \(staleDays) days or more (\(stale.count))",
+            title: "Macs with no check-in for more than \(staleDays) days (\(stale.count))",
             body: HtmlSectionFormatters.renderCappedTable(
                 headers: ["Device", "Serial", "Primary User", "Days Since Check-in"],
                 rows: tableRows, expanded: expandAll)))

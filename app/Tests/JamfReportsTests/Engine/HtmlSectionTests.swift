@@ -360,6 +360,7 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("intervention-list"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("Stale-Mac"))
+        XCTAssertTrue(html.contains("Macs with no check-in for more than 30 days (1)"), html)
     }
 
     func testInterventionListIsLeftOutWithoutAComputersSnapshot() {
@@ -368,11 +369,31 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertEqual(block.omission, "no computers snapshot")
     }
 
+    /// "More than N days": a Mac at exactly the threshold is not listed, one day later is.
+    func testInterventionListHoldsMacsPastTheThresholdNotAtIt() {
+        func stamp(daysAgo: Int) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            return formatter.string(
+                from: Date().addingTimeInterval(-Double(daysAgo) * 86_400 - 3_600))
+        }
+        let report = makeReport()
+        let inventory: [[String: Any]] = [
+            ["name": "Mac-at-30", "serial_number": "S30", "last_check_in": stamp(daysAgo: 30)],
+            ["name": "Mac-at-31", "serial_number": "S31", "last_check_in": stamp(daysAgo: 31)],
+        ]
+        XCTAssertEqual(report.staleComputers(inventory).map(\.days), [31])
+        let html = report.buildInterventionList(computersInventory: inventory).html
+        XCTAssertTrue(html.contains("Mac-at-31"))
+        XCTAssertFalse(html.contains("Mac-at-30"))
+    }
+
     func testInterventionListIsLeftOutWhenNoMacIsPastTheThreshold() {
         let recent: [[String: Any]] = [["name": "Fresh", "last_check_in": "2999-01-01"]]
         let block = makeReport().buildInterventionList(computersInventory: recent)
         XCTAssertTrue(block.html.isEmpty)
-        XCTAssertEqual(block.omission, "no Mac has gone 30 days or more without a check-in")
+        XCTAssertEqual(block.omission, "no Mac has gone more than 30 days without a check-in")
     }
 
     /// A hundred and five stale Macs: ten show, the other ninety-five sit behind "Show all".

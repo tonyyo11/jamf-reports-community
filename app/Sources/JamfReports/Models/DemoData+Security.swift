@@ -184,7 +184,7 @@ extension DemoData {
         record.department = mac.department
         record.managedState = "Managed"
         record.daysSinceContact = mac.daysSinceContact
-        record.stale = mac.daysSinceContact >= 30
+        record.stale = mac.daysSinceContact > 30
         record.lastContact = timestamp(minutesBefore: mac.daysSinceContact * 1_440)
         return record
     }
@@ -430,7 +430,7 @@ extension DemoData {
     /// the other demo screens count.
     static let auditFindings: [AuditFinding] = {
         let controls = securityControls
-        let stale = fleetMacs.filter { $0.daysSinceContact >= 30 }.count
+        let stale = fleetMacs.filter { $0.daysSinceContact > 30 }.count
         return [
             AuditFinding(
                 name: "Computers without FileVault",
@@ -449,7 +449,7 @@ extension DemoData {
                 recommendation: "Re-enable Gatekeeper with a configuration profile.",
                 severity: "WARNING"),
             AuditFinding(
-                name: "Stale computers (30+ days since check-in)", affected: stale,
+                name: "Stale computers (>30 days since check-in)", affected: stale,
                 category: "hygiene",
                 recommendation: "Contact their users from Offline Outreach, or retire the "
                     + "records.",

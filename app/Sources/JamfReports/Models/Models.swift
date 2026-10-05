@@ -590,6 +590,14 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
             source: source
         )
     }
+
+    /// Whether the Mac last contacted Jamf more than `thresholdDays` days ago, the rule behind
+    /// `thresholds.stale_device_days`: a Mac at exactly the threshold is not stale. A record
+    /// with no day count keeps the `stale` flag its sources set.
+    func isStale(atDays thresholdDays: Int) -> Bool {
+        if let days = daysSinceContact { return days > thresholdDays }
+        return stale
+    }
 }
 
 struct DeviceInventorySnapshot: Sendable {
@@ -624,12 +632,7 @@ struct DeviceInventorySnapshot: Sendable {
     }
 
     func staleCount(thresholdDays: Int) -> Int {
-        devices.filter { device in
-            if let days = device.daysSinceContact {
-                return days >= thresholdDays
-            }
-            return device.stale
-        }.count
+        devices.filter { $0.isStale(atDays: thresholdDays) }.count
     }
 
     /// The share of Macs whose FileVault value reads as on, over those whose value reads as
@@ -1047,7 +1050,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .fileVault:     return "FileVault Encryption"
             case .osCurrent:     return "On Current macOS"
             case .edrAgent:      return "EDR agent coverage"
-            case .stale:         return "Stale Devices (30d+)"
+            case .stale:         return "Stale Devices (>30d)"
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
             case .mscpBandTrend: return "mSCP Compliance Bands"

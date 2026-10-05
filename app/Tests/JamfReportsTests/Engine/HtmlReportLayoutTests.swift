@@ -355,7 +355,7 @@ final class HtmlReportLayoutTests: XCTestCase {
         XCTAssertEqual(os.value, "61.5%")
         XCTAssertEqual(os.change, "+1.5 pp · better")
 
-        let stale = try tile("Stale Macs (30+ days)", in: html)
+        let stale = try tile("Stale Macs (&gt;30 days)", in: html)
         XCTAssertEqual(stale.value, "9")
         XCTAssertEqual(stale.change, "+4 · worse", "more stale Macs is worse")
 
@@ -482,7 +482,8 @@ final class HtmlReportLayoutTests: XCTestCase {
         let items = attention(html)
         let texts = items.map(\.text)
         // The figure the "At a glance" tile shows (the summary's), not a second count.
-        XCTAssertTrue(texts.contains("9 Macs have not checked in for 30 days or more."), "\(texts)")
+        XCTAssertTrue(
+            texts.contains("9 Macs have not checked in for more than 30 days."), "\(texts)")
         XCTAssertTrue(texts.contains {
             $0 == "12 P0 security gaps need action: FileVault, SIP or Firewall is off."
         }, "\(texts)")
@@ -773,7 +774,7 @@ final class HtmlReportLayoutTests: XCTestCase {
         XCTAssertTrue(text.contains("Security report (security)"))
         XCTAssertTrue(text.contains("Patch status (patch-status)"))
         XCTAssertTrue(text.contains("Daily summaries (snapshots/summaries)"))
-        XCTAssertTrue(text.contains("no check-in for 45 days or more"))
+        XCTAssertTrue(text.contains("no check-in for more than 45 days"))
         // Firewall is not counted, so it is not a factor; the check-in label names the window.
         XCTAssertTrue(text.contains(
             "Factors and weights: FileVault 15, SIP 10, Gatekeeper 5, "

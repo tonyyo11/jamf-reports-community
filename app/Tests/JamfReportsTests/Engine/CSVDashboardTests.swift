@@ -305,6 +305,43 @@ final class CSVDashboardTests: XCTestCase {
                        "Stale devices must remain sorted most-stale-first")
     }
 
+    /// "More than N days": a Mac at exactly the threshold is not on the Stale Devices sheet and
+    /// is counted in the sheets that cover active Macs; a day later it is the reverse.
+    func testMacAtExactlyTheThresholdIsNotStale() throws {
+        func stamp(daysAgo: Int) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            return formatter.string(
+                from: Date().addingTimeInterval(-Double(daysAgo) * 86_400 - 3_600))
+        }
+        let csvText = [
+            "Computer Name,Serial Number,Last Check-in",
+            "Mac-at-30,AAA,\(stamp(daysAgo: 30))",
+            "Mac-at-31,BBB,\(stamp(daysAgo: 31))",
+        ].joined(separator: "\n") + "\n"
+        var config = ReportConfig()
+        var cols = ColumnConfig()
+        cols.computerName = "Computer Name"
+        cols.serialNumber = "Serial Number"
+        cols.lastCheckin = "Last Check-in"
+        config.columns = cols
+        var thresholds = ThresholdsConfig()
+        thresholds.staleDeviceDays = 30
+        config.thresholds = thresholds
+        let wb = Workbook()
+        let dashboard = try XCTUnwrap(
+            CSVDashboard(config: config, csvData: Data(csvText.utf8), workbook: wb))
+        dashboard.writeStaleDevices()
+
+        let ws = try XCTUnwrap(wb.sheet(named: "Stale Devices"))
+        let names = ws.cells.filter { $0.col == 0 && $0.row >= 4 }.compactMap { cell -> String? in
+            if case .string(let s) = cell.value { return s }
+            return nil
+        }
+        XCTAssertEqual(names, ["Mac-at-31"], "30 days is not more than 30")
+    }
+
     // MARK: - Security Agents sheet
 
     /// The sheet counted "Not Installed" as installed when `connected_value` was "Installed".

@@ -308,7 +308,7 @@ extension HtmlReport {
         case .devices:
             let days = config.thresholds?.resolvedStaleDays ?? 30
             parts.append("\(f.plural(staleComputers(inputs.computers).count, "Mac")) idle "
-                + "\(days)+ days")
+                + "over \(days) days")
         case .policies:
             if shown.contains(.policyTable) {
                 let n = (inputs.policyStatus.first?["config_findings"] as? [Any])?.count ?? 0

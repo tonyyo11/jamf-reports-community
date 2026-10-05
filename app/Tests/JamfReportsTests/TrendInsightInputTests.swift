@@ -36,8 +36,8 @@ final class TrendInsightInputTests: XCTestCase {
         metric.displayLabel(benchmarkLabel: "CIS Level 1", edrAgentName: "CrowdStrike Falcon")
     }
 
-    /// "Stale Devices (30d+)" alone read as a statement about how old the devices are.
-    private let stale = "Stale Devices (30d+) — devices with no recent check-in"
+    /// "Stale Devices (>30d)" alone read as a statement about how old the devices are.
+    private let stale = "Stale Devices (>30d) — devices with no recent check-in"
 
     private func input(
         _ store: TrendStore, metrics: [TrendSeries.Metric] = TrendSeries.Metric.allCases

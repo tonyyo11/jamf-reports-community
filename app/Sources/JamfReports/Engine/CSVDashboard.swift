@@ -388,7 +388,8 @@ struct CSVDashboard: Sendable {
         let totalCols = 6 + extraFields.count
         var row = ws.writeSheetHeader(
             title: t("Stale Devices"),
-            subtitle: "Devices not checked in for \(staleThreshold)+ days | Generated: \(ts)",
+            subtitle: "Devices not checked in for more than \(staleThreshold) days"
+                + " | Generated: \(ts)",
             ncols: totalCols
         )
         ws.setColumnWidth(0, 0, 30)
@@ -922,7 +923,9 @@ struct CSVDashboard: Sendable {
         let checkinColName = mobileCol(\.lastCheckin)
         for csvRow in rows {
             let checkinStr = checkinColName.flatMap { csvRow[$0] } ?? ""
-            guard let days = daysSince(checkinStr), days >= 0, days < staleThreshold else { continue }
+            guard let days = daysSince(checkinStr), days >= 0, days <= staleThreshold else {
+                continue
+            }
             ws.write(mobileValue(csvRow, \.deviceName), row: row, col: 0, format: .cell)
             ws.write(mobileValue(csvRow, \.serialNumber), row: row, col: 1, format: .cell)
             ws.write(mobileValue(csvRow, \.operatingSystem), row: row, col: 2, format: .cell)
@@ -1020,7 +1023,7 @@ struct CSVDashboard: Sendable {
               let raw = csvRow[checkinCol],
               !raw.isEmpty else { return true }
         guard let d = daysSince(raw) else { return false }
-        return d >= days
+        return d > days
     }
 
     private func daysSince(_ dateString: String) -> Int? {
