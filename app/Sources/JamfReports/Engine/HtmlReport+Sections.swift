@@ -150,6 +150,24 @@ extension HtmlReport {
         }.sorted { $0.age > $1.age }
     }
 
+    /// The Macs MDM reaches whose check-in or inventory lags (`ContactGap`), counted by kind.
+    func contactGapCounts(
+        _ computers: [[String: Any]], now: Date = Date()
+    ) -> [ContactGap: Int] {
+        let staleDays = config.staleRule.days
+        let gapDays = config.contactGapDays
+        var counts: [ContactGap: Int] = [:]
+        for item in computers {
+            let dates = ComputerDates(item: item)
+            if let gap = ContactGap.of(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                staleDays: staleDays, gapDays: gapDays, now: now) {
+                counts[gap, default: 0] += 1
+            }
+        }
+        return counts
+    }
+
     /// Macs that are stale under the stale rule, with the oldest counted date's age and the
     /// primary user.
     func buildInterventionList(computersInventory: [[String: Any]]) -> HtmlBlock {

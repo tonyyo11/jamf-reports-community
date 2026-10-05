@@ -164,6 +164,7 @@ extension HtmlReport {
 
     /// One sentence per rule, each only while its count is above zero:
     /// - Macs stale under the stale rule (`thresholds.stale_device_days`, `stale_basis`),
+    /// - Macs MDM reaches whose Jamf binary or inventory is more than `contact_gap_days` behind,
     /// - P0 security gaps (FileVault, SIP or Firewall off at the `fail` level),
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
@@ -184,6 +185,12 @@ extension HtmlReport {
         let stale = latest?.staleCount ?? (inputs.computers.isEmpty ? 0 : inputs.staleMacCount)
         if stale > 0 {
             add(.interventionList, .devices, Self.staleSentence(stale, rule: rule))
+        }
+        for gap in ContactGap.allCases {
+            let count = inputs.contactGapCounts[gap] ?? 0
+            guard count > 0 else { continue }
+            add(.interventionList, .devices,
+                Self.contactGapSentence(gap, count: count, gapDays: config.contactGapDays))
         }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
@@ -230,6 +237,21 @@ extension HtmlReport {
         let mac = count == 1 ? "1 Mac has" : "\(count) Macs have"
         if rule.usesDefaultBasis { return "\(mac) not checked in for more than \(rule.days) days." }
         return "\(mac) gone more than \(rule.days) days without a \(rule.basisPhrase)."
+    }
+
+    /// "2 Macs are reached by MDM, but their Jamf binary has not checked in for more than 14
+    /// days."
+    static func contactGapSentence(_ gap: ContactGap, count: Int, gapDays: Int) -> String {
+        let one = count == 1
+        let macs = one ? "1 Mac" : "\(count) Macs"
+        switch gap {
+        case .binarySilent:
+            return "\(macs) \(one ? "is" : "are") reached by MDM, but \(one ? "its" : "their") "
+                + "Jamf binary has not checked in for more than \(gapDays) days."
+        case .inventoryStale:
+            return "\(macs) \(one ? "checks" : "check") in, but \(one ? "its" : "their") "
+                + "inventory has not updated for more than \(gapDays) days."
+        }
     }
 
     /// The "Needs attention" section: a sentence per rule that fires, each a link to the part

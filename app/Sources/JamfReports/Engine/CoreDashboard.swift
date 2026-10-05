@@ -1247,11 +1247,13 @@ struct CoreDashboard: Sendable {
         var row = ws.writeSheetHeader(
             title: t("Check-in Health"),
             subtitle: "\(ruleSubtitle(overdueRule, window: "Threshold")) | Generated: \(ts)",
-            ncols: 4)
+            ncols: 6)
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 2, 18)
         ws.setColumnWidth(3, 3, 18)
+        ws.setColumnWidth(4, 4, 18)
+        ws.setColumnWidth(5, 5, 26)
 
         let total = items.count
         // "Overdue (>N days)": a Mac at exactly N days is still current. A row with no date
@@ -1278,8 +1280,74 @@ struct CoreDashboard: Sendable {
         ws.write("Overdue (>\(threshold) days)", row: row, col: 0, format: overdueFmt)
         ws.write(overdue, row: row, col: 1, format: overdueFmt)
         ws.write(String(format: "%.1f%%", pctOverdue), row: row, col: 2, format: overdueFmt)
+        row += 2
+        writeContactDetail(ws: ws, row: row, overdueRule: overdueRule)
     }
 
+    /// The Macs that are overdue or that MDM reaches while their check-in or inventory lags
+    /// (`ContactGap`), each with its three dates, read from the `computers` snapshot. Nothing
+    /// is written without one, or when no Mac qualifies.
+    private func writeContactDetail(ws: Worksheet, row startRow: Int, overdueRule: StaleRule) {
+        guard let raw = try? loadLatestJSON(
+                names: ["computers", "computers-list", "computers_list"]),
+              let computers = raw as? [[String: Any]] else { return }
+        let gapDays = config.contactGapDays
+        let now = Date()
+        struct Entry {
+            let name: String
+            let serial: String
+            let dates: ComputerDates
+            let gap: ContactGap?
+            let age: StaleAge?
+        }
+        let entries: [Entry] = computers.compactMap { item in
+            let dates = ComputerDates(item: item)
+            let inputs = StaleInputs(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                carriesDates: true)
+            let age = overdueRule.age(of: inputs, now: now)
+            let gap = ContactGap.of(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                staleDays: config.staleRule.days, gapDays: gapDays, now: now)
+            let overdue = age.map { $0 > .days(overdueRule.days) } ?? false
+            guard gap != nil || overdue else { return nil }
+            let general = item["general"] as? [String: Any]
+            let hardware = item["hardware"] as? [String: Any]
+            return Entry(name: general?["name"] as? String ?? item["name"] as? String ?? "",
+                         serial: hardware?["serialNumber"] as? String ?? "",
+                         dates: dates, gap: gap, age: age)
+        }.sorted { lhs, rhs in
+            if (lhs.gap != nil) != (rhs.gap != nil) { return lhs.gap != nil }
+            return (lhs.age ?? .days(0)) > (rhs.age ?? .days(0))
+        }
+        guard !entries.isEmpty else { return }
+        var row = startRow
+        let headers = ["Name", "Serial", "Last Contact", "Last Check-in", "Last Inventory",
+                       "Contact gap"]
+        for (col, header) in headers.enumerated() {
+            ws.write(header, row: row, col: col, format: .header)
+        }
+        row += 1
+        for entry in entries {
+            let fmt: CellFormat = entry.gap != nil ? .yellow : .cell
+            let cells = [entry.name, entry.serial, Self.dayText(entry.dates.contact),
+                         Self.dayText(entry.dates.checkIn), Self.dayText(entry.dates.inventory),
+                         entry.gap?.label ?? ""]
+            for (col, cell) in cells.enumerated() {
+                ws.write(cell, row: row, col: col, format: fmt)
+            }
+            row += 1
+        }
+    }
+
+    /// A date as `yyyy-MM-dd`, empty when the Mac has none.
+    private static func dayText(_ date: Date?) -> String {
+        guard let date else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
 
     // MARK: - Environment Stats
     // Source: `jamf-cli pro report env-stats --output json`
