@@ -538,7 +538,7 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
             XCTAssertEqual(store.securityPolicy.scoreFactors,
                            [SecurityScoreFactor(.fileVault, weight: 30)])
             XCTAssertEqual(store.securityPolicyIssues.map(\.keyPath),
-                           ["security_policy.score_factors[2]"])
+                           ["security_policy.score_factors[1]"])
 
             var factors = try XCTUnwrap(store.securityPolicy.scoreFactors)
             factors.append(SecurityScoreFactor(.sip, weight: 25))
