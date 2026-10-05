@@ -38,6 +38,8 @@ struct SettingsView: View {
     // not the Config-tab managed-key surface.
     @State private var aiConfig: AIConfig = AIConfig()
     @State private var aiSaveMessage: String? = nil
+    /// What a save did not keep (a backup was made), shown while its profile is live.
+    @State private var aiSaveNote: ProfileSaveNote?
 
     // Workspace location (2.7.0). Held in @State so the card reflects a change
     // without waiting for the next `.task`; the store is the source of truth.
@@ -1011,12 +1013,7 @@ struct SettingsView: View {
                     .font(.caption.monospaced())
                     .foregroundStyle(Theme.Text.tertiary(contrast))
 
-                if let aiSaveMessage {
-                    Text(aiSaveMessage)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.warn)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                aiSaveStatus
             }
         }
         .accessibilityElement(children: .contain)
@@ -1026,14 +1023,30 @@ struct SettingsView: View {
             aiConfig = workspace.demoMode
                 ? AIConfig() : AIConfigLoader.load(profile: workspace.profile)
             aiSaveMessage = nil
+            aiSaveNote = nil
         }
+    }
+
+    @ViewBuilder
+    private var aiSaveStatus: some View {
+        if let aiSaveMessage { aiStatusLine(aiSaveMessage) }
+        if let line = aiSaveNote?.line(for: workspace.profile) { aiStatusLine(line) }
+    }
+
+    private func aiStatusLine(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(Theme.Colors.warn)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func saveAIConfig() {
         guard !workspace.demoMode else { return }
         do {
-            try AIConfigWriter.save(aiConfig, profile: workspace.profile)
+            let profile = workspace.profile
+            let written = try AIConfigWriter.save(aiConfig, profile: profile)
             aiSaveMessage = nil
+            if let saved = written.report.note(for: profile) { aiSaveNote = saved }
         } catch {
             aiSaveMessage = "Couldn't save AI settings: \(error.localizedDescription)"
         }

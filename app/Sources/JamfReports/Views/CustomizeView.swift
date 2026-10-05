@@ -20,6 +20,8 @@ struct CustomizeView: View {
 
     @State private var applySaved = false
     @State private var saveError: String?
+    /// What Apply did not keep (a backup was made), shown while its profile is live.
+    @State private var saveNote: ProfileSaveNote?
     @State private var showGuide = false
 
     /// The smaller templates `jamf-reports generate --template` accepts; the CLI
@@ -38,34 +40,7 @@ struct CustomizeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                if let err = saveError {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .font(.system(size: 13))
-                        Text("Save failed: \(err)")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Text.primary)
-                        Spacer()
-                        Button {
-                            saveError = nil
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Theme.Text.tertiary(contrast))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Dismiss error banner")
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.red.opacity(0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Color.red.opacity(0.3), lineWidth: 0.5)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
+                statusBanners
                 HStack(alignment: .top, spacing: 14) {
                     sheetsCard
                     rightRail
@@ -102,6 +77,48 @@ struct CustomizeView: View {
         chartPerMajor = charts.perMajorCharts
         htmlWithWorkbook = !workspace.demoMode
             && HTMLReportConfigLoader.withWorkbook(profile: workspace.profile)
+        saveNote = nil
+    }
+
+    /// A failed Apply, and what a saved one did not keep.
+    @ViewBuilder
+    private var statusBanners: some View {
+        if let err = saveError {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.system(size: 13))
+                Text("Save failed: \(err)")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.Text.primary)
+                Spacer()
+                Button {
+                    saveError = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.Text.tertiary(contrast))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss error banner")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.red.opacity(0.08))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.3), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        if let line = saveNote?.line(for: workspace.profile) { saveNoteLine(line) }
+    }
+
+    private func saveNoteLine(_ note: String) -> some View {
+        Text(note)
+            .font(.footnote)
+            .foregroundStyle(Theme.Colors.warn)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var header: some View {
@@ -295,8 +312,9 @@ struct CustomizeView: View {
             do {
                 // Only this screen's options. It edits nothing else, so it
                 // no longer saves the Config tab's unsaved edits along with them.
-                try ChartsConfigWriter.save(chartOptions, profile: profile)
-                try HTMLReportConfigWriter.save(withWorkbook: withWorkbook, profile: profile)
+                try Self.writeOptions(
+                    chartOptions, withWorkbook: withWorkbook, profile: profile
+                ) { saveNote = $0 }
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
@@ -307,6 +325,22 @@ struct CustomizeView: View {
                 saveError = error.localizedDescription
             }
         }
+    }
+}
+
+extension CustomizeView {
+    /// Writes this screen's options, charts first. Each write's note reaches `noting` as soon
+    /// as it is made, so a failed html write does not lose the charts write's note.
+    nonisolated static func writeOptions(
+        _ chartOptions: ChartsOptions, withWorkbook: Bool, profile: String,
+        noting: (ProfileSaveNote) -> Void
+    ) throws {
+        let charts = try ChartsConfigWriter.save(chartOptions, profile: profile)
+        if let saved = charts.report.note(for: profile) { noting(saved) }
+        let html = try HTMLReportConfigWriter.save(withWorkbook: withWorkbook, profile: profile)
+        guard let line = html.report.statusLine else { return }
+        let lines = [charts.report.statusLine, line].compactMap { $0 }
+        noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
     }
 }
 

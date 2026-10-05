@@ -96,18 +96,18 @@ final class BackupMaintenanceHostScopeTests: XCTestCase {
 
     // MARK: - Synced-volume pruning
 
-    /// Redirects `JRC_TEST_WORKSPACES_ROOT` at a path shaped like a real
-    /// provider mount (`~/Library/CloudStorage/<Provider>/...`) so
-    /// `CloudStorage.provider(for:)` recognizes it and `pruneScheduledBackups`
-    /// takes the host-scoped branch. Cleaned up via `addTeardownBlock`, per the
-    /// dotfile-scratch-under-home convention in `CrashRegressionTests`.
+    /// Redirects `JRC_TEST_WORKSPACES_ROOT` at a path shaped like a provider mount
+    /// (`<home>/Library/CloudStorage/<Provider>/...`) under the temporary folder, so
+    /// `CloudStorage.provider(for:)`, which matches `/Library/CloudStorage/` anywhere in a path,
+    /// recognizes it and `pruneScheduledBackups` takes the host-scoped branch. Nothing is made
+    /// in the real `~/Library/CloudStorage`.
     @discardableResult
     private func makeSyncedWorkspaceRoot() throws -> URL {
-        let scratch = ".jrc-backupscope-cloud-\(UUID().uuidString)"
-        let cloudRoot = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/CloudStorage/OneDrive-JRCTest", isDirectory: true)
-            .appendingPathComponent(scratch, isDirectory: true)
-        let workspacesRoot = cloudRoot.appendingPathComponent("Jamf-Reports", isDirectory: true)
+        let cloudRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("jrc-backupscope-\(UUID().uuidString)", isDirectory: true)
+        let workspacesRoot = cloudRoot
+            .appendingPathComponent("Library/CloudStorage/OneDrive-JRCTest/Jamf-Reports",
+                                    isDirectory: true)
         try FileManager.default.createDirectory(
             at: workspacesRoot.appendingPathComponent(profile).appendingPathComponent("backups"),
             withIntermediateDirectories: true

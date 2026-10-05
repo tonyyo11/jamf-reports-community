@@ -5,10 +5,10 @@ import Testing
 final class ReportsFilterTests {
     private let sampleReports = [
         Report(name: "jamf_report_main_2024-05-01.xlsx", size: "1.2 MB", date: "May 1, 09:15", source: "Weekly Executive", sheets: 15, devices: 247),
-        Report(name: "compliance_main_2024-05-02.html", size: "850 KB", date: "May 2, 14:30", source: "Monthly Compliance", sheets: 0, devices: 247),
+        Report(name: "report_main_2024-05-02.html", size: "850 KB", date: "May 2, 14:30", source: "Monthly Compliance", sheets: 0, devices: 247),
         Report(name: "inventory_export_2024-05-03.csv", size: "2.1 MB", date: "May 3, 08:45", source: "Inventory Export", sheets: 0, devices: 247),
         Report(name: "mobile_devices_2024-05-04.pdf", size: "650 KB", date: "May 4, 16:20", source: "Mobile Inventory", sheets: 0, devices: 82),
-        Report(name: "school_report_edu_2024-05-05.xlsx", size: "900 KB", date: "May 5, 11:10", source: "Jamf School", sheets: 8, devices: 150)
+        Report(name: "school-report_edu_2024-05-05.xlsx", size: "900 KB", date: "May 5, 11:10", source: "Jamf School", sheets: 8, devices: 150)
     ]
 
     private func profile(_ filename: String) -> String? {
@@ -28,6 +28,20 @@ final class ReportsFilterTests {
         #expect(profile("report_20260424.xlsx") == nil)
         #expect(profile("fleet-bands-prod-2026-04-24_073305.png") == nil)
         #expect(profile("devices-2026-04-24_073305.csv") == nil)
+    }
+
+    /// The prefixes are the ones the writers use (`ExportNaming.stem`), so every generated
+    /// report reads back its profile and a name no writer makes reads as none.
+    @Test func profileFromFilenameFollowsTheWritersNames() {
+        for type in GenerateOutputType.allCases {
+            for school in [false, true] {
+                let stem = ExportNaming.stem(for: type, profile: "acme-dev", schoolMode: school)
+                #expect(profile(stem + "_2026-10-04_120000.xlsx") == "acme-dev", "\(stem)")
+            }
+        }
+        #expect(profile("compliance_main_2024-05-02.html") == nil)
+        #expect(profile("mobile_devices_2024-05-04.pdf") == nil)
+        #expect(profile("school_report_edu_2024-05-05.xlsx") == nil)
     }
 
     /// `ExportNaming` files saved into a reports folder: `<kind>-<profile>-<timestamp>`.
@@ -74,11 +88,11 @@ final class ReportsFilterTests {
     @Test func searchByNameExactMatch() {
         let filtered = ReportsView.filteredReports(
             reports: sampleReports,
-            searchText: "compliance_main_2024-05-02.html",
+            searchText: "report_main_2024-05-02.html",
             profileFilter: []
         )
         #expect(filtered.count == 1)
-        #expect(filtered.first?.name == "compliance_main_2024-05-02.html")
+        #expect(filtered.first?.name == "report_main_2024-05-02.html")
     }
 
     @Test func searchByNamePartialMatch() {
@@ -88,7 +102,7 @@ final class ReportsFilterTests {
             profileFilter: []
         )
         #expect(filtered.count == 1)
-        #expect(filtered.first?.name == "compliance_main_2024-05-02.html")
+        #expect(filtered.first?.name == "report_main_2024-05-02.html")
     }
 
     @Test func searchCaseInsensitive() {
@@ -148,7 +162,7 @@ final class ReportsFilterTests {
         let lower = ReportsView.filteredReports(
             reports: sampleReports, searchText: "", profileFilter: ["edu"]
         )
-        #expect(lower.map(\.name) == ["school_report_edu_2024-05-05.xlsx"])
+        #expect(lower.map(\.name) == ["school-report_edu_2024-05-05.xlsx"])
     }
 
     /// Two jamf-cli profiles saving to one folder: `acme` must not take in `acme-dev`,
@@ -204,6 +218,6 @@ final class ReportsFilterTests {
             profileFilter: ["edu"]
         )
         #expect(filtered.count == 1)
-        #expect(filtered.first?.name.contains("school_report_edu") == true)
+        #expect(filtered.first?.name.contains("school-report_edu") == true)
     }
 }

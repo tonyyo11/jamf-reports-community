@@ -322,6 +322,11 @@ enum ProfileService {
         scheduleCounts: [String: Int],
         _testBinaryOverride: URL? = nil
     ) -> [JamfCLIProfile] {
+        #if DEBUG
+        // A test never reads this Mac's ~/.config/jamf-cli/config.yaml, the fallback when no
+        // jamf-cli is found; one that checks discovery passes its own binary.
+        if _testBinaryOverride == nil, NSClassFromString("XCTestCase") != nil { return [] }
+        #endif
         guard let binary = _testBinaryOverride ?? ExecutableLocator.locate("jamf-cli") else {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }

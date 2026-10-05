@@ -170,7 +170,12 @@ compliance is now one figure everywhere.
   screen opened it; the screen says so and offers Reload.
 - Before onboarding or `jamf-reports scaffold --out` replaces an existing config.yaml, and on any
   save that drops comments or unreadable lines inside the blocks it edits, the app keeps a copy as
-  `config.yaml.bak-<date-time>` (the newest five), and says where it is.
+  `config.yaml.bak-<date-time>` (the newest five), and says where it is: on the Config screen,
+  and on the Customize screen, the Notifications card, the AI panel and the Scoring tab. Recording
+  a jamf-cli profile in its workspace's config.yaml, and connecting Jamf Protect or Jamf School,
+  keep a copy the same way, named in the run log and on the Protect and School setup screens. A
+  new workspace created from the example configuration is written with its profile already
+  recorded, so it gets no copy.
 - config.yaml indented by 3 or 4 spaces, or a mix, reads as a 2-space file does. A key typed twice
   is read as its last value everywhere, and a Config screen save changes only that copy. A
   security policy level can be written `warn`, `failure`, `gap`, `ignored`, `skip` or
@@ -514,6 +519,8 @@ compliance is now one figure everywhere.
   page runs in the HTML report, so it gets the same check as every other snapshot.
 - Diagnostic bundles remove the profile's tenant and environment IDs from logs and other captured
   text, including the ID jamf-cli repeats in "Environment not found" errors.
+- The inventory CSV export guards a cell that starts with a tab or a carriage return the way it
+  already guarded `=`, `+`, `-` and `@`, so a spreadsheet does not read such a cell as a formula.
 
 ## [2.8.3] - 2026-09-29
 

@@ -103,6 +103,31 @@ final class HtmlReportTests: XCTestCase {
         }
     }
 
+    /// With history off the report neither resolves nor writes `html.history_file`, so a
+    /// refused path is not warned about for nothing; turned on, it is warned about once.
+    func testAHistoryFileIsResolvedOnlyWhenHistoryIsTracked() throws {
+        for (tracked, warnings) in [(false, 0), (true, 1)] {
+            let (dataDir, outputURL) = try historyWorkspace(config: """
+            html:
+              track_history: \(tracked)
+              history_file: /var/log/history.json
+            """)
+            try FileManager.default.createDirectory(
+                at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let lines = Lines()
+            var report = makeReport(dataDir: dataDir)
+            report.onLine = { lines.add($0.text) }
+
+            let section = report.buildHistorySection(security: [], outputURL: outputURL)
+
+            XCTAssertEqual(section.isEmpty, !tracked)
+            XCTAssertEqual(lines.all.count, warnings, "\(lines.all)")
+            XCTAssertEqual(FileManager.default.fileExists(atPath: outputURL
+                .deletingLastPathComponent().appendingPathComponent("html_history.json").path),
+                tracked)
+        }
+    }
+
     func testTheSensitiveFoldersStayRefusedWithTheOptIn() throws {
         let (dataDir, outputURL) = try historyWorkspace(
             config: "output:\n  allow_absolute_paths: true\n")

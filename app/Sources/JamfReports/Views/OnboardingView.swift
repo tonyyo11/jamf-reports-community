@@ -592,6 +592,17 @@ struct OnboardingView: View {
         }
     }
 
+    /// What recording a connection in config.yaml did not keep, under its CONNECTED pill.
+    @ViewBuilder
+    private func configNote(_ note: String?) -> some View {
+        if let note {
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.warn)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var protectProductCard: some View {
         Card(padding: 22) {
             VStack(alignment: .leading, spacing: 14) {
@@ -617,6 +628,8 @@ struct OnboardingView: View {
                         Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
                     }
                 }
+
+                configNote(flow.protectConfigNote)
 
                 if !flow.protectConnected {
                     Divider().background(Theme.Colors.hairline)
@@ -719,6 +732,8 @@ struct OnboardingView: View {
                         Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
                     }
                 }
+
+                configNote(flow.schoolConfigNote)
 
                 if !flow.schoolConnected {
                     Divider().background(Theme.Colors.hairline)
@@ -832,6 +847,8 @@ struct OnboardingView: View {
                             .foregroundStyle(Theme.Colors.fg2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+
+                    configNote(flow.schoolConfigNote)
 
                     if !flow.schoolConnected {
                         Divider().background(Theme.Colors.hairline)

@@ -7,9 +7,9 @@ import XCTest
 /// and therefore the LogRedactor; the file-export path previously used
 /// `FileManager.copyItem` and copied raw bytes verbatim, bypassing redaction.
 ///
-/// `RunHistoryService.loadLog` rejects paths outside
-/// `~/Jamf-Reports/<profile>/automation/logs/`, so the test pins a real (unique)
-/// directory under the running user's home and cleans up via `addTeardownBlock`.
+/// `RunHistoryService.loadLog` reads only `<workspaces root>/<profile>/automation/logs/`, so the
+/// test stages a unique profile under `ProfileService.workspacesRoot()`, which under XCTest is
+/// this test process's own folder, never the real `~/Jamf-Reports`.
 ///
 /// `@MainActor` is required (PR-9.5): `RunsView.renderExport(from:)` is
 /// MainActor-isolated via `View` conformance. Swift 6.0/6.1 (CI macos-latest)
@@ -18,7 +18,7 @@ import XCTest
 final class RunsViewExportRedactionTests: XCTestCase {
 
     func testRenderExportRedactsBearerToken() throws {
-        let logURL = try writeLogInRealLogsDir(
+        let logURL = try writeLogInLogsDir(
             "[info] starting\nAuthorization: Bearer abcdef0123456789abcdef0123456789\n[ok] done\n"
         )
 
@@ -34,7 +34,7 @@ final class RunsViewExportRedactionTests: XCTestCase {
     }
 
     func testRenderExportRedactsClientSecret() throws {
-        let logURL = try writeLogInRealLogsDir(
+        let logURL = try writeLogInLogsDir(
             "client_secret: super-secret-value-1234\n"
         )
 
@@ -46,28 +46,20 @@ final class RunsViewExportRedactionTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Stage a log file at `~/Jamf-Reports/<unique-profile>/automation/logs/<name>.log`
-    /// (the only shape `RunHistoryService.loadLog` will read) and return its URL.
-    /// Profile slug uses the test's unique UUID — guaranteed non-collision with
-    /// any real workspace.
-    private func writeLogInRealLogsDir(_ contents: String) throws -> URL {
-        let slug = "pr7-export-test-" + UUID().uuidString.lowercased()
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let logsDir = home
+    /// Stage a log file at `<workspaces root>/<unique-profile>/automation/logs/run.log` (the
+    /// only shape `RunHistoryService.loadLog` will read) and return its URL.
+    private func writeLogInLogsDir(_ contents: String) throws -> URL {
+        let root = ProfileService.workspacesRoot()
+        let realRoot = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Jamf-Reports", isDirectory: true)
-            .appendingPathComponent(slug, isDirectory: true)
-            .appendingPathComponent("automation", isDirectory: true)
-            .appendingPathComponent("logs", isDirectory: true)
+        XCTAssertNotEqual(root.standardizedFileURL, realRoot.standardizedFileURL)
+        let profileRoot = root.appendingPathComponent(
+            "pr7-export-test-" + UUID().uuidString.lowercased(), isDirectory: true)
+        let logsDir = profileRoot.appendingPathComponent("automation/logs", isDirectory: true)
         try FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
         let logURL = logsDir.appendingPathComponent("run.log")
         try contents.write(to: logURL, atomically: true, encoding: .utf8)
-        addTeardownBlock {
-            // Clean up the slug-scoped subtree only; never touch the parent.
-            let profileRoot = home
-                .appendingPathComponent("Jamf-Reports", isDirectory: true)
-                .appendingPathComponent(slug, isDirectory: true)
-            try? FileManager.default.removeItem(at: profileRoot)
-        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: profileRoot) }
         return logURL
     }
 }

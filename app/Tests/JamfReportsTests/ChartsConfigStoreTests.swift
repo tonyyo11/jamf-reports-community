@@ -36,6 +36,23 @@ final class ChartsConfigStoreTests: XCTestCase {
         try String(contentsOf: try configURL(), encoding: .utf8)
     }
 
+    // MARK: - Customize Apply
+
+    /// Apply writes the charts block, then the html one. A failed html write keeps the note
+    /// the charts write already made.
+    func testApplyKeepsTheChartsNoteWhenTheHTMLWriteFails() throws {
+        try write("charts:\n  # team note\n  save_png: true\nhtml: off\n")
+        var notes: [ProfileSaveNote] = []
+
+        XCTAssertThrowsError(try CustomizeView.writeOptions(
+            ChartsOptions(savePNGs: false, perMajorCharts: true), withWorkbook: true,
+            profile: profile) { notes.append($0) })
+
+        XCTAssertEqual(notes.count, 1)
+        XCTAssertEqual(notes.first?.profile, profile)
+        XCTAssertTrue(notes.first?.line.contains("config.yaml.bak-") ?? false, "\(notes)")
+    }
+
     // MARK: - Round trip
 
     func testSaveThenLoadRoundTripsBothOptions() throws {

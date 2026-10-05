@@ -14,6 +14,11 @@ enum ExecutableLocator {
     ]
 
     static func locate(_ binary: String) -> URL? {
+        #if DEBUG
+        // Tests never launch the jamf-cli installed on this Mac; CI has none, and a test that
+        // needs one injects a stub.
+        if binary == "jamf-cli", NSClassFromString("XCTestCase") != nil { return nil }
+        #endif
         for dir in candidatePaths {
             let url = URL(fileURLWithPath: dir).appendingPathComponent(binary)
             if FileManager.default.isExecutableFile(atPath: url.path) {
@@ -2175,48 +2180,36 @@ final class CLIBridge {
 
     /// Refuses a workspace recorded for a case variant of `profile`: the two
     /// share the folder on a case-insensitive volume, and rebinding it would
-    /// collect a second tenant into the first one's data.
+    /// collect a second tenant into the first one's data. Records `profile` in
+    /// `jamf_cli.profile` through `ConfigService.saveBlock`, which copies the file first when
+    /// the write drops a comment, an unread line or a retired key, and logs what it did.
     private func reconcileConfigProfile(
         config: URL,
         profile: String,
         onLine: @Sendable @escaping (LogLine) -> Void
     ) throws {
         do {
-            let text = try String(contentsOf: config, encoding: .utf8)
-            var document = try YAMLCodec.decode(text)
-            guard case .mapping(var root) = document.root else { return }
-            var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
-            let current = jamfCLI.value(for: "profile")?.stringValue?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let document = try YAMLCodec.decode(String(contentsOf: config, encoding: .utf8))
+            guard case .mapping(let root) = document.root else { return }
+            let current = root.value(for: "jamf_cli")?.mapping?.value(for: "profile")?
+                .stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard current != profile else { return }
             guard !ProfileService.isCaseVariant(current, of: profile) else {
                 throw CLIBridgeError.profileCaseConflict(profile: profile, owner: current)
             }
 
-            jamfCLI.set("profile", value: .scalar(.string(profile)))
-            root.set("jamf_cli", value: .mapping(jamfCLI))
-            document.root = .mapping(root)
-            let encoded = try YAMLCodec.encode(document, replacingTopLevelKeys: ["jamf_cli"])
-            let permissions = (try? FileManager.default.attributesOfItem(atPath: config.path))
-                .flatMap { $0[.posixPermissions] as? NSNumber }
-            try encoded.write(to: config, atomically: true, encoding: .utf8)
-            if let permissions {
-                do {
-                    try FileManager.default.setAttributes(
-                        [.posixPermissions: permissions],
-                        ofItemAtPath: config.path
-                    )
-                } catch {
-                    AppLogger.cli.warning(
-                        "reconcileConfigProfile: could not restore permissions on \(config.path): \(error)"
-                    )
-                }
-            }
+            let report = try ConfigService.saveBlock(
+                key: "jamf_cli", profile: profile,
+                workspaceRoot: config.deletingLastPathComponent().deletingLastPathComponent()
+            ) { ConfigService.setJamfCLIProfile(profile, in: &$0) }.report
             onLine(.init(
                 timestamp: Date(),
                 level: .info,
                 text: "[info] set jamf_cli.profile to \(profile) in \(config.path)"
             ))
+            if let line = report.statusLine {
+                onLine(.init(timestamp: Date(), level: .info, text: "[info] \(line)"))
+            }
         } catch let conflict as CLIBridgeError {
             onLine(.init(timestamp: Date(), level: .fail,
                          text: "[error] \(conflict.localizedDescription)"))
@@ -2231,8 +2224,32 @@ final class CLIBridge {
             if error is YAMLCodec.CodecError {
                 throw CLIBridgeError.configLoadFailed(path: config.path, detail: nil)
             }
+            if let refused = error as? ConfigService.ConfigError {
+                throw Self.refusedWrite(refused, key: "jamf_cli.profile")
+            }
             throw CLIBridgeError.directoryOperationFailed(path: config.path)
         }
+    }
+
+    /// The error for a config.yaml write `ConfigService` refused, saying what to change.
+    private static func refusedWrite(
+        _ error: ConfigService.ConfigError, key: String
+    ) -> CLIBridgeError {
+        let fix: String
+        switch error {
+        case .notASettingsBlock(let block):
+            fix = "\(block) is typed as a single value; write its settings indented under "
+                + "\"\(block):\", or remove that line."
+        case .symlinkDestination:
+            fix = "the file is a symbolic link; replace it with the file it points to."
+        case .credentialKey(let name):
+            fix = "it holds a credential-shaped key (\(ConfigSchema.displayText(name))); "
+                + "remove it, since jamf-cli keeps secrets in the keychain."
+        default:
+            fix = "the file could not be updated; check that the workspace's config.yaml is a "
+                + "set of top-level settings."
+        }
+        return .configWriteRefused(key: key, fix: fix)
     }
 
     private func bundledSeedConfig() -> URL? {

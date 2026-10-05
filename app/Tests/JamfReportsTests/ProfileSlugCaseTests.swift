@@ -245,6 +245,109 @@ final class ProfileSlugCaseTests: XCTestCase {
         }
     }
 
+    // MARK: - Binding records the profile through the scoped writer
+
+    /// Binding rewrites `jamf_cli:` to record the profile. A comment there is not kept, so the
+    /// file is copied first and the run log names the copy; a key the app does not read stays.
+    func testBindingBacksUpACommentInsideJamfCLIAndSaysWhere() async throws {
+        let workspace = tempRoot.appendingPathComponent("acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let config = workspace.appendingPathComponent("config.yaml")
+        try Data("jamf_cli:\n  # tenant A\n  profile: \"\"\n  team_key: keep\n".utf8)
+            .write(to: config)
+        let lines = CaseTestBox<[String]>([])
+
+        _ = try await CLIBridge().initializeWorkspace(profile: "acme") { line in
+            lines.value.append(line.text)
+        }
+
+        let text = try String(contentsOf: config, encoding: .utf8)
+        XCTAssertTrue(text.contains("profile: acme") || text.contains("profile: \"acme\""), text)
+        XCTAssertTrue(text.contains("team_key: keep"), text)
+        let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
+            .filter { $0.hasPrefix("config.yaml.bak-") }
+        XCTAssertEqual(copies.count, 1, "\(copies)")
+        let copy = try XCTUnwrap(copies.first)
+        let copied = try String(
+            contentsOf: workspace.appendingPathComponent(copy), encoding: .utf8)
+        XCTAssertTrue(copied.contains("# tenant A"), copied)
+        XCTAssertTrue(lines.value.contains { $0.contains(copy) }, "\(lines.value)")
+    }
+
+    /// The run log says what the binding's write did: a retired key it removed is named, not
+    /// reported as a comment.
+    func testBindingLogsTheRetiredKeyItRemoved() async throws {
+        let workspace = tempRoot.appendingPathComponent("acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try Data("jamf_cli:\n  allow_live_overview: true\n  profile: \"\"\n".utf8)
+            .write(to: workspace.appendingPathComponent("config.yaml"))
+        let lines = CaseTestBox<[String]>([])
+
+        _ = try await CLIBridge().initializeWorkspace(profile: "acme") { line in
+            lines.value.append(line.text)
+        }
+
+        XCTAssertTrue(lines.value.contains {
+            $0.contains("jamf_cli.allow_live_overview") && $0.contains("config.yaml.bak-")
+        }, "\(lines.value)")
+    }
+
+    /// A `jamf_cli` typed as a single value is left as typed, and the error names the key and
+    /// the fix: not "could not be parsed" (the file parsed), and no path.
+    func testBindingRefusesAJamfCLIBlockTypedAsAValue() async throws {
+        let workspace = tempRoot.appendingPathComponent("acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        let config = workspace.appendingPathComponent("config.yaml")
+        let typed = Data("jamf_cli: off\ncolumns:\n  serial_number: Serial\n".utf8)
+        try typed.write(to: config)
+
+        do {
+            _ = try await CLIBridge().initializeWorkspace(
+                profile: "acme", onLine: CLIBridge.noOpOnLine)
+            XCTFail("a jamf_cli typed as a value must not be bound")
+        } catch let error as CLIBridgeError {
+            guard case .configWriteRefused = error else { return XCTFail("got \(error)") }
+            let text = error.localizedDescription
+            XCTAssertTrue(text.contains("jamf_cli"), text)
+            XCTAssertFalse(text.contains("parsed"), text)
+            XCTAssertFalse(text.contains(tempRoot.path), text)
+            XCTAssertFalse(text.contains(".."), text)
+        }
+        XCTAssertEqual(try Data(contentsOf: config), typed)
+    }
+
+    /// A workspace seeded from the shipped example is written with the profile recorded, so
+    /// binding it writes nothing and no backup of a file the app just made is kept.
+    func testBindingASeededWorkspaceKeepsNoBackupOfTheSeed() async throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("config.example.yaml").path) {
+            guard dir.pathComponents.count > 1 else { throw XCTSkip("no config.example.yaml") }
+            dir = dir.deletingLastPathComponent()
+        }
+        try ReportEngine.initializeWorkspace(
+            profile: "Seeded", workspacesRoot: tempRoot,
+            seedConfigURL: dir.appendingPathComponent("config.example.yaml"), onLine: { _ in })
+        let lines = CaseTestBox<[String]>([])
+
+        _ = try await CLIBridge().initializeWorkspace(profile: "Seeded") { line in
+            lines.value.append(line.text)
+        }
+
+        let workspace = tempRoot.appendingPathComponent("Seeded", isDirectory: true)
+        let text = try String(
+            contentsOf: workspace.appendingPathComponent("config.yaml"), encoding: .utf8)
+        let loaded = try ConfigService.load(profile: "Seeded", workspaceRoot: tempRoot)
+        XCTAssertEqual(loaded.document.root.mapping?.value(for: "jamf_cli")?.mapping?
+            .value(for: "profile")?.stringValue, "Seeded")
+        XCTAssertTrue(text.contains("# jamf-reports community edition — example configuration"))
+        let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
+            .filter { $0.hasPrefix("config.yaml.bak-") }
+        XCTAssertEqual(copies, [])
+        XCTAssertFalse(lines.value.contains { $0.contains("config.yaml.bak-") },
+                       "\(lines.value)")
+    }
+
     // MARK: - Case variants never share a workspace
 
     #if DEBUG

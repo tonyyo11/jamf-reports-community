@@ -563,6 +563,14 @@ struct ReportsView: View {
         )
     }
 
+    /// What a generated report's name starts with: each `ExportNaming.reportKind` and `_`,
+    /// longest first, so "jamf_report_prod_..." yields "prod", not "report".
+    nonisolated static let reportPrefixes: [String] = Set(
+        GenerateOutputType.allCases.flatMap { type in
+            [false, true].map { ExportNaming.reportKind(for: type, schoolMode: $0) + "_" }
+        }
+    ).sorted { ($0.count, $0) > ($1.count, $1) }
+
     /// The profile in a report's filename, written `<prefix><profile>_<yyyy-MM-dd>…`
     /// ("report_meridian-prod_2026-04-24_073305.xlsx"). Everything between the
     /// prefix and the last date is the profile, decoded with `ProfileName`, so any
@@ -581,12 +589,7 @@ struct ReportsView: View {
             return ProfileName.name(fromPathComponent: String(match.1))
         }
         let lowered = stem.lowercased()
-        // Longest first, so "jamf_report_prod_..." yields "prod", not "report".
-        let knownPrefixes = [
-            "jamf_report_", "school_report_", "school-report_",
-            "report_", "compliance_", "mobile_", "inventory_",
-        ]
-        guard let prefix = knownPrefixes.first(where: { lowered.hasPrefix($0) }) else {
+        guard let prefix = reportPrefixes.first(where: { lowered.hasPrefix($0) }) else {
             return nil
         }
         let rest = String(stem.dropFirst(prefix.count))

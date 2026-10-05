@@ -731,6 +731,30 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
         }
     }
 
+    /// A save that drops a comment inside the block backs the file up, and the store hands
+    /// the report's notes to the card that saved, which shows them as its status line.
+    func testASaveThatDropsACommentReturnsTheBackupNote() async throws {
+        try await withPolicyWorkspacesRoot {
+            _ = try writePolicyConfig("""
+            security_policy:
+              # Weights agreed with the security team
+              score_weights:
+                filevault: 30
+            """, profile: "policy-store-notes")
+            let store = policyTestStore(demo: false, profile: "policy-store-notes")
+            try await store.loadConfig()
+
+            let report = try store.saveScoreWeights(.defaultWeights)
+
+            let backup = try XCTUnwrap(report.backupName)
+            XCTAssertTrue(report.droppedComments)
+            XCTAssertEqual(report.statusLine, report.notes.joined(separator: " "))
+            XCTAssertTrue(report.statusLine?.contains(backup) ?? false)
+            let again = try store.saveSecurityLevel(.warning, for: .sip)
+            XCTAssertNil(again.statusLine, "nothing left to drop, so nothing to say")
+        }
+    }
+
     func testAFailedSaveThrowsAndKeepsTheLoadedPolicy() async throws {
         try await withPolicyWorkspacesRoot {
             let store = policyTestStore(demo: false, profile: "escape\n")
@@ -1130,7 +1154,8 @@ final class SecurityPolicyCardTests: XCTestCase {
             XCTAssertEqual(store.securityPolicyIssues.count, 3)
             let failure = Failure()
 
-            SecurityPolicyCard.writeAppliedLevel(.fileVault, in: store, failure: failure.binding)
+            SecurityPolicyCard.writeAppliedLevel(.fileVault, in: store,
+                failure: failure.binding, note: failure.noteBinding)
             XCTAssertEqual(store.securityPolicyIssues.map(\.keyPath), [
                 "security_policy.controls.sip", "security_policy.filevault_off_hardware_encrypted",
             ])
@@ -1139,7 +1164,8 @@ final class SecurityPolicyCardTests: XCTestCase {
             XCTAssertTrue(text.contains("sip: wrn"), "another key's typed value stays")
             XCTAssertEqual(store.securityPolicy, .default)
 
-            SecurityPolicyCard.writeAppliedHardwareLevel(in: store, failure: failure.binding)
+            SecurityPolicyCard.writeAppliedHardwareLevel(in: store,
+                failure: failure.binding, note: failure.noteBinding)
             XCTAssertEqual(store.securityPolicyIssues.map(\.keyPath),
                            ["security_policy.controls.sip"])
             XCTAssertFalse(try String(contentsOf: url, encoding: .utf8)
@@ -1152,7 +1178,8 @@ final class SecurityPolicyCardTests: XCTestCase {
         try await withPolicyWorkspacesRoot {
             let store = policyTestStore(demo: false, profile: "escape\n")
             let failure = Failure()
-            SecurityPolicyCard.writeAppliedLevel(.sip, in: store, failure: failure.binding)
+            SecurityPolicyCard.writeAppliedLevel(.sip, in: store,
+                failure: failure.binding, note: failure.noteBinding)
             XCTAssertEqual(
                 failure.value?.message,
                 "Couldn't save the security policy: Invalid profile name: escape\n")
@@ -1165,6 +1192,10 @@ final class SecurityPolicyCardTests: XCTestCase {
         var value: SecurityPolicyCard.SaveFailure?
         var binding: Binding<SecurityPolicyCard.SaveFailure?> {
             Binding(get: { self.value }, set: { self.value = $0 })
+        }
+        var note: ProfileSaveNote?
+        var noteBinding: Binding<ProfileSaveNote?> {
+            Binding(get: { self.note }, set: { self.note = $0 })
         }
     }
 
@@ -1182,7 +1213,7 @@ final class SecurityPolicyCardTests: XCTestCase {
             try await store.loadConfig()
             let failure = Failure()
             let picker = SecurityPolicyCard.levelBinding(
-                .sip, in: store, failure: failure.binding)
+                .sip, in: store, failure: failure.binding, note: failure.noteBinding)
             XCTAssertEqual(picker.wrappedValue, .fail)
 
             picker.wrappedValue = .warning
@@ -1197,6 +1228,35 @@ final class SecurityPolicyCardTests: XCTestCase {
         }
     }
 
+    /// The note a save returns is the card's until the card goes: a later save with nothing
+    /// to say leaves it. It belongs to the profile it was saved under and reads as nothing on
+    /// another.
+    func testAPickerSaveThatBacksUpTheFileLeavesTheCardsNote() async throws {
+        try await withPolicyWorkspacesRoot {
+            _ = try writePolicyConfig("""
+            security_policy:
+              controls:
+                sip: fail  # agreed 2026-09
+            """, profile: "policy-card-note")
+            let store = policyTestStore(demo: false, profile: "policy-card-note")
+            try await store.loadConfig()
+            let failure = Failure()
+            let picker = SecurityPolicyCard.levelBinding(
+                .sip, in: store, failure: failure.binding, note: failure.noteBinding)
+
+            picker.wrappedValue = .warning
+            let note = try XCTUnwrap(failure.note)
+            XCTAssertEqual(note.profile, "policy-card-note")
+            let line = try XCTUnwrap(note.line(for: "policy-card-note"))
+            XCTAssertTrue(line.contains("config.yaml.bak-"), line)
+            XCTAssertNil(note.line(for: "another-profile"))
+
+            picker.wrappedValue = .ignore
+            XCTAssertEqual(failure.note, note)
+            XCTAssertNil(failure.value)
+        }
+    }
+
     func testTheHardwarePickerWritesAndRemovesItsKey() async throws {
         try await withPolicyWorkspacesRoot {
             let url = try writePolicyConfig(
@@ -1204,7 +1264,8 @@ final class SecurityPolicyCardTests: XCTestCase {
             let store = policyTestStore(demo: false, profile: "policy-card")
             try await store.loadConfig()
             let failure = Failure()
-            let picker = SecurityPolicyCard.hardwareBinding(in: store, failure: failure.binding)
+            let picker = SecurityPolicyCard.hardwareBinding(in: store,
+                failure: failure.binding, note: failure.noteBinding)
             XCTAssertNil(picker.wrappedValue)
 
             picker.wrappedValue = .ignore
@@ -1226,7 +1287,8 @@ final class SecurityPolicyCardTests: XCTestCase {
         try await withPolicyWorkspacesRoot {
             let store = policyTestStore(demo: false, profile: "escape\n")
             let failure = Failure()
-            let picker = SecurityPolicyCard.levelBinding(.sip, in: store, failure: failure.binding)
+            let picker = SecurityPolicyCard.levelBinding(.sip, in: store,
+                failure: failure.binding, note: failure.noteBinding)
 
             picker.wrappedValue = .warning
 
@@ -1244,7 +1306,8 @@ final class SecurityPolicyCardTests: XCTestCase {
         try await withPolicyWorkspacesRoot {
             let store = policyTestStore(demo: true)
             let failure = Failure()
-            let picker = SecurityPolicyCard.levelBinding(.sip, in: store, failure: failure.binding)
+            let picker = SecurityPolicyCard.levelBinding(.sip, in: store,
+                failure: failure.binding, note: failure.noteBinding)
 
             picker.wrappedValue = .warning
 
