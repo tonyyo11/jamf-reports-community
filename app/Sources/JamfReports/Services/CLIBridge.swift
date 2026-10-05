@@ -740,7 +740,8 @@ final class CLIBridge {
     ///
     /// Holds the tick lock throughout (`holdingTickLock`), and throws
     /// `CLIBridgeError.tickLockHeld` before the auth probe when a tick holds it, or
-    /// `CLIBridgeError.collectInProgress` when another collect is running in this app.
+    /// `CLIBridgeError.collectInProgress` when another collect is running in this app,
+    /// `.generateInProgress` for a report. Inside `holdingGenerate` it runs under that hold.
     func collect(
         profile: String,
         tiers: Set<CollectionTier> = Set(CollectionTier.allCases),
@@ -807,7 +808,8 @@ final class CLIBridge {
 
     /// `narrative` (F3, GUI-only) is asked for between the collect and the generate, only
     /// when the collect worked: it reads the snapshots the collect just wrote, so a narrative
-    /// asked for before it would describe the stale ones the report is not built from.
+    /// asked for before it would describe the stale ones the report is not built from. The
+    /// whole run holds the tick lock (`holdingGenerate`).
     func collectThenGenerate(
         profile: String,
         csvPath: String?,
@@ -833,15 +835,18 @@ final class CLIBridge {
 
     /// Orchestration core of `collectThenGenerate`, with the three steps injected so tests
     /// can order them without a live jamf-cli (the same seam as `runGenerateAll`). A failed
-    /// collect returns its exit code before the narrative is asked for.
+    /// collect returns its exit code before the narrative is asked for. One `holdingGenerate`
+    /// covers all three, so the lock is never released between the collect and the report.
     static func runCollectThenGenerate(
         collect: () async throws -> Int32,
         narrative: (() async -> String?)?,
         generate: (String?) async throws -> Int32
     ) async throws -> Int32 {
-        let collectExit = try await collect()
-        guard collectExit == 0 else { return collectExit }
-        return try await generate(await narrative?())
+        try await holdingGenerate {
+            let collectExit = try await collect()
+            guard collectExit == 0 else { return collectExit }
+            return try await generate(await narrative?())
+        }
     }
 
     // MARK: - jamf-cli exit codes (jamf-cli Error Handling & Exit Codes spec)

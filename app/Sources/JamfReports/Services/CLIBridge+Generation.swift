@@ -46,11 +46,15 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
     /// jamf-cli is being installed or updated by this app, so the collect did not start: the
     /// binary changes under it otherwise. Nothing is queued.
     case toolUpdateInProgress
+    /// A report is being generated in this app, so the collect (or second report) did not
+    /// start: it would replace snapshots under the report. Nothing is queued.
+    case generateInProgress
 
-    /// True for the ways a collect is turned away before it starts. A refusal is not a
-    /// failure: it is shown as information and leaves no Run History record.
+    /// True for the ways a collect or report is turned away before it starts. A refusal is
+    /// not a failure: it is shown as information and leaves no Run History record.
     var isCollectRefusal: Bool {
         self == .tickLockHeld || self == .collectInProgress || self == .toolUpdateInProgress
+            || self == .generateInProgress
     }
 
     /// `isCollectRefusal` for an error of unknown type.
@@ -101,6 +105,8 @@ enum CLIBridgeError: Error, LocalizedError, Equatable, Sendable {
             return "A refresh is already running — try again when it finishes"
         case .toolUpdateInProgress:
             return "jamf-cli is being updated — try again when it finishes"
+        case .generateInProgress:
+            return "A report is being generated — try again when it finishes"
         }
     }
 }

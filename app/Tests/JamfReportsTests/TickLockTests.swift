@@ -20,7 +20,7 @@ final class TickLockTests: XCTestCase {
 
     func testLivePidBlocksASecondAcquire() {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
         XCTAssertFalse(lock.acquire(pid: 2, isAlive: { _ in true }))
     }
 
@@ -49,6 +49,19 @@ final class TickLockTests: XCTestCase {
         XCTAssertTrue(lock.acquire(pid: 7, isAlive: { _ in true }))
     }
 
+    /// `kill(0, 0)` signals the caller's own process group and succeeds, `kill(-1, 0)` every
+    /// process, and `kill(1, 0)` reaches launchd (EPERM, which counts as alive): none of them
+    /// is a holder, so a lock file naming one must not hold off every run until it goes stale.
+    func testAHolderPidOfOneOrBelowIsGarbageNotALiveProcess() throws {
+        for text in ["0", "1", "-1", "-5"] {
+            let lock = TickLock(url: lockURL())
+            try Data(text.utf8).write(to: lock.url)
+            XCTAssertFalse(lock.isHeldByAnotherLiveProcess(pid: 7), "pid \(text) read as alive")
+            XCTAssertTrue(lock.acquire(pid: 7), "pid \(text) blocked a takeover")
+            XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8), "7")
+        }
+    }
+
     /// A takeover must not have its lock deleted by the process it displaced.
     func testReleaseLeavesAFileOwnedByAnotherPidInPlace() throws {
         let lock = TickLock(url: lockURL())
@@ -59,7 +72,7 @@ final class TickLockTests: XCTestCase {
 
     func testTouchResetsTheLockFileModificationDate() throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         try FileManager.default.setAttributes(
             [.modificationDate: old], ofItemAtPath: lock.url.path)
@@ -181,7 +194,7 @@ final class TickLockTests: XCTestCase {
     /// wake takes it over mid-collect.
     func testKeepingAliveTouchesTheLockWhileTheBodyRuns() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         try FileManager.default.setAttributes(
             [.modificationDate: old], ofItemAtPath: lock.url.path)
@@ -196,7 +209,7 @@ final class TickLockTests: XCTestCase {
 
     func testKeepingAliveStopsWhenTheBodyReturns() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
         _ = await lock.keepingAlive(every: .milliseconds(20)) { () async -> Bool in
             try? await Task.sleep(for: .milliseconds(100))
             return true
@@ -213,7 +226,7 @@ final class TickLockTests: XCTestCase {
     /// itself and cancels them when the collect ends.
     func testHeartbeatTouchesTheLockUntilCancelled() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         try FileManager.default.setAttributes(
             [.modificationDate: old], ofItemAtPath: lock.url.path)
@@ -234,7 +247,7 @@ final class TickLockTests: XCTestCase {
 
     func testKeepingAliveStopsBeatingAfterItsLimit() async throws {
         let lock = TickLock(url: lockURL())
-        XCTAssertTrue(lock.acquire(pid: 1, isAlive: { _ in true }))
+        XCTAssertTrue(lock.acquire(pid: 100, isAlive: { _ in true }))
         let old = Date().addingTimeInterval(-2 * 60 * 60)
         _ = await lock.keepingAlive(every: .milliseconds(20), limit: .milliseconds(100)) {
             () async -> Bool in

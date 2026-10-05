@@ -608,8 +608,12 @@ private func scheduledRun(profile: String) async -> Int32 {
         tiers: tiers,
         excludedProfiles: allProfiles ? Array(ProfileService.parseExclusions(excludeArg)) : nil
     )
-    // The external scheduler sees the exit code alone — retries are the tick's.
-    let code = await runSchedule(schedule, verbose: verbose).exitCode
+    // The external scheduler sees the exit code alone — retries are the tick's. Under the
+    // tick lock like the tick's own runs; a run it turns away is queued, not failed.
+    guard let outcome = await runScheduleExclusively(schedule, verbose: verbose) else {
+        return TickRunner.queuedExitCode
+    }
+    let code = outcome.exitCode
     // External-scheduler path only: the tick posts its own digest once per wake.
     await notifyOverdueSchedulesHeadless(
         profiles: allProfiles ? ProfileService.discoverLocal().map(\.name) : [profile],

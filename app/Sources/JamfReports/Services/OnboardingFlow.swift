@@ -1076,7 +1076,9 @@ final class OnboardingFlow {
             )
         },
         generate: @escaping FirstReportStep = { profile, onLine in
-            try await CLIBridge().generate(profile: profile, csvPath: nil, onLine: onLine)
+            try await CLIBridge.holdingGenerate {
+                try await CLIBridge().generate(profile: profile, csvPath: nil, onLine: onLine)
+            }
         }
     ) async {
         firstReportOutput.removeAll()

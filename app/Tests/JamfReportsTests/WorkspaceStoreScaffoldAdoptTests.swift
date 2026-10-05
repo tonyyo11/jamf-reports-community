@@ -40,10 +40,11 @@ final class WorkspaceStoreScaffoldAdoptTests: XCTestCase {
         let savedDays = store.configState.staleDeviceDays
         store.configState.staleDeviceDays = savedDays + "5"
 
-        var merged = try ConfigService.load(profile: "acme").state
+        let read = try ConfigService.load(profile: "acme")
+        var merged = read.state
         merged.columns["serial_number"] = "Serial"
         merged.columns["computer_name"] = "Computer Name"
-        store.adoptScaffoldedColumns(from: merged)
+        store.adoptScaffoldedColumns(from: merged, readStamp: read.stamp)
 
         XCTAssertEqual(store.configState.columns["serial_number"], "Serial")
         XCTAssertEqual(store.columnMappings.first { $0.key == "computer_name" }?.value,
