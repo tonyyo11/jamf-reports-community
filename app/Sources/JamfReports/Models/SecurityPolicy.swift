@@ -58,7 +58,7 @@ struct SecurityPolicyIssue: Sendable, Equatable {
 }
 
 /// The workspace's `security_policy:` block. Absent, every control fails as it always
-/// has, there is no hardware-encrypted FileVault rule and the score uses the default weights.
+/// has, there is no hardware-encrypted FileVault rule and the score counts the default factors.
 struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     var fileVault: SecurityControlLevel
     var sip: SecurityControlLevel
@@ -67,12 +67,14 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     /// Level for FileVault off on a Mac whose internal volume is hardware-encrypted;
     /// nil uses `fileVault`.
     var fileVaultOffHardwareEncrypted: SecurityControlLevel?
-    /// The Security Score's weights; nil uses `SecurityScoreWeights.defaultWeights`.
-    var scoreWeights: SecurityScoreWeights?
-    /// The name of the `security_agents` entry the score counts as the EDR agent
-    /// (`security_policy.edr_agent`), trimmed. Nil, and a name that matches no agent, count the
-    /// first named agent (`SecurityScoreInputs.edrAgent(in:)`); the other agents are shown and
-    /// tracked but do not change the score.
+    /// What the Security Score counts (`score_factors`), as listed, each kind or name once; nil
+    /// when the key is absent or not a list, which counts the defaults
+    /// (`resolvedScoreFactors(agents:baselines:)`).
+    var scoreFactors: [SecurityScoreFactor]?
+    /// The name of the `security_agents` entry the Overview's EDR card, its trend and
+    /// `crowdstrikePct` describe (`security_policy.edr_agent`), trimmed. Nil, and a name that
+    /// matches no agent, mean the first named agent (`SecurityScoreInputs.edrAgent(in:)`). The
+    /// score counts agents through `scoreFactors`.
     var edrAgent: String?
     /// The values an organization's own export uses for on and off, per control
     /// (`security_policy.on_values` / `off_values`), normalised by `normalizedValue` and never
@@ -89,7 +91,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         firewall: SecurityControlLevel = .fail,
         gatekeeper: SecurityControlLevel = .fail,
         fileVaultOffHardwareEncrypted: SecurityControlLevel? = nil,
-        scoreWeights: SecurityScoreWeights? = nil,
+        scoreFactors: [SecurityScoreFactor]? = nil,
         edrAgent: String? = nil,
         onValues: [SecurityControl: [String]] = [:],
         offValues: [SecurityControl: [String]] = [:]
@@ -99,7 +101,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         self.firewall = firewall
         self.gatekeeper = gatekeeper
         self.fileVaultOffHardwareEncrypted = fileVaultOffHardwareEncrypted
-        self.scoreWeights = scoreWeights
+        self.scoreFactors = scoreFactors
         let agent = edrAgent?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.edrAgent = agent?.isEmpty == false ? agent : nil
         self.onValues = Self.vocabulary(onValues)
@@ -109,7 +111,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
     enum CodingKeys: String, CodingKey, CaseIterable {
         case controls
         case fileVaultOffHardwareEncrypted = "filevault_off_hardware_encrypted"
-        case scoreWeights = "score_weights"
+        case scoreFactors = "score_factors"
         case edrAgent = "edr_agent"
         case onValues = "on_values"
         case offValues = "off_values"
@@ -119,12 +121,41 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         case filevault, sip, firewall, gatekeeper
     }
 
-    /// A key under `score_weights`, named at run time from `SecurityScoreWeights.configSlots`.
-    private struct WeightKey: CodingKey {
-        let stringValue: String
-        var intValue: Int? { nil }
-        init?(stringValue: String) { self.stringValue = stringValue }
-        init?(intValue: Int) { nil }
+    /// The keys of one `score_factors` item.
+    enum FactorKeys: String, CodingKey, CaseIterable {
+        case factor, weight
+        case graceDays = "grace_days"
+        case agent, baseline
+    }
+
+    /// One `score_factors` item: a mapping with `factor` and `weight`, plus `agent` for an
+    /// agent, an optional `baseline` for mSCP and an optional `grace_days` for the two
+    /// currency factors. Nil for an item the app cannot use, which
+    /// `SecurityPolicyConfigLoader.issues` names; an unreadable `grace_days` uses the default.
+    private struct FactorEntry: Decodable {
+        let factor: SecurityScoreFactor?
+
+        init(from decoder: Decoder) throws {
+            factor = Self.read(decoder)
+        }
+
+        private static func read(_ decoder: Decoder) -> SecurityScoreFactor? {
+            guard let c = try? decoder.container(keyedBy: FactorKeys.self),
+                  let kind = (try? c.decode(String.self, forKey: .factor))
+                    .flatMap(SecurityControlPolicy.factorKind(typed:)),
+                  let weight = SecurityControlPolicy.decodedWeight(c, .weight)
+            else { return nil }
+            let target: String?
+            switch kind {
+            case .agent: target = try? c.decode(String.self, forKey: .agent)
+            case .mscp: target = try? c.decodeIfPresent(String.self, forKey: .baseline)
+            default: target = nil
+            }
+            let factor = SecurityScoreFactor(
+                kind, weight: weight, graceDays: SecurityControlPolicy.decodedGraceDays(c),
+                target: target)
+            return kind == .agent && factor.target == nil ? nil : factor
+        }
     }
 
     /// The words under one `on_values` / `off_values` key: a string, or a list of them. A
@@ -175,14 +206,14 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
             return
         }
         let hardware = Self.decodedLevel(c, .fileVaultOffHardwareEncrypted)
-        let weights = Self.decodedWeights(c)
+        let factors = Self.decodedFactors(c)
         let agent = try? c.decodeIfPresent(String.self, forKey: .edrAgent)
         let on = Self.decodedVocabulary(c, .onValues)
         let off = Self.decodedVocabulary(c, .offValues)
         guard let controls = try? c.nestedContainer(keyedBy: ControlKeys.self, forKey: .controls)
         else {
             self.init(
-                fileVaultOffHardwareEncrypted: hardware, scoreWeights: weights,
+                fileVaultOffHardwareEncrypted: hardware, scoreFactors: factors,
                 edrAgent: agent, onValues: on, offValues: off)
             return
         }
@@ -192,7 +223,7 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
             firewall: Self.decodedLevel(controls, .firewall) ?? .fail,
             gatekeeper: Self.decodedLevel(controls, .gatekeeper) ?? .fail,
             fileVaultOffHardwareEncrypted: hardware,
-            scoreWeights: weights,
+            scoreFactors: factors,
             edrAgent: agent,
             onValues: on, offValues: off
         )
@@ -225,25 +256,48 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         }
     }
 
-    /// Nil for a block that is absent or not a mapping; otherwise every key the app reads,
-    /// each at its typed weight or, when missing or unreadable, its default.
-    private static func decodedWeights(
+    /// Nil for a key that is absent or not a list. Otherwise the items the app can use, each
+    /// kind or name once: a repeat replaces the earlier one, as a repeated key does.
+    private static func decodedFactors(
         _ container: KeyedDecodingContainer<CodingKeys>
-    ) -> SecurityScoreWeights? {
-        guard let block = try? container.nestedContainer(
-            keyedBy: WeightKey.self, forKey: .scoreWeights)
+    ) -> [SecurityScoreFactor]? {
+        guard var items = try? container.nestedUnkeyedContainer(forKey: .scoreFactors)
         else { return nil }
-        return SecurityScoreWeights { slot in
-            guard let key = WeightKey(stringValue: slot) else { return nil }
-            // A fractional YAML scalar arrives as a string, an integer as a number
-            // (`AlertRule.tolerantDouble`).
-            if let number = try? block.decodeIfPresent(Double.self, forKey: key) {
-                return scoreWeight(number)
-            }
-            return (try? block.decodeIfPresent(String.self, forKey: key))
-                .flatMap { scoreWeight(typed: $0) }
+        var read: [SecurityScoreFactor] = []
+        // `FactorEntry` never throws, so each pass moves past one item and this ends.
+        while !items.isAtEnd {
+            guard let entry = try? items.decode(FactorEntry.self) else { break }
+            if let factor = entry.factor { read.append(factor) }
         }
+        return read.enumerated().filter { index, factor in
+            !read[(index + 1)...].contains { $0.key == factor.key }
+        }.map(\.element)
     }
+
+    /// A `factor` word: trimmed, case-insensitive.
+    static func factorKind(typed raw: String) -> SecurityScoreFactor.Kind? {
+        SecurityScoreFactor.Kind(rawValue: raw.trimmingCharacters(in: .whitespaces).lowercased())
+    }
+
+    /// A weight from 0 to 100. A fractional YAML scalar arrives as a string, an integer as a
+    /// number (`AlertRule.tolerantDouble`).
+    static func decodedWeight(
+        _ c: KeyedDecodingContainer<FactorKeys>, _ key: FactorKeys
+    ) -> Double? {
+        if let number = try? c.decode(Double.self, forKey: key) { return scoreWeight(number) }
+        return (try? c.decode(String.self, forKey: key)).flatMap { scoreWeight(typed: $0) }
+    }
+
+    /// A whole number of days from 0 to 365; nil for anything else, which uses the default.
+    static func decodedGraceDays(_ c: KeyedDecodingContainer<FactorKeys>) -> Int? {
+        let typed = (try? c.decode(Int.self, forKey: .graceDays))
+            ?? (try? c.decode(String.self, forKey: .graceDays)).flatMap {
+                Int($0.trimmingCharacters(in: .whitespaces))
+            }
+        return typed.flatMap { graceDays($0) }
+    }
+
+    static func graceDays(_ days: Int) -> Int? { (0...365).contains(days) ? days : nil }
 
     /// A typed weight is a number from 0 to 100; anything else is not read.
     static func scoreWeight(_ value: Double) -> Double? {
@@ -455,58 +509,51 @@ struct SecurityControlPolicy: Sendable, Equatable, Decodable {
         }.count
     }
 
-    /// The score's weights with FileVault, SIP or Firewall at zero when set to `ignore`, so
-    /// the calculator leaves that control out without listing it as missing data.
-    func effectiveScoreWeights(_ base: SecurityScoreWeights) -> SecurityScoreWeights {
-        var weights = base
-        if fileVault == .ignore { weights.fileVault = 0 }
-        if sip == .ignore { weights.sip = 0 }
-        if firewall == .ignore { weights.firewall = 0 }
-        return weights
-    }
-
-    /// What every score uses: the workspace's weights, or the defaults, less the controls
-    /// that are not counted.
-    var resolvedScoreWeights: SecurityScoreWeights {
-        effectiveScoreWeights(scoreWeights ?? .defaultWeights)
-    }
-}
-
-extension SecurityScoreWeights {
-    /// The keys under `security_policy.score_weights`, in the order the Scoring tab lists them.
-    nonisolated(unsafe) static let configSlots:
-        [(key: String, path: WritableKeyPath<SecurityScoreWeights, Double>)] = [
-            ("filevault", \.fileVault), ("sip", \.sip), ("firewall", \.firewall),
-            ("edr_agent", \.edrAgent), ("mscp", \.mscp), ("xprotect", \.xprotect),
-            ("cve", \.cve), ("secure_boot", \.secureBoot),
-        ]
-
-    /// The defaults, with each slot the lookup has a weight for replaced.
-    init(reading weight: (String) -> Double?) {
-        self = .defaultWeights
-        for slot in Self.configSlots {
-            if let value = weight(slot.key) { self[keyPath: slot.path] = value }
+    /// What every score counts: `scoreFactors`, or the defaults when absent, less a control
+    /// set to `ignore`, an agent no `security_agents` entry names and an mSCP baseline the
+    /// workspace does not have. A name takes the configured spelling.
+    func resolvedScoreFactors(agents: [String], baselines: [String]) -> [SecurityScoreFactor] {
+        let listed = scoreFactors
+            ?? SecurityScoreFactor.defaults(agents: agents, hasBaseline: !baselines.isEmpty)
+        return listed.compactMap { factor in
+            if let control = factor.kind.control {
+                return level(for: control) == .ignore ? nil : factor
+            }
+            var resolved = factor
+            switch factor.kind {
+            case .agent:
+                guard let name = Self.configuredName(factor.target, in: agents) else { return nil }
+                resolved.target = name
+            case .mscp:
+                guard !baselines.isEmpty else { return nil }
+                guard factor.target != nil else { return factor }
+                guard let name = Self.configuredName(factor.target, in: baselines) else {
+                    return nil
+                }
+                resolved.target = name
+            default:
+                break
+            }
+            return resolved
         }
     }
 
-    /// The weight under a `score_weights` key; nil for a key the app does not read.
-    func weight(forConfigKey key: String) -> Double? {
-        Self.configSlots.first { $0.key == key }.map { self[keyPath: $0.path] }
-    }
-
-    /// Whole numbers from 0 to 100, as the block stores them; a weight that is not a
-    /// number reads as its default.
-    func rounded() -> SecurityScoreWeights {
-        var copy = self
-        for slot in Self.configSlots {
-            let value = self[keyPath: slot.path].rounded()
-            copy[keyPath: slot.path] = value.isNaN
-                ? Self.defaultWeights[keyPath: slot.path] : min(max(value, 0), 100)
-        }
-        return copy
+    /// `name` as `names` spells it, matched trimmed and case-insensitively.
+    static func configuredName(_ name: String?, in names: [String]) -> String? {
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty
+        else { return nil }
+        return names.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty && $0.caseInsensitiveCompare(name) == .orderedSame }
     }
 }
 
 extension ReportConfig {
     var resolvedSecurityPolicy: SecurityControlPolicy { securityPolicy ?? .default }
+
+    /// The score's factors for this workspace (`SecurityControlPolicy.resolvedScoreFactors`).
+    var resolvedScoreFactors: [SecurityScoreFactor] {
+        resolvedSecurityPolicy.resolvedScoreFactors(
+            agents: SecurityScoreInputs.namedAgents(in: self).map(\.name),
+            baselines: (compliance?.resolvedBaselines ?? []).map(\.name))
+    }
 }

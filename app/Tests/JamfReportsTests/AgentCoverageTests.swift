@@ -120,7 +120,7 @@ final class AgentCoverageTests: XCTestCase {
 
     // MARK: - Which agent is the EDR
 
-    func testEDRAgentChoiceDrivesTheScoreAndCrowdstrikePct() throws {
+    func testEDRAgentChoiceDrivesCrowdstrikePctButNotTheScore() throws {
         let first = try emit()
         let chosen = try emit(Self.agentsYAML + """
 
@@ -129,9 +129,12 @@ final class AgentCoverageTests: XCTestCase {
             """)
         XCTAssertEqual(first.crowdstrikePct, 70.0)
         XCTAssertEqual(chosen.crowdstrikePct, 100.0, "matched case-insensitively")
-        // Same Macs, other EDR input: the score moves with the chosen agent only.
-        XCTAssertGreaterThan(try XCTUnwrap(chosen.securityScore),
-                             try XCTUnwrap(first.securityScore))
+        // The choice names the agent the EDR card and `crowdstrikePct` describe. The score
+        // counts every agent as its own factor, so the choice leaves it and its basis alone.
+        XCTAssertEqual(try XCTUnwrap(chosen.securityScore), try XCTUnwrap(first.securityScore))
+        XCTAssertEqual(chosen.securityScoreBasis, first.securityScoreBasis)
+        XCTAssertTrue(try XCTUnwrap(first.securityScoreBasis).hasSuffix(
+            "agent:Falcon=5,agent:Scanner=5,agent:Forwarder=5"))
         XCTAssertEqual(chosen.securityAgentCoverage, first.securityAgentCoverage,
                        "every agent is still tracked")
     }

@@ -25,14 +25,18 @@ enum ConfigEditedKeys {
     }
 
     /// The block with every setting the Scoring tab writes, on an empty block: each control's
-    /// level, FileVault's hardware level, and the whole set of weights.
+    /// level, FileVault's hardware level, and a factor list using every entry key.
     private static var securityPolicyProbe: YAMLCodec.YAMLMapping {
         var block = YAMLCodec.YAMLMapping(entries: [])
         for control in SecurityControl.allCases {
             SecurityPolicyConfigWriter.apply(.level(.fail, for: control), to: &block)
         }
         SecurityPolicyConfigWriter.apply(.hardwareLevel(.fail), to: &block)
-        SecurityPolicyConfigWriter.apply(.scoreWeights(.defaultWeights), to: &block)
+        SecurityPolicyConfigWriter.apply(.scoreFactors([
+            SecurityScoreFactor(.osCurrent, weight: 1, graceDays: 30),
+            SecurityScoreFactor(.agent, weight: 1, target: "x"),
+            SecurityScoreFactor(.mscp, weight: 1, target: "x"),
+        ]), to: &block)
         SecurityPolicyConfigWriter.apply(.edrAgent("x"), to: &block)
         return block
     }

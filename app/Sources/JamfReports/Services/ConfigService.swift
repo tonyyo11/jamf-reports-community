@@ -481,7 +481,11 @@ enum ConfigService {
     /// screen writes, "Customize Apply" for `charts`, nil for a block no app writer rewrites.
     static func retiredKeyRemover(inBlock block: String) -> String? {
         if managedTopLevelKeys.contains(block) { return "Config save" }
-        return block == "charts" ? "Customize Apply" : nil
+        switch block {
+        case "charts": return "Customize Apply"
+        case "security_policy": return "Scoring save"
+        default: return nil
+        }
     }
 
     /// Replaces the file at `url` with `encoded` through a temporary file beside it, and

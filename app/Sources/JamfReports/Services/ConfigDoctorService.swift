@@ -742,6 +742,38 @@ enum ConfigDoctorService {
             issues: SecurityPolicyConfigLoader.issues(profile: profile),
             policy: policy, hardware: hardware)
             + edrAgentRows(policy: policy, agents: config.securityAgents ?? [])
+            + scoreFactorRows(config: config)
+    }
+
+    /// Listed score factors the score cannot count: an agent no `security_agents` entry names,
+    /// a baseline `compliance.baselines` does not have (or mSCP with no baseline), and an empty
+    /// list, which scores nothing. A control set to `ignore` is left out by the policy, not
+    /// by a mistake, so it is not named.
+    static func scoreFactorRows(config: ReportConfig) -> [DoctorRow] {
+        let policy = config.resolvedSecurityPolicy
+        guard let listed = policy.scoreFactors else { return [] }
+        let path = SecurityPolicyConfigLoader.factorsPath
+        guard !listed.isEmpty else {
+            return [DoctorRow(
+                id: "security_policy.score_factors.empty", severity: .warn, title: path,
+                detail: "The list is empty, so the security score counts nothing.",
+                hint: "Add factors in Config > Scoring, or remove the key to use the defaults.")]
+        }
+        let kept = Set(config.resolvedScoreFactors.map(\.key))
+        return listed.filter { $0.kind.control == nil && !kept.contains($0.key) }
+            .enumerated().map { index, factor in
+                let name = ConfigSchema.displayText(factor.target ?? "")
+                let detail = factor.kind == .agent
+                    ? "\"\(name)\" matches no security_agents entry, so it is not scored."
+                    : factor.target == nil
+                        ? "No compliance.baselines entry is configured, so mSCP is not scored."
+                        : "\"\(name)\" matches no compliance.baselines entry, so it is not scored."
+                return DoctorRow(
+                    id: "security_policy.score_factors.unmatched.\(index)", severity: .warn,
+                    title: path, detail: detail,
+                    hint: "Write the name exactly as configured, or remove the factor in "
+                        + "Config > Scoring.")
+            }
     }
 
     /// `security_policy.edr_agent` names an agent the score would count as EDR; a name that
@@ -829,8 +861,9 @@ enum ConfigDoctorService {
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
         }
-        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
-            return "\"\(issue.value)\" is not a number from 0 to 100 — using \(issue.used)"
+        if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
+            return issue.value.isEmpty
+                ? "This entry is \(issue.used)" : "\"\(issue.value)\" — \(issue.used)"
         }
         if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
             return securityVocabularyDetail(issue)
@@ -856,8 +889,8 @@ enum ConfigDoctorService {
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Write it as indented key: value lines in config.yaml, or remove it."
         }
-        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
-            return "Set it to a number from 0 to 100 in config.yaml, or remove the line."
+        if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
+            return "Fix the entry in config.yaml, or edit the factors in Config > Scoring."
         }
         if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
             return issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff

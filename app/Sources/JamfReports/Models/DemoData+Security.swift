@@ -638,6 +638,25 @@ extension DemoData {
 
     // MARK: - Security Posture
 
+    /// The four controls out of the 524-Mac fleet under the default policy.
+    private static let securityFleetCounts = SecurityFleetCounts.build(
+        totalDevices: securityControls.total,
+        onCounts: [
+            .fileVault: securityControls.fileVault, .sip: securityControls.sip,
+            .firewall: securityControls.firewall, .gatekeeper: securityControls.gatekeeper,
+        ],
+        devices: [], hardware: [:], policy: .default)
+
+    /// The default native factors measured from the demo's counts: the four controls score,
+    /// the rest have no data in the demo.
+    private static let securityScoreMeasures = SecurityScoreInputs.measures(
+        for: SecurityScoreFactor.nativeDefaults, fleet: securityFleetCounts, sources: .none,
+        config: nil)
+
+    /// The Security Posture ring's score, which the Overview card and Trends end on.
+    static let securityScoreValue = SecurityScoreCalculator.score(
+        factors: SecurityScoreFactor.nativeDefaults, measures: securityScoreMeasures).value
+
     /// The Security Posture screen's `pro report security` snapshot: the four
     /// controls out of the 524-Mac fleet and the Overview's macOS distribution,
     /// counted under the default policy.
@@ -653,13 +672,10 @@ extension DemoData {
         },
         sourceFile: nil,
         snapshotDate: referenceDate,
-        fleetCounts: SecurityFleetCounts.build(
-            totalDevices: securityControls.total,
-            onCounts: [
-                .fileVault: securityControls.fileVault, .sip: securityControls.sip,
-                .firewall: securityControls.firewall, .gatekeeper: securityControls.gatekeeper,
-            ],
-            devices: [], hardware: [:], policy: .default)
+        fleetCounts: securityFleetCounts,
+        scoreFactors: SecurityScoreFactor.nativeDefaults,
+        scoreMeasures: securityScoreMeasures,
+        staleDays: 30
     )
 
     // MARK: - Compliance Posture

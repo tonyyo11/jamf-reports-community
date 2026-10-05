@@ -820,13 +820,13 @@ final class WorkspaceStore {
         try saveSecuritySetting(.hardwareLevel(level)) { $0.fileVaultOffHardwareEncrypted = level }
     }
 
-    /// Nil removes the block, so the default weights apply.
+    /// Nil removes the list, so the default factors apply.
     @discardableResult
-    func saveScoreWeights(_ weights: SecurityScoreWeights?) throws -> ConfigSaveReport {
-        try saveSecuritySetting(.scoreWeights(weights)) { $0.scoreWeights = weights }
+    func saveScoreFactors(_ factors: [SecurityScoreFactor]?) throws -> ConfigSaveReport {
+        try saveSecuritySetting(.scoreFactors(factors)) { $0.scoreFactors = factors }
     }
 
-    /// The agent the score counts as EDR; nil removes the key, so the first agent counts.
+    /// The agent the EDR card describes; nil removes the key, so the first agent counts.
     @discardableResult
     func saveEDRAgent(_ name: String?) throws -> ConfigSaveReport {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -1100,7 +1100,10 @@ struct OverviewView: View {
         let lastValue = values.last
         let current = lastValue ?? 0
         let prev = values.count > 1 ? values[values.count - 2] : current
-        let diff = current - prev
+        // Two scores on different definitions (`securityScoreBasis`) have no change between them.
+        let comparable = metric != .securityScore || workspace.demoMode
+            || trendStore.latestSecurityScoresComparable
+        let diff = comparable ? current - prev : 0
 
         let valueStr: String = {
             guard let val = lastValue else { return "--" }
@@ -1113,6 +1116,7 @@ struct OverviewView: View {
 
         let deltaStr: String = {
             guard lastValue != nil, values.count >= 2 else { return "No Data" }
+            guard comparable else { return "Not comparable" }
             let absDiff = abs(diff)
             if metric.unit == "%" {
                 return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"

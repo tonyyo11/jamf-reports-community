@@ -137,6 +137,7 @@ final class SecurityPolicyConsistencyTests: XCTestCase {
             in: dataDir.appendingPathComponent("security", isDirectory: true)))
         let posture = try SecurityPostureService.load(
             from: securityURL, policy: policy, hardware: hardware)
+            .scored(config: config, dataDir: dataDir)
         let compliance = try XCTUnwrap(CompliancePostureService.load(
             from: securityURL, policy: policy, hardware: hardware))
 
@@ -245,10 +246,17 @@ final class SecurityPolicyConsistencyTests: XCTestCase {
         let firewallLabel: String
     }
 
+    // Scores under the default score factors, by hand. The security report scores FileVault 2 of
+    // 6, SIP 5 of 6, Firewall 4 of 6 and Gatekeeper 5 of 6 at weights 15, 10, 10 and 5, and
+    // the five computers records (all ESCROWED) score the bootstrap token 5 of 5 at 5; nothing
+    // else is collected. A: (500 + 833.3 + 666.7 + 416.7 + 500) / 45 = 64.8. B moves the two
+    // hardware-encrypted Macs to warning, so FileVault is 4 of 6: (1000 + 833.3 + 666.7
+    // + 416.7 + 500) / 45 = 75.9. C leaves Firewall out: (500 + 833.3 + 416.7 + 500) / 35 = 64.3.
+
     func testPolicyANoBlock() async throws {
         let surfaces = try await measure(Self.policyA, dataDir: try writeFleet())
         try assertColumn(surfaces, Column(
-            p0: 7, p1: 1, score: 61.1, compliancePct: 33.3, moved: 0, passBand: 2,
+            p0: 7, p1: 1, score: 64.8, compliancePct: 33.3, moved: 0, passBand: 2,
             noFileVault0102: true, noFileVault0103: true, firewallDisabled0103: true,
             securityStateFileVault: "UNENCRYPTED", securityStateFormat: .red,
             postureSheetFirewall: "RED",
@@ -262,7 +270,7 @@ final class SecurityPolicyConsistencyTests: XCTestCase {
     func testPolicyBHardwareEncryptedAtWarning() async throws {
         let surfaces = try await measure(Self.policyB, dataDir: try writeFleet())
         try assertColumn(surfaces, Column(
-            p0: 5, p1: 1, score: 72.2, compliancePct: 50.0, moved: 2, passBand: 3,
+            p0: 5, p1: 1, score: 75.9, compliancePct: 50.0, moved: 2, passBand: 3,
             noFileVault0102: false, noFileVault0103: false, firewallDisabled0103: true,
             securityStateFileVault: "FileVault off (hardware-encrypted)",
             securityStateFormat: .yellow,
@@ -277,7 +285,7 @@ final class SecurityPolicyConsistencyTests: XCTestCase {
     func testPolicyCFirewallIgnored() async throws {
         let surfaces = try await measure(Self.policyC, dataDir: try writeFleet())
         try assertColumn(surfaces, Column(
-            p0: 5, p1: 1, score: 58.3, compliancePct: 33.3, moved: 0, passBand: 2,
+            p0: 5, p1: 1, score: 64.3, compliancePct: 33.3, moved: 0, passBand: 2,
             noFileVault0102: true, noFileVault0103: true, firewallDisabled0103: false,
             securityStateFileVault: "UNENCRYPTED", securityStateFormat: .red,
             postureSheetFirewall: "Not counted",
@@ -356,7 +364,7 @@ final class SecurityPolicyConsistencyTests: XCTestCase {
                        fleet.fileVaultOffHardwareEncrypted, "\(policy): executive vs posture moved")
 
         let postureScore = SecurityScoreCalculator.score(
-            input: fleet.scoreInput(), weights: s.posture.policy.resolvedScoreWeights).value
+            factors: s.posture.scoreFactors, measures: s.posture.scoreMeasures).value
         XCTAssertEqual(s.summary.securityScore, Self.round1(postureScore),
                        "\(policy): summary vs posture score")
         XCTAssertEqual(Self.round1(s.executive.securityScore), Self.round1(postureScore),

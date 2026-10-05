@@ -170,11 +170,18 @@ struct PatchStatusService: Sendable {
     /// between 0 and its own `total`: the figure never passes 100. Nil, never 0, when no
     /// title has devices.
     static func fleetCompliancePct(_ titles: [PatchStatusRow]) -> Double? {
+        fleetComplianceCounts(titles).map { Double($0.onLatest) / Double($0.devices) * 100.0 }
+    }
+
+    /// The two sums behind `fleetCompliancePct`; nil when no title has devices.
+    static func fleetComplianceCounts(
+        _ titles: [PatchStatusRow]
+    ) -> (onLatest: Int, devices: Int)? {
         let counted = titles.filter { $0.total > 0 }
         let devices = counted.reduce(0) { $0 + $1.total }
         guard devices > 0 else { return nil }
         let onLatest = counted.reduce(0) { $0 + min(max($1.onLatest, 0), $1.total) }
-        return Double(onLatest) / Double(devices) * 100.0
+        return (onLatest, devices)
     }
 
     // MARK: - Internals

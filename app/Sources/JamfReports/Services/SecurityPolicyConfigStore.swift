@@ -26,20 +26,23 @@ enum SecurityPolicyConfigLoader {
     private static let blockPath = "security_policy"
     static let controlsPath = "security_policy.controls"
     static let hardwarePath = "security_policy.filevault_off_hardware_encrypted"
-    private static let weightsPath = "security_policy.score_weights"
+    static let factorsPath = "security_policy.score_factors"
     static let edrAgentPath = "security_policy.edr_agent"
     static let onValuesPath = "security_policy.on_values"
     static let offValuesPath = "security_policy.off_values"
 
     /// Key paths of the blocks that hold other settings: an issue at one of them is about
     /// the block's shape. Any other issue with a `used` is about a typed level, or when
-    /// `isWeightPath` holds, a typed weight, or when `isVocabularyPath` holds, a typed value.
+    /// `isFactorPath` holds, a `score_factors` entry, or when `isVocabularyPath` holds, a
+    /// typed value.
     static let blockKeyPaths: Set<String> = [
-        blockPath, controlsPath, weightsPath, onValuesPath, offValuesPath,
+        blockPath, controlsPath, onValuesPath, offValuesPath,
     ]
 
-    static func isWeightPath(_ keyPath: String) -> Bool {
-        keyPath.hasPrefix(weightsPath + ".")
+    /// `score_factors` itself, or one of its entries (`score_factors[2]`, from 0 as
+    /// `ConfigSchema` numbers list items).
+    static func isFactorPath(_ keyPath: String) -> Bool {
+        keyPath == factorsPath || keyPath.hasPrefix(factorsPath + "[")
     }
 
     /// A key under `on_values` or `off_values`: one issue per value that is not used.
@@ -80,8 +83,8 @@ enum SecurityPolicyConfigLoader {
                 controlsIssues(node, applied: applied)
             case "filevault_off_hardware_encrypted":
                 levelIssues(hardwarePath, node, used: hardwareUsed)
-            case "score_weights":
-                weightsIssues(node, applied: applied)
+            case "score_factors":
+                factorsIssues(node)
             case "edr_agent":
                 edrAgentIssues(node)
             case "on_values":
@@ -123,24 +126,92 @@ enum SecurityPolicyConfigLoader {
         }
     }
 
-    private static func weightsIssues(
-        _ node: YAMLCodec.YAMLValue, applied: SecurityControlPolicy
-    ) -> [SecurityPolicyIssue] {
-        guard case .mapping(let weights) = node else {
-            return shapeIssues(weightsPath, node, used: "the default weights")
-        }
-        let used = applied.scoreWeights ?? .defaultWeights
-        return settings(weights).flatMap { key, node -> [SecurityPolicyIssue] in
-            let path = "\(weightsPath).\(displayText(key))"
-            guard let weight = used.weight(forConfigKey: key) else {
-                return unknownKeyIssues(path)
-            }
-            if case .scalar = node,
-               SecurityControlPolicy.scoreWeight(typed: typedText(node)) != nil { return [] }
+    /// `score_factors` is a list; each entry the decoder skipped, or read other than as typed,
+    /// is one issue at `score_factors[N]` (from 0) with what happened in `used`.
+    private static func factorsIssues(_ node: YAMLCodec.YAMLValue) -> [SecurityPolicyIssue] {
+        guard case .sequence(let items) = node else {
+            if case .scalar(.null) = node { return [] }
             return [SecurityPolicyIssue(
-                keyPath: path, value: displayText(typedText(node)),
-                used: String(format: "%g", weight))]
+                keyPath: factorsPath, value: ConfigSchema.displayText(typedText(node)),
+                used: "the default factors, since this is not a list")]
         }
+        var seen: [String: Int] = [:]
+        var issues: [SecurityPolicyIssue] = []
+        for (index, item) in items.enumerated() {
+            let path = "\(factorsPath)[\(index)]"
+            let (found, key) = factorIssues(path, item)
+            issues += found
+            if let key {
+                if let earlier = seen[key] {
+                    issues.append(SecurityPolicyIssue(
+                        keyPath: "\(factorsPath)[\(earlier)]", value: displayText(key),
+                        used: "replaced by score_factors[\(index)], which lists it again"))
+                }
+                seen[key] = index
+            }
+        }
+        return issues
+    }
+
+    /// The issues of one entry, and the key the decoder kept it under (nil when skipped).
+    private static func factorIssues(
+        _ path: String, _ item: YAMLCodec.YAMLValue
+    ) -> (issues: [SecurityPolicyIssue], key: String?) {
+        guard case .mapping(let entry) = item else {
+            return ([SecurityPolicyIssue(
+                keyPath: path, value: ConfigSchema.displayText(typedText(item)),
+                used: "skipped: an entry needs factor and weight")], nil)
+        }
+        let fields = Dictionary(settings(entry).map { ($0.key, $0.node) }) { _, last in last }
+        var issues = settings(entry).compactMap { key, _ -> SecurityPolicyIssue? in
+            SecurityControlPolicy.FactorKeys(rawValue: key) == nil
+                ? unknownKeyIssues("\(path).\(ConfigSchema.displayText(key))").first : nil
+        }
+        let typedKind = fields["factor"].map(typedText) ?? ""
+        guard let kind = SecurityControlPolicy.factorKind(typed: typedKind) else {
+            let known = SecurityScoreFactor.Kind.allCases.map(\.rawValue).joined(separator: ", ")
+            issues.append(SecurityPolicyIssue(
+                keyPath: path, value: displayText(typedKind),
+                used: "skipped: factor is one of \(known)"))
+            return (issues, nil)
+        }
+        guard let weightNode = fields["weight"], case .scalar = weightNode,
+              SecurityControlPolicy.scoreWeight(typed: typedText(weightNode)) != nil else {
+            issues.append(SecurityPolicyIssue(
+                keyPath: path, value: displayText(fields["weight"].map(typedText) ?? ""),
+                used: "skipped: weight is a number from 0 to 100"))
+            return (issues, nil)
+        }
+        let name = kind == .agent ? fields["agent"] : kind == .mscp ? fields["baseline"] : nil
+        let target = name.flatMap { $0.stringValue }?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if kind == .agent, target?.isEmpty != false {
+            issues.append(SecurityPolicyIssue(
+                keyPath: path, value: displayText(typedKind),
+                used: "skipped: an agent entry needs the agent's name under agent"))
+            return (issues, nil)
+        }
+        issues += graceIssues(path, kind: kind, fields["grace_days"])
+        let key = SecurityScoreFactor(kind, weight: 1, target: target).key
+        return (issues, key)
+    }
+
+    private static func graceIssues(
+        _ path: String, kind: SecurityScoreFactor.Kind, _ node: YAMLCodec.YAMLValue?
+    ) -> [SecurityPolicyIssue] {
+        guard let node else { return [] }
+        guard let days = kind.defaultGraceDays else {
+            return [SecurityPolicyIssue(
+                keyPath: "\(path).grace_days", value: displayText(typedText(node)),
+                used: "not read: \(kind.rawValue) has no grace period")]
+        }
+        let typed = Int(typedText(node).trimmingCharacters(in: .whitespaces))
+        if case .scalar = node, let typed, SecurityControlPolicy.graceDays(typed) != nil {
+            return []
+        }
+        return [SecurityPolicyIssue(
+            keyPath: "\(path).grace_days", value: displayText(typedText(node)),
+            used: "\(days) days, since grace_days is a whole number from 0 to 365")]
     }
 
     /// A value the decoder did not keep (not text, or empty) is an issue at its control's key
@@ -268,8 +339,9 @@ enum SecurityPolicyConfigWriter {
         case level(SecurityControlLevel, for: SecurityControl)
         /// Nil removes the key, so FileVault's own level applies.
         case hardwareLevel(SecurityControlLevel?)
-        /// Nil removes the block, so the default weights apply.
-        case scoreWeights(SecurityScoreWeights?)
+        /// The whole list, as the Scoring tab edits it; nil removes the key, so the default
+        /// factors apply.
+        case scoreFactors([SecurityScoreFactor]?)
         /// The agent counted as EDR; nil removes the key, so the first agent counts.
         case edrAgent(String?)
     }
@@ -287,7 +359,7 @@ enum SecurityPolicyConfigWriter {
     private static let blockKey = "security_policy"
     private static let controlsKey = "controls"
     private static let hardwareKey = "filevault_off_hardware_encrypted"
-    private static let weightsKey = "score_weights"
+    private static let factorsKey = "score_factors"
     private static let edrAgentKey = "edr_agent"
 
     @discardableResult
@@ -316,8 +388,14 @@ enum SecurityPolicyConfigWriter {
             } else {
                 block.entries.removeAll { $0.key == hardwareKey }
             }
-        case .scoreWeights(let weights):
-            applyWeights(weights, to: &block)
+        case .scoreFactors(let factors):
+            guard let factors else {
+                block.entries.removeAll { $0.key == factorsKey }
+                return
+            }
+            let existing = lastValue(of: factorsKey, in: block)?.sequence ?? []
+            assign(.sequence(factors.map { entry($0, keeping: existing) }),
+                   to: factorsKey, in: &block)
         case .edrAgent(let name):
             if let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
                 assign(.scalar(.string(name)), to: edrAgentKey, in: &block)
@@ -327,32 +405,41 @@ enum SecurityPolicyConfigWriter {
         }
     }
 
-    /// Writes the whole set when the file has no weights block, else only the weights the
-    /// file does not already yield. Keys the app does not read stay.
-    private static func applyWeights(
-        _ weights: SecurityScoreWeights?, to block: inout YAMLCodec.YAMLMapping
-    ) {
-        guard let weights else {
-            block.entries.removeAll { $0.key == weightsKey }
-            return
+    /// One `score_factors` entry: `factor` and `weight`, then the name or grace period the kind
+    /// takes. The file's last entry for the same factor keeps its other keys and their order, so
+    /// a key typed by hand survives a save. A whole weight is written as a number, a fractional
+    /// one as text, which the decoder reads back.
+    static func entry(
+        _ factor: SecurityScoreFactor, keeping existing: [YAMLCodec.YAMLValue] = []
+    ) -> YAMLCodec.YAMLValue {
+        var entry = existing.compactMap(\.mapping).last { typedKey($0) == factor.key }
+            ?? .init(entries: [])
+        let weight = min(max(factor.weight, 0), 100)
+        assign(.scalar(.string(factor.kind.rawValue)), to: "factor", in: &entry)
+        assign(weight == weight.rounded()
+               ? .scalar(.int(Int(weight))) : .scalar(.string(String(format: "%g", weight))),
+               to: "weight", in: &entry)
+        let targetKey = factor.kind == .agent ? "agent" : "baseline"
+        if let target = factor.target {
+            assign(.scalar(.string(target)), to: targetKey, in: &entry)
+        } else if factor.kind.takesTarget {
+            entry.entries.removeAll { $0.key == targetKey }
         }
-        let whole = weights.rounded()
-        let existing = lastValue(of: weightsKey, in: block)?.mapping
-        var mapping = existing ?? .init(entries: [])
-        for slot in SecurityScoreWeights.configSlots {
-            // The decoder reads an absent or unreadable weight as its default.
-            let typed = typedWeight(lastValue(of: slot.key, in: mapping))
-                ?? SecurityScoreWeights.defaultWeights[keyPath: slot.path]
-            if existing == nil || typed != weights[keyPath: slot.path] {
-                assign(.scalar(.int(Int(whole[keyPath: slot.path]))), to: slot.key, in: &mapping)
-            }
+        if let days = factor.graceDays {
+            assign(.scalar(.int(days)), to: "grace_days", in: &entry)
+        } else {
+            entry.entries.removeAll { $0.key == "grace_days" }
         }
-        if mapping != existing { assign(.mapping(mapping), to: weightsKey, in: &block) }
+        return .mapping(entry)
     }
 
-    private static func typedWeight(_ node: YAMLCodec.YAMLValue?) -> Double? {
-        guard let node, case .scalar = node else { return nil }
-        return SecurityControlPolicy.scoreWeight(typed: node.stringValue ?? "")
+    /// The factor a typed entry decodes as, or nil when it names none.
+    private static func typedKey(_ entry: YAMLCodec.YAMLMapping) -> String? {
+        guard let kind = entry.value(for: "factor")?.stringValue
+            .flatMap(SecurityControlPolicy.factorKind(typed:)) else { return nil }
+        let name = kind == .agent ? entry.value(for: "agent")
+            : kind == .mscp ? entry.value(for: "baseline") : nil
+        return SecurityScoreFactor(kind, weight: 1, target: name?.stringValue).key
     }
 
     /// What the decoder sees for a repeated key: the last entry.

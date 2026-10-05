@@ -200,14 +200,15 @@ final class ExecutiveSummarySheetTests: XCTestCase {
     }
 
     /// Fixture `security.json` (the dummy tenant's `pro report security`): 101 Macs, FileVault
-    /// 100, SIP 1, Firewall 0, Gatekeeper 100; SIP is NOT_COLLECTED on 100 rows. Score = mean
-    /// of 99.0, 100 (the one Mac that reported SIP) and 0.0 percent.
+    /// 100, SIP 1, Firewall 0, Gatekeeper 100; SIP is NOT_COLLECTED on 100 rows. Shares 99.0,
+    /// 100 (the one Mac that reported SIP), 0.0 and 99.0 at 15, 10, 10 and 5:
+    /// (1485.1 + 1000 + 0 + 495.0) / 40 = 74.5.
     func testExecutiveMetricsOnTheSecurityFixtureCountOnlyMeasuredMacs() throws {
         let dataDir = try tempDataDir(copying: ["security"])
         let m = try metrics(dataDir: dataDir)
         XCTAssertEqual(m.totalDevices, 101)
-        XCTAssertEqual(try XCTUnwrap(m.securityScore), 66.3, accuracy: 0.001)
-        XCTAssertEqual(m.securityGrade, .d)
+        XCTAssertEqual(try XCTUnwrap(m.securityScore), 74.5, accuracy: 0.001)
+        XCTAssertEqual(m.securityGrade, .c)
         XCTAssertEqual(m.actionItemsP1, 1)
         XCTAssertEqual(m.p0NotReported, 100)
         XCTAssertEqual(m.p1NotReported, 0)
@@ -226,14 +227,15 @@ final class ExecutiveSummarySheetTests: XCTestCase {
         let dataDir = try tempDataDir(copying: ["security"])
         let sip = try metrics("security_policy:\n  controls:\n    sip: warning\n", dataDir: dataDir)
         XCTAssertEqual(sip.actionItemsP0, 1 + 101, "FileVault and Firewall only")
-        // (99.01 + 100 + 0) / 3
-        XCTAssertEqual(try XCTUnwrap(sip.securityScore), 66.3, accuracy: 0.001)
+        // SIP at warning scores as compliant: (99.01 x 15 + 100 x 10 + 0 x 10 + 99.01 x 5) / 40
+        XCTAssertEqual(try XCTUnwrap(sip.securityScore), 74.5, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(sip.sipPct), 1.0, accuracy: 0.05, "coverage stays a fact")
 
         let firewall = try metrics(
             "security_policy:\n  controls:\n    firewall: ignore\n", dataDir: dataDir)
         XCTAssertEqual(firewall.actionItemsP0, 1, "SIP's 100 Macs did not report")
-        XCTAssertEqual(try XCTUnwrap(firewall.securityScore), 99.5, accuracy: 0.001)
+        // Firewall is not scored: (99.01 x 15 + 100 x 10 + 99.01 x 5) / 30
+        XCTAssertEqual(try XCTUnwrap(firewall.securityScore), 99.3, accuracy: 0.001)
 
         let gatekeeper = try metrics(
             "security_policy:\n  controls:\n    gatekeeper: ignore\n", dataDir: dataDir)
@@ -308,7 +310,9 @@ final class ExecutiveSummarySheetTests: XCTestCase {
         let none = try metrics(dataDir: dataDir)
         XCTAssertEqual(none.actionItemsP0, 3)
         XCTAssertEqual(none.fileVaultOffHardwareEncrypted, 0)
-        XCTAssertEqual(try XCTUnwrap(none.securityScore), 90.0, accuracy: 0.001)
+        // FileVault 7 of 10, the rest 10 of 10: (70 x 15 + 100 x 10 + 100 x 10 + 100 x 5) / 40
+        // = 3550 / 40 = 88.75, to a tenth.
+        XCTAssertEqual(try XCTUnwrap(none.securityScore), 88.8, accuracy: 0.001)
 
         let warning = try metrics(
             "security_policy:\n  filevault_off_hardware_encrypted: warning\n", dataDir: dataDir)

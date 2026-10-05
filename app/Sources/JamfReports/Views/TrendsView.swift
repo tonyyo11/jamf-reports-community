@@ -139,8 +139,17 @@ struct TrendsView: View {
         return SummaryJSONParser.dateFormatter.string(from: d)
     }
 
-    private var startVal: Double { values.first ?? 0 }
-    private var endVal: Double { values.last ?? 0 }
+    private var startVal: Double { changeValues.first ?? 0 }
+    private var endVal: Double { changeValues.last ?? 0 }
+
+    /// The values the hero's change compares: for the Security Score only the days since its
+    /// definition last changed.
+    private var changeValues: [Double] { changeSeries(for: metric, values) }
+
+    private func changeSeries(for m: TrendSeries.Metric, _ series: [Double]) -> [Double] {
+        guard m == .securityScore, !workspaceStore.demoMode else { return series }
+        return trendStore.comparableSecurityScores()
+    }
     private var delta: Double { endVal - startVal }
 
     /// Below this baseline (in the metric's own units), a relative-change
@@ -448,7 +457,7 @@ struct TrendsView: View {
         series = points(for: m).map(\.value)
         sparkValues = Self.sparklineValues(series)
 
-        let change = Self.trendChange(metric: m, series: series)
+        let change = Self.trendChange(metric: m, series: changeSeries(for: m, series))
         let verdict = change?.verdict ?? .neutral
         let isActive = metric == m
         let color = Color(hex: m.colorHex)
@@ -463,7 +472,7 @@ struct TrendsView: View {
                 Text(metricLabel(m))
                     .font(.footnote.weight(.medium))
                     .foregroundStyle(Theme.Colors.fg)
-                Text(Self.pillDeltaText(metric: m, series: series))
+                Text(Self.pillDeltaText(metric: m, series: changeSeries(for: m, series)))
                     .font(Theme.Fonts.mono(10.5, weight: .semibold))
                     .foregroundStyle(verdictColor(verdict))
                 if sparkValues.count >= 2 {

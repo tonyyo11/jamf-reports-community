@@ -23,7 +23,12 @@ final class ConfigEditedKeysTests: XCTestCase {
             ["ai", "enabled"], ["ai", "tier"], ["ai", "reasoning_level"],
             ["security_policy", "controls", "sip"], ["security_policy", "controls", "filevault"],
             ["security_policy", "filevault_off_hardware_encrypted"],
-            ["security_policy", "score_weights", "edr_agent"],
+            ["security_policy", "score_factors", "factor"],
+            ["security_policy", "score_factors", "weight"],
+            ["security_policy", "score_factors", "grace_days"],
+            ["security_policy", "score_factors", "agent"],
+            ["security_policy", "score_factors", "baseline"],
+            ["security_policy", "edr_agent"],
         ]
         for path in expected {
             XCTAssertTrue(paths.contains(path), path.joined(separator: "."))

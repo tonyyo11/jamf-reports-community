@@ -489,10 +489,11 @@ security_policy:
   # FileVault off on a Mac whose internal volume is hardware-encrypted (Apple
   # silicon, or Intel with the T2 chip). Omit to use the filevault level.
   # filevault_off_hardware_encrypted: warning
-  # The security_agents entry the Security Score counts as the EDR agent (its name, as
+  # The security_agents entry the Overview's EDR card and its trend follow (its name, as
   # written under security_agents). Omit to use the first agent. A name that matches no
-  # agent also uses the first, and Config Doctor warns. The other agents are tracked and
-  # shown (an Overview card and a Trends series each) but do not change the score.
+  # agent also uses the first, and Config Doctor warns. Every agent is tracked and shown
+  # (an Overview card and a Trends series each); the score counts them through
+  # score_factors below.
   # edr_agent: "CrowdStrike Falcon"
   # Your own words for on and off, for an extension attribute or CSV column mapped
   # to filevault, sip, firewall or gatekeeper: a list, or one string, per control.
@@ -504,16 +505,51 @@ security_policy:
   #   firewall: ["Pass", "Compliant"]
   # off_values:
   #   firewall: ["Fail", "Non-Compliant"]
-  # Security Score weights, 0-100 each. Omit for these defaults.
-  # score_weights:
-  #   filevault: 15
-  #   sip: 15
-  #   firewall: 15
-  #   edr_agent: 10
-  #   mscp: 20
-  #   xprotect: 5
-  #   cve: 15
-  #   secure_boot: 5
+  # What the Security Score counts: a list of factors, each with a weight from 0 to 100.
+  # The score is the weighted share of Macs that pass each factor; a factor with no data
+  # drops out and the rest are rescaled, so weights need not add up to 100. Omit the list
+  # for the defaults below, which also add mscp at 10 when compliance.baselines has an
+  # entry and one agent entry at 5 per security_agents entry. Listed, it is exactly what
+  # is scored. Config > Scoring edits it.
+  #   filevault, sip, firewall, gatekeeper  the control is on (security report, this policy)
+  #   secure_boot        Secure Boot at full security (Apple silicon and T2 Macs)
+  #   bootstrap_token    the bootstrap token is escrowed
+  #   os_current         macOS at least the newest release of its major version that came
+  #                      out grace_days or more ago (SOFA feed; default 30)
+  #   xprotect_current   XProtect at the newest version, or that version is younger than
+  #                      grace_days (SOFA feed; default 14)
+  #   patch_compliance   devices on the latest version of their patch title
+  #   checked_in         last contact within thresholds.stale_device_days
+  #   mscp               a compliance.baselines entry passes (baseline: its name; default
+  #                      the first)
+  #   agent              a security_agents entry reports connected (agent: its name)
+  # score_factors:
+  #   - factor: filevault
+  #     weight: 15
+  #   - factor: sip
+  #     weight: 10
+  #   - factor: firewall
+  #     weight: 10
+  #   - factor: gatekeeper
+  #     weight: 5
+  #   - factor: secure_boot
+  #     weight: 5
+  #   - factor: bootstrap_token
+  #     weight: 5
+  #   - factor: os_current
+  #     weight: 15
+  #     grace_days: 30
+  #   - factor: xprotect_current
+  #     weight: 5
+  #   - factor: patch_compliance
+  #     weight: 10
+  #   - factor: checked_in
+  #     weight: 5
+  #   - factor: mscp
+  #     weight: 10
+  #   - factor: agent
+  #     agent: "CrowdStrike Falcon"
+  #     weight: 5
 
 # =============================================================================
 # SNAPSHOT RETENTION (admin-controlled; OFF by default)

@@ -760,7 +760,13 @@ final class HtmlReportLayoutTests: XCTestCase {
         XCTAssertTrue(text.contains("Patch status (patch-status)"))
         XCTAssertTrue(text.contains("Daily summaries (snapshots/summaries)"))
         XCTAssertTrue(text.contains("no check-in for 45 days or more"))
-        XCTAssertTrue(text.contains("Weights: FileVault 15, SIP 15, Firewall 0"))
+        // Firewall is not counted, so it is not a factor; the check-in label names the window.
+        XCTAssertTrue(text.contains(
+            "Factors and weights: FileVault 15, SIP 10, Gatekeeper 5, "
+                + "Secure Boot at full security 5, Bootstrap token escrowed 5, "), text)
+        XCTAssertTrue(text.contains("Checked in within 45 days 5"))
+        XCTAssertFalse(text.contains("Firewall 10"))
+        XCTAssertTrue(text.contains("<td>Score factors</td><td>Defaults</td>"))
         XCTAssertTrue(text.contains("<td>System Integrity Protection</td><td>Warning</td>"))
         XCTAssertTrue(text.contains("<td>Firewall</td><td>Not counted</td>"))
         XCTAssertTrue(text.contains(

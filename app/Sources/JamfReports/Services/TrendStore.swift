@@ -367,12 +367,32 @@ struct TrendPoint: Identifiable, Sendable, Equatable {
         guard let index = scored.indices.dropFirst().last(where: {
             scored[$0].securityScoreBasis != scored[$0 - 1].securityScoreBasis
         }), let basis = scored[index].securityScoreBasis else { return nil }
-        let counted = SecurityScoreInputs.metrics(inBasis: basis)
-            .map { $0.displayLabel(edrAgentName: edrAgentName) }
+        let counted = SecurityScoreFactor.labels(inBasis: basis, edrAgentName: edrAgentName)
             .joined(separator: ", ")
         return "The security score changed definition on \(scored[index].date): it now weighs "
             + "\(counted). Earlier days keep the score they were recorded with, so the step "
             + "there is the definition, not the fleet."
+    }
+
+    /// The Security Score's values in range since its definition last changed, so a change
+    /// over the range compares days scored the same way.
+    func comparableSecurityScores() -> [Double] {
+        Self.comparableSecurityScores(in: filteredSummaries)
+    }
+
+    /// Whether the two newest scored days in range share a definition; true with fewer than
+    /// two scored days, which have no change to compare.
+    var latestSecurityScoresComparable: Bool {
+        let scored = filteredSummaries.filter { $0.securityScore != nil }.count
+        return scored < 2 || comparableSecurityScores().count >= 2
+    }
+
+    /// The newest run of scored days that share `securityScoreBasis`, oldest first.
+    nonisolated static func comparableSecurityScores(in summaries: [DailySummary]) -> [Double] {
+        let scored = summaries.filter { $0.securityScore != nil }.sorted { $0.date < $1.date }
+        guard let newest = scored.last else { return [] }
+        return scored.reversed().prefix { $0.securityScoreBasis == newest.securityScoreBasis }
+            .reversed().compactMap(\.securityScore)
     }
 
     var isEmpty: Bool {
