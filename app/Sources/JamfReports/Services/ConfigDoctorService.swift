@@ -514,7 +514,7 @@ enum ConfigDoctorService {
 
     /// Validates the `alerts:` block. Only emitted when the block is present at
     /// all (an unopted-in workspace gets no rows). Each malformed rule (unknown
-    /// metric/when, absent/non-finite/negative threshold — the same criteria as
+    /// metric/when, absent/non-finite/negative/oversized threshold — the same criteria as
     /// `AlertsConfig.resolvedRules`) gets its own error row; an enabled-but-
     /// undeliverable configuration warns; a healthy configuration confirms.
     private static func alertsRows(_ config: ReportConfig) -> [DoctorRow] {
@@ -572,8 +572,16 @@ enum ConfigDoctorService {
         guard let threshold = rule.threshold else {
             return "no threshold set"
         }
+        return thresholdFailure(threshold)
+    }
+
+    private static func thresholdFailure(_ threshold: Double) -> String? {
         guard threshold.isFinite, threshold >= 0 else {
             return "threshold \(threshold) is not a valid non-negative number"
+        }
+        guard threshold <= AlertRule.maxThreshold else {
+            return "threshold \(threshold) is above \(Int(AlertRule.maxThreshold)), "
+                + "the largest the app accepts"
         }
         return nil
     }

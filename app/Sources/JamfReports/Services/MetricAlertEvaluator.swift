@@ -199,9 +199,11 @@ enum MetricAlertEvaluator {
         metric.isPercentage ? "\(trim(value))%" : trim(value)
     }
 
-    /// Drop a trailing ".0" so whole numbers read cleanly ("90" not "90.0").
-    private static func trim(_ value: Double) -> String {
-        if value.rounded() == value { return String(Int(value)) }
+    /// Drop a trailing ".0" so whole numbers read cleanly ("90" not "90.0"). `Int(exactly:)` is
+    /// nil outside Int's range and for inf/nan, which a shared summary.json can carry, where
+    /// `Int(_:)` would trap.
+    static func trim(_ value: Double) -> String {
+        if let whole = Int(exactly: value) { return String(whole) }
         return String(format: "%.1f", value)
     }
 }

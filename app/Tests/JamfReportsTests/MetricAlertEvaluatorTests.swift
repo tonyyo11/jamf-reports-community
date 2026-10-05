@@ -463,6 +463,66 @@ final class MetricAlertEvaluatorTests: XCTestCase {
         XCTAssertEqual(resolved.first?.resolvedComparison, .below)
     }
 
+    // MARK: - Oversized thresholds and values
+
+    /// `Int(1e19)` traps, so a whole-number Double outside Int's range must format as text.
+    func testTrimDoesNotTrapOutsideIntRange() {
+        XCTAssertEqual(MetricAlertEvaluator.trim(90), "90")
+        XCTAssertEqual(MetricAlertEvaluator.trim(90.25), "90.2")
+        XCTAssertEqual(MetricAlertEvaluator.trim(1e19), "10000000000000000000.0")
+        XCTAssertEqual(MetricAlertEvaluator.trim(-1e30), "-1000000000000000019884624838656.0")
+        XCTAssertEqual(MetricAlertEvaluator.trim(.infinity), "inf")
+        XCTAssertEqual(MetricAlertEvaluator.trim(.nan), "nan")
+    }
+
+    func testHugeSummaryValueFormatsInsteadOfTrapping() {
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("filevault_pct", "above", 90)],
+            current: summary(fileVaultPct: 1e30), prior: nil
+        )
+        XCTAssertEqual(hits.count, 1)
+        XCTAssertTrue(hits.first?.message.contains("above threshold 90") ?? false)
+    }
+
+    func testHugeDropFormatsInsteadOfTrapping() {
+        let hits = MetricAlertEvaluator.evaluate(
+            rules: [rule("filevault_pct", "drops_more_than", 5)],
+            current: summary(fileVaultPct: 80), prior: summary(fileVaultPct: 1e30)
+        )
+        XCTAssertEqual(hits.count, 1)
+    }
+
+    func testThresholdAboveTheBoundIsDroppedByResolvedRules() {
+        let bound = AlertRule.maxThreshold
+        let config = AlertsConfig(enabled: true, rules: [
+            AlertRule(metric: "filevault_pct", when: "below", threshold: 1e19),
+            AlertRule(metric: "stale_count", when: "above", threshold: bound + 1),
+            AlertRule(metric: "stale_count", when: "above", threshold: bound),
+        ])
+        XCTAssertEqual(config.resolvedRules.map(\.threshold), [bound])
+    }
+
+    func testHugeThresholdInYAMLIsDroppedAndDoctorNamesIt() throws {
+        let yaml = """
+        alerts:
+          enabled: true
+          rules:
+            - metric: filevault_pct
+              when: below
+              threshold: 1e19
+        """
+        let alerts = try XCTUnwrap(ConfigLoader.loadFromString(yaml).alerts)
+        XCTAssertEqual(alerts.rules?.first?.threshold, 1e19)
+        XCTAssertTrue(alerts.resolvedRules.isEmpty)
+        let rows = ConfigDoctorService.evaluate(
+            config: try ConfigLoader.loadFromString(yaml), parseError: nil, csvHeaders: nil,
+            csvFamily: nil, eaCoverageNames: []
+        )
+        let row = try XCTUnwrap(rows.first { $0.id == "alerts.rule.0" })
+        XCTAssertEqual(row.severity, .fail)
+        XCTAssertTrue(row.detail.contains("above 1000000000"), row.detail)
+    }
+
     // MARK: - C3 skip logging (never fires, stays deterministic)
 
     func testAbsentResolvedMetricStillReturnsNoHitsDeterministically() {

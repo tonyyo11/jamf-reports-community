@@ -979,15 +979,16 @@ struct AlertsConfig: Decodable, Sendable {
     /// no metric, no operator, an unknown metric/operator, or no usable
     /// threshold — so a half-edited rule silently no-ops rather than mis-firing.
     /// A threshold must be finite (rejects a "nan"/"inf" string that parsed to a
-    /// non-finite Double) and non-negative (a negative threshold is meaningless
+    /// non-finite Double), non-negative (a negative threshold is meaningless
     /// for every operator: below/above on 0–100 metrics and drops_more_than
-    /// expects a positive drop).
+    /// expects a positive drop) and at most `AlertRule.maxThreshold`.
     var resolvedRules: [AlertRule] {
         (rules ?? []).filter { rule in
             guard let metric = rule.metric, AlertMetric(rawValue: metric) != nil,
                   let when = rule.when, AlertRule.Comparison(rawValue: when) != nil,
                   let threshold = rule.threshold,
-                  threshold.isFinite, threshold >= 0 else { return false }
+                  threshold.isFinite, threshold >= 0,
+                  threshold <= AlertRule.maxThreshold else { return false }
             return true
         }
     }
@@ -1001,6 +1002,11 @@ struct AlertRule: Decodable, Sendable, Equatable {
         case below, above
         case dropsMoreThan = "drops_more_than"
     }
+
+    /// The largest threshold a rule may carry. Percent metrics top out at 100 and the count
+    /// metrics (stale, P0, total devices) at a fleet's size, so a billion is far past any real
+    /// rule: a larger value is a typo (`1e19`), and the rule is dropped.
+    static let maxThreshold: Double = 1_000_000_000
 
     var metric: String?
     var when: String?
