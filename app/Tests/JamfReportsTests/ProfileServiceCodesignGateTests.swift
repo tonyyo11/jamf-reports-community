@@ -74,6 +74,14 @@ final class ProfileServiceCodesignGateTests: XCTestCase {
         )
     }
 
+    /// A test that injects no binary runs no jamf-cli and reads no jamf-cli config, so the
+    /// developer's real profiles and install never reach a `WorkspaceStore()` built by a test.
+    func testDiscoveryUnderTestsWithoutABinaryFindsNoProfiles() {
+        XCTAssertTrue(ProfileService.discoverJamfCLIProfiles(scheduleCounts: [:]).isEmpty)
+        XCTAssertTrue(WorkspaceStore.liveJamfCLIProfileNames().isEmpty)
+        XCTAssertNil(WorkspaceStore.liveJamfCLIInstallation())
+    }
+
     func testDiscoverJamfCLIProfilesSkipsGateForNonJamfCLIBasename() {
         // Gate is keyed on basename == "jamf-cli". An executable with
         // any other basename bypasses the gate. /bin/echo accepts the
