@@ -105,7 +105,8 @@ these interactive dashboards either — it produces a separate generated workboo
   Data source: Jamf Platform API `compliance-devices` (tier 1) and device inventory (tier
   1).
 - **Offline Outreach** — stale devices bucketed into outreach tiers (31–90 / 91–180 /
-  180+ days) with a one-click clipboard mail-merge of the affected users.
+  180+ days) by stale age (the oldest date `thresholds.stale_basis` lists, by default the
+  check-in) with a one-click clipboard mail-merge of the affected users.
   Data source: per-device last-check-in dates from device-compliance (tier 1) and device
   inventory (tier 1).
 

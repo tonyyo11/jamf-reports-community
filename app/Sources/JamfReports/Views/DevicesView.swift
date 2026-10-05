@@ -48,13 +48,14 @@ struct DevicesView: View {
     }
 
     private enum DeviceFilter: String, CaseIterable, Identifiable {
-        case all, stale, patch, security, priorityAction
+        case all, stale, contactGap, patch, security, priorityAction
         var id: String { rawValue }
 
         var label: String {
             switch self {
             case .all:            "All"
             case .stale:          "Stale"
+            case .contactGap:     "Contact gap"
             case .patch:          "Patch"
             case .security:       "Security"
             case .priorityAction: "Priority"
@@ -65,6 +66,7 @@ struct DevicesView: View {
             switch self {
             case .all:            "list.bullet"
             case .stale:          "clock.badge.exclamationmark"
+            case .contactGap:     "wifi.exclamationmark"
             case .patch:          "square.and.arrow.down.badge.clock"
             case .security:       "lock.shield"
             case .priorityAction: "exclamationmark.triangle.fill"
@@ -100,7 +102,9 @@ struct DevicesView: View {
             case .all:
                 return true
             case .stale:
-                return device.isStale(atDays: staleDays)
+                return isStale(device)
+            case .contactGap:
+                return contactGap(of: device) != nil
             case .patch:
                 return device.patchFailureCount > 0
             case .security:
@@ -306,7 +310,7 @@ struct DevicesView: View {
             range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
             prefix: "Stale",
             suffix: "d",
-            help: "Devices with no jamf-cli check-in for more than this many days are "
+            help: "Devices with no \(staleRule.basisPhrase) for more than this many days are "
                 + "flagged stale."
         )
     }
@@ -404,8 +408,8 @@ struct DevicesView: View {
         HStack(spacing: 12) {
             StatTile(label: "Devices", value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
-            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(thresholdDays: staleDays))",
-                     sub: ">\(staleDays) days since contact")
+            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(staleRule))",
+                     sub: ">\(staleDays) days since \(staleRule.basisPhrase)")
             StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
             StatTile(label: "FileVault",
@@ -496,7 +500,7 @@ struct DevicesView: View {
                     .width(
                         min: userColumnWidth.min, ideal: userColumnWidth.ideal,
                         max: userColumnWidth.max)
-                    TableColumn("Last Contact") { device in
+                    TableColumn("Last Check-in") { device in
                         HStack(spacing: 4) {
                             if isStale(device) {
                                 Image(systemName: "clock.badge.exclamationmark")
@@ -582,8 +586,10 @@ struct DevicesView: View {
                         ("Model", device.model),
                         ("macOS", device.osVersion),
                         ("Managed", device.managedState),
-                        ("Last contact", device.lastContact),
+                        ("Last check-in", device.lastContact),
                         ("Last inventory", device.lastInventory),
+                        ("Last contact", Self.contactText(device)),
+                        ("Contact gap", contactGap(of: device)?.label ?? ""),
                         ("User", userLabel(device)),
                         ("Department", device.department),
                         ("Site", device.site),
@@ -1200,8 +1206,24 @@ struct DevicesView: View {
         }
     }
 
+    /// The stale rule the screen follows: its window picker over the workspace's
+    /// `stale_basis`.
+    private var staleRule: StaleRule {
+        StaleRule(days: staleDays, basis: activeSnapshot.staleBasis)
+    }
+
     private func isStale(_ device: DeviceInventoryRecord) -> Bool {
-        device.isStale(atDays: staleDays)
+        device.isStale(staleRule)
+    }
+
+    private func contactGap(of device: DeviceInventoryRecord) -> ContactGap? {
+        device.contactGap(rule: staleRule, gapDays: activeSnapshot.contactGapDays)
+    }
+
+    /// Jamf Pro's Last Contact, which counts MDM and declarative device management, written as
+    /// the check-in and inventory dates are: an ISO 8601 timestamp.
+    nonisolated static func contactText(_ device: DeviceInventoryRecord) -> String {
+        device.contactDate.map { ISO8601DateFormatter().string(from: $0) } ?? ""
     }
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {

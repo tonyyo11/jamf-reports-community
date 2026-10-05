@@ -10,8 +10,8 @@ import Foundation
 /// - Secure Boot, bootstrap token, XProtect and macOS currency: the `computers` snapshot, the
 ///   last two against the cached macOS SOFA feed (`SOFAScoreFeed`).
 /// - Patch compliance: `patch-status`, device-weighted (`PatchStatusService`).
-/// - Checked in: `device-compliance` rows under `thresholds.stale_device_days`, the summary's
-///   stale rule.
+/// - Checked in: `device-compliance` rows under the stale rule (`StaleRule`:
+///   `thresholds.stale_device_days` and `stale_basis`), the summary's stale count.
 /// - mSCP: a `compliance.baselines` entry's pass share from `ea-results`. The four-control proxy
 ///   is never used: it is FileVault, SIP, Firewall and Gatekeeper again.
 /// - Agents: each named `security_agents` entry's coverage from `ea-results`, over the whole
@@ -24,6 +24,9 @@ enum SecurityScoreInputs {
         var sofa: SOFAScoreFeed?
         var patchRows: [PatchStatusRow]?
         var complianceRows: [DeviceComplianceRow]?
+        /// The dates of each Mac in `computers`, for a `stale_basis` that counts more than the
+        /// check-in. Nil when the basis needs none or the snapshot is missing.
+        var computerDates: ComputerDateIndex?
         var eaRows: [EAResultRow]?
 
         static let none = Sources()
@@ -72,7 +75,7 @@ enum SecurityScoreInputs {
     /// applies no cache-age gate, as with every report sheet
     /// (`ReportEngine.loadLatestSnapshotData`). Off the main actor.
     nonisolated static func load(
-        dataDir: URL, factors: [SecurityScoreFactor]
+        dataDir: URL, factors: [SecurityScoreFactor], staleRule: StaleRule = StaleRule(days: 30)
     ) -> Sources {
         let kinds = Set(factors.map(\.kind))
         func newest(_ kind: String) -> Data? {
@@ -93,6 +96,9 @@ enum SecurityScoreInputs {
         if kinds.contains(.checkedIn) {
             sources.complianceRows = newest("device-compliance").flatMap {
                 try? JSONDecoder().decode([DeviceComplianceRow].self, from: $0)
+            }
+            if staleRule.needsComputers {
+                sources.computerDates = newest("computers").flatMap(ComputerDateIndex.init)
             }
         }
         if !kinds.isDisjoint(with: [.mscp, .agent]) {
@@ -146,10 +152,11 @@ enum SecurityScoreInputs {
                 SecurityScoreMeasure(passing: $0.onLatest, evaluated: $0.devices)
             }
         case .checkedIn:
-            let staleDays = config?.thresholds?.resolvedStaleDays ?? 30
+            let rule = config?.staleRule ?? StaleRule(days: 30)
             return judged(sources.complianceRows) { row in
-                row.resolvedDaysSinceContact == nil && row.stale == nil
-                    ? nil : !row.isStale(atDays: staleDays)
+                let inputs = row.staleInputs(rule, computers: sources.computerDates)
+                if rule.age(of: inputs, now: now) == nil && row.stale == nil { return nil }
+                return !rule.isStale(inputs, now: now)
             }
         case .mscp:
             return mscpMeasure(factor, rows: sources.eaRows, config: config)

@@ -746,21 +746,33 @@ struct ReportEngine: Sendable {
             mobileDeviceCount = MobileFleetService.deviceCount(fromMobileDevicesListData: mobileData)
         }
 
-        // Stale count from device-compliance, using the row's resolved day count
-        // (`days_since_contact`, falling back to legacy `days_since_checkin`):
-        // more than `resolvedStaleDays` days, the config threshold (default 30).
-        // Current jamf-cli emits `days_since_contact` (a String), not the legacy
-        // `days_since_checkin`, so the old checkin-only filter always read nil and
-        // reported 0 stale. When no day count is emitted at all, `isStale` falls
-        // back to the server-side `stale` flag.
-        let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
+        // Stale count from device-compliance under the stale rule (`StaleRule`): the row's
+        // resolved day count (`days_since_contact`, falling back to legacy `days_since_checkin`)
+        // is the check-in age, more than `stale_device_days` days is stale. Current jamf-cli
+        // emits `days_since_contact` (a String), not the legacy `days_since_checkin`, so the
+        // old checkin-only filter always read nil and reported 0 stale. When no date is known
+        // `isStale` falls back to the server-side `stale` flag. A `stale_basis` that counts
+        // the inventory or contact date reads them from the `computers` snapshot.
+        let staleRule = config.staleRule
         // nil (not 0) when device-compliance was never collected — unknown is
         // not zero, and a 0 here renders as a measured "0 stale devices".
         var staleCount: Int? = nil
         var complianceRows: [DeviceComplianceRow]? = nil
+        var computerDates: ComputerDateIndex? = nil
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
-            staleCount = rows.filter { $0.isStale(atDays: staleDaysThreshold) }.count
+            if staleRule.needsComputers {
+                computerDates = cachedData(kind: "computers").flatMap(ComputerDateIndex.init)
+                if computerDates == nil {
+                    AppLogger.collect.notice("""
+                        stale_basis counts the inventory or contact date but no computers \
+                        snapshot is available, so the stale count uses the check-in alone
+                        """)
+                }
+            }
+            staleCount = rows.filter {
+                $0.isStale(staleRule, computers: computerDates)
+            }.count
             complianceRows = rows
         }
 
@@ -883,7 +895,8 @@ struct ReportEngine: Sendable {
         let scoreFactors = config.resolvedScoreFactors
         let scoreSources = Self.scoreSources(
             dataDir: dataDir, computers: cachedData(kind: "computers"),
-            patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows)
+            patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows,
+            computerDates: computerDates)
         let score = SecurityScoreCalculator.score(
             factors: scoreFactors,
             measures: SecurityScoreInputs.measures(
@@ -952,10 +965,11 @@ struct ReportEngine: Sendable {
     private static func scoreSources(
         dataDir: URL, computers: Data?,
         patchRows: [PatchStatusRow]?, complianceRows: [DeviceComplianceRow]?,
-        eaRows: [EAResultRow]?
+        eaRows: [EAResultRow]?, computerDates: ComputerDateIndex?
     ) -> SecurityScoreInputs.Sources {
         var sources = SecurityScoreInputs.Sources(
-            patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows)
+            patchRows: patchRows, complianceRows: complianceRows, computerDates: computerDates,
+            eaRows: eaRows)
         sources.computers = computers.flatMap(ComputerScoreFacts.decodeSnapshot)
         sources.sofa = SOFAScoreFeed.load(dataDir: dataDir)
         return sources

@@ -122,17 +122,20 @@ final class DeviceInventoryStaleThresholdTests: XCTestCase {
         merged.daysSinceContact = 2
         merged.stale = true
         XCTAssertFalse(
-            DeviceInventoryService.restatingStale(merged, thresholdDays: 30).stale)
+            DeviceInventoryService.restatingStale(merged, rule: StaleRule(days: 30)).stale)
 
         merged.daysSinceContact = 30
-        XCTAssertFalse(DeviceInventoryService.restatingStale(merged, thresholdDays: 30).stale)
+        XCTAssertFalse(
+            DeviceInventoryService.restatingStale(merged, rule: StaleRule(days: 30)).stale)
         merged.daysSinceContact = 31
         merged.stale = false
-        XCTAssertTrue(DeviceInventoryService.restatingStale(merged, thresholdDays: 30).stale)
+        XCTAssertTrue(
+            DeviceInventoryService.restatingStale(merged, rule: StaleRule(days: 30)).stale)
 
         var undated = DeviceInventoryRecord.empty(id: "u", source: "device-compliance")
         undated.stale = true
-        XCTAssertTrue(DeviceInventoryService.restatingStale(undated, thresholdDays: 30).stale,
+        XCTAssertTrue(
+            DeviceInventoryService.restatingStale(undated, rule: StaleRule(days: 30)).stale,
                       "no day count: the sources' flag stands")
     }
 

@@ -1157,8 +1157,7 @@ struct OverviewView: View {
             guard lastValue != nil else { return "Not reported by this profile" }
             var parts: [String] = []
             if metric == .activeDevices {
-                let days = Int(workspace.configState.staleDeviceDays) ?? 30
-                parts.append("Checked in within \(days)d")
+                parts.append(workspace.configState.staleRule.checkedInLabel(shortUnit: true))
             }
             if values.count >= 2, let comparisonDate {
                 parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
@@ -1801,8 +1800,10 @@ struct OverviewView: View {
                 staleMeasured: latest?.staleCount != nil
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
-            "Excludes devices stale beyond \(Int(workspace.configState.staleDeviceDays) ?? 30)d. " +
-            "Open Devices to inspect records contributing to this count."
+            "Excludes devices stale beyond \(workspace.configState.staleRule.days)d"
+            + (workspace.configState.staleRule.usesDefaultBasis
+                ? "" : " (\(workspace.configState.staleRule.basisPhrase))")
+            + ". Open Devices to inspect records contributing to this count."
         case .compliance:
             latest?.complianceIsProxy == true
                 ? "Control-gap proxy (FileVault/SIP/Firewall/Gatekeeper). Configure a Compliance EA for true mSCP banding."

@@ -63,9 +63,10 @@ extension HtmlReport {
     /// What every figure in the report means, written from the settings in force.
     private func definitionList(_ inputs: Inputs, glance: Glance?) -> String {
         let f = HtmlSectionFormatters.self
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        let rule = config.staleRule
         let factorText = config.resolvedScoreFactors.map {
-            "\($0.label(staleDays: staleDays)) \(SecurityScoreFactor.weightText($0.weight))"
+            "\($0.label(staleDays: rule.days, staleBasis: rule.basis)) "
+                + SecurityScoreFactor.weightText($0.weight)
         }.joined(separator: ", ")
         let compliance: String
         switch inputs.summaries.last?.complianceIsProxy {
@@ -83,9 +84,9 @@ extension HtmlReport {
                 + "seven days earlier. A figure measured differently then and now shows no change."
         } ?? "There is no earlier daily summary to compare with."
         let entries: [(String, String)] = [
-            ("Stale", "A Mac with no check-in for more than \(staleDays) days "
-                + "(thresholds.stale_device_days). At a glance counts from the daily summary; the "
-                + "lists count from the computers snapshot."),
+            ("Stale", "A Mac with no \(rule.basisPhrase) for more than \(rule.days) days "
+                + "(thresholds.stale_device_days and stale_basis). At a glance counts from the "
+                + "daily summary; the lists count from the computers snapshot."),
             ("P0 security gap", "A Mac measured off for FileVault, SIP or Firewall at the Fail "
                 + "level, counted once per control."),
             ("P1 security gap", "A Mac measured off for Gatekeeper at the Fail level."),

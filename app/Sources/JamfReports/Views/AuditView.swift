@@ -9,6 +9,9 @@ struct AuditFinding: Identifiable, Codable {
     let category: String
     let recommendation: String
     let severity: String
+    /// The Macs behind the finding, for a finding the app computes from the inventory
+    /// (`contactGapFindings`). `pro audit` returns counts only, so its findings have none.
+    var devices: [String] = []
 
     var driftKey: String {
         [
@@ -90,6 +93,7 @@ struct AuditView: View {
     @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
     @State private var commandFindings: [AuditFinding] = []
+    @State private var contactGapList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
@@ -482,6 +486,7 @@ struct AuditView: View {
             }
             duplicateSerialsSection
             commandHealthSection
+            ContactGapSection(findings: contactGapList)
         }
     }
 
@@ -1017,6 +1022,7 @@ struct AuditView: View {
             duplicateSerials = DemoData.duplicateSerialsSnapshot
             commandHealth = .empty
             commandFindings = []
+            contactGapList = []
             return
         }
 
@@ -1066,6 +1072,11 @@ struct AuditView: View {
 
         commandFindings = commandHealthFindings(
             commandHealth, failedCommandTotal: failedCommandTotal)
+        let profile = workspace.profile
+        let inventory = await Task.detached(priority: .userInitiated) {
+            DeviceInventoryService.load(profile: profile, demoMode: false)
+        }.value
+        contactGapList = contactGapFindings(inventory)
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
             profile: workspace.profile,
@@ -1265,7 +1276,7 @@ private struct AffectedBar: View {
     }
 }
 
-private struct FindingDetailPopover: View {
+struct FindingDetailPopover: View {
     let finding: AuditFinding
     let tone: Pill.Tone
     @Environment(\.dismiss) private var dismiss
@@ -1296,6 +1307,8 @@ private struct FindingDetailPopover: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
+
+            if !finding.devices.isEmpty { deviceList }
 
             // `pro audit` returns counts, not device lists — "take action"
             // means routing to the screen that holds the underlying records.
@@ -1336,6 +1349,25 @@ private struct FindingDetailPopover: View {
         .padding(16)
         .frame(width: 360)
         .background(Theme.Colors.winBG)
+    }
+
+    /// The Macs of a finding the app computed itself, in a scroll area so a long list does
+    /// not stretch the popover.
+    private var deviceList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Kicker(text: "Macs (\(finding.devices.count))")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(finding.devices, id: \.self) { device in
+                        Text(device)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 140)
+        }
     }
 }
 
@@ -1580,6 +1612,7 @@ func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: T
     if name.contains("mdm command") { return ("Devices", .devices) }
     switch finding.category.lowercased() {
     case "security": return ("Security Posture", .securityPosture)
+    case "contact gap": return ("Devices", .devices)
     case "compliance": return ("Compliance Posture", .compliancePosture)
     case "hygiene": return ("Policies & Profiles", .policyProfile)
     default: return nil

@@ -178,12 +178,15 @@ struct SecurityPostureView: View {
                              tone: pillTone(for: score.grade))
                     }
                     if !score.parts.isEmpty {
-                        ScoreBreakdownList(score: score, staleDays: snapshot.staleDays)
+                        ScoreBreakdownList(
+                            score: score, staleDays: snapshot.staleDays,
+                            staleBasis: snapshot.staleBasis)
                     }
                     // The demo cannot collect, so it never tells its viewer to.
                     if !score.missing.isEmpty && !workspace.demoMode {
                         Text(Self.missingText(
-                            score, fleet: snapshot.fleetCounts, staleDays: snapshot.staleDays))
+                            score, fleet: snapshot.fleetCounts, staleDays: snapshot.staleDays,
+                            staleBasis: snapshot.staleBasis))
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -196,13 +199,14 @@ struct SecurityPostureView: View {
     /// The hero card's line for metrics the ring does not score. FileVault, when the report
     /// carries it but the hardware rule left no Mac to score it over, gets its own reason.
     static func missingText(
-        _ score: SecurityScore, fleet: SecurityFleetCounts, staleDays: Int? = nil
+        _ score: SecurityScore, fleet: SecurityFleetCounts, staleDays: Int? = nil,
+        staleBasis: [StaleBasis] = StaleBasis.default
     ) -> String {
         let fileVaultNotCounted = score.missing.contains { $0.kind == .fileVault }
             && fleet.controls[.fileVault] != nil
         let names = score.missing
             .filter { !(fileVaultNotCounted && $0.kind == .fileVault) }
-            .map { $0.label(staleDays: staleDays) }
+            .map { $0.label(staleDays: staleDays, staleBasis: staleBasis) }
             .joined(separator: ", ")
         var sentences: [String] = []
         // A factor has no data when its snapshot was not collected, or when it judged no Mac
@@ -529,6 +533,7 @@ private struct SecurityPostureOSDonutExport: View {
 struct ScoreBreakdownList: View {
     let score: SecurityScore
     let staleDays: Int?
+    var staleBasis: [StaleBasis] = StaleBasis.default
 
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -536,7 +541,7 @@ struct ScoreBreakdownList: View {
         Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
             ForEach(score.parts, id: \.factor.key) { part in
                 GridRow {
-                    Text(part.factor.label(staleDays: staleDays))
+                    Text(part.factor.label(staleDays: staleDays, staleBasis: staleBasis))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(Self.percent(part.share))

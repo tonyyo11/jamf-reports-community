@@ -262,7 +262,8 @@ Platform API.*
 ### Recon
 The `jamf recon` command devices run (manually or on a schedule) to push
 their current inventory to Jamf Pro. EA scripts execute during recon. A
-device that hasn't reconned in N days is *stale*. *see also: stale device.*
+device that hasn't reconned in N days can be *stale* when `inventory` is in `thresholds.stale_basis`.
+*see also: stale device.*
 
 ### Scope level (Platform API)
 The level a Jamf Account integration is created at, which its credential is
@@ -379,6 +380,12 @@ removed in 2.3.0. *see also: Refresh tier, Inventory tier, Scan tier.*
 `config.yaml.bak-<date-time>`: the copy the app makes beside config.yaml before
 onboarding, `jamf-reports scaffold --out` or a Config screen save drops comments
 or unreadable lines from it. The newest five are kept.
+
+### Contact gap
+A Mac whose Last Contact (any contact, MDM included) is current while its Last Check-in, or its
+Last Inventory Update, is more than `thresholds.contact_gap_days` (default 14) behind it: MDM
+reaches the Mac and the Jamf binary does not, or does not for inventory. Measured from Last
+Contact, not from today. *see also: stale device.*
 
 ### Custom EA
 A `custom_eas:` config entry that drives a dedicated sheet in generated
@@ -544,11 +551,15 @@ and inverse stale-device pressure. Distinct from Risk and Security scores;
 it's a quick "is the fleet trending up or down" pulse. Appears in Trends.
 
 ### Stale device
-A device whose last check-in (recon) was more than the configured stale
-threshold ago (`thresholds.stale_device_days` in `config.yaml`, default 30). A
-device at exactly the threshold is not stale.
-Outreach dashboard tiers further bucket into Recent (0–30d) / Offline
-(31–90d) / Inactive (91–180d) / Dormant (180d+). *see also: recon.*
+A device with a date older than the configured stale threshold
+(`thresholds.stale_device_days` in `config.yaml`, default 30). Which dates count is
+`thresholds.stale_basis`: `check_in` (Last Check-in), `inventory` (Last Inventory Update) and
+`contact` (Last Contact), default `[check_in]`. The device is stale when any listed date is more
+than the threshold old, in whole days; a device at exactly the threshold is not stale. A date a
+device has never had counts as older than any number of days, except Last Contact, which is
+ignored when missing.
+Outreach dashboard tiers further bucket by that stale age into Recent (0–30d) / Offline
+(31–90d) / Inactive (91–180d) / Dormant (180d+). *see also: contact gap, recon.*
 
 ### Stand-down
 A scheduled collect declining to run because another Mac collected the same

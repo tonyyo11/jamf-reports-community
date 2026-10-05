@@ -78,7 +78,57 @@ file changed on disk after the screen loaded it. See
   names no tab of the workbook is ignored with a warning. An empty `only: []` means no
   restriction. Period and fleet workbooks do not read these.
 - **`thresholds`**, **`output`**, **`charts`** — stale-device window, disk-usage bands,
-  output retention, chart toggles.
+  output retention, chart toggles. See **Stale Macs and the contact gap** below for the
+  stale rule.
+
+### Stale Macs and the contact gap (`thresholds`)
+
+Jamf Pro keeps three dates for a Mac, and each moves for a different reason:
+
+| Date | `stale_basis` word | What moves it |
+|---|---|---|
+| Last Check-in | `check_in` | the Jamf binary checking in |
+| Last Inventory Update | `inventory` | the Jamf binary submitting inventory (recon) |
+| Last Contact (Jamf Pro 11.30 and later) | `contact` | any contact: the Jamf binary, MDM or declarative device management |
+
+```yaml
+thresholds:
+  stale_device_days: 30
+  stale_basis: [check_in, inventory]   # optional; default [check_in]
+  contact_gap_days: 14                 # optional; default 14
+```
+
+A Mac's **stale age** is the largest age, in whole days, among the listed dates it has. It is
+stale when that age is more than `stale_device_days`, so a Mac at exactly the threshold is not.
+`[check_in, inventory]` therefore means "not checking in or not inventorying beyond 30 days".
+A single word reads as a one-item list; a word the app does not know is skipped and named by
+Config Doctor, and a list with none uses `[check_in]`. Config › Thresholds has a switch for each
+date (at least one stays on).
+
+- A Mac with no check-in or inventory date, in a source that dates every Mac (the `computers`
+  snapshot), has never had it and counts as stale. A Mac with no Last Contact is not judged by
+  it, and a Mac with none of the listed dates falls back to jamf-cli's own `stale` flag.
+- device-compliance rows carry only the check-in day count, so with `inventory` or `contact`
+  listed the app reads those dates from the `computers` snapshot, matched by Jamf ID and then
+  serial. Without a snapshot, only the check-in counts, and the run log says so.
+- A CSV has the inventory date only when its "Last Inventory Update" column is mapped as
+  `columns.last_inventory`. Without it, `inventory` does not apply to CSV rows, and Config Doctor
+  says so.
+- The one rule counts the daily summary's stale figure, the Overview, Devices, Offline Outreach
+  (its tiers bucket by stale age), the workbook (Active Devices, Compliance Posture, Device
+  Compliance, Check-in Health, Patch Summary Dashboard, Executive Summary), the CSV sheets, the HTML
+  report and the Security Score's `checked_in` factor, whose name says which dates it counts. The
+  Health Audit's own stale finding stays jamf-cli's. Mobile devices are not covered.
+
+**Contact gap.** A Mac whose Last Contact is current (no more than `stale_device_days` old) while
+its Last Check-in is more than `contact_gap_days` before that Last Contact is one MDM reaches and
+the Jamf binary does not: broken, removed or blocked. Likewise a Mac whose check-in keeps up but
+whose Last Inventory Update lags it. The lag is measured from Last Contact, not from today, and a
+Mac silent on every channel is stale, not a gap. A Mac with no Last Contact is left out. The Health
+Audit lists both kinds with their Macs and a recommendation, Devices has a **Contact gap** filter
+and shows the three dates in the detail panel, the Check-in Health sheet lists the Macs with all
+three dates, and the HTML report names both under Needs attention. The daily summary records no
+contact-gap count, so there is no Trends series or alert key for it.
 
 ### Compliance baselines (`compliance`)
 
@@ -177,7 +227,7 @@ rest are rescaled.
 | `os_current` | macOS is at least the newest release of its major version that came out `grace_days` (30) or more days ago, per the SOFA feed |
 | `xprotect_current` | XProtect is at the newest version, or that version came out less than `grace_days` (14) ago |
 | `patch_compliance` | (per device and title) the device has the title's latest version |
-| `checked_in` | it checked in within `thresholds.stale_device_days` |
+| `checked_in` | every date `thresholds.stale_basis` lists (by default the last check-in) is within `thresholds.stale_device_days` |
 | `mscp` | it passes the baseline (`baseline:` names one; default the first) |
 | `agent` | the agent (`agent:` names a `security_agents` entry) reports connected, over the whole fleet |
 
@@ -472,8 +522,9 @@ enough. From the top it has:
    "No change" when it rounds to nothing. A figure the earlier summary measured another way
    (patch compliance before 2.9, or a compliance proxy against a benchmark) says so instead
    of showing a change.
-3. **Needs attention**: one sentence for each of Macs that have not checked in for more than
-   `thresholds.stale_device_days` days, P0 gaps, patch titles under 50%, failing configuration
+3. **Needs attention**: one sentence for each of stale Macs (more than
+   `thresholds.stale_device_days` days without a date `thresholds.stale_basis` lists), Macs MDM
+   reaches whose Jamf binary or inventory lags (the contact gap), P0 gaps, patch titles under 50%, failing configuration
    profiles and apps, failed patch or update runs, and security agents not on every Mac. A
    sentence appears only while its count is above zero and links to the part of the report
    that lists it; opening a link opens the group around it.

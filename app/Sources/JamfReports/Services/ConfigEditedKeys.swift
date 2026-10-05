@@ -41,12 +41,16 @@ enum ConfigEditedKeys {
         return block
     }
 
-    /// A state that sets every key the Config screen can write: the columns it writes only
-    /// when set, and one entry of each custom EA type with all of that type's values.
+    /// A state that sets every key the Config screen can write: the columns and thresholds it
+    /// writes only when set or changed, and one entry of each custom EA type with all of that
+    /// type's values.
     private static var probeState: ConfigState {
         var state = ConfigState.defaultState
         // Written only when set, since the default is blank (the Overview's generic title).
         state.baselineLabel = "x"
+        // Written only when they differ from the default (an absent key).
+        state.staleBasis = [.checkIn, .inventory]
+        state.contactGapDays = "30"
         for key in ConfigState.optionalColumnKeys { state.columns[key] = "x" }
         state.securityAgents = [
             ConfigSecurityAgent(name: "x", column: "x", connectedValue: "x"),

@@ -383,7 +383,7 @@ final class HtmlSectionTests: XCTestCase {
             ["name": "Mac-at-30", "serial_number": "S30", "last_check_in": stamp(daysAgo: 30)],
             ["name": "Mac-at-31", "serial_number": "S31", "last_check_in": stamp(daysAgo: 31)],
         ]
-        XCTAssertEqual(report.staleComputers(inventory).map(\.days), [31])
+        XCTAssertEqual(report.staleComputers(inventory).map(\.age), [.days(31)])
         let html = report.buildInterventionList(computersInventory: inventory).html
         XCTAssertTrue(html.contains("Mac-at-31"))
         XCTAssertFalse(html.contains("Mac-at-30"))

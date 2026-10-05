@@ -51,8 +51,10 @@ extension HtmlReport {
 
         /// Macs in the fleet: the security summary's count, else the overview's.
         var totalDevices: Int = 0
-        /// Macs in `computers` with no check-in for more than `thresholds.stale_device_days`.
+        /// Macs in `computers` that are stale under the stale rule.
         var staleMacCount: Int = 0
+        /// Macs in `computers` that MDM reaches while their check-in or inventory lags.
+        var contactGapCounts: [ContactGap: Int] = [:]
         /// P0 gaps as the newest daily summary counts them, else from the security snapshot.
         /// One figure for the tile, the attention list and the group headline, so a summary
         /// written by an older build cannot make the top of the report disagree with itself.
@@ -110,6 +112,7 @@ extension HtmlReport {
         inputs.totalDevices = asInt(secData["total_devices"])
             ?? overviewDeviceCount(inputs.overview)
         inputs.staleMacCount = staleComputers(inputs.computers).count
+        inputs.contactGapCounts = contactGapCounts(inputs.computers)
         inputs.fleet = securityFleet()
         if !(config.securityAgents ?? []).isEmpty,
            let url = track("Extension attribute results", "ea-results"),

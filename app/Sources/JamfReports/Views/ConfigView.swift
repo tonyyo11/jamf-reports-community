@@ -1095,9 +1095,10 @@ private struct ThresholdsTab: View {
                     thresholdField(
                         label: "Stale device threshold", key: "stale_device_days",
                         value: $ws.configState.staleDeviceDays, unit: "days",
-                        help: "A device is flagged stale when its last check-in was more than "
-                            + "this many days ago"
+                        help: "A device is flagged stale when a date counted below is more than "
+                            + "this many days old"
                     )
+                    StaleBasisControls()
                     thresholdField(
                         label: "Check-in overdue", key: "checkin_overdue_days",
                         value: $ws.configState.checkinOverdueDays, unit: "days",
