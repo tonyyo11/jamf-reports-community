@@ -12,8 +12,8 @@ struct SecurityPolicyCard: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var saveFailure: SaveFailure?
-    /// What a save did not keep (a backup was made), shown until the card goes away.
-    @State private var saveNote: String?
+    /// What a save did not keep (a backup was made), shown while its profile is live.
+    @State private var saveNote: ProfileSaveNote?
 
     /// Each failure is its own value, so a second identical failure still redraws the pickers
     /// back onto the saved policy.
@@ -58,7 +58,7 @@ struct SecurityPolicyCard: View {
                 .foregroundStyle(Theme.Colors.danger)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        if let saveNote { warnNote(saveNote) }
+        if let line = saveNote?.line(for: workspace.profile) { warnNote(line) }
     }
 
     private func controlRow(_ control: SecurityControl, issue: SecurityPolicyIssue?) -> some View {
@@ -180,24 +180,27 @@ struct SecurityPolicyCard: View {
     /// that one key.
     static func levelBinding(
         _ control: SecurityControl, in workspace: WorkspaceStore,
-        failure: Binding<SaveFailure?>, note: Binding<String?>
+        failure: Binding<SaveFailure?>, note: Binding<ProfileSaveNote?>
     ) -> Binding<SecurityControlLevel> {
         Binding(
             get: { workspace.securityPolicy.level(for: control) },
             set: { level in
-                persist(failure, note: note) {
+                persist(failure, note: note, profile: workspace.profile) {
                     try workspace.saveSecurityLevel(level, for: control)
                 }
             })
     }
 
     static func hardwareBinding(
-        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>, note: Binding<String?>
+        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>,
+        note: Binding<ProfileSaveNote?>
     ) -> Binding<SecurityControlLevel?> {
         Binding(
             get: { workspace.securityPolicy.fileVaultOffHardwareEncrypted },
             set: { level in
-                persist(failure, note: note) { try workspace.saveHardwareLevel(level) }
+                persist(failure, note: note, profile: workspace.profile) {
+                    try workspace.saveHardwareLevel(level)
+                }
             })
     }
 
@@ -205,18 +208,23 @@ struct SecurityPolicyCard: View {
     /// the file holds, so the typed value that did not read as a level goes.
     static func writeAppliedLevel(
         _ control: SecurityControl, in workspace: WorkspaceStore,
-        failure: Binding<SaveFailure?>, note: Binding<String?>
+        failure: Binding<SaveFailure?>, note: Binding<ProfileSaveNote?>
     ) {
         let level = workspace.securityPolicy.level(for: control)
-        persist(failure, note: note) { try workspace.saveSecurityLevel(level, for: control) }
+        persist(failure, note: note, profile: workspace.profile) {
+            try workspace.saveSecurityLevel(level, for: control)
+        }
     }
 
     /// Applied nil (FileVault's own level) removes the entry.
     static func writeAppliedHardwareLevel(
-        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>, note: Binding<String?>
+        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>,
+        note: Binding<ProfileSaveNote?>
     ) {
         let level = workspace.securityPolicy.fileVaultOffHardwareEncrypted
-        persist(failure, note: note) { try workspace.saveHardwareLevel(level) }
+        persist(failure, note: note, profile: workspace.profile) {
+            try workspace.saveHardwareLevel(level)
+        }
     }
 
     static func writeTitle(for level: SecurityControlLevel?) -> String {
@@ -226,13 +234,13 @@ struct SecurityPolicyCard: View {
     /// A successful write clears the failure and keeps what it did not keep as the card's note
     /// (a later write with nothing to say leaves it); a failed one becomes the card's message.
     static func persist(
-        _ failure: Binding<SaveFailure?>, note: Binding<String?>,
+        _ failure: Binding<SaveFailure?>, note: Binding<ProfileSaveNote?>, profile: String,
         _ write: () throws -> ConfigSaveReport
     ) {
         do {
             let report = try write()
             failure.wrappedValue = nil
-            if let line = report.statusLine { note.wrappedValue = line }
+            if let saved = report.note(for: profile) { note.wrappedValue = saved }
         } catch {
             failure.wrappedValue = SaveFailure(
                 message: "Couldn't save the security policy: \(error.localizedDescription)")
@@ -324,8 +332,8 @@ struct ScoringTab: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(WorkspaceStore.self) private var workspace
     @State private var saveFailure: String?
-    /// What a save did not keep (a backup was made), shown until the tab goes away.
-    @State private var saveNote: String?
+    /// What a save did not keep (a backup was made), shown while its profile is live.
+    @State private var saveNote: ProfileSaveNote?
 
     /// Demo mode shows the defaults the demo's own score uses, not this Mac's preference.
     private var displayed: (weights: SecurityScoreWeights, fromLegacyPreference: Bool) {
@@ -382,7 +390,7 @@ struct ScoringTab: View {
     /// A successful save clears the failure and keeps what it did not keep as the note.
     private func noting(_ report: ConfigSaveReport) {
         saveFailure = nil
-        if let line = report.statusLine { saveNote = line }
+        if let saved = report.note(for: workspace.profile) { saveNote = saved }
     }
 
     @ViewBuilder
@@ -392,8 +400,8 @@ struct ScoringTab: View {
                 .font(.caption)
                 .foregroundStyle(Theme.Colors.danger)
         }
-        if let saveNote {
-            Text(saveNote)
+        if let line = saveNote?.line(for: workspace.profile) {
+            Text(line)
                 .font(.caption)
                 .foregroundStyle(Theme.Colors.warn)
                 .fixedSize(horizontal: false, vertical: true)

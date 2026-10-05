@@ -38,8 +38,8 @@ struct SettingsView: View {
     // not the Config-tab managed-key surface.
     @State private var aiConfig: AIConfig = AIConfig()
     @State private var aiSaveMessage: String? = nil
-    /// What a save did not keep (a backup was made), shown until the panel reloads.
-    @State private var aiSaveNote: String?
+    /// What a save did not keep (a backup was made), shown while its profile is live.
+    @State private var aiSaveNote: ProfileSaveNote?
 
     // Workspace location (2.7.0). Held in @State so the card reflects a change
     // without waiting for the next `.task`; the store is the source of truth.
@@ -1030,7 +1030,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var aiSaveStatus: some View {
         if let aiSaveMessage { aiStatusLine(aiSaveMessage) }
-        if let aiSaveNote { aiStatusLine(aiSaveNote) }
+        if let line = aiSaveNote?.line(for: workspace.profile) { aiStatusLine(line) }
     }
 
     private func aiStatusLine(_ text: String) -> some View {
@@ -1043,9 +1043,10 @@ struct SettingsView: View {
     private func saveAIConfig() {
         guard !workspace.demoMode else { return }
         do {
-            let written = try AIConfigWriter.save(aiConfig, profile: workspace.profile)
+            let profile = workspace.profile
+            let written = try AIConfigWriter.save(aiConfig, profile: profile)
             aiSaveMessage = nil
-            if let line = written.report.statusLine { aiSaveNote = line }
+            if let saved = written.report.note(for: profile) { aiSaveNote = saved }
         } catch {
             aiSaveMessage = "Couldn't save AI settings: \(error.localizedDescription)"
         }

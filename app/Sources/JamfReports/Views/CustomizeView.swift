@@ -20,8 +20,8 @@ struct CustomizeView: View {
 
     @State private var applySaved = false
     @State private var saveError: String?
-    /// What Apply did not keep (a backup was made), shown until the options reload.
-    @State private var saveNote: String?
+    /// What Apply did not keep (a backup was made), shown while its profile is live.
+    @State private var saveNote: ProfileSaveNote?
     @State private var showGuide = false
 
     /// The smaller templates `jamf-reports generate --template` accepts; the CLI
@@ -111,7 +111,7 @@ struct CustomizeView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        if let saveNote { saveNoteLine(saveNote) }
+        if let line = saveNote?.line(for: workspace.profile) { saveNoteLine(line) }
     }
 
     private func saveNoteLine(_ note: String) -> some View {
@@ -316,7 +316,9 @@ struct CustomizeView: View {
                 let html = try HTMLReportConfigWriter.save(
                     withWorkbook: withWorkbook, profile: profile)
                 let notes = [charts.report.statusLine, html.report.statusLine].compactMap { $0 }
-                if !notes.isEmpty { saveNote = notes.joined(separator: " ") }
+                if !notes.isEmpty {
+                    saveNote = ProfileSaveNote(profile: profile, line: notes.joined(separator: " "))
+                }
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false

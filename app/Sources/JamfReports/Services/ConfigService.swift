@@ -218,6 +218,21 @@ struct ConfigSaveReport: Equatable, Sendable {
 
     /// The notes as the one status line a scoped-write card shows; nil when there are none.
     var statusLine: String? { notes.isEmpty ? nil : notes.joined(separator: " ") }
+
+    /// The status line kept with the profile whose config.yaml the save wrote; nil when there
+    /// is nothing to say.
+    func note(for profile: String) -> ProfileSaveNote? {
+        statusLine.map { ProfileSaveNote(profile: profile, line: $0) }
+    }
+}
+
+/// A save's status line and the profile it was saved under, so a card that outlives a profile
+/// switch shows it only while that profile is the live one.
+struct ProfileSaveNote: Equatable, Sendable {
+    let profile: String
+    let line: String
+
+    func line(for live: String) -> String? { live == profile ? line : nil }
 }
 
 /// A config file's modification date and size (both nil when there is no file), and the

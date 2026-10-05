@@ -20,8 +20,8 @@ struct NotificationsCard: View {
     @State private var notifyURL = ""
     @State private var notifyDetail: NotifyConfig.Detail = .full
     @State private var notifySaveMessage: String?
-    /// What a save did not keep (a backup was made), shown until the form reloads.
-    @State private var notifySaveNote: String?
+    /// What a save did not keep (a backup was made), shown while its profile is live.
+    @State private var notifySaveNote: ProfileSaveNote?
     @State private var notifyTestResult: String?
     @State private var notifyTesting = false
     @State private var notifyURLSaveTask: Task<Void, Never>?
@@ -112,8 +112,8 @@ struct NotificationsCard: View {
             Text(notifySaveMessage)
                 .font(.caption).foregroundStyle(Theme.Colors.warn)
         }
-        if let notifySaveNote {
-            Text(notifySaveNote)
+        if let line = notifySaveNote?.line(for: profile) {
+            Text(line)
                 .font(.caption).foregroundStyle(Theme.Colors.warn)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -162,10 +162,8 @@ struct NotificationsCard: View {
                 profile: edit.profile
             )
             notifySaveMessage = nil
-            // A debounced save can land after a profile switch; its note is the other profile's.
-            if edit.profile == profile, let line = written.report.statusLine {
-                notifySaveNote = line
-            }
+            // A debounced save can land after a profile switch; its note keeps its own profile.
+            if let saved = written.report.note(for: edit.profile) { notifySaveNote = saved }
         } catch {
             notifySaveMessage = "Couldn't save notification settings: \(error.localizedDescription)"
         }

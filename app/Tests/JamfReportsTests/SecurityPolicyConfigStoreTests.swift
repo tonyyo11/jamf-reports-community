@@ -1193,8 +1193,8 @@ final class SecurityPolicyCardTests: XCTestCase {
         var binding: Binding<SecurityPolicyCard.SaveFailure?> {
             Binding(get: { self.value }, set: { self.value = $0 })
         }
-        var note: String?
-        var noteBinding: Binding<String?> {
+        var note: ProfileSaveNote?
+        var noteBinding: Binding<ProfileSaveNote?> {
             Binding(get: { self.note }, set: { self.note = $0 })
         }
     }
@@ -1229,7 +1229,8 @@ final class SecurityPolicyCardTests: XCTestCase {
     }
 
     /// The note a save returns is the card's until the card goes: a later save with nothing
-    /// to say leaves it.
+    /// to say leaves it. It belongs to the profile it was saved under and reads as nothing on
+    /// another.
     func testAPickerSaveThatBacksUpTheFileLeavesTheCardsNote() async throws {
         try await withPolicyWorkspacesRoot {
             _ = try writePolicyConfig("""
@@ -1245,7 +1246,10 @@ final class SecurityPolicyCardTests: XCTestCase {
 
             picker.wrappedValue = .warning
             let note = try XCTUnwrap(failure.note)
-            XCTAssertTrue(note.contains("config.yaml.bak-"), note)
+            XCTAssertEqual(note.profile, "policy-card-note")
+            let line = try XCTUnwrap(note.line(for: "policy-card-note"))
+            XCTAssertTrue(line.contains("config.yaml.bak-"), line)
+            XCTAssertNil(note.line(for: "another-profile"))
 
             picker.wrappedValue = .ignore
             XCTAssertEqual(failure.note, note)
