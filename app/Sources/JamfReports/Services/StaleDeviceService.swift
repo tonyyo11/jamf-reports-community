@@ -218,6 +218,41 @@ struct StaleDeviceService: Sendable {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// The addresses to copy for a mail client's recipient line, joined with "; ".
+    struct RecipientList: Equatable {
+        let list: String
+        let count: Int
+        /// Entries left out because they hold more than one address or a display name.
+        let skipped: Int
+
+        /// What the Outreach screen shows after the copy.
+        var confirmation: String {
+            let copied = "Copied \(count) email\(count == 1 ? "" : "s")"
+            guard skipped > 0 else { return copied }
+            return copied + ", skipped \(skipped) that are not a single address"
+        }
+    }
+
+    /// An Email field comes from Jamf, so `a@corp.gov; attacker@evil.com` would add a
+    /// recipient when pasted. An entry with `;`, `,`, `<`, `>` or whitespace inside is
+    /// skipped and counted; a blank entry is no entry.
+    static func recipientList(from emails: [String]) -> RecipientList {
+        let separators = CharacterSet(charactersIn: ";,<>").union(.whitespacesAndNewlines)
+        var kept: [String] = []
+        var skipped = 0
+        for email in emails {
+            let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed.unicodeScalars.contains(where: separators.contains) {
+                skipped += 1
+            } else {
+                kept.append(trimmed)
+            }
+        }
+        return RecipientList(
+            list: kept.joined(separator: "; "), count: kept.count, skipped: skipped)
+    }
+
     /// Escape a value for CSV output. Neutralizes spreadsheet formula injection
     /// (leading `=`, `+`, `-`, `@`, tab or carriage return get a tab prefix) and applies
     /// RFC 4180 quoting. The one implementation every CSV writer uses.
