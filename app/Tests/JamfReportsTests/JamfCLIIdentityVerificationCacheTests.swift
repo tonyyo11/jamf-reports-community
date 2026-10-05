@@ -99,6 +99,58 @@ final class JamfCLIIdentityVerificationCacheTests: XCTestCase {
         XCTAssertEqual(counter.value, 2, "An mtime bump (e.g. legitimate upgrade) must re-trigger verification")
     }
 
+    // MARK: - A symlinked path is fingerprinted by what it points at
+
+    /// Homebrew's `/opt/homebrew/bin/jamf-cli` is a symlink into the Cellar. `attributesOfItem`
+    /// on the link describes the link, whose size and mtime never change when the target is
+    /// swapped in place, so a long-lived process kept trusting the swapped binary.
+    func testCacheInvalidatedWhenSymlinkTargetChanges() throws {
+        let target = tempDir.appendingPathComponent("real-jamf-cli")
+        try Data("target-v1".utf8).write(to: target)
+        let link = tempDir.appendingPathComponent("link-to-jamf-cli")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        let counter = SendableCounter()
+        let verify: @Sendable (URL, String) -> Bool = { _, _ in
+            counter.increment()
+            return true
+        }
+        _ = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: link, verify: verify)
+        _ = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: link, verify: verify)
+        XCTAssertEqual(counter.value, 1, "An unchanged target stays cached through its link")
+
+        try Data("target-v2-swapped-in-place".utf8).write(to: target)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(120)], ofItemAtPath: target.path)
+
+        _ = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: link, verify: verify)
+        XCTAssertEqual(counter.value, 2, "A changed link target must be verified again")
+    }
+
+    /// Same path, size and mtime, different file: an attacker who restores the mtime is still a
+    /// different inode.
+    func testCacheInvalidatedWhenTheFileIsReplacedWithTheSameSizeAndMtime() throws {
+        let counter = SendableCounter()
+        let verify: @Sendable (URL, String) -> Bool = { _, _ in
+            counter.increment()
+            return true
+        }
+        let pinned = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        try FileManager.default.setAttributes(
+            [.modificationDate: pinned], ofItemAtPath: binary.path)
+        _ = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: binary, verify: verify)
+        XCTAssertEqual(counter.value, 1)
+
+        let size = try Data(contentsOf: binary).count
+        try FileManager.default.removeItem(at: binary)
+        try Data(String(repeating: "x", count: size).utf8).write(to: binary)
+        try FileManager.default.setAttributes(
+            [.modificationDate: pinned], ofItemAtPath: binary.path)
+
+        _ = JamfCLIIdentity.ensureVerifiedJamfCLI(executable: binary, verify: verify)
+        XCTAssertEqual(counter.value, 2, "A replaced file (new inode) must be verified again")
+    }
+
     // MARK: - Verifier failure returns an error and does not cache
 
     func testVerifierFailureReturnsUntrustedAndDoesNotCache() {
