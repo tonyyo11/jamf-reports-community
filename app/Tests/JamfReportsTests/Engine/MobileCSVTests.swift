@@ -41,6 +41,23 @@ final class MobileCSVTests: XCTestCase {
         return formatter.string(from: date)
     }
 
+    /// A check-in `daysAgo` whole days and an hour back, so the day count is `daysAgo` at any
+    /// time of day and across a DST change.
+    private func timestamp(daysAgo: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: Date().addingTimeInterval(-Double(daysAgo) * 86_400 - 3_600))
+    }
+
+    private func names(_ sheetName: String, in wb: Workbook) -> [String] {
+        let ws = wb.sheets.first { $0.name == sheetName }
+        return (ws?.cells ?? []).compactMap { cell -> String? in
+            guard cell.col == 0, case .string(let s) = cell.value else { return nil }
+            return s
+        }
+    }
+
     // MARK: - writeMobileInventoryCSV
 
     func testMobileInventoryIncludesActiveDevices() {
@@ -65,6 +82,27 @@ final class MobileCSVTests: XCTestCase {
         }
         XCTAssertTrue(names.contains("iPad1"), "Active device iPad1 should appear")
         XCTAssertFalse(names.contains("iPad2"), "Stale device iPad2 should be excluded")
+    }
+
+    /// A device at exactly the threshold is not stale, so it is active; a day later it is stale.
+    /// The two sheets split the fleet with nobody on neither.
+    func testMobileDeviceAtExactlyTheThresholdIsActiveNotStale() {
+        let csvData = makeCSV(rows: [
+            ("iPad-at", "AT1", timestamp(daysAgo: 30)),
+            ("iPad-past", "PA1", timestamp(daysAgo: 31)),
+        ])
+        let wb = Workbook()
+        guard let dashboard = CSVDashboard(
+            config: makeConfig(staleDays: 30), csvData: csvData, workbook: wb) else {
+            XCTFail("CSVDashboard init failed"); return
+        }
+        dashboard.writeMobileInventoryCSV()
+        dashboard.writeMobileStaleCSV()
+
+        XCTAssertEqual(names("Mobile Device Inventory", in: wb).filter { $0.hasPrefix("iPad-") },
+                       ["iPad-at"])
+        XCTAssertEqual(names("Mobile Stale Devices", in: wb).filter { $0.hasPrefix("iPad-") },
+                       ["iPad-past"])
     }
 
     func testMobileInventoryExcludesUnparseableCheckin() {

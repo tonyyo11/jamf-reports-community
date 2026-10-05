@@ -140,7 +140,7 @@ extension HtmlReport {
         let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         return computers
             .map { (item: $0, days: daysAgo(from: inventoryLastContact($0))) }
-            .filter { $0.days >= staleDays }
+            .filter { $0.days > staleDays }
             .sorted { $0.days > $1.days }
     }
 

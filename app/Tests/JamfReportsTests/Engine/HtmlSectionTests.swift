@@ -368,6 +368,26 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertEqual(block.omission, "no computers snapshot")
     }
 
+    /// "More than N days": a Mac at exactly the threshold is not listed, one day later is.
+    func testInterventionListHoldsMacsPastTheThresholdNotAtIt() {
+        func stamp(daysAgo: Int) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            return formatter.string(
+                from: Date().addingTimeInterval(-Double(daysAgo) * 86_400 - 3_600))
+        }
+        let report = makeReport()
+        let inventory: [[String: Any]] = [
+            ["name": "Mac-at-30", "serial_number": "S30", "last_check_in": stamp(daysAgo: 30)],
+            ["name": "Mac-at-31", "serial_number": "S31", "last_check_in": stamp(daysAgo: 31)],
+        ]
+        XCTAssertEqual(report.staleComputers(inventory).map(\.days), [31])
+        let html = report.buildInterventionList(computersInventory: inventory).html
+        XCTAssertTrue(html.contains("Mac-at-31"))
+        XCTAssertFalse(html.contains("Mac-at-30"))
+    }
+
     func testInterventionListIsLeftOutWhenNoMacIsPastTheThreshold() {
         let recent: [[String: Any]] = [["name": "Fresh", "last_check_in": "2999-01-01"]]
         let block = makeReport().buildInterventionList(computersInventory: recent)

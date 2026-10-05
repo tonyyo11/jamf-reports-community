@@ -676,7 +676,7 @@ struct CoreDashboard: Sendable {
     /// meaning of every "stale" label in the workbook. jamf-cli's own `stale` flag is a
     /// 14-day cut that the row only falls back to when it carries no day count.
     private func isStaleDevice(_ row: DeviceComplianceRow) -> Bool {
-        row.isStale(atDays: (config.thresholds?.resolvedStaleDays ?? 30) + 1)
+        row.isStale(atDays: config.thresholds?.resolvedStaleDays ?? 30)
     }
 
     // MARK: - Policy Health
@@ -1227,10 +1227,10 @@ struct CoreDashboard: Sendable {
         ws.setColumnWidth(3, 3, 18)
 
         let total = items.count
-        // "Overdue (>N days)": isStale(atDays:) is >=, so a Mac at exactly N days is still
-        // current. A row with no day count falls back to jamf-cli's own `stale` flag, as
-        // this sheet did for every row before `checkin_overdue_days` was read.
-        let overdue = items.filter { $0.isStale(atDays: threshold + 1) }.count
+        // "Overdue (>N days)": a Mac at exactly N days is still current. A row with no day
+        // count falls back to jamf-cli's own `stale` flag, as this sheet did for every row
+        // before `checkin_overdue_days` was read.
+        let overdue = items.filter { $0.isStale(atDays: threshold) }.count
         let current = total - overdue
         let pctCurrent = total > 0 ? Double(current) / Double(total) * 100 : 0.0
         let pctOverdue = total > 0 ? Double(overdue) / Double(total) * 100 : 0.0

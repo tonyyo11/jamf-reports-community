@@ -89,6 +89,7 @@ enum DeviceInventoryService {
         // Scored once per device: scoring reads several values, and the sort compares many
         // times. The Devices screen re-scores with the security agent's status.
         let devices = merger.records
+            .map { restatingStale($0, thresholdDays: config.staleDeviceDays) }
             .map { (record: $0, score: RiskScoringService.risk(for: $0, policy: policy).score) }
             .sorted { lhs, rhs in
                 if lhs.score != rhs.score { return lhs.score > rhs.score }
@@ -110,6 +111,19 @@ enum DeviceInventoryService {
             isDemo: false,
             securityPolicy: policy
         )
+    }
+
+    /// A merged record's `stale` from its day count. The merge keeps the newest source's
+    /// `daysSinceContact` but ORs the flags, so a Mac an older snapshot saw past the threshold
+    /// would stay stale after a newer one saw it check in. A record with no day count keeps
+    /// the flag its sources set.
+    static func restatingStale(
+        _ record: DeviceInventoryRecord, thresholdDays: Int
+    ) -> DeviceInventoryRecord {
+        guard let days = record.daysSinceContact else { return record }
+        var record = record
+        record.stale = days > thresholdDays
+        return record
     }
 
     private static func emptySnapshot(warning: String) -> DeviceInventorySnapshot {
@@ -524,7 +538,7 @@ extension DeviceInventoryService {
         record.lastContact = cell(row, ["Last Check-in", "Last Contact", "Last Contact Date"])
         record.lastInventory = cell(row, ["Last Inventory Update", "Last Report", "Report Date"])
         record.daysSinceContact = daysSince(row: row, dateLabel: record.lastContact)
-        record.stale = (record.daysSinceContact ?? 0) >= staleThresholdDays
+        record.stale = (record.daysSinceContact ?? 0) > staleThresholdDays
         record.fileVault = cell(row, ["FileVault Status", "FileVault 2 Status", "FileVault 2 Enabled"])
         record.sip = cell(row, ["System Integrity Protection", "SIP"])
         record.firewall = cell(row, ["Firewall Enabled", "Firewall"])
@@ -574,7 +588,7 @@ extension DeviceInventoryService {
         record.lastContact = first(flat, ["general.lastCheckIn", "general.lastContactTime", "general.lastContactDate", "lastContactDate"])
         record.lastInventory = first(flat, ["general.reportDate", "general.lastReportDate", "lastReportDate"])
         record.daysSinceContact = daysSince(label: record.lastContact)
-        record.stale = (record.daysSinceContact ?? 0) >= staleThresholdDays
+        record.stale = (record.daysSinceContact ?? 0) > staleThresholdDays
         record.fileVault = first(flat, ["diskEncryption.bootPartitionEncryptionDetails.partitionFileVault2State", "operatingSystem.fileVault2Status", "diskEncryption.fileVault2Enabled"])
         record.sip = first(flat, ["security.sipStatus", "security.systemIntegrityProtection"])
         record.firewall = first(flat, ["security.firewallEnabled", "operatingSystem.activeDirectoryStatus.firewallEnabled"])
@@ -603,7 +617,12 @@ extension DeviceInventoryService {
         record.lastContact = clean(item["last_contact"]) ?? clean(item["last_checkin"]) ?? ""
         record.daysSinceContact = intValue(item["days_since_contact"]) ?? daysSince(label: record.lastContact)
         record.managedState = managedLabel(clean(item["managed"]) ?? "")
-        record.stale = boolValue(item["stale"]) || (record.daysSinceContact ?? 0) >= staleThresholdDays
+        // jamf-cli's own `stale` flag is a 14-day cut: it decides only a row with no day count.
+        if let days = record.daysSinceContact {
+            record.stale = days > staleThresholdDays
+        } else {
+            record.stale = boolValue(item["stale"])
+        }
         return record
     }
 

@@ -100,8 +100,7 @@ struct DevicesView: View {
             case .all:
                 return true
             case .stale:
-                if let days = device.daysSinceContact { return days >= staleDays }
-                return device.stale
+                return device.isStale(atDays: staleDays)
             case .patch:
                 return device.patchFailureCount > 0
             case .security:
@@ -1201,8 +1200,7 @@ struct DevicesView: View {
     }
 
     private func isStale(_ device: DeviceInventoryRecord) -> Bool {
-        if let days = device.daysSinceContact { return days >= staleDays }
-        return device.stale
+        device.isStale(atDays: staleDays)
     }
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {

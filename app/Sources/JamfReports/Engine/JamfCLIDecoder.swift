@@ -411,11 +411,12 @@ struct DeviceComplianceRow: Decodable, Sendable {
     /// falling back to the legacy `days_since_checkin`.
     var resolvedDaysSinceContact: Int? { daysSinceContact ?? daysSinceCheckin }
 
-    /// Whether the device is stale at `>= threshold` days. Uses the resolved day
-    /// count when present; otherwise falls back to the server-side `stale` flag
-    /// (coarser ~90-100d cadence, but honest when no day count is emitted).
+    /// Whether the device is stale: more than `threshold` days since its last contact, so a
+    /// Mac at exactly `threshold` days is not. Uses the resolved day count when present;
+    /// otherwise falls back to the server-side `stale` flag (coarser ~90-100d cadence, but
+    /// honest when no day count is emitted).
     func isStale(atDays threshold: Int) -> Bool {
-        if let days = resolvedDaysSinceContact { return days >= threshold }
+        if let days = resolvedDaysSinceContact { return days > threshold }
         return stale == true
     }
 }
