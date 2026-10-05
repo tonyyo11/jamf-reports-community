@@ -260,7 +260,8 @@ extension RiskScoringService.Input {
         // the no-arg variant that returns Double?.
         let scanner = Scanner(string: trimmed)
         guard let value = scanner.scanDouble() else { return nil }
-        if value > 0, value <= 1 { return value * 100 }   // 0.94 → 94
-        return value
+        let pct = value > 0 && value <= 1 ? value * 100 : value   // 0.94 → 94
+        // "1e20", "inf" or "-5" is no disk percentage, and the detail text rounds it to an Int.
+        return (0...100).contains(pct) ? pct : nil
     }
 }

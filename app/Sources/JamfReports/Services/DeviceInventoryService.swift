@@ -930,16 +930,20 @@ private extension DeviceInventoryService {
         return ""
     }
 
+    /// A Mac has a few hundred rules at most. A cell far past that is a bad export, and the
+    /// risk score multiplies the count by a per-failure weight, which overflows near Int.max.
+    static let maxFailureCount = 1_000_000
+
     static func failureCount(_ row: [String: String]) -> Int {
         let exact = cell(row, ["Failed Rules", "Failed Rules Count", "Failures", "Compliance Failures"])
         if let value = Int(exact.trimmingCharacters(in: CharacterSet(charactersIn: " %"))) {
-            return value
+            return min(max(value, 0), maxFailureCount)
         }
         for (key, value) in row {
             let normalized = normalizeHeader(key)
             if normalized.contains("fail") && (normalized.contains("count") || normalized.contains("rules")),
                let parsed = Int(value.trimmingCharacters(in: CharacterSet(charactersIn: " %"))) {
-                return parsed
+                return min(max(parsed, 0), maxFailureCount)
             }
         }
         return 0
