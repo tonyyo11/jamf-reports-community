@@ -129,9 +129,8 @@ final class SecurityFleetCountsNonFailingTests: XCTestCase {
         let fleet = try mixedFleet(encrypted: 5, silicon: 3, intel: 2, policy: policy)
         XCTAssertEqual(try XCTUnwrap(fleet.nonFailingPct(.fileVault)), 5.0 / 7.0 * 100,
                        accuracy: 0.001)
-        let input = fleet.scoreInput()
-        XCTAssertEqual(input.compliantCounts[.fileVault], 5)
-        XCTAssertEqual(input.metricTotals[.fileVault], 7)
+        XCTAssertEqual(fleet.scoreMeasure(for: .fileVault),
+                       SecurityScoreMeasure(passing: 5, evaluated: 7))
         // Other controls keep the whole fleet.
         XCTAssertEqual(try XCTUnwrap(fleet.nonFailingPct(.sip)), 100, accuracy: 0.001)
     }

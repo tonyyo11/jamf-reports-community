@@ -18,10 +18,10 @@ extension HtmlReport {
     func buildAINarrativeSection(_ narrative: String) -> String {
         let f = HtmlSectionFormatters.self
         return """
-        <section class="content-section" id="ai-narrative">
+        <section class="summary-block" id="ai-narrative">
           <h2>AI Fleet Summary</h2>
           <p>\(f.escapeHTML(narrative))</p>
-          <p style="font-size:12px;opacity:0.7">AI-generated summary — verify against the metrics below.</p>
+          <p class="ai-note">AI-generated summary — verify against the metrics below.</p>
         </section>
         """
     }
@@ -127,42 +127,70 @@ extension HtmlReport {
             title: "Recent failures (\(rows.count))",
             body: HtmlSectionFormatters.renderCappedTable(
                 headers: ["Device", "Serial", "Title", "Source", "Age"],
-                rows: tableRows, expanded: expandAll)))
+                rows: tableRows, maxRows: HtmlSectionFormatters.maxFailureRows,
+                expanded: expandAll)))
     }
 
     // MARK: - interventionList
 
-    /// The Macs whose last check-in is `thresholds.stale_device_days` or more days old, oldest
-    /// first, each with its age. A Mac with no readable check-in date is not counted.
+    /// The Macs that are stale under the stale rule (`thresholds.stale_device_days` and
+    /// `stale_basis`), oldest first, each with its stale age. A Mac without a date the rule
+    /// counts has never had it, so it is the oldest of all.
     func staleComputers(
-        _ computers: [[String: Any]]
-    ) -> [(item: [String: Any], days: Int)] {
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
-        return computers
-            .map { (item: $0, days: daysAgo(from: inventoryLastContact($0))) }
-            .filter { $0.days >= staleDays }
-            .sorted { $0.days > $1.days }
+        _ computers: [[String: Any]], now: Date = Date()
+    ) -> [(item: [String: Any], age: StaleAge)] {
+        let rule = config.staleRule
+        return computers.compactMap { item -> (item: [String: Any], age: StaleAge)? in
+            let dates = ComputerDates(item: item)
+            let inputs = StaleInputs(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                carriesDates: true)
+            guard let age = rule.age(of: inputs, now: now), age > .days(rule.days)
+            else { return nil }
+            return (item, age)
+        }.sorted { $0.age > $1.age }
     }
 
-    /// Macs past `thresholds.stale_device_days` with last check-in and primary user.
+    /// The Macs MDM reaches whose check-in or inventory lags (`ContactGap`), counted by kind.
+    func contactGapCounts(
+        _ computers: [[String: Any]], now: Date = Date()
+    ) -> [ContactGap: Int] {
+        let staleDays = config.staleRule.days
+        let gapDays = config.contactGapDays
+        var counts: [ContactGap: Int] = [:]
+        for item in computers {
+            let dates = ComputerDates(item: item)
+            if let gap = ContactGap.of(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                staleDays: staleDays, gapDays: gapDays, now: now) {
+                counts[gap, default: 0] += 1
+            }
+        }
+        return counts
+    }
+
+    /// Macs that are stale under the stale rule, with the oldest counted date's age and the
+    /// primary user.
     func buildInterventionList(computersInventory: [[String: Any]]) -> HtmlBlock {
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        let rule = config.staleRule
         guard !computersInventory.isEmpty else { return .omitted("no computers snapshot") }
         let stale = staleComputers(computersInventory)
         guard !stale.isEmpty else {
             return .omitted(
-                "no Mac has gone \(staleDays) days or more without a check-in")
+                "no Mac has gone more than \(rule.days) days without a \(rule.basisPhrase)")
         }
         let tableRows = stale.map { entry -> [String] in
             [inventoryName(entry.item), inventorySerial(entry.item),
-             inventoryUsername(entry.item), "\(entry.days)"]
+             inventoryUsername(entry.item), entry.age.days.map(String.init) ?? "never"]
         }
         return .shown(HtmlSectionFormatters.block(
             id: "intervention-list",
-            title: "Macs with no check-in for \(staleDays) days or more (\(stale.count))",
+            title: "Macs with no \(rule.basisPhrase) for more than \(rule.days) days "
+                + "(\(stale.count))",
             body: HtmlSectionFormatters.renderCappedTable(
-                headers: ["Device", "Serial", "Primary User", "Days Since Check-in"],
-                rows: tableRows, expanded: expandAll)))
+                headers: ["Device", "Serial", "Primary User", "Days Since \(rule.basisHeading)"],
+                rows: tableRows, maxRows: HtmlSectionFormatters.maxInterventionRows,
+                expanded: expandAll)))
     }
 
     // MARK: - patchQueue
@@ -1008,11 +1036,13 @@ extension HtmlReport {
 
             // Accept both camelCase (current Swift + Python writers) and snake_case
             // (defensive: hand-authored or third-party summaries). Both writers emit camelCase.
+            // A Double outside Int's range (1e30) reads as absent: `Int(_:)` would trap.
             func intVal(_ camel: String, _ snake: String) -> Int? {
-                if let n = dict[camel] as? Int { return n }
-                if let d = dict[camel] as? Double { return Int(d) }
-                if let n = dict[snake] as? Int { return n }
-                if let d = dict[snake] as? Double { return Int(d) }
+                for key in [camel, snake] {
+                    if let n = dict[key] as? Int { return n }
+                    if let d = dict[key] as? Double,
+                       let n = Int(exactly: d.rounded(.towardZero)) { return n }
+                }
                 return nil
             }
             func dblVal(_ camel: String, _ snake: String) -> Double? {

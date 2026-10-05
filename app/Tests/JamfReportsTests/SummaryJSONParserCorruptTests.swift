@@ -65,6 +65,40 @@ final class SummaryJSONParserCorruptTests: XCTestCase {
         XCTAssertEqual(summaries.count, 1)
     }
 
+    /// `Int(1e30)` in a chart label and `Int.max + Int.max` in a cross-profile sum trap, so a
+    /// summary holding such a number is skipped like a corrupt one.
+    func test_parseDirectory_skipsSummaryWithNumberOutsideRange() throws {
+        let dir = try makeDir()
+        try writeSummaryJSON(date: "2026-04-01", totalDevices: 100, to: dir)
+        func body(_ date: String, total: String = "5", extra: String = "") -> (String, String) {
+            (date, #"{"date":"\#(date)","totalDevices":\#(total),"source":"x"\#(extra)}"#)
+        }
+        let bands = #","mscpBands":{"b":{"pass":4611686018427387904,"low":0,"medLow":0,"#
+            + #""medium":0,"high":0,"noData":0}}"#
+        let bodies = [
+            body("2026-04-02", extra: #","fileVaultPct":1e30"#),
+            body("2026-04-03", total: "9223372036854775807"),
+            body("2026-04-04", extra: #","staleCount":-9223372036854775808"#),
+            body("2026-04-05", extra: bands),
+            body("2026-04-06", extra: #","securityAgentCoverage":{"edr":-1e12}"#),
+        ]
+        for (date, body) in bodies {
+            try body.write(to: dir.appendingPathComponent("summary_\(date).json"),
+                           atomically: true, encoding: .utf8)
+        }
+
+        XCTAssertEqual(SummaryJSONParser.parseDirectory(dir).map(\.date), ["2026-04-01"])
+    }
+
+    func test_parseDirectory_keepsNumbersAtTheBound() throws {
+        let dir = try makeDir()
+        let body = #"{"date":"2026-04-02","totalDevices":1000000000,"source":"x","#
+            + #""fileVaultPct":100,"staleCount":0}"#
+        try body.write(to: dir.appendingPathComponent("summary_2026-04-02.json"),
+                       atomically: true, encoding: .utf8)
+        XCTAssertEqual(SummaryJSONParser.parseDirectory(dir).count, 1)
+    }
+
     func test_parseDirectory_emptyDir_returnsEmpty() throws {
         let dir = try makeDir()
         XCTAssertTrue(SummaryJSONParser.parseDirectory(dir).isEmpty)

@@ -40,14 +40,14 @@ enum CSVParser {
     }
 
     /// Parse only the header row, skipping the full O(rows) scan in `parseText`.
-    /// ponytail: splits on the first raw newline, so a header containing a
+    /// ponytail: splits on the first raw CR or LF, so a header containing a
     /// quoted embedded newline would truncate — no Jamf export emits one.
     static func parseHeader(_ data: Data) -> [String]? {
         var raw = data
         let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
         if raw.prefix(3).elementsEqual(bom) { raw = raw.dropFirst(3) }
         let headerBytes: Data
-        if let newlineIndex = raw.firstIndex(of: 0x0A) {
+        if let newlineIndex = raw.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
             headerBytes = raw[..<newlineIndex]
         } else {
             headerBytes = raw
@@ -56,27 +56,31 @@ enum CSVParser {
         return parseText(text).first
     }
 
+    /// Walks Unicode scalars, not Characters: "\r\n" is ONE Character that equals neither
+    /// "\r" nor "\n", so a CSV saved by Excel or Windows read as a single row, and a combining
+    /// mark after a comma or quote fused with it.
     static func parseText(_ text: String) -> [[String]] {
         var rows: [[String]] = []
         var fields: [String] = []
         var field = ""
         var inQuote = false
-        var idx = text.startIndex
+        let scalars = text.unicodeScalars
+        var idx = scalars.startIndex
 
-        while idx < text.endIndex {
-            let ch = text[idx]
-            let next = text.index(after: idx)
+        while idx < scalars.endIndex {
+            let ch = scalars[idx]
+            var next = scalars.index(after: idx)
 
             if inQuote {
                 if ch == "\"" {
-                    if next < text.endIndex && text[next] == "\"" {
-                        field.append("\"")
-                        idx = text.index(after: next)
-                        continue
+                    if next < scalars.endIndex && scalars[next] == "\"" {
+                        field.unicodeScalars.append(ch)
+                        next = scalars.index(after: next)
+                    } else {
+                        inQuote = false
                     }
-                    inQuote = false
                 } else {
-                    field.append(ch)
+                    field.unicodeScalars.append(ch)
                 }
             } else {
                 switch ch {
@@ -85,21 +89,16 @@ enum CSVParser {
                 case ",":
                     fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
                     field = ""
-                case "\r":
-                    if next < text.endIndex && text[next] == "\n" {
-                        idx = text.index(after: idx)
+                case "\r", "\n":
+                    if ch == "\r" && next < scalars.endIndex && scalars[next] == "\n" {
+                        next = scalars.index(after: next)
                     }
                     fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
                     rows.append(fields)
                     fields = []
                     field = ""
-                case "\n":
-                    fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
-                    rows.append(fields)
-                    fields = []
-                    field = ""
                 default:
-                    field.append(ch)
+                    field.unicodeScalars.append(ch)
                 }
             }
             idx = next
@@ -344,9 +343,9 @@ struct CSVDashboard: Sendable {
         }
         row += 1
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
+        let staleRule = config.staleRule
         for csvRow in rows {
-            let stale = isStale(csvRow, days: staleThreshold)
+            let stale = isStale(csvRow, rule: staleRule)
             let fmt: CellFormat = stale ? .yellow : .cell
             ws.write(value(csvRow, .computerName), row: row, col: 0, format: fmt)
             ws.write(value(csvRow, .serialNumber), row: row, col: 1, format: fmt)
@@ -382,13 +381,16 @@ struct CSVDashboard: Sendable {
 
     func writeStaleDevices() {
         let ws = workbook.addSheet("Stale Devices")
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
+        let staleRule = config.staleRule
         let ts = ISO8601DateFormatter().string(from: Date())
         let extraFields = mappedExtraInventoryFields()
         let totalCols = 6 + extraFields.count
         var row = ws.writeSheetHeader(
             title: t("Stale Devices"),
-            subtitle: "Devices not checked in for \(staleThreshold)+ days | Generated: \(ts)",
+            subtitle: staleRule.usesDefaultBasis
+                ? "Devices not checked in for more than \(staleRule.days) days | Generated: \(ts)"
+                : "Devices with no \(staleRule.basisPhrase) for more than \(staleRule.days) days"
+                    + " | Generated: \(ts)",
             ncols: totalCols
         )
         ws.setColumnWidth(0, 0, 30)
@@ -406,7 +408,7 @@ struct CSVDashboard: Sendable {
             col(.serialNumber) ?? "Serial Number",
             col(.lastCheckin) ?? "Last Check-in",
             col(.department) ?? "Department",
-            "Days Since Check-in",
+            "Days Since \(staleRule.basisHeading)",
             col(.manager) ?? "Manager",
         ]
         headers += extraFields.map { $0.label }
@@ -416,21 +418,23 @@ struct CSVDashboard: Sendable {
         row += 1
 
         // Precompute once per row — the comparator would otherwise re-parse
-        // the check-in date O(n log n) times.
-        let staleRows: [(row: CSVRow, days: Int?)] = rows
-            .filter { isStale($0, days: staleThreshold) }
-            .map { csvRow -> (row: CSVRow, days: Int?) in
-                (csvRow, daysSince(value(csvRow, .lastCheckin)))
+        // the dates O(n log n) times. The age is the stale age: the check-in's alone on the
+        // default basis, as this column always was.
+        let now = Date()
+        let staleRows: [(row: CSVRow, age: StaleAge?)] = rows
+            .filter { isStale($0, rule: staleRule, now: now) }
+            .map { csvRow -> (row: CSVRow, age: StaleAge?) in
+                (csvRow, staleRule.age(of: staleInputs(csvRow), now: now))
             }
-            .sorted { ($0.days ?? 0) > ($1.days ?? 0) }
+            .sorted { ($0.age ?? .days(0)) > ($1.age ?? .days(0)) }
 
-        for (csvRow, days) in staleRows {
+        for (csvRow, age) in staleRows {
             let rawManager = col(.manager).flatMap { csvRow[$0] }
             ws.write(value(csvRow, .computerName), row: row, col: 0, format: .yellow)
             ws.write(value(csvRow, .serialNumber), row: row, col: 1, format: .yellow)
             ws.write(value(csvRow, .lastCheckin), row: row, col: 2, format: .yellow)
             ws.write(value(csvRow, .department), row: row, col: 3, format: .yellow)
-            ws.write(days.map { "\($0)" } ?? "", row: row, col: 4, format: .yellow)
+            ws.write(Self.ageText(age), row: row, col: 4, format: .yellow)
             ws.write(ManagerParser.parse(rawManager), row: row, col: 5, format: .yellow)
             for (offset, extra) in extraFields.enumerated() {
                 ws.write(value(csvRow, extra.field), row: row, col: 6 + offset, format: .yellow)
@@ -468,8 +472,8 @@ struct CSVDashboard: Sendable {
         if showsWarning { ws.write("Warning", row: row, col: 5, format: .header) }
         row += 1
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
-        let activeRows = rows.filter { !isStale($0, days: staleThreshold) }
+        let staleRule = config.staleRule
+        let activeRows = rows.filter { !isStale($0, rule: staleRule) }
         let total = activeRows.count
 
         // `logical` doubles as the policy control's raw value; Secure Boot and Bootstrap
@@ -588,8 +592,8 @@ struct CSVDashboard: Sendable {
         ws.write("% Installed", row: row, col: 3, format: .header)
         row += 1
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
-        let activeRows = rows.filter { !isStale($0, days: staleThreshold) }
+        let staleRule = config.staleRule
+        let activeRows = rows.filter { !isStale($0, rule: staleRule) }
         let total = activeRows.count
 
         for agent in securityAgents {
@@ -922,7 +926,9 @@ struct CSVDashboard: Sendable {
         let checkinColName = mobileCol(\.lastCheckin)
         for csvRow in rows {
             let checkinStr = checkinColName.flatMap { csvRow[$0] } ?? ""
-            guard let days = daysSince(checkinStr), days >= 0, days < staleThreshold else { continue }
+            guard let days = daysSince(checkinStr), days >= 0, days <= staleThreshold else {
+                continue
+            }
             ws.write(mobileValue(csvRow, \.deviceName), row: row, col: 0, format: .cell)
             ws.write(mobileValue(csvRow, \.serialNumber), row: row, col: 1, format: .cell)
             ws.write(mobileValue(csvRow, \.operatingSystem), row: row, col: 2, format: .cell)
@@ -1015,12 +1021,36 @@ struct CSVDashboard: Sendable {
 
     // MARK: - Helpers
 
-    private func isStale(_ csvRow: CSVRow, days: Int) -> Bool {
-        guard let checkinCol = col(.lastCheckin),
-              let raw = csvRow[checkinCol],
-              !raw.isEmpty else { return true }
-        guard let d = daysSince(raw) else { return false }
-        return d >= days
+    /// Whether the row is stale under the stale rule. A row with no check-in is stale, as it
+    /// always was; one whose check-in text is no date is not, unless the rule counts another
+    /// date that says so.
+    private func isStale(_ csvRow: CSVRow, rule: StaleRule, now: Date = Date()) -> Bool {
+        rule.isStale(staleInputs(csvRow), now: now)
+    }
+
+    /// The dates a CSV row carries: the check-in column, and the inventory one when
+    /// `columns.last_inventory` maps it. A CSV has no Last Contact. A blank check-in, or a
+    /// blank inventory cell in a mapped column, is a date the Mac never had.
+    private func staleInputs(_ csvRow: CSVRow) -> StaleInputs {
+        let parser = DateParser()
+        func cell(_ field: ColumnField) -> String? {
+            col(field).flatMap { csvRow[$0] }?.trimmingCharacters(in: .whitespaces)
+        }
+        let checkIn = cell(.lastCheckin) ?? ""
+        let inventory = cell(.lastInventory)
+        let blankInventory = col(.lastInventory) != nil && inventory?.isEmpty != false
+        return StaleInputs(
+            checkIn: parser.parse(checkIn),
+            inventory: inventory.flatMap(parser.parse),
+            carriesDates: checkIn.isEmpty || blankInventory)
+    }
+
+    private static func ageText(_ age: StaleAge?) -> String {
+        switch age {
+        case nil: ""
+        case .never?: "never"
+        case .days(let days)?: String(days)
+        }
     }
 
     private func daysSince(_ dateString: String) -> Int? {

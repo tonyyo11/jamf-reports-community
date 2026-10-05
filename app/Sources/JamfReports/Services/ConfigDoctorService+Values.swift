@@ -224,7 +224,8 @@ extension ConfigDoctorService {
     private static func thresholdValueRows(_ config: ReportConfig) -> [DoctorRow] {
         let limits = config.thresholds ?? ThresholdsConfig()
         let positive: [(key: String, typed: Int?, effect: String)] = [
-            ("stale_device_days", limits.staleDeviceDays, "every Mac counts as stale"),
+            ("stale_device_days", limits.staleDeviceDays,
+             "a Mac counts as stale as soon as a day passes without a check-in"),
             ("warning_disk_percent", limits.warningDiskPercent,
              "every percentage value counts as over it"),
             ("critical_disk_percent", limits.criticalDiskPercent,
@@ -240,6 +241,7 @@ extension ConfigDoctorService {
                             "\(typed) is not above 0. The app uses it as written, so \(effect).",
                             "Set a number above 0, or remove the key for the default.")
         }
+        rows += staleBasisRows(limits)
         let (warn, crit) = (limits.resolvedWarningDisk, limits.resolvedCriticalDisk)
         if limits.warningDiskPercent != nil || limits.criticalDiskPercent != nil, warn > crit {
             rows.append(valueRow(
@@ -257,6 +259,44 @@ extension ConfigDoctorService {
                 "warning_threshold (\(eaWarn)) is above critical_threshold (\(eaCrit)), so the "
                     + "warning band never applies.", "Set the warning below the critical one.",
                 tag: ".order"))
+        }
+        return rows
+    }
+
+    /// `thresholds.stale_basis` and `contact_gap_days`: a date the app does not know is skipped,
+    /// a list with none uses the default, and a gap outside 1 to 365 days uses 14.
+    private static func staleBasisRows(_ limits: ThresholdsConfig) -> [DoctorRow] {
+        var rows: [DoctorRow] = []
+        let known = StaleBasis.allCases.map(\.rawValue).joined(separator: ", ")
+        let hint = "List any of: \(known). A single word is read as a one-item list."
+        if let setting = limits.staleBasis {
+            if setting.wrongShape {
+                rows.append(valueRow(
+                    "thresholds.stale_basis",
+                    "stale_basis is neither a date nor a list of dates. The app counts check_in.",
+                    hint))
+            } else if setting.words.isEmpty {
+                rows.append(valueRow(
+                    "thresholds.stale_basis",
+                    "stale_basis is an empty list. The app counts check_in.", hint))
+            } else if !setting.skipped.isEmpty {
+                let many = setting.skipped.count > 1
+                let outcome = setting.known.isEmpty
+                    ? "the app counts check_in"
+                    : "the app skips \(many ? "them" : "it")"
+                rows.append(valueRow(
+                    "thresholds.stale_basis",
+                    "\(listed(setting.skipped)) \(many ? "name" : "names") no date the app "
+                        + "counts, so \(outcome).", hint))
+            }
+        }
+        if let typed = limits.contactGapDays,
+           typed.value.map({ !ContactGap.dayRange.contains($0) }) ?? true {
+            rows.append(valueRow(
+                "thresholds.contact_gap_days",
+                "\(shown(typed.typed)) is not a whole number from 1 to 365. The app uses "
+                    + "\(ContactGap.defaultDays).",
+                "Set a whole number of days from 1 to 365, or remove the key."))
         }
         return rows
     }

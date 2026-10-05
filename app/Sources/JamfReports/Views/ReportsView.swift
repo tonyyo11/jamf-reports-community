@@ -126,10 +126,10 @@ struct ReportsView: View {
                             .accessibilityLabel(r.accessibilityLabel)
                         }
                         .width(min: 220, ideal: 360)
-                        TableColumn("Source schedule") { r in
-                            Text(r.source).font(.footnote).lineLimit(1)
+                        TableColumn("Type") { r in
+                            Text(r.source).font(.footnote).lineLimit(1).help(r.source)
                         }
-                        .width(min: 110, ideal: 150)
+                        .width(min: 110, ideal: 170)
                         TableColumn("Sheets") { r in Mono(text: r.sheetsLabel) }
                             .width(min: 44, ideal: 56, max: 72)
                         TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
@@ -438,7 +438,7 @@ struct ReportsView: View {
 
     @MainActor
     private func generatePDFReport() {
-        guard !workspace.demoMode else { return }
+        guard !workspace.demoMode, !workspace.reportMustWait() else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -448,26 +448,34 @@ struct ReportsView: View {
         panel.directoryURL = reportsDirectory
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
+            // A collect may have started while the panel was open.
+            guard workspace.beginReportRun(for: profile) else { return }
             let outPath = dest.path
             isGeneratingPDF = true
             workspace.globalStatus = "pdf · profile=\(profile)"
             reportError = nil
             Task {
+                defer { workspace.clearRunInProgress(for: profile) }
                 let code: Int32
                 do {
-                    code = try await bridge.generatePDF(
-                        profile: profile, outFile: outPath
-                    ) { line in
-                        Task { @MainActor in
-                            guard self.isGeneratingPDF else { return }
-                            workspace.globalStatus = line.text
+                    code = try await CLIBridge.holdingGenerate {
+                        try await bridge.generatePDF(
+                            profile: profile, outFile: outPath
+                        ) { line in
+                            Task { @MainActor in
+                                guard self.isGeneratingPDF else { return }
+                                workspace.globalStatus = line.text
+                            }
                         }
                     }
                 } catch {
                     isGeneratingPDF = false
                     workspace.globalStatus = nil
-                    workspace.toast = Toast(message: "PDF generation failed · \(error.localizedDescription)", style: .danger)
-                    reportError = "PDF generation failed: \(error.localizedDescription)"
+                    workspace.toast = WorkspaceStore.exportFailureToast(
+                        error, operation: "PDF generation")
+                    if !CLIBridgeError.isCollectRefusal(error) {
+                        reportError = "PDF generation failed: \(error.localizedDescription)"
+                    }
                     return
                 }
                 isGeneratingPDF = false
@@ -487,7 +495,7 @@ struct ReportsView: View {
 
     @MainActor
     private func runExportInventoryCSV() {
-        guard !workspace.demoMode else { return }
+        guard !workspace.demoMode, !workspace.reportMustWait() else { return }
         let profile = workspace.profile
         let dateStr = ExportNaming.timestamp()
         let panel = NSSavePanel()
@@ -497,26 +505,34 @@ struct ReportsView: View {
         panel.directoryURL = reportsDirectory
         panel.begin { response in
             guard response == .OK, let dest = panel.url else { return }
+            // A collect may have started while the panel was open.
+            guard workspace.beginReportRun(for: profile) else { return }
             let outPath = dest.path
             isExportingCSV = true
             workspace.globalStatus = "inventory-csv · profile=\(profile)"
             reportError = nil
             Task {
+                defer { workspace.clearRunInProgress(for: profile) }
                 let code: Int32
                 do {
-                    code = try await bridge.exportInventoryCSV(
-                        profile: profile, outFile: outPath
-                    ) { line in
-                        Task { @MainActor in
-                            guard self.isExportingCSV else { return }
-                            workspace.globalStatus = line.text
+                    code = try await CLIBridge.holdingGenerate {
+                        try await bridge.exportInventoryCSV(
+                            profile: profile, outFile: outPath
+                        ) { line in
+                            Task { @MainActor in
+                                guard self.isExportingCSV else { return }
+                                workspace.globalStatus = line.text
+                            }
                         }
                     }
                 } catch {
                     isExportingCSV = false
                     workspace.globalStatus = nil
-                    workspace.toast = Toast(message: "CSV export failed · \(error.localizedDescription)", style: .danger)
-                    reportError = "Inventory CSV export failed: \(error.localizedDescription)"
+                    workspace.toast = WorkspaceStore.exportFailureToast(
+                        error, operation: "CSV export")
+                    if !CLIBridgeError.isCollectRefusal(error) {
+                        reportError = "Inventory CSV export failed: \(error.localizedDescription)"
+                    }
                     return
                 }
                 isExportingCSV = false

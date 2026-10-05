@@ -151,4 +151,69 @@ final class IntegrityEnvelopeTests: XCTestCase {
     func testParseSHA256LogLineRejectsNonMatchingPrefix() {
         XCTAssertNil(GenerateSheetState.parseSHA256LogLine("[ok] report written"))
     }
+
+    // MARK: - Log lines for PDF and CSV
+
+    private func hex(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// A CSV has no sidecar or manifest; its line hashes the file as written, and the sheet
+    /// reads the same hash and name back.
+    func testSha256LogLineForAFileHashesItsBytesAndTheSheetReadsItBack() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let file = dir.appendingPathComponent("inventory.csv")
+        try "a,b\n1,2\n".write(to: file, atomically: true, encoding: .utf8)
+        let line = try XCTUnwrap(ReportEngine.sha256LogLine(for: file))
+        XCTAssertEqual(line.level, .ok)
+        let parsed = try XCTUnwrap(GenerateSheetState.parseSHA256LogLine(line.text))
+        XCTAssertEqual(parsed.hash, hex(Data("a,b\n1,2\n".utf8)))
+        XCTAssertEqual(parsed.filename, "inventory.csv")
+    }
+
+    func testSha256LogLineIsNilForAFileThatIsNotThere() {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("IntegrityEnvelopeTests-\(UUID().uuidString).csv")
+        XCTAssertNil(ReportEngine.sha256LogLine(for: missing))
+    }
+
+    /// The PDF already wrote a manifest with its digest and said nothing in the log, so the
+    /// Generate sheet listed no integrity row for it.
+    @MainActor
+    func testGeneratePDFLogsItsDigestAndItMatchesTheManifest() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let out = dir.appendingPathComponent("r.pdf")
+        let lines = DigestLines()
+        try await ReportEngine.generatePDF(
+            config: ReportConfig(), dataDir: dir, outputURL: out, profileName: "t",
+            locateJamfCLI: { nil }, onLine: { lines.add($0.text) })
+
+        let digestLines = lines.texts.filter { $0.hasPrefix("[ok] sha256: ") }
+        XCTAssertEqual(digestLines.count, 1, "\(lines.texts)")
+        let parsed = try XCTUnwrap(GenerateSheetState.parseSHA256LogLine(digestLines[0]))
+        XCTAssertEqual(parsed.filename, "r.pdf")
+        XCTAssertEqual(parsed.hash, hex(try Data(contentsOf: out)))
+        let manifest = try String(
+            contentsOf: out.appendingPathExtension("manifest.txt"), encoding: .utf8)
+        XCTAssertTrue(manifest.contains("sha256:   \(parsed.hash)"), manifest)
+    }
+}
+
+private final class DigestLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    func add(_ text: String) {
+        lock.lock()
+        lines.append(text)
+        lock.unlock()
+    }
+
+    var texts: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return lines
+    }
 }

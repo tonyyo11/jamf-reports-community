@@ -496,6 +496,44 @@ final class ReportEngineTests: XCTestCase {
             "staleCount must count B+C (days_since_contact) and D (stale fallback)")
     }
 
+    /// "More than N days": a Mac at exactly the threshold is not counted, one day later is.
+    func testSummaryStaleCountIsMoreThanTheThresholdNotAtIt() throws {
+        let dataDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stale-count-boundary-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dataDir) }
+
+        let secDir = dataDir.appendingPathComponent("security", isDirectory: true)
+        try FileManager.default.createDirectory(at: secDir, withIntermediateDirectories: true)
+        try Data("""
+        [{"section":"summary","data":{"total_devices":4,"filevault_encrypted":4,
+          "sip_enabled":4,"firewall_enabled":4,"gatekeeper_enabled":4}}]
+        """.utf8).write(to: secDir.appendingPathComponent("security_\(recentStamp).json"))
+
+        let compDir = dataDir.appendingPathComponent("device-compliance", isDirectory: true)
+        try FileManager.default.createDirectory(at: compDir, withIntermediateDirectories: true)
+        try Data("""
+        [
+          {"name":"A","serial":"A1","managed":true,"stale":true,"days_since_contact":"29"},
+          {"name":"B","serial":"B1","managed":true,"stale":true,"days_since_contact":"30"},
+          {"name":"C","serial":"C1","managed":true,"stale":true,"days_since_contact":"31"},
+          {"name":"D","serial":"D1","managed":true,"stale":true,"days_since_contact":"32"}
+        ]
+        """.utf8).write(to: compDir.appendingPathComponent("device-compliance_\(recentStamp).json"))
+
+        let summariesDir = dataDir.appendingPathComponent("summaries", isDirectory: true)
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        ReportEngine(config: ReportConfig(), dataDir: dataDir)
+            .emitSummaryJSON(summariesDir: summariesDir)
+
+        let today = SummaryJSONParser.dateFormatter.string(from: Date())
+        let obj = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(contentsOf: summariesDir.appendingPathComponent("summary_\(today).json"))
+            ) as? [String: Any])
+        XCTAssertEqual(obj["staleCount"] as? Int, 2,
+            "31 and 32 days are more than 30; 29 and exactly 30 are not")
+    }
+
     /// staleCount must agree with DeviceInventorySnapshot.staleCount(thresholdDays:) —
     /// the same computation DevicesView uses for its "Stale" stat tile.
     func testSummaryStaleCountAgreesWithDeviceInventorySnapshot() throws {
@@ -506,7 +544,7 @@ final class ReportEngineTests: XCTestCase {
         r1.daysSinceContact = 10
         var r2 = DeviceInventoryRecord.empty(id: "r2", source: "test")
         r2.daysSinceContact = 29
-        // 3 devices at or over the threshold.
+        // One at exactly the threshold (not stale) and two past it.
         var r3 = DeviceInventoryRecord.empty(id: "r3", source: "test")
         r3.daysSinceContact = 30
         var r4 = DeviceInventoryRecord.empty(id: "r4", source: "test")
@@ -522,16 +560,17 @@ final class ReportEngineTests: XCTestCase {
             generatedAt: "", generatedDate: nil, isDemo: false)
         let uiStaleCount = devSnapshot.staleCount(thresholdDays: staleDays)
 
-        // The summary engine uses `daysSinceCheckin >= staleDaysThreshold`.
-        // Synthesize the matching device-compliance rows.
+        // The summary engine counts device-compliance rows through
+        // `DeviceComplianceRow.isStale(atDays:)`. Synthesize the matching rows.
         let compRows = records.compactMap { r -> [String: Any]? in
             guard let d = r.daysSinceContact else { return nil }
             return ["name": r.id, "serial": "", "managed": true,
-                    "stale": d >= staleDays, "days_since_checkin": d]
+                    "stale": d > staleDays, "days_since_contact": String(d)]
         }
-        let engineStaleCount = compRows.filter {
-            ($0["days_since_checkin"] as? Int ?? 0) >= staleDays
-        }.count
+        let decoded = try JSONDecoder().decode(
+            [DeviceComplianceRow].self, from: JSONSerialization.data(withJSONObject: compRows))
+        let engineStaleCount = decoded.filter { $0.isStale(atDays: staleDays) }.count
+        XCTAssertEqual(engineStaleCount, 2, "90 and 200 days are stale; 30 is not")
 
         XCTAssertEqual(engineStaleCount, uiStaleCount,
             "Engine staleCount (\(engineStaleCount)) must match DevicesView stat tile " +

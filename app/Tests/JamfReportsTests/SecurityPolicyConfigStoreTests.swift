@@ -41,9 +41,12 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
         try SecurityPolicyConfigWriter.save(setting, profile: profile)
     }
 
-    private func loadedWeights() -> SecurityScoreWeights? {
-        SecurityPolicyConfigLoader.load(profile: profile).scoreWeights
-    }
+    private let custom: [SecurityScoreFactor] = [
+        SecurityScoreFactor(.fileVault, weight: 30), SecurityScoreFactor(.sip, weight: 12.5),
+        SecurityScoreFactor(.osCurrent, weight: 15, graceDays: 45),
+        SecurityScoreFactor(.agent, weight: 5, target: "Falcon"),
+        SecurityScoreFactor(.mscp, weight: 10, target: "STIG"),
+    ]
 
     // MARK: - Round trip
 
@@ -52,13 +55,13 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
             try write("columns:\n  serial_number: \"Serial Number\"\n")
             let policy = SecurityControlPolicy(
                 fileVault: .warning, sip: .ignore, firewall: .fail, gatekeeper: .warning,
-                fileVaultOffHardwareEncrypted: .fail, scoreWeights: custom)
+                fileVaultOffHardwareEncrypted: .fail, scoreFactors: custom)
 
             for control in SecurityControl.allCases {
                 try save(.level(policy.level(for: control), for: control))
             }
             try save(.hardwareLevel(policy.fileVaultOffHardwareEncrypted))
-            try save(.scoreWeights(policy.scoreWeights))
+            try save(.scoreFactors(policy.scoreFactors))
 
             XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile), policy)
             XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile), [])
@@ -122,8 +125,9 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
                 filevault: fail
                 sip: fail
                 custom_control: warning
-              score_weights:
-                sip: 5
+              score_factors:
+                - factor: sip
+                  weight: 5
             charts:
               save_png: false
               os_adoption:
@@ -135,7 +139,7 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
             let text = try readBack()
             for kept in ["Serial Number", "notify:", "provider: \"teams\"", "charts:",
                          "save_png: false", "per_major_charts: false", "mode: strict",
-                         "custom_control: warning", "score_weights:", "sip: 5"] {
+                         "custom_control: warning", "score_factors:", "factor: sip", "weight: 5"] {
                 XCTAssertTrue(text.contains(kept), "a save dropped \(kept)")
             }
             XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile).sip, .warning)
@@ -404,195 +408,12 @@ final class SecurityPolicyConfigStoreTests: XCTestCase {
     func testALevelReplacesAControlsEntryOfTheWrongShape() throws {
         try withWorkspacesRoot {
             try write("security_policy:\n  controls: strict\n")
-            try save(.scoreWeights(nil))
+            try save(.scoreFactors(nil))
             XCTAssertTrue(try readBack().contains("controls: strict"), "nothing to write")
 
             try save(.level(.warning, for: .sip))
             XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile).sip, .warning)
             XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile), [])
-        }
-    }
-
-    // MARK: - Score weights
-
-    private let custom = SecurityScoreWeights(
-        fileVault: 30, sip: 12, firewall: 15, edrAgent: 0, mscp: 20, xprotect: 5, cve: 100,
-        secureBoot: 5)
-
-    func testSaveThenLoadReturnsTheWeights() throws {
-        try withWorkspacesRoot {
-            try write("columns:\n  serial_number: \"Serial Number\"\n")
-
-            try save(.level(.warning, for: .sip))
-            try save(.scoreWeights(custom))
-
-            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile),
-                           SecurityControlPolicy(sip: .warning, scoreWeights: custom))
-            XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile), [])
-            let text = try readBack()
-            XCTAssertTrue(text.contains("score_weights:"))
-            XCTAssertTrue(text.contains("Serial Number"))
-            for key in ["filevault: 30", "sip: 12", "edr_agent: 0", "secure_boot: 5",
-                        "cve: 100"] {
-                XCTAssertTrue(text.contains(key), key)
-            }
-        }
-    }
-
-    /// Saved weights that equal the defaults are still a saved block: they load back as set.
-    func testWeightsEqualToTheDefaultsAreWrittenAsABlock() throws {
-        try withWorkspacesRoot {
-            try save(.scoreWeights(.defaultWeights))
-            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile),
-                           SecurityControlPolicy(scoreWeights: .defaultWeights))
-            XCTAssertFalse(try readBack().contains("controls:"), "no control level was written")
-        }
-    }
-
-    func testNilWeightsRemoveTheBlockAndNothingElse() throws {
-        try withWorkspacesRoot {
-            try write("""
-            security_policy:
-              mode: strict
-              controls:
-                sip: warning
-              score_weights:
-                sip: 5
-            notify:
-              enabled: true
-            """)
-            XCTAssertNotNil(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights)
-
-            try save(.scoreWeights(nil))
-
-            let text = try readBack()
-            XCTAssertFalse(text.contains("score_weights"))
-            for kept in ["mode: strict", "sip: warning", "notify:"] {
-                XCTAssertTrue(text.contains(kept), kept)
-            }
-            XCTAssertNil(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights)
-        }
-    }
-
-    func testASaveOfTheWeightsTheFileAlreadyYieldsLeavesTheFileAlone() throws {
-        try withWorkspacesRoot {
-            let typed = """
-            security_policy:
-              score_weights:
-                # a comment the writer would drop if it rewrote the block
-                filevault: "30"
-                sip: 5
-            """
-            try write(typed)
-            let loaded = SecurityPolicyConfigLoader.load(profile: profile)
-
-            try save(.scoreWeights(loaded.scoreWeights))
-
-            XCTAssertEqual(try readBack(), typed)
-        }
-    }
-
-    func testChangingOneWeightKeepsTheOthersAsTypedAndTheUnknownKeys() throws {
-        try withWorkspacesRoot {
-            try write("""
-            security_policy:
-              score_weights:
-                filevault: "30"
-                sip: 5
-                crowdstrike: 9
-            """)
-            var weights = try XCTUnwrap(loadedWeights())
-            weights.sip = 8
-
-            try save(.scoreWeights(weights))
-
-            let text = try readBack()
-            XCTAssertTrue(text.contains("\"30\""), "a weight that reads as saved stays typed")
-            XCTAssertTrue(text.contains("crowdstrike: 9"))
-            XCTAssertFalse(text.contains("sip: 5"))
-            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights, weights)
-        }
-    }
-
-    /// An unreadable weight reads as its default, so a save that leaves the default as it is
-    /// leaves the typo and its issue; changing that weight writes a number over it.
-    func testAnUnreadableWeightStaysUntilItsOwnWeightChanges() throws {
-        try withWorkspacesRoot {
-            try write("security_policy:\n  score_weights:\n    sip: abc\n    cve: 30\n")
-            var weights = try XCTUnwrap(loadedWeights())
-            XCTAssertEqual(weights.sip, 15)
-
-            try save(.scoreWeights(weights))
-            XCTAssertTrue(try readBack().contains("sip: abc"))
-            XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile).count, 1)
-
-            weights.sip = 16
-            try save(.scoreWeights(weights))
-            XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile), [])
-            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights, weights)
-        }
-    }
-
-    /// A fractional weight typed by hand is what the score uses, so a save of a control
-    /// level must not touch it.
-    func testASaveOfAControlLeavesAFractionalWeightAsTyped() throws {
-        try withWorkspacesRoot {
-            try write("security_policy:\n  score_weights:\n    xprotect: 12.5\n")
-            XCTAssertEqual(
-                SecurityPolicyConfigLoader.load(profile: profile).scoreWeights?.xprotect, 12.5)
-
-            try save(.level(.warning, for: .sip))
-
-            XCTAssertTrue(try readBack().contains("xprotect: 12.5"))
-            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights?.xprotect,
-                           12.5)
-        }
-    }
-
-    func testWeightsAreWrittenAsWholeNumbersFromZeroToOneHundred() throws {
-        try withWorkspacesRoot {
-            var weights = SecurityScoreWeights.defaultWeights
-            weights.fileVault = 12.6
-            weights.sip = 150
-            weights.firewall = -3
-            weights.edrAgent = .nan
-            try save(.scoreWeights(weights))
-
-            let loaded = try XCTUnwrap(
-                SecurityPolicyConfigLoader.load(profile: profile).scoreWeights)
-            XCTAssertEqual(loaded.fileVault, 13)
-            XCTAssertEqual(loaded.sip, 100)
-            XCTAssertEqual(loaded.firewall, 0)
-            XCTAssertEqual(loaded.edrAgent, 10, "a weight that is not a number is its default")
-            XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile), [])
-        }
-    }
-
-    func testAWeightsBlockOfTheWrongShapeIsReplacedWhenWeightsAreSaved() throws {
-        try withWorkspacesRoot {
-            try write("security_policy:\n  score_weights: 5\n")
-            try save(.scoreWeights(nil))
-            XCTAssertNil(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights)
-            XCTAssertFalse(try readBack().contains("score_weights"), "nil removes the key")
-
-            try write("security_policy:\n  score_weights: 5\n")
-            try save(.scoreWeights(custom))
-            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights, custom)
-            XCTAssertEqual(SecurityPolicyConfigLoader.issues(profile: profile), [])
-        }
-    }
-
-    func testARepeatedWeightKeyIsWrittenOnce() throws {
-        try withWorkspacesRoot {
-            try write("security_policy:\n  score_weights:\n    sip: 9\n    sip: 5\n")
-            var weights = try XCTUnwrap(loadedWeights())
-            XCTAssertEqual(weights.sip, 5)
-            weights.sip = 7
-
-            try save(.scoreWeights(weights))
-
-            XCTAssertEqual(SecurityPolicyConfigLoader.load(profile: profile).scoreWeights?.sip, 7)
-            XCTAssertEqual(try readBack().components(separatedBy: "sip:").count, 2)
         }
     }
 
@@ -700,34 +521,37 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
         }
     }
 
-    func testTheStoreLoadsSavesAndResetsTheWeights() async throws {
+    func testTheStoreLoadsSavesAndResetsTheFactors() async throws {
         try await withPolicyWorkspacesRoot {
             _ = try writePolicyConfig("""
             security_policy:
-              score_weights:
-                filevault: 30
-                sip: 150
+              score_factors:
+                - factor: filevault
+                  weight: 30
+                - factor: sip
+                  weight: 150
             """, profile: "policy-store-w")
             let store = policyTestStore(demo: false, profile: "policy-store-w")
 
             try await store.loadConfig()
 
-            XCTAssertEqual(store.securityPolicy.scoreWeights?.fileVault, 30)
-            XCTAssertEqual(store.securityPolicy.scoreWeights?.sip, 15)
+            XCTAssertEqual(store.securityPolicy.scoreFactors,
+                           [SecurityScoreFactor(.fileVault, weight: 30)])
             XCTAssertEqual(store.securityPolicyIssues.map(\.keyPath),
-                           ["security_policy.score_weights.sip"])
+                           ["security_policy.score_factors[1]"])
 
-            var weights = try XCTUnwrap(store.securityPolicy.scoreWeights)
-            weights.sip = 25
-            try store.saveScoreWeights(weights)
-            XCTAssertEqual(store.securityPolicy.scoreWeights?.sip, 25)
-            XCTAssertEqual(store.securityPolicyIssues, [], "the saved weight clears its issue")
+            var factors = try XCTUnwrap(store.securityPolicy.scoreFactors)
+            factors.append(SecurityScoreFactor(.sip, weight: 25))
+            try store.saveScoreFactors(factors)
+            XCTAssertEqual(store.securityPolicy.scoreFactors, factors)
+            XCTAssertEqual(store.securityPolicyIssues, [],
+                           "the saved list no longer holds the skipped entry")
             XCTAssertEqual(
-                SecurityPolicyConfigLoader.load(profile: "policy-store-w").scoreWeights?.sip, 25)
+                SecurityPolicyConfigLoader.load(profile: "policy-store-w").scoreFactors, factors)
 
-            try store.saveScoreWeights(nil)
-            XCTAssertNil(store.securityPolicy.scoreWeights)
-            XCTAssertNil(SecurityPolicyConfigLoader.load(profile: "policy-store-w").scoreWeights)
+            try store.saveScoreFactors(nil)
+            XCTAssertNil(store.securityPolicy.scoreFactors)
+            XCTAssertNil(SecurityPolicyConfigLoader.load(profile: "policy-store-w").scoreFactors)
         }
     }
 
@@ -737,14 +561,15 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
         try await withPolicyWorkspacesRoot {
             _ = try writePolicyConfig("""
             security_policy:
-              # Weights agreed with the security team
-              score_weights:
-                filevault: 30
+              # Factors agreed with the security team
+              score_factors:
+                - factor: filevault
+                  weight: 30
             """, profile: "policy-store-notes")
             let store = policyTestStore(demo: false, profile: "policy-store-notes")
             try await store.loadConfig()
 
-            let report = try store.saveScoreWeights(.defaultWeights)
+            let report = try store.saveScoreFactors(SecurityScoreFactor.nativeDefaults)
 
             let backup = try XCTUnwrap(report.backupName)
             XCTAssertTrue(report.droppedComments)
@@ -761,7 +586,7 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
 
             XCTAssertThrowsError(try store.saveSecurityLevel(.warning, for: .sip))
             XCTAssertThrowsError(try store.saveHardwareLevel(.warning))
-            XCTAssertThrowsError(try store.saveScoreWeights(.defaultWeights))
+            XCTAssertThrowsError(try store.saveScoreFactors(SecurityScoreFactor.nativeDefaults))
 
             XCTAssertEqual(store.securityPolicy, .default)
         }
@@ -846,7 +671,7 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
 
             try store.saveSecurityLevel(.warning, for: .sip)
             try store.saveHardwareLevel(.warning)
-            try store.saveScoreWeights(.defaultWeights)
+            try store.saveScoreFactors(SecurityScoreFactor.nativeDefaults)
             XCTAssertFalse(FileManager.default.fileExists(atPath: workspace.path),
                            "no workspace folder is created for the demo profile")
 
@@ -854,7 +679,7 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
             let url = try writePolicyConfig(text, profile: store.profile)
             try store.saveSecurityLevel(.warning, for: .sip)
             try store.saveHardwareLevel(.warning)
-            try store.saveScoreWeights(.defaultWeights)
+            try store.saveScoreFactors(SecurityScoreFactor.nativeDefaults)
             XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), text)
             XCTAssertEqual(store.securityPolicy, .default)
         }
@@ -882,7 +707,7 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
         }
     }
 
-    func testTheHardwareLevelAndTheWeightsSaveAloneAndAreAdopted() async throws {
+    func testTheHardwareLevelAndTheFactorsSaveAloneAndAreAdopted() async throws {
         try await withPolicyWorkspacesRoot {
             _ = try writePolicyConfig(
                 "security_policy:\n  controls:\n    sip: warn\n", profile: "policy-store-h")
@@ -891,40 +716,44 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
 
             try store.saveHardwareLevel(.warning)
             XCTAssertEqual(store.securityPolicy.fileVaultOffHardwareEncrypted, .warning)
-            try store.saveScoreWeights(.defaultWeights)
-            XCTAssertEqual(store.securityPolicy.scoreWeights, .defaultWeights)
+            try store.saveScoreFactors(SecurityScoreFactor.nativeDefaults)
+            XCTAssertEqual(store.securityPolicy.scoreFactors, SecurityScoreFactor.nativeDefaults)
             XCTAssertEqual(
                 SecurityPolicyConfigLoader.load(profile: "policy-store-h"),
                 SecurityControlPolicy(
                     sip: .warning, fileVaultOffHardwareEncrypted: .warning,
-                    scoreWeights: .defaultWeights))
+                    scoreFactors: SecurityScoreFactor.nativeDefaults))
 
             try store.saveHardwareLevel(nil)
             XCTAssertNil(store.securityPolicy.fileVaultOffHardwareEncrypted)
         }
     }
 
-    /// The weights card saves the set it shows with one weight changed; a hand-typed level
-    /// synonym and a fractional weight the file already yields stay as typed.
-    func testEditingOneWeightKeepsTheHandTypedLevelAndWeight() async throws {
+    /// The factors card saves the whole list with one weight changed; a hand-typed level
+    /// synonym in another key of the block stays as typed, and the other entries keep their
+    /// weights, a fractional one included.
+    func testEditingOneWeightKeepsTheHandTypedLevelAndTheOtherWeights() async throws {
         try await withPolicyWorkspacesRoot {
             let url = try writePolicyConfig("""
             security_policy:
               controls:
                 firewall: warn
-              score_weights:
-                xprotect: 12.5
+              score_factors:
+                - {factor: xprotect_current, weight: 12.5}
+                - {factor: sip, weight: 10}
             """, profile: "policy-store-w1")
             let store = policyTestStore(demo: false, profile: "policy-store-w1")
             try await store.loadConfig()
-            var weights = try XCTUnwrap(store.securityPolicy.scoreWeights)
-            weights.sip = 25
-            try store.saveScoreWeights(weights)
+            let factors = try XCTUnwrap(store.securityPolicy.scoreFactors)
+            let sip = try XCTUnwrap(factors.first { $0.kind == .sip })
+            try store.saveScoreFactors(ScoreFactorsCard.replacing(sip, weight: 25, in: factors))
 
             let text = try String(contentsOf: url, encoding: .utf8)
             XCTAssertTrue(text.contains("firewall: warn\n"), text)
-            XCTAssertTrue(text.contains("xprotect: 12.5\n"), text)
-            XCTAssertTrue(text.contains("sip: 25\n"), text)
+            XCTAssertEqual(
+                SecurityPolicyConfigLoader.load(profile: "policy-store-w1").scoreFactors,
+                [SecurityScoreFactor(.xprotectCurrent, weight: 12.5),
+                 SecurityScoreFactor(.sip, weight: 25)])
         }
     }
 
@@ -938,13 +767,13 @@ final class SecurityPolicyWorkspaceStoreTests: XCTestCase {
             try await store.loadConfig()
 
             try store.saveSecurityLevel(.warning, for: .sip)
-            try store.saveScoreWeights(.defaultWeights)
+            try store.saveScoreFactors(SecurityScoreFactor.nativeDefaults)
             store.configState.staleDeviceDays = "45"
             try await store.saveConfig()
 
             let saved = SecurityPolicyConfigLoader.load(profile: "policy-store-cs")
             XCTAssertEqual(saved.sip, .warning)
-            XCTAssertEqual(saved.scoreWeights, .defaultWeights)
+            XCTAssertEqual(saved.scoreFactors, SecurityScoreFactor.nativeDefaults)
             try await store.loadConfig()
             XCTAssertEqual(store.configState.staleDeviceDays, "45")
         }
@@ -1088,36 +917,45 @@ final class SecurityPolicyCardTests: XCTestCase {
                 + "settings — using fail for every control.")
     }
 
-    func testAWeightIssueNamesTheKeyWhatTheFileSaysAndWhatTheAppUsed() {
+    func testAFactorIssueNamesTheEntryWhatTheFileSaysAndWhatTheAppDid() {
         XCTAssertEqual(
-            SecurityPolicyCard.weightCaption(
-                issue("security_policy.score_weights.sip", "150", "15")),
-            "config.yaml's score_weights.sip is \"150\", which is not a number from 0 to 100 "
-                + "— using 15.")
+            SecurityPolicyCard.factorCaption(issue(
+                "security_policy.score_factors[2]", "150",
+                "skipped: weight is a number from 0 to 100")),
+            "config.yaml's score_factors[2] (\"150\"): skipped: weight is a number from 0 "
+                + "to 100.")
         XCTAssertEqual(
-            SecurityPolicyCard.weightCaption(
-                issue("security_policy.score_weights.secure_boot", "abc", "5")),
-            "config.yaml's score_weights.secure_boot is \"abc\", which is not a number from 0 "
-                + "to 100 — using 5.", "the longest key is not cut short")
-        let shown = SecurityPolicyCard.weightCaption(
-            issue("security_policy.score_weights.s\u{1B}ip", "a\u{202E}b\n", "15"))
-        XCTAssertEqual(shown, SecurityPolicyCard.weightCaption(
-            issue("security_policy.score_weights.sip", "ab", "15")))
+            SecurityPolicyCard.factorCaption(issue(
+                "security_policy.score_factors[1].grace_days", "400",
+                "30 days, since grace_days is a whole number from 0 to 365")),
+            "config.yaml's score_factors[1].grace_days (\"400\"): 30 days, since grace_days "
+                + "is a whole number from 0 to 365.")
+        XCTAssertEqual(
+            SecurityPolicyCard.factorCaption(issue(
+                "security_policy.score_factors", "5",
+                "the default factors, since this is not a list")),
+            "config.yaml's score_factors (\"5\"): the default factors, since this is not a list.")
+        let shown = SecurityPolicyCard.factorCaption(
+            issue("security_policy.score_factors[1]", "a\u{202E}b\n", "skipped"))
+        XCTAssertEqual(shown, SecurityPolicyCard.factorCaption(
+            issue("security_policy.score_factors[1]", "ab", "skipped")))
     }
 
-    func testWeightIssuesAreFoundApartFromLevelsShapesAndUnknownKeys() {
-        let weight = issue("security_policy.score_weights.sip", "150", "15")
-        let unknown = issue("security_policy.score_weights.extra", "", "")
-        let shape = issue("security_policy.score_weights", "[5]", "the default weights")
+    func testFactorIssuesAreFoundApartFromLevelsShapesAndUnknownKeys() {
+        let entry = issue("security_policy.score_factors[2]", "150", "skipped: weight")
+        let notAList = issue("security_policy.score_factors", "5", "the default factors")
+        let unknown = issue("security_policy.score_factors[1].colour", "", "")
+        let shape = issue("security_policy.controls", "strict", "fail for every control")
         let level = issue("security_policy.controls.sip", "wrn", "fail")
         XCTAssertEqual(
-            SecurityPolicyCard.weightIssues(in: [level, shape, unknown, weight]), [weight])
-        XCTAssertNil(SecurityPolicyCard.levelIssue(for: .sip, in: [weight]))
-        XCTAssertEqual(SecurityPolicyCard.shapeIssues(in: [weight, unknown]), [])
+            SecurityPolicyCard.factorIssues(in: [level, shape, unknown, entry, notAList]),
+            [entry, notAList])
+        XCTAssertNil(SecurityPolicyCard.levelIssue(for: .sip, in: [entry]))
+        XCTAssertEqual(SecurityPolicyCard.shapeIssues(in: [entry, notAList, unknown]), [])
         XCTAssertEqual(
-            SecurityPolicyCard.unknownKeysCaption([weight, unknown]),
+            SecurityPolicyCard.unknownKeysCaption([entry, unknown]),
             "config.yaml has 1 security_policy setting the app does not read: "
-                + "security_policy.score_weights.extra.")
+                + "security_policy.score_factors[1].colour.")
     }
 
     func testTheCardInstantiatesInAndOutOfDemoMode() {

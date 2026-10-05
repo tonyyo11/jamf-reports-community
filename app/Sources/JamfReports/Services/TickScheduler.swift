@@ -194,11 +194,14 @@ struct TickLock: Sendable {
 
     /// The test `acquire()` refuses on: the file names a live pid other than
     /// `pid` and is not stale. Read-only — never writes or touches the lock.
+    /// A pid of 1 or below is no holder: `kill(0, 0)` and `kill(-1, 0)` signal whole process
+    /// groups and succeed, and pid 1 is launchd, so a lock file naming one would read as alive
+    /// until its date went stale.
     func isHeldByAnotherLiveProcess(
         pid: Int32 = getpid(),
         isAlive: (Int32) -> Bool = { kill($0, 0) == 0 || errno == EPERM }
     ) -> Bool {
-        guard let holder = holder() else { return false }
+        guard let holder = holder(), holder > 1 else { return false }
         return holder != pid && isAlive(holder) && !isStale()
     }
 
@@ -269,6 +272,36 @@ struct TickLock: Sendable {
         beats.cancel()
         await beats.value
         return result
+    }
+
+    /// The line a run turned away by `holdingForRun` prints, after its own prefix.
+    static let busyMessage =
+        "another collect, report or scheduled run is in progress — try again when it finishes"
+
+    /// Runs `body` holding this lock, kept fresh while it runs, for a process other than the
+    /// tick that collects or writes a report (`--scheduled-run` from an external scheduler, the
+    /// included CLI): it cannot overlap a GUI collect or report, a tick or another such process.
+    /// Nil, without running `body`, when another live process holds the lock. A lock file that
+    /// cannot be written runs `body` without it, as a GUI collect does: refusing would turn a
+    /// broken Application Support into a dead command, and a tick needs the same file.
+    func holdingForRun<T: Sendable>(
+        beatEvery interval: Duration = TickLock.heartbeatInterval,
+        isolation: isolated (any Actor)? = #isolation,
+        _ body: () async throws -> T
+    ) async rethrows -> T? {
+        switch claim() {
+        case .heldElsewhere:
+            return nil
+        case .writeFailed:
+            return try await body()
+        case .acquired:
+            let beats = heartbeat(every: interval)
+            defer {
+                beats.cancel()
+                release()
+            }
+            return try await body()
+        }
     }
 
     /// `keepingAlive`'s beats, for a holder whose body runs on the main actor and so

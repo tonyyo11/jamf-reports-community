@@ -170,9 +170,18 @@ final class ConfigFileSectionsTests: XCTestCase {
             sip: warning
             firewall: ignore
           filevault_off_hardware_encrypted: warning
-          score_weights:
-            filevault: 20
-            sip: 10
+          score_factors:
+            - factor: filevault
+              weight: 20
+            - factor: os_current
+              weight: 10
+              grace_days: 14
+            - factor: agent
+              agent: Falcon
+              weight: 5
+            - factor: mscp
+              baseline: STIG
+              weight: 10
         """
         let sections = try build(yaml)
         XCTAssertEqual(summary(sections), [])
@@ -281,6 +290,15 @@ final class ConfigFileSectionsTests: XCTestCase {
         let sections = try build("jamf_cli:\n  data_dir: first\n  data_dir: second\n")
         XCTAssertEqual(summary(sections), ["jamf_cli: jamf_cli.data_dir=second"])
         XCTAssertEqual(sections.skipped.count, 1)
+    }
+
+    func testAValueNestedPastTheCapIsListedAsSkipped() throws {
+        let deep = String(repeating: "[", count: 100) + String(repeating: "]", count: 100)
+        let sections = try build("sheets:\n  skip: \(deep)\n")
+        XCTAssertEqual(sections.skipped, [
+            "Line 2: nested more than 64 levels deep, so what is below that depth was not "
+                + "read as written",
+        ])
     }
 
     func testAValueOfTheWrongShapeIsNotListed() throws {

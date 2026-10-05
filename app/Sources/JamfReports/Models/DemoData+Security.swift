@@ -184,7 +184,7 @@ extension DemoData {
         record.department = mac.department
         record.managedState = "Managed"
         record.daysSinceContact = mac.daysSinceContact
-        record.stale = mac.daysSinceContact >= 30
+        record.stale = mac.daysSinceContact > 30
         record.lastContact = timestamp(minutesBefore: mac.daysSinceContact * 1_440)
         return record
     }
@@ -430,7 +430,7 @@ extension DemoData {
     /// the other demo screens count.
     static let auditFindings: [AuditFinding] = {
         let controls = securityControls
-        let stale = fleetMacs.filter { $0.daysSinceContact >= 30 }.count
+        let stale = fleetMacs.filter { $0.daysSinceContact > 30 }.count
         return [
             AuditFinding(
                 name: "Computers without FileVault",
@@ -449,7 +449,7 @@ extension DemoData {
                 recommendation: "Re-enable Gatekeeper with a configuration profile.",
                 severity: "WARNING"),
             AuditFinding(
-                name: "Stale computers (30+ days since check-in)", affected: stale,
+                name: "Stale computers (>30 days since check-in)", affected: stale,
                 category: "hygiene",
                 recommendation: "Contact their users from Offline Outreach, or retire the "
                     + "records.",
@@ -638,6 +638,25 @@ extension DemoData {
 
     // MARK: - Security Posture
 
+    /// The four controls out of the 524-Mac fleet under the default policy.
+    private static let securityFleetCounts = SecurityFleetCounts.build(
+        totalDevices: securityControls.total,
+        onCounts: [
+            .fileVault: securityControls.fileVault, .sip: securityControls.sip,
+            .firewall: securityControls.firewall, .gatekeeper: securityControls.gatekeeper,
+        ],
+        devices: [], hardware: [:], policy: .default)
+
+    /// The default native factors measured from the demo's counts: the four controls score,
+    /// the rest have no data in the demo.
+    private static let securityScoreMeasures = SecurityScoreInputs.measures(
+        for: SecurityScoreFactor.nativeDefaults, fleet: securityFleetCounts, sources: .none,
+        config: nil)
+
+    /// The Security Posture ring's score, which the Overview card and Trends end on.
+    static let securityScoreValue = SecurityScoreCalculator.score(
+        factors: SecurityScoreFactor.nativeDefaults, measures: securityScoreMeasures).value
+
     /// The Security Posture screen's `pro report security` snapshot: the four
     /// controls out of the 524-Mac fleet and the Overview's macOS distribution,
     /// counted under the default policy.
@@ -653,13 +672,10 @@ extension DemoData {
         },
         sourceFile: nil,
         snapshotDate: referenceDate,
-        fleetCounts: SecurityFleetCounts.build(
-            totalDevices: securityControls.total,
-            onCounts: [
-                .fileVault: securityControls.fileVault, .sip: securityControls.sip,
-                .firewall: securityControls.firewall, .gatekeeper: securityControls.gatekeeper,
-            ],
-            devices: [], hardware: [:], policy: .default)
+        fleetCounts: securityFleetCounts,
+        scoreFactors: SecurityScoreFactor.nativeDefaults,
+        scoreMeasures: securityScoreMeasures,
+        staleDays: 30
     )
 
     // MARK: - Compliance Posture

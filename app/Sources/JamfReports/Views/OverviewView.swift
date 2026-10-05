@@ -4,6 +4,7 @@ import Charts
 struct OverviewView: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @AppStorage("defaultTrendRange") private var defaultTrendRangeRaw: String = TrendRange.w4.rawValue
 
     // WCAG 1.4.4: Dynamic Type scaling for KPI numerals
@@ -586,10 +587,7 @@ struct OverviewView: View {
         }
 
         let profile = workspace.profile
-        guard workspace.setRunInProgress(for: profile) else {
-            workspace.toast = Toast(message: "Another run is already in progress for profile '\(profile)' — skipped", style: .danger)
-            return
-        }
+        guard workspace.beginReportRun(for: profile) else { return }
 
         isRunning = true
         defer {
@@ -661,14 +659,20 @@ struct OverviewView: View {
                 await MainActor.run { workspace.globalStatus = skipMessage }
                 AppLogger.cli.info("\(skipMessage, privacy: .public)")
 
-                let narrative = await makeNarrative()
-                exit = try await bridge.generate(profile: profile, csvPath: nil, aiNarrative: narrative) { [weak workspace] line in
-                    Task { @MainActor in
-                        guard let workspace, self.isRunning else { return }
-                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                            self.generatedHashes[parsed.filename] = parsed.hash
+                // The report is built from snapshots a collect would replace, so it holds
+                // the lock from the narrative on, as `collectThenGenerate` does.
+                exit = try await CLIBridge.holdingGenerate {
+                    let narrative = await makeNarrative()
+                    return try await bridge.generate(
+                        profile: profile, csvPath: nil, aiNarrative: narrative
+                    ) { [weak workspace] line in
+                        Task { @MainActor in
+                            guard let workspace, self.isRunning else { return }
+                            if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                                self.generatedHashes[parsed.filename] = parsed.hash
+                            }
+                            workspace.globalStatus = line.text
                         }
-                        workspace.globalStatus = line.text
                     }
                 }
             } else {
@@ -1100,7 +1104,10 @@ struct OverviewView: View {
         let lastValue = values.last
         let current = lastValue ?? 0
         let prev = values.count > 1 ? values[values.count - 2] : current
-        let diff = current - prev
+        // Two scores on different definitions (`securityScoreBasis`) have no change between them.
+        let comparable = metric != .securityScore || workspace.demoMode
+            || trendStore.latestSecurityScoresComparable
+        let diff = comparable ? current - prev : 0
 
         let valueStr: String = {
             guard let val = lastValue else { return "--" }
@@ -1113,6 +1120,7 @@ struct OverviewView: View {
 
         let deltaStr: String = {
             guard lastValue != nil, values.count >= 2 else { return "No Data" }
+            guard comparable else { return "Not comparable" }
             let absDiff = abs(diff)
             if metric.unit == "%" {
                 return "\(diff >= 0 ? "+" : "−")\(String(format: "%.1f", absDiff))pp"
@@ -1146,8 +1154,7 @@ struct OverviewView: View {
             guard lastValue != nil else { return "Not reported by this profile" }
             var parts: [String] = []
             if metric == .activeDevices {
-                let days = Int(workspace.configState.staleDeviceDays) ?? 30
-                parts.append("Checked in within \(days)d")
+                parts.append(workspace.configState.staleRule.checkedInLabel(shortUnit: true))
             }
             if values.count >= 2, let comparisonDate {
                 parts.append("vs \(Self.comparisonDateFormatter.string(from: comparisonDate))")
@@ -1311,6 +1318,14 @@ struct OverviewView: View {
         ))
     }
 
+    /// Lines a failing rule's ID may take. An ID is one unbroken token, so two lines split it
+    /// mid-word; at ordinary sizes it takes one and is cut in the middle (its tooltip has the
+    /// whole ID). At accessibility sizes it may wrap, as #118 let this card's labels reflow
+    /// rather than clip.
+    static func failingRuleLineLimit(for size: DynamicTypeSize) -> Int {
+        size.isAccessibilitySize ? 2 : 1
+    }
+
     private var failingRulesBars: some View {
         let rules = failingRules.prefix(6)
         let maxFails = rules.map(\.fails).max() ?? 1
@@ -1321,7 +1336,9 @@ struct OverviewView: View {
                         .font(Theme.Fonts.mono(11.5))
                         .foregroundStyle(Theme.Colors.fg2)
                         .frame(minWidth: 260, alignment: .leading)
-                        .lineLimit(2)
+                        .lineLimit(Self.failingRuleLineLimit(for: dynamicTypeSize))
+                        .truncationMode(.middle)
+                        .help(r.ruleID)
                     GeometryReader { geo in
                         let w = CGFloat(r.fails) / CGFloat(maxFails) * geo.size.width
                         ZStack(alignment: .leading) {
@@ -1780,8 +1797,10 @@ struct OverviewView: View {
                 staleMeasured: latest?.staleCount != nil
             ) ?? "Composite of compliance, patch posture, and stale-device pressure."
         case .activeDevices:
-            "Excludes devices stale beyond \(Int(workspace.configState.staleDeviceDays) ?? 30)d. " +
-            "Open Devices to inspect records contributing to this count."
+            "Excludes devices stale beyond \(workspace.configState.staleRule.days)d"
+            + (workspace.configState.staleRule.usesDefaultBasis
+                ? "" : " (\(workspace.configState.staleRule.basisPhrase))")
+            + ". Open Devices to inspect records contributing to this count."
         case .compliance:
             latest?.complianceIsProxy == true
                 ? "Control-gap proxy (FileVault/SIP/Firewall/Gatekeeper). Configure a Compliance EA for true mSCP banding."

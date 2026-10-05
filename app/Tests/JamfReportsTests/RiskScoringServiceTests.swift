@@ -220,6 +220,41 @@ final class RiskScoringServiceTests: XCTestCase {
         XCTAssertEqual(risk.triggered.first?.detail, "96% used")
     }
 
+    /// `Int(1e20.rounded())` in the detail text traps, and the Overview scores every Mac on
+    /// open, so a bad cell must read as no value.
+    func testDiskUsageCellOutsideAPercentageIsNotRead() {
+        func used(_ cell: String) -> Double? {
+            var record = DeviceInventoryRecord.empty(id: "d", source: "csv")
+            record.diskUsage = cell
+            return RiskScoringService.Input.from(record: record, policy: .default).bootDrivePctUsed
+        }
+        for cell in ["1e20", "-5", "250", "inf", "nan", "100.5", ""] {
+            XCTAssertNil(used(cell), "\(cell) is no disk percentage")
+        }
+        XCTAssertEqual(used("94%"), 94)
+        XCTAssertEqual(try XCTUnwrap(used("0.94")), 94, accuracy: 0.0001)
+        XCTAssertEqual(used("100"), 100)
+        XCTAssertEqual(used("0%"), 0)
+    }
+
+    /// `Int.max`-sized `Failed Rules` cell times the per-failure weight overflows and traps.
+    func testCSVFailedRulesBeyondAnyRealCountIsClamped() {
+        func failedRules(_ cell: String) -> Int {
+            DeviceInventoryService.recordFromCSV(
+                ["Computer Name": "Mac-1", "Failed Rules": cell], source: "inventory.csv"
+            ).failedRules
+        }
+        XCTAssertEqual(failedRules("4611686018427387904"), 1_000_000)
+        XCTAssertEqual(failedRules("-4"), 0)
+        XCTAssertEqual(failedRules("37"), 37)
+        let record = DeviceInventoryService.recordFromCSV(
+            ["Computer Name": "Mac-1", "Failed Rules": "4611686018427387904"],
+            source: "inventory.csv")
+        let input = RiskScoringService.Input.from(record: record, policy: .default)
+        XCTAssertGreaterThan(RiskScoringService.score(input: input).score, 0,
+                             "scoring a clamped count neither traps nor wraps")
+    }
+
     func testInputFromInventoryRecordInterpretsStringStatuses() {
         let record = DeviceInventoryRecord(
             id: "JSS-100",

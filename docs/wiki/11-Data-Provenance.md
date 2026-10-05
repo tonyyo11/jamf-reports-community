@@ -105,9 +105,9 @@ This table shows where each Overview KPI number comes from:
 | Gatekeeper % | Security report Gatekeeper enabled / total | 2 |
 | Compliance % | EA results (real mSCP/STIG bands) OR 4-control proxy from security report — check config for `complianceIsProxy` | 1 or 2 |
 | Patch % | Share of devices on the latest version: sum of devices on latest / sum of devices, over titles that have devices; from `patch-status` | 2 |
-| Stale Count | Device-compliance rows with last-check-in older than `stale_device_days` threshold | 1 |
-| OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary | SOFA + 2 |
-| Security Score | Weighted composite of FileVault, SIP, firewall, EDR agent, mSCP, XProtect, CVE and Secure Boot, over the metrics measured, under the workspace's security policy and `security_policy.score_weights` (Config → Scoring) | 2 + config |
+| Stale Count | Device-compliance rows whose oldest counted date is more than `stale_device_days` days old; the dates are `thresholds.stale_basis` (default the last check-in; inventory and contact come from the `computers` snapshot) | 1 (+ 2 for inventory or contact) |
+| OS Currency % | Latest macOS version count from SOFA feed / total devices from inventory-summary; can be disabled via `jamf_cli.collect_skip: [sofa]` | SOFA + 2 |
+| Security Score | Weighted share of Macs passing each factor in `security_policy.score_factors` (Config → Scoring; by default the native Jamf Pro factors, plus mSCP and each security agent when configured), over the factors with data, under the workspace's security policy | 2 + config |
 | Action items P0 / P1 | Security report counts under the security policy: P0 = FileVault, SIP or Firewall failing, P1 = Gatekeeper failing, over the Macs that reported the control | 2 + config |
 | mSCP Bands | Pass/Low/Med-Low/Medium/High/No Data distribution from EA results per device | 1 |
 
@@ -120,7 +120,9 @@ Examples:
 
 - If you have not collected `ea-results` yet, Compliance % shows "—".
 - If you have not collected `patch-status` yet, Patch % shows "—".
-- If a device has no last-check-in date, it does not count toward Stale Count.
+- If a device-compliance row has no day count and jamf-cli does not flag it stale, it does not
+  count toward Stale Count. With `stale_basis` listing `inventory`, a Mac the `computers`
+  snapshot dates but that has no inventory date counts as never inventoried: stale.
 
 This is intentional: missing data does not drag down your health scores. When you add that
 data source to your collection schedule, the metric appears and the index recalculates.

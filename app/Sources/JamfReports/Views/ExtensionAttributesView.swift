@@ -464,7 +464,10 @@ struct ExtensionAttributesView: View {
                         }
                     }
                     .chartYAxis {
-                        AxisMarks(position: .leading) { _ in
+                        // The default draws each value inside the plot, above its bar, so with
+                        // ten or more values a bar kept a pixel or two of its row (macOS 15
+                        // and 27); aligned puts the values in a gutter and the bar gets the row.
+                        AxisMarks(preset: .aligned, position: .leading) { _ in
                             AxisValueLabel()
                                 .font(.caption2)
                         }
@@ -673,7 +676,7 @@ private struct BarChartExportView: View {
                 }
             }
             .chartYAxis {
-                AxisMarks(position: .leading) { _ in
+                AxisMarks(preset: .aligned, position: .leading) { _ in
                     AxisValueLabel()
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.Chart.textPrimary)

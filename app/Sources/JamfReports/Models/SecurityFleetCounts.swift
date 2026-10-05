@@ -76,29 +76,16 @@ struct SecurityFleetCounts: Sendable, Equatable {
         return Double(counted - counts.fail) / Double(counted) * 100
     }
 
-    /// A warning is not a gap, so it scores as compliant. An ignored control keeps its count,
-    /// so `effectiveScoreWeights` can drop it without the score calling it missing. Macs that
-    /// did not report a control, and the Macs the hardware rule does not count for FileVault,
-    /// are left out of that metric's share; when that is every Mac, the metric has no share
-    /// this run.
-    func scoreInput() -> SecurityScoreCalculator.Input {
-        let scored: [(SecurityControl, SecurityScore.Metric)] = [
-            (.fileVault, .fileVault), (.sip, .sip), (.firewall, .firewall),
-        ]
-        var compliant: [SecurityScore.Metric: Int] = [:]
-        var totals: [SecurityScore.Metric: Int] = [:]
-        for (control, metric) in scored {
-            guard let counts = controls[control] else { continue }
-            let left = counts.level == .ignore ? 0 : counts.notReported
-            let counted = totalDevices - left
-                - (control == .fileVault ? fileVaultNotCountedByHardware : 0)
-            if counted != totalDevices {
-                guard counted > 0 else { continue }
-                totals[metric] = counted
-            }
-            compliant[metric] = counts.on + counts.warning
-        }
-        return .init(totalDevices: totalDevices, compliantCounts: compliant, metricTotals: totals)
+    /// A control's share for the score: Macs on or at a warning (a warning is not a gap) over
+    /// the Macs measured. Macs that did not report the control, and the Macs the hardware rule
+    /// does not count for FileVault, are left out; when that is every Mac the control has no
+    /// share this run. Nil when the report has no count for the control.
+    func scoreMeasure(for control: SecurityControl) -> SecurityScoreMeasure? {
+        guard let counts = controls[control] else { return nil }
+        let left = counts.level == .ignore ? 0 : counts.notReported
+        let counted = totalDevices - left
+            - (control == .fileVault ? fileVaultNotCountedByHardware : 0)
+        return SecurityScoreMeasure(passing: counts.on + counts.warning, evaluated: counted)
     }
 
     /// FileVault-off Macs in no bucket and not unreported: the ones the hardware rule dropped

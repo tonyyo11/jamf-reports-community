@@ -58,13 +58,17 @@ enum CellValue: Sendable {
 
     private static func sanitizeString(_ raw: String) -> CellValue {
         let filtered = stripControlCharacters(raw)
-        // Excel cell limit: 32,767 characters.
-        let s: String
-        if filtered.count > 32_000 {
-            s = String(String.UnicodeScalarView(filtered.prefix(32_000)))
-        } else {
-            s = String(String.UnicodeScalarView(filtered))
+        // Excel cell limit: 32,767 characters, counted in UTF-16 units. A scalar is at most
+        // two, so only a longer value needs the count.
+        var kept = filtered[...]
+        if filtered.count > 16_000 {
+            var units = 0
+            kept = filtered.prefix(while: { scalar in
+                units += scalar.utf16.count
+                return units <= 32_000
+            })
         }
+        let s = String(String.UnicodeScalarView(kept))
         // Escape formula-injection: cells starting with =, +, -, @ get a leading tab.
         if let first = s.first, "=+-@".contains(first) {
             return .string("\t" + s)
@@ -854,27 +858,51 @@ final class Workbook: @unchecked Sendable {
         return ["png", "jpg", "jpeg", "gif", "bmp"].contains(ext) ? ext : "png"
     }
 
+    /// Excel counts a sheet name in UTF-16 units and allows 31.
+    private static let maxSheetNameUnits = 31
+
     private func sanitizeSheetName(_ name: String) -> String {
         let invalid = CharacterSet(charactersIn: "[]:*?/\\")
         var s = name.components(separatedBy: invalid).joined(separator: " ")
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: "'"))
         s = String(String.UnicodeScalarView(CellValue.stripControlCharacters(s)))
         if s.isEmpty { s = "Sheet" }
-        return String(s.prefix(31))
+        return Self.truncated(s, toUTF16Units: Self.maxSheetNameUnits)
     }
 
-    /// Disambiguate against existing sheet names — two names colliding after
-    /// the 31-char truncation would emit duplicate `<sheet>`, which ECMA-376
-    /// forbids. The suffixed result stays within 31 characters.
+    /// `text` cut to at most `units` UTF-16 units on a Character boundary, so neither a
+    /// surrogate pair nor a joined emoji sequence is split. A single Character longer than
+    /// the limit is cut on a scalar instead of leaving nothing.
+    private static func truncated(_ text: String, toUTF16Units units: Int) -> String {
+        var used = 0
+        var result = ""
+        for character in text {
+            used += character.utf16.count
+            if used > units { break }
+            result.append(character)
+        }
+        guard result.isEmpty else { return result }
+        used = 0
+        for scalar in text.unicodeScalars {
+            used += scalar.utf16.count
+            if used > units { break }
+            result.unicodeScalars.append(scalar)
+        }
+        return result
+    }
+
+    /// Disambiguate against existing sheet names. Excel compares names without regard to
+    /// case, and two names colliding after the 31-unit truncation would emit duplicate
+    /// `<sheet>`, which ECMA-376 forbids. The suffixed result stays within 31 UTF-16 units.
     private func uniqueSheetName(_ base: String) -> String {
-        let existingNames = Set(sheets.map { $0.name })
-        guard existingNames.contains(base) else { return base }
+        let existingNames = Set(sheets.map { $0.name.lowercased() })
+        guard existingNames.contains(base.lowercased()) else { return base }
         var suffix = 2
         while true {
             let suffixStr = "_\(suffix)"
-            let maxBaseLength = max(0, 31 - suffixStr.count)
-            let candidate = String(base.prefix(maxBaseLength)) + suffixStr
-            if !existingNames.contains(candidate) { return candidate }
+            let maxBaseUnits = max(0, Self.maxSheetNameUnits - suffixStr.utf16.count)
+            let candidate = Self.truncated(base, toUTF16Units: maxBaseUnits) + suffixStr
+            if !existingNames.contains(candidate.lowercased()) { return candidate }
             suffix += 1
         }
     }

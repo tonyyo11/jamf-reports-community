@@ -112,6 +112,9 @@ struct ColumnConfig: Decodable, Sendable {
     var entraSSOStatus: String?
     /// Device purchase or acquisition date column. YAML key: `purchase_date`.
     var purchaseDate: String?
+    /// Last Inventory Update column (Jamf's export header). YAML key: `last_inventory`. Read
+    /// only for `thresholds.stale_basis: [inventory]`; a CSV without it has no inventory date.
+    var lastInventory: String?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case computerName = "computer_name"
@@ -142,6 +145,7 @@ struct ColumnConfig: Decodable, Sendable {
         case batteryHealth = "battery_health"
         case entraSSOStatus = "entra_sso_status"
         case purchaseDate = "purchase_date"
+        case lastInventory = "last_inventory"
     }
 
     /// Return the configured column name for the given logical field, or nil if unset.
@@ -176,6 +180,7 @@ struct ColumnConfig: Decodable, Sendable {
         case .batteryHealth: value = batteryHealth
         case .entraSSOStatus: value = entraSSOStatus
         case .purchaseDate: value = purchaseDate
+        case .lastInventory: value = lastInventory
         }
         let trimmed = value?.trimmingCharacters(in: .whitespaces) ?? ""
         return trimmed.isEmpty ? nil : trimmed
@@ -205,6 +210,8 @@ enum ColumnField: String, CaseIterable, Sendable {
     case lastLoggedInUser, recoveryLock, batteryHealth, entraSSOStatus
     /// Device purchase or acquisition date. YAML key: `purchase_date`.
     case purchaseDate
+    /// Last Inventory Update. YAML key: `last_inventory`.
+    case lastInventory
 
     /// The `columns:` key in config.yaml, taken from the decoder rather than spelled from the
     /// case name (which would read `entraSSOStatus` as `entra_s_s_o_status`).
@@ -238,6 +245,7 @@ enum ColumnField: String, CaseIterable, Sendable {
         case .batteryHealth: .batteryHealth
         case .entraSSOStatus: .entraSSOStatus
         case .purchaseDate: .purchaseDate
+        case .lastInventory: .lastInventory
         }
         return key.rawValue
     }
@@ -294,9 +302,10 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Report kinds `collect` never runs — the on-prem stall guard. Only the four
-    /// per-device-heavy kinds count (`ReportEngine.collectSkipKinds`); the GUI does
-    /// not write this key, and a Config screen save keeps it.
+    /// Report kinds `collect` never runs — the on-prem stall guard, and `sofa` for a network
+    /// that must not reach the SOFA host. Only `ReportEngine.skippableKinds` count
+    /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
+    /// screen save keeps it.
     var collectSkip: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {
@@ -600,6 +609,10 @@ struct ThresholdsConfig: Decodable, Sendable {
     var warningDiskPercent: Int?
     var certWarningDays: Int?
     var profileErrorWarning: Int?
+    /// Which dates make a Mac stale (`stale_basis`). Never fails the decode: a word it does not
+    /// know is skipped and named by Config Doctor.
+    var staleBasis: StaleBasisSetting?
+    var contactGapDays: WholeNumberSetting?   // key is `contact_gap_days`
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case staleDeviceDays = "stale_device_days"
@@ -608,6 +621,8 @@ struct ThresholdsConfig: Decodable, Sendable {
         case warningDiskPercent = "warning_disk_percent"
         case certWarningDays = "cert_warning_days"
         case profileErrorWarning = "profile_error_warning"
+        case staleBasis = "stale_basis"
+        case contactGapDays = "contact_gap_days"
     }
 
     var resolvedStaleDays: Int { staleDeviceDays ?? 30 }
@@ -616,6 +631,130 @@ struct ThresholdsConfig: Decodable, Sendable {
     var resolvedWarningDisk: Int { warningDiskPercent ?? 80 }
     var resolvedCertWarningDays: Int { certWarningDays ?? 90 }
     var resolvedProfileErrorWarning: Int { profileErrorWarning ?? 10 }
+    var resolvedStaleBasis: [StaleBasis] { staleBasis?.resolved ?? StaleBasis.default }
+
+    /// `contact_gap_days` when it is a whole number from 1 to 365, else 14.
+    var resolvedContactGapDays: Int {
+        contactGapDays?.value.flatMap { ContactGap.dayRange.contains($0) ? $0 : nil }
+            ?? ContactGap.defaultDays
+    }
+
+    var staleRule: StaleRule { StaleRule(days: resolvedStaleDays, basis: resolvedStaleBasis) }
+}
+
+/// `thresholds.stale_basis` as typed: a date or a list of dates. Never throws (the `AlertRule`
+/// pattern), because a thrown error would fail the whole config.yaml decode.
+struct StaleBasisSetting: Decodable, Sendable, Equatable {
+    /// Each item as typed, in order. An item that is not text reads as an empty word.
+    var words: [String]
+    /// True when the value was neither text nor a list.
+    var wrongShape = false
+
+    init(words: [String], wrongShape: Bool = false) {
+        self.words = words
+        self.wrongShape = wrongShape
+    }
+
+    init(from decoder: Decoder) throws {
+        let single = try? decoder.singleValueContainer()
+        if let text = single.flatMap({ try? $0.decode(String.self) }) {
+            self.init(words: [text])
+        } else if var items = try? decoder.unkeyedContainer() {
+            var found: [String] = []
+            // `decode` moves past the item whether or not it reads, so this ends.
+            while !items.isAtEnd {
+                found.append((try? items.decode(Word.self))?.text ?? "")
+            }
+            self.init(words: found)
+        } else {
+            self.init(words: [], wrongShape: true)
+        }
+    }
+
+    private struct Word: Decodable {
+        let text: String?
+
+        init(from decoder: Decoder) throws {
+            text = (try? decoder.singleValueContainer())
+                .flatMap { try? $0.decode(String.self) }
+        }
+    }
+
+    /// The dates the app knows, each once.
+    var known: [StaleBasis] {
+        let parsed = words.compactMap(StaleBasis.parse)
+        return StaleBasis.allCases.filter(parsed.contains)
+    }
+
+    /// The words that name no date.
+    var skipped: [String] { words.filter { StaleBasis.parse($0) == nil } }
+
+    /// What the app counts: the known dates, or the default when there are none.
+    var resolved: [StaleBasis] { known.isEmpty ? StaleBasis.default : known }
+}
+
+/// A whole-number setting as typed. Never throws, so text where a number belongs costs that
+/// setting, not the config.yaml decode.
+struct WholeNumberSetting: Decodable, Sendable, Equatable {
+    /// The number; nil when the value was not a whole number.
+    var value: Int?
+    /// What was typed, for a Config Doctor row.
+    var typed: String
+
+    init(value: Int?, typed: String) {
+        self.value = value
+        self.typed = typed
+    }
+
+    init(from decoder: Decoder) throws {
+        guard let single = try? decoder.singleValueContainer() else {
+            self.init(value: nil, typed: "")
+            return
+        }
+        if let number = try? single.decode(Int.self) {
+            self.init(value: number, typed: String(number))
+        } else if let text = try? single.decode(String.self) {
+            // YAMLCodec has no float branch: 14.5 and a quoted "14" both arrive as text.
+            self.init(value: Int(text.trimmingCharacters(in: .whitespaces)), typed: text)
+        } else if let flag = try? single.decode(Bool.self) {
+            self.init(value: nil, typed: String(flag))
+        } else {
+            self.init(value: nil, typed: "")
+        }
+    }
+}
+
+extension StaleBasisSetting {
+    /// From a value of `ConfigLoader.rawMapping`: text, a list, or anything else (wrong shape).
+    init(raw: Any?) {
+        switch raw {
+        case nil, is NSNull: self.init(words: [])
+        case let text as String: self.init(words: [text])
+        case let items as [Any]: self.init(words: items.map { $0 as? String ?? "" })
+        default: self.init(words: [], wrongShape: true)
+        }
+    }
+}
+
+extension WholeNumberSetting {
+    /// From a value of `ConfigLoader.rawMapping`. A boolean is not a number even though
+    /// `NSNumber` would read it as one.
+    init?(raw: Any?) {
+        switch raw {
+        case nil, is NSNull: return nil
+        case let flag as Bool: self.init(value: nil, typed: String(flag))
+        case let number as Int: self.init(value: number, typed: String(number))
+        case let text as String:
+            self.init(value: Int(text.trimmingCharacters(in: .whitespaces)), typed: text)
+        default: self.init(value: nil, typed: "")
+        }
+    }
+}
+
+extension ReportConfig {
+    /// The stale rule of this config: `thresholds.stale_device_days` and `stale_basis`.
+    var staleRule: StaleRule { thresholds?.staleRule ?? StaleRule(days: 30) }
+    var contactGapDays: Int { thresholds?.resolvedContactGapDays ?? ContactGap.defaultDays }
 }
 
 // MARK: - output
@@ -841,15 +980,16 @@ struct AlertsConfig: Decodable, Sendable {
     /// no metric, no operator, an unknown metric/operator, or no usable
     /// threshold — so a half-edited rule silently no-ops rather than mis-firing.
     /// A threshold must be finite (rejects a "nan"/"inf" string that parsed to a
-    /// non-finite Double) and non-negative (a negative threshold is meaningless
+    /// non-finite Double), non-negative (a negative threshold is meaningless
     /// for every operator: below/above on 0–100 metrics and drops_more_than
-    /// expects a positive drop).
+    /// expects a positive drop) and at most `AlertRule.maxThreshold`.
     var resolvedRules: [AlertRule] {
         (rules ?? []).filter { rule in
             guard let metric = rule.metric, AlertMetric(rawValue: metric) != nil,
                   let when = rule.when, AlertRule.Comparison(rawValue: when) != nil,
                   let threshold = rule.threshold,
-                  threshold.isFinite, threshold >= 0 else { return false }
+                  threshold.isFinite, threshold >= 0,
+                  threshold <= AlertRule.maxThreshold else { return false }
             return true
         }
     }
@@ -863,6 +1003,11 @@ struct AlertRule: Decodable, Sendable, Equatable {
         case below, above
         case dropsMoreThan = "drops_more_than"
     }
+
+    /// The largest threshold a rule may carry. Percent metrics top out at 100 and the count
+    /// metrics (stale, P0, total devices) at a fleet's size, so a billion is far past any real
+    /// rule: a larger value is a typo (`1e19`), and the rule is dropped.
+    static let maxThreshold: Double = 1_000_000_000
 
     var metric: String?
     var when: String?
@@ -1234,11 +1379,15 @@ enum ConfigLoader {
         case fileNotFound(URL)
         case encodingError(URL)
         case decodeError(String, Error)
+        case fileTooLarge(URL, bytes: Int)
 
         var errorDescription: String? {
             switch self {
             case .fileNotFound(let u): return "config.yaml not found at \(u.path)"
             case .encodingError(let u): return "Could not read config.yaml at \(u.path)"
+            case .fileTooLarge(let u, let bytes):
+                return "config.yaml at \(u.path) is \(bytes) bytes, over the "
+                    + "\(ConfigLoader.maxConfigBytes / 1_048_576) MB limit"
             case .decodeError(let ctx, let e):
                 if let detail = ConfigLoader.describeDecodingFailure(e) {
                     return "Config decode failed (\(ctx)): \(detail)"
@@ -1296,10 +1445,18 @@ enum ConfigLoader {
         }
     }
 
+    /// The largest config.yaml `load` reads. Real files are a few KB; the folder may be shared
+    /// with other Macs and sync tools.
+    static let maxConfigBytes = 4 * 1_048_576
+
     /// Load and decode `config.yaml` at `url`, merging defaults via `withDefaults()`.
     static func load(from url: URL) throws -> ReportConfig {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LoadError.fileNotFound(url)
+        }
+        if let bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+           bytes > maxConfigBytes {
+            throw LoadError.fileTooLarge(url, bytes: bytes)
         }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             throw LoadError.encodingError(url)

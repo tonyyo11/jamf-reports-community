@@ -156,7 +156,7 @@ enum RunHistoryService {
     /// Convert a plist/log label like
     /// `com.github.tonyyo11.jamf-reports-community.profile.daily-snapshot.out`
     /// to `"Daily Snapshot"`.
-    private static func humanName(from label: String) -> String {
+    static func humanName(from label: String) -> String {
         // The background item's own records (tick-level failures) carry no profile part.
         let unstamped = label.replacingOccurrences(
             of: #"\.\d{8}-\d{6}$"#, with: "", options: .regularExpression)

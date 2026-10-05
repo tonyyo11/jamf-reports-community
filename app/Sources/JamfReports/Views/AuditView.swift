@@ -9,6 +9,9 @@ struct AuditFinding: Identifiable, Codable {
     let category: String
     let recommendation: String
     let severity: String
+    /// The Macs behind the finding, for a finding the app computes from the inventory
+    /// (`contactGapFindings`). `pro audit` returns counts only, so its findings have none.
+    var devices: [String] = []
 
     var driftKey: String {
         [
@@ -36,6 +39,18 @@ struct AuditFinding: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case name, affected, category, recommendation, severity
+    }
+
+    /// The findings as CSV. Finding text comes from jamf-cli, so each cell goes through
+    /// `StaleDeviceService.csvField` (formula sign neutralised, CR/LF/comma/quote quoted).
+    static func csv(_ findings: [AuditFinding]) -> String {
+        let header = "Severity,Name,Category,Affected,Recommendation\n"
+        let body = findings.map { f in
+            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
+                .map(StaleDeviceService.csvField)
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        return header + body
     }
 }
 
@@ -90,6 +105,7 @@ struct AuditView: View {
     @State private var duplicateSerials: DuplicateSerialService.Snapshot = .empty
     @State private var commandHealth: MDMCommandHealthService.Snapshot = .empty
     @State private var commandFindings: [AuditFinding] = []
+    @State private var contactGapList: [AuditFinding] = []
 
     @State private var isRunningAudit = false
     @State private var isRunningHygiene = false
@@ -472,7 +488,8 @@ struct AuditView: View {
                             }
                         }
                     }
-                    .frame(height: tableHeight(rowCount: filteredFindings.count))
+                    .pageTableHeight(
+                        rows: filteredFindings.count, rowHeight: PageTableMetrics.richRowHeight)
                     .popover(item: $selectedFinding) { finding in
                         FindingDetailPopover(finding: finding, tone: pillTone(finding.severity))
                     }
@@ -481,6 +498,7 @@ struct AuditView: View {
             }
             duplicateSerialsSection
             commandHealthSection
+            ContactGapSection(findings: contactGapList)
         }
     }
 
@@ -988,14 +1006,8 @@ struct AuditView: View {
         // "Export Findings" appeared to do nothing on network shares and
         // custom folders.)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let header = "Severity,Name,Category,Affected,Recommendation\n"
-        let body = findings.map { f in
-            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
-                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-                .joined(separator: ",")
-        }.joined(separator: "\n")
         do {
-            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            try AuditFinding.csv(findings).write(to: url, atomically: true, encoding: .utf8)
         } catch {
             exportError = "Could not write \(url.lastPathComponent): \(error.localizedDescription)"
             showExportError = true
@@ -1016,6 +1028,7 @@ struct AuditView: View {
             duplicateSerials = DemoData.duplicateSerialsSnapshot
             commandHealth = .empty
             commandFindings = []
+            contactGapList = []
             return
         }
 
@@ -1065,6 +1078,11 @@ struct AuditView: View {
 
         commandFindings = commandHealthFindings(
             commandHealth, failedCommandTotal: failedCommandTotal)
+        let profile = workspace.profile
+        let inventory = await Task.detached(priority: .userInitiated) {
+            DeviceInventoryService.load(profile: profile, demoMode: false)
+        }.value
+        contactGapList = contactGapFindings(inventory)
 
         let hygieneSnapshots = await bridge.cachedJSONSnapshots(
             profile: workspace.profile,
@@ -1264,7 +1282,7 @@ private struct AffectedBar: View {
     }
 }
 
-private struct FindingDetailPopover: View {
+struct FindingDetailPopover: View {
     let finding: AuditFinding
     let tone: Pill.Tone
     @Environment(\.dismiss) private var dismiss
@@ -1295,6 +1313,8 @@ private struct FindingDetailPopover: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
+
+            if !finding.devices.isEmpty { deviceList }
 
             // `pro audit` returns counts, not device lists — "take action"
             // means routing to the screen that holds the underlying records.
@@ -1335,6 +1355,25 @@ private struct FindingDetailPopover: View {
         .padding(16)
         .frame(width: 360)
         .background(Theme.Colors.winBG)
+    }
+
+    /// The Macs of a finding the app computed itself, in a scroll area so a long list does
+    /// not stretch the popover.
+    private var deviceList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Kicker(text: "Macs (\(finding.devices.count))")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(finding.devices, id: \.self) { device in
+                        Text(device)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.Colors.fg2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 140)
+        }
     }
 }
 
@@ -1579,6 +1618,7 @@ func auditActionDestination(for finding: AuditFinding) -> (label: String, tab: T
     if name.contains("mdm command") { return ("Devices", .devices) }
     switch finding.category.lowercased() {
     case "security": return ("Security Posture", .securityPosture)
+    case "contact gap": return ("Devices", .devices)
     case "compliance": return ("Compliance Posture", .compliancePosture)
     case "hygiene": return ("Policies & Profiles", .policyProfile)
     default: return nil

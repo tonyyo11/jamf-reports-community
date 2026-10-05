@@ -26,6 +26,7 @@ final class HtmlReportLayoutTests: XCTestCase {
         var updateFailures = 2
         var dashboard = false
         var summaries = true
+        var complianceIsProxy = true
         var yaml = ""
         var eaResults: [[String: Any]] = []
     }
@@ -131,31 +132,34 @@ final class HtmlReportLayoutTests: XCTestCase {
         }
         try fleet.yaml.write(
             to: root.appendingPathComponent("config.yaml"), atomically: true, encoding: .utf8)
-        if fleet.summaries { try writeSummaries(root) }
+        if fleet.summaries { try writeSummaries(root, proxy: fleet.complianceIsProxy) }
         return (try ConfigLoader.loadFromString(fleet.yaml).withDefaults(), dataDir)
     }
 
     /// Two daily summaries eight days apart, so the lookback finds the earlier one. Changes:
     /// score +2.0 (better), P0 +2 (worse), patch none, macOS +1.5 (better), stale +4
     /// (worse), compliance -5.0 (worse).
-    private func writeSummaries(_ root: URL) throws {
+    private func writeSummaries(_ root: URL, proxy: Bool = true) throws {
         let dir = root.appendingPathComponent("snapshots/summaries", isDirectory: true)
         let today = Self.anchor
         let earlier = Calendar.current.date(byAdding: .day, value: -8, to: today)!
         func summary(
             _ date: Date, score: Double, p0: Int, patch: Double, os: Double, stale: Int,
-            compliance: Double, basis: String? = DailySummary.deviceWeightedPatchBasis
+            compliance: Double, basis: String? = DailySummary.deviceWeightedPatchBasis,
+            proxy: Bool = true
         ) -> DailySummary {
             DailySummary(
                 date: GoldenFleetClock.daySummaryString(date), totalDevices: 20,
                 fileVaultPct: 95, compliancePct: compliance, staleCount: stale, osCurrentPct: os,
                 crowdstrikePct: nil, patchPct: patch, source: "jamf-cli",
                 provenance: nil, securityScore: score, actionItemsP0: p0,
-                complianceIsProxy: true, patchPctBasis: basis)
+                complianceIsProxy: proxy, patchPctBasis: basis)
         }
         let all = [
-            summary(earlier, score: 80, p0: 10, patch: 70, os: 60, stale: 5, compliance: 90),
-            summary(today, score: 82, p0: 12, patch: 70, os: 61.5, stale: 9, compliance: 85),
+            summary(earlier, score: 80, p0: 10, patch: 70, os: 60, stale: 5, compliance: 90,
+                    proxy: proxy),
+            summary(today, score: 82, p0: 12, patch: 70, os: 61.5, stale: 9, compliance: 85,
+                    proxy: proxy),
         ]
         for item in all {
             try GoldenFleetWorkspace.writeJSON(
@@ -351,7 +355,7 @@ final class HtmlReportLayoutTests: XCTestCase {
         XCTAssertEqual(os.value, "61.5%")
         XCTAssertEqual(os.change, "+1.5 pp · better")
 
-        let stale = try tile("Stale Macs (30+ days)", in: html)
+        let stale = try tile("Stale Macs (&gt;30 days)", in: html)
         XCTAssertEqual(stale.value, "9")
         XCTAssertEqual(stale.change, "+4 · worse", "more stale Macs is worse")
 
@@ -359,6 +363,16 @@ final class HtmlReportLayoutTests: XCTestCase {
         XCTAssertEqual(compliance.value, "85.0%")
         XCTAssertEqual(compliance.change, "-5.0 pp · worse")
         XCTAssertEqual(html.components(separatedBy: "<div class=\"glance-tile\">").count - 1, 6)
+    }
+
+    /// A benchmark named by its plist has no space to wrap at; the tile can break it at its
+    /// dots and underscores, so it stays inside the card.
+    func testALongComplianceLabelBreaksAtItsSeparators() async throws {
+        let html = try await render(Fleet(
+            complianceIsProxy: false,
+            yaml: "compliance:\n  baseline_label: \"org.example_800_53r5.audit.plist\"\n"))
+        XCTAssertTrue(html.contains("<div class=\"glance-label\">"
+            + "org.<wbr>example_<wbr>800_<wbr>53r5.<wbr>audit.<wbr>plist</div>"))
     }
 
     func testTheCaptionNamesTheDateTheChangesCompareWith() async throws {
@@ -468,7 +482,8 @@ final class HtmlReportLayoutTests: XCTestCase {
         let items = attention(html)
         let texts = items.map(\.text)
         // The figure the "At a glance" tile shows (the summary's), not a second count.
-        XCTAssertTrue(texts.contains("9 Macs have not checked in for 30 days or more."), "\(texts)")
+        XCTAssertTrue(
+            texts.contains("9 Macs have not checked in for more than 30 days."), "\(texts)")
         XCTAssertTrue(texts.contains {
             $0 == "12 P0 security gaps need action: FileVault, SIP or Firewall is off."
         }, "\(texts)")
@@ -759,8 +774,14 @@ final class HtmlReportLayoutTests: XCTestCase {
         XCTAssertTrue(text.contains("Security report (security)"))
         XCTAssertTrue(text.contains("Patch status (patch-status)"))
         XCTAssertTrue(text.contains("Daily summaries (snapshots/summaries)"))
-        XCTAssertTrue(text.contains("no check-in for 45 days or more"))
-        XCTAssertTrue(text.contains("Weights: FileVault 15, SIP 15, Firewall 0"))
+        XCTAssertTrue(text.contains("no check-in for more than 45 days"))
+        // Firewall is not counted, so it is not a factor; the check-in label names the window.
+        XCTAssertTrue(text.contains(
+            "Factors and weights: FileVault 15, SIP 10, Gatekeeper 5, "
+                + "Secure Boot at full security 5, Bootstrap token escrowed 5, "), text)
+        XCTAssertTrue(text.contains("Checked in within 45 days 5"))
+        XCTAssertFalse(text.contains("Firewall 10"))
+        XCTAssertTrue(text.contains("<td>Score factors</td><td>Defaults</td>"))
         XCTAssertTrue(text.contains("<td>System Integrity Protection</td><td>Warning</td>"))
         XCTAssertTrue(text.contains("<td>Firewall</td><td>Not counted</td>"))
         XCTAssertTrue(text.contains(

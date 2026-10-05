@@ -513,6 +513,19 @@ final class DeviceSecurityStateTests: XCTestCase {
         XCTAssertEqual(StaleDeviceService.csvField("a\t=1"), "a\t=1")
     }
 
+    /// Swift reads "\r\n" as one `Character` equal to neither "\r" nor "\n", so a
+    /// Character test left `a\r\n=1+1` unquoted and Excel started a second record.
+    func testCSVFieldQuotesACRLFPair() {
+        XCTAssertEqual(StaleDeviceService.csvField("a\r\n=1+1"), "\"a\r\n=1+1\"")
+        XCTAssertEqual(StaleDeviceService.csvField("\r\n=1"), "\"\t\r\n=1\"")
+    }
+
+    /// A combining mark fuses with the sign into one `Character` that is not "=".
+    func testCSVFieldNeutralisesAFormulaSignFollowedByACombiningMark() {
+        XCTAssertEqual(StaleDeviceService.csvField("=\u{301}1"), "\t=\u{301}1")
+        XCTAssertEqual(StaleDeviceService.csvField("@\u{301}x"), "\t@\u{301}x")
+    }
+
     /// The tile counts the Macs the rule took out of the gaps; FileVault stays off for the share.
     func testSnapshotCountsHardwareEncryptedFileVaultOffApart() {
         let macs = [

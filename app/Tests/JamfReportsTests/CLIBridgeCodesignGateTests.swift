@@ -239,34 +239,9 @@ final class CLIBridgeCodesignGateTests: XCTestCase {
     // accept path: the real CodeSignVerifier returns true for a genuinely
     // signed binary, and CLIBridge.codesignGate returns nil (allow).
 
-    /// Locate a validly-signed binary that carries a Team ID so the real
-    /// `CodeSignVerifier` success branch can be exercised. Apple platform
-    /// binaries (`/bin/ls`, …) carry no Team ID; third-party apps under
-    /// `/Applications` do. Returns nil when none is found so the caller skips.
-    private func firstTeamIDSignedBinary() -> (url: URL, teamID: String)? {
-        let fm = FileManager.default
-        guard let apps = try? fm.contentsOfDirectory(
-            at: URL(fileURLWithPath: "/Applications"),
-            includingPropertiesForKeys: nil
-        ) else { return nil }
-        for app in apps.sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
-        where app.pathExtension == "app" {
-            let exeDir = app.appendingPathComponent("Contents/MacOS", isDirectory: true)
-            guard let exes = try? fm.contentsOfDirectory(
-                at: exeDir, includingPropertiesForKeys: nil
-            ) else { continue }
-            for exe in exes.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                if let team = CodeSignVerifier.teamID(of: exe), !team.isEmpty {
-                    return (exe, team)
-                }
-            }
-        }
-        return nil
-    }
-
     func testCodeSignVerifierAcceptsProperlySignedBinary() throws {
-        guard let (binary, teamID) = firstTeamIDSignedBinary() else {
-            throw XCTSkip("No Team-ID-signed binary found under /Applications on this host")
+        guard let (binary, teamID) = DeveloperIDTestBinary.find() else {
+            throw XCTSkip("No Developer ID signed binary found under /Applications on this host")
         }
         // Real verifier, real signed binary, `expectedTeamID` stubbed to the
         // binary's own Team ID — the success branch the rejection-only suite

@@ -146,8 +146,8 @@ struct SecurityPolicyCard: View {
         ForEach(Self.shapeIssues(in: issues), id: \.keyPath) { issue in
             warnNote(Self.shapeCaption(issue))
         }
-        ForEach(Self.weightIssues(in: issues), id: \.keyPath) { issue in
-            warnNote(Self.weightCaption(issue))
+        ForEach(Self.factorIssues(in: issues), id: \.keyPath) { issue in
+            warnNote(Self.factorCaption(issue))
         }
         if let unknown = Self.unknownKeysCaption(issues) { warnNote(unknown) }
     }
@@ -265,15 +265,15 @@ struct SecurityPolicyCard: View {
         level(SecurityPolicyConfigLoader.hardwarePath, in: issues)
     }
 
-    /// The block, `controls` or `score_weights` holding something other than settings.
+    /// The block or `controls` holding something other than settings.
     static func shapeIssues(in issues: [SecurityPolicyIssue]) -> [SecurityPolicyIssue] {
         issues.filter { SecurityPolicyConfigLoader.blockKeyPaths.contains($0.keyPath) }
     }
 
-    /// A `score_weights` value the app did not read as a weight. The weights card has its own
-    /// steppers, so these are noted here with the other hand-typed values.
-    static func weightIssues(in issues: [SecurityPolicyIssue]) -> [SecurityPolicyIssue] {
-        issues.filter { SecurityPolicyConfigLoader.isWeightPath($0.keyPath) && !$0.used.isEmpty }
+    /// A `score_factors` entry the app skipped or read other than as typed. The factors card
+    /// edits the list, so these are noted here with the other hand-typed values.
+    static func factorIssues(in issues: [SecurityPolicyIssue]) -> [SecurityPolicyIssue] {
+        issues.filter { SecurityPolicyConfigLoader.isFactorPath($0.keyPath) && !$0.used.isEmpty }
     }
 
     static func levelCaption(_ issue: SecurityPolicyIssue) -> String {
@@ -281,12 +281,11 @@ struct SecurityPolicyCard: View {
             + "using \(shown(issue.used))."
     }
 
-    /// Names the key as `score_weights.<key>`: the whole key path of the longest key is past
-    /// what `shown` allows.
-    static func weightCaption(_ issue: SecurityPolicyIssue) -> String {
-        let key = issue.keyPath.split(separator: ".").last.map(String.init) ?? issue.keyPath
-        return "config.yaml's score_weights.\(shown(key)) is \"\(shown(issue.value))\", which "
-            + "is not a number from 0 to 100 — using \(shown(issue.used))."
+    /// Names the entry as `score_factors[N]`, with what the app did with it.
+    static func factorCaption(_ issue: SecurityPolicyIssue) -> String {
+        let path = issue.keyPath.replacingOccurrences(of: "security_policy.", with: "")
+        let typed = issue.value.isEmpty ? "" : " (\"\(shown(issue.value))\")"
+        return "config.yaml's \(shownPath(path))\(typed): \(issue.used)."
     }
 
     static func shapeCaption(_ issue: SecurityPolicyIssue) -> String {
@@ -317,208 +316,12 @@ struct SecurityPolicyCard: View {
 
 // MARK: - Scoring tab
 
-/// Lets the user set the weighted Security Score formula lifted from v3.5. The weights are
-/// saved to the workspace's `security_policy.score_weights` through
-/// `WorkspaceStore.saveScoreWeights`, so the summary, the workbook and the Security Posture
-/// screen score with the same set. A workspace with none saved shows this Mac's earlier
-/// preference (`ScoringConfig.storageKey`), which is only read. Tenants without certain agent
-/// stacks (e.g. no CrowdStrike) can zero out the matching weight to drop that metric from the
-/// score entirely.
-///
-/// The weights card is built in small functions: Swift 6.1 could not type-check it as one
-/// expression in reasonable time.
+/// The workspace's security policy and the factors the Security Score counts.
 struct ScoringTab: View {
-    @AppStorage(ScoringConfig.storageKey) private var legacyRaw: String = ""
-    @Environment(\.colorSchemeContrast) private var contrast
-    @Environment(WorkspaceStore.self) private var workspace
-    @State private var saveFailure: String?
-    /// What a save did not keep (a backup was made), shown while its profile is live.
-    @State private var saveNote: ProfileSaveNote?
-
-    /// Demo mode shows the defaults the demo's own score uses, not this Mac's preference.
-    private var displayed: (weights: SecurityScoreWeights, fromLegacyPreference: Bool) {
-        ScoringConfig.displayedWeights(
-            config: workspace.securityPolicy.scoreWeights,
-            legacyRaw: workspace.demoMode ? "" : legacyRaw)
-    }
-
-    /// Saves the whole set with one weight changed.
-    private func update(_ mutate: (inout SecurityScoreWeights) -> Void) {
-        guard !workspace.demoMode else { return }
-        var weights = displayed.weights
-        mutate(&weights)
-        save(weights)
-    }
-
-    /// Nil removes the block, so the workspace scores with the defaults again.
-    private func save(_ weights: SecurityScoreWeights?) {
-        guard !workspace.demoMode else { return }
-        do {
-            noting(try workspace.saveScoreWeights(weights))
-        } catch {
-            saveFailure = "Couldn't save the score weights: \(error.localizedDescription)"
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SecurityPolicyCard()
-            // Read once per body evaluation: the 8 weight rows and the total share it.
-            weightsCard(displayed)
-        }
-    }
-
-    private func weightsCard(
-        _ shown: (weights: SecurityScoreWeights, fromLegacyPreference: Bool)
-    ) -> some View {
-        Card(padding: 18) {
-            VStack(alignment: .leading, spacing: 14) {
-                weightsHeader(totalWeight: Self.totalWeight(shown.weights))
-                Text(Self.intro(fromLegacyPreference: shown.fromLegacyPreference))
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.tertiary(contrast))
-                statusLines
-                weightRows(shown.weights)
-                    .disabled(workspace.demoMode)
-                    .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Security score weight configuration")
-    }
-
-    /// A successful save clears the failure and keeps what it did not keep as the note.
-    private func noting(_ report: ConfigSaveReport) {
-        saveFailure = nil
-        if let saved = report.note(for: workspace.profile) { saveNote = saved }
-    }
-
-    @ViewBuilder
-    private var statusLines: some View {
-        if let saveFailure {
-            Text(saveFailure)
-                .font(.caption)
-                .foregroundStyle(Theme.Colors.danger)
-        }
-        if let line = saveNote?.line(for: workspace.profile) {
-            Text(line)
-                .font(.caption)
-                .foregroundStyle(Theme.Colors.warn)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func weightsHeader(totalWeight: Double) -> some View {
-        HStack {
-            SectionHeader(title: "Security Score Weights")
-            Spacer()
-            Pill(
-                text: "Sum: \(Int(totalWeight))",
-                tone: totalWeight == 100 ? .teal : .gold,
-                icon: totalWeight == 100 ? "checkmark" : "scalemass"
-            )
-            PNPButton(title: "Reset to v3.5 defaults", size: .sm) {
-                save(ScoringConfig.resetWeights(legacyRaw: legacyRaw))
-            }
-            .disabled(workspace.demoMode)
-            .help(workspace.demoMode ? DemoData.liveOnlyHelp : Self.resetHelp)
-        }
-    }
-
-    private func weightRows(_ weights: SecurityScoreWeights) -> some View {
-        VStack(spacing: 6) {
-            weightRow("FileVault Encryption", value: binding(\.fileVault, weights))
-            weightRow("System Integrity Protection", value: binding(\.sip, weights))
-            weightRow("Firewall Enabled", value: binding(\.firewall, weights))
-            weightRow(edrLabel, value: binding(\.edrAgent, weights))
-            edrAgentPicker
-            weightRow("mSCP Compliance", value: binding(\.mscp, weights))
-            weightRow("XProtect Current", value: binding(\.xprotect, weights))
-            weightRow("CVE Clean", value: binding(\.cve, weights))
-            weightRow("Secure Boot (Full)", value: binding(\.secureBoot, weights))
-        }
-    }
-
-    /// Which `security_agents` entry the EDR weight and the EDR score card follow. Offered with
-    /// two or more agents; the others are shown and tracked but do not change the score.
-    @ViewBuilder
-    private var edrAgentPicker: some View {
-        let names = workspace.configState.securityAgents.map(\.name)
-            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        if names.count > 1 {
-            HStack {
-                Text("Agent counted as EDR")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.Colors.fg)
-                Spacer()
-                Picker("Agent counted as EDR", selection: edrAgentBinding) {
-                    ForEach(names, id: \.self) { Text($0).tag(Optional($0)) }
-                }
-                .labelsHidden()
-                .frame(width: 260)
-                .disabled(workspace.demoMode)
-            }
-            .padding(.leading, 12)
-        }
-    }
-
-    /// The picker shows the agent that counts, so the default reads as the first agent's name
-    /// and choosing it writes that name.
-    private var edrAgentBinding: Binding<String?> {
-        Binding(
-            get: { workspace.edrAgentName },
-            set: { name in
-                do {
-                    noting(try workspace.saveEDRAgent(name))
-                } catch {
-                    saveFailure = "Couldn't save the EDR agent: \(error.localizedDescription)"
-                }
-            })
-    }
-
-    private var edrLabel: String {
-        "\(workspace.edrAgentName ?? "EDR Agent") Connected"
-    }
-
-    /// Reads the weight from the set this body evaluation shows; a change saves that set with
-    /// the one weight replaced.
-    private func binding(
-        _ keyPath: WritableKeyPath<SecurityScoreWeights, Double>,
-        _ weights: SecurityScoreWeights
-    ) -> Binding<Int> {
-        Binding(
-            get: { Int(weights[keyPath: keyPath]) },
-            set: { value in update { $0[keyPath: keyPath] = Double(value) } })
-    }
-
-    private static let resetHelp =
-        "Restore the eight default weights from the v3.5 production script."
-
-    private static func intro(fromLegacyPreference: Bool) -> String {
-        let base: String = "These weights drive the Security Score everywhere: Security Posture, "
-            + "the Overview, Trends, alerts and reports. They are saved to this "
-            + "workspace's config.yaml. Set a weight to 0 to drop that metric "
-            + "entirely. Missing metrics in your data are auto-renormalized so the "
-            + "score still scales to 100."
-        guard fromLegacyPreference else { return base }
-        return base + " These are this Mac's earlier weights; they apply once you change "
-            + "one, which saves them to this workspace."
-    }
-
-    private static func totalWeight(_ w: SecurityScoreWeights) -> Double {
-        w.fileVault + w.sip + w.firewall + w.edrAgent + w.mscp + w.xprotect + w.cve + w.secureBoot
-    }
-
-    @ViewBuilder
-    private func weightRow(_ label: String, value: Binding<Int>) -> some View {
-        HStack {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(Theme.Colors.fg)
-            Spacer()
-            EditableNumberStepper(value: value, range: 0...100, suffix: "pts")
-                .accessibilityLabel("\(label) weight")
-                .accessibilityValue("\(value.wrappedValue) points out of 100")
+            ScoreFactorsCard()
         }
     }
 }

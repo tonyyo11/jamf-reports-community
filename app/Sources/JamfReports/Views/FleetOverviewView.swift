@@ -312,7 +312,7 @@ struct FleetOverviewView: View {
                     StatTile(
                         label: "Stale",
                         value: row.summary?.staleCount.map { "\($0)" } ?? "--",
-                        sub: "30d+ since contact"
+                        sub: ">30d since contact"
                     )
                     StatTile(
                         label: "Patch",
@@ -866,7 +866,7 @@ func fleetProfileIssues(_ summary: DailySummary?) -> [FleetProfileIssue] {
     if let staleCount = summary.staleCount, staleCount > 0 {
         issues.append(FleetProfileIssue(
             reason: "\(staleCount) stale device\(staleCount == 1 ? "" : "s")",
-            explanation: "Devices that have not checked in for 30+ days. Offline "
+            explanation: "Devices that have not checked in for more than 30 days. Offline "
                 + "Outreach buckets them by how long they have been quiet.",
             actionLabel: "Open Offline Outreach",
             tab: .outreach

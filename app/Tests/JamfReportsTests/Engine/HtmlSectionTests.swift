@@ -61,6 +61,31 @@ final class HtmlSectionTests: XCTestCase {
         )
     }
 
+    /// A reverse-DNS name wraps at its separators, and nothing is added where no text follows.
+    func testEscapeHTMLBreakableBreaksAfterSeparatorsOnly() {
+        let breakable = HtmlSectionFormatters.escapeHTMLBreakable
+        XCTAssertEqual(
+            breakable("org.example_800.audit.plist"),
+            "org.<wbr>example_<wbr>800.<wbr>audit.<wbr>plist")
+        XCTAssertEqual(breakable("a/b."), "a/<wbr>b.")
+        XCTAssertEqual(breakable("Compliance Benchmark"), "Compliance Benchmark")
+        XCTAssertEqual(breakable("v1.2 <b>"), "v1.<wbr>2 &lt;b&gt;")
+    }
+
+    func testEscapeHTMLBreakableStillEscapes() {
+        let html = HtmlSectionFormatters.escapeHTMLBreakable(Self.xssPayload)
+        XCTAssertFalse(html.contains("<script>"))
+        XCTAssertTrue(html.contains("&lt;/<wbr>script&gt;"))
+    }
+
+    func testAINarrativeSectionIsASpacedBlockWithItsCaptionInAClass() {
+        let html = makeReport().buildAINarrativeSection("Fleet <b>ok</b> & stable")
+        XCTAssertTrue(html.contains("<section class=\"summary-block\" id=\"ai-narrative\">"))
+        XCTAssertTrue(html.contains("<p class=\"ai-note\">"))
+        XCTAssertFalse(html.contains("style="), "the caption's look lives in the style sheet")
+        XCTAssertTrue(html.contains("Fleet &lt;b&gt;ok&lt;/b&gt; &amp; stable"))
+    }
+
     func testRenderTable() {
         let html = HtmlSectionFormatters.renderTable(
             headers: ["Name", "Count"],
@@ -276,17 +301,31 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertEqual(block.omission, "no patch or update failures in the snapshots")
     }
 
-    /// Thirty failures: ten rows show, the other twenty sit behind "Show all 30".
+    /// Twenty-five failures: ten rows show, the other fifteen sit behind "Show all 25".
     func testRecentFailuresShowTenAndKeepTheRestBehindShowAll() {
-        let patch: [[String: Any]] = (0..<30).map {
+        let html = makeReport().buildRecentFailures(
+            patchFailures: Self.patchFailures(count: 25), updateFailures: []).html
+        let (shown, rest) = Self.splitAtShowAll(html)
+        XCTAssertEqual(Self.bodyRows(shown), 10)
+        XCTAssertTrue(html.contains("<summary>Show all 25</summary>"))
+        XCTAssertEqual(Self.bodyRows(rest), 15)
+        XCTAssertFalse(html.contains("more rows are in the workbook"))
+    }
+
+    /// The failures list names Macs, so it keeps 2.8.3's 25 rows, not the 500 of other lists.
+    func testRecentFailuresHoldAtMostTwentyFiveRows() {
+        let html = makeReport().buildRecentFailures(
+            patchFailures: Self.patchFailures(count: 40), updateFailures: []).html
+        XCTAssertEqual(Self.bodyRows(html), 25)
+        XCTAssertTrue(html.contains("15 more rows are in the workbook."))
+        XCTAssertTrue(html.contains("Recent failures (40)"))
+    }
+
+    private static func patchFailures(count: Int) -> [[String: Any]] {
+        (0..<count).map {
             ["device": "Mac-\($0)", "serial": "S\($0)", "policy": "Zoom",
              "status_date": "2026-03-\(String(format: "%02d", $0 % 28 + 1))"]
         }
-        let html = makeReport().buildRecentFailures(patchFailures: patch, updateFailures: []).html
-        let (shown, rest) = Self.splitAtShowAll(html)
-        XCTAssertEqual(Self.bodyRows(shown), 10)
-        XCTAssertTrue(html.contains("<summary>Show all 30</summary>"))
-        XCTAssertEqual(Self.bodyRows(rest), 20)
     }
 
     /// Body rows in `html`: every row `renderTable` closes after its last cell.
@@ -335,6 +374,7 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("intervention-list"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("Stale-Mac"))
+        XCTAssertTrue(html.contains("Macs with no check-in for more than 30 days (1)"), html)
     }
 
     func testInterventionListIsLeftOutWithoutAComputersSnapshot() {
@@ -343,23 +383,59 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertEqual(block.omission, "no computers snapshot")
     }
 
+    /// "More than N days": a Mac at exactly the threshold is not listed, one day later is.
+    func testInterventionListHoldsMacsPastTheThresholdNotAtIt() {
+        func stamp(daysAgo: Int) -> String {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            return formatter.string(
+                from: Date().addingTimeInterval(-Double(daysAgo) * 86_400 - 3_600))
+        }
+        let report = makeReport()
+        let inventory: [[String: Any]] = [
+            ["name": "Mac-at-30", "serial_number": "S30", "last_check_in": stamp(daysAgo: 30)],
+            ["name": "Mac-at-31", "serial_number": "S31", "last_check_in": stamp(daysAgo: 31)],
+        ]
+        XCTAssertEqual(report.staleComputers(inventory).map(\.age), [.days(31)])
+        let html = report.buildInterventionList(computersInventory: inventory).html
+        XCTAssertTrue(html.contains("Mac-at-31"))
+        XCTAssertFalse(html.contains("Mac-at-30"))
+    }
+
     func testInterventionListIsLeftOutWhenNoMacIsPastTheThreshold() {
         let recent: [[String: Any]] = [["name": "Fresh", "last_check_in": "2999-01-01"]]
         let block = makeReport().buildInterventionList(computersInventory: recent)
         XCTAssertTrue(block.html.isEmpty)
-        XCTAssertEqual(block.omission, "no Mac has gone 30 days or more without a check-in")
+        XCTAssertEqual(block.omission, "no Mac has gone more than 30 days without a check-in")
     }
 
-    /// A hundred and five stale Macs: ten show, the other ninety-five sit behind "Show all".
+    /// A hundred stale Macs: ten show, the other ninety sit behind "Show all".
     func testInterventionListKeepsEveryRowBehindShowAll() {
-        let inventory: [[String: Any]] = (0..<105).map {
-            ["name": "Stale-\($0)", "serial_number": "S\($0)", "last_check_in": "2020-01-01"]
-        }
+        let inventory = Self.staleMacs(count: 100)
         let html = makeReport().buildInterventionList(computersInventory: inventory).html
         let (shown, rest) = Self.splitAtShowAll(html)
         XCTAssertEqual(Self.bodyRows(shown), 10)
-        XCTAssertEqual(Self.bodyRows(rest), 95)
-        XCTAssertTrue(html.contains("<summary>Show all 105</summary>"))
+        XCTAssertEqual(Self.bodyRows(rest), 90)
+        XCTAssertTrue(html.contains("<summary>Show all 100</summary>"))
+        XCTAssertFalse(html.contains("more rows are in the workbook"))
+    }
+
+    /// The list names Macs, serials and users in a forwarded file, so it keeps 2.8.3's 100
+    /// rows and says how many more the workbook has.
+    func testInterventionListHoldsAtMostAHundredRows() {
+        let html = makeReport()
+            .buildInterventionList(computersInventory: Self.staleMacs(count: 150)).html
+        XCTAssertEqual(Self.bodyRows(html), 100)
+        XCTAssertTrue(html.contains("50 more rows are in the workbook."))
+        XCTAssertTrue(html.contains("<summary>Show 100 of 150</summary>"))
+        XCTAssertTrue(html.contains("for more than 30 days (150)"))
+    }
+
+    private static func staleMacs(count: Int) -> [[String: Any]] {
+        (0..<count).map {
+            ["name": "Stale-\($0)", "serial_number": "S\($0)", "last_check_in": "2020-01-01"]
+        }
     }
 
     func testInterventionListXSS() {

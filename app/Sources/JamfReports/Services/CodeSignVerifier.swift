@@ -19,7 +19,8 @@ enum CodeSignVerifier {
     /// Returns the Team ID embedded in the code signature of the binary at `url`.
     ///
     /// Uses `SecStaticCodeCreateWithPath` + `SecCodeCopySigningInformation` to extract
-    /// the signing identity without executing the binary.
+    /// the signing identity without executing the binary. The value is what the code
+    /// directory claims, so it is never a trust decision; `verify(url:expectedTeamID:)` is.
     ///
     /// - Parameter url: Absolute file URL of the binary to inspect.
     /// - Returns: The Team ID string (e.g. `"9CKFZ3A4YR"`), or `nil` if the binary is
@@ -44,16 +45,33 @@ enum CodeSignVerifier {
         return dict[kSecCodeInfoTeamIdentifier as String] as? String
     }
 
-    /// Returns `true` if the binary at `url` has a valid signature issued by `expectedTeamID`.
+    /// Returns `true` if the binary at `url` is validly signed by a Developer ID or Apple
+    /// certificate chain whose leaf belongs to `expectedTeamID`.
     ///
-    /// Performs both a static validity check (the binary has not been modified since
-    /// signing) and a Team ID comparison. Both must pass.
+    /// Checks the signature against a code requirement rather than comparing the Team ID
+    /// read from the code directory: an ad-hoc signature can carry any Team ID string
+    /// (`codesign --team-identifier`), but it cannot satisfy `anchor apple generic` with
+    /// the team's certificate as leaf.
     ///
     /// - Parameters:
     ///   - url: Absolute file URL of the binary to verify.
-    ///   - expectedTeamID: The Team ID that must appear in the signing certificate chain.
-    /// - Returns: `true` if the binary is validly signed by the expected team, `false` otherwise.
+    ///   - expectedTeamID: The Team ID in the signing certificate's subject OU: ten
+    ///     uppercase letters or digits. Anything else returns `false` without building a
+    ///     requirement, so the value cannot add requirement syntax.
+    /// - Returns: `true` if the binary satisfies the requirement, `false` otherwise.
     static func verify(url: URL, expectedTeamID: String) -> Bool {
+        guard isWellFormedTeamID(expectedTeamID) else { return false }
+
+        var requirement: SecRequirement?
+        let requirementText =
+            "anchor apple generic and certificate leaf[subject.OU] = \"\(expectedTeamID)\""
+        let requirementStatus = SecRequirementCreateWithString(
+            requirementText as CFString,
+            SecCSFlags(rawValue: 0),
+            &requirement
+        )
+        guard requirementStatus == errSecSuccess, let requirement else { return false }
+
         var staticCode: SecStaticCode?
         let createStatus = SecStaticCodeCreateWithPath(
             url as CFURL,
@@ -62,15 +80,17 @@ enum CodeSignVerifier {
         )
         guard createStatus == errSecSuccess, let code = staticCode else { return false }
 
-        // Verify the binary has not been modified since signing.
         let validityStatus = SecStaticCodeCheckValidity(
             code,
-            SecCSFlags(rawValue: kSecCSCheckAllArchitectures),
-            nil
+            SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSStrictValidate),
+            requirement
         )
-        guard validityStatus == errSecSuccess else { return false }
+        return validityStatus == errSecSuccess
+    }
 
-        guard let foundTeamID = teamID(of: url) else { return false }
-        return foundTeamID == expectedTeamID
+    /// Apple Team IDs are ten uppercase ASCII letters or digits.
+    private static func isWellFormedTeamID(_ value: String) -> Bool {
+        value.utf8.count == 10
+            && value.utf8.allSatisfy { ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x41 && $0 <= 0x5A) }
     }
 }

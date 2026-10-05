@@ -101,7 +101,7 @@ struct FleetDriftWriter {
         ws.setColumnWidth(0, 0, 34)
         ws.setColumnWidth(1, 5, 22)
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
+        let staleRule = config.staleRule
         guard let serialColName = config.columns?.columnName(for: .serialNumber) else {
             ws.write("serial_number column not configured — Fleet Drift unavailable.",
                      row: row, col: 0, format: .cell)
@@ -138,10 +138,8 @@ struct FleetDriftWriter {
         // --- New Stale ---
         let commonSerials = currentSerials.intersection(priorSerials).sorted()
         let newStale = commonSerials.filter { serial in
-            let curDays = daysSince(checkIn: currentMap[serial])
-            let priorDays = daysSince(checkIn: priorMap[serial])
-            return !isStale(days: priorDays, threshold: staleThreshold)
-                && isStale(days: curDays, threshold: staleThreshold)
+            !isStale(priorMap[serial], rule: staleRule)
+                && isStale(currentMap[serial], rule: staleRule)
         }
         row = writeSection(
             ws: ws, row: row,
@@ -155,10 +153,8 @@ struct FleetDriftWriter {
 
         // --- Recovered Stale ---
         let recoveredStale = commonSerials.filter { serial in
-            let curDays = daysSince(checkIn: currentMap[serial])
-            let priorDays = daysSince(checkIn: priorMap[serial])
-            return isStale(days: priorDays, threshold: staleThreshold)
-                && !isStale(days: curDays, threshold: staleThreshold)
+            isStale(priorMap[serial], rule: staleRule)
+                && !isStale(currentMap[serial], rule: staleRule)
         }
         row = writeSection(
             ws: ws, row: row,
@@ -311,9 +307,14 @@ struct FleetDriftWriter {
         return DateParser().parse(raw).map { Int(Date().timeIntervalSince($0) / 86400) }
     }
 
-    private func isStale(days: Int?, threshold: Int) -> Bool {
-        guard let days else { return false }
-        return days > threshold
+    /// Stale under the stale rule, over the dates the export carries. A row without a date the
+    /// rule counts is not stale here, so a Mac an export does not date is not a new stale one.
+    private func isStale(_ row: CSVRow?, rule: StaleRule) -> Bool {
+        guard let row else { return false }
+        let parser = DateParser()
+        let inventory = config.columns?.columnName(for: .lastInventory).flatMap { row[$0] }
+        return rule.isStale(StaleInputs(
+            checkIn: parser.parse(checkinValue(row)), inventory: inventory.flatMap(parser.parse)))
     }
 
     private func makeEnrollmentCells(_ row: CSVRow) -> [String] {

@@ -106,14 +106,11 @@ struct SecurityPostureView: View {
 
     private var score: SecurityScore { Self.score(snapshot) }
 
-    /// The ring's score, under the weights the workspace's policy carries, from the same inputs
-    /// as summary.json's `securityScore` and the workbook's Executive Summary.
+    /// The ring's score, over the workspace's factors, from the same inputs as summary.json's
+    /// `securityScore` and the workbook's Executive Summary.
     static func score(_ snapshot: SecurityPostureService.Snapshot) -> SecurityScore {
         SecurityScoreCalculator.score(
-            input: SecurityScoreInputs.input(
-                fleet: snapshot.fleetCounts, extras: snapshot.scoreExtras),
-            weights: snapshot.policy.resolvedScoreWeights
-        )
+            factors: snapshot.scoreFactors, measures: snapshot.scoreMeasures)
     }
 
     private var actionItems: (p0: Int, p1: Int, p2: Int) {
@@ -180,15 +177,16 @@ struct SecurityPostureView: View {
                         Pill(text: score.grade.rawValue,
                              tone: pillTone(for: score.grade))
                     }
-                    if !score.available.isEmpty {
-                        Text(availabilityText)
-                            .font(.footnote)
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
+                    if !score.parts.isEmpty {
+                        ScoreBreakdownList(
+                            score: score, staleDays: snapshot.staleDays,
+                            staleBasis: snapshot.staleBasis)
                     }
                     // The demo cannot collect, so it never tells its viewer to.
                     if !score.missing.isEmpty && !workspace.demoMode {
-                        Text(Self.missingText(score, fleet: snapshot.fleetCounts,
-                                              edrAgentName: workspace.edrAgentName))
+                        Text(Self.missingText(
+                            score, fleet: snapshot.fleetCounts, staleDays: snapshot.staleDays,
+                            staleBasis: snapshot.staleBasis))
                             .font(.caption)
                             .foregroundStyle(Theme.Text.tertiary(contrast))
                     }
@@ -198,29 +196,22 @@ struct SecurityPostureView: View {
         }
     }
 
-    private var availabilityText: String {
-        let names = score.available
-            .map { $0.displayLabel(edrAgentName: workspace.edrAgentName) }
-            .joined(separator: ", ")
-        return "Weighted across: \(names)."
-    }
-
     /// The hero card's line for metrics the ring does not score. FileVault, when the report
     /// carries it but the hardware rule left no Mac to score it over, gets its own reason.
     static func missingText(
-        _ score: SecurityScore, fleet: SecurityFleetCounts, edrAgentName: String?
+        _ score: SecurityScore, fleet: SecurityFleetCounts, staleDays: Int? = nil,
+        staleBasis: [StaleBasis] = StaleBasis.default
     ) -> String {
-        let fileVaultNotCounted = score.missing.contains(.fileVault)
+        let fileVaultNotCounted = score.missing.contains { $0.kind == .fileVault }
             && fleet.controls[.fileVault] != nil
         let names = score.missing
-            .filter { !(fileVaultNotCounted && $0 == .fileVault) }
-            .map { $0.displayLabel(edrAgentName: edrAgentName) }
+            .filter { !(fileVaultNotCounted && $0.kind == .fileVault) }
+            .map { $0.label(staleDays: staleDays, staleBasis: staleBasis) }
             .joined(separator: ", ")
         var sentences: [String] = []
-        // FileVault, SIP and the firewall come from the security report, the EDR agent and the
-        // mSCP baseline from the extension attributes (when `security_agents` and
-        // `compliance.baselines` name them), and nothing collects XProtect, CVE or Secure Boot.
-        // So the line says what has no data and asks for no collect.
+        // A factor has no data when its snapshot was not collected, or when it judged no Mac
+        // (an agent no Mac reports, a SOFA feed not yet cached). The line says what has no
+        // data and asks for no collect.
         if !names.isEmpty {
             sentences.append("No data for \(names), so not scored.")
         }
@@ -536,4 +527,36 @@ private struct SecurityPostureOSDonutExport: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+}
+
+/// Under the score ring: each scored factor, its share of Macs and the points it adds.
+struct ScoreBreakdownList: View {
+    let score: SecurityScore
+    let staleDays: Int?
+    var staleBasis: [StaleBasis] = StaleBasis.default
+
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+            ForEach(score.parts, id: \.factor.key) { part in
+                GridRow {
+                    Text(part.factor.label(staleDays: staleDays, staleBasis: staleBasis))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(Self.percent(part.share))
+                        .gridColumnAlignment(.trailing)
+                    Text(Self.points(score.points(of: part)))
+                        .gridColumnAlignment(.trailing)
+                }
+            }
+        }
+        .font(.footnote.monospacedDigit())
+        .foregroundStyle(Theme.Text.tertiary(contrast))
+        .accessibilityElement(children: .combine)
+    }
+
+    static func percent(_ share: Double) -> String { String(format: "%.1f%%", share) }
+
+    static func points(_ value: Double) -> String { String(format: "%.1f pts", value) }
 }

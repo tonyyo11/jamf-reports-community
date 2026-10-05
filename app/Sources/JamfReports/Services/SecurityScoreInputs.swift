@@ -1,46 +1,35 @@
 import Foundation
 
-/// The inputs of the weighted Security Score beyond the security report's FileVault, SIP and
-/// Firewall counts, and the one function that joins all of them. The daily summary writer, the
-/// Security Posture screen and the workbook's Executive Summary each score through
-/// `input(fleet:extras:)`, so one fleet has one score on every surface.
+/// What the Security Score's factors measure, from snapshots the app already collects, and the
+/// one function that measures them. The daily summary writer, the Security Posture screen and
+/// the workbook each score through `measures(for:fleet:sources:config:now:)`, so one fleet has
+/// one score on every surface. Nothing here fetches.
 ///
-/// Sources, all already collected (nothing here fetches):
-/// - **EDR agent** (`.edrAgent`): the first named `security_agents` entry's coverage from
-///   `ea-results`, over the whole fleet (a Mac with no value counts as not connected). It is
-///   the figure the summary records as `crowdstrikePct` and the Overview's EDR card shows.
-/// - **mSCP** (`.mscp`): the primary `compliance.baselines` entry's pass share, Macs with a
-///   zero failure count over the Macs with a valid count (Macs with no row are out of the
-///   share). It is the real-data `compliancePct` and `mscpScorePct`. The four-control proxy
-///   is never used: it is FileVault, SIP, Firewall and Gatekeeper again, which the score
-///   already counts, so feeding it would weigh those controls twice.
-/// - **XProtect, CVE, Secure Boot**: no snapshot, summary writer or report in the app
-///   measures them (`DailySummary` has the fields; no collect fills them), so they stay out
-///   and their weights drop from the denominator, as the calculator does for any input
-///   without data.
+/// - FileVault, SIP, Firewall, Gatekeeper: the security report's counts under the workspace
+///   policy (`SecurityFleetCounts.scoreMeasure(for:)`).
+/// - Secure Boot, bootstrap token, XProtect and macOS currency: the `computers` snapshot, the
+///   last two against the cached macOS SOFA feed (`SOFAScoreFeed`).
+/// - Patch compliance: `patch-status`, device-weighted (`PatchStatusService`).
+/// - Checked in: `device-compliance` rows under the stale rule (`StaleRule`:
+///   `thresholds.stale_device_days` and `stale_basis`), the summary's stale count.
+/// - mSCP: a `compliance.baselines` entry's pass share from `ea-results`. The four-control proxy
+///   is never used: it is FileVault, SIP, Firewall and Gatekeeper again.
+/// - Agents: each named `security_agents` entry's coverage from `ea-results`, over the whole
+///   fleet (a Mac with no value counts as not connected), the summary's EDR figure.
 enum SecurityScoreInputs {
-    struct Extras: Sendable, Equatable {
-        /// Macs the first named security agent reports connected. Nil when no Mac reports its
-        /// extension attribute at all (unknown, not zero).
-        var edrConnected: Int?
-        /// Primary baseline: Macs with zero failures, and Macs with a valid count.
-        var mscpPass: Int?
-        var mscpEvaluated: Int?
+    /// The snapshots the factors read beyond the security report. A nil part was not loaded,
+    /// or did not decode, and every factor that needs it has no data.
+    struct Sources: Sendable {
+        var computers: [ComputerScoreFacts]?
+        var sofa: SOFAScoreFeed?
+        var patchRows: [PatchStatusRow]?
+        var complianceRows: [DeviceComplianceRow]?
+        /// The dates of each Mac in `computers`, for a `stale_basis` that counts more than the
+        /// check-in. Nil when the basis needs none or the snapshot is missing.
+        var computerDates: ComputerDateIndex?
+        var eaRows: [EAResultRow]?
 
-        static let none = Extras()
-    }
-
-    /// The extras from pieces a caller has already computed.
-    static func extras(
-        edr: SecurityAgentCoverage.Result?, mscp: MSCPComplianceService.BaselineResult?
-    ) -> Extras {
-        var extras = Extras()
-        if let edr, edr.reporting > 0 { extras.edrConnected = edr.installed }
-        if let mscp, mscp.devicesWithData > 0 {
-            extras.mscpPass = mscp.passCount
-            extras.mscpEvaluated = mscp.devicesWithData
-        }
-        return extras
+        static let none = Sources()
     }
 
     /// The agent the score counts as the EDR agent, the one the EDR card, the trend and
@@ -82,58 +71,211 @@ enum SecurityScoreInputs {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The extras for decoded `ea-results` rows under `config`.
-    static func extras(eaRows: [EAResultRow]?, config: ReportConfig?) -> Extras {
-        guard let eaRows, let config else { return .none }
-        let coverage = edrAgent(in: config).flatMap {
-            SecurityAgentCoverage.compute(rows: eaRows, agents: [$0]).first
+    /// The newest snapshots in `dataDir` that `factors` need. Unlike the summary writer it
+    /// applies no cache-age gate, as with every report sheet
+    /// (`ReportEngine.loadLatestSnapshotData`). Off the main actor.
+    nonisolated static func load(
+        dataDir: URL, factors: [SecurityScoreFactor], staleRule: StaleRule = StaleRule(days: 30)
+    ) -> Sources {
+        let kinds = Set(factors.map(\.kind))
+        func newest(_ kind: String) -> Data? {
+            try? ReportEngine.loadLatestSnapshotData(kind: kind, dataDir: dataDir)
         }
-        let baselines = config.compliance?.resolvedBaselines ?? []
-        let primary = baselines.isEmpty
-            ? nil : MSCPComplianceService.evaluate(rows: eaRows, baselines: baselines).first
-        return extras(edr: coverage, mscp: primary)
-    }
-
-    /// The extras from the newest `ea-results` snapshot in `dataDir`: what the Security Posture
-    /// screen and the workbook read. Unlike the summary writer they apply no cache-age gate,
-    /// as with every report sheet (`ReportEngine.loadLatestSnapshotData`). Off the main actor.
-    nonisolated static func load(dataDir: URL, config: ReportConfig?) -> Extras {
-        guard let config,
-              edrAgent(in: config) != nil || !(config.compliance?.resolvedBaselines ?? []).isEmpty,
-              let data = try? ReportEngine.loadLatestSnapshotData(
-                  kind: "ea-results", dataDir: dataDir)
-        else { return .none }
-        return extras(eaRows: EAResultRow.decodeSnapshot(data).rows, config: config)
-    }
-
-    /// The score's input: the security report's three controls, then the extras. A metric the
-    /// extras leave out is missing, and the calculator drops its weight.
-    static func input(
-        fleet: SecurityFleetCounts, extras: Extras
-    ) -> SecurityScoreCalculator.Input {
-        let base = fleet.scoreInput()
-        guard fleet.totalDevices > 0 else { return base }
-        var compliant = base.compliantCounts
-        var totals = base.metricTotals
-        if let edr = extras.edrConnected {
-            compliant[.edrAgent] = min(edr, fleet.totalDevices)
+        var sources = Sources()
+        if !kinds.isDisjoint(with: [.secureBoot, .bootstrapToken, .osCurrent, .xprotectCurrent]) {
+            sources.computers = newest("computers").flatMap(ComputerScoreFacts.decodeSnapshot)
         }
-        if let pass = extras.mscpPass, let evaluated = extras.mscpEvaluated {
-            compliant[.mscp] = pass
-            totals[.mscp] = evaluated
+        if !kinds.isDisjoint(with: [.osCurrent, .xprotectCurrent]) {
+            sources.sofa = SOFAScoreFeed.load(dataDir: dataDir)
         }
-        return .init(
-            totalDevices: base.totalDevices, compliantCounts: compliant, metricTotals: totals)
+        if kinds.contains(.patchCompliance) {
+            sources.patchRows = newest("patch-status").flatMap {
+                try? JSONDecoder().decode([PatchStatusRow].self, from: $0)
+            }
+        }
+        if kinds.contains(.checkedIn) {
+            sources.complianceRows = newest("device-compliance").flatMap {
+                try? JSONDecoder().decode([DeviceComplianceRow].self, from: $0)
+            }
+            if staleRule.needsComputers {
+                sources.computerDates = newest("computers").flatMap(ComputerDateIndex.init)
+            }
+        }
+        if !kinds.isDisjoint(with: [.mscp, .agent]) {
+            sources.eaRows = newest("ea-results").flatMap { EAResultRow.decodeSnapshot($0).rows }
+        }
+        return sources
     }
 
-    /// The summary's `securityScoreBasis`: the metrics that contributed, in score order, by
-    /// raw value. Two scores compare only when this is equal.
-    static func basis(of score: SecurityScore) -> String? {
-        score.available.isEmpty ? nil : score.available.map(\.rawValue).joined(separator: ",")
+    /// What each factor measured, keyed by `SecurityScoreFactor.key`; a factor without data is
+    /// absent. `fleet` is nil when the security report was not collected.
+    static func measures(
+        for factors: [SecurityScoreFactor], fleet: SecurityFleetCounts?, sources: Sources,
+        config: ReportConfig?, now: Date = Date()
+    ) -> [String: SecurityScoreMeasure] {
+        var measured: [String: SecurityScoreMeasure] = [:]
+        for factor in factors {
+            if let measure = measure(
+                factor, fleet: fleet, sources: sources, config: config, now: now) {
+                measured[factor.key] = measure
+            }
+        }
+        return measured
     }
 
-    /// The metrics a recorded basis names, in the order recorded; unknown words are dropped.
-    static func metrics(inBasis basis: String) -> [SecurityScore.Metric] {
-        basis.split(separator: ",").compactMap { SecurityScore.Metric(rawValue: String($0)) }
+    private static func measure(
+        _ factor: SecurityScoreFactor, fleet: SecurityFleetCounts?, sources: Sources,
+        config: ReportConfig?, now: Date
+    ) -> SecurityScoreMeasure? {
+        let grace = factor.resolvedGraceDays
+        switch factor.kind {
+        case .fileVault, .sip, .firewall, .gatekeeper:
+            return factor.kind.control.flatMap { fleet?.scoreMeasure(for: $0) }
+        case .secureBoot:
+            return judged(sources.computers) { $0.secureBootFull }
+        case .bootstrapToken:
+            return judged(sources.computers) { $0.bootstrapEscrowed }
+        case .osCurrent:
+            guard let feed = sources.sofa else { return nil }
+            return judged(sources.computers) {
+                $0.osVersion.flatMap { feed.isCurrent($0, graceDays: grace, now: now) }
+            }
+        case .xprotectCurrent:
+            guard let feed = sources.sofa, feed.xprotectVersion != nil else { return nil }
+            return judged(sources.computers) { facts in
+                facts.xprotectVersion.flatMap {
+                    feed.isXProtectCurrent($0, graceDays: grace, now: now)
+                }
+            }
+        case .patchCompliance:
+            return sources.patchRows.flatMap(PatchStatusService.fleetComplianceCounts).map {
+                SecurityScoreMeasure(passing: $0.onLatest, evaluated: $0.devices)
+            }
+        case .checkedIn:
+            let rule = config?.staleRule ?? StaleRule(days: 30)
+            return judged(sources.complianceRows) { row in
+                let inputs = row.staleInputs(rule, computers: sources.computerDates)
+                if rule.age(of: inputs, now: now) == nil && row.stale == nil { return nil }
+                return !rule.isStale(inputs, now: now)
+            }
+        case .mscp:
+            return mscpMeasure(factor, rows: sources.eaRows, config: config)
+        case .agent:
+            return agentMeasure(factor, rows: sources.eaRows, config: config, fleet: fleet)
+        }
     }
+
+    /// Macs `passes` judged true over Macs it judged; nil `passes` leaves a Mac out.
+    private static func judged<Row>(
+        _ rows: [Row]?, _ passes: (Row) -> Bool?
+    ) -> SecurityScoreMeasure? {
+        guard let rows else { return nil }
+        let verdicts = rows.compactMap(passes)
+        return SecurityScoreMeasure(
+            passing: verdicts.filter { $0 }.count, evaluated: verdicts.count)
+    }
+
+    /// The named baseline, or the first one.
+    private static func mscpMeasure(
+        _ factor: SecurityScoreFactor, rows: [EAResultRow]?, config: ReportConfig?
+    ) -> SecurityScoreMeasure? {
+        let baselines = config?.compliance?.resolvedBaselines ?? []
+        let baseline = factor.target.map { name in
+            baselines.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+        } ?? baselines.first
+        guard let rows, let baseline,
+              let result = MSCPComplianceService.evaluate(rows: rows, baselines: [baseline]).first,
+              result.devicesWithData > 0
+        else { return nil }
+        return SecurityScoreMeasure(passing: result.passCount, evaluated: result.devicesWithData)
+    }
+
+    /// Over the whole fleet, so a Mac with no value counts as not connected; no data when no
+    /// Mac reports the agent's extension attribute at all.
+    private static func agentMeasure(
+        _ factor: SecurityScoreFactor, rows: [EAResultRow]?, config: ReportConfig?,
+        fleet: SecurityFleetCounts?
+    ) -> SecurityScoreMeasure? {
+        let agents = namedAgents(in: config)
+        guard let rows, let name = factor.target,
+              let agent = agents.first(where: {
+                  agentKey($0.name).caseInsensitiveCompare(name) == .orderedSame
+              }),
+              let coverage = SecurityAgentCoverage.compute(rows: rows, agents: [agent]).first,
+              coverage.reporting > 0
+        else { return nil }
+        let fleetSize = fleet.map(\.totalDevices).flatMap { $0 > 0 ? $0 : nil }
+            ?? coverage.reporting
+        return SecurityScoreMeasure(
+            passing: min(coverage.installed, fleetSize), evaluated: fleetSize)
+    }
+}
+
+/// The fields of one `computers` row the score reads. Never throws: a field of an unexpected
+/// type reads as absent, so one odd record cannot lose the snapshot.
+struct ComputerScoreFacts: Decodable, Sendable, Equatable {
+    /// `security.secureBootLevel` is full security; nil when not supported or not reported.
+    let secureBootFull: Bool?
+    /// `security.bootstrapTokenEscrowedStatus` (or the older Bool key) says escrowed; nil when
+    /// not supported or not reported.
+    let bootstrapEscrowed: Bool?
+    let xprotectVersion: Int?
+    let osVersion: String?
+
+    init(secureBootFull: Bool?, bootstrapEscrowed: Bool?, xprotectVersion: Int?,
+         osVersion: String?) {
+        self.secureBootFull = secureBootFull
+        self.bootstrapEscrowed = bootstrapEscrowed
+        self.xprotectVersion = xprotectVersion
+        self.osVersion = osVersion
+    }
+
+    private enum Sections: String, CodingKey { case security, operatingSystem }
+    private enum SecurityKeys: String, CodingKey {
+        case secureBootLevel, bootstrapTokenEscrowedStatus, bootstrapTokenEscrowed
+        case xprotectVersion
+    }
+    private enum OSKeys: String, CodingKey { case version }
+
+    init(from decoder: Decoder) throws {
+        let row = try? decoder.container(keyedBy: Sections.self)
+        let security = try? row?.nestedContainer(keyedBy: SecurityKeys.self, forKey: .security)
+        let os = try? row?.nestedContainer(keyedBy: OSKeys.self, forKey: .operatingSystem)
+        func text(_ key: SecurityKeys) -> String? {
+            (try? security?.decodeIfPresent(String.self, forKey: key))?
+                .trimmingCharacters(in: .whitespaces).uppercased()
+        }
+        secureBootFull = Self.secureBoot(text(.secureBootLevel))
+        bootstrapEscrowed = Self.escrow(text(.bootstrapTokenEscrowedStatus))
+            ?? (try? security?.decodeIfPresent(Bool.self, forKey: .bootstrapTokenEscrowed))
+        xprotectVersion = text(.xprotectVersion).flatMap { Int($0) }
+        osVersion = (try? os?.decodeIfPresent(String.self, forKey: .version))?
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    static func secureBoot(_ level: String?) -> Bool? {
+        switch level {
+        case "FULL_SECURITY": true
+        case "MEDIUM_SECURITY", "NO_SECURITY", "REDUCED_SECURITY", "PERMISSIVE_SECURITY": false
+        default: nil
+        }
+    }
+
+    static func escrow(_ status: String?) -> Bool? {
+        switch status {
+        case "ESCROWED": true
+        case "NOT_ESCROWED": false
+        default: nil
+        }
+    }
+
+    /// A `computers` snapshot: a bare array, or a `results` envelope.
+    static func decodeSnapshot(_ data: Data) -> [ComputerScoreFacts]? {
+        if let rows = try? JSONDecoder().decode([ComputerScoreFacts].self, from: data) {
+            return rows
+        }
+        return (try? JSONDecoder().decode(Envelope.self, from: data))?.results
+    }
+
+    private struct Envelope: Decodable { let results: [ComputerScoreFacts] }
 }

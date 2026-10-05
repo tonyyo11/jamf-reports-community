@@ -195,7 +195,7 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(findings["Computers without FileVault"]?.severity, "CRITICAL")
         XCTAssertEqual(findings["Firewall disabled"]?.affected, 42)
         XCTAssertEqual(findings["Gatekeeper disabled"]?.affected, 12)
-        let stale = findings["Stale computers (30+ days since check-in)"]
+        let stale = findings["Stale computers (>30 days since check-in)"]
         XCTAssertEqual(stale?.affected, 26)
         XCTAssertEqual(Double(stale?.affected ?? 0),
                        Double(DemoData.totalDevices) - (DemoData.activeDevicesTrend.last ?? 0))
@@ -338,16 +338,19 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(DemoData.securityPostureSnapshot.policy, .default)
     }
 
-    /// The ring's value with the default weights. The Overview's Security Score
+    /// The ring's value over the default factors: the demo measures the four controls
+    /// (513, 524, 482 and 512 of 524 Macs) and nothing else, so (97.9 x 15 + 100 x 10
+    /// + 92.0 x 10 + 97.7 x 5) / 40 = 3876.9 / 40 = 96.9. The Overview's Security Score
     /// card ends on `DemoData.trends[.securityScore]`, which should match it.
-    func testSecurityScoreRingWithDefaultWeights() throws {
+    func testSecurityScoreRingWithDefaultFactors() throws {
         let snapshot = DemoData.securityPostureSnapshot
         let score = SecurityScoreCalculator.score(
-            input: snapshot.fleetCounts.scoreInput(),
-            weights: snapshot.policy.effectiveScoreWeights(.defaultWeights))
-        XCTAssertEqual(score.value, 96.6, accuracy: 0.001)
+            factors: snapshot.scoreFactors, measures: snapshot.scoreMeasures)
+        XCTAssertEqual(score.value, 96.9, accuracy: 0.001)
         XCTAssertEqual(score.grade, .aPlus)
-        XCTAssertEqual(score.available, [.fileVault, .sip, .firewall])
+        XCTAssertEqual(score.available.map(\.id), ["filevault", "sip", "firewall", "gatekeeper"])
+        XCTAssertEqual(snapshot.scoreFactors, SecurityScoreFactor.nativeDefaults)
+        XCTAssertEqual(DemoData.securityScoreValue, score.value)
         let overviewScore = try XCTUnwrap(DemoData.trends[.securityScore]?.last)
         XCTAssertEqual(overviewScore, score.value, accuracy: 0.05)
     }

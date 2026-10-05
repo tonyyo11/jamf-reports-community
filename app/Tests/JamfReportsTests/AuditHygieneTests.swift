@@ -33,6 +33,27 @@ final class AuditHygieneTests: XCTestCase {
         XCTAssertEqual(findings[1].severity, "OK")
     }
 
+    // MARK: - findings CSV
+
+    /// Finding text comes from jamf-cli; a leading formula sign or a CRLF must not
+    /// reach Excel as a formula or a second record.
+    func testFindingsCSVNeutralisesFormulasAndQuotesCRLF() {
+        let findings = [
+            AuditFinding(
+                name: "=HYPERLINK(\"http://evil\",\"x\")", affected: 3, category: "Sec, Ops",
+                recommendation: "Fix\r\n=1+1", severity: "CRITICAL"),
+            AuditFinding(
+                name: "@SUM(A1)", affected: 0, category: "+x", recommendation: "-y",
+                severity: "OK"),
+        ]
+        XCTAssertEqual(
+            AuditFinding.csv(findings),
+            "Severity,Name,Category,Affected,Recommendation\n"
+                + "CRITICAL,\"\t=HYPERLINK(\"\"http://evil\"\",\"\"x\"\")\",\"Sec, Ops\",3,"
+                + "\"Fix\r\n=1+1\"\n"
+                + "OK,\t@SUM(A1),\t+x,0,\t-y")
+    }
+
     // MARK: - affectedDisplay
 
     /// CRITICAL/WARNING findings with affected==0 must display "—" because

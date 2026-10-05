@@ -115,8 +115,8 @@ final class OutputDirResolutionTests: XCTestCase {
     /// resolves under /private, which the path rules refuse even with the opt-in.
     private func withWorkspace(_ body: (URL, URL) async throws -> Void) async throws {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let root = home.appendingPathComponent(".jrc-test-output-\(UUID().uuidString)")
-        let published = home.appendingPathComponent(".jrc-test-published-\(UUID().uuidString)")
+        let root = home.appendingPathComponent("jrc-test-output-\(UUID().uuidString)")
+        let published = home.appendingPathComponent("jrc-test-published-\(UUID().uuidString)")
         let workspace = root.appendingPathComponent(profile, isDirectory: true)
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]
@@ -187,8 +187,8 @@ final class GUIReportFolderTests: XCTestCase {
     /// refuse even with the opt-in.
     private func withPublishWorkspace(_ body: (URL, URL) async throws -> Void) async throws {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let root = home.appendingPathComponent(".jrc-test-gui-\(UUID().uuidString)")
-        let published = home.appendingPathComponent(".jrc-test-gui-out-\(UUID().uuidString)")
+        let root = home.appendingPathComponent("jrc-test-gui-\(UUID().uuidString)")
+        let published = home.appendingPathComponent("jrc-test-gui-out-\(UUID().uuidString)")
         let workspace = root.appendingPathComponent("gui", isDirectory: true)
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         let saved = ProcessInfo.processInfo.environment["JRC_TEST_WORKSPACES_ROOT"]

@@ -580,6 +580,9 @@ struct StatTile: View {
 struct Sparkline: View {
     let values: [Double]
     var color: Color = Theme.Colors.gold
+    /// The vertical scale to draw against, so the line can match a larger chart's; nil
+    /// stretches the values' own span over the height.
+    var domain: ClosedRange<Double>? = nil
 
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -601,9 +604,18 @@ struct Sparkline: View {
         .accessibilityHidden(true)
     }
 
+    private var span: (lo: Double, hi: Double)? {
+        if let domain {
+            guard domain.upperBound > domain.lowerBound else { return nil }
+            return (domain.lowerBound, domain.upperBound)
+        }
+        guard let rawLo = values.min(), let hi = values.max(), hi != rawLo else { return nil }
+        // Clamp min to 0 to prevent negative Y baseline for percentage-like metrics
+        return (max(rawLo, 0), hi)
+    }
+
     private func makePath(in size: CGSize) -> Path {
-        guard let rawLo = values.min(), let hi = values.max(), hi != rawLo else { return Path() }
-        let lo = max(rawLo, 0)  // Clamp min to 0 to prevent negative Y baseline for percentage-like metrics
+        guard !values.isEmpty, let (lo, hi) = span else { return Path() }
         let n = values.count
         var p = Path()
         for (i, v) in values.enumerated() {

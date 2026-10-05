@@ -191,11 +191,7 @@ struct ReportEngine: Sendable {
         // `shasum -a 256` output format. The hash is also surfaced to the UI
         // via the log stream so GenerateSheet can show it in the toast.
         if let hash = Self.writeSHA256Sidecar(for: outputURL) {
-            onLine?(.init(
-                timestamp: Date(),
-                level: .ok,
-                text: "[ok] sha256: \(hash) \(outputURL.lastPathComponent)"
-            ))
+            onLine?(Self.sha256LogLine(hash: hash, artifact: outputURL))
         }
 
         // Archive CSV snapshot only after a successful write — avoids archiving when generate fails.
@@ -278,6 +274,15 @@ struct ReportEngine: Sendable {
 
         guard sorted.count > keep else { return }
 
+        // Moving a file into its own folder deletes it: the archive's copy is the file.
+        guard !Self.isSameFolder(archiveDir, outputDir) else {
+            let msg = "[warn] output.archive_dir is the output folder, so no report is "
+                + "archived. Set archive_dir to another folder, or leave it empty."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return
+        }
+
         do {
             try fm.createDirectory(at: archiveDir, withIntermediateDirectories: true)
         } catch {
@@ -313,15 +318,35 @@ struct ReportEngine: Sendable {
         }
     }
 
+    /// True when both URLs name one folder once `..` and symlinks are resolved. Case is
+    /// ignored because a differently cased spelling reaches the same folder on APFS.
+    private static func isSameFolder(_ lhs: URL, _ rhs: URL) -> Bool {
+        let paths = [lhs, rhs].map { $0.resolvingSymlinksInPath().standardizedFileURL.path }
+        return paths[0].caseInsensitiveCompare(paths[1]) == .orderedSame
+    }
+
+    private static func isSameFile(_ lhs: URL, _ rhs: URL) -> Bool {
+        isSameFolder(lhs.deletingLastPathComponent(), rhs.deletingLastPathComponent())
+            && lhs.lastPathComponent.caseInsensitiveCompare(rhs.lastPathComponent)
+                == .orderedSame
+    }
+
     /// Moves `file` into `archiveDir`, replacing a file of the same name there. A failure is a
     /// `[warn]` line, and the result is false.
     @discardableResult
-    private static func moveToArchive(
+    static func moveToArchive(
         _ file: URL, archiveDir: URL, label: String = "",
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)?
     ) -> Bool {
         let fm = FileManager.default
         let dest = archiveDir.appendingPathComponent(file.lastPathComponent)
+        guard !isSameFile(dest, file) else {
+            let msg = "[warn] Could not archive \(label)\(file.lastPathComponent): the archive "
+                + "folder is the folder it is in."
+            AppLogger.report.warning("\(msg, privacy: .private)")
+            onLine?(.init(timestamp: Date(), level: .warn, text: msg))
+            return false
+        }
         do {
             if fm.fileExists(atPath: dest.path) {
                 try fm.removeItem(at: dest)
@@ -425,7 +450,7 @@ struct ReportEngine: Sendable {
             // this run cannot measure, so nothing goes from known to nil.
             if let built = buildSummaryFromCLI(
                 date: today, provenance: provenance, liveKinds: liveKinds),
-               let existing = try? JSONDecoder().decode(DailySummary.self, from: existingData),
+               let existing = try? SummaryJSONParser.decode(existingData),
                Self.freshSummaryIsBetter(existing: existing, fresh: built) {
                 var fresh = built.filling(from: existing)
                 fresh.collectionSources = Self.mergedSources(
@@ -750,24 +775,34 @@ struct ReportEngine: Sendable {
             mobileDeviceCount = MobileFleetService.deviceCount(fromMobileDevicesListData: mobileData)
         }
 
-        // Stale count from device-compliance, using the row's resolved day count
-        // (`days_since_contact`, falling back to legacy `days_since_checkin`)
-        // `>= resolvedStaleDays` with the config threshold (default 30 days).
-        // Current jamf-cli emits `days_since_contact` (a String), not the legacy
-        // `days_since_checkin`, so the old checkin-only filter always read nil and
-        // reported 0 stale. When no day count is emitted at all, `isStale` falls
-        // back to the server-side `stale` flag. Note: this path unified the
-        // summary-writer threshold (#176); DeviceInventoryService and
-        // StaleDeviceService still hardcode 30 and use `daysSinceContact` — counts
-        // agree at the default config but diverge with a non-default threshold
-        // (follow-up: parameterize those services).
-        let staleDaysThreshold = config.thresholds?.resolvedStaleDays ?? 30
+        // Stale count from device-compliance under the stale rule (`StaleRule`): the row's
+        // resolved day count (`days_since_contact`, falling back to legacy `days_since_checkin`)
+        // is the check-in age, more than `stale_device_days` days is stale. Current jamf-cli
+        // emits `days_since_contact` (a String), not the legacy `days_since_checkin`, so the
+        // old checkin-only filter always read nil and reported 0 stale. When no date is known
+        // `isStale` falls back to the server-side `stale` flag. A `stale_basis` that counts
+        // the inventory or contact date reads them from the `computers` snapshot.
+        let staleRule = config.staleRule
         // nil (not 0) when device-compliance was never collected — unknown is
         // not zero, and a 0 here renders as a measured "0 stale devices".
         var staleCount: Int? = nil
+        var complianceRows: [DeviceComplianceRow]? = nil
+        var computerDates: ComputerDateIndex? = nil
         if let compData = cachedData(kind: "device-compliance"),
            let rows = try? JSONDecoder().decode([DeviceComplianceRow].self, from: compData) {
-            staleCount = rows.filter { $0.isStale(atDays: staleDaysThreshold) }.count
+            if staleRule.needsComputers {
+                computerDates = cachedData(kind: "computers").flatMap(ComputerDateIndex.init)
+                if computerDates == nil {
+                    AppLogger.collect.notice("""
+                        stale_basis counts the inventory or contact date but no computers \
+                        snapshot is available, so the stale count uses the check-in alone
+                        """)
+                }
+            }
+            staleCount = rows.filter {
+                $0.isStale(staleRule, computers: computerDates)
+            }.count
+            complianceRows = rows
         }
 
         // OS current % — SOFA-driven: a device is "current" when its OS version is
@@ -788,9 +823,11 @@ struct ReportEngine: Sendable {
         // Patch % — device-weighted (`PatchStatusService.fleetCompliancePct`); nil when
         // patch-status is absent or no title has devices (not the same as 0%).
         var patchPct: Double? = nil
+        var patchRows: [PatchStatusRow]? = nil
         if let patchData = cachedData(kind: "patch-status"),
            let rows = try? JSONDecoder().decode([PatchStatusRow].self, from: patchData) {
             patchPct = PatchStatusService.fleetCompliancePct(rows)
+            patchRows = rows
         }
 
         // Real mSCP compliance from ea-results — overrides the proxy when the
@@ -822,10 +859,8 @@ struct ReportEngine: Sendable {
                 )
             }
         }
-        var primaryMSCP: MSCPComplianceService.BaselineResult?
         if !eaBaselines.isEmpty, let eaRows {
             let results = MSCPComplianceService.evaluate(rows: eaRows, baselines: eaBaselines)
-            primaryMSCP = results.first
             if let primary = results.first, let realPct = primary.compliancePct {
                 complianceFinalPct = realPct
                 complianceIsRealData = true
@@ -862,11 +897,10 @@ struct ReportEngine: Sendable {
                 agentCoveragePct[SecurityScoreInputs.agentKey(coverage.name)] = pct
             }
         }
-        // The same two figures feed the security score below, through the one function the
-        // Security Posture screen and the workbook use, so a fleet has one score everywhere.
-        let scoreExtras = SecurityScoreInputs.extras(edr: edrCoverage, mscp: primaryMSCP)
-        let edrConnectedPct = scoreExtras.edrConnected.flatMap {
-            SecurityAgentCoverage.percent(installed: $0, fleet: totalDevices)
+        let edrConnectedPct = edrCoverage.flatMap { coverage in
+            coverage.reporting > 0
+                ? SecurityAgentCoverage.percent(installed: coverage.installed, fleet: totalDevices)
+                : nil
         }
 
         // Derive per-control percentages and the weighted v3.5 security
@@ -884,15 +918,26 @@ struct ReportEngine: Sendable {
         let fleet = SecurityFleetCounts.build(
             totalDevices: totalDevices, onCounts: securityOnCounts, devices: securityDevices,
             hardware: hardware, policy: securityPolicy)
-        // Every input that has data this run: FileVault, SIP and Firewall from the security
-        // report, the EDR agent and the primary mSCP baseline from ea-results. A metric
-        // without data drops out of the denominator.
+        // The workspace's score factors, through the one function the Security Posture screen
+        // and the workbook use, so a fleet has one score everywhere. A factor without data
+        // drops out of the denominator.
+        let scoreFactors = config.resolvedScoreFactors
+        let scoreSources = Self.scoreSources(
+            dataDir: dataDir, computers: cachedData(kind: "computers"),
+            patchRows: patchRows, complianceRows: complianceRows, eaRows: eaRows,
+            computerDates: computerDates)
         let score = SecurityScoreCalculator.score(
-            input: SecurityScoreInputs.input(fleet: fleet, extras: scoreExtras),
-            weights: securityPolicy.resolvedScoreWeights
-        )
-        // Score is only meaningful when at least one metric contributed.
-        let securityScore: Double? = score.available.isEmpty ? nil : score.value
+            factors: scoreFactors,
+            measures: SecurityScoreInputs.measures(
+                for: scoreFactors, fleet: fleet, sources: scoreSources, config: config))
+        // Score is only meaningful when at least one factor contributed.
+        let securityScore: Double? = score.parts.isEmpty ? nil : score.value
+        let facts = SecurityScoreInputs.measures(
+            for: Self.summaryFactFactors(scoreFactors), fleet: fleet, sources: scoreSources,
+            config: config)
+        func factPct(_ kind: SecurityScoreFactor.Kind) -> Double? {
+            facts[kind.rawValue]?.share.map(round1)
+        }
 
         // complianceIsProxy:
         //   nil   — no compliance data at all (neither proxy nor real)
@@ -920,6 +965,9 @@ struct ReportEngine: Sendable {
             sipPct: sipPct.map(round1),
             firewallPct: firewallPct.map(round1),
             gatekeeperPct: gatekeeperPct.map(round1),
+            secureBootPct: factPct(.secureBoot),
+            bootstrapPct: factPct(.bootstrapToken),
+            xprotectPct: factPct(.xprotectCurrent),
             // Real baseline data only: the proxy is the controls above again.
             mscpScorePct: complianceIsRealData ? complianceFinalPct.map(round1) : nil,
             securityScore: securityScore.map(round1),
@@ -935,9 +983,35 @@ struct ReportEngine: Sendable {
             // a hostname to a file that never needed one.
             collectedByHost: Self.collectingHostLabel(dataDir: dataDir),
             patchPctBasis: DailySummary.deviceWeightedPatchBasis,
-            securityScoreBasis: securityScore == nil ? nil : SecurityScoreInputs.basis(of: score),
+            securityScoreBasis: score.basis,
             securityAgentCoverage: agentCoveragePct.isEmpty ? nil : agentCoveragePct
         )
+    }
+
+    /// The score's sources from what the summary writer already read, plus the `computers`
+    /// snapshot and the SOFA feed, which the summary's Secure Boot, bootstrap token and
+    /// XProtect figures need whatever the score lists.
+    private static func scoreSources(
+        dataDir: URL, computers: Data?,
+        patchRows: [PatchStatusRow]?, complianceRows: [DeviceComplianceRow]?,
+        eaRows: [EAResultRow]?, computerDates: ComputerDateIndex?
+    ) -> SecurityScoreInputs.Sources {
+        var sources = SecurityScoreInputs.Sources(
+            patchRows: patchRows, complianceRows: complianceRows, computerDates: computerDates,
+            eaRows: eaRows)
+        sources.computers = computers.flatMap(ComputerScoreFacts.decodeSnapshot)
+        sources.sofa = SOFAScoreFeed.load(dataDir: dataDir)
+        return sources
+    }
+
+    /// The summary records Secure Boot, bootstrap token and XProtect shares whether or not the
+    /// score lists them; XProtect with the listed grace period, if any.
+    private static func summaryFactFactors(
+        _ listed: [SecurityScoreFactor]
+    ) -> [SecurityScoreFactor] {
+        [.secureBoot, .bootstrapToken, .xprotectCurrent].map { kind in
+            listed.first { $0.kind == kind } ?? SecurityScoreFactor(kind, weight: 1)
+        }
     }
 
     /// This machine's display name when the workspace is shared, else nil.
@@ -1817,6 +1891,7 @@ struct ReportEngine: Sendable {
         force: Bool = false,
         authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        refreshSOFA: @escaping SOFARefresh = defaultSOFARefresh,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> CollectDisposition {
         guard ProfileService.isValid(profile) else {
@@ -1965,10 +2040,11 @@ struct ReportEngine: Sendable {
         let scanPlan = Self.planDeviceScan(
             tiers: tiers, skipExpensive: skipExpensive, force: force,
             stateStore: stateStore, now: collectStart)
-        let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers)
+        let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
         Self.logCollectPlan(
-            profile: profile, plan: plan, afterMatrix: afterMatrix, deviceScan: scanPlan,
-            onLine: onLine)
+            profile: profile, plan: plan, afterMatrix: afterMatrix,
+            afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
+            deviceScan: scanPlan, onLine: onLine)
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -2057,7 +2133,7 @@ struct ReportEngine: Sendable {
         await Self.finalizeCollect(
             profile: profile, afterMatrix: afterMatrix, bin: bin, dataDir: dataDir,
             savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
-            loadedConfig: loadedConfig,
+            loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
         )
 
@@ -2177,6 +2253,7 @@ struct ReportEngine: Sendable {
         savedKinds: Set<String>,
         nothingLanded: Bool,
         loadedConfig: ReportConfig?,
+        refreshSOFA: SOFARefresh,
         workspacePaths: WorkspacePaths.Type,
         stateStore: StateFileStore?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
@@ -2194,7 +2271,7 @@ struct ReportEngine: Sendable {
         if afterMatrix.contains(Self.sofaKind) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting sofa for \(profile)"))
-            let (sofaSnapshot, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
+            let (sofaSnapshot, sofaWarnings) = await refreshSOFA(dataDir)
             for w in sofaWarnings {
                 onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(w)"))
             }
@@ -3030,11 +3107,7 @@ struct ReportEngine: Sendable {
         writeManifestStatic(for: outputURL, profile: profile, template: template.identifier)
         // T-13 integrity envelope: surface the embedded fingerprint via the log
         // stream so the GUI can show it in the "Report ready" toast.
-        onLine?(.init(
-            timestamp: Date(),
-            level: .ok,
-            text: "[ok] sha256: \(digest) \(outputURL.lastPathComponent)"
-        ))
+        onLine?(sha256LogLine(hash: digest, artifact: outputURL))
         return digest
     }
 
@@ -3055,7 +3128,8 @@ struct ReportEngine: Sendable {
         report.templateName = template.displayName
         report.openSections = Set(template.htmlOpenSections)
         report.expandAll = expandAll
-        report.jamfCLIVersion = locateJamfCLI().flatMap(JamfCLIInstaller.installedVersion(at:))
+        report.jamfCLIVersion = locateJamfCLI()
+            .flatMap { JamfCLIInstaller.installedVersion(at: $0) }
         return report
     }
 
@@ -3087,7 +3161,8 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         profileName: String = "",
         template: any ReportTemplate = FullInstanceTemplate(),
-        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") }
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to PDF
         // generation too. PDF is built on top of HTML; the underlying snapshot
@@ -3118,9 +3193,12 @@ struct ReportEngine: Sendable {
             strategy: template.pdfPagination
         )
         try await PDFExporter.export(htmlString: paginatedHTML, to: outputURL)
-        // Write SHA-256 manifest alongside the PDF artifact.
+        // Write SHA-256 manifest alongside the PDF artifact, and log its digest like the
+        // other formats do so the Generate sheet lists the file.
         let profile = config.jamfCli?.resolvedProfile ?? ""
-        writeManifestStatic(for: outputURL, profile: profile, template: template.identifier)
+        let digest = writeManifestStatic(
+            for: outputURL, profile: profile, template: template.identifier)
+        if let digest { onLine?(sha256LogLine(hash: digest, artifact: outputURL)) }
     }
 
     // MARK: - Pagination helper
@@ -3398,16 +3476,21 @@ struct ReportEngine: Sendable {
 
         let shouldTimestamp = config.output?.timestampOutputs ?? true
         if shouldTimestamp {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
-            let ts = formatter.string(from: Date())
-                .replacingOccurrences(of: ":", with: "")
-                .replacingOccurrences(of: "-", with: "-")
-                .replacingOccurrences(of: "T", with: "_")
-            return outDir.appendingPathComponent("\(namedStem)_\(ts).xlsx")
+            return outDir.appendingPathComponent("\(namedStem)_\(Self.workbookTimestamp()).xlsx")
         } else {
             return outDir.appendingPathComponent("\(namedStem).xlsx")
         }
+    }
+
+    /// The stamp a workbook's file name ends in: `yyyy-MM-dd_HHmmss`. It is UTC, the
+    /// ISO 8601 formatter's default zone, which is why a workbook's name can read hours
+    /// ahead of the Generated column beside it. The Config screen's example comes from here.
+    static func workbookTimestamp(_ date: Date = Date()) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
+        return formatter.string(from: date)
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: "T", with: "_")
     }
 
     /// The report folder from `WorkspacePaths.reportsDir`, so every report writer agrees on it.
@@ -3961,15 +4044,17 @@ struct ReportEngine: Sendable {
     /// ```
     ///
     /// Failures are logged to stderr and silently swallowed — a manifest write
-    /// failure must never abort artifact delivery.
+    /// failure must never abort artifact delivery. Returns the artifact's SHA-256, nil when
+    /// the artifact could not be read.
+    @discardableResult
     static func writeManifestStatic(
         for artifactURL: URL,
         profile: String,
         template: String = ""
-    ) {
+    ) -> String? {
         guard let data = try? Data(contentsOf: artifactURL) else {
             fputs("[warn] manifest: could not read \(artifactURL.lastPathComponent)\n", stderr)
-            return
+            return nil
         }
         let digest = SHA256.hash(data: data)
         let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
@@ -3998,6 +4083,21 @@ struct ReportEngine: Sendable {
             fputs("[warn] manifest: could not write \(manifestURL.lastPathComponent): \(error)\n",
                   stderr)
         }
+        return hex
+    }
+
+    /// The `[ok] sha256: <hash> <file>` line the Generate sheet turns into an integrity row
+    /// (`GenerateSheetState.parseSHA256LogLine` reads it back).
+    static func sha256LogLine(hash: String, artifact: URL) -> CLIBridge.LogLine {
+        .init(timestamp: Date(), level: .ok,
+              text: "[ok] sha256: \(hash) \(artifact.lastPathComponent)")
+    }
+
+    /// The same line for a file hashed from disk; nil when the file cannot be read.
+    static func sha256LogLine(for artifact: URL) -> CLIBridge.LogLine? {
+        guard let data = try? Data(contentsOf: artifact) else { return nil }
+        let hex = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        return sha256LogLine(hash: hex, artifact: artifact)
     }
 
     // MARK: - PR-10 / threat-model T-11: strict-manifest pre-flight

@@ -64,10 +64,12 @@ extension ReportEngine {
         )
     }
 
-    /// Inserts `title` as the report's positional argument, ahead of its flags.
+    /// Inserts `title` as the report's positional argument, ahead of its flags. The value
+    /// after a leading `-p` is skipped: a profile name may start with `--`.
     static func benchmarkReportArguments(_ base: [String], title: String) -> [String] {
         var arguments = base
-        let flags = base.firstIndex { $0.hasPrefix("--") } ?? base.endIndex
+        let searchFrom = base.first == "-p" ? min(2, base.count) : 0
+        let flags = base[searchFrom...].firstIndex { $0.hasPrefix("--") } ?? base.endIndex
         arguments.insert(title, at: flags)
         return arguments
     }

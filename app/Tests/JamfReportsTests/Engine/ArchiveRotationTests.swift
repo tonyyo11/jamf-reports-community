@@ -356,6 +356,57 @@ final class ArchiveRotationTests: XCTestCase {
         }
     }
 
+    // MARK: - Archive folder is the output folder
+
+    private final class Lines: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: [String] = []
+        func add(_ line: String) { lock.lock(); stored.append(line); lock.unlock() }
+        var all: [String] { lock.lock(); defer { lock.unlock() }; return stored }
+    }
+
+    /// `output.archive_dir` set to the output folder made every move delete the report it
+    /// was moving: the destination was the file itself.
+    func testRotationIntoTheOutputFolderKeepsEveryFileAndWarnsOnce() throws {
+        let files = ["report_2024-01-01.xlsx", "report_2024-01-02.xlsx", "report_2024-01-03.xlsx"]
+        try createFiles(names: files, in: outputDir)
+        let alias = tmpDir.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: outputDir)
+        let spellings = [outputDir!, URL(fileURLWithPath: outputDir.path + "/"), alias,
+                         outputDir.appendingPathComponent("../reports")]
+        for archive in spellings {
+            let lines = Lines()
+            engine.archiveOldRuns(
+                outputDir: outputDir, archiveDir: archive, stem: "report", keep: 1,
+                onLine: { lines.add($0.text) })
+            XCTAssertEqual(try names(in: outputDir), files, archive.path)
+            XCTAssertEqual(lines.all.count, 1, "\(archive.path): \(lines.all)")
+            XCTAssertTrue(lines.all.first?.hasPrefix("[warn]") == true, "\(lines.all)")
+        }
+    }
+
+    /// APFS folds case, so a differently cased archive_dir is the output folder too.
+    func testRotationIntoTheOutputFolderSpelledInAnotherCaseKeepsEveryFile() throws {
+        let other = tmpDir.appendingPathComponent("REPORTS", isDirectory: true)
+        try XCTSkipUnless(FileManager.default.fileExists(atPath: other.path),
+                          "case-sensitive volume")
+        let files = ["report_2024-01-01.xlsx", "report_2024-01-02.xlsx"]
+        try createFiles(names: files, in: outputDir)
+        engine.archiveOldRuns(outputDir: outputDir, archiveDir: other, stem: "report", keep: 1)
+        XCTAssertEqual(try names(in: outputDir), files)
+    }
+
+    func testMoveToArchiveRefusesADestinationThatIsTheSourceFile() throws {
+        try createFiles(names: ["report_2024-01-01.xlsx"], in: outputDir)
+        let file = outputDir.appendingPathComponent("report_2024-01-01.xlsx")
+        let lines = Lines()
+        let moved = ReportEngine.moveToArchive(
+            file, archiveDir: outputDir, onLine: { lines.add($0.text) })
+        XCTAssertFalse(moved)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertEqual(lines.all.count, 1)
+    }
+
     // MARK: - Helpers
 
     private func createFiles(names: [String], in dir: URL) throws {

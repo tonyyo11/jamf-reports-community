@@ -37,8 +37,8 @@ enum JamfCLIIdentity {
     // (collect, audit, backup, …) without re-checking. On Homebrew installs
     // `/opt/homebrew/bin/` is user-writable; a post-onboarding swap would
     // receive credentials. The cache below lets us re-verify cheaply on
-    // every spawn, short-circuiting when the binary's (path, size, mtime)
-    // matches a previously-verified entry.
+    // every spawn, short-circuiting when the binary's fingerprint (resolved
+    // path, size, mtime, inode) matches a previously-verified entry.
 
     /// Errors surfaced by `ensureVerifiedJamfCLI`. Distinct cases let the
     /// caller emit a precise user-facing diagnostic and let post-mortem
@@ -53,14 +53,16 @@ enum JamfCLIIdentity {
         case probeFailed(path: String)
     }
 
-    /// Fingerprint stored in the verified-binary cache. Keyed on path,
-    /// size, and modification time so any rewrite (homebrew upgrade,
-    /// malicious swap, even a same-content `touch`) invalidates the
-    /// cached approval.
+    /// Fingerprint stored in the verified-binary cache. Keyed on the
+    /// symlink-resolved path, size, modification time and inode so any
+    /// rewrite (homebrew upgrade, malicious swap, even a same-content
+    /// `touch`) invalidates the cached approval. A restored mtime does not
+    /// hide a replaced file: the replacement is a different inode.
     struct Fingerprint: Hashable {
         let path: String
         let size: Int64
         let mtime: TimeInterval
+        let inode: UInt64
     }
 
     nonisolated(unsafe) private static var verifiedFingerprints: Set<Fingerprint> = []
@@ -73,11 +75,13 @@ enum JamfCLIIdentity {
     /// uses `CodeSignVerifier.verify(url:expectedTeamID:)`.
     ///
     /// Cache contract: a successful verify inserts the binary's
-    /// `(path, size, mtime)` fingerprint into a process-local set. The
-    /// next call with the same fingerprint short-circuits. A binary
-    /// swap (different size) or a homebrew upgrade (different mtime)
-    /// produces a different fingerprint and forces re-verification.
-    /// Failed verifies are never cached.
+    /// `(resolved path, size, mtime, inode)` fingerprint into a
+    /// process-local set. The next call with the same fingerprint
+    /// short-circuits. A binary swap (different size or inode) or a
+    /// homebrew upgrade (different mtime) produces a different
+    /// fingerprint and forces re-verification. `executable` may be a
+    /// symlink (Homebrew's `/opt/homebrew/bin/jamf-cli`); the target is
+    /// what is fingerprinted and verified. Failed verifies are never cached.
     ///
     /// - Parameters:
     ///   - executable: Absolute file URL of the binary to verify.
@@ -105,7 +109,7 @@ enum JamfCLIIdentity {
             return .success(())
         }
 
-        guard verify(executable, teamID) else {
+        guard verify(URL(fileURLWithPath: fingerprint.path), teamID) else {
             return .failure(.untrusted(path: executable.path, teamID: teamID))
         }
 
@@ -125,7 +129,9 @@ enum JamfCLIIdentity {
     // MARK: - Cache primitives
 
     private static func makeFingerprint(executable: URL) -> Fingerprint? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: executable.path) else {
+        // attributesOfItem on a symlink describes the link, not its target.
+        let resolved = executable.resolvingSymlinksInPath().path
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: resolved) else {
             return nil
         }
         let size: Int64
@@ -136,10 +142,13 @@ enum JamfCLIIdentity {
         } else {
             return nil
         }
-        guard let mtime = attrs[.modificationDate] as? Date else {
+        guard let mtime = attrs[.modificationDate] as? Date,
+              let inode = (attrs[.systemFileNumber] as? NSNumber)?.uint64Value else {
             return nil
         }
-        return Fingerprint(path: executable.path, size: size, mtime: mtime.timeIntervalSinceReferenceDate)
+        return Fingerprint(
+            path: resolved, size: size,
+            mtime: mtime.timeIntervalSinceReferenceDate, inode: inode)
     }
 
     private static func cacheContains(_ fp: Fingerprint) -> Bool {

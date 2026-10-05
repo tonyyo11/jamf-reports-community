@@ -28,6 +28,13 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         return url
     }
 
+    private let oldComputers = "computers_20240101T000000.json"
+    private let newComputers = "computers_20260101T000000.json"
+    private let recentComputers = "computers_20260105T000000.json"
+    private let ea1 = "ea-results_20260103T000000.json"
+    private let ea2 = "ea-results_20260102T000000.json"
+    private let ea3 = "ea-results_20260101T000000.json"
+
     private var dataDir: URL { root.appendingPathComponent("jamf-cli-data", isDirectory: true) }
     private var archiveRoot: URL { root.appendingPathComponent("_archive", isDirectory: true) }
 
@@ -41,7 +48,7 @@ final class SnapshotRetentionServiceTests: XCTestCase {
     // MARK: - Default off
 
     func testDisabledPolicyIsNoOp() throws {
-        let old = try writeSnapshot(kind: "computers", name: "c_old.json", ageDays: 400)
+        let old = try writeSnapshot(kind: "computers", name: oldComputers, ageDays: 400)
         let pol = SnapshotRetentionService.policy(from: nil)  // disabled
         let acted = SnapshotRetentionService.sweep(
             dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot, policy: pol
@@ -53,8 +60,8 @@ final class SnapshotRetentionServiceTests: XCTestCase {
     // MARK: - Archive mode
 
     func testArchiveMovesOldFilesPreservingKind() throws {
-        let old = try writeSnapshot(kind: "computers", name: "c_old.json", ageDays: 400)
-        let fresh = try writeSnapshot(kind: "computers", name: "c_new.json", ageDays: 1)
+        let old = try writeSnapshot(kind: "computers", name: oldComputers, ageDays: 400)
+        let fresh = try writeSnapshot(kind: "computers", name: newComputers, ageDays: 1)
         let acted = SnapshotRetentionService.sweep(
             dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
             policy: policy(mode: .archive, keepDays: 365)
@@ -62,12 +69,12 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         XCTAssertEqual(acted, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: old.path), "old moved out")
         XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path), "fresh kept")
-        let archived = archiveRoot.appendingPathComponent("jamf-cli-data/computers/c_old.json")
+        let archived = archiveRoot.appendingPathComponent("jamf-cli-data/computers/\(oldComputers)")
         XCTAssertTrue(FileManager.default.fileExists(atPath: archived.path), "old now in archive")
     }
 
     func testDeleteModeRemovesOldFiles() throws {
-        let old = try writeSnapshot(kind: "policies", name: "p_old.json", ageDays: 400)
+        let old = try writeSnapshot(kind: "policies", name: "policies_20240101T000000.json", ageDays: 400)
         let acted = SnapshotRetentionService.sweep(
             dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
             policy: policy(mode: .delete, keepDays: 365)
@@ -84,28 +91,28 @@ final class SnapshotRetentionServiceTests: XCTestCase {
 
     func testKeepCountProtectsNewestRegardlessOfAge() throws {
         // All three are old; keepCount 2 protects the two newest.
-        try writeSnapshot(kind: "ea-results", name: "ea1.json", ageDays: 100)
-        try writeSnapshot(kind: "ea-results", name: "ea2.json", ageDays: 200)
-        try writeSnapshot(kind: "ea-results", name: "ea3.json", ageDays: 300)
+        try writeSnapshot(kind: "ea-results", name: ea1, ageDays: 100)
+        try writeSnapshot(kind: "ea-results", name: ea2, ageDays: 200)
+        try writeSnapshot(kind: "ea-results", name: ea3, ageDays: 300)
         let acted = SnapshotRetentionService.sweep(
             dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
             policy: policy(mode: .delete, keepDays: 30, keepCount: 2)
         )
         XCTAssertEqual(acted, 1, "only the single oldest beyond the 2-newest floor")
         XCTAssertTrue(FileManager.default.fileExists(
-            atPath: dataDir.appendingPathComponent("ea-results/ea1.json").path), "newest kept")
+            atPath: dataDir.appendingPathComponent("ea-results/\(ea1)").path), "newest kept")
     }
 
     func testAgeHorizonKeepsRecentFiles() throws {
-        try writeSnapshot(kind: "computers", name: "recent.json", ageDays: 10)
-        try writeSnapshot(kind: "computers", name: "old.json", ageDays: 100)
+        try writeSnapshot(kind: "computers", name: recentComputers, ageDays: 10)
+        try writeSnapshot(kind: "computers", name: oldComputers, ageDays: 100)
         let acted = SnapshotRetentionService.sweep(
             dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
             policy: policy(mode: .delete, keepDays: 30)
         )
         XCTAssertEqual(acted, 1)
         XCTAssertTrue(FileManager.default.fileExists(
-            atPath: dataDir.appendingPathComponent("computers/recent.json").path))
+            atPath: dataDir.appendingPathComponent("computers/\(recentComputers)").path))
     }
 
     // MARK: - Skip-list
@@ -145,9 +152,9 @@ final class SnapshotRetentionServiceTests: XCTestCase {
     /// dir). If it counted as a snapshot it would occupy a keep_count slot and
     /// could itself be archived/deleted, ahead of a real (older) snapshot.
     func testManifestJSONNeverCountsAsSnapshot() throws {
-        try writeSnapshot(kind: "ea-results", name: "ea1.json", ageDays: 3)
-        try writeSnapshot(kind: "ea-results", name: "ea2.json", ageDays: 2)
-        try writeSnapshot(kind: "ea-results", name: "ea3.json", ageDays: 1)
+        try writeSnapshot(kind: "ea-results", name: ea1, ageDays: 3)
+        try writeSnapshot(kind: "ea-results", name: ea2, ageDays: 2)
+        try writeSnapshot(kind: "ea-results", name: ea3, ageDays: 1)
         let manifest = dataDir.appendingPathComponent("ea-results/manifest.json")
         try "{}".write(to: manifest, atomically: true, encoding: .utf8)
 
@@ -158,7 +165,7 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         XCTAssertEqual(acted, 0, "keep_count 3 protects all 3 real snapshots")
         XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.path),
                       "manifest.json must never be deleted by retention")
-        for name in ["ea1.json", "ea2.json", "ea3.json"] {
+        for name in [ea1, ea2, ea3] {
             XCTAssertTrue(FileManager.default.fileExists(
                 atPath: dataDir.appendingPathComponent("ea-results/\(name)").path))
         }
@@ -188,6 +195,80 @@ final class SnapshotRetentionServiceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: oldSummary.path))
     }
 
+    // MARK: - Only canonical snapshot files are candidates
+
+    private func writeFile(_ url: URL, ageDays: Double) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "x".write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -ageDays * 86_400)],
+            ofItemAtPath: url.path)
+    }
+
+    /// A peer-edited `jamf_cli.data_dir` can point at a folder of personal files.
+    func testOnlyStampedSnapshotsMoveFromADataDirHoldingOtherFiles() throws {
+        let snapshot = try writeSnapshot(
+            kind: "computers", name: oldComputers, ageDays: 400)
+        let dashboard = try writeSnapshot(
+            kind: "dashboard", name: "dashboard_20240101T000000.html", ageDays: 400)
+        let kindDir = dataDir.appendingPathComponent("computers")
+        let others = ["notes.docx", "photo.png", "report_20240101T000000.pdf",
+                      "computers_20240101T000000 2.json", "manifest.json"]
+            .map { kindDir.appendingPathComponent($0) }
+        for url in others { try writeFile(url, ageDays: 400) }
+
+        let result = SnapshotRetentionService.sweepWithResult(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(mode: .archive, keepDays: 30))
+
+        XCTAssertEqual(result.acted, 2)
+        XCTAssertEqual(result.failed, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: snapshot.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dashboard.path))
+        for url in others {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path),
+                          "\(url.lastPathComponent) is not a snapshot and must stay")
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archiveRoot
+            .appendingPathComponent("jamf-cli-data/computers/\(oldComputers)").path))
+    }
+
+    /// Files that are not snapshots must not take a keep_count slot either.
+    func testNonSnapshotFilesDoNotCountTowardKeepCount() throws {
+        try writeSnapshot(kind: "computers", name: oldComputers, ageDays: 400)
+        try writeSnapshot(kind: "computers", name: newComputers, ageDays: 399)
+        try writeFile(dataDir.appendingPathComponent("computers/notes.docx"), ageDays: 1)
+
+        let acted = SnapshotRetentionService.sweep(
+            dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
+            policy: policy(mode: .delete, keepDays: 30, keepCount: 1))
+
+        XCTAssertEqual(acted, 1, "notes.docx is no snapshot, so it takes no keep_count slot")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: dataDir.appendingPathComponent("computers/\(newComputers)").path))
+    }
+
+    func testOnlyCanonicalSummariesAreSwept() throws {
+        let summariesDir = root.appendingPathComponent("snapshots/summaries", isDirectory: true)
+        let summary = summariesDir.appendingPathComponent("summary_2024-01-01.json")
+        let others = ["notes.docx", "summary_2024-01-01 2.json", "summary_20240101T000000.json"]
+            .map { summariesDir.appendingPathComponent($0) }
+        try writeFile(summary, ageDays: 400)
+        for url in others { try writeFile(url, ageDays: 400) }
+
+        let acted = SnapshotRetentionService.sweep(
+            dataDir: dataDir, summariesDir: summariesDir, archiveRoot: archiveRoot,
+            policy: policy(mode: .delete, keepDays: 30, includeSummaries: true))
+
+        XCTAssertEqual(acted, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: summary.path))
+        for url in others {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path),
+                          "\(url.lastPathComponent) is not a summary and must stay")
+        }
+    }
+
     // MARK: - Policy mapping
 
     func testPolicyMappingDefaultsAndOverrides() throws {
@@ -206,8 +287,8 @@ final class SnapshotRetentionServiceTests: XCTestCase {
 
     /// `sweepWithResult` returns acted=1, failed=0 on a clean archive.
     func testSweepWithResult_cleanSweepReturnsZeroFailed() throws {
-        try writeSnapshot(kind: "computers", name: "old.json", ageDays: 400)
-        try writeSnapshot(kind: "computers", name: "new.json", ageDays: 1)
+        try writeSnapshot(kind: "computers", name: oldComputers, ageDays: 400)
+        try writeSnapshot(kind: "computers", name: newComputers, ageDays: 1)
         let result = SnapshotRetentionService.sweepWithResult(
             dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
             policy: policy(mode: .archive, keepDays: 365)
@@ -218,7 +299,7 @@ final class SnapshotRetentionServiceTests: XCTestCase {
 
     /// `sweepWithResult` returns acted=0, failed=0 when no files are due.
     func testSweepWithResult_nothingDueIsAllZero() throws {
-        try writeSnapshot(kind: "computers", name: "recent.json", ageDays: 5)
+        try writeSnapshot(kind: "computers", name: recentComputers, ageDays: 5)
         let result = SnapshotRetentionService.sweepWithResult(
             dataDir: dataDir, summariesDir: nil, archiveRoot: archiveRoot,
             policy: policy(mode: .delete, keepDays: 365)
@@ -236,7 +317,7 @@ final class SnapshotRetentionServiceTests: XCTestCase {
 
     /// When a delete fails (file made read-only), sweepWithResult reports failed > 0.
     func testSweepWithResult_deleteFailureIsCountedInFailed() throws {
-        let oldFile = try writeSnapshot(kind: "computers", name: "old.json", ageDays: 400)
+        let oldFile = try writeSnapshot(kind: "computers", name: oldComputers, ageDays: 400)
         // Make the file's parent directory read-only so the delete cannot succeed.
         let dir = oldFile.deletingLastPathComponent()
         try FileManager.default.setAttributes(
@@ -258,7 +339,7 @@ final class SnapshotRetentionServiceTests: XCTestCase {
 
     /// Failure messages are routed through `onLine` so run logs surface them.
     func testActFailureIsEmittedThroughOnLine() throws {
-        let oldFile = try writeSnapshot(kind: "computers", name: "old.json", ageDays: 400)
+        let oldFile = try writeSnapshot(kind: "computers", name: oldComputers, ageDays: 400)
         let dir = oldFile.deletingLastPathComponent()
         try FileManager.default.setAttributes(
             [.posixPermissions: NSNumber(value: Int16(0o555))], ofItemAtPath: dir.path

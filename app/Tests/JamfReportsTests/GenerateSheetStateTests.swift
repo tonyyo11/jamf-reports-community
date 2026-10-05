@@ -213,6 +213,36 @@ final class GenerateSheetStateTests: XCTestCase {
             + CLIBridge.explainExit(3, operation: "CSV generation"))
     }
 
+    // MARK: - Footer and the audit line
+
+    /// The dismiss button keeps its own label while a run goes; only Generate says Running.
+    func testOnlyGenerateSaysRunningWhileARunGoes() {
+        let running = GenerateSheetState.footerTitles(isRunning: true)
+        XCTAssertEqual(running.dismiss, "Done")
+        XCTAssertEqual(running.generate, "Running\u{2026}")
+        let idle = GenerateSheetState.footerTitles(isRunning: false)
+        XCTAssertEqual(idle.dismiss, "Done")
+        XCTAssertEqual(idle.generate, "Generate")
+    }
+
+    func testAnAuditThatExitsZeroEndsWithAnOkLine() {
+        let line = GenerateSheetState.auditResultLine(exitCode: 0)
+        XCTAssertEqual(line.level, .ok)
+        XCTAssertTrue(line.text.hasPrefix("[ok] health audit finished"), line.text)
+    }
+
+    /// Any other exit still lets the generate go on, and the log says why the audit is stale.
+    func testAnAuditThatFailsOrIsPartialEndsWithAWarnNamingTheCause() {
+        let partial = GenerateSheetState.auditResultLine(exitCode: CLIBridge.exitCodePartialFailure)
+        XCTAssertEqual(partial.level, .warn)
+        XCTAssertTrue(partial.text.contains("partial results (exit 7)"), partial.text)
+        let rejected = GenerateSheetState.auditResultLine(exitCode: CLIBridge.exitCodeUnauthorized)
+        XCTAssertEqual(rejected.level, .warn)
+        XCTAssertTrue(rejected.text.contains("health audit failed: authentication failed (401)"),
+                      rejected.text)
+        XCTAssertTrue(rejected.text.hasSuffix("Continuing with the cached audit data."))
+    }
+
     // MARK: - Custom template selection
 
     func testDefaultSelectedTemplateIDIsFullInstance() {

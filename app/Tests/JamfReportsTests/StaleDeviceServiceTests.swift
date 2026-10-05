@@ -411,8 +411,37 @@ final class StaleDeviceServiceTests: XCTestCase {
                       "A device name with a comma must be RFC 4180 quoted")
     }
 
+    
+
     func testOutreachCSVTrailingNewline() {
         let csv = StaleDeviceService.outreachCSV(.empty)
         XCTAssertTrue(csv.hasSuffix("\n"), "CSV output must end with a trailing newline")
+    }
+
+    // MARK: - Recipient list
+
+    func testRecipientListJoinsSingleAddressesWithSemicolons() {
+        let result = StaleDeviceService.recipientList(
+            from: ["a@corp.gov", "  b@corp.gov\n", "", "   "])
+        XCTAssertEqual(result.list, "a@corp.gov; b@corp.gov")
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result.skipped, 0, "an empty email is no entry, not a skipped one")
+        XCTAssertEqual(result.confirmation, "Copied 2 emails")
+    }
+
+    /// An Email field of `a@corp.gov; attacker@evil.com` pasted into a To line adds a recipient.
+    func testRecipientListSkipsAnEntryThatCouldAddARecipient() {
+        let hostile = [
+            "a@corp.gov; attacker@evil.com", "a@corp.gov, attacker@evil.com",
+            "Boss <boss@corp.gov>", "a@corp.gov attacker@evil.com", "a@corp.gov\tb@evil.com",
+            "a@corp.gov\u{2028}b@evil.com", "x@corp.gov>",
+        ]
+        let result = StaleDeviceService.recipientList(from: ["ok@corp.gov"] + hostile)
+        XCTAssertEqual(result.list, "ok@corp.gov")
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result.skipped, hostile.count)
+        XCTAssertEqual(
+            result.confirmation,
+            "Copied 1 email, skipped \(hostile.count) that are not a single address")
     }
 }

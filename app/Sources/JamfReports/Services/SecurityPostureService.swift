@@ -7,8 +7,8 @@ import Foundation
 ///
 /// The view consumes a single `Snapshot` value containing both raw counts
 /// (for KPI tiles) and the OS-version distribution (for the donut). The
-/// `SecurityScore` is computed separately by `SecurityScoreCalculator` from
-/// `fleetCounts` so the view can pass user-configurable weights through.
+/// `SecurityScore` is computed by `SecurityScoreCalculator` from the workspace's factors and
+/// what each measured, which `load` reads with the snapshot.
 struct SecurityPostureService: Sendable {
 
     /// Everything the SecurityPostureView needs from a single security
@@ -32,9 +32,13 @@ struct SecurityPostureService: Sendable {
         /// The counts under the workspace's policy: P0/P1, the score and the tiles' sub-lines.
         var fleetCounts: SecurityFleetCounts = .empty
         var policy: SecurityControlPolicy = .default
-        /// The EDR agent and primary mSCP baseline the score also weighs
-        /// (`SecurityScoreInputs`); `.none` leaves it to the security report's three controls.
-        var scoreExtras: SecurityScoreInputs.Extras = .none
+        /// What the score counts (`ReportConfig.resolvedScoreFactors`) and what each factor
+        /// measured (`SecurityScoreInputs.measures`); empty leaves the score with no data.
+        var scoreFactors: [SecurityScoreFactor] = []
+        var scoreMeasures: [String: SecurityScoreMeasure] = [:]
+        /// `thresholds.stale_device_days` and `stale_basis`, for the check-in factor's label.
+        var staleDays: Int?
+        var staleBasis: [StaleBasis] = StaleBasis.default
 
         struct OSVersion: Sendable, Equatable, Identifiable {
             let osVersion: String
@@ -91,8 +95,18 @@ struct SecurityPostureService: Sendable {
         let hardware = HardwareEncryption.index(dataDir: dir, for: policy)
         do {
             var snapshot = try decode(at: newest, policy: policy, hardware: hardware)
-            snapshot.scoreExtras = SecurityScoreInputs.load(
-                dataDir: dir, config: reportConfig(profile: profile))
+            let config = reportConfig(profile: profile)
+            let factors = config?.resolvedScoreFactors
+                ?? policy.resolvedScoreFactors(agents: [], baselines: [])
+            snapshot.scoreFactors = factors
+            snapshot.scoreMeasures = SecurityScoreInputs.measures(
+                for: factors, fleet: snapshot.fleetCounts,
+                sources: SecurityScoreInputs.load(
+                    dataDir: dir, factors: factors,
+                    staleRule: config?.staleRule ?? StaleRule(days: 30)),
+                config: config)
+            snapshot.staleDays = config?.thresholds?.resolvedStaleDays ?? 30
+            snapshot.staleBasis = config?.thresholds?.resolvedStaleBasis ?? StaleBasis.default
             return snapshot
         } catch let LoadError.decodeFailed(reason) {
             return .failed("Couldn't read the latest security snapshot — \(reason).")
@@ -102,7 +116,7 @@ struct SecurityPostureService: Sendable {
     }
 
     /// The workspace's decoded config.yaml; nil when absent or unreadable (the score then
-    /// weighs the security report's controls alone).
+    /// counts the native factors).
     private static func reportConfig(profile: String) -> ReportConfig? {
         guard let workspace = ProfileService.workspaceURL(for: profile) else { return nil }
         return try? ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))

@@ -521,6 +521,22 @@ final class JamfCLIDecoderTests: XCTestCase {
             "day count (10) must win over the stale flag")
     }
 
+    /// Stale is "more than the threshold": a Mac at exactly 30 days is not, 31 is.
+    func testDeviceComplianceRowIsStaleOnlyPastTheThreshold() throws {
+        let json = """
+        [{"name":"At","stale":true,"days_since_contact":"30"},
+         {"name":"Past","stale":false,"days_since_contact":"31"},
+         {"name":"LegacyAt","days_since_checkin":30},
+         {"name":"LegacyPast","days_since_checkin":31}]
+        """
+        let rows = try JSONDecoder().decode([DeviceComplianceRow].self, from: Data(json.utf8))
+        XCTAssertFalse(rows[0].isStale(atDays: 30), "exactly 30 days is not more than 30")
+        XCTAssertTrue(rows[1].isStale(atDays: 30))
+        XCTAssertTrue(rows[0].isStale(atDays: 29))
+        XCTAssertFalse(rows[2].isStale(atDays: 30))
+        XCTAssertTrue(rows[3].isStale(atDays: 30))
+    }
+
     /// When no day count is emitted, `isStale` falls back to the server `stale` flag.
     func testDeviceComplianceRowStaleFlagFallback() throws {
         let json = """

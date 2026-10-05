@@ -129,7 +129,7 @@ final class HtmlReportDashboardTests: XCTestCase {
     }
 
     private static let policy = "default-src 'none'; style-src 'unsafe-inline'; "
-        + "script-src 'unsafe-inline'; img-src data:"
+        + "script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
     private static let policyMeta =
         "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">"
 

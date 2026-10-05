@@ -60,15 +60,18 @@ final class ConfigSchemaTests: XCTestCase {
           controls:
             filevault: warning
           filevault_off_hardware_encrypted: ignore
-          score_weights:
-            filevault: 15
-            sip: 15
-            firewall: 15
-            edr_agent: 10
-            mscp: 20
-            xprotect: 5
-            cve: 15
-            secure_boot: 5
+          score_factors:
+            - factor: filevault
+              weight: 15
+            - factor: os_current
+              weight: 15
+              grace_days: 30
+            - factor: agent
+              agent: "CrowdStrike Falcon"
+              weight: 5
+            - factor: mscp
+              baseline: "STIG"
+              weight: 10
         """)
         XCTAssertEqual(keys, [])
     }
@@ -117,15 +120,30 @@ final class ConfigSchemaTests: XCTestCase {
             sip: fail
             antivirus: warning
           mode: strict
-          score_weights:
-            filevualt: 10
+          score_factors:
+            - factor: sip
+              weight: 5
+              wieght: 10
         """)
         XCTAssertEqual(keys.map(\.keyPath), [
             "security_policy.controls.antivirus",
             "security_policy.mode",
-            "security_policy.score_weights.filevualt",
+            "security_policy.score_factors[0].wieght",
         ])
-        XCTAssertEqual(keys.last?.suggestion, "filevault")
+        XCTAssertEqual(keys.last?.suggestion, "weight")
+    }
+
+    /// `score_weights` was replaced by `score_factors` before any release read it: it is
+    /// reported as retired since 2.9 and has no suggestion, not as a typo of another key.
+    func testScoreWeightsIsReportedAsRetired() throws {
+        let keys = try unknownKeys("""
+        security_policy:
+          score_weights:
+            filevault: 15
+        """)
+        XCTAssertEqual(keys.map(\.keyPath), ["security_policy.score_weights"])
+        XCTAssertEqual(keys.first?.retiredSince, "2.9")
+        XCTAssertNil(keys.first?.suggestion)
     }
 
     func testTheVocabularyBlocksAreKnownAndTheirUnknownKeysAreReported() throws {
@@ -411,9 +429,8 @@ final class ConfigSchemaTests: XCTestCase {
                        true)
         let html = ConfigSchema.knownKeys(at: ["html"]) ?? []
         XCTAssertTrue(html.isSuperset(of: ["track_history", "history_file", "section_limits"]))
-        XCTAssertEqual(ConfigSchema.knownKeys(at: ["security_policy", "score_weights"]), [
-            "filevault", "sip", "firewall", "edr_agent", "mscp", "xprotect", "cve",
-            "secure_boot",
+        XCTAssertEqual(ConfigSchema.knownKeys(at: ["security_policy", "score_factors"]), [
+            "factor", "weight", "grace_days", "agent", "baseline",
         ])
     }
 

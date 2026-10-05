@@ -64,6 +64,22 @@ enum CLIRun {
         stream.write(Data((line.text + "\n").utf8))
     }
 
+    /// Runs `body` holding the tick lock, as a GUI collect, a report and the tick do, so this
+    /// command cannot overlap one of them or another command. When another live process holds
+    /// it, nothing runs: one line on stderr and exit `TickRunner.queuedExitCode`, the code a
+    /// tick turned away by the lock exits with. `fail` exits without unwinding, so a command
+    /// that ends with a failure exit returns what it would have exited with and fails after.
+    static func exclusively<T: Sendable>(
+        lock: TickLock = TickLock(url: TickLock.defaultURL),
+        _ body: () async throws -> T
+    ) async throws -> T {
+        guard let result = try await lock.holdingForRun(body) else {
+            FileHandle.standardError.write(Data("error: \(TickLock.busyMessage)\n".utf8))
+            throw ExitCode(TickRunner.queuedExitCode)
+        }
+        return result
+    }
+
     /// Print an error to stderr and exit with the given code (jamf-cli convention).
     static func fail(_ message: String, code: Int32 = 1) -> Never {
         FileHandle.standardError.write(Data(("error: " + message + "\n").utf8))

@@ -388,11 +388,18 @@ struct DeviceComplianceRow: Decodable, Sendable {
     /// as a String ("4160") in production but tolerated as a number too (matches
     /// CoreDashboard's `days_since_contact` precedence).
     let daysSinceContact: Int?
+    /// The Jamf ID, when the row carries one (current jamf-cli rows do not).
+    let jamfID: String?
+    /// The last check-in as jamf-cli wrote it (`last_contact`).
+    let lastContact: String?
 
     private enum CodingKeys: String, CodingKey {
         case name, serial, managed, stale
         case daysSinceCheckin = "days_since_checkin"
         case daysSinceContact = "days_since_contact"
+        case id, jamfID = "jamf_id", deviceID = "device_id"
+        case lastContact = "last_contact"
+        case lastCheckin = "last_checkin"
     }
 
     init(from decoder: Decoder) throws {
@@ -405,18 +412,56 @@ struct DeviceComplianceRow: Decodable, Sendable {
         // jamf-cli versions (reuses AnyCodable.intValue like other decoders here).
         daysSinceCheckin = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceCheckin)?.intValue
         daysSinceContact = try c.decodeIfPresent(AnyCodable.self, forKey: .daysSinceContact)?.intValue
+        // Neither read can fail the row: a value of another type is no ID and no date.
+        jamfID = [CodingKeys.id, .jamfID, .deviceID].lazy
+            .compactMap { (try? c.decodeIfPresent(AnyCodable.self, forKey: $0))??.intValue }
+            .first.map(String.init)
+        lastContact = [CodingKeys.lastContact, .lastCheckin].lazy
+            .compactMap { (try? c.decodeIfPresent(String.self, forKey: $0)) ?? nil }
+            .first { !$0.isEmpty }
     }
 
     /// Resolved day count, preferring the current `days_since_contact` key and
     /// falling back to the legacy `days_since_checkin`.
     var resolvedDaysSinceContact: Int? { daysSinceContact ?? daysSinceCheckin }
 
-    /// Whether the device is stale at `>= threshold` days. Uses the resolved day
-    /// count when present; otherwise falls back to the server-side `stale` flag
-    /// (coarser ~90-100d cadence, but honest when no day count is emitted).
+    /// Whether the device is stale: more than `threshold` days since its last contact, so a
+    /// Mac at exactly `threshold` days is not. Uses the resolved day count when present;
+    /// otherwise falls back to the server-side `stale` flag (coarser ~90-100d cadence, but
+    /// honest when no day count is emitted). This is `isStale(_:computers:)` on the default
+    /// basis, the last check-in alone.
     func isStale(atDays threshold: Int) -> Bool {
-        if let days = resolvedDaysSinceContact { return days >= threshold }
-        return stale == true
+        isStale(StaleRule(days: threshold), computers: nil)
+    }
+
+    /// What the stale rule reads from this row. A row carries only the check-in day count, so
+    /// the inventory and contact dates come from the `computers` snapshot's Mac with the same
+    /// Jamf ID, else the same serial. A row `computers` cannot place counts its check-in alone.
+    func staleInputs(
+        _ rule: StaleRule, computers: ComputerDateIndex?
+    ) -> StaleInputs {
+        var inputs = StaleInputs(checkInDays: resolvedDaysSinceContact, flag: stale == true)
+        guard rule.needsComputers, let match = computers?.match(jamfID: jamfID, serial: serial)
+        else { return inputs }
+        inputs.checkIn = match.checkIn
+        inputs.inventory = match.inventory
+        inputs.contact = match.contact
+        inputs.carriesDates = true
+        return inputs
+    }
+
+    /// Whether the device is stale under `rule`. `computers` is read only when the rule counts
+    /// the inventory or contact date.
+    func isStale(
+        _ rule: StaleRule, computers: ComputerDateIndex?, now: Date = Date()
+    ) -> Bool {
+        rule.isStale(staleInputs(rule, computers: computers), now: now)
+    }
+
+    func staleAge(
+        _ rule: StaleRule, computers: ComputerDateIndex?, now: Date = Date()
+    ) -> StaleAge? {
+        rule.age(of: staleInputs(rule, computers: computers), now: now)
     }
 }
 

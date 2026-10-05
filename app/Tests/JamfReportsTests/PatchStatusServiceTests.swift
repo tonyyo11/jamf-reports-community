@@ -236,6 +236,13 @@ final class PatchStatusServiceTests: XCTestCase {
         )
     }
 
+    func testComplianceCSVQuotesATitleWithACRLFPair() {
+        let rows = [sampleRow(title: "Agent\r\n=1+1", latest: "1.0")]
+        let csv = PatchStatusService.complianceCSV(rows)
+        XCTAssertTrue(csv.contains("\"Agent\r\n=1+1\",1.0"),
+                      "A CRLF inside a title must be quoted, not start a new record")
+    }
+
     func testComplianceCSVEmptyTitlesYieldsHeaderOnly() {
         XCTAssertEqual(
             PatchStatusService.complianceCSV([]),

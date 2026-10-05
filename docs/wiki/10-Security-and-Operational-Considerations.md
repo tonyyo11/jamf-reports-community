@@ -238,6 +238,12 @@ rather than silently generating a report from tampered data. It does not trigger
 `absent` or `omitted` results, since legacy snapshots and partial collects cannot be
 retroactively verified. Off by default.
 
+**jamf-cli's signature is checked before use.** The app runs jamf-cli, and passes it a
+client secret during setup, only when the binary carries Jamf's Developer ID signature
+(team `483DWKW443`). From 2.9.0 the check asks for a certificate Apple issued to Jamf, so a
+binary that merely names Jamf's team in a self-made signature is refused. If Setup says
+jamf-cli failed its signature check, reinstall it from Jamf's release package or Homebrew.
+
 **Recommendation:** store `config.yaml` in version control (local git, internal GitHub, etc.)
 if your operational security practices require configuration audit trails. Generated reports
 themselves do not need version control — only the input config.
@@ -260,21 +266,28 @@ credential/secret material (always redacted).
 
 ## Diagnostic Bundle Redaction Scope
 
-**`diagnostic-bundle` redacts credentials and most PII, but not bare IP addresses.**
+**`diagnostic-bundle` and run history log export redact credentials and most PII, but not bare IP addresses.**
 
 The diagnostic bundle includes:
 
-- Redacted `config.yaml` (secrets always removed)
-- Recent logs (secrets redacted)
+- Redacted `config.yaml` (secrets and webhook URLs removed; exception approvers and
+  descriptions replaced with placeholders)
+- Recent logs (secrets, webhook URLs, the Jamf server address and the profile's tenant and
+  environment IDs removed)
 - Snapshots (PII redacted with stable hash placeholders: `device-<8hex>`, `serial-<8hex>`)
 - Workspace tree listing (paths visible, but no data)
 
-**Exception:** if your Jamf Pro instance is addressed by IP (e.g., `https://192.168.1.10/`) 
-instead of a hostname, those IPs remain in the bundle. Server URLs are NOT redacted by the
-IP-redaction heuristic (which matches only hostnames with alphabetic TLDs).
+Run History's **Copy log** and **Export log…**, and the export in Settings › Logging, apply
+the same redaction before the text reaches the clipboard or a file: secrets, webhook URLs
+(Slack, Teams, Teams Workflows, Power Automate), the Jamf server address and the profile's
+tenant and environment IDs are removed. The log on screen is not changed.
 
-**Before sharing a bundle**, review it and redact IP addresses or other infrastructure
-details if your security policy requires it:
+**Exception:** if your Jamf Pro instance is addressed by IP (e.g., `https://192.168.1.10/`) 
+instead of a hostname, those IPs remain in the bundle and exports. Server URLs are NOT redacted
+by the IP-redaction heuristic (which matches only hostnames with alphabetic TLDs).
+
+**Before sharing a bundle or log export**, review it and redact IP addresses or other
+infrastructure details if your security policy requires it:
 
 ```bash
 # Inspect the bundle contents
@@ -297,6 +310,9 @@ file, not access-controlled.
   (owner read/write only, no group or world visibility).
 - Use `output.archive_enabled: true` to move older reports into an archive for retention
   governance (they are moved, not deleted, so you can audit/recover them).
+- **The HTML report keeps device lists short because it is forwarded:** it lists at most
+  100 stale Macs, 25 recent failures and 10 least-compliant Macs, and says how many more
+  the workbook has. The workbook's sheets are not capped.
 
 ## Multi-Tenant and Team Access
 
@@ -330,6 +346,22 @@ more than one of them. Create each JamfReports integration for the single
 environment its profile reports on, with read permissions only. An
 integration spanning every environment, or carrying write permissions, turns
 a secret leaked from one Mac into access to all of them.
+
+## External Network Calls
+
+**SOFA feed is the only non-Jamf host the app reaches.** When collecting, the app
+fetches macOS and XProtect release dates from `sofafeed.macadmins.io` to score
+currency in your security posture metrics. If your network must not reach third-party
+hosts, disable this fetch by adding it to `jamf_cli.collect_skip` in `config.yaml`:
+
+```yaml
+jamf_cli:
+  collect_skip: [sofa]   # or: ["sofa", "other", "kinds"]
+```
+
+The last feed fetched stays in use. With none, the macOS-current and XProtect-current
+factors have no data and are left out of the Security Score (never scored as 0). Jamf Pro and Platform API calls are always to your configured
+Jamf Pro server, not a third-party host.
 
 ## Webhook Egress
 
@@ -386,6 +418,13 @@ derived on any host running the app, so there is nothing else to migrate.
 The same Automation screen that hosts this policy also drives the opt-in Notifications
 webhook and shows Automation Health (the dead-man switch for overdue or failing
 schedules) — see [Automation Trust](https://github.com/tonyyo11/jamf-reports-community/wiki/05b-Automation-Trust).
+
+**Collecting and writing reports never overlap on one Mac.** The app, the background item
+and the command line share one lock. Generate, Export PDF, Export Inventory CSV and Trends'
+archive are refused while a collect runs ("A refresh is already running"), and a Refresh, an
+automatic collect or a scheduled run asked for while a report is being written waits ("A
+report is being generated — try again when it finishes"). The lock is per Mac: Macs sharing
+a workspace coordinate through the shared-workspace claim described above.
 
 ## Known Issues
 

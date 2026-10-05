@@ -783,7 +783,7 @@ final class CoreDashboardSecurityTests: XCTestCase {
         for yaml in [
             "", "security_policy:\n  controls:\n    sip: fail\n    firewall: fail\n",
             "security_policy:\n  filevault_off_hardware_encrypted: fail\n",
-            "security_policy:\n  score_weights:\n    sip: 20\n",
+            "security_policy:\n  score_factors:\n    - {factor: sip, weight: 20}\n",
         ] {
             let dash = try dashboard(yaml, dataDir: dir)
             try dash.writeCompliancePosture()

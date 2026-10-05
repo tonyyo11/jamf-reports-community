@@ -21,7 +21,7 @@ final class WorkspaceRootStoreTests: XCTestCase {
         // every validation here would come back .sensitiveLocation and prove
         // nothing about the rules under test.
         scratch = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-roottest-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-roottest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
     }
 

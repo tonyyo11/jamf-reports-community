@@ -812,7 +812,7 @@ private struct ColumnsTab: View {
                 // reloadFromDisk() leaves the loaded config alone, so without this the
                 // Columns tab showed the old mappings and Save wrote them back.
                 if workspace.profile == profile {
-                    workspace.adoptScaffoldedColumns(from: merged)
+                    workspace.adoptScaffoldedColumns(from: merged, readStamp: outcome.readStamp)
                 }
             } catch {
                 await MainActor.run {
@@ -891,22 +891,31 @@ private struct AgentsTab: View {
         )
     }
 
+    /// Mirrors `agentRow`: same spacing, the same fixed 140 and 36 point columns, so each
+    /// title sits over its field.
     private var agentsHeader: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             tableHeaderCell("Agent Name",      width: nil)
             tableHeaderCell("EA Column",       width: nil)
             tableHeaderCell("Connected Value", width: 140)
-            Spacer().frame(width: 36)
+            Color.clear.frame(width: 36, height: 1)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
     }
 
+    /// A fixed-width title when `width` is set, else one that shares the row's spare width.
+    /// A `maxWidth` cap, as this had, let the title shrink to its text and drift from its field.
+    @ViewBuilder
     private func tableHeaderCell(_ title: String, width: CGFloat?) -> some View {
-        Text(title)
+        let label = Text(title)
             .font(.caption.monospaced().weight(.semibold))
             .foregroundStyle(Theme.Text.tertiary(contrast))
-            .frame(maxWidth: width ?? .infinity, alignment: .leading)
+        if let width {
+            label.frame(width: width, alignment: .leading)
+        } else {
+            label.frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func agentRow(_ index: Int) -> some View {
@@ -936,6 +945,11 @@ private struct AgentsTab: View {
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
+            // Left flexible, the menu took an equal share of the row beside the two text
+            // fields and drew its chevron at the far edge, pushing the columns out of line
+            // with the header.
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
@@ -1081,8 +1095,10 @@ private struct ThresholdsTab: View {
                     thresholdField(
                         label: "Stale device threshold", key: "stale_device_days",
                         value: $ws.configState.staleDeviceDays, unit: "days",
-                        help: "Days since last check-in before a device is flagged stale"
+                        help: "A device is flagged stale when a date counted below is more than "
+                            + "this many days old"
                     )
+                    StaleBasisControls()
                     thresholdField(
                         label: "Check-in overdue", key: "checkin_overdue_days",
                         value: $ws.configState.checkinOverdueDays, unit: "days",
@@ -1321,7 +1337,7 @@ private struct OutputTab: View {
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
                     outputToggleRow(
                         title: "Timestamp output filenames",
-                        detail: "_2026-04-25_091418",
+                        detail: "_\(ReportEngine.workbookTimestamp())",
                         isOn: $ws.configState.timestampOutputs
                     )
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 10)

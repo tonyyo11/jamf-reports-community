@@ -49,7 +49,7 @@ extension HtmlReport {
                        comparable: { $0.patchPctBasis == $1.patchPctBasis }),
             FigureSpec(label: "On current macOS", unit: "%", polarity: .higherIsBetter,
                        read: { $0.osCurrentPct }, format: percent, comparable: always),
-            FigureSpec(label: "Stale Macs (\(staleDays)+ days)", unit: "",
+            FigureSpec(label: "Stale Macs (>\(staleDays) days)", unit: "",
                        polarity: .lowerIsBetter, read: { $0.staleCount.map(Double.init) },
                        format: { String(format: "%.0f", $0) }, comparable: always),
             FigureSpec(label: complianceLabel(isProxy: current.complianceIsProxy), unit: "%",
@@ -136,7 +136,7 @@ extension HtmlReport {
         let wasHTML = was.isEmpty ? "" : "<span class=\"glance-was\">\(f.escapeHTML(was))</span>"
         return """
             <div class="glance-tile">
-              <div class="glance-label">\(f.escapeHTML(spec.label))</div>
+              <div class="glance-label">\(f.escapeHTMLBreakable(spec.label))</div>
               <div class="glance-value">\(f.escapeHTML(spec.format(value)))</div>
               <div class="glance-change \(changeClass)">\(f.escapeHTML(changeText))\(wasHTML)</div>
             </div>
@@ -163,7 +163,8 @@ extension HtmlReport {
     }
 
     /// One sentence per rule, each only while its count is above zero:
-    /// - Macs with no check-in for `thresholds.stale_device_days` or more,
+    /// - Macs stale under the stale rule (`thresholds.stale_device_days`, `stale_basis`),
+    /// - Macs MDM reaches whose Jamf binary or inventory is more than `contact_gap_days` behind,
     /// - P0 security gaps (FileVault, SIP or Firewall off at the `fail` level),
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
@@ -173,7 +174,7 @@ extension HtmlReport {
         _ inputs: Inputs, shown: Set<SectionID>
     ) -> [(text: String, anchor: String?)] {
         let latest = inputs.summaries.last
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        let rule = config.staleRule
         var items: [(text: String, anchor: String?)] = []
         func add(_ id: SectionID, _ group: HtmlDetailGroup, _ text: String) {
             items.append((text, attentionAnchor(id, group: group, shown: shown)))
@@ -183,9 +184,13 @@ extension HtmlReport {
         // computers snapshot stands in when the summary has no count.
         let stale = latest?.staleCount ?? (inputs.computers.isEmpty ? 0 : inputs.staleMacCount)
         if stale > 0 {
-            add(.interventionList, .devices, stale == 1
-                ? "1 Mac has not checked in for \(staleDays) days or more."
-                : "\(stale) Macs have not checked in for \(staleDays) days or more.")
+            add(.interventionList, .devices, Self.staleSentence(stale, rule: rule))
+        }
+        for gap in ContactGap.allCases {
+            let count = inputs.contactGapCounts[gap] ?? 0
+            guard count > 0 else { continue }
+            add(.interventionList, .devices,
+                Self.contactGapSentence(gap, count: count, gapDays: config.contactGapDays))
         }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
@@ -224,6 +229,29 @@ extension HtmlReport {
                 "Security agents are not on every Mac: \(list.joined(separator: ", ")).")
         }
         return items
+    }
+
+    /// "3 Macs have not checked in for more than 30 days." On the default basis, the check-in
+    /// alone; otherwise the dates the rule counts.
+    static func staleSentence(_ count: Int, rule: StaleRule) -> String {
+        let mac = count == 1 ? "1 Mac has" : "\(count) Macs have"
+        if rule.usesDefaultBasis { return "\(mac) not checked in for more than \(rule.days) days." }
+        return "\(mac) gone more than \(rule.days) days without a \(rule.basisPhrase)."
+    }
+
+    /// "2 Macs are reached by MDM, but their Jamf binary has not checked in for more than 14
+    /// days."
+    static func contactGapSentence(_ gap: ContactGap, count: Int, gapDays: Int) -> String {
+        let one = count == 1
+        let macs = one ? "1 Mac" : "\(count) Macs"
+        switch gap {
+        case .binarySilent:
+            return "\(macs) \(one ? "is" : "are") reached by MDM, but \(one ? "its" : "their") "
+                + "Jamf binary has not checked in for more than \(gapDays) days."
+        case .inventoryStale:
+            return "\(macs) \(one ? "checks" : "check") in, but \(one ? "its" : "their") "
+                + "inventory has not updated for more than \(gapDays) days."
+        }
     }
 
     /// The "Needs attention" section: a sentence per rule that fires, each a link to the part

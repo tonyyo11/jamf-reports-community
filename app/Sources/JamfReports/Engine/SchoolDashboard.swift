@@ -506,7 +506,9 @@ struct SchoolDashboard: Sendable {
     private func intField(_ item: [String: Any], _ keys: [String]) -> Int {
         for key in keys {
             if let n = item[key] as? Int { return n }
-            if let d = item[key] as? Double { return Int(d) }
+            if let d = item[key] as? Double, let n = Int(exactly: d.rounded(.towardZero)) {
+                return n
+            }
             if let s = item[key] as? String, let n = Int(s) { return n }
         }
         return 0

@@ -190,11 +190,12 @@ extension HtmlReport {
         h4 { font-size: 0.9rem; margin: 0.8rem 0 0.4rem; color: var(--subtext); }
         .summary-block { margin-bottom: 1.5rem; }
         .glance-note { color: var(--subtext); font-size: 0.8rem; margin: -0.4rem 0 0.8rem; }
+        .ai-note { color: var(--subtext); font-size: 0.75rem; margin-top: 0.4rem; }
         .glance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
                        gap: 0.8rem; }
         .glance-tile { background: var(--card); border: 1px solid var(--border);
                        border-radius: 10px; padding: 0.9rem 1rem; }
-        .glance-label { font-size: 0.8rem; color: var(--subtext); }
+        .glance-label { font-size: 0.8rem; color: var(--subtext); overflow-wrap: anywhere; }
         .glance-value { font-size: 1.9rem; font-weight: 700; line-height: 1.2; margin: 0.15rem 0; }
         .glance-change { font-size: 0.78rem; }
         .glance-change.better { color: var(--green); }
@@ -236,7 +237,8 @@ extension HtmlReport {
         .tile.warn { border-color: var(--yellow); }
         .tile.bad { border-color: var(--red); }
         .tile-value { font-size: 2rem; font-weight: 700; }
-        .tile-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.3rem; }
+        .tile-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.3rem;
+                      overflow-wrap: anywhere; }
         table th, table td { padding: 0.6rem 1rem; text-align: left;
                              border-bottom: 1px solid var(--border); }
         table th { background: var(--bg2); font-weight: 600; }
@@ -248,7 +250,8 @@ extension HtmlReport {
         .count-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
                       padding: 1rem 1.5rem; min-width: 160px; text-align: center; }
         .count-value { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
-        .count-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.25rem; }
+        .count-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.25rem;
+                       overflow-wrap: anywhere; }
         .theme-toggle, .ctl { background: none; border: 1px solid var(--border);
                               border-radius: 6px; padding: 0.4rem 0.8rem; color: var(--text);
                               cursor: pointer; }
@@ -313,8 +316,27 @@ extension HtmlReport {
           .cohort-bar-bg, .cohort-bar-fill, .sev-pill {
             -webkit-print-color-adjust: exact; print-color-adjust: exact;
           }
-          details.group > summary::before { content: ""; margin: 0; }
-          details > summary { page-break-after: avoid; }
+          /* No disclosure markers: print opens every group. The [open] selector is needed,
+             since it is more specific than the screen's own marker rule. */
+          details > summary { list-style: none; }
+          details > summary::-webkit-details-marker { display: none; }
+          details.group > summary::before, details.group[open] > summary::before {
+            content: ""; margin: 0;
+          }
+          /* A heading stays with what it introduces, and a box shorter than a page is not
+             cut by a page break. The engine leaves a longer one to break where it must. */
+          h2, h3, h4, details > summary { break-after: avoid; page-break-after: avoid; }
+          .glance-tile, .tile, .count-card, .compliance-hero, .attention-list li, .block {
+            break-inside: avoid; page-break-inside: avoid;
+          }
+          /* A group runs past a page, so a card border would be cut at every break; it prints
+             as a ruled section instead. */
+          details.group { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+          /* The five security tiles share one row; wrapped, they printed as three over two. */
+          .tiles-row { flex-wrap: nowrap; gap: 0.6rem; }
+          .tiles-row .tile { flex: 1 1 0; min-width: 0; padding: 0.8rem 0.4rem; }
+          .tiles-row .tile-value { font-size: 1.5rem; }
+          .count-card { flex: 1 1 8rem; min-width: 0; }
           a { color: #000 !important; text-decoration: none; }
           /* Its bottom padding alone could start an empty last page. */
           footer { padding-bottom: 0; }

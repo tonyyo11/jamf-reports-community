@@ -45,7 +45,21 @@ struct OutreachView: View {
 
     private var subtitle: String? {
         guard snapshot.totalDevices > 0 else { return nil }
-        return "\(snapshot.totalDevices) device\(snapshot.totalDevices == 1 ? "" : "s") bucketed by days since check-in."
+        let count = snapshot.totalDevices
+        return "\(count) device\(count == 1 ? "" : "s") bucketed by "
+            + "days since \(staleRule.basisPhrase)."
+    }
+
+    /// The stale rule the tiers follow: the configured window over the dates `stale_basis` lists.
+    private var staleRule: StaleRule {
+        StaleRule(days: configuredStaleDays, basis: snapshot.staleBasis)
+    }
+
+    /// A Mac's stale age as the table shows it: days, or "never" for a Mac without a date the
+    /// rule counts.
+    private func ageText(_ device: DeviceInventoryRecord) -> String {
+        guard let age = device.staleAge(staleRule) else { return "\(device.daysSinceContact ?? 0)" }
+        return age.days.map(String.init) ?? "never"
     }
 
     /// Configured `thresholds.stale_device_days` (default 30). Tier boundaries
@@ -226,12 +240,13 @@ struct OutreachView: View {
                         .width(min: 100, ideal: 120)
 
                         TableColumn("Days Since") { device in
-                            let days = device.daysSinceContact ?? 0
-                            Text("\(days)")
+                            let age = ageText(device)
+                            Text(age)
                                 .font(Theme.Fonts.mono(11, weight: .semibold))
-                                .foregroundStyle(daysSinceColor(for: days))
+                                .foregroundStyle(daysSinceColor(for: Int(age) ?? .max))
                                 .monospacedDigit()
-                                .accessibilityLabel("\(days) days since check-in")
+                                .accessibilityLabel(
+                                    "\(age) days since \(staleRule.basisPhrase)")
                         }
                         .width(min: 80, ideal: 90)
 
@@ -259,24 +274,19 @@ struct OutreachView: View {
 
     private func copyEmailList() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
-        let emails = devices.compactMap { device -> String? in
-            let trimmed = device.email.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-        let emailString = emails.joined(separator: "; ")
-        copy(text: emailString, then: "Copied \(emails.count) emails")
+        let recipients = StaleDeviceService.recipientList(from: devices.map(\.email))
+        copy(text: recipients.list, then: recipients.confirmation)
     }
 
     private func copyTableCSV() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
-        var csv = "Name,Serial,Email,Department,Days Since Check-in\n"
+        var csv = "Name,Serial,Email,Department,Days Since \(staleRule.basisHeading)\n"
         for device in devices {
             let name = StaleDeviceService.csvField(device.displayName)
             let serial = StaleDeviceService.csvField(device.displaySerial)
             let email = StaleDeviceService.csvField(device.email)
             let dept = StaleDeviceService.csvField(device.department)
-            let days = device.daysSinceContact ?? 0
-            csv += "\(name),\(serial),\(email),\(dept),\(days)\n"
+            csv += "\(name),\(serial),\(email),\(dept),\(ageText(device))\n"
         }
         copy(text: csv, then: "Copied table data")
     }

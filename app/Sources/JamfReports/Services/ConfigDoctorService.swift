@@ -92,6 +92,8 @@ enum ConfigDoctorService {
             rows += securityPolicyRows(profile: profile, config: config)
             rows += csvHardwareColumnRows(
                 config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
+            rows += csvInventoryColumnRows(
+                config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
@@ -512,7 +514,7 @@ enum ConfigDoctorService {
 
     /// Validates the `alerts:` block. Only emitted when the block is present at
     /// all (an unopted-in workspace gets no rows). Each malformed rule (unknown
-    /// metric/when, absent/non-finite/negative threshold — the same criteria as
+    /// metric/when, absent/non-finite/negative/oversized threshold — the same criteria as
     /// `AlertsConfig.resolvedRules`) gets its own error row; an enabled-but-
     /// undeliverable configuration warns; a healthy configuration confirms.
     private static func alertsRows(_ config: ReportConfig) -> [DoctorRow] {
@@ -570,8 +572,16 @@ enum ConfigDoctorService {
         guard let threshold = rule.threshold else {
             return "no threshold set"
         }
+        return thresholdFailure(threshold)
+    }
+
+    private static func thresholdFailure(_ threshold: Double) -> String? {
         guard threshold.isFinite, threshold >= 0 else {
             return "threshold \(threshold) is not a valid non-negative number"
+        }
+        guard threshold <= AlertRule.maxThreshold else {
+            return "threshold \(threshold) is above \(Int(AlertRule.maxThreshold)), "
+                + "the largest the app accepts"
         }
         return nil
     }
@@ -681,6 +691,7 @@ enum ConfigDoctorService {
         case .orphanItems: "Put the list under the key it belongs to, or remove it."
         case .unclosedFlow: "Close it on the same line, or put one item per line under the key."
         case .secondDocument: "Remove the --- line; config.yaml holds one document."
+        case .nestingTooDeep: "Flatten it; no setting is nested that deep."
         }
     }
 
@@ -742,6 +753,38 @@ enum ConfigDoctorService {
             issues: SecurityPolicyConfigLoader.issues(profile: profile),
             policy: policy, hardware: hardware)
             + edrAgentRows(policy: policy, agents: config.securityAgents ?? [])
+            + scoreFactorRows(config: config)
+    }
+
+    /// Listed score factors the score cannot count: an agent no `security_agents` entry names,
+    /// a baseline `compliance.baselines` does not have (or mSCP with no baseline), and an empty
+    /// list, which scores nothing. A control set to `ignore` is left out by the policy, not
+    /// by a mistake, so it is not named.
+    static func scoreFactorRows(config: ReportConfig) -> [DoctorRow] {
+        let policy = config.resolvedSecurityPolicy
+        guard let listed = policy.scoreFactors else { return [] }
+        let path = SecurityPolicyConfigLoader.factorsPath
+        guard !listed.isEmpty else {
+            return [DoctorRow(
+                id: "security_policy.score_factors.empty", severity: .warn, title: path,
+                detail: "The list is empty, so the security score counts nothing.",
+                hint: "Add factors in Config > Scoring, or remove the key to use the defaults.")]
+        }
+        let kept = Set(config.resolvedScoreFactors.map(\.key))
+        return listed.filter { $0.kind.control == nil && !kept.contains($0.key) }
+            .enumerated().map { index, factor in
+                let name = ConfigSchema.displayText(factor.target ?? "")
+                let detail = factor.kind == .agent
+                    ? "\"\(name)\" matches no security_agents entry, so it is not scored."
+                    : factor.target == nil
+                        ? "No compliance.baselines entry is configured, so mSCP is not scored."
+                        : "\"\(name)\" matches no compliance.baselines entry, so it is not scored."
+                return DoctorRow(
+                    id: "security_policy.score_factors.unmatched.\(index)", severity: .warn,
+                    title: path, detail: detail,
+                    hint: "Write the name exactly as configured, or remove the factor in "
+                        + "Config > Scoring.")
+            }
     }
 
     /// `security_policy.edr_agent` names an agent the score would count as EDR; a name that
@@ -821,6 +864,24 @@ enum ConfigDoctorService {
         )]
     }
 
+    /// A `stale_basis` that counts the inventory date needs the CSV's Last Inventory Update
+    /// column, mapped as `columns.last_inventory`. Without it the CSV sheets leave the
+    /// inventory date out of the rule, which this row says.
+    static func csvInventoryColumnRows(
+        config: ReportConfig, csvHeaders: [String]?, csvFamily: CSVFamily?
+    ) -> [DoctorRow] {
+        guard config.thresholds?.resolvedStaleBasis.contains(.inventory) == true,
+              csvHeaders != nil, csvFamily != .mobile,
+              config.columns?.columnName(for: .lastInventory) == nil else { return [] }
+        return [DoctorRow(
+            id: "thresholds.stale_basis.csv_inventory_column", severity: .warn,
+            title: "thresholds.stale_basis",
+            detail: "stale_basis counts inventory, but columns.last_inventory is not mapped, so "
+                + "a CSV report has no inventory date: inventory does not apply to its rows.",
+            hint: "Map columns.last_inventory to the export's 'Last Inventory Update' column "
+                + "in Config.")]
+    }
+
     private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {
         if issue.keyPath == SecurityPolicyConfigLoader.edrAgentPath {
             return "Expected the name of a security agent, found \"\(issue.value)\" — "
@@ -829,8 +890,9 @@ enum ConfigDoctorService {
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Expected a block of settings, found \"\(issue.value)\" — using \(issue.used)"
         }
-        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
-            return "\"\(issue.value)\" is not a number from 0 to 100 — using \(issue.used)"
+        if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
+            return issue.value.isEmpty
+                ? "This entry is \(issue.used)" : "\"\(issue.value)\" — \(issue.used)"
         }
         if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
             return securityVocabularyDetail(issue)
@@ -856,8 +918,8 @@ enum ConfigDoctorService {
         if SecurityPolicyConfigLoader.blockKeyPaths.contains(issue.keyPath) {
             return "Write it as indented key: value lines in config.yaml, or remove it."
         }
-        if SecurityPolicyConfigLoader.isWeightPath(issue.keyPath) {
-            return "Set it to a number from 0 to 100 in config.yaml, or remove the line."
+        if SecurityPolicyConfigLoader.isFactorPath(issue.keyPath) {
+            return "Fix the entry in config.yaml, or edit the factors in Config > Scoring."
         }
         if SecurityPolicyConfigLoader.isVocabularyPath(issue.keyPath) {
             return issue.used == SecurityPolicyConfigLoader.vocabularyReadAsOff

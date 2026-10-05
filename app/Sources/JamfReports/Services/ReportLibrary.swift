@@ -72,8 +72,11 @@ struct ReportLibrary {
 
     func list(profile: String) -> [Report] {
         guard let location = location(for: profile) else { return [] }
+        let scheduled = scheduledFiles(profile: profile, roots: location.roots)
         return reportFileURLs(in: location)
-            .compactMap { report(from: $0, profile: profile, roots: location.roots) }
+            .compactMap {
+                report(from: $0, profile: profile, roots: location.roots, scheduled: scheduled)
+            }
             .sorted { $0.mtime > $1.mtime }
             .map(\.report)
     }
@@ -158,7 +161,8 @@ struct ReportLibrary {
     private func report(
         from url: URL,
         profile: String,
-        roots: [URL]
+        roots: [URL],
+        scheduled: [String: String]
     ) -> (report: Report, mtime: Date)? {
         guard let metadata = metadata(for: url, roots: roots) else { return nil }
         let name = url.lastPathComponent
@@ -166,9 +170,9 @@ struct ReportLibrary {
             name: name,
             size: FileDisplay.size(metadata.size),
             date: FileDisplay.date(metadata.mtime),
-            source: inferredSource(from: name, profile: profile),
+            source: Self.sourceLabel(forFilename: name, schedule: scheduled[name]),
             sheets: url.pathExtension.lowercased() == "xlsx" ? worksheetCount(in: url) : 0,
-            devices: deviceCount(from: url, profile: profile)
+            devices: deviceCount(from: url, profile: profile, modified: metadata.mtime)
         )
         return (report, metadata.mtime)
     }
@@ -191,45 +195,73 @@ struct ReportLibrary {
         return values?.isRegularFile == true
     }
 
-    private func inferredSource(from filename: String, profile: String) -> String {
-        let stem = stripTimestamp(
-            URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
-        )
-        let lowered = stem.lowercased()
+    /// The Type column: what the file is, then the schedule that wrote it when `schedule` is
+    /// known. A file name cannot say which schedule (or whether any) produced it, so the
+    /// name alone only ever gives the kind.
+    static func sourceLabel(forFilename filename: String, schedule: String?) -> String {
+        let kind = kindLabel(forFilename: filename)
+        guard let schedule, !schedule.isEmpty else { return kind }
+        return "\(kind) \u{00B7} \(schedule)"
+    }
 
-        if lowered.contains("jamf_report") { return "Weekly Executive" }
-        if lowered.contains("compliance") { return "Monthly Compliance" }
-        if lowered.contains("mobile") { return "Mobile Inventory" }
-        if lowered.contains("school_report") || lowered.contains("school") { return "Jamf School" }
-        if lowered.contains("inventory") { return "Inventory Export" }
-
-        var label = stem
-        for token in profileTokens(profile) {
-            label = label.replacingOccurrences(of: token, with: "", options: .caseInsensitive)
+    /// What a file is, from the names the writers give (`ExportNaming`) and its extension.
+    static func kindLabel(forFilename filename: String) -> String {
+        let lowered = filename.lowercased()
+        let exports: [(prefix: String, label: String)] = [
+            ("period-report-", "Period report"),
+            ("patch-compliance-", "Patch compliance CSV"),
+            ("audit-findings-", "Audit findings CSV"),
+            ("outreach-stale-devices-", "Offline outreach CSV"),
+            ("devices-", "Devices CSV"),
+            ("school-report_", "Jamf School workbook"),
+        ]
+        if let match = exports.first(where: { lowered.hasPrefix($0.prefix) }) {
+            return match.label
         }
-        label = label.replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return label.isEmpty ? "Manual Run" : titleCase(label)
+        switch URL(fileURLWithPath: lowered).pathExtension {
+        case "xlsx": return "Workbook"
+        case "html": return "HTML report"
+        case "pdf": return "PDF report"
+        case "csv":
+            let isInventory = lowered.hasPrefix("inventory_")
+                || lowered.hasPrefix("automation_inventory_")
+            return isInventory ? "Inventory CSV" : "CSV export"
+        default: return "Report file"
+        }
     }
 
-    private func profileTokens(_ profile: String) -> [String] {
-        let normalized = profile.replacingOccurrences(of: "-", with: "_")
-        return [profile, normalized]
+    /// File name to the schedule that wrote it, for the files a schedule's status file names.
+    /// The status file holds only the schedule's latest run, and a run started from the app
+    /// leaves none, so most files have no entry and show their kind alone.
+    private func scheduledFiles(profile: String, roots: [URL]) -> [String: String] {
+        guard let logs = try? WorkspacePaths.runHistoryDir(for: profile) else { return [:] }
+        let automation = logs.deletingLastPathComponent()
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: automation, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        ) else {
+            return [:]
+        }
+        let statusFiles = entries
+            .filter { $0.lastPathComponent.hasSuffix("_status.json") }
+            .compactMap { WorkspacePathGuard.validate($0, underAny: roots) }
+        return Self.scheduledFiles(statusFiles: statusFiles)
     }
 
-    private func stripTimestamp(_ stem: String) -> String {
-        let pattern = #"[_-]\d{4}-\d{2}-\d{2}(?:[_T]\d{4,6})?$"#
-        return stem.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
-    }
-
-    private func titleCase(_ value: String) -> String {
-        value
-            .split(separator: " ")
-            .map { word in
-                word.prefix(1).uppercased() + word.dropFirst().lowercased()
+    /// Testable core of `scheduledFiles(profile:roots:)`: reads each status file's label and
+    /// the report paths `ScheduledRunRecorder` wrote into it.
+    static func scheduledFiles(statusFiles: [URL]) -> [String: String] {
+        var named: [String: String] = [:]
+        for url in statusFiles {
+            guard let data = try? Data(contentsOf: url),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let label = json["label"] as? String, !label.isEmpty else { continue }
+            let schedule = RunHistoryService.humanName(from: label)
+            for key in ["xlsx_report_path", "html_report_path", "inventory_csv_path"] {
+                guard let path = json[key] as? String, !path.isEmpty else { continue }
+                named[URL(fileURLWithPath: path).lastPathComponent] = schedule
             }
-            .joined(separator: " ")
+        }
+        return named
     }
 
     private func worksheetCount(in url: URL) -> Int {
@@ -240,22 +272,21 @@ struct ReportLibrary {
         return countWorksheetEntries(in: centralDirectory)
     }
 
-    /// Returns the device count from the associated summary.json when available,
-    /// nil when the summary is absent, the filename carries no date stamp, or
-    /// totalDevices is non-numeric. Non-xlsx files always return nil.
-    private func deviceCount(from url: URL, profile: String) -> Int? {
-        guard url.pathExtension.lowercased() == "xlsx" else { return nil }
-        return deviceCountFromSummary(reportURL: url, profile: profile)
-    }
-
-    /// Try to find the device count from a summary.json file that corresponds to this report.
-    /// Returns nil if no summary can be found or parsed.
-    private func deviceCountFromSummary(reportURL: URL, profile: String) -> Int? {
-        guard let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else {
+    /// The device count from the daily summary of the date in the file name, for a workbook.
+    /// Nil when there is no such summary, the name carries no date, `totalDevices` is
+    /// non-numeric, or the summary has been rewritten since the workbook was (see
+    /// `deviceCount(forReportURL:summariesDir:reportModified:)`). Other formats are nil.
+    private func deviceCount(from url: URL, profile: String, modified: Date) -> Int? {
+        guard url.pathExtension.lowercased() == "xlsx",
+              let summariesDir = try? WorkspacePaths.summariesDir(for: profile) else {
             return nil
         }
-        return deviceCount(forReportURL: reportURL, summariesDir: summariesDir)
+        return deviceCount(forReportURL: url, summariesDir: summariesDir, reportModified: modified)
     }
+
+    /// How long after a workbook its day's summary may be written and still count as the
+    /// summary the workbook was generated beside: `generate` can emit the summary itself.
+    static let summaryGrace: TimeInterval = 300
 
     /// Testable core: looks up the device count given the report URL and summaries directory.
     ///
@@ -263,7 +294,14 @@ struct ReportLibrary {
     /// `summary_<date>.json` in `summariesDir`, and returns `totalDevices`.
     /// Returns nil when the filename has no date, the summary is absent, or
     /// `totalDevices` is missing / non-numeric.
-    func deviceCount(forReportURL reportURL: URL, summariesDir: URL) -> Int? {
+    ///
+    /// The summary is one file per day and a later collect the same day rewrites it, so its
+    /// count describes the workbook only while it is unchanged. With `reportModified`, a
+    /// summary written more than `summaryGrace` after the workbook gives nil: the count
+    /// would otherwise move under a file that did not change.
+    func deviceCount(
+        forReportURL reportURL: URL, summariesDir: URL, reportModified: Date? = nil
+    ) -> Int? {
         let filename = reportURL.lastPathComponent
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
 
@@ -282,9 +320,20 @@ struct ReportLibrary {
             return nil
         }
 
-        // JSON numbers may deserialize as Int or Double depending on the serializer.
+        if let reportModified {
+            let summaryModified = try? summaryURL.resourceValues(
+                forKeys: [.contentModificationDateKey]).contentModificationDate
+            // An unreadable mtime proves nothing, so it gives no count.
+            guard let summaryModified,
+                  summaryModified <= reportModified.addingTimeInterval(Self.summaryGrace) else {
+                return nil
+            }
+        }
+
+        // JSON numbers may deserialize as Int or Double depending on the serializer. A Double
+        // outside Int's range gives no count; `Int(_:)` would trap.
         return (json["totalDevices"] as? Int)
-            ?? (json["totalDevices"] as? Double).map(Int.init)
+            ?? (json["totalDevices"] as? Double).flatMap { Int(exactly: $0.rounded(.towardZero)) }
     }
 
     private func hasZipMagic(_ url: URL) -> Bool {

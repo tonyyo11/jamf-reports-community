@@ -49,6 +49,17 @@ struct StaleDeviceService: Sendable {
             }
             return .recent
         }
+
+        /// The tier of a Mac's stale age (`StaleRule`): a Mac that never had a counted date is
+        /// the most stale there is, and one the rule has no date for is recent, as a Mac with
+        /// no day count always was.
+        static func tier(forAge age: StaleAge?, staleDays: Int = 30) -> Tier {
+            switch age {
+            case nil: .recent
+            case .never?: .dormant
+            case .days(let days)?: tier(for: days, staleDays: staleDays)
+            }
+        }
     }
 
     struct Snapshot: Sendable {
@@ -63,6 +74,8 @@ struct StaleDeviceService: Sendable {
         /// `DeviceInventoryService`. Used for `cacheSource` freshness; distinct
         /// from `snapshotDate` (which reflects device activity, not collection time).
         let dataCollectedDate: Date?
+        /// `thresholds.stale_basis`, the dates the tiers' stale age counts.
+        var staleBasis: [StaleBasis] = StaleBasis.default
 
         /// Freshness signal for `StaleDataBanner`. Uses the 36-hour window shared
         /// with other dashboard services (aligns with the standard daily cadence).
@@ -95,19 +108,23 @@ struct StaleDeviceService: Sendable {
         return snapshot(
             from: deviceSnapshot.devices,
             staleDays: staleDays,
+            staleBasis: deviceSnapshot.staleBasis,
             dataCollectedDate: deviceSnapshot.generatedDate
         )
     }
 
     /// Pure function test seam: build snapshot from device records.
     /// `staleDays` is the configured `thresholds.stale_device_days` (default 30);
-    /// tier boundaries scale from it. `dataCollectedDate` should be the source-file
+    /// tier boundaries scale from it, and a Mac's tier follows its stale age under
+    /// `staleBasis` (`StaleRule`). `dataCollectedDate` should be the source-file
     /// mtime from `DeviceInventoryService` so that `cacheSource` reflects collection
     /// time, not device activity time.
     static func snapshot(
         from records: [DeviceInventoryRecord],
         staleDays: Int = 30,
-        dataCollectedDate: Date? = nil
+        staleBasis: [StaleBasis] = StaleBasis.default,
+        dataCollectedDate: Date? = nil,
+        now: Date = Date()
     ) -> Snapshot {
         guard !records.isEmpty else {
             // Preserve dataCollectedDate so cacheSource reflects collection time
@@ -120,7 +137,8 @@ struct StaleDeviceService: Sendable {
                 devicesByTier: base.devicesByTier,
                 sourceFile: nil,
                 snapshotDate: nil,
-                dataCollectedDate: collected
+                dataCollectedDate: collected,
+                staleBasis: staleBasis
             )
         }
 
@@ -133,19 +151,22 @@ struct StaleDeviceService: Sendable {
             devicesByTier[tier] = []
         }
 
-        // Bucket devices by tier
+        // Bucket devices by stale age; the age is computed once per record, as the sort
+        // would otherwise repeat it.
+        let rule = StaleRule(days: staleDays, basis: staleBasis)
+        var ages: [String: StaleAge] = [:]
         for record in records {
-            let tier = Tier.tier(for: record.daysSinceContact, staleDays: staleDays)
+            let age = record.staleAge(rule, now: now)
+            ages[record.id] = age
+            let tier = Tier.tier(forAge: age, staleDays: staleDays)
             tierCounts[tier, default: 0] += 1
             devicesByTier[tier, default: []].append(record)
         }
 
-        // Sort devices within each tier: most-stale first (descending by daysSinceContact)
+        // Sort devices within each tier: most-stale first (descending by stale age)
         for tier in Tier.allCases {
             devicesByTier[tier]?.sort { lhs, rhs in
-                let lhsDays = lhs.daysSinceContact ?? 0
-                let rhsDays = rhs.daysSinceContact ?? 0
-                return lhsDays > rhsDays
+                (ages[lhs.id] ?? .days(0)) > (ages[rhs.id] ?? .days(0))
             }
         }
 
@@ -162,7 +183,8 @@ struct StaleDeviceService: Sendable {
             devicesByTier: devicesByTier,
             sourceFile: nil,
             snapshotDate: mostRecentContact,
-            dataCollectedDate: dataCollectedDate
+            dataCollectedDate: dataCollectedDate,
+            staleBasis: staleBasis
         )
     }
 
@@ -196,15 +218,55 @@ struct StaleDeviceService: Sendable {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// The addresses to copy for a mail client's recipient line, joined with "; ".
+    struct RecipientList: Equatable {
+        let list: String
+        let count: Int
+        /// Entries left out because they hold more than one address or a display name.
+        let skipped: Int
+
+        /// What the Outreach screen shows after the copy.
+        var confirmation: String {
+            let copied = "Copied \(count) email\(count == 1 ? "" : "s")"
+            guard skipped > 0 else { return copied }
+            return copied + ", skipped \(skipped) that are not a single address"
+        }
+    }
+
+    /// An Email field comes from Jamf, so `a@corp.gov; attacker@evil.com` would add a
+    /// recipient when pasted. An entry with `;`, `,`, `<`, `>` or whitespace inside is
+    /// skipped and counted; a blank entry is no entry.
+    static func recipientList(from emails: [String]) -> RecipientList {
+        let separators = CharacterSet(charactersIn: ";,<>").union(.whitespacesAndNewlines)
+        var kept: [String] = []
+        var skipped = 0
+        for email in emails {
+            let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed.unicodeScalars.contains(where: separators.contains) {
+                skipped += 1
+            } else {
+                kept.append(trimmed)
+            }
+        }
+        return RecipientList(
+            list: kept.joined(separator: "; "), count: kept.count, skipped: skipped)
+    }
+
     /// Escape a value for CSV output. Neutralizes spreadsheet formula injection
     /// (leading `=`, `+`, `-`, `@`, tab or carriage return get a tab prefix) and applies
-    /// RFC 4180 quoting — matches `PatchStatusService.csvField` exactly.
+    /// RFC 4180 quoting. The one implementation every CSV writer uses.
+    ///
+    /// Tests unicode scalars, not `Character`s: Swift reads "\r\n" as one Character equal
+    /// to neither "\r" nor "\n", and a sign plus a combining mark as one Character that is
+    /// not the sign.
     static func csvField(_ value: String) -> String {
         var field = value
-        if let first = field.first, "=+-@\t\r".contains(first) {
+        if let first = field.unicodeScalars.first, "=+-@\t\r".unicodeScalars.contains(first) {
             field = "\t" + field
         }
-        guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
+        guard field.unicodeScalars.contains(where: { ",\"\n\r".unicodeScalars.contains($0) })
+        else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

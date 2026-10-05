@@ -236,6 +236,26 @@ final class GenerateSheetState {
         return (hashCandidate, filename)
     }
 
+    /// The footer button labels. Done keeps its name while a run goes (the button is disabled
+    /// then), so only Generate says Running.
+    nonisolated static func footerTitles(isRunning: Bool) -> (dismiss: String, generate: String) {
+        ("Done", isRunning ? "Running\u{2026}" : "Generate")
+    }
+
+    /// The line that closes the health audit run before a generate: `[ok]` after exit 0,
+    /// else a `[warn]` naming the cause. The run goes on with the cached audit either way.
+    nonisolated static func auditResultLine(exitCode: Int32) -> CLIBridge.LogLine {
+        if exitCode == 0 {
+            return .init(timestamp: Date(), level: .ok,
+                         text: "[ok] health audit finished; the report uses its findings")
+        }
+        let cause = exitCode == CLIBridge.exitCodePartialFailure
+            ? "health audit finished with partial results (exit 7); some findings may be missing"
+            : CLIBridge.explainExit(exitCode, operation: "health audit")
+        return .init(timestamp: Date(), level: .warn,
+                     text: "[warn] \(cause) Continuing with the cached audit data.")
+    }
+
     func reset() {
         logLines = []
         isRunning = false
@@ -302,28 +322,14 @@ struct GenerateSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             titlebar
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    formatsSection
-                    templateSection
-                    collectToggle
-                    auditToggle
-                    outputFolderRow
-                    profileRow
-                    if state.collectFresh, let auth = workspace.authStatus, !auth.isValid {
-                        authWarningBanner
+            ScrollViewReader { proxy in
+                ScrollView { formContent }
+                    .onChange(of: state.isRunning) { _, running in
+                        scroll(proxy, to: running ? .log : .result)
                     }
-                    if state.isRunning || !state.logLines.isEmpty {
-                        logPanel
+                    .onChange(of: state.errorMessage) { _, message in
+                        if message != nil, !state.isRunning { scroll(proxy, to: .result) }
                     }
-                    if let err = state.errorMessage {
-                        errorBanner(err)
-                    }
-                    if !state.isRunning && state.completedCount > 0 {
-                        completionBanner
-                    }
-                }
-                .padding(20)
             }
             Divider()
             footer
@@ -336,6 +342,52 @@ struct GenerateSheet: View {
     }
 
     // MARK: Subviews
+
+    private var formContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            formatsSection
+            templateSection
+            collectToggle
+            auditToggle
+            outputFolderRow
+            profileRow
+            if state.collectFresh, let auth = workspace.authStatus, !auth.isValid {
+                authWarningBanner
+            }
+            if state.isRunning || !state.logLines.isEmpty {
+                logPanel.id(ScrollTarget.log)
+            }
+            if state.errorMessage != nil || (!state.isRunning && state.completedCount > 0) {
+                resultSection.id(ScrollTarget.result)
+            }
+        }
+        .padding(20)
+    }
+
+    private var resultSection: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if let err = state.errorMessage {
+                errorBanner(err)
+            }
+            if !state.isRunning && state.completedCount > 0 {
+                completionBanner
+            }
+        }
+    }
+
+    private enum ScrollTarget: Hashable { case log, result }
+
+    /// The log and the result sit below the form, out of sight on a short sheet: a run
+    /// brings its log into view, and its end brings the result.
+    private func scroll(_ proxy: ScrollViewProxy, to target: ScrollTarget) {
+        Task { @MainActor in
+            // The target appears in the same update; scroll once it is laid out.
+            await Task.yield()
+            withAnimation(.easeOut(duration: 0.25)) {
+                proxy.scrollTo(target, anchor: target == .log ? .top : .bottom)
+            }
+        }
+    }
 
     private var titlebar: some View {
         HStack {
@@ -822,14 +874,14 @@ struct GenerateSheet: View {
         HStack {
             Spacer()
 
-            PNPButton(title: state.isRunning ? "Running\u{2026}" : "Done") {
+            PNPButton(title: GenerateSheetState.footerTitles(isRunning: state.isRunning).dismiss) {
                 dismiss()
             }
             .disabled(!state.canDismiss)
             .keyboardShortcut(.cancelAction)
 
             PNPButton(
-                title: state.isRunning ? "Running\u{2026}" : "Generate",
+                title: GenerateSheetState.footerTitles(isRunning: state.isRunning).generate,
                 icon: state.isRunning ? "hourglass" : "play.fill",
                 style: .gold
             ) {
@@ -885,6 +937,11 @@ struct GenerateSheet: View {
     private func runGenerate() async {
         // A demo profile's name can match a real workspace; the presenter disables Generate too.
         guard !workspace.demoMode else { return }
+        if let refusal = workspace.generateRefusal() {
+            state.reset()
+            state.errorMessage = WorkspaceStore.generateRefusalMessage(refusal)
+            return
+        }
         guard workspace.setRunInProgress(for: profile) else {
             state.errorMessage = "Another run is already in progress for profile '\(profile)' — skipped"
             return
@@ -911,7 +968,8 @@ struct GenerateSheet: View {
                 text: "[info] running health audit before generate"
             ))
             do {
-                _ = try await bridge.audit(profile: profile, category: nil, onLine: onLine)
+                let code = try await bridge.audit(profile: profile, category: nil, onLine: onLine)
+                state.appendLine(GenerateSheetState.auditResultLine(exitCode: code))
             } catch {
                 state.appendLine(.init(
                     timestamp: Date(), level: .warn,

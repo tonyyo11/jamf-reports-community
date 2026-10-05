@@ -83,10 +83,10 @@ enum DemoData {
     private static let crowdstrikeTrend = trend(start: 82, end: 94, jitter: 2.8,
                                                 pinnedLast: coverage(edrInstalled))
     private static let patchTrend = trend(start: 62, end: 84, jitter: 4)
-    /// Ends on the Security Posture ring's 96.6: a summary scores the same three
-    /// controls from the same `pro report security` counts (`securityControls`).
+    /// Ends on the Security Posture ring's score: a summary scores the same factors from
+    /// the same `pro report security` counts (`securityControls`).
     private static let securityScoreTrend = trend(
-        start: 88, end: 96, jitter: 0.8, pinnedLast: 96.6)
+        start: 88, end: 96, jitter: 0.8, pinnedLast: securityScoreValue)
 
     /// Each control's card ends on its share of the fleet in `securityControls`, the
     /// counts the Security Posture screen shows.
@@ -388,7 +388,7 @@ enum DemoData {
             lastContact: days == 0 ? timestamp(minutesBefore: 47) : "\(days) days ago",
             lastInventory: timestamp(minutesBefore: 0),
             daysSinceContact: days,
-            stale: days >= 30,
+            stale: days > 30,
             fileVault: fileVault,
             sip: "Enabled",
             firewall: "Enabled",

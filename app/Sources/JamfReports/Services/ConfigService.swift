@@ -43,6 +43,10 @@ struct ConfigState: Equatable, Sendable {
     var criticalDiskPercent: String
     var certWarningDays: String
     var profileErrorWarning: String
+    /// `thresholds.stale_basis`, as the app reads it: never empty.
+    var staleBasis: [StaleBasis] = StaleBasis.default
+    /// `thresholds.contact_gap_days`, as typed; the default when the file has none.
+    var contactGapDays = String(ContactGap.defaultDays)
     var complianceEnabled: Bool
     var baselineLabel: String
     var failuresCountColumn: String
@@ -72,11 +76,23 @@ struct ConfigState: Equatable, Sendable {
     /// when set: a cleared or never-typed one is left out of config.yaml, not written as `key: ""`.
     static let optionalColumnKeys = [
         "full_name", "asset_tag", "building", "position", "last_logged_in_user",
-        "recovery_lock", "battery_health", "entra_sso_status", "purchase_date",
+        "recovery_lock", "battery_health", "entra_sso_status", "purchase_date", "last_inventory",
     ]
 
     /// Every key the Config screen's column list shows, in order.
     static let columnKeys = baseColumnKeys + optionalColumnKeys
+
+    /// The stale rule the screen's thresholds describe.
+    var staleRule: StaleRule {
+        StaleRule(days: Int(staleDeviceDays.trimmingCharacters(in: .whitespaces)) ?? 30,
+                  basis: staleBasis)
+    }
+
+    /// The contact gap the screen shows: whole days from 1 to 365, else the default.
+    var contactGapDaysValue: Int {
+        Int(contactGapDays.trimmingCharacters(in: .whitespaces))
+            .flatMap { ContactGap.dayRange.contains($0) ? $0 : nil } ?? ContactGap.defaultDays
+    }
 
     static let mobileColumnKeys = [
         "device_name", "serial_number", "operating_system", "last_checkin", "email",
@@ -115,6 +131,7 @@ struct ConfigState: Equatable, Sendable {
             "battery_health": "",
             "entra_sso_status": "",
             "purchase_date": "",
+            "last_inventory": "",
         ],
         // Mobile is opt-in — seed empty so a Mac-only fleet doesn't trip the
         // config doctor with mappings it will never use (matches Python
@@ -263,6 +280,14 @@ struct ConfigFileStamp: Equatable, Sendable {
             return false
         }
         return Self.digest(text) == digest
+    }
+
+    /// Whether `other` stamps the same file as this one: the same date and size, or, when a
+    /// sync provider restamped a file it did not change, the same text.
+    func isSameFile(as other: ConfigFileStamp) -> Bool {
+        if modified == other.modified && size == other.size { return true }
+        guard let digest, let otherDigest = other.digest else { return false }
+        return digest == otherDigest
     }
 
     static func digest(_ text: String) -> Data {
@@ -481,7 +506,11 @@ enum ConfigService {
     /// screen writes, "Customize Apply" for `charts`, nil for a block no app writer rewrites.
     static func retiredKeyRemover(inBlock block: String) -> String? {
         if managedTopLevelKeys.contains(block) { return "Config save" }
-        return block == "charts" ? "Customize Apply" : nil
+        switch block {
+        case "charts": return "Customize Apply"
+        case "security_policy": return "Scoring save"
+        default: return nil
+        }
     }
 
     /// Replaces the file at `url` with `encoded` through a temporary file beside it, and
@@ -673,6 +702,9 @@ enum ConfigService {
             )
             state.certWarningDays = string(thresholds, "cert_warning_days", fallback: state.certWarningDays)
             state.profileErrorWarning = string(thresholds, "profile_error_warning", fallback: state.profileErrorWarning)
+            state.staleBasis = staleBasisSetting(thresholds).resolved
+            state.contactGapDays = string(
+                thresholds, "contact_gap_days", fallback: state.contactGapDays)
         }
 
         if let compliance = root.value(for: "compliance")?.mapping {
@@ -750,6 +782,8 @@ enum ConfigService {
         thresholds.set("critical_disk_percent", value: intScalar(state.criticalDiskPercent))
         thresholds.set("cert_warning_days", value: intScalar(state.certWarningDays))
         thresholds.set("profile_error_warning", value: intScalar(state.profileErrorWarning))
+        applyStaleBasis(state.staleBasis, to: &thresholds)
+        applyContactGapDays(state, to: &thresholds)
         root.set("thresholds", value: .mapping(thresholds))
 
         var compliance = root.value(for: "compliance")?.mapping ?? .init(entries: [])
@@ -787,6 +821,52 @@ enum ConfigService {
         root.set("branding", value: .mapping(branding))
 
         document.root = .mapping(root)
+    }
+
+    /// What `thresholds.stale_basis` holds: a date, a list of dates, or nothing the app reads.
+    private static func staleBasisSetting(
+        _ thresholds: YAMLCodec.YAMLMapping
+    ) -> StaleBasisSetting {
+        guard let value = thresholds.value(for: "stale_basis") else {
+            return StaleBasisSetting(words: [])
+        }
+        if let items = value.sequence {
+            return StaleBasisSetting(words: items.map { $0.stringValue ?? "" })
+        }
+        return value.stringValue.map { StaleBasisSetting(words: [$0]) }
+            ?? StaleBasisSetting(words: [], wrongShape: true)
+    }
+
+    /// Writes `stale_basis` only when the choice differs from what the file already says, so
+    /// a single word, an unknown word or a comment-free hand edit is left as typed, and the
+    /// default is the absent key.
+    private static func applyStaleBasis(
+        _ basis: [StaleBasis], to thresholds: inout YAMLCodec.YAMLMapping
+    ) {
+        let chosen = StaleRule(days: 0, basis: basis).basis
+        guard chosen != staleBasisSetting(thresholds).resolved else { return }
+        if chosen == StaleBasis.default {
+            thresholds.entries.removeAll { $0.key == "stale_basis" }
+        } else {
+            thresholds.set("stale_basis", value: .sequence(chosen.map { scalar($0.rawValue) }))
+        }
+    }
+
+    /// Same rule as `applyStaleBasis`: an unchanged gap is left as typed.
+    private static func applyContactGapDays(
+        _ state: ConfigState, to thresholds: inout YAMLCodec.YAMLMapping
+    ) {
+        let typed = thresholds.value(for: "contact_gap_days")?.stringValue
+            .flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+        let current = typed.flatMap { ContactGap.dayRange.contains($0) ? $0 : nil }
+            ?? ContactGap.defaultDays
+        let chosen = state.contactGapDaysValue
+        guard chosen != current else { return }
+        if chosen == ContactGap.defaultDays {
+            thresholds.entries.removeAll { $0.key == "contact_gap_days" }
+        } else {
+            thresholds.set("contact_gap_days", value: .scalar(.int(chosen)))
+        }
     }
 
     /// The EA's values set on the entry as read. A key its type does not use, and an integer

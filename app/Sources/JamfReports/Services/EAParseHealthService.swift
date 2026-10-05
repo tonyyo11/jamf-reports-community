@@ -47,8 +47,8 @@ struct EAParseHealthService {
     ///     "%", constrained to `0...100`. This is a STRICTER accuracy lens than the
     ///     engine sheet, which renders any value via `NSString.doubleValue` (0 on
     ///     non-numeric) without range-checking.
-    ///   - `.version`: `^\d+(\.\d+)*([\w.-]*)$` — dotted-numeric-ish tokens. The engine
-    ///     buckets any value as a version, so this is a STRICTER accuracy lens.
+    ///   - `.version`: `^\d+(\.\d+)*([\w.-]*)$` — dotted-numeric-ish tokens of at most 256
+    ///     bytes. The engine buckets any value as a version, so this is a STRICTER accuracy lens.
     ///   - `.date`: parses under the same formats as the engine's date-EA path
     ///     (`DateParser`, CSVDashboard.swift:983).
     static func assess(
@@ -126,6 +126,8 @@ struct EAParseHealthService {
 
     // MARK: - Type parsing (mirrors the engine)
 
+    private static let maxVersionLength = 256
+
     private static func parses(
         _ value: String,
         as type: CustomEAConfig.EAType,
@@ -137,7 +139,10 @@ struct EAParseHealthService {
         case .percentage:
             return parsesPercentage(value)
         case .version:
-            return value.range(of: #"^\d+(\.\d+)*([\w.-]*)$"#, options: .regularExpression) != nil
+            // The pattern backtracks quadratically on a long near miss, and no version is
+            // this long, so a longer value is not matched at all.
+            return value.utf8.count <= maxVersionLength
+                && value.range(of: #"^\d+(\.\d+)*([\w.-]*)$"#, options: .regularExpression) != nil
         case .date:
             return dateParser.parse(value) != nil
         }
