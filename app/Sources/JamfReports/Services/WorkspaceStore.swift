@@ -878,7 +878,12 @@ final class WorkspaceStore {
     /// config and its saved baseline, and rebuilds the Columns tab. Other unsaved edits stay.
     /// Before, the Columns tab kept the old mappings, and the Save the re-scaffold toast asks
     /// for wrote them back over the merge.
-    func adoptScaffoldedColumns(from saved: ConfigState) {
+    ///
+    /// The file's stamp moves with the write only when the merge read the file this screen
+    /// loaded (`readStamp`, from `ScaffoldService.mergeIntoConfig`). If it had changed on disk
+    /// since, the screen's other values are still the old ones, so the stamp stays and the
+    /// next Save refuses (`changedOnDisk`) until the screen reloads.
+    func adoptScaffoldedColumns(from saved: ConfigState, readStamp: ConfigFileStamp) {
         guard !demoMode else { return }
         configState.columns = saved.columns
         configState.mobileColumns = saved.mobileColumns
@@ -888,7 +893,8 @@ final class WorkspaceStore {
         _savedState?.mobileColumns = saved.mobileColumns
         _savedState?.failuresCountColumn = saved.failuresCountColumn
         _savedState?.failuresListColumn = saved.failuresListColumn
-        if let reloaded = try? ConfigService.load(profile: profile) {
+        if _loadedStamp?.isSameFile(as: readStamp) == true,
+           let reloaded = try? ConfigService.load(profile: profile) {
             _loadedDoc = reloaded.document
             _loadedStamp = reloaded.stamp
         }

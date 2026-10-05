@@ -282,6 +282,14 @@ struct ConfigFileStamp: Equatable, Sendable {
         return Self.digest(text) == digest
     }
 
+    /// Whether `other` stamps the same file as this one: the same date and size, or, when a
+    /// sync provider restamped a file it did not change, the same text.
+    func isSameFile(as other: ConfigFileStamp) -> Bool {
+        if modified == other.modified && size == other.size { return true }
+        guard let digest, let otherDigest = other.digest else { return false }
+        return digest == otherDigest
+    }
+
     static func digest(_ text: String) -> Data {
         Data(SHA256.hash(data: Data(text.utf8)))
     }
