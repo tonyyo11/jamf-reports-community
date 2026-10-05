@@ -846,20 +846,25 @@ private extension DeviceInventoryService {
         }
     }
 
+    /// Walks Unicode scalars, not Characters: "\r\n" is ONE Character that equals neither "\r"
+    /// nor "\n", so a CSV saved by Excel or Windows read as a single row with no devices.
+    /// It also avoids `Array(text)`, which copies 16 bytes per Character.
     static func parseCSVTable(_ text: String) -> [[String]] {
-        let chars = Array(text)
+        let scalars = text.unicodeScalars
         var rows: [[String]] = []
         var row: [String] = []
         var field = ""
         var inQuotes = false
-        var i = 0
+        var idx = scalars.startIndex
 
-        while i < chars.count {
-            let ch = chars[i]
+        while idx < scalars.endIndex {
+            let ch = scalars[idx]
+            var next = scalars.index(after: idx)
+            let following = next < scalars.endIndex ? scalars[next] : nil
             if ch == "\"" {
-                if inQuotes, i + 1 < chars.count, chars[i + 1] == "\"" {
-                    field.append("\"")
-                    i += 1
+                if inQuotes, following == "\"" {
+                    field.unicodeScalars.append(ch)
+                    next = scalars.index(after: next)
                 } else {
                     inQuotes.toggle()
                 }
@@ -871,11 +876,11 @@ private extension DeviceInventoryService {
                 if !row.allSatisfy({ $0.isEmpty }) { rows.append(row) }
                 row = []
                 field = ""
-                if ch == "\r", i + 1 < chars.count, chars[i + 1] == "\n" { i += 1 }
+                if ch == "\r", following == "\n" { next = scalars.index(after: next) }
             } else {
-                field.append(ch)
+                field.unicodeScalars.append(ch)
             }
-            i += 1
+            idx = next
         }
         row.append(field)
         if !row.allSatisfy({ $0.isEmpty }) { rows.append(row) }

@@ -40,14 +40,14 @@ enum CSVParser {
     }
 
     /// Parse only the header row, skipping the full O(rows) scan in `parseText`.
-    /// ponytail: splits on the first raw newline, so a header containing a
+    /// ponytail: splits on the first raw CR or LF, so a header containing a
     /// quoted embedded newline would truncate — no Jamf export emits one.
     static func parseHeader(_ data: Data) -> [String]? {
         var raw = data
         let bom: [UInt8] = [0xEF, 0xBB, 0xBF]
         if raw.prefix(3).elementsEqual(bom) { raw = raw.dropFirst(3) }
         let headerBytes: Data
-        if let newlineIndex = raw.firstIndex(of: 0x0A) {
+        if let newlineIndex = raw.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
             headerBytes = raw[..<newlineIndex]
         } else {
             headerBytes = raw
@@ -56,27 +56,31 @@ enum CSVParser {
         return parseText(text).first
     }
 
+    /// Walks Unicode scalars, not Characters: "\r\n" is ONE Character that equals neither
+    /// "\r" nor "\n", so a CSV saved by Excel or Windows read as a single row, and a combining
+    /// mark after a comma or quote fused with it.
     static func parseText(_ text: String) -> [[String]] {
         var rows: [[String]] = []
         var fields: [String] = []
         var field = ""
         var inQuote = false
-        var idx = text.startIndex
+        let scalars = text.unicodeScalars
+        var idx = scalars.startIndex
 
-        while idx < text.endIndex {
-            let ch = text[idx]
-            let next = text.index(after: idx)
+        while idx < scalars.endIndex {
+            let ch = scalars[idx]
+            var next = scalars.index(after: idx)
 
             if inQuote {
                 if ch == "\"" {
-                    if next < text.endIndex && text[next] == "\"" {
-                        field.append("\"")
-                        idx = text.index(after: next)
-                        continue
+                    if next < scalars.endIndex && scalars[next] == "\"" {
+                        field.unicodeScalars.append(ch)
+                        next = scalars.index(after: next)
+                    } else {
+                        inQuote = false
                     }
-                    inQuote = false
                 } else {
-                    field.append(ch)
+                    field.unicodeScalars.append(ch)
                 }
             } else {
                 switch ch {
@@ -85,21 +89,16 @@ enum CSVParser {
                 case ",":
                     fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
                     field = ""
-                case "\r":
-                    if next < text.endIndex && text[next] == "\n" {
-                        idx = text.index(after: idx)
+                case "\r", "\n":
+                    if ch == "\r" && next < scalars.endIndex && scalars[next] == "\n" {
+                        next = scalars.index(after: next)
                     }
                     fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
                     rows.append(fields)
                     fields = []
                     field = ""
-                case "\n":
-                    fields.append(field.trimmingCharacters(in: .init(charactersIn: " \t")))
-                    rows.append(fields)
-                    fields = []
-                    field = ""
                 default:
-                    field.append(ch)
+                    field.unicodeScalars.append(ch)
                 }
             }
             idx = next
