@@ -449,7 +449,7 @@ extension DemoData {
                 recommendation: "Re-enable Gatekeeper with a configuration profile.",
                 severity: "WARNING"),
             AuditFinding(
-                name: "Stale computers (30+ days since check-in)", affected: stale,
+                name: "Stale computers (>30 days since check-in)", affected: stale,
                 category: "hygiene",
                 recommendation: "Contact their users from Offline Outreach, or retire the "
                     + "records.",

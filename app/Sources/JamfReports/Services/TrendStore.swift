@@ -833,7 +833,7 @@ extension FleetInsightInput {
 }
 
 private extension TrendSeries.Metric {
-    /// The screen's label, with what a count of "stale" devices means: "Stale Devices (30d+)"
+    /// The screen's label, with what a count of "stale" devices means: "Stale Devices (>30d)"
     /// alone read as a statement about how old the devices are.
     func insightLabel(_ screenLabel: String) -> String {
         self == .stale ? screenLabel + " — devices with no recent check-in" : screenLabel

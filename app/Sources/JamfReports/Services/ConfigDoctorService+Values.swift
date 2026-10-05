@@ -224,7 +224,8 @@ extension ConfigDoctorService {
     private static func thresholdValueRows(_ config: ReportConfig) -> [DoctorRow] {
         let limits = config.thresholds ?? ThresholdsConfig()
         let positive: [(key: String, typed: Int?, effect: String)] = [
-            ("stale_device_days", limits.staleDeviceDays, "every Mac counts as stale"),
+            ("stale_device_days", limits.staleDeviceDays,
+             "a Mac counts as stale as soon as a day passes without a check-in"),
             ("warning_disk_percent", limits.warningDiskPercent,
              "every percentage value counts as over it"),
             ("critical_disk_percent", limits.criticalDiskPercent,

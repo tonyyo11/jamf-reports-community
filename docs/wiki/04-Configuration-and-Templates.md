@@ -472,8 +472,8 @@ enough. From the top it has:
    "No change" when it rounds to nothing. A figure the earlier summary measured another way
    (patch compliance before 2.9, or a compliance proxy against a benchmark) says so instead
    of showing a change.
-3. **Needs attention**: one sentence for each of Macs that have not checked in for
-   `thresholds.stale_device_days`, P0 gaps, patch titles under 50%, failing configuration
+3. **Needs attention**: one sentence for each of Macs that have not checked in for more than
+   `thresholds.stale_device_days` days, P0 gaps, patch titles under 50%, failing configuration
    profiles and apps, failed patch or update runs, and security agents not on every Mac. A
    sentence appears only while its count is above zero and links to the part of the report
    that lists it; opening a link opens the group around it.

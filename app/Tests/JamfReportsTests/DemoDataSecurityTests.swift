@@ -195,7 +195,7 @@ final class DemoDataSecurityTests: XCTestCase {
         XCTAssertEqual(findings["Computers without FileVault"]?.severity, "CRITICAL")
         XCTAssertEqual(findings["Firewall disabled"]?.affected, 42)
         XCTAssertEqual(findings["Gatekeeper disabled"]?.affected, 12)
-        let stale = findings["Stale computers (30+ days since check-in)"]
+        let stale = findings["Stale computers (>30 days since check-in)"]
         XCTAssertEqual(stale?.affected, 26)
         XCTAssertEqual(Double(stale?.affected ?? 0),
                        Double(DemoData.totalDevices) - (DemoData.activeDevicesTrend.last ?? 0))

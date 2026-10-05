@@ -51,7 +51,7 @@ extension HtmlReport {
 
         /// Macs in the fleet: the security summary's count, else the overview's.
         var totalDevices: Int = 0
-        /// Macs in `computers` with no check-in for `thresholds.stale_device_days` or more.
+        /// Macs in `computers` with no check-in for more than `thresholds.stale_device_days`.
         var staleMacCount: Int = 0
         /// P0 gaps as the newest daily summary counts them, else from the security snapshot.
         /// One figure for the tile, the attention list and the group headline, so a summary

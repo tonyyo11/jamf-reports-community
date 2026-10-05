@@ -388,7 +388,8 @@ struct CSVDashboard: Sendable {
         let totalCols = 6 + extraFields.count
         var row = ws.writeSheetHeader(
             title: t("Stale Devices"),
-            subtitle: "Devices not checked in for \(staleThreshold)+ days | Generated: \(ts)",
+            subtitle: "Devices not checked in for more than \(staleThreshold) days"
+                + " | Generated: \(ts)",
             ncols: totalCols
         )
         ws.setColumnWidth(0, 0, 30)

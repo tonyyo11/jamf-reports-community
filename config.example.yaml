@@ -839,8 +839,9 @@ custom_eas:
 
 thresholds:
 
-  # Devices not checked in within this many days are treated as inactive
-  # and excluded from compliance/security agent counts.
+  # A Mac is stale when it last checked in MORE than this many days ago: a Mac at
+  # exactly this many days is not stale. Stale Macs are treated as inactive and
+  # excluded from compliance/security agent counts.
   #
   # Also bounds how old a dropped csv-inbox/ export may be before the Devices
   # and Outreach screens stop treating it as current inventory: a CSV cannot

@@ -544,8 +544,9 @@ and inverse stale-device pressure. Distinct from Risk and Security scores;
 it's a quick "is the fleet trending up or down" pulse. Appears in Trends.
 
 ### Stale device
-A device that hasn't checked in (reconned) within the configured stale
-threshold (`thresholds.stale_device_days` in `config.yaml`, default 30).
+A device whose last check-in (recon) was more than the configured stale
+threshold ago (`thresholds.stale_device_days` in `config.yaml`, default 30). A
+device at exactly the threshold is not stale.
 Outreach dashboard tiers further bucket into Recent (0–30d) / Offline
 (31–90d) / Inactive (91–180d) / Dormant (180d+). *see also: recon.*
 

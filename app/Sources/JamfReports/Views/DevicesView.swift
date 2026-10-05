@@ -306,7 +306,8 @@ struct DevicesView: View {
             range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
             prefix: "Stale",
             suffix: "d",
-            help: "Devices with no jamf-cli check-in for at least this many days are flagged stale."
+            help: "Devices with no jamf-cli check-in for more than this many days are "
+                + "flagged stale."
         )
     }
 
@@ -404,7 +405,7 @@ struct DevicesView: View {
             StatTile(label: "Devices", value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
             StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(thresholdDays: staleDays))",
-                     sub: "\(staleDays)+ days since contact")
+                     sub: ">\(staleDays) days since contact")
             StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
             StatTile(label: "FileVault",

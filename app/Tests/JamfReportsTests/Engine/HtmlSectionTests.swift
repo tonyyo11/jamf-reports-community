@@ -360,6 +360,7 @@ final class HtmlSectionTests: XCTestCase {
         XCTAssertTrue(html.contains("intervention-list"))
         XCTAssertTrue(html.contains("<table"))
         XCTAssertTrue(html.contains("Stale-Mac"))
+        XCTAssertTrue(html.contains("Macs with no check-in for more than 30 days (1)"), html)
     }
 
     func testInterventionListIsLeftOutWithoutAComputersSnapshot() {
@@ -392,7 +393,7 @@ final class HtmlSectionTests: XCTestCase {
         let recent: [[String: Any]] = [["name": "Fresh", "last_check_in": "2999-01-01"]]
         let block = makeReport().buildInterventionList(computersInventory: recent)
         XCTAssertTrue(block.html.isEmpty)
-        XCTAssertEqual(block.omission, "no Mac has gone 30 days or more without a check-in")
+        XCTAssertEqual(block.omission, "no Mac has gone more than 30 days without a check-in")
     }
 
     /// A hundred and five stale Macs: ten show, the other ninety-five sit behind "Show all".

@@ -1041,7 +1041,7 @@ struct TrendSeries: Identifiable, Sendable {
             case .fileVault:     return "FileVault Encryption"
             case .osCurrent:     return "On Current macOS"
             case .edrAgent:      return "EDR agent coverage"
-            case .stale:         return "Stale Devices (30d+)"
+            case .stale:         return "Stale Devices (>30d)"
             case .patch:         return "Patch Compliance"
             case .securityScore: return "Security Score (Weighted)"
             case .mscpBandTrend: return "mSCP Compliance Bands"
