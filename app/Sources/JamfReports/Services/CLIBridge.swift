@@ -1624,6 +1624,16 @@ final class CLIBridge {
         return code
     }
 
+    /// `<type>_<yyyyMMdd'T'HHmmss>.json` in local time: the stamp `ReportEngine.saveSnapshot`
+    /// writes and `CloudStorage.snapshotTimestamp` reads. A UTC stamp read as local put an
+    /// audit hours in the future, ahead of newer snapshots.
+    nonisolated static func snapshotFileName(type: String, at date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return "\(type)_\(formatter.string(from: date)).json"
+    }
+
     private func saveJSONSnapshot(
         data: Data,
         profile: String,
@@ -1645,11 +1655,7 @@ final class CLIBridge {
             return
         }
         let dir = dataDir.appendingPathComponent(type, isDirectory: true)
-        let ts = ISO8601DateFormatter().string(from: Date())
-            .replacingOccurrences(of: ":", with: "")
-            .replacingOccurrences(of: "-", with: "")
-            .prefix(15)
-        let file = dir.appendingPathComponent("\(type)_\(ts).json")
+        let file = dir.appendingPathComponent(Self.snapshotFileName(type: type, at: Date()))
 
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

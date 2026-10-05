@@ -227,6 +227,9 @@ compliance is now one figure everywhere.
 - The small lines on the Trends metric buttons showed only the last eight snapshots, stretched
   to fill the button, so a one-device change looked like a jump and the line could rise while
   the change beside it fell. Each line now covers the selected range on the chart's own scale.
+- A Health Audit run from the app was saved with a UTC time in its name, which the app reads as
+  local time, so the HTML report's "Data collected" showed a time hours after the report was
+  made, and that audit was taken as newer than later ones. It is now saved in local time.
 - PDF exports held only the first page of the report. They now hold the whole report, the
   bars and severity labels keep their colours, and the Compliance and Security Posture
   templates keep the summary on the first page and start each section on a new one.
