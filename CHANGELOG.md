@@ -238,6 +238,11 @@ compliance is now one figure everywhere.
 - A Health Audit run from the app was saved with a UTC time in its name, which the app reads as
   local time, so the HTML report's "Data collected" showed a time hours after the report was
   made, and that audit was taken as newer than later ones. It is now saved in local time.
+- A Mac is stale when its last check-in is more than Stale device days ago (30 by default), on
+  every screen and report. The daily summary, Overview, Devices and the HTML report counted a Mac
+  at exactly 30 days as stale while Offline Outreach and the workbook did not, so the counts
+  differed by the Macs on that day (128 against 127 on one fleet). The Health Audit's own stale
+  finding still comes from jamf-cli, which counts by calendar date.
 - Two Macs with the same computer name are two Macs. Devices and Offline Outreach merged them
   into one (663 Macs where Jamf had 664), because inventory rows were joined by name when a
   serial was not yet known. Rows now join on the Jamf ID, management ID, UDID or
