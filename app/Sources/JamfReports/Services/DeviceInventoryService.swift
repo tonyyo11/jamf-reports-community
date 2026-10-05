@@ -896,21 +896,36 @@ extension DeviceInventoryService {
     /// with or without a fraction of any length, then the CSV export forms.
     static func parseDate(_ text: String) -> Date? {
         guard !text.isEmpty else { return nil }
-        if let date = ISO8601DateFormatter().date(from: text) { return date }
+        if let date = isoFormatter.date(from: text) { return date }
         // Jamf Pro timestamps can carry milliseconds (device-compliance's do:
         // "2015-02-17T21:33:23.712Z"), which the default options reject. Such a
         // Mac had no contact age unless device-compliance supplied a day count.
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: text) { return date }
-        let formats = ["yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy"]
-        for format in formats {
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = format
+        if let date = isoFractionalFormatter.date(from: text) { return date }
+        for formatter in exportDateFormatters {
             if let date = formatter.date(from: text) { return date }
         }
         return nil
+    }
+
+    // Built once: this runs several times per CSV row and per computer. As for
+    // `StateFileStore.formatter`, a configured formatter's `date(from:)` is safe to share.
+    nonisolated(unsafe) private static let isoFormatter = ISO8601DateFormatter()
+
+    nonisolated(unsafe) private static let isoFractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let exportDateFormatters: [DateFormatter] = [
+        "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd", "MM/dd/yyyy HH:mm", "MM/dd/yyyy",
+    ].map { format in
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        // A formatter built per call read the zone at that moment; this one follows changes.
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateFormat = format
+        return formatter
     }
 }
 
