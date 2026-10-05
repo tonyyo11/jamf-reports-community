@@ -85,6 +85,8 @@ enum DeviceInventoryService {
             warnings: &warnings
         )
 
+        warnings.append(contentsOf: leftOutWarnings(merger.leftOutRows))
+
         let policy = SecurityPolicyConfigLoader.load(profile: profile)
         // Scored once per device: scoring reads several values, and the sort compares many
         // times. The Devices screen re-scores with the security agent's status.
@@ -506,9 +508,11 @@ extension DeviceInventoryService {
     ) -> DeviceInventoryRecord {
         let name = cell(row, ["Computer Name", "Device Name", "Name"])
         let serial = cell(row, ["Serial Number", "Serial"])
-        let jamfID = cell(row, ["Jamf ID", "Computer ID", "ID"])
+        let jamfID = cell(row, ["Jamf ID", "Computer ID", "JSS Computer ID", "ID"])
         var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
         record.jamfID = jamfID
+        record.managementID = nilIfEmpty(cell(row, ["Management ID", "Jamf Management ID"]))
+        record.udid = nilIfEmpty(cell(row, ["UDID"]))
         record.name = name
         record.serial = serial
         record.osVersion = cell(row, ["Operating System", "Operating System Version", "OS Version", "macOS"])
@@ -554,6 +558,9 @@ extension DeviceInventoryService {
         )
         var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
         record.jamfID = jamfID
+        record.managementID = nilIfEmpty(first(flat, ["general.managementId", "managementId"]))
+        // The MDM UDID, not `hardware.provisioningUdid`, which is a different identifier.
+        record.udid = nilIfEmpty(first(flat, ["udid", "general.udid", "hardware.udid"]))
         record.name = name
         record.serial = serial
         record.osVersion = first(flat, ["operatingSystem.version", "operatingSystemVersion", "general.osVersion"])
@@ -1037,6 +1044,10 @@ fileprivate extension DeviceInventoryService {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    static func nilIfEmpty(_ value: String) -> String? {
+        value.isEmpty ? nil : value
+    }
+
     static func percentLabel(_ numerator: Int, _ denominator: Int) -> String {
         guard denominator > 0 else { return "N/A" }
         return String(format: "%.1f%%", Double(numerator) / Double(denominator) * 100)
@@ -1071,56 +1082,172 @@ fileprivate extension DeviceInventoryService {
     }
 }
 
+// MARK: - Device identity
+
+/// What says two inventory rows are one Mac, strongest first. A computer name is not
+/// here: two Macs can share one.
+enum DeviceIdentifier: CaseIterable, Sendable {
+    case jamfID, managementID, udid, platformID, serial
+
+    /// A serial is the weak one: it can sit on two Jamf records after a logic-board swap.
+    var isStrong: Bool { self != .serial }
+}
+
+extension DeviceInventoryRecord {
+
+    /// The record's value for `kind`, trimmed and lowercased; nil when no source carried one.
+    func identifier(_ kind: DeviceIdentifier) -> String? {
+        let raw: String? = switch kind {
+        case .jamfID: numericJamfID
+        case .managementID: managementID
+        case .udid: udid
+        case .platformID: platformID
+        case .serial: serial
+        }
+        let key = DeviceInventoryService.normalizedKey(raw ?? "")
+        return key.isEmpty ? nil : key
+    }
+
+    var identifiers: [(kind: DeviceIdentifier, value: String)] {
+        DeviceIdentifier.allCases.compactMap { kind in identifier(kind).map { (kind, $0) } }
+    }
+
+    /// True when some identifier both records carry has two values.
+    func disagrees(with other: DeviceInventoryRecord) -> Bool {
+        DeviceIdentifier.allCases.contains { kind in
+            guard let mine = identifier(kind), let theirs = other.identifier(kind) else {
+                return false
+            }
+            return mine != theirs
+        }
+    }
+}
+
+extension DeviceInventoryService {
+
+    /// One line per source whose rows could not be tied to a single Mac. Counts only: the
+    /// warning must not carry a device name.
+    static func leftOutWarnings(_ rows: [String: Int]) -> [String] {
+        rows.sorted { $0.key < $1.key }.map { source, count in
+            "\(source): left out \(count) \(count == 1 ? "row" : "rows") that could not be "
+                + "matched to one Mac, because the serial, ID or name they carry fits more than "
+                + "one. A Serial Number or Jamf ID column lets each row find its Mac."
+        }
+    }
+}
+
 // MARK: - Merge helper
 
-private struct DeviceRecordMerger {
+/// Folds the inventory sources into one record per Mac.
+///
+/// A row joins an existing record only when they share an identifier (Jamf ID, management
+/// ID, UDID, Platform ID, serial) and no identifier they both carry differs. A computer name
+/// never decides that alone, so two Macs that share a name stay two. A serial does not
+/// outrank a differing Jamf ID either: one serial can sit on two records.
+struct DeviceRecordMerger {
     private(set) var records: [DeviceInventoryRecord] = []
-    private var jamfIDIndex: [String: Int] = [:]
-    private var serialIndex: [String: Int] = [:]
-    private var nameIndex: [String: Int] = [:]
+    /// Rows left out per source file because nothing told which Mac they described.
+    private(set) var leftOutRows: [String: Int] = [:]
+    private var identifierIndex: [DeviceIdentifier: [String: [Int]]] = [:]
+    private var nameIndex: [String: [Int]] = [:]
+    private var usedIDs: Set<String> = []
+
+    private enum Placement { case merge(Int), append, leaveOut }
 
     mutating func upsert(_ record: DeviceInventoryRecord) {
         var record = record
         record.osVersion = OSVersionName.normalized(record.osVersion)
-        let newJamfIDKey = record.numericJamfID
-        let newSerialKey = DeviceInventoryService.normalizedKey(record.serial)
-        let newNameKey = DeviceInventoryService.normalizedKey(record.name)
-
-        if let idx = (!newSerialKey.isEmpty ? serialIndex[newSerialKey] : nil)
-            ?? (newJamfIDKey.map { jamfIDIndex[$0] } ?? nil)
-            ?? (!newNameKey.isEmpty ? nameIndex[newNameKey] : nil) {
-            // Update existing record. Remove stale index entries, merge, then
-            // add updated ones — O(1) instead of O(n) full rebuild.
-            let existing = records[idx]
-            let oldJamfIDKey = existing.numericJamfID
-            let oldSerialKey = DeviceInventoryService.normalizedKey(existing.serial)
-            let oldNameKey = DeviceInventoryService.normalizedKey(existing.name)
-
+        switch placement(of: record) {
+        case .merge(let idx):
             records[idx].merge(record)
-
-            let mergedJamfIDKey = records[idx].numericJamfID
-            let mergedSerialKey = DeviceInventoryService.normalizedKey(records[idx].serial)
-            let mergedNameKey = DeviceInventoryService.normalizedKey(records[idx].name)
-
-            if oldJamfIDKey != mergedJamfIDKey {
-                if let old = oldJamfIDKey { jamfIDIndex.removeValue(forKey: old) }
-                if let new = mergedJamfIDKey { jamfIDIndex[new] = idx }
-            }
-            if oldSerialKey != mergedSerialKey {
-                if !oldSerialKey.isEmpty { serialIndex.removeValue(forKey: oldSerialKey) }
-                if !mergedSerialKey.isEmpty { serialIndex[mergedSerialKey] = idx }
-            }
-            if oldNameKey != mergedNameKey {
-                if !oldNameKey.isEmpty { nameIndex.removeValue(forKey: oldNameKey) }
-                if !mergedNameKey.isEmpty { nameIndex[mergedNameKey] = idx }
-            }
-        } else {
-            // New record: append and index in O(1).
-            let idx = records.count
+            index(idx)
+        case .append:
+            record.id = uniqueID(for: record)
+            usedIDs.insert(record.id)
             records.append(record)
-            if let jamfIDKey = newJamfIDKey { jamfIDIndex[jamfIDKey] = idx }
-            if !newSerialKey.isEmpty { serialIndex[newSerialKey] = idx }
-            if !newNameKey.isEmpty { nameIndex[newNameKey] = idx }
+            index(records.count - 1)
+        case .leaveOut:
+            leftOutRows[record.source, default: 0] += 1
         }
+    }
+
+    private func placement(of record: DeviceInventoryRecord) -> Placement {
+        let nameKey = DeviceInventoryService.normalizedKey(record.name)
+        let identifiers = record.identifiers
+        if identifiers.isEmpty { return placementByName(nameKey) }
+        let candidates = compatibleRecords(sharing: identifiers, with: record)
+        if candidates.isEmpty {
+            // A name-only record made earlier is this Mac's only trace: take it over, but only
+            // when it is the one record with that name.
+            let named = nameKey.isEmpty ? [] : nameIndex[nameKey] ?? []
+            if named.count == 1, records[named[0]].identifiers.isEmpty { return .merge(named[0]) }
+            return .append
+        }
+        // Prefer the records that share something other than a serial.
+        let strong = candidates.filter { $0.value }.keys
+        let pool = (strong.isEmpty ? Array(candidates.keys) : Array(strong)).sorted()
+        if pool.count == 1 { return .merge(pool[0]) }
+        // Several records fit (one serial on two Jamf records). The name only chooses among
+        // them because an identifier already ties the row to each.
+        let named = pool.filter {
+            !nameKey.isEmpty && DeviceInventoryService.normalizedKey(records[$0].name) == nameKey
+        }
+        return named.count == 1 ? .merge(named[0]) : .leaveOut
+    }
+
+    /// A row with no identifier joins the one record with its name. With no such record it is
+    /// the only evidence of that Mac. With several, it is one of them and nothing says which, so
+    /// it is left out rather than counted as another Mac.
+    private func placementByName(_ nameKey: String) -> Placement {
+        guard !nameKey.isEmpty else { return .append }
+        let named = nameIndex[nameKey] ?? []
+        switch named.count {
+        case 0: return .append
+        case 1: return .merge(named[0])
+        default: return .leaveOut
+        }
+    }
+
+    /// Records sharing an identifier with `record` and disagreeing on none, each marked with
+    /// whether the shared identifier is more than a serial.
+    private func compatibleRecords(
+        sharing identifiers: [(kind: DeviceIdentifier, value: String)],
+        with record: DeviceInventoryRecord
+    ) -> [Int: Bool] {
+        var sharesStrong: [Int: Bool] = [:]
+        for (kind, value) in identifiers {
+            for idx in identifierIndex[kind]?[value] ?? [] {
+                sharesStrong[idx] = (sharesStrong[idx] ?? false) || kind.isStrong
+            }
+        }
+        return sharesStrong.filter { !records[$0.key].disagrees(with: record) }
+    }
+
+    /// Adds record `idx` to the identifier and name indexes. A merge only fills a blank, never
+    /// changes a value, so nothing needs removing: O(1) per upsert.
+    private mutating func index(_ idx: Int) {
+        for (kind, value) in records[idx].identifiers
+        where !identifierIndex[kind, default: [:]][value, default: []].contains(idx) {
+            identifierIndex[kind, default: [:]][value, default: []].append(idx)
+        }
+        let nameKey = DeviceInventoryService.normalizedKey(records[idx].name)
+        if !nameKey.isEmpty, !nameIndex[nameKey, default: []].contains(idx) {
+            nameIndex[nameKey, default: []].append(idx)
+        }
+    }
+
+    /// `Identifiable` needs a distinct id per row, and two Macs can share the serial or name
+    /// the id is built from.
+    private func uniqueID(for record: DeviceInventoryRecord) -> String {
+        guard usedIDs.contains(record.id) else { return record.id }
+        let tie = record.identifier(.jamfID) ?? record.identifier(.managementID)
+            ?? record.identifier(.udid) ?? "2"
+        var candidate = "\(record.id)#\(tie)"
+        var count = 2
+        while usedIDs.contains(candidate) {
+            count += 1
+            candidate = "\(record.id)#\(count)"
+        }
+        return candidate
     }
 }
