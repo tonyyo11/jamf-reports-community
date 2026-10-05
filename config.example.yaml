@@ -145,6 +145,12 @@ columns:
   # Purchase date. Read; no report uses it yet (adds no column).
   # purchase_date: ""
 
+  # Last Inventory Update (Jamf's export header). Read only when
+  # thresholds.stale_basis lists inventory: it is a CSV row's inventory date. A CSV
+  # without it has no inventory date, so inventory does not apply to its rows; a blank
+  # cell in a mapped column counts as never inventoried.
+  # last_inventory: "Last Inventory Update"
+
 
 # =============================================================================
 # MOBILE CSV COLUMN MAPPING
@@ -519,7 +525,8 @@ security_policy:
   #   xprotect_current   XProtect at the newest version, or that version is younger than
   #                      grace_days (SOFA feed; default 14)
   #   patch_compliance   devices on the latest version of their patch title
-  #   checked_in         last contact within thresholds.stale_device_days
+  #   checked_in         every date thresholds.stale_basis lists (by default the last
+  #                      check-in) within thresholds.stale_device_days
   #   mscp               a compliance.baselines entry passes (baseline: its name; default
   #                      the first)
   #   agent              a security_agents entry reports connected (agent: its name)
@@ -839,9 +846,9 @@ custom_eas:
 
 thresholds:
 
-  # A Mac is stale when it last checked in MORE than this many days ago: a Mac at
-  # exactly this many days is not stale. Stale Macs are treated as inactive and
-  # excluded from compliance/security agent counts.
+  # A Mac is stale when any date listed in stale_basis (below) is MORE than this many
+  # whole days old: a Mac at exactly this many days is not stale. Stale Macs are treated
+  # as inactive and excluded from compliance/security agent counts.
   #
   # Also bounds how old a dropped csv-inbox/ export may be before the Devices
   # and Outreach screens stop treating it as current inventory: a CSV cannot
@@ -850,9 +857,33 @@ thresholds:
   # report over a longer window.
   stale_device_days: 30
 
-  # The Check-in Health sheet counts a Mac as overdue when it last checked in
-  # more than this many days ago. A Mac with no check-in date is overdue only
-  # when jamf-cli flags it stale.
+  # Which of the three dates Jamf Pro keeps for a Mac count toward stale. A list of:
+  #   check_in   Last Check-in: the Jamf binary checking in
+  #   inventory  Last Inventory Update: the Jamf binary submitting inventory (recon)
+  #   contact    Last Contact (Jamf Pro 11.30 and later): any contact, including MDM and
+  #              declarative device management
+  # A Mac is stale when ANY listed date is more than stale_device_days old, so
+  # [check_in, inventory] means "not checking in or not inventorying beyond 30 days". A
+  # single word reads as a one-item list. A word that is not one of these is skipped and
+  # named by Config Doctor, and a list with none uses the default. A Mac with no
+  # check-in or inventory date on record, in a source that dates every Mac (the
+  # computers snapshot), counts as never: stale. A Mac with no Last Contact is not
+  # judged by it. A Mac with none of the listed dates falls back to jamf-cli's stale
+  # flag. device-compliance rows carry only the check-in, so inventory and contact are
+  # read from the computers snapshot (matched by Jamf ID, then serial). A CSV has the
+  # inventory date only through columns.last_inventory. Absent means [check_in].
+  stale_basis: [check_in]
+
+  # A Mac whose Last Contact is current while its Last Check-in, or its Last Inventory
+  # Update, is more than this many days behind that Last Contact is a Mac MDM reaches
+  # and the Jamf binary does not (or not for inventory). The Health Audit lists both
+  # kinds, Devices has a Contact gap filter and the HTML report names them under Needs
+  # attention. A whole number from 1 to 365; anything else uses 14.
+  contact_gap_days: 14
+
+  # The Check-in Health sheet counts a Mac as overdue when a date listed in stale_basis
+  # is more than this many days old. A Mac with none of them is overdue only when
+  # jamf-cli flags it stale.
   checkin_overdue_days: 7
 
   # Default disk usage thresholds used when not set per-EA.
