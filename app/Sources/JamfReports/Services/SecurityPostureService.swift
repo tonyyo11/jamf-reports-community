@@ -36,8 +36,9 @@ struct SecurityPostureService: Sendable {
         /// measured (`SecurityScoreInputs.measures`); empty leaves the score with no data.
         var scoreFactors: [SecurityScoreFactor] = []
         var scoreMeasures: [String: SecurityScoreMeasure] = [:]
-        /// `thresholds.stale_device_days`, for the check-in factor's label.
+        /// `thresholds.stale_device_days` and `stale_basis`, for the check-in factor's label.
         var staleDays: Int?
+        var staleBasis: [StaleBasis] = StaleBasis.default
 
         struct OSVersion: Sendable, Equatable, Identifiable {
             let osVersion: String
@@ -100,8 +101,12 @@ struct SecurityPostureService: Sendable {
             snapshot.scoreFactors = factors
             snapshot.scoreMeasures = SecurityScoreInputs.measures(
                 for: factors, fleet: snapshot.fleetCounts,
-                sources: SecurityScoreInputs.load(dataDir: dir, factors: factors), config: config)
+                sources: SecurityScoreInputs.load(
+                    dataDir: dir, factors: factors,
+                    staleRule: config?.staleRule ?? StaleRule(days: 30)),
+                config: config)
             snapshot.staleDays = config?.thresholds?.resolvedStaleDays ?? 30
+            snapshot.staleBasis = config?.thresholds?.resolvedStaleBasis ?? StaleBasis.default
             return snapshot
         } catch let LoadError.decodeFailed(reason) {
             return .failed("Couldn't read the latest security snapshot — \(reason).")

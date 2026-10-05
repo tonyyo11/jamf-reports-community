@@ -132,36 +132,44 @@ extension HtmlReport {
 
     // MARK: - interventionList
 
-    /// The Macs whose last check-in is more than `thresholds.stale_device_days` days old,
-    /// oldest first, each with its age. A Mac with no readable check-in date is not counted.
+    /// The Macs that are stale under the stale rule (`thresholds.stale_device_days` and
+    /// `stale_basis`), oldest first, each with its stale age. A Mac without a date the rule
+    /// counts has never had it, so it is the oldest of all.
     func staleComputers(
-        _ computers: [[String: Any]]
-    ) -> [(item: [String: Any], days: Int)] {
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
-        return computers
-            .map { (item: $0, days: daysAgo(from: inventoryLastContact($0))) }
-            .filter { $0.days > staleDays }
-            .sorted { $0.days > $1.days }
+        _ computers: [[String: Any]], now: Date = Date()
+    ) -> [(item: [String: Any], age: StaleAge)] {
+        let rule = config.staleRule
+        return computers.compactMap { item -> (item: [String: Any], age: StaleAge)? in
+            let dates = ComputerDates(item: item)
+            let inputs = StaleInputs(
+                checkIn: dates.checkIn, inventory: dates.inventory, contact: dates.contact,
+                carriesDates: true)
+            guard let age = rule.age(of: inputs, now: now), age > .days(rule.days)
+            else { return nil }
+            return (item, age)
+        }.sorted { $0.age > $1.age }
     }
 
-    /// Macs past `thresholds.stale_device_days` with last check-in and primary user.
+    /// Macs that are stale under the stale rule, with the oldest counted date's age and the
+    /// primary user.
     func buildInterventionList(computersInventory: [[String: Any]]) -> HtmlBlock {
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        let rule = config.staleRule
         guard !computersInventory.isEmpty else { return .omitted("no computers snapshot") }
         let stale = staleComputers(computersInventory)
         guard !stale.isEmpty else {
             return .omitted(
-                "no Mac has gone more than \(staleDays) days without a check-in")
+                "no Mac has gone more than \(rule.days) days without a \(rule.basisPhrase)")
         }
         let tableRows = stale.map { entry -> [String] in
             [inventoryName(entry.item), inventorySerial(entry.item),
-             inventoryUsername(entry.item), "\(entry.days)"]
+             inventoryUsername(entry.item), entry.age.days.map(String.init) ?? "never"]
         }
         return .shown(HtmlSectionFormatters.block(
             id: "intervention-list",
-            title: "Macs with no check-in for more than \(staleDays) days (\(stale.count))",
+            title: "Macs with no \(rule.basisPhrase) for more than \(rule.days) days "
+                + "(\(stale.count))",
             body: HtmlSectionFormatters.renderCappedTable(
-                headers: ["Device", "Serial", "Primary User", "Days Since Check-in"],
+                headers: ["Device", "Serial", "Primary User", "Days Since \(rule.basisHeading)"],
                 rows: tableRows, expanded: expandAll)))
     }
 

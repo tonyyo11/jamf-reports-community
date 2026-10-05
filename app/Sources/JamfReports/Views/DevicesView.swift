@@ -100,7 +100,7 @@ struct DevicesView: View {
             case .all:
                 return true
             case .stale:
-                return device.isStale(atDays: staleDays)
+                return isStale(device)
             case .patch:
                 return device.patchFailureCount > 0
             case .security:
@@ -306,7 +306,7 @@ struct DevicesView: View {
             range: AppConstants.staleDaysMin...AppConstants.staleDaysMax,
             prefix: "Stale",
             suffix: "d",
-            help: "Devices with no jamf-cli check-in for more than this many days are "
+            help: "Devices with no \(staleRule.basisPhrase) for more than this many days are "
                 + "flagged stale."
         )
     }
@@ -404,8 +404,8 @@ struct DevicesView: View {
         HStack(spacing: 12) {
             StatTile(label: "Devices", value: "\(activeSnapshot.totalDevices)",
                      sub: activeSnapshot.isDemo ? "Demo inventory" : "Current workspace")
-            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(thresholdDays: staleDays))",
-                     sub: ">\(staleDays) days since contact")
+            StatTile(label: "Stale", value: "\(activeSnapshot.staleCount(staleRule))",
+                     sub: ">\(staleDays) days since \(staleRule.basisPhrase)")
             StatTile(label: "Patch Issues", value: "\(activeSnapshot.patchIssueCount)",
                      sub: "\(activeSnapshot.patchTitles.count) patch titles")
             StatTile(label: "FileVault",
@@ -1200,8 +1200,14 @@ struct DevicesView: View {
         }
     }
 
+    /// The stale rule the screen follows: its window picker over the workspace's
+    /// `stale_basis`.
+    private var staleRule: StaleRule {
+        StaleRule(days: staleDays, basis: activeSnapshot.staleBasis)
+    }
+
     private func isStale(_ device: DeviceInventoryRecord) -> Bool {
-        device.isStale(atDays: staleDays)
+        device.isStale(staleRule)
     }
 
     private func lastContactLabel(_ device: DeviceInventoryRecord) -> String {

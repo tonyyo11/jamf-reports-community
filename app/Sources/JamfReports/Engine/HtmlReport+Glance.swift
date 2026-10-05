@@ -163,7 +163,7 @@ extension HtmlReport {
     }
 
     /// One sentence per rule, each only while its count is above zero:
-    /// - Macs with no check-in for more than `thresholds.stale_device_days`,
+    /// - Macs stale under the stale rule (`thresholds.stale_device_days`, `stale_basis`),
     /// - P0 security gaps (FileVault, SIP or Firewall off at the `fail` level),
     /// - patch titles under 50% on the latest version,
     /// - configuration profiles and apps with install errors,
@@ -173,7 +173,7 @@ extension HtmlReport {
         _ inputs: Inputs, shown: Set<SectionID>
     ) -> [(text: String, anchor: String?)] {
         let latest = inputs.summaries.last
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        let rule = config.staleRule
         var items: [(text: String, anchor: String?)] = []
         func add(_ id: SectionID, _ group: HtmlDetailGroup, _ text: String) {
             items.append((text, attentionAnchor(id, group: group, shown: shown)))
@@ -183,9 +183,7 @@ extension HtmlReport {
         // computers snapshot stands in when the summary has no count.
         let stale = latest?.staleCount ?? (inputs.computers.isEmpty ? 0 : inputs.staleMacCount)
         if stale > 0 {
-            add(.interventionList, .devices, stale == 1
-                ? "1 Mac has not checked in for more than \(staleDays) days."
-                : "\(stale) Macs have not checked in for more than \(staleDays) days.")
+            add(.interventionList, .devices, Self.staleSentence(stale, rule: rule))
         }
         let p0 = inputs.p0 ?? 0
         if p0 > 0 {
@@ -224,6 +222,14 @@ extension HtmlReport {
                 "Security agents are not on every Mac: \(list.joined(separator: ", ")).")
         }
         return items
+    }
+
+    /// "3 Macs have not checked in for more than 30 days." On the default basis, the check-in
+    /// alone; otherwise the dates the rule counts.
+    static func staleSentence(_ count: Int, rule: StaleRule) -> String {
+        let mac = count == 1 ? "1 Mac has" : "\(count) Macs have"
+        if rule.usesDefaultBasis { return "\(mac) not checked in for more than \(rule.days) days." }
+        return "\(mac) gone more than \(rule.days) days without a \(rule.basisPhrase)."
     }
 
     /// The "Needs attention" section: a sentence per rule that fires, each a link to the part

@@ -20,7 +20,9 @@ struct CoreDashboard: Sendable {
     /// no AI block on the Executive Summary sheet — headless callers never set it.
     let aiNarrative: String?
     /// Shared by the copies of this struct that `sheetPlan`'s closures hold.
-    private let hardwareIndex = HardwareIndexCache()
+    private let hardwareIndex = OnceCache<[String: Bool]>()
+    /// The `computers` snapshot's dates, read once for every sheet that grades by the stale rule.
+    private let computerDateIndex = OnceCache<ComputerDateIndex?>()
 
     init(
         config: ReportConfig,
@@ -672,11 +674,33 @@ struct CoreDashboard: Sendable {
         return try JSONDecoder().decode([DeviceComplianceRow].self, from: data)
     }
 
-    /// Whether a Mac has gone more than `thresholds.stale_device_days` without contact, the
-    /// meaning of every "stale" label in the workbook. jamf-cli's own `stale` flag is a
-    /// 14-day cut that the row only falls back to when it carries no day count.
+    /// Whether a Mac is stale under the stale rule (`thresholds.stale_device_days` and
+    /// `stale_basis`), the meaning of every "stale" label in the workbook. jamf-cli's own
+    /// `stale` flag is a 14-day cut that the row only falls back to when it knows no date.
     private func isStaleDevice(_ row: DeviceComplianceRow) -> Bool {
-        row.isStale(atDays: config.thresholds?.resolvedStaleDays ?? 30)
+        isStale(row, rule: config.staleRule)
+    }
+
+    private func isStale(_ row: DeviceComplianceRow, rule: StaleRule) -> Bool {
+        row.isStale(rule, computers: computerDates(for: rule))
+    }
+
+    /// The dates of each Mac in `computers`, only when `rule` counts a date the
+    /// device-compliance rows lack.
+    private func computerDates(for rule: StaleRule) -> ComputerDateIndex? {
+        guard rule.needsComputers else { return nil }
+        return computerDateIndex.value {
+            (try? loadLatestJSONData(names: ["computers", "computers-list", "computers_list"]))
+                .flatMap(ComputerDateIndex.init)
+        }
+    }
+
+    /// What a sheet's subtitle says about the rule: the window, and the dates when they are
+    /// not just the check-in.
+    private func ruleSubtitle(_ rule: StaleRule, window: String = "Stale threshold") -> String {
+        rule.usesDefaultBasis
+            ? "\(window): \(rule.days) days"
+            : "\(window): \(rule.days) days since \(rule.basisPhrase)"
     }
 
     // MARK: - Policy Health
@@ -1216,21 +1240,24 @@ struct CoreDashboard: Sendable {
         }
 
         let threshold = config.thresholds?.resolvedCheckinOverdueDays ?? 7
+        // The overdue window is its own threshold, counted over the dates `stale_basis` lists.
+        let overdueRule = config.staleRule.with(days: threshold)
         let ws = workbook.addSheet("Check-in Health")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("Check-in Health"),
-                                      subtitle: "Threshold: \(threshold) days | Generated: \(ts)",
-                                      ncols: 4)
+        var row = ws.writeSheetHeader(
+            title: t("Check-in Health"),
+            subtitle: "\(ruleSubtitle(overdueRule, window: "Threshold")) | Generated: \(ts)",
+            ncols: 4)
         ws.setColumnWidth(0, 0, 30)
         ws.setColumnWidth(1, 1, 18)
         ws.setColumnWidth(2, 2, 18)
         ws.setColumnWidth(3, 3, 18)
 
         let total = items.count
-        // "Overdue (>N days)": a Mac at exactly N days is still current. A row with no day
-        // count falls back to jamf-cli's own `stale` flag, as this sheet did for every row
+        // "Overdue (>N days)": a Mac at exactly N days is still current. A row with no date
+        // falls back to jamf-cli's own `stale` flag, as this sheet did for every row
         // before `checkin_overdue_days` was read.
-        let overdue = items.filter { $0.isStale(atDays: threshold) }.count
+        let overdue = items.filter { isStale($0, rule: overdueRule) }.count
         let current = total - overdue
         let pctCurrent = total > 0 ? Double(current) / Double(total) * 100 : 0.0
         let pctOverdue = total > 0 ? Double(overdue) / Double(total) * 100 : 0.0
@@ -1252,6 +1279,7 @@ struct CoreDashboard: Sendable {
         ws.write(overdue, row: row, col: 1, format: overdueFmt)
         ws.write(String(format: "%.1f%%", pctOverdue), row: row, col: 2, format: overdueFmt)
     }
+
 
     // MARK: - Environment Stats
     // Source: `jamf-cli pro report env-stats --output json`
@@ -1367,7 +1395,6 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
-        let staleThreshold = config.thresholds?.resolvedStaleDays ?? 30
         let total = items.count
         let stale = items.filter(isStaleDevice).count
         let active = total - stale
@@ -1375,9 +1402,9 @@ struct CoreDashboard: Sendable {
 
         let ws = workbook.addSheet("Active Devices")
         let ts = ISO8601DateFormatter().string(from: Date())
-        var row = ws.writeSheetHeader(title: t("Active Devices"),
-                                      subtitle: "Stale threshold: \(staleThreshold) days | Generated: \(ts)",
-                                      ncols: 2)
+        var row = ws.writeSheetHeader(
+            title: t("Active Devices"),
+            subtitle: "\(ruleSubtitle(config.staleRule)) | Generated: \(ts)", ncols: 2)
         ws.setColumnWidth(0, 0, 32)
         ws.setColumnWidth(1, 1, 14)
 
@@ -2225,7 +2252,6 @@ struct CoreDashboard: Sendable {
             throw CoreDashboardError.noCachedData(names: ["device-compliance"])
         }
 
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
         let totalEnrolled = dcList.count
         let activeCount = dcList.filter { !isStaleDevice($0) }.count
         let inactiveCount = totalEnrolled - activeCount
@@ -2269,7 +2295,8 @@ struct CoreDashboard: Sendable {
         let ts = ISO8601DateFormatter().string(from: Date())
         var row = ws.writeSheetHeader(
             title: t("Patch Summary Dashboard"),
-            subtitle: "Source: patch-status + device-compliance | Active window: \(staleDays) days | Generated: \(ts)",
+            subtitle: "Source: patch-status + device-compliance | "
+                + "\(ruleSubtitle(config.staleRule, window: "Active window")) | Generated: \(ts)",
             ncols: 9
         )
         ws.setColumnWidth(0, 0, 32)
@@ -2749,9 +2776,9 @@ struct CoreDashboard: Sendable {
         let score = SecurityScore(
             value: m.securityScore ?? 0, grade: m.securityGrade ?? .f,
             parts: m.securityScoreParts, missing: [])
-        let staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        let rule = config.staleRule
         return m.securityScoreParts.map { part in
-            ("Score — \(part.factor.label(staleDays: staleDays))",
+            ("Score — \(part.factor.label(staleDays: rule.days, staleBasis: rule.basis))",
              String(format: "%.1f%% · %.1f pts", part.share, score.points(of: part)))
         }
     }
@@ -2768,7 +2795,8 @@ struct CoreDashboard: Sendable {
             factors: factors,
             measures: SecurityScoreInputs.measures(
                 for: factors, fleet: fleet,
-                sources: SecurityScoreInputs.load(dataDir: dataDir, factors: factors),
+                sources: SecurityScoreInputs.load(
+                    dataDir: dataDir, factors: factors, staleRule: config.staleRule),
                 config: config))
         m.securityScoreParts = score.parts
         if !score.parts.isEmpty {
@@ -2799,19 +2827,21 @@ struct CoreDashboard: Sendable {
     }
 
     /// Populate managed count + stale tier buckets from the cached `device-compliance` snapshot.
-    /// Uses `days_since_contact` (or legacy `days_since_checkin`) directly — avoids constructing
-    /// `DeviceInventoryRecord` objects, which have a different shape than the JSON source.
+    /// A Mac's tier follows its stale age under the stale rule: the oldest of the dates
+    /// `stale_basis` lists, which is the row's check-in day count (`days_since_contact`, or
+    /// legacy `days_since_checkin`) unless the basis counts more.
     private func applyStaleAndManaged(to m: inout ExecutiveSummaryMetrics) {
-        guard let raw = try? loadLatestJSON(names: ["device-compliance", "device_compliance"]),
-              let items = raw as? [[String: Any]], !items.isEmpty else { return }
-        m.managedCount = items.filter { asBool($0["managed"]) == true }.count
+        guard let items = loadLatestTyped(
+            names: ["device-compliance", "device_compliance"], as: [DeviceComplianceRow].self),
+              !items.isEmpty else { return }
+        m.managedCount = items.filter { $0.managed == true }.count
+        let rule = config.staleRule
+        let computers = computerDates(for: rule)
         var tierCounts: [StaleDeviceService.Tier: Int] = [:]
         for tier in StaleDeviceService.Tier.allCases { tierCounts[tier] = 0 }
         for item in items {
-            let days = asInt(item["days_since_contact"]) ?? asInt(item["days_since_checkin"])
             let tier = StaleDeviceService.Tier.tier(
-                for: days, staleDays: config.thresholds?.resolvedStaleDays ?? 30
-            )
+                forAge: item.staleAge(rule, computers: computers), staleDays: rule.days)
             tierCounts[tier, default: 0] += 1
         }
         m.recentCount = tierCounts[.recent]
@@ -3660,20 +3690,22 @@ enum CoreDashboardError: Error, LocalizedError, SheetSkippable {
     }
 }
 
-// MARK: - HardwareIndexCache
+// MARK: - OnceCache
 
-/// The hardware index reads and parses the `computers` snapshot, so a dashboard builds it once
-/// however many sheets grade by it.
-private final class HardwareIndexCache: @unchecked Sendable {
+/// The hardware index and the computers' dates read and parse the `computers` snapshot, so a
+/// dashboard builds each once however many sheets grade by it.
+private final class OnceCache<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var index: [String: Bool]?
+    private var stored: Value?
+    private var isStored = false
 
-    func value(_ make: () -> [String: Bool]) -> [String: Bool] {
+    func value(_ make: () -> Value) -> Value {
         lock.lock()
         defer { lock.unlock() }
-        if let index { return index }
+        if isStored, let stored { return stored }
         let made = make()
-        index = made
+        stored = made
+        isStored = true
         return made
     }
 }

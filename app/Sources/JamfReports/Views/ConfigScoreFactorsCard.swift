@@ -7,6 +7,7 @@ struct ScoreFactorsSnapshot: Sendable, Equatable {
     var agents: [String] = []
     var baselines: [String] = []
     var staleDays = 30
+    var staleBasis: [StaleBasis] = StaleBasis.default
     var measures: [String: SecurityScoreMeasure] = [:]
 
     /// Off the main actor: it reads config.yaml and the snapshots.
@@ -20,6 +21,7 @@ struct ScoreFactorsSnapshot: Sendable, Equatable {
         snapshot.agents = SecurityScoreInputs.namedAgents(in: config).map(\.name)
         snapshot.baselines = (config.compliance?.resolvedBaselines ?? []).map(\.name)
         snapshot.staleDays = config.thresholds?.resolvedStaleDays ?? 30
+        snapshot.staleBasis = config.thresholds?.resolvedStaleBasis ?? StaleBasis.default
         var candidates: [SecurityScoreFactor] = config.resolvedSecurityPolicy.scoreFactors ?? []
         candidates += SecurityScoreFactor.nativeDefaults
         candidates += snapshot.agents.map { SecurityScoreFactor(.agent, weight: 1, target: $0) }
@@ -30,7 +32,8 @@ struct ScoreFactorsSnapshot: Sendable, Equatable {
         let posture = SecurityPostureService.load(profile: profile)
         snapshot.measures = SecurityScoreInputs.measures(
             for: candidates, fleet: posture.totalDevices > 0 ? posture.fleetCounts : nil,
-            sources: SecurityScoreInputs.load(dataDir: dataDir, factors: candidates),
+            sources: SecurityScoreInputs.load(
+                dataDir: dataDir, factors: candidates, staleRule: config.staleRule),
             config: config)
         return snapshot
     }
@@ -91,7 +94,8 @@ struct ScoreFactorsCard: View {
         return VStack(spacing: 6) {
             ForEach(factors, id: \.key) { factor in
                 ScoreFactorRow(
-                    label: factor.label(staleDays: snapshot.staleDays),
+                    label: factor.label(
+                        staleDays: snapshot.staleDays, staleBasis: snapshot.staleBasis),
                     status: Self.status(of: factor, snapshot: snapshot,
                                         policy: workspace.securityPolicy),
                     part: Self.part(factor, of: scoring),
