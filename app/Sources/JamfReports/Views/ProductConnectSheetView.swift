@@ -157,20 +157,24 @@ struct ProductConnectSheetView: View {
                             NSApp.keyWindow?.makeFirstResponder(nil)
                             Task {
                                 await flow.registerProtectProfile()
-                                if flow.protectConnected { dismiss() }
+                                // A note stays on screen until the sheet is closed.
+                                if flow.protectConnected, flow.protectConfigNote == nil {
+                                    dismiss()
+                                }
                             }
                         }
                         .disabled(!protectCanConnect)
 
-                        PNPButton(title: "Cancel", style: .neutral, size: .md) {
+                        PNPButton(
+                            title: flow.protectConnected ? "Done" : "Cancel",
+                            style: .neutral, size: .md
+                        ) {
                             flow.clearAllSecrets()
                             dismiss()
                         }
                     }
 
-                    if flow.protectConnected {
-                        Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
-                    }
+                    connectedStatus(flow.protectConnected, note: flow.protectConfigNote)
                 }
             }
         }
@@ -250,20 +254,23 @@ struct ProductConnectSheetView: View {
                             NSApp.keyWindow?.makeFirstResponder(nil)
                             Task {
                                 await flow.registerSchoolProfile()
-                                if flow.schoolConnected { dismiss() }
+                                if flow.schoolConnected, flow.schoolConfigNote == nil {
+                                    dismiss()
+                                }
                             }
                         }
                         .disabled(!schoolCanConnect)
 
-                        PNPButton(title: "Cancel", style: .neutral, size: .md) {
+                        PNPButton(
+                            title: flow.schoolConnected ? "Done" : "Cancel",
+                            style: .neutral, size: .md
+                        ) {
                             flow.clearAllSecrets()
                             dismiss()
                         }
                     }
 
-                    if flow.schoolConnected {
-                        Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
-                    }
+                    connectedStatus(flow.schoolConnected, note: flow.schoolConfigNote)
                 }
             }
         }
@@ -271,6 +278,20 @@ struct ProductConnectSheetView: View {
     }
 
     // MARK: - Helpers
+
+    /// CONNECTED, and under it what recording the connection in config.yaml did not keep.
+    @ViewBuilder
+    private func connectedStatus(_ connected: Bool, note: String?) -> some View {
+        if connected {
+            Pill(text: "CONNECTED", tone: .teal, icon: "checkmark")
+        }
+        if let note {
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.warn)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
     private var productIcon: String {
         product == .protect ? "shield.lefthalf.filled" : "graduationcap.fill"

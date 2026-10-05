@@ -450,6 +450,34 @@ final class OnboardingFlowMultiProductTests: XCTestCase {
         XCTAssertNil(school.backupName, "nothing in school_cli was dropped")
     }
 
+    /// Recording a connection keeps what the write did not keep as the flow's note, which the
+    /// Add Products card and the connect sheet show beside CONNECTED.
+    func test_recordingAConnectionKeepsTheBackupNote() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("MPTest-\(UUID().uuidString)", isDirectory: true)
+        setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
+        addTeardownBlock {
+            unsetenv("JRC_TEST_WORKSPACES_ROOT")
+            try? FileManager.default.removeItem(at: root)
+        }
+        let profile = "testnote"
+        let url = try ConfigService.configURL(for: profile)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "protect:\n  # second tenant\n  enabled: false\n"
+            .write(to: url, atomically: true, encoding: .utf8)
+        let flow = OnboardingFlow()
+
+        try flow.recordProtectConnection(profileSlug: profile, protectProfileName: "p")
+        try flow.recordSchoolConnection(profileSlug: profile, schoolProfileName: "s")
+
+        XCTAssertTrue(flow.protectConnected)
+        XCTAssertTrue(flow.protectConfigNote?.contains("config.yaml.bak-") ?? false,
+                      "\(String(describing: flow.protectConfigNote))")
+        XCTAssertTrue(flow.schoolConnected)
+        XCTAssertNil(flow.schoolConfigNote, "school_cli held nothing to drop")
+    }
+
     func test_writeSchoolConfig_setsEnabledAndProfile() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("MPTest-\(UUID().uuidString)", isDirectory: true)

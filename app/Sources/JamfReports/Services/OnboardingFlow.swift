@@ -180,6 +180,8 @@ final class OnboardingFlow {
     var isConnectingProtect = false
     var protectConnected = false
     var protectConnectionError: String?
+    /// What recording the connection in config.yaml did not keep (a backup was made).
+    var protectConfigNote: String?
 
     // MARK: - Jamf School fields
 
@@ -192,6 +194,8 @@ final class OnboardingFlow {
     var isConnectingSchool = false
     var schoolConnected = false
     var schoolConnectionError: String?
+    /// What recording the connection in config.yaml did not keep (a backup was made).
+    var schoolConfigNote: String?
 
     // MARK: - State flags
 
@@ -592,6 +596,7 @@ final class OnboardingFlow {
     func registerProtectProfile() async {
         protectConnected = false
         protectConnectionError = nil
+        protectConfigNote = nil
 
         let name = protectProfileName.trimmed
         guard ProfileService.isValid(name) else {
@@ -647,14 +652,18 @@ final class OnboardingFlow {
             return
         }
 
-        // Write protect.enabled + protect.profile into the workspace config.
         do {
-            try writeProtectConfig(profileSlug: profileName.trimmed, protectProfileName: name)
+            try recordProtectConnection(profileSlug: profileName.trimmed, protectProfileName: name)
         } catch {
             protectConnectionError = "Connected, but config update failed: \(error.localizedDescription)"
-            return
         }
+    }
 
+    /// Writes protect.enabled + protect.profile into the workspace config after setup
+    /// succeeded, and keeps what the write did not keep as `protectConfigNote`.
+    func recordProtectConnection(profileSlug: String, protectProfileName: String) throws {
+        protectConfigNote = try writeProtectConfig(
+            profileSlug: profileSlug, protectProfileName: protectProfileName).statusLine
         protectConnected = true
         protectEnabled = true
     }
@@ -662,6 +671,7 @@ final class OnboardingFlow {
     func registerSchoolProfile() async {
         schoolConnected = false
         schoolConnectionError = nil
+        schoolConfigNote = nil
 
         let name = schoolProfileName.trimmed
         guard ProfileService.isValid(name) else {
@@ -717,14 +727,18 @@ final class OnboardingFlow {
             return
         }
 
-        // Write school_cli.enabled + school_cli.profile into the workspace config.
         do {
-            try writeSchoolConfig(profileSlug: profileName.trimmed, schoolProfileName: name)
+            try recordSchoolConnection(profileSlug: profileName.trimmed, schoolProfileName: name)
         } catch {
             schoolConnectionError = "Connected, but config update failed: \(error.localizedDescription)"
-            return
         }
+    }
 
+    /// Writes school_cli.enabled + school_cli.profile into the workspace config after setup
+    /// succeeded, and keeps what the write did not keep as `schoolConfigNote`.
+    func recordSchoolConnection(profileSlug: String, schoolProfileName: String) throws {
+        schoolConfigNote = try writeSchoolConfig(
+            profileSlug: profileSlug, schoolProfileName: schoolProfileName).statusLine
         schoolConnected = true
         schoolEnabled = true
     }

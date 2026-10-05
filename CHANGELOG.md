@@ -173,8 +173,9 @@ compliance is now one figure everywhere.
   `config.yaml.bak-<date-time>` (the newest five), and says where it is: on the Config screen,
   and on the Customize screen, the Notifications card, the AI panel and the Scoring tab. Recording
   a jamf-cli profile in its workspace's config.yaml, and connecting Jamf Protect or Jamf School,
-  keep a copy the same way; the first names it in the run log. A new workspace created from the
-  example configuration is written with its profile already recorded, so it gets no copy.
+  keep a copy the same way, named in the run log and on the Protect and School setup screens. A
+  new workspace created from the example configuration is written with its profile already
+  recorded, so it gets no copy.
 - config.yaml indented by 3 or 4 spaces, or a mix, reads as a 2-space file does. A key typed twice
   is read as its last value everywhere, and a Config screen save changes only that copy. A
   security policy level can be written `warn`, `failure`, `gap`, `ignored`, `skip` or
