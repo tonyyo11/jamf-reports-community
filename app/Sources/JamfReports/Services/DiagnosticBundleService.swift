@@ -289,6 +289,14 @@ final class DiagnosticRedactor {
         }
     }
 
+    /// The placeholder for free text no pattern can find, such as a name or a justification an
+    /// admin typed into config.yaml. `category` keeps its keep-flag; an empty value or a
+    /// category the options keep comes back as written.
+    func placeholderText(for value: String, category: String) -> String {
+        guard !value.isEmpty, piiEnabled(category) else { return value }
+        return placeholder(category, value)
+    }
+
     private func placeholder(_ kind: String, _ value: String) -> String {
         let cacheKey = "\(kind)\u{0}\(value)"
         if let cached = cache[cacheKey] { return cached }
@@ -702,9 +710,60 @@ enum DiagnosticBundleService {
             return [.skipped(path: "config.yaml", reason: "could not read config")]
         }
         var content = String(decoding: data, as: UTF8.self)
-        if let redactor { content = redactor.redactText(content) }
+        if let redactor {
+            content = redactor.redactText(try redactingExceptionText(in: content, with: redactor))
+        }
         try writeText(content, to: staging.appendingPathComponent("config.yaml"))
         return [.file(path: "config.yaml", size: content.utf8.count, redacted: redactor != nil)]
+    }
+
+    /// The `exceptions[]` fields an admin types as free text, with the category whose
+    /// placeholder replaces each: a person's name and a justification.
+    private static let exceptionTextFields = [("signed_off_by", "user"), ("description", "org")]
+
+    /// Replaces `signed_off_by` and `description` in each `exceptions` entry with the
+    /// redactor's placeholders. Parsed with `YAMLCodec`, as the app reads the file, so a flow
+    /// mapping or a block value is covered too. Only the `exceptions:` block is re-emitted
+    /// (its quoting and comments are normalized); every other line stays as written, and a
+    /// file with nothing to replace comes back unchanged.
+    static func redactingExceptionText(
+        in yaml: String, with redactor: DiagnosticRedactor
+    ) throws -> String {
+        guard let document = try? YAMLCodec.decode(yaml) else {
+            AppLogger.collect.warning(
+                "DiagnosticBundle: config.yaml is not a mapping; exception text not replaced")
+            return yaml
+        }
+        guard case .mapping(var root) = document.root,
+              case .sequence(let entries)? = root.value(for: "exceptions") else { return yaml }
+        var replaced = false
+        let redacted = entries.map { entry -> YAMLCodec.YAMLValue in
+            guard case .mapping(var fields) = entry else { return entry }
+            for (key, category) in exceptionTextFields {
+                guard case .scalar(let scalar)? = fields.value(for: key),
+                      let text = scalarText(scalar) else { continue }
+                let placeholder = redactor.placeholderText(for: text, category: category)
+                if placeholder != text {
+                    fields.set(key, value: .scalar(.string(placeholder)))
+                    replaced = true
+                }
+            }
+            return .mapping(fields)
+        }
+        guard replaced else { return yaml }
+        root.set("exceptions", value: .sequence(redacted))
+        var edited = document
+        edited.root = .mapping(root)
+        return try YAMLCodec.encode(edited, replacingTopLevelKeys: ["exceptions"])
+    }
+
+    private static func scalarText(_ scalar: YAMLCodec.YAMLScalar) -> String? {
+        switch scalar {
+        case .string(let text): text
+        case .int(let value): String(value)
+        case .bool(let value): String(value)
+        case .null: nil
+        }
     }
 
     private static func collectWorkspaceTree(
