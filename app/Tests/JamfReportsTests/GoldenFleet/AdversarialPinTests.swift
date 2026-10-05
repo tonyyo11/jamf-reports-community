@@ -126,20 +126,28 @@ final class AdversarialPinTests: XCTestCase {
         let ageRoot = makeRoot()
         let ageData = ageRoot.appendingPathComponent("data", isDirectory: true)
         let ageSummaries = ageRoot.appendingPathComponent("summaries", isDirectory: true)
-        // Filename stamped 2h ago, but mtime freshly stamped NOW.
-        let oldFilename = GoldenFleetClock.stamp(Date().addingTimeInterval(-2 * 3600))
+        // Filename stamped 48h ago, but mtime freshly stamped NOW. The margin over the 1h
+        // limit keeps the pin about filename-vs-mtime, not about two clock reads agreeing:
+        // a CI run at 2h once wrote a summary here and did not reproduce in 75 reruns.
+        let writtenAt = Date().addingTimeInterval(-48 * 3600)
+        let oldFilename = GoldenFleetClock.stamp(writtenAt)
         let ageFile = securityURL(ageData, stamp: oldFilename)
         try GoldenFleetWorkspace.writeJSON(secPayload(total: 100), to: ageFile)
         try GoldenFleetWorkspace.setModificationDate(ageFile, to: Date())
+        let parsed = try XCTUnwrap(CloudStorage.snapshotTimestamp(of: ageFile),
+                                   "stamp \(oldFilename) did not parse, so age falls back to mtime")
+        XCTAssertEqual(parsed.timeIntervalSince(writtenAt), 0, accuracy: 1,
+                       "stamp \(oldFilename) read back as \(parsed), written \(writtenAt)")
 
         var cfg = ReportConfig()
         var jamf = JamfCLIConfig()
-        jamf.maxCacheAgeHours = 1          // 2h filename age > 1h limit → expired.
+        jamf.maxCacheAgeHours = 1          // 48h filename age > 1h limit → expired.
         cfg.jamfCli = jamf
 
         ReportEngine(config: cfg, dataDir: ageData).emitSummaryJSON(summariesDir: ageSummaries)
         XCTAssertTrue(SummaryJSONParser.parseDirectory(ageSummaries).isEmpty,
-                      "age-by-filename (2h) exceeds max_cache_age_hours=1 → treated absent → no summary")
+                      "age-by-filename (48h) exceeds max_cache_age_hours=1 → treated absent → "
+                        + "no summary (parsed \(parsed), now \(Date()))")
     }
 
     // MARK: - Pin 3 — string counts: "3.0" → 3 (Low), "3.9" → No Data
