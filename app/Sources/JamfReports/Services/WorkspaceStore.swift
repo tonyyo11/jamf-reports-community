@@ -280,6 +280,7 @@ final class WorkspaceStore {
         "battery_health":      "Battery Health",
         "entra_sso_status":    "Entra SSO Status",
         "purchase_date":       "Purchase Date",
+        "last_inventory":      "Last Inventory Update",
     ]
 
     private static let requiredColumnKeys: Set<String> = [

@@ -89,8 +89,9 @@ struct SecurityScoreFactor: Sendable, Hashable {
 
     // MARK: Labels
 
-    /// The factor's name on screens and in reports. `staleDays` names the check-in window.
-    func label(staleDays: Int? = nil) -> String {
+    /// The factor's name on screens and in reports. `staleDays` names the check-in window and
+    /// `staleBasis` the dates it counts.
+    func label(staleDays: Int? = nil, staleBasis: [StaleBasis] = StaleBasis.default) -> String {
         switch kind {
         case .fileVault: return "FileVault"
         case .sip: return "SIP"
@@ -102,7 +103,8 @@ struct SecurityScoreFactor: Sendable, Hashable {
         case .xprotectCurrent: return "XProtect current (\(resolvedGraceDays)-day grace)"
         case .patchCompliance: return "Patch compliance"
         case .checkedIn:
-            return staleDays.map { "Checked in within \($0) days" } ?? "Checked in recently"
+            return staleDays.map { StaleRule(days: $0, basis: staleBasis).checkedInLabel() }
+                ?? "Checked in recently"
         case .mscp: return target.map { "mSCP: \($0)" } ?? "mSCP baseline"
         case .agent: return "\(target ?? "Agent") connected"
         }
@@ -121,7 +123,8 @@ struct SecurityScoreFactor: Sendable, Hashable {
     /// metric names (`fileVault,sip,firewall,crowdstrike,mscp`), whose `crowdstrike` was the
     /// EDR agent. An unknown word is dropped.
     static func labels(
-        inBasis basis: String, staleDays: Int? = nil, edrAgentName: String? = nil
+        inBasis basis: String, staleDays: Int? = nil, staleBasis: [StaleBasis] = StaleBasis.default,
+        edrAgentName: String? = nil
     ) -> [String] {
         basis.split(separator: ",").compactMap { entry in
             let id = unescaped(String(entry.split(separator: "=").first ?? ""))
@@ -132,7 +135,7 @@ struct SecurityScoreFactor: Sendable, Hashable {
             let parts = id.split(separator: ":", maxSplits: 1).map(String.init)
             guard let kind = parts.first.flatMap(Kind.init(rawValue:)) else { return nil }
             return SecurityScoreFactor(kind, weight: 0, target: parts.count > 1 ? parts[1] : nil)
-                .label(staleDays: staleDays)
+                .label(staleDays: staleDays, staleBasis: staleBasis)
         }
     }
 

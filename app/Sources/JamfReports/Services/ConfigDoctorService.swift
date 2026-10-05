@@ -92,6 +92,8 @@ enum ConfigDoctorService {
             rows += securityPolicyRows(profile: profile, config: config)
             rows += csvHardwareColumnRows(
                 config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
+            rows += csvInventoryColumnRows(
+                config: config, csvHeaders: csvHeaders, csvFamily: csvFamily)
         }
         rows += evaluateCloudStorage(cloudStorageInputs(profile: profile, config: config))
         rows += evaluateWorkspaceContinuity(
@@ -851,6 +853,24 @@ enum ConfigDoctorService {
                 + "to the export's \(headers.joined(separator: " and ")) "
                 + "\(headers.count == 1 ? "column" : "columns")."
         )]
+    }
+
+    /// A `stale_basis` that counts the inventory date needs the CSV's Last Inventory Update
+    /// column, mapped as `columns.last_inventory`. Without it the CSV sheets leave the
+    /// inventory date out of the rule, which this row says.
+    static func csvInventoryColumnRows(
+        config: ReportConfig, csvHeaders: [String]?, csvFamily: CSVFamily?
+    ) -> [DoctorRow] {
+        guard config.thresholds?.resolvedStaleBasis.contains(.inventory) == true,
+              csvHeaders != nil, csvFamily != .mobile,
+              config.columns?.columnName(for: .lastInventory) == nil else { return [] }
+        return [DoctorRow(
+            id: "thresholds.stale_basis.csv_inventory_column", severity: .warn,
+            title: "thresholds.stale_basis",
+            detail: "stale_basis counts inventory, but columns.last_inventory is not mapped, so "
+                + "a CSV report has no inventory date: inventory does not apply to its rows.",
+            hint: "Map columns.last_inventory to the export's 'Last Inventory Update' column "
+                + "in Config.")]
     }
 
     private static func securityPolicyDetail(_ issue: SecurityPolicyIssue) -> String {

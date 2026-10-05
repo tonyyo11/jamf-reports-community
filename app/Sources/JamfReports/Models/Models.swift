@@ -458,6 +458,8 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var ipAddress: String
     var assetTag: String
     var managedState: String
+    /// The Mac's last check-in as the source wrote it (the name predates Jamf Pro's separate
+    /// Last Contact, which `contactDate` holds).
     var lastContact: String
     var lastInventory: String
     var daysSinceContact: Int?
@@ -479,6 +481,15 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var managementID: String? = nil
     var udid: String? = nil
     var platformID: String? = nil
+    /// The three Jamf Pro dates as dates, for `StaleRule` and `ContactGap`: Last Check-in
+    /// (`lastContact` is its text), Last Inventory Update (`lastInventory`) and Last Contact,
+    /// which counts MDM and declarative device management too. Nil when no source carried it.
+    var checkInDate: Date? = nil
+    var inventoryDate: Date? = nil
+    var contactDate: Date? = nil
+    /// True when a source that dates every Mac (the `computers` snapshot) described this one,
+    /// so a missing check-in or inventory date means it never had one.
+    var carriesDates = false
 
     var displayName: String { name.isEmpty ? "Unknown device" : name }
     var displaySerial: String { serial.isEmpty ? "No serial" : serial }
@@ -519,6 +530,10 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         managementID = firstNonEmpty(managementID, other.managementID)
         udid = firstNonEmpty(udid, other.udid)
         platformID = firstNonEmpty(platformID, other.platformID)
+        checkInDate = [checkInDate, other.checkInDate].compactMap { $0 }.max()
+        inventoryDate = [inventoryDate, other.inventoryDate].compactMap { $0 }.max()
+        contactDate = [contactDate, other.contactDate].compactMap { $0 }.max()
+        carriesDates = carriesDates || other.carriesDates
         name = firstNonEmpty(name, other.name)
         serial = firstNonEmpty(serial, other.serial)
         osVersion = firstNonEmpty(osVersion, other.osVersion)
@@ -591,12 +606,35 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
         )
     }
 
-    /// Whether the Mac last contacted Jamf more than `thresholdDays` days ago, the rule behind
-    /// `thresholds.stale_device_days`: a Mac at exactly the threshold is not stale. A record
-    /// with no day count keeps the `stale` flag its sources set.
+    /// What the stale rule reads from this record.
+    var staleInputs: StaleInputs {
+        StaleInputs(
+            checkInDays: daysSinceContact, checkIn: checkInDate, inventory: inventoryDate,
+            contact: contactDate, carriesDates: carriesDates, flag: stale)
+    }
+
+    /// Whether the Mac is stale under `rule`: its oldest counted date is more than `rule.days`
+    /// old, so a Mac at exactly the threshold is not. A record with none of those dates keeps
+    /// the `stale` flag its sources set.
+    func isStale(_ rule: StaleRule, now: Date = Date()) -> Bool {
+        rule.isStale(staleInputs, now: now)
+    }
+
+    /// `isStale` on the default basis, the last check-in alone.
     func isStale(atDays thresholdDays: Int) -> Bool {
-        if let days = daysSinceContact { return days > thresholdDays }
-        return stale
+        isStale(StaleRule(days: thresholdDays))
+    }
+
+    /// How old the oldest counted date is; nil when the record has none of them.
+    func staleAge(_ rule: StaleRule, now: Date = Date()) -> StaleAge? {
+        rule.age(of: staleInputs, now: now)
+    }
+
+    /// The contact gap the Mac shows, if any (`ContactGap.of`).
+    func contactGap(rule: StaleRule, gapDays: Int, now: Date = Date()) -> ContactGap? {
+        ContactGap.of(
+            checkIn: checkInDate, inventory: inventoryDate, contact: contactDate,
+            staleDays: rule.days, gapDays: gapDays, now: now)
     }
 }
 
@@ -610,6 +648,11 @@ struct DeviceInventorySnapshot: Sendable {
     var isDemo: Bool
     /// The workspace's `security_policy`, which every gap and risk on the screen follows.
     var securityPolicy: SecurityControlPolicy = .default
+    /// `thresholds.stale_device_days`, `stale_basis` and `contact_gap_days`, which the screens'
+    /// stale counts and contact-gap lists follow.
+    var staleDays = 30
+    var staleBasis: [StaleBasis] = StaleBasis.default
+    var contactGapDays = ContactGap.defaultDays
 
     static let empty = DeviceInventorySnapshot(
         devices: [], patchTitles: [], sourceFiles: [], warnings: [],
@@ -632,7 +675,25 @@ struct DeviceInventorySnapshot: Sendable {
     }
 
     func staleCount(thresholdDays: Int) -> Int {
-        devices.filter { $0.isStale(atDays: thresholdDays) }.count
+        staleCount(StaleRule(days: thresholdDays, basis: staleBasis))
+    }
+
+    func staleCount(_ rule: StaleRule, now: Date = Date()) -> Int {
+        devices.filter { $0.isStale(rule, now: now) }.count
+    }
+
+    /// The Macs MDM reaches whose check-in or inventory has fallen behind, by kind.
+    func contactGaps(
+        staleDays: Int, now: Date = Date()
+    ) -> [ContactGap: [DeviceInventoryRecord]] {
+        let rule = StaleRule(days: staleDays, basis: staleBasis)
+        var found: [ContactGap: [DeviceInventoryRecord]] = [:]
+        for device in devices {
+            if let gap = device.contactGap(rule: rule, gapDays: contactGapDays, now: now) {
+                found[gap, default: []].append(device)
+            }
+        }
+        return found
     }
 
     /// The share of Macs whose FileVault value reads as on, over those whose value reads as

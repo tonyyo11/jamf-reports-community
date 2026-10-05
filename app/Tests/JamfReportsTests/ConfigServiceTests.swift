@@ -322,6 +322,7 @@ final class ConfigServiceTests: XCTestCase {
         ("position", "Job Title"), ("last_logged_in_user", "Last Logged In"),
         ("recovery_lock", "Recovery Lock"), ("battery_health", "Battery Health"),
         ("entra_sso_status", "Entra SSO"), ("purchase_date", "Purchase Date"),
+        ("last_inventory", "Last Inventory Update"),
     ]
 
     private func extraColumnsConfig(only keys: Set<String>? = nil) -> String {
