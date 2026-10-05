@@ -1335,7 +1335,7 @@ private struct OutputTab: View {
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 14)
                     outputToggleRow(
                         title: "Timestamp output filenames",
-                        detail: "_2026-04-25_091418",
+                        detail: "_\(ReportEngine.workbookTimestamp())",
                         isOn: $ws.configState.timestampOutputs
                     )
                     Divider().background(Theme.Hairline.standard).padding(.vertical, 10)
