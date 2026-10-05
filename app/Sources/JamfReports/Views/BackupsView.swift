@@ -431,6 +431,16 @@ struct BackupsView: View {
                     .foregroundStyle(Theme.Colors.warn)
                     .padding(.horizontal, 6)
             }
+            if !diffParseFailed {
+                // The quotes inside new_value are jamf-cli's: it sends each changed field as
+                // a JSON string. Raw shows its output as received, so Copy hands a script
+                // the same text.
+                Text("jamf-cli sends each changed field as a JSON string, so quotes inside it "
+                     + "show escaped. Raw is its output unchanged; Summary reads the values.")
+                    .font(Theme.Fonts.mono(10.5))
+                    .foregroundStyle(Theme.Text.tertiary(contrast))
+                    .padding(.horizontal, 6)
+            }
             Text(diffRawText)
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Text.secondary)
@@ -721,20 +731,44 @@ private struct DiffGroupView: View {
 
     @ViewBuilder
     private func changeRow(_ change: BackupDiffModel.Change) -> some View {
-        HStack(alignment: .top, spacing: 6) {
+        HStack(alignment: .top, spacing: 8) {
             Text(change.path.isEmpty ? "(value)" : change.path)
                 .font(Theme.Fonts.mono(11))
                 .foregroundStyle(Theme.Text.secondary)
-            Text(change.old ?? "—")
-                .font(Theme.Fonts.mono(11))
-                .foregroundStyle(Theme.Colors.danger)
-            Image(systemName: "arrow.right")
-                .font(.system(size: 8))
-                .foregroundStyle(Theme.Text.tertiary(contrast))
-            Text(change.new ?? "—")
-                .font(Theme.Fonts.mono(11))
-                .foregroundStyle(Theme.Colors.ok)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+            DiffValuePair(old: change.old, new: change.new, size: 11)
         }
+    }
+
+    /// One member's change inside a card whose members landed on different values: the
+    /// object names, then each field's before → after, labelled when the card has several.
+    private func variantRow(_ variant: BackupDiffModel.Variant) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            // Cap the inline name list: a variant can legitimately cover a hundred-plus
+            // objects, and joining those into one line would clip to meaningless text.
+            // The full list is under "Show objects".
+            Text(variantLabel(variant))
+                .font(Theme.Fonts.mono(10.5))
+                .foregroundStyle(Theme.Text.tertiary(contrast))
+                .frame(maxWidth: 220, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(variant.changes.enumerated()), id: \.offset) { _, change in
+                    HStack(alignment: .top, spacing: 6) {
+                        let fields = group.fields
+                        if let label = BackupDiffModel.fieldLabel(for: change, among: fields) {
+                            Text(label)
+                                .font(Theme.Fonts.mono(10.5))
+                                .foregroundStyle(Theme.Text.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
+                        }
+                        DiffValuePair(old: change.old, new: change.new, size: 10.5)
+                    }
+                }
+            }
+        }
+        .padding(.leading, 24)
     }
 
     var body: some View {
@@ -764,23 +798,7 @@ private struct DiffGroupView: View {
                     .foregroundStyle(Theme.Text.secondary)
                     .padding(.leading, 12)
                 ForEach(Array(group.variants.enumerated()), id: \.offset) { _, variant in
-                    HStack(alignment: .top, spacing: 6) {
-                        // Cap the inline name list: a variant can legitimately
-                        // cover a hundred-plus objects, and joining those into
-                        // one line would clip to meaningless text. The full list
-                        // is under "Show objects".
-                        Text(variantLabel(variant))
-                            .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Text.tertiary(contrast))
-                            .frame(maxWidth: 220, alignment: .leading)
-                        Text(
-                            variant.changes.map { $0.new ?? $0.old ?? "—" }
-                                .joined(separator: "; ")
-                        )
-                            .font(Theme.Fonts.mono(10.5))
-                            .foregroundStyle(Theme.Colors.ok)
-                    }
-                    .padding(.leading, 24)
+                    variantRow(variant)
                 }
             }
 
@@ -827,5 +845,47 @@ private struct DiffGroupView: View {
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.Colors.gold.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// A before → after pair. Short values share a line; when they do not fit (an icon URL ending
+/// in a 64-digit hash) the old value takes its own line and each value shortens in the middle
+/// with the whole text in its tooltip, instead of wrapping to one character per line.
+private struct DiffValuePair: View {
+    let old: String?
+    let new: String?
+    let size: CGFloat
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private func value(_ text: String?, color: Color) -> some View {
+        Text(text ?? "\u{2014}")
+            .font(Theme.Fonts.mono(size))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(text ?? "")
+    }
+
+    private var arrow: some View {
+        Image(systemName: "arrow.right")
+            .font(.system(size: 8))
+            .foregroundStyle(Theme.Text.tertiary(contrast))
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                value(old, color: Theme.Colors.danger)
+                arrow
+                value(new, color: Theme.Colors.ok)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                value(old, color: Theme.Colors.danger)
+                HStack(spacing: 6) {
+                    arrow
+                    value(new, color: Theme.Colors.ok)
+                }
+            }
+        }
     }
 }
