@@ -330,9 +330,10 @@ struct ReportLibrary {
             }
         }
 
-        // JSON numbers may deserialize as Int or Double depending on the serializer.
+        // JSON numbers may deserialize as Int or Double depending on the serializer. A Double
+        // outside Int's range gives no count; `Int(_:)` would trap.
         return (json["totalDevices"] as? Int)
-            ?? (json["totalDevices"] as? Double).map(Int.init)
+            ?? (json["totalDevices"] as? Double).flatMap { Int(exactly: $0.rounded(.towardZero)) }
     }
 
     private func hasZipMagic(_ url: URL) -> Bool {

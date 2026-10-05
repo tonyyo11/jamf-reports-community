@@ -1034,11 +1034,13 @@ extension HtmlReport {
 
             // Accept both camelCase (current Swift + Python writers) and snake_case
             // (defensive: hand-authored or third-party summaries). Both writers emit camelCase.
+            // A Double outside Int's range (1e30) reads as absent: `Int(_:)` would trap.
             func intVal(_ camel: String, _ snake: String) -> Int? {
-                if let n = dict[camel] as? Int { return n }
-                if let d = dict[camel] as? Double { return Int(d) }
-                if let n = dict[snake] as? Int { return n }
-                if let d = dict[snake] as? Double { return Int(d) }
+                for key in [camel, snake] {
+                    if let n = dict[key] as? Int { return n }
+                    if let d = dict[key] as? Double,
+                       let n = Int(exactly: d.rounded(.towardZero)) { return n }
+                }
                 return nil
             }
             func dblVal(_ camel: String, _ snake: String) -> Double? {
