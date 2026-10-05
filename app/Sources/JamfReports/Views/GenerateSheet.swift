@@ -302,28 +302,14 @@ struct GenerateSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             titlebar
             Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    formatsSection
-                    templateSection
-                    collectToggle
-                    auditToggle
-                    outputFolderRow
-                    profileRow
-                    if state.collectFresh, let auth = workspace.authStatus, !auth.isValid {
-                        authWarningBanner
+            ScrollViewReader { proxy in
+                ScrollView { formContent }
+                    .onChange(of: state.isRunning) { _, running in
+                        scroll(proxy, to: running ? .log : .result)
                     }
-                    if state.isRunning || !state.logLines.isEmpty {
-                        logPanel
+                    .onChange(of: state.errorMessage) { _, message in
+                        if message != nil, !state.isRunning { scroll(proxy, to: .result) }
                     }
-                    if let err = state.errorMessage {
-                        errorBanner(err)
-                    }
-                    if !state.isRunning && state.completedCount > 0 {
-                        completionBanner
-                    }
-                }
-                .padding(20)
             }
             Divider()
             footer
@@ -336,6 +322,52 @@ struct GenerateSheet: View {
     }
 
     // MARK: Subviews
+
+    private var formContent: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            formatsSection
+            templateSection
+            collectToggle
+            auditToggle
+            outputFolderRow
+            profileRow
+            if state.collectFresh, let auth = workspace.authStatus, !auth.isValid {
+                authWarningBanner
+            }
+            if state.isRunning || !state.logLines.isEmpty {
+                logPanel.id(ScrollTarget.log)
+            }
+            if state.errorMessage != nil || (!state.isRunning && state.completedCount > 0) {
+                resultSection.id(ScrollTarget.result)
+            }
+        }
+        .padding(20)
+    }
+
+    private var resultSection: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            if let err = state.errorMessage {
+                errorBanner(err)
+            }
+            if !state.isRunning && state.completedCount > 0 {
+                completionBanner
+            }
+        }
+    }
+
+    private enum ScrollTarget: Hashable { case log, result }
+
+    /// The log and the result sit below the form, out of sight on a short sheet: a run
+    /// brings its log into view, and its end brings the result.
+    private func scroll(_ proxy: ScrollViewProxy, to target: ScrollTarget) {
+        Task { @MainActor in
+            // The target appears in the same update; scroll once it is laid out.
+            await Task.yield()
+            withAnimation(.easeOut(duration: 0.25)) {
+                proxy.scrollTo(target, anchor: target == .log ? .top : .bottom)
+            }
+        }
+    }
 
     private var titlebar: some View {
         HStack {

@@ -221,6 +221,9 @@ compliance is now one figure everywhere.
 
 ### Fixed
 
+- The Generate Reports sheet kept its live log and its result below the form, so a run could
+  end, or stop because a refresh was already running, without a visible word. A run now scrolls
+  to its log, and its end scrolls to the result.
 - PDF exports held only the first page of the report. They now hold the whole report, the
   bars and severity labels keep their colours, and the Compliance and Security Posture
   templates keep the summary on the first page and start each section on a new one.
