@@ -229,6 +229,13 @@ sidebar profile chip, check `jamf_cli.data_dir` in `config.yaml`, and regenerate
 match the CSV. Open the Config screen, re-scaffold against your CSV export, and confirm
 each mapping resolves to the right header.
 
+**CSV line-ending compatibility.** CSV exports from Windows or Excel sometimes use carriage-return-linefeed
+(CRLF, `\r\n`) line endings instead of the Unix standard linefeed (`\n`). The app parses both
+formats transparently — you do not need to convert the file. If the app reads your CSV as a single
+row with no data, your line endings are likely not being recognized; check the file with `file` or
+reopen it in a text editor and save it without line-ending conversion, or use `dos2unix` to clean it
+up.
+
 **Notarization warning on first launch.** A local build is ad-hoc signed, not
 Developer-ID notarized. Right-click the app in Finder, choose Open, and confirm — macOS
 remembers the choice.
@@ -257,6 +264,19 @@ Classic command on a Platform gateway profile, or a Platform-only command on an 
 profile. The remedy is a different profile, not another attempt, so the automatic
 re-collect leaves that source alone. `jamf-cli commands -o json` lists what the binary in
 hand refuses.
+
+### App-level exit codes (jamf-reports CLI)
+
+The `jamf-reports` command-line tool also returns its own exit codes:
+
+| Code | Meaning |
+|---|---|
+| 75 | Queued — a scheduled run or another operation holds the lock; your command was not started. Try again in a few minutes. |
+
+Collection and report generation run under an exclusive lock so they never overlap. If
+you run `jamf-reports collect`, `jamf-reports generate` or `jamf-reports schedules run`
+while another operation is active (a tick wake, a scheduled run, or a report generation
+on the same Mac), your command exits 75 and queues for the next opportunity.
 
 ## Report integrity envelope
 
