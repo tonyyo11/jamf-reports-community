@@ -254,6 +254,20 @@ final class YAMLParseNoteTests: XCTestCase {
         XCTAssertEqual(read.parseNotes, [])
     }
 
+    /// "\r\n" is one `Character` that equals neither "\r" nor "\n", so a CRLF inside a value
+    /// was written raw and split the key's line in two.
+    func testAStringHoldingACRLFIsWrittenQuotedOnOneLine() throws {
+        var document = YAMLCodec.emptyDocument()
+        document.root = .mapping(.init(entries: [
+            .init(key: "note", value: .scalar(.string("a\r\nb"))),
+        ]))
+        let text = try YAMLCodec.encode(document, replacingTopLevelKeys: ["note"])
+        XCTAssertEqual(text, "note: \"a\\r\\nb\"\n")
+        let read = try YAMLCodec.decode(text)
+        XCTAssertEqual(read.parseNotes, [])
+        XCTAssertEqual(try XCTUnwrap(read.root.mapping).entries.map(\.key), ["note"])
+    }
+
     /// A save of a CRLF file used to write an empty line after every line it kept.
     func testEncodingACRLFFileKeepsOneLineBreakPerLine() throws {
         var document = try YAMLCodec.decode(
