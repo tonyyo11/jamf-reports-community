@@ -136,7 +136,7 @@ extension HtmlReport {
         let wasHTML = was.isEmpty ? "" : "<span class=\"glance-was\">\(f.escapeHTML(was))</span>"
         return """
             <div class="glance-tile">
-              <div class="glance-label">\(f.escapeHTML(spec.label))</div>
+              <div class="glance-label">\(f.escapeHTMLBreakable(spec.label))</div>
               <div class="glance-value">\(f.escapeHTML(spec.format(value)))</div>
               <div class="glance-change \(changeClass)">\(f.escapeHTML(changeText))\(wasHTML)</div>
             </div>

@@ -430,6 +430,67 @@ final class HtmlReportTests: XCTestCase {
                       "Print CSS must force white background")
     }
 
+    /// The CSS rule for `selector` (its declarations), or nil.
+    private func declarations(of selector: String, in css: String) -> String? {
+        guard let start = css.range(of: "\n        \(selector) {")
+                ?? css.range(of: "\n\(selector) {"),
+              let end = css[start.upperBound...].firstIndex(of: "}") else { return nil }
+        return String(css[start.upperBound..<end])
+    }
+
+    /// A compliance label can be a reverse-DNS name with no space to wrap at; the tiles break
+    /// it inside the card, and the AI caption sits in a spaced block.
+    func testScreenCSSWrapsLongTileLabelsAndSpacesTheAICaption() throws {
+        let css = makeReport().buildCSS(accentColor: "#2D5EA2")
+        for selector in [".glance-label", ".tile-label", ".count-label"] {
+            let rule = try XCTUnwrap(declarations(of: selector, in: css), selector)
+            XCTAssertTrue(rule.contains("overflow-wrap: anywhere"), "\(selector): \(rule)")
+        }
+        XCTAssertNotNil(declarations(of: ".ai-note", in: css))
+        let block = try XCTUnwrap(declarations(of: ".summary-block", in: css))
+        XCTAssertTrue(block.contains("margin-bottom"), "the AI summary needs room below it")
+    }
+
+    /// The `@media print` rules of the report's style sheet, whitespace collapsed.
+    private func printRules() throws -> String {
+        let css = makeReport().buildCSS(accentColor: "#2D5EA2")
+        let start = try XCTUnwrap(css.range(of: "@media print"))
+        return css[start.upperBound...].split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// A heading stays with what follows it, and a box shorter than a page is not cut by a
+    /// page break: the tiles, the attention lines and each block of a group.
+    func testPrintCSSKeepsHeadingsWithTheirBlocksAndSmallBoxesWhole() throws {
+        let rules = try printRules()
+        XCTAssertTrue(rules.contains(
+            "h2, h3, h4, details > summary { break-after: avoid; page-break-after: avoid; }"))
+        XCTAssertTrue(rules.contains(
+            ".glance-tile, .tile, .count-card, .compliance-hero, .attention-list li, .block { "
+            + "break-inside: avoid; page-break-inside: avoid; }"))
+    }
+
+    /// Print opens every group, so no group or "Show all" block prints a disclosure marker;
+    /// the open-group selector is there because it outranks the screen's own marker rule.
+    func testPrintCSSPrintsNoDisclosureMarkers() throws {
+        let rules = try printRules()
+        XCTAssertTrue(rules.contains("details > summary { list-style: none; }"))
+        XCTAssertTrue(rules.contains(
+            "details > summary::-webkit-details-marker { display: none; }"))
+        XCTAssertTrue(rules.contains(
+            "details.group > summary::before, details.group[open] > summary::before { "
+            + "content: \"\"; margin: 0; }"))
+    }
+
+    /// A group is longer than a page, so it prints as a ruled section, not a card whose
+    /// border breaks at every page; the security tiles share one row.
+    func testPrintCSSRulesGroupsAndKeepsTheSecurityTilesInOneRow() throws {
+        let rules = try printRules()
+        XCTAssertTrue(rules.contains(
+            "details.group { border: 0; border-top: 1px solid var(--border); border-radius: 0; }"))
+        XCTAssertTrue(rules.contains(".tiles-row { flex-wrap: nowrap;"))
+        XCTAssertTrue(rules.contains(".tiles-row .tile { flex: 1 1 0; min-width: 0;"))
+    }
+
     func testLocalStorageThemePersistenceInScript() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -191,11 +191,7 @@ struct ReportEngine: Sendable {
         // `shasum -a 256` output format. The hash is also surfaced to the UI
         // via the log stream so GenerateSheet can show it in the toast.
         if let hash = Self.writeSHA256Sidecar(for: outputURL) {
-            onLine?(.init(
-                timestamp: Date(),
-                level: .ok,
-                text: "[ok] sha256: \(hash) \(outputURL.lastPathComponent)"
-            ))
+            onLine?(Self.sha256LogLine(hash: hash, artifact: outputURL))
         }
 
         // Archive CSV snapshot only after a successful write — avoids archiving when generate fails.
@@ -3030,11 +3026,7 @@ struct ReportEngine: Sendable {
         writeManifestStatic(for: outputURL, profile: profile, template: template.identifier)
         // T-13 integrity envelope: surface the embedded fingerprint via the log
         // stream so the GUI can show it in the "Report ready" toast.
-        onLine?(.init(
-            timestamp: Date(),
-            level: .ok,
-            text: "[ok] sha256: \(digest) \(outputURL.lastPathComponent)"
-        ))
+        onLine?(sha256LogLine(hash: digest, artifact: outputURL))
         return digest
     }
 
@@ -3087,7 +3079,8 @@ struct ReportEngine: Sendable {
         outputURL: URL,
         profileName: String = "",
         template: any ReportTemplate = FullInstanceTemplate(),
-        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") }
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async throws {
         // PR-10 / threat-model T-11: strict-mode pre-flight applies to PDF
         // generation too. PDF is built on top of HTML; the underlying snapshot
@@ -3118,9 +3111,12 @@ struct ReportEngine: Sendable {
             strategy: template.pdfPagination
         )
         try await PDFExporter.export(htmlString: paginatedHTML, to: outputURL)
-        // Write SHA-256 manifest alongside the PDF artifact.
+        // Write SHA-256 manifest alongside the PDF artifact, and log its digest like the
+        // other formats do so the Generate sheet lists the file.
         let profile = config.jamfCli?.resolvedProfile ?? ""
-        writeManifestStatic(for: outputURL, profile: profile, template: template.identifier)
+        let digest = writeManifestStatic(
+            for: outputURL, profile: profile, template: template.identifier)
+        if let digest { onLine?(sha256LogLine(hash: digest, artifact: outputURL)) }
     }
 
     // MARK: - Pagination helper
@@ -3961,15 +3957,17 @@ struct ReportEngine: Sendable {
     /// ```
     ///
     /// Failures are logged to stderr and silently swallowed — a manifest write
-    /// failure must never abort artifact delivery.
+    /// failure must never abort artifact delivery. Returns the artifact's SHA-256, nil when
+    /// the artifact could not be read.
+    @discardableResult
     static func writeManifestStatic(
         for artifactURL: URL,
         profile: String,
         template: String = ""
-    ) {
+    ) -> String? {
         guard let data = try? Data(contentsOf: artifactURL) else {
             fputs("[warn] manifest: could not read \(artifactURL.lastPathComponent)\n", stderr)
-            return
+            return nil
         }
         let digest = SHA256.hash(data: data)
         let hex = digest.compactMap { String(format: "%02x", $0) }.joined()
@@ -3998,6 +3996,21 @@ struct ReportEngine: Sendable {
             fputs("[warn] manifest: could not write \(manifestURL.lastPathComponent): \(error)\n",
                   stderr)
         }
+        return hex
+    }
+
+    /// The `[ok] sha256: <hash> <file>` line the Generate sheet turns into an integrity row
+    /// (`GenerateSheetState.parseSHA256LogLine` reads it back).
+    static func sha256LogLine(hash: String, artifact: URL) -> CLIBridge.LogLine {
+        .init(timestamp: Date(), level: .ok,
+              text: "[ok] sha256: \(hash) \(artifact.lastPathComponent)")
+    }
+
+    /// The same line for a file hashed from disk; nil when the file cannot be read.
+    static func sha256LogLine(for artifact: URL) -> CLIBridge.LogLine? {
+        guard let data = try? Data(contentsOf: artifact) else { return nil }
+        let hex = SHA256.hash(data: data).compactMap { String(format: "%02x", $0) }.joined()
+        return sha256LogLine(hash: hex, artifact: artifact)
     }
 
     // MARK: - PR-10 / threat-model T-11: strict-manifest pre-flight

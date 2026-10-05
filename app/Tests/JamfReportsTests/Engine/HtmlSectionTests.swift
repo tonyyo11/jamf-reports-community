@@ -61,6 +61,31 @@ final class HtmlSectionTests: XCTestCase {
         )
     }
 
+    /// A reverse-DNS name wraps at its separators, and nothing is added where no text follows.
+    func testEscapeHTMLBreakableBreaksAfterSeparatorsOnly() {
+        let breakable = HtmlSectionFormatters.escapeHTMLBreakable
+        XCTAssertEqual(
+            breakable("org.example_800.audit.plist"),
+            "org.<wbr>example_<wbr>800.<wbr>audit.<wbr>plist")
+        XCTAssertEqual(breakable("a/b."), "a/<wbr>b.")
+        XCTAssertEqual(breakable("Compliance Benchmark"), "Compliance Benchmark")
+        XCTAssertEqual(breakable("v1.2 <b>"), "v1.<wbr>2 &lt;b&gt;")
+    }
+
+    func testEscapeHTMLBreakableStillEscapes() {
+        let html = HtmlSectionFormatters.escapeHTMLBreakable(Self.xssPayload)
+        XCTAssertFalse(html.contains("<script>"))
+        XCTAssertTrue(html.contains("&lt;/<wbr>script&gt;"))
+    }
+
+    func testAINarrativeSectionIsASpacedBlockWithItsCaptionInAClass() {
+        let html = makeReport().buildAINarrativeSection("Fleet <b>ok</b> & stable")
+        XCTAssertTrue(html.contains("<section class=\"summary-block\" id=\"ai-narrative\">"))
+        XCTAssertTrue(html.contains("<p class=\"ai-note\">"))
+        XCTAssertFalse(html.contains("style="), "the caption's look lives in the style sheet")
+        XCTAssertTrue(html.contains("Fleet &lt;b&gt;ok&lt;/b&gt; &amp; stable"))
+    }
+
     func testRenderTable() {
         let html = HtmlSectionFormatters.renderTable(
             headers: ["Name", "Count"],

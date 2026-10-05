@@ -236,6 +236,26 @@ final class GenerateSheetState {
         return (hashCandidate, filename)
     }
 
+    /// The footer button labels. Done keeps its name while a run goes (the button is disabled
+    /// then), so only Generate says Running.
+    nonisolated static func footerTitles(isRunning: Bool) -> (dismiss: String, generate: String) {
+        ("Done", isRunning ? "Running\u{2026}" : "Generate")
+    }
+
+    /// The line that closes the health audit run before a generate: `[ok]` after exit 0,
+    /// else a `[warn]` naming the cause. The run goes on with the cached audit either way.
+    nonisolated static func auditResultLine(exitCode: Int32) -> CLIBridge.LogLine {
+        if exitCode == 0 {
+            return .init(timestamp: Date(), level: .ok,
+                         text: "[ok] health audit finished; the report uses its findings")
+        }
+        let cause = exitCode == CLIBridge.exitCodePartialFailure
+            ? "health audit finished with partial results (exit 7); some findings may be missing"
+            : CLIBridge.explainExit(exitCode, operation: "health audit")
+        return .init(timestamp: Date(), level: .warn,
+                     text: "[warn] \(cause) Continuing with the cached audit data.")
+    }
+
     func reset() {
         logLines = []
         isRunning = false
@@ -854,14 +874,14 @@ struct GenerateSheet: View {
         HStack {
             Spacer()
 
-            PNPButton(title: state.isRunning ? "Running\u{2026}" : "Done") {
+            PNPButton(title: GenerateSheetState.footerTitles(isRunning: state.isRunning).dismiss) {
                 dismiss()
             }
             .disabled(!state.canDismiss)
             .keyboardShortcut(.cancelAction)
 
             PNPButton(
-                title: state.isRunning ? "Running\u{2026}" : "Generate",
+                title: GenerateSheetState.footerTitles(isRunning: state.isRunning).generate,
                 icon: state.isRunning ? "hourglass" : "play.fill",
                 style: .gold
             ) {
@@ -943,7 +963,8 @@ struct GenerateSheet: View {
                 text: "[info] running health audit before generate"
             ))
             do {
-                _ = try await bridge.audit(profile: profile, category: nil, onLine: onLine)
+                let code = try await bridge.audit(profile: profile, category: nil, onLine: onLine)
+                state.appendLine(GenerateSheetState.auditResultLine(exitCode: code))
             } catch {
                 state.appendLine(.init(
                     timestamp: Date(), level: .warn,
