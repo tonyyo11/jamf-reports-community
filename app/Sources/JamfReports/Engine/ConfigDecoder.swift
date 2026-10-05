@@ -1378,11 +1378,15 @@ enum ConfigLoader {
         case fileNotFound(URL)
         case encodingError(URL)
         case decodeError(String, Error)
+        case fileTooLarge(URL, bytes: Int)
 
         var errorDescription: String? {
             switch self {
             case .fileNotFound(let u): return "config.yaml not found at \(u.path)"
             case .encodingError(let u): return "Could not read config.yaml at \(u.path)"
+            case .fileTooLarge(let u, let bytes):
+                return "config.yaml at \(u.path) is \(bytes) bytes, over the "
+                    + "\(ConfigLoader.maxConfigBytes / 1_048_576) MB limit"
             case .decodeError(let ctx, let e):
                 if let detail = ConfigLoader.describeDecodingFailure(e) {
                     return "Config decode failed (\(ctx)): \(detail)"
@@ -1440,10 +1444,18 @@ enum ConfigLoader {
         }
     }
 
+    /// The largest config.yaml `load` reads. Real files are a few KB; the folder may be shared
+    /// with other Macs and sync tools.
+    static let maxConfigBytes = 4 * 1_048_576
+
     /// Load and decode `config.yaml` at `url`, merging defaults via `withDefaults()`.
     static func load(from url: URL) throws -> ReportConfig {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw LoadError.fileNotFound(url)
+        }
+        if let bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+           bytes > maxConfigBytes {
+            throw LoadError.fileTooLarge(url, bytes: bytes)
         }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             throw LoadError.encodingError(url)
