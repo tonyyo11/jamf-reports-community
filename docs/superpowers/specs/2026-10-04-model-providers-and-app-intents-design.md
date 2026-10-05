@@ -1,6 +1,7 @@
-# Model providers and App Intents — design draft
+# Model providers and App Intents — design
 
-Status: DRAFT for owner decisions (2026-10-04). Nothing here is built.
+Status: approved by the owner on 2026-10-05; the decisions are recorded at the end. Nothing here
+is built yet.
 
 Two features:
 
@@ -101,7 +102,7 @@ feature communicates.
 
 ### Consent before anything is sent
 
-External Intelligence Integrations are off by default and is never turned on as a side effect. Connecting a service runs
+External Intelligence Integrations are off by default and are never turned on as a side effect. Connecting a service runs
 an explicit disclosure step, and no request is made until it is confirmed.
 
 1. **Disclosure sheet.** When someone chooses Connect on an external service, the sheet states, in
@@ -156,7 +157,9 @@ an explicit disclosure step, and no request is made until it is confirmed.
 - **Per Mac** (app preferences plus the Keychain): the connected services, keys, models, URLs and
   acknowledgements. Secrets and consent cannot go into a workspace that may be shared.
 - **Per workspace** (config.yaml): `ai.enabled`, which stays the gate it is today, and the new
-  `ai.allow_remote`.
+  `ai.allow_remote`. Absent or `true`, external services are allowed, still subject to the managed
+  preference and each Mac's consent; `false` forbids them for everyone who opens the workspace. It
+  joins `config.example.yaml` in the same change that adds its reader.
 
 ### GUI: Settings › Intelligence
 
@@ -216,16 +219,19 @@ Entities:
 - Before shipping, a Tart VM install test confirms Shortcuts lists the actions from a Developer ID
   install.
 
-## Decisions for the owner
+## Decisions (settled 2026-10-05)
 
-1. **Default for external AI (decided 2026-10-04).** Off by default, and connected only through the
-   explicit consent step; organizations can turn it off entirely by managed preference. Settled; no
-   longer open.
-2. **How remote providers are reached.** Raw HTTPS at the app's seams (recommended), or the
-   `ClaudeForFoundationModels` package behind Foundation Models?
-3. **Who pays.** A key per user, or an organization key through a proxy? The latter adds a proxy
-   URL field and is the safer pattern for a fleet.
-4. **Workspace override.** Is `ai.allow_remote: false` in config.yaml wanted?
-5. **Intents scope.** Is the v1 action list right? Should Collect and Generate wait for the run to
-   finish (recommended) or return as soon as it starts?
-6. **Local server.** Is it worth Phase 2, or skip it unless someone asks?
+1. **Default for external AI.** Off by default, and connected only through the explicit consent
+   step; organizations can turn it off entirely by managed preference. (Decided 2026-10-04.)
+2. **How remote providers are reached.** Raw HTTPS at the app's seams: no new package, and the
+   providers work on every supported macOS. Revisit `ClaudeForFoundationModels` when it leaves
+   beta, if guided generation is wanted.
+3. **Who pays.** A key per user in Phase 1: each person connects their own key, stored in their
+   login Keychain, with consent recorded per Mac. An organization key behind a proxy (a proxy URL
+   field) is added later if an organization asks for it.
+4. **Workspace override.** Yes: `ai.allow_remote: false` in config.yaml (see "Where settings live").
+5. **Intents scope.** The v1 action list as written. Collect and Generate wait for the run to finish
+   and return its result; a run past the system's time limit says it is still running and Run
+   History has the result.
+6. **Local server.** Phase 2, after Claude. A server on localhost keeps the data on the Mac, which
+   suits organizations that cannot send fleet data to a cloud service.
