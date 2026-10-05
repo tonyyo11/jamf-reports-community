@@ -14,7 +14,7 @@ final class CLIScaffoldTests: XCTestCase {
     /// (correctly) refuses — scaffold writes must target an ordinary user path.
     private func tempDir() throws -> URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-scaffold-test-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-scaffold-test-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

@@ -366,7 +366,7 @@ final class ConfigReadOneWayTests: XCTestCase {
     /// Whether WorkspacePaths accepts an output folder outside the workspace.
     private func optsIn(_ yaml: String) throws -> Bool {
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-read-outside-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-read-outside-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: outside) }
         var accepted = false

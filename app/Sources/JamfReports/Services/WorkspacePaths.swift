@@ -200,12 +200,16 @@ enum WorkspacePaths {
     }
 
     /// True when an absolute path resolves to a known-sensitive location
-    /// (system directories, user dotfiles, keychain config). Used by tests
-    /// of the disallowed-absolute-path policy and by future callers that
-    /// gate `output.allow_absolute_paths` enforcement.
+    /// (system directories, `/Applications`, `~/Library`, every dot-entry directly under
+    /// home, keychain config). Used by tests of the disallowed-absolute-path policy and by
+    /// future callers that gate `output.allow_absolute_paths` enforcement.
+    ///
+    /// The path need not exist: a peer-edited config.yaml can name a folder the app would
+    /// create. Matching ignores case (APFS is case-insensitive by default) and Unicode
+    /// normalization form, so `~/library/LaunchAgents/x` is denied like `~/Library/...`.
     static func isSensitiveAbsolutePath(_ url: URL) -> Bool {
-        let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
-        let home = NSString(string: "~").expandingTildeInPath
+        let path = folded(resolvedForPolicy(url))
+        let homes = homeFolds()
 
         // Carve-out: `~/Library` is denied wholesale, but macOS mounts every
         // modern sync provider (OneDrive/SharePoint, Box, Dropbox, Google Drive,
@@ -215,22 +219,54 @@ enum WorkspacePaths {
         // application support. Everything else under `~/Library` stays denied.
         // Reaching it still requires `output.allow_absolute_paths: true`, and
         // ConfigDoctor warns about what syncing costs.
-        if resolved.hasPrefix("\(home)/Library/CloudStorage/") { return false }
+        let underHome = homes.compactMap { relative(path, under: $0) }
+        if underHome.contains(where: { $0.hasPrefix("library/cloudstorage/") }) { return false }
 
-        let denied: [String] = [
-            "/etc", "/var", "/private", "/System", "/Library", "/usr", "/bin", "/sbin"
-        ]
-        let homeDenied: [String] = [
-            "\(home)/Library", "\(home)/.ssh", "\(home)/.config",
-            "\(home)/.aws", "\(home)/.gnupg", "\(home)/.kube"
-        ]
-        for prefix in denied {
-            if resolved == prefix || resolved.hasPrefix(prefix + "/") { return true }
+        let denied = ["/etc", "/var", "/private", "/system", "/library", "/usr", "/bin", "/sbin",
+                      "/applications"]
+        if denied.contains(where: { relative(path, under: $0) != nil }) { return true }
+
+        // Home dotfiles and dot-folders (.zshrc, .netrc, .gitconfig, .docker, .ssh, ...) are
+        // where credentials and shell start-up files live; none is a place for reports.
+        return underHome.contains {
+            $0 == "library" || $0.hasPrefix("library/") || $0.hasPrefix(".")
         }
-        for prefix in homeDenied {
-            if resolved == prefix || resolved.hasPrefix(prefix + "/") { return true }
+    }
+
+    /// `url` with symlinks resolved. A path that does not exist yet keeps its missing tail:
+    /// the deepest existing ancestor is resolved and the rest appended, so an alias or a
+    /// different spelling of an existing parent cannot hide a denied folder.
+    private static func resolvedForPolicy(_ url: URL) -> String {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.path) {
+            return url.resolvingSymlinksInPath().standardizedFileURL.path
         }
-        return false
+        var existing = url.standardizedFileURL
+        var tail: [String] = []
+        while existing.path != "/", !fm.fileExists(atPath: existing.path) {
+            tail.insert(existing.lastPathComponent, at: 0)
+            existing = existing.deletingLastPathComponent()
+        }
+        return tail.reduce(existing.resolvingSymlinksInPath()) {
+            $0.appendingPathComponent($1)
+        }.standardizedFileURL.path
+    }
+
+    private static func folded(_ path: String) -> String {
+        path.precomposedStringWithCanonicalMapping.lowercased()
+    }
+
+    /// The home folder as typed and with symlinks resolved, folded for comparison.
+    private static func homeFolds() -> [String] {
+        let home = NSString(string: "~").expandingTildeInPath
+        let resolved = URL(fileURLWithPath: home).resolvingSymlinksInPath().path
+        return Array(Set([folded(home), folded(resolved)]))
+    }
+
+    /// `path` below `root` ("" for `root` itself), or nil when it is not inside it.
+    private static func relative(_ path: String, under root: String) -> String? {
+        if path == root { return "" }
+        return path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : nil
     }
 
     private static func workspaceRoot(for profile: String) -> URL? {

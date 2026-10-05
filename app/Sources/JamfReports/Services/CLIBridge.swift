@@ -2170,7 +2170,7 @@ final class CLIBridge {
                 try ReportEngine.initializeWorkspace(
                     profile: profile,
                     workspacesRoot: ProfileService.workspacesRoot(),
-                    seedConfigURL: bundledSeedConfig(),
+                    seedConfigURL: Self.bundledSeedConfig(),
                     onLine: onLine
                 )
             } catch {
@@ -2262,15 +2262,35 @@ final class CLIBridge {
         return .configWriteRefused(key: key, fix: fix)
     }
 
-    private func bundledSeedConfig() -> URL? {
-        let fm = FileManager.default
-        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath, isDirectory: true)
-        let candidates = [
-            cwd.appendingPathComponent("config.example.yaml"),
-            cwd.deletingLastPathComponent().appendingPathComponent("config.example.yaml"),
-            Bundle.main.resourceURL?.appendingPathComponent("config.example.yaml"),
-        ].compactMap { $0 }
-        return candidates.first { fm.fileExists(atPath: $0.path) }
+    nonisolated static var isDebugBuild: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// The `config.example.yaml` that seeds a new workspace's config.yaml: the app bundle's
+    /// copy. A debug build (`swift run`, no bundle) also reads the working directory and its
+    /// parent, the repo checkout; a release build never does, since a file planted where a
+    /// `jamf-reports` run starts would become the workspace's config.
+    nonisolated static func bundledSeedConfig(
+        workingDirectory: URL = URL(
+            fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true),
+        resourceURL: URL? = Bundle.main.resourceURL,
+        searchesWorkingDirectory: Bool = CLIBridge.isDebugBuild
+    ) -> URL? {
+        let name = "config.example.yaml"
+        var candidates: [URL?] = []
+        if searchesWorkingDirectory {
+            candidates += [
+                workingDirectory.appendingPathComponent(name),
+                workingDirectory.deletingLastPathComponent().appendingPathComponent(name),
+            ]
+        }
+        candidates.append(resourceURL?.appendingPathComponent(name))
+        return candidates.compactMap { $0 }
+            .first { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
 
