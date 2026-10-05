@@ -5,7 +5,8 @@ report. This page walks through it and the workspace it creates.
 
 ## Reaching onboarding
 
-On first launch the app opens a **Welcome chooser** with three cards:
+On first launch, when jamf-cli has no profiles yet, the app opens a **Welcome chooser** with
+three cards:
 
 - **Connect Jamf Pro** — starts the Jamf Pro onboarding flow.
 - **Connect Jamf School** — starts a Jamf School-only onboarding flow (see
@@ -21,11 +22,52 @@ later, open the **workspace switcher** at the bottom of the sidebar and choose *
 workspace…**, or click **Settings → jamf-cli → Connections → Add connection**. Both
 routes start the same onboarding flow.
 
+## When jamf-cli is already set up
+
+If jamf-cli already has a profile and no profile has a workspace yet, first launch skips the
+Welcome chooser and opens **jamf-cli is already set up**. jamf-cli already holds the
+credentials, so this screen covers only what the app is missing.
+
+**Already have a workspace folder?** When the workspace already exists, such as a synced team
+folder other Macs use or a folder from a previous install, click **Choose workspace
+folder…** and pick the folder that contains the profile folders, not a profile folder
+itself. A folder on a sync provider first asks you to confirm that everyone with access to
+it can read raw device data. If a workspace for one of your profiles is there, the dashboard
+opens on its history and nothing else on this screen runs. That includes the automation
+step, so automation stays off until you turn it on in the Automation tab. If none is found,
+the screen names the `config.yaml` path it looked for; the folder still becomes the
+workspace location, so pick again or initialize below. To add a Mac to a shared workspace,
+follow
+[Adding another Mac](https://github.com/tonyyo11/jamf-reports-community/wiki/10-Security-and-Operational-Considerations#adding-another-mac).
+
+Otherwise, three steps set up new workspaces:
+
+1. **Profiles to set up** — every usable jamf-cli profile starts ticked. A profile the app
+   can't use is listed with the reason and can't be selected.
+2. **Automated scans** — **Keep data fresh automatically** is on by default: a daily collect
+   plus a weekly deep scan of the per-device queries. Choose the deep scan and report day,
+   how often reports generate (Off, Daily, Weekly or Monthly; Weekly by default) and the
+   run time (06:00 by default). The Automation tab changes any of it later.
+3. **First collection** — **Initialize & run first collection** creates a workspace for each
+   selected profile, then collects for each one in turn, with a live count and a
+   per-source list. When at least one workspace was created, **Continue to dashboard** saves
+   the automation choice and opens the app; if macOS hasn't allowed the background item, a
+   notice says to allow JamfReports under **Login Items › Allow in the Background**. When no
+   workspace could be created, the button becomes **Try again** and your choices stay
+   editable.
+
+**Skip — set up later from the dashboard** dismisses the screen for good. Overview then shows
+a **Configuration incomplete** banner with **Choose existing folder…** and **Initialize**,
+and the Automation tab sets up schedules. Unless you skip, the screen comes back whenever no
+profile has a workspace, for example after the workspace folder is emptied.
+
 ## The onboarding flow
 
 1. **Welcome** — a short intro to what onboarding will do.
-2. **Install CLI** — the app checks that `jamf-cli` is installed and on `PATH`, and shows
-   the `brew install Jamf-Concepts/tap/jamf-cli` command if it is not. See
+2. **Install CLI** — the app looks for `jamf-cli` in `/opt/homebrew/bin`, `/usr/local/bin`
+   and the system binary folders, then where Homebrew installed it, and shows the
+   `brew install Jamf-Concepts/tap/jamf-cli` command if it finds none. It does not search
+   your shell's `PATH`, so a copy anywhere else, such as `~/go/bin`, is not found. See
    [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for details.
 3. **Workspace** — choose a profile name. The name becomes a folder under
    `~/Jamf-Reports/<profile>/`. Any name works except one with a line break or a space at
@@ -136,9 +178,9 @@ those EAs in Jamf Pro, a CSV cannot add them either. Drop a CSV in any time from
 ## Running without jamf-cli credentials
 
 Real Jamf Pro credentials are not required to get through onboarding. `jamf-cli` itself
-must be **installed** — the Install CLI step won't let you continue until the app detects
-it on `PATH` — but installing it is a free Homebrew download that needs no Jamf Pro
-server access.
+must be **installed** — the Install CLI step won't let you continue until the app finds it
+in one of the places that step checks (above) — but installing it is a free Homebrew
+download that needs no Jamf Pro server access.
 
 The Authenticate step only checks that the fields are well-formed (a URL plus a client ID
 and secret); it does not contact your Jamf Pro server, and registering the profile is a

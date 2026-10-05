@@ -99,6 +99,37 @@ instance's data into the shared history or fail where the others succeed, and
 each screen shows whichever Mac collected last. Compare `jamf-cli config list`
 on each Mac when you add it.
 
+### Adding another Mac
+
+Once one Mac has its workspace in the shared folder, do this on each Mac that joins it:
+
+1. Install the same app version the other Macs run.
+2. Install `jamf-cli` and create the profile `config.yaml` names in `jamf_cli.profile`,
+   reaching the same instance the same way (above), with this Mac's own credential (see
+   [Multi-Tenant and Team Access](#multi-tenant-and-team-access)). Give its API client the
+   same privileges as the others. Failure counts live in the workspace, so a privilege one
+   Mac lacks shows up as a failing source on every Mac.
+3. Sync the team folder and keep it downloaded (OneDrive's **Always Keep on This Device**,
+   or your provider's equivalent). A file that exists only in the cloud is fetched the first
+   time the app reads it, which slows Trends and report generation and fails offline.
+4. Make sure `config.yaml` holds no absolute path that only exists on the first Mac, such as
+   `/Users/alice/…` in `data_dir`, `output_dir` or an archive folder. Use a path relative to
+   the workspace, or start it with `~/`.
+5. Launch the app. When jamf-cli already has a profile, first launch opens **jamf-cli is
+   already set up**. Under **Already have a workspace folder?**, click **Choose workspace
+   folder…** and pick the folder that contains the profile folders, not a profile folder
+   itself, then confirm the shared-folder notice. Skip **Initialize & run first
+   collection**: the workspace already exists. On a Mac that already uses the app,
+   **Settings → Workspace location** does the same.
+6. Leave automation off. One Mac should run the schedules; see
+   [Several Macs, one workspace](https://github.com/tonyyo11/jamf-reports-community/wiki/05-Scheduling-and-Automation#several-macs-one-workspace).
+7. Run **Config → Run check**. It should list the other Macs and raise no version or clock
+   warning.
+
+If first launch shows the Welcome chooser (**Connect Jamf Pro**, **Try the demo first**)
+instead, the app found no jamf-cli profile. Fix jamf-cli rather than running onboarding,
+which creates a separate, empty workspace under `~/Jamf-Reports`.
+
 ### What a shared workspace still costs you
 
 **Everyone with folder access can read the fleet's PII.** `jamf-cli-data/`
