@@ -52,7 +52,8 @@ final class DeviceInventoryStaleBasisTests: XCTestCase {
         ]
         let data = base.appendingPathComponent("jamf-cli-data", isDirectory: true)
         try JSONSerialization.data(withJSONObject: macs).write(
-            to: try prepare(data.appendingPathComponent("computers/computers_20260901T090000.json")))
+            to: try prepare(
+                data.appendingPathComponent("computers/computers_20260901T090000.json")))
         try JSONSerialization.data(withJSONObject: compliance).write(
             to: try prepare(data.appendingPathComponent(
                 "device-compliance/device-compliance_20260901T090000.json")))
