@@ -39,7 +39,7 @@ final class SecurityFixesWave3Tests: XCTestCase {
     /// Block-style opt-in still works (regression check after the rewrite).
     func test_sf8_blockStyleOptInStillWorks() throws {
         let outside = fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-sf8-outside-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-sf8-outside-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
 

@@ -52,7 +52,7 @@ final class CrashRegressionTests: XCTestCase {
     private func loadSnapshot(definitions: String, results: String) throws
         -> ExtensionAttributeService.Snapshot {
         let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-eatest-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("jrc-eatest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
 
@@ -108,7 +108,7 @@ final class CrashRegressionTests: XCTestCase {
     /// A dropped log line must never cost the collect that produced it.
     func testFailedLogWriteIsDroppedNotFatal() throws {
         let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-logwrite-\(UUID().uuidString).log")
+            .appendingPathComponent("jrc-logwrite-\(UUID().uuidString).log")
         FileManager.default.createFile(atPath: url.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: url) }
 
@@ -130,7 +130,7 @@ final class CrashRegressionTests: XCTestCase {
 
     func testSuccessfulLogWriteDoesNotWarn() throws {
         let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".jrc-logwrite-\(UUID().uuidString).log")
+            .appendingPathComponent("jrc-logwrite-\(UUID().uuidString).log")
         FileManager.default.createFile(atPath: url.path, contents: nil)
         defer { try? FileManager.default.removeItem(at: url) }
 

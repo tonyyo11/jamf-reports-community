@@ -199,7 +199,7 @@ final class HtmlReportTests: XCTestCase {
         let (dataDir, outputURL) = try historyWorkspace(
             config: "output:\n  allow_absolute_paths: true\n")
         let report = makeReport(dataDir: dataDir)
-        let away = "~/.jrc-history-\(UUID().uuidString)/history.json"
+        let away = "~/jrc-history-\(UUID().uuidString)/history.json"
         XCTAssertEqual(report.resolvedHistoryPath(away, outputURL: outputURL).path,
                        NSString(string: away).expandingTildeInPath)
         XCTAssertEqual(
