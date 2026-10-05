@@ -248,4 +248,41 @@ final class LogRedactorTests: XCTestCase {
         let input = "Connecting to https://jamf.example.com/api/v1/policies"
         XCTAssertEqual(LogRedactor.redact(input), input)
     }
+
+    // MARK: - redactedForSharing
+
+    /// The fixture line from `FailureCauseTests`: jamf-cli names the host and the environment ID.
+    private let environmentNotFound = "API request failed with status 404 Not Found, traceId "
+        + "0000000000000000 (method=GET, url=https://us.api.jamfcloud.com/compliance-benchmarks/"
+        + "v1/benchmarks): [ENVIRONMENT_NOT_FOUND] Environment "
+        + "'3f2b8c1e-5d4a-4e7b-9c10-a1b2c3d4e5f6' not found."
+
+    func testSharingDropsTheHostAndTheScopeIDButKeepsTheRest() {
+        let shared = LogRedactor.redactedForSharing(
+            environmentNotFound, profile: "harbor",
+            scopeIDs: { $0 == "harbor" ? ["3F2B8C1E-5D4A-4E7B-9C10-A1B2C3D4E5F6"] : [] })
+
+        XCTAssertFalse(shared.contains("jamfcloud.com"), "the Jamf host must not leave")
+        XCTAssertFalse(shared.lowercased().contains("3f2b8c1e"), "the environment ID must leave")
+        // The bundle's `url=` rule replaces the whole value, endpoint path included.
+        XCTAssertTrue(shared.contains("(method=GET, url=REDACTED_URL"), shared)
+        XCTAssertTrue(shared.contains("[ENVIRONMENT_NOT_FOUND] Environment '"))
+        XCTAssertTrue(shared.contains("' not found."))
+        XCTAssertTrue(shared.contains("API request failed with status 404 Not Found"))
+    }
+
+    func testSharingWithNoProfileLooksUpNoScopeIDs() {
+        var asked = false
+        let shared = LogRedactor.redactedForSharing(
+            environmentNotFound, profile: nil, scopeIDs: { _ in asked = true; return [] })
+
+        XCTAssertFalse(asked, "demo mode must not read the jamf-cli config")
+        XCTAssertFalse(shared.contains("jamfcloud.com"), "the host goes with or without a profile")
+    }
+
+    func testSharingStillAppliesTheCredentialPatterns() {
+        let shared = LogRedactor.redactedForSharing(
+            "client_secret: super-secret-value-1234", profile: nil)
+        XCTAssertFalse(shared.contains("super-secret-value-1234"))
+    }
 }
