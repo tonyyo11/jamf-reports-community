@@ -121,7 +121,8 @@ enum HtmlSectionFormatters {
 
     /// A table of the first `limit` rows and, when there are more, the rest inside a nested
     /// `<details>` headed "Show all N" (N is the full count). Every row up to `maxRows`
-    /// stays in the file; past that a note gives the count the workbook holds.
+    /// stays in the file; past that the block reads "Show M of N" and a note gives the count
+    /// the workbook holds.
     nonisolated static func renderCappedTable(
         headers: [String],
         rows: [[String]],
@@ -144,7 +145,8 @@ enum HtmlSectionFormatters {
         let rest = renderTable(
             headers: headers, rows: Array(kept.dropFirst(limit)),
             rowClasses: classes.map { Array($0.dropFirst(limit)) })
-        return head + showAll(count: rows.count, body: rest + more, expanded: expanded)
+        let label = omitted > 0 ? "Show \(kept.count) of \(rows.count)" : "Show all \(rows.count)"
+        return head + disclosure(label: label, body: rest + more, expanded: expanded)
     }
 
     /// Rows that are already markup (a `<tr>` each), capped like `renderCappedTable`.

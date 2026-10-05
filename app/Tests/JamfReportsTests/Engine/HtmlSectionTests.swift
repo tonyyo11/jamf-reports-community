@@ -428,6 +428,7 @@ final class HtmlSectionTests: XCTestCase {
             .buildInterventionList(computersInventory: Self.staleMacs(count: 150)).html
         XCTAssertEqual(Self.bodyRows(html), 100)
         XCTAssertTrue(html.contains("50 more rows are in the workbook."))
+        XCTAssertTrue(html.contains("<summary>Show 100 of 150</summary>"))
         XCTAssertTrue(html.contains("for more than 30 days (150)"))
     }
 
