@@ -522,6 +522,13 @@ compliance is now one figure everywhere.
 - The inventory CSV export guards a cell that starts with a tab or a carriage return the way it
   already guarded `=`, `+`, `-` and `@`, so a spreadsheet does not read such a cell as a formula.
 
+### Dependencies
+
+- Reviewed jamf-cli v1.32.0 (2026-10-03): security hardening (credential field restrictions,
+  JCDS path-traversal protection, device secrets off command line), MCP catalog additions, and
+  identifier resolution changes. No code changes required — the app uses read-only data
+  collection paths that are unaffected by these changes.
+
 ## [2.8.3] - 2026-09-29
 
 Every jamf-cli profile name works in Jamf Reports, whatever it contains: spaces, dots, accented
