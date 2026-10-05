@@ -7,6 +7,10 @@ enum PageTableMetrics {
     /// taller than this, and the table then scrolls a little sooner.
     static let headerHeight: CGFloat = 32
     static let rowHeight: CGFloat = 28
+    /// A row holding a pill, a bar or a button, as the Health Audit findings do (measured at
+    /// the default text size). Two points taller than `rowHeight`: sized at 28, the last row of
+    /// a short list would scroll.
+    static let richRowHeight: CGFloat = 30
     /// What a page keeps back from the viewport for the card's title and the page's padding, so
     /// a table at its limit still ends above the bottom edge.
     static let reserved: CGFloat = 120

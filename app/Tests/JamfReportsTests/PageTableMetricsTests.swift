@@ -27,6 +27,15 @@ final class PageTableMetricsTests: XCTestCase {
         XCTAssertEqual(PageTableMetrics.height(rows: 10, viewport: .nan), 312)
     }
 
+    /// The Health Audit's six findings sat in a 264 pt table (36 pt a row plus 48), which drew
+    /// a seventh, empty striped row under them.
+    func testAShortListOfRichRowsStopsAtItsRows() {
+        let height = PageTableMetrics.height(
+            rows: 6, rowHeight: PageTableMetrics.richRowHeight, viewport: 900)
+        XCTAssertEqual(height, 32 + 6 * 30)
+        XCTAssertLessThan(height, 264)
+    }
+
     func testTallerRowsScaleTheContentHeight() {
         XCTAssertEqual(PageTableMetrics.contentHeight(rows: 4, rowHeight: 40), 192)
     }
