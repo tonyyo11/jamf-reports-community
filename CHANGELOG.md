@@ -238,6 +238,17 @@ compliance is now one figure everywhere.
 - A Health Audit run from the app was saved with a UTC time in its name, which the app reads as
   local time, so the HTML report's "Data collected" showed a time hours after the report was
   made, and that audit was taken as newer than later ones. It is now saved in local time.
+- Your organization decides what makes a Mac stale. Config › Thresholds picks which dates count:
+  last check-in, last inventory, last contact, or any mix (`thresholds.stale_basis`); a Mac is
+  stale when any of them is more than Stale device days old. With nothing set it stays last
+  check-in, so counts do not move until you choose. Every stale count, Offline Outreach's tiers
+  and the security score's check-in factor follow it.
+- Macs MDM can reach but the Jamf binary cannot. Jamf Pro 11.30 records Last Contact, any contact
+  over the binary, MDM or declarative device management. When a Mac's Last Contact is current
+  but its last check-in lags it by more than two weeks (`thresholds.contact_gap_days`), the
+  Health Audit lists it as "Jamf binary silent", and when it checks in but its inventory lags,
+  as "Inventory not updating". Devices can filter them and shows all three dates, the workbook's
+  Check-in Health sheet lists them, and the HTML report counts them under Needs attention.
 - A Mac is stale when its last check-in is more than Stale device days ago (30 by default), on
   every screen and report. The daily summary, Overview, Devices and the HTML report counted a Mac
   at exactly 30 days as stale while Offline Outreach and the workbook did not, so the counts

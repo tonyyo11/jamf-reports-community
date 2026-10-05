@@ -198,7 +198,30 @@ Device Compliance and Patch Summary Dashboard, the CSV sheets, the HTML report, 
 score factor), from the row's day count (`DeviceComplianceRow.isStale(atDays:)` and
 `DeviceInventoryRecord.isStale(atDays:)`, both `>`), so a Mac exactly at the threshold is not
 stale. The Health Audit's stale finding is jamf-cli's (`pro audit --days N`, a calendar-date
-filter) and can include a Mac at exactly N days. jamf-cli's own `stale` flag is a 14-day cut and is
+filter) and can include a Mac at exactly N days.
+**Which dates count is the organization's (2.9):** `thresholds.stale_basis` lists `check_in`
+(`general.lastCheckIn`), `inventory` (`general.reportDate`) and `contact` (`general.lastContact`,
+Jamf Pro 11.30: the binary, MDM or DDM); default `[check_in]`, so a workspace that sets nothing
+counts as before. `StaleRule` (`Models/StaleRule.swift`) is the one rule: the stale age is the
+largest whole-day age among the listed dates that are known, stale when it is more than
+`stale_device_days`; a missing check-in or inventory date counts as never only where the source
+dates every Mac (the `computers` snapshot, a blank CSV cell), a missing Last Contact is unknown, and
+all-unknown falls back to jamf-cli's `stale` flag. Device-compliance rows carry only the check-in
+day count, so with `inventory` or `contact` listed the summary joins them to the `computers` dates
+(`ComputerDates`, Jamf ID then serial). Every stale count and age goes through it: the summary,
+Overview, Devices, Offline Outreach tiers and age columns, Fleet Drift, the workbook, the CSV sheets
+(`columns.last_inventory`, "Last Inventory Update", is needed for `inventory` on a CSV; Config Doctor
+says so), the HTML report and the `checked_in` score factor, whose label names the basis.
+**Contact gap (2.9):** `ContactGap` (`Models/ContactGap.swift`) flags a Mac whose Last Contact is
+current (within `stale_device_days`) while its Last Check-in lags Last Contact by more than
+`thresholds.contact_gap_days` (default 14, 1-365: "Jamf binary silent", MDM reaches the Mac but the
+binary does not) or, with check-in current, its Last Inventory does ("Inventory not updating"). A
+Mac with no Last Contact is left out. It shows as an app-computed Health Audit card
+(`ContactGapSection`, hidden when no Mac has a Last Contact), a Devices filter and the three dates
+in the detail panel, a detail table on the workbook's Check-in Health sheet, and Needs attention
+lines in the HTML report. Config › Thresholds edits both keys (`ConfigStaleBasisControls`). The
+daily summary records no basis, so a Trends stale series that spans a basis change mixes
+definitions (open finding). jamf-cli's own `stale` flag is a 14-day cut and is
 used only for a row with no day count. The Compliance Posture table shows each Mac's day count
 and lists the longest silence first.
 
