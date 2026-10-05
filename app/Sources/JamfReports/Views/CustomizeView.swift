@@ -312,13 +312,9 @@ struct CustomizeView: View {
             do {
                 // Only this screen's options. It edits nothing else, so it
                 // no longer saves the Config tab's unsaved edits along with them.
-                let charts = try ChartsConfigWriter.save(chartOptions, profile: profile)
-                let html = try HTMLReportConfigWriter.save(
-                    withWorkbook: withWorkbook, profile: profile)
-                let notes = [charts.report.statusLine, html.report.statusLine].compactMap { $0 }
-                if !notes.isEmpty {
-                    saveNote = ProfileSaveNote(profile: profile, line: notes.joined(separator: " "))
-                }
+                try Self.writeOptions(
+                    chartOptions, withWorkbook: withWorkbook, profile: profile
+                ) { saveNote = $0 }
                 applySaved = true
                 try? await Task.sleep(for: .seconds(2))
                 applySaved = false
@@ -329,6 +325,22 @@ struct CustomizeView: View {
                 saveError = error.localizedDescription
             }
         }
+    }
+}
+
+extension CustomizeView {
+    /// Writes this screen's options, charts first. Each write's note reaches `noting` as soon
+    /// as it is made, so a failed html write does not lose the charts write's note.
+    nonisolated static func writeOptions(
+        _ chartOptions: ChartsOptions, withWorkbook: Bool, profile: String,
+        noting: (ProfileSaveNote) -> Void
+    ) throws {
+        let charts = try ChartsConfigWriter.save(chartOptions, profile: profile)
+        if let saved = charts.report.note(for: profile) { noting(saved) }
+        let html = try HTMLReportConfigWriter.save(withWorkbook: withWorkbook, profile: profile)
+        guard let line = html.report.statusLine else { return }
+        let lines = [charts.report.statusLine, line].compactMap { $0 }
+        noting(ProfileSaveNote(profile: profile, line: lines.joined(separator: " ")))
     }
 }
 
