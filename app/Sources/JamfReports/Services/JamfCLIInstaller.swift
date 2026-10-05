@@ -253,7 +253,11 @@ final class JamfCLIInstaller {
         return nil
     }
 
-    nonisolated static func installedVersion(at binary: URL) -> String? {
+    /// `timeout` is a seam for tests; a version check that has not answered in the default 60 s
+    /// reads as no version, like a rejected binary.
+    nonisolated static func installedVersion(
+        at binary: URL, timeout: TimeInterval = JamfCLIProbe.defaultTimeout
+    ) -> String? {
         // M-01: refuse to spawn a tampered jamf-cli even for `--version`.
         // Returning nil drops the discovered version to "unknown", which
         // the upgrade path (`updateGitHubRelease`) already treats as a
@@ -263,37 +267,12 @@ final class JamfCLIInstaller {
             return nil
         }
 
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = ["--version"]
-        // SF-10/B-13: minimal env for jamf-cli invocations.
-        process.environment = CLIBridge.environmentForJamfCLI()
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        process.standardOutput = stdout
-        process.standardError = stderr
-
-        // Drain concurrently to avoid pipe-buffer deadlock on large --version output.
-        let stdoutDrainer = ProcessPipeDrainer(pipe: stdout)
-        let stderrDrainer = ProcessPipeDrainer(pipe: stderr)
-        stdoutDrainer.start()
-        stderrDrainer.start()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            stdoutDrainer.cancel()
-            stderrDrainer.cancel()
-            return nil
-        }
-
-        let out = stdoutDrainer.finish()
-        let err = stderrDrainer.finish()
+        guard let output = JamfCLIProbe.run(
+            executable: binary, arguments: ["--version"], timeout: timeout
+        ) else { return nil }
         let text = [
-            String(data: out, encoding: .utf8),
-            String(data: err, encoding: .utf8),
+            String(data: output.stdout, encoding: .utf8),
+            String(data: output.stderr, encoding: .utf8),
         ]
         .compactMap { $0 }
         .joined(separator: "\n")
@@ -310,32 +289,19 @@ final class JamfCLIInstaller {
     ///
     /// Kept synchronous (matching `installedVersion(at:)`) so call sites in
     /// `currentInstallation()` do not need an async context. Safe on any thread;
-    /// `Process` spawns a child process and `waitUntilExit` blocks the caller thread.
-    nonisolated static func specProVersion(at binary: URL) -> String? {
+    /// it blocks the caller thread until the child exits or `timeout` stops it.
+    nonisolated static func specProVersion(
+        at binary: URL, timeout: TimeInterval = JamfCLIProbe.defaultTimeout
+    ) -> String? {
         if CLIBridge.codesignGate(executable: binary, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
 
-        let process = Process()
-        process.executableURL = binary
-        process.arguments = ["version", "-o", "json"]
-        process.environment = CLIBridge.environmentForJamfCLI()
+        guard let output = JamfCLIProbe.run(
+            executable: binary, arguments: ["version", "-o", "json"], timeout: timeout
+        ), output.exitCode == 0 else { return nil }
 
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-
-        // Read to EOF before waiting, or output past the pipe buffer deadlocks the pair.
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        guard process.terminationStatus == 0 else { return nil }
+        let data = output.stdout
         guard !data.isEmpty else { return nil }
 
         // `jamf-cli version -o json` shape (v1.18.0+):

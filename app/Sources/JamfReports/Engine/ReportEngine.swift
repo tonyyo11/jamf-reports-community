@@ -3096,7 +3096,8 @@ struct ReportEngine: Sendable {
         report.templateName = template.displayName
         report.openSections = Set(template.htmlOpenSections)
         report.expandAll = expandAll
-        report.jamfCLIVersion = locateJamfCLI().flatMap(JamfCLIInstaller.installedVersion(at:))
+        report.jamfCLIVersion = locateJamfCLI()
+            .flatMap { JamfCLIInstaller.installedVersion(at: $0) }
         return report
     }
 

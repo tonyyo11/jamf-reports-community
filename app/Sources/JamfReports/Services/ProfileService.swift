@@ -346,6 +346,7 @@ enum ProfileService {
         // JAMF_CLI_* etc. inherited from the parent can't alter how jamf-cli
         // resolves its config or validates TLS.
         process.environment = CLIBridge.environmentForJamfCLI()
+        process.standardInput = FileHandle.nullDevice
 
         let stdout = Pipe()
         process.standardOutput = stdout

@@ -80,34 +80,23 @@ extension Provenance {
     /// there is no streaming `LogLine` consumer at this layer (Provenance is
     /// async metadata capture, not a Runs-feed run), so the `onLine` closure
     /// is a no-op.
-    static func captureJamfCLIVersion(jamfCLIURL: URL?) async -> String? {
+    static func captureJamfCLIVersion(
+        jamfCLIURL: URL?, timeout: TimeInterval = JamfCLIProbe.defaultTimeout
+    ) async -> String? {
         guard let url = jamfCLIURL else { return nil }
         if CLIBridge.codesignGate(executable: url, onLine: CLIBridge.noOpOnLine) != nil {
             return nil
         }
+        // The probe blocks its thread until the child exits or the deadline stops it.
         return await withCheckedContinuation { continuation in
-            let proc = Process()
-            proc.executableURL = url
-            proc.arguments = ["--version"]
-            // SF-10/B-13: minimal env for jamf-cli — see `CLIBridge`.
-            proc.environment = CLIBridge.environmentForJamfCLI()
-            let pipe = Pipe()
-            proc.standardOutput = pipe
-            proc.standardError = FileHandle.nullDevice
-
-            do {
-                try proc.run()
-                // Read to EOF before waiting, or output past the pipe buffer deadlocks the pair.
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                proc.waitUntilExit()
-                let output = String(data: data, encoding: .utf8) ?? ""
-                let version = output
+            DispatchQueue.global(qos: .userInitiated).async {
+                let output = JamfCLIProbe.run(
+                    executable: url, arguments: ["--version"], timeout: timeout)
+                let version = output.flatMap { String(data: $0.stdout, encoding: .utf8) }?
                     .components(separatedBy: .newlines)
                     .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
                     .map { $0.trimmingCharacters(in: .whitespaces) }
                 continuation.resume(returning: version)
-            } catch {
-                continuation.resume(returning: nil)
             }
         }
     }
