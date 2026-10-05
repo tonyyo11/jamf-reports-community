@@ -207,7 +207,11 @@ enum WorkspacePaths {
     /// The path need not exist: a peer-edited config.yaml can name a folder the app would
     /// create. Matching ignores case (APFS is case-insensitive by default) and Unicode
     /// normalization form, so `~/library/LaunchAgents/x` is denied like `~/Library/...`.
-    static func isSensitiveAbsolutePath(_ url: URL) -> Bool {
+    ///
+    /// `workspaceRoot` keeps a workspace root under another dot-folder (`~/.jamf-reports`)
+    /// usable: a stored root that newly failed this check would fall back to the default
+    /// root and its history would look lost. The credential folders stay refused.
+    static func isSensitiveAbsolutePath(_ url: URL, workspaceRoot: Bool = false) -> Bool {
         let path = folded(resolvedForPolicy(url))
         let homes = homeFolds()
 
@@ -228,10 +232,18 @@ enum WorkspacePaths {
 
         // Home dotfiles and dot-folders (.zshrc, .netrc, .gitconfig, .docker, .ssh, ...) are
         // where credentials and shell start-up files live; none is a place for reports.
-        return underHome.contains {
-            $0 == "library" || $0.hasPrefix("library/") || $0.hasPrefix(".")
+        return underHome.contains { relative in
+            if relative == "library" || relative.hasPrefix("library/") { return true }
+            guard relative.hasPrefix(".") else { return false }
+            let first = relative.split(separator: "/").first.map(String.init) ?? relative
+            return !workspaceRoot || credentialFolders.contains(first)
         }
     }
+
+    /// Dot-folders refused even as a workspace root (the 2.8.3 list).
+    private static let credentialFolders: Set<String> = [
+        ".ssh", ".config", ".aws", ".gnupg", ".kube"
+    ]
 
     /// `url` with symlinks resolved. A path that does not exist yet keeps its missing tail:
     /// the deepest existing ancestor is resolved and the rest appended, so an alias or a

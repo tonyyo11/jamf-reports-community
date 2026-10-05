@@ -45,6 +45,20 @@ final class WorkspacePathsSensitiveTests: XCTestCase {
         }
     }
 
+    /// A workspace root under another dot-folder stays usable, so a root stored before this
+    /// rule does not fall back to the default; the credential folders stay refused.
+    func testAWorkspaceRootMayLiveInADotFolderButNotACredentialFolder() {
+        func root(_ name: String) -> Bool {
+            WorkspacePaths.isSensitiveAbsolutePath(
+                URL(fileURLWithPath: "\(home)/\(name)"), workspaceRoot: true)
+        }
+        XCTAssertFalse(root(".jamf-reports"))
+        XCTAssertFalse(root(".local/share/Jamf-Reports"))
+        for name in [".ssh/x", ".config/jr", ".aws", ".gnupg", ".kube/x", "Library/x"] {
+            XCTAssertTrue(root(name), name)
+        }
+    }
+
     func testOrdinaryFoldersUnderHomeAreAllowed() {
         for path in ["Documents/Reports", "Jamf-Reports/prod", "Desktop/new-folder/x"] {
             XCTAssertFalse(sensitive("\(home)/\(path)"), path)

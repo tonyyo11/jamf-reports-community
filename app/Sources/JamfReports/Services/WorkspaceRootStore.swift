@@ -103,7 +103,7 @@ enum WorkspaceRootStore {
     /// Silently substituting the default there would start a second, empty
     /// history beside the real one and read as total data loss.
     private static func refusingSensitive(_ url: URL) -> URL {
-        guard WorkspacePaths.isSensitiveAbsolutePath(url) else { return url }
+        guard WorkspacePaths.isSensitiveAbsolutePath(url, workspaceRoot: true) else { return url }
         AppLogger.platform.error(
             """
             workspace root \(url.path, privacy: .public) is a reserved location \
@@ -178,7 +178,9 @@ enum WorkspaceRootStore {
         // at a system directory or a credential store. The CloudStorage
         // carve-out in isSensitiveAbsolutePath is what lets a provider mount
         // under ~/Library/CloudStorage through.
-        if WorkspacePaths.isSensitiveAbsolutePath(resolved) { return .sensitiveLocation }
+        if WorkspacePaths.isSensitiveAbsolutePath(resolved, workspaceRoot: true) {
+            return .sensitiveLocation
+        }
 
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: resolved.path, isDirectory: &isDirectory) else {
