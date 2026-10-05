@@ -2181,8 +2181,8 @@ final class CLIBridge {
     /// Refuses a workspace recorded for a case variant of `profile`: the two
     /// share the folder on a case-insensitive volume, and rebinding it would
     /// collect a second tenant into the first one's data. Records `profile` in
-    /// `jamf_cli.profile` through `ConfigService.saveBlock`, which keeps every other
-    /// key in the block and copies the file first when the block held a comment.
+    /// `jamf_cli.profile` through `ConfigService.saveBlock`, which copies the file first when
+    /// the write drops a comment, an unread line or a retired key, and logs what it did.
     private func reconcileConfigProfile(
         config: URL,
         profile: String,
@@ -2207,11 +2207,8 @@ final class CLIBridge {
                 level: .info,
                 text: "[info] set jamf_cli.profile to \(profile) in \(config.path)"
             ))
-            if let copy = report.backupName {
-                onLine(.init(
-                    timestamp: Date(), level: .info,
-                    text: "[info] jamf_cli held comments or lines the app does not keep; "
-                        + "a copy of config.yaml as it was is at \(copy)"))
+            if let line = report.statusLine {
+                onLine(.init(timestamp: Date(), level: .info, text: "[info] \(line)"))
             }
         } catch let conflict as CLIBridgeError {
             onLine(.init(timestamp: Date(), level: .fail,

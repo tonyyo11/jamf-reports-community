@@ -274,6 +274,24 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertTrue(lines.value.contains { $0.contains(copy) }, "\(lines.value)")
     }
 
+    /// The run log says what the binding's write did: a retired key it removed is named, not
+    /// reported as a comment.
+    func testBindingLogsTheRetiredKeyItRemoved() async throws {
+        let workspace = tempRoot.appendingPathComponent("acme", isDirectory: true)
+        try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
+        try Data("jamf_cli:\n  allow_live_overview: true\n  profile: \"\"\n".utf8)
+            .write(to: workspace.appendingPathComponent("config.yaml"))
+        let lines = CaseTestBox<[String]>([])
+
+        _ = try await CLIBridge().initializeWorkspace(profile: "acme") { line in
+            lines.value.append(line.text)
+        }
+
+        XCTAssertTrue(lines.value.contains {
+            $0.contains("jamf_cli.allow_live_overview") && $0.contains("config.yaml.bak-")
+        }, "\(lines.value)")
+    }
+
     /// A `jamf_cli` typed as a single value is left as typed, and the error names the key and
     /// the fix: not "could not be parsed" (the file parsed), and no path.
     func testBindingRefusesAJamfCLIBlockTypedAsAValue() async throws {
@@ -326,7 +344,7 @@ final class ProfileSlugCaseTests: XCTestCase {
         let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
             .filter { $0.hasPrefix("config.yaml.bak-") }
         XCTAssertEqual(copies, [])
-        XCTAssertFalse(lines.value.contains { $0.contains("a copy of config.yaml") },
+        XCTAssertFalse(lines.value.contains { $0.contains("config.yaml.bak-") },
                        "\(lines.value)")
     }
 
