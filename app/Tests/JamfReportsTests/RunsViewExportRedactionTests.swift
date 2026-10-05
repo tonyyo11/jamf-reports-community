@@ -22,7 +22,7 @@ final class RunsViewExportRedactionTests: XCTestCase {
             "[info] starting\nAuthorization: Bearer abcdef0123456789abcdef0123456789\n[ok] done\n"
         )
 
-        let rendered = RunsView.renderExport(from: logURL)
+        let rendered = RunsView.renderExport(from: logURL, profile: nil)
 
         XCTAssertTrue(rendered.contains("REDACTED_BEARER"),
                       "exportLogFile must route through LogRedactor")
@@ -38,10 +38,23 @@ final class RunsViewExportRedactionTests: XCTestCase {
             "client_secret: super-secret-value-1234\n"
         )
 
-        let rendered = RunsView.renderExport(from: logURL)
+        let rendered = RunsView.renderExport(from: logURL, profile: nil)
 
         XCTAssertTrue(rendered.contains("REDACTED_CLIENT_SECRET"))
         XCTAssertFalse(rendered.contains("super-secret-value-1234"))
+    }
+
+    /// jamf-cli's stderr lines name the Jamf host and, for a gateway profile, the environment ID;
+    /// an export is shared outside the host, so both go, as in the diagnostic bundle.
+    func testRenderExportDropsTheJamfHost() throws {
+        let logURL = try writeLogInLogsDir(
+            "[warn] GET https://acme.jamfcloud.com/api/v1/computers failed with HTTP 503\n")
+
+        let rendered = RunsView.renderExport(from: logURL, profile: nil)
+
+        XCTAssertFalse(rendered.contains("acme.jamfcloud.com"), "the host must not be exported")
+        XCTAssertTrue(rendered.contains("/api/v1/computers failed with HTTP 503"),
+                      "the rest of the line stays readable")
     }
 
     // MARK: - Helpers

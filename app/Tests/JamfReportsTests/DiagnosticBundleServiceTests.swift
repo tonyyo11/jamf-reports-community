@@ -601,6 +601,113 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         XCTAssertEqual(policy["enabled"] as? Bool, false)
     }
 
+    // MARK: - Free text in the staged config
+
+    private func stagedConfig(
+        _ yaml: String, redactor: DiagnosticRedactor = DiagnosticRedactor()
+    ) throws -> String {
+        let workspace = try makeWorkspace()
+        defer { try? FileManager.default.removeItem(at: workspace.root) }
+        try yaml.write(to: workspace.sources.configURL, atomically: true, encoding: .utf8)
+        let staging = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: staging) }
+        _ = try DiagnosticBundleService.stageFiles(
+            sources: workspace.sources, into: staging,
+            redactor: redactor, options: .init(), now: Date())
+        return try String(
+            contentsOf: staging.appendingPathComponent("config.yaml"), encoding: .utf8)
+    }
+
+    /// `signed_off_by` and `description` are typed by an admin: a person's name and a
+    /// justification, which no pattern can find. Everything else in the entry, and every line
+    /// outside the `exceptions:` block, stays as written.
+    func testStagedConfigReplacesTheFreeTextOfAnException() throws {
+        let config = try stagedConfig("""
+        # Harbor tenant
+        jamf_cli:
+          profile: harbor
+        exceptions:
+          - id: EX-1
+            description: Kiosk app cannot run on Tahoe until the vendor ships 3.2
+            signed_off_by: Jane Q. Admin
+            signed_off_date: 2026-03-01
+            expires_date: 2026-12-31
+            control_id: AC-2
+        thresholds:
+          stale_device_days: 30
+
+        """)
+
+        XCTAssertFalse(config.contains("Jane Q. Admin"), config)
+        XCTAssertFalse(config.contains("Kiosk app"), config)
+        XCTAssertTrue(config.contains("description: org-"), config)
+        XCTAssertTrue(config.contains("signed_off_by: user-"), config)
+        for kept in ["# Harbor tenant", "  profile: harbor", "- id: EX-1",
+                     "signed_off_date: 2026-03-01", "expires_date: 2026-12-31",
+                     "control_id: AC-2", "thresholds:", "  stale_device_days: 30"] {
+            XCTAssertTrue(config.contains(kept), "\(kept) missing from: \(config)")
+        }
+    }
+
+    func testTheSamePersonGetsTheSamePlaceholderAcrossEntries() throws {
+        let config = try stagedConfig("""
+        exceptions:
+          - id: EX-1
+            description: One
+            signed_off_by: Jane Q. Admin
+            signed_off_date: 2026-03-01
+          - id: EX-2
+            description: Two
+            signed_off_by: Jane Q. Admin
+            signed_off_date: 2026-03-02
+        """)
+
+        let placeholders = config.split(separator: "\n")
+            .filter { $0.contains("signed_off_by:") }.map(String.init)
+        XCTAssertEqual(placeholders.count, 2)
+        XCTAssertEqual(Set(placeholders.map { $0.trimmingCharacters(in: .whitespaces) }).count, 1,
+                       "one signer is one placeholder: \(placeholders)")
+        XCTAssertFalse(config.contains("Jane"), config)
+    }
+
+    /// A flow mapping and a block scalar are forms an admin can type; neither may carry the
+    /// text through, and the lines under a `|` are not part of what the app reads.
+    func testFlowAndBlockScalarFormsDoNotCarryTheTextThrough() throws {
+        let config = try stagedConfig("""
+        exceptions:
+          - {id: EX-1, description: "Printer driver pinned", signed_off_by: "Sam Roe"}
+          - id: EX-2
+            description: |
+              Waiver for the lab Macs,
+              approved by Pat Doe
+            signed_off_by: 'Pat Doe'
+            signed_off_date: 2026-03-02
+        """)
+
+        for leaked in ["Printer driver", "Sam Roe", "lab Macs", "Pat Doe"] {
+            XCTAssertFalse(config.contains(leaked), "\(leaked) leaked into: \(config)")
+        }
+        XCTAssertTrue(config.contains("EX-1") && config.contains("EX-2"))
+    }
+
+    func testAConfigWithNoExceptionsIsStagedAsBefore() throws {
+        let config = try stagedConfig("# note\nclient_secret: topsecret123\nfoo: bar\n\n\n")
+        XCTAssertEqual(config, "# note\nclient_secret: REDACTED_CLIENT_SECRET\nfoo: bar\n\n\n")
+    }
+
+    func testKeepUsernamesKeepsTheSignerButNotTheDescription() throws {
+        let redactor = DiagnosticRedactor(redactUsernames: false)
+        let config = try stagedConfig("""
+        exceptions:
+          - id: EX-1
+            description: Kiosk app
+            signed_off_by: Jane Q. Admin
+        """, redactor: redactor)
+
+        XCTAssertTrue(config.contains("Jane Q. Admin"), config)
+        XCTAssertFalse(config.contains("Kiosk app"), config)
+    }
+
     // MARK: - Fixtures
 
     private func makeTempDir() throws -> URL {
@@ -698,5 +805,32 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         let yaml = "  url: https://contoso.webhook.office.com/webhookb2/\(secret)/IncomingWebhook/x"
         let out = r.redactText(yaml)
         XCTAssertFalse(out.contains(secret))
+    }
+
+    // MARK: - Teams Workflows and Power Automate webhooks
+
+    func testWorkflowWebhookURLsAreRedactedWhateverTheContext() {
+        let r = DiagnosticRedactor()
+        let urls = [
+            "https://prod-12.westus.logic.azure.com:443/workflows/0a1b/triggers/manual/paths/"
+                + "invoke?api-version=2016-06-01&sig=Zm9vYmFyU0lH",
+            "https://prod-03.usgovvirginia.logic.azure.us/workflows/9f8e/triggers/manual/paths/"
+                + "invoke?api-version=2016-06-01&sig=Zm9vYmFyU0lH",
+            "https://env0123.4.environment.api.powerplatform.com/powerautomate/automations/"
+                + "direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9v",
+            "https://env0123.4.environment.api.powerplatform.us/powerautomate/automations/"
+                + "direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9v",
+        ]
+        for url in urls {
+            XCTAssertEqual(
+                r.redactText("POST to \(url) returned 202"),
+                "POST to REDACTED_WEBHOOK_URL returned 202", url)
+        }
+    }
+
+    func testSignatureQueryValueIsRedactedOnAnyHost() {
+        let out = DiagnosticRedactor().redactText("GET /invoke?api-version=1&sig=Zm9vYmFyU0lH&x=1")
+        XCTAssertFalse(out.contains("Zm9vYmFyU0lH"))
+        XCTAssertTrue(out.contains("sig=REDACTED_SIG&x=1"))
     }
 }

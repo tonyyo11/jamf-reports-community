@@ -156,9 +156,10 @@ final class CollectPlanTests: XCTestCase {
     /// SOFA and the patch release dates are fetched after the matrix on the tier set alone,
     /// so the plan names them or the log would show two sources it never announced.
     func testTheSourcesFetchedAfterTheMatrixAreInThePlan() {
-        XCTAssertEqual(ReportEngine.sourcesAfterMatrix(tiers: [.refresh]),
+        XCTAssertEqual(ReportEngine.sourcesAfterMatrix(tiers: [.refresh], collectSkip: []),
                        ["sofa", "patch-release-dates"])
-        XCTAssertEqual(ReportEngine.sourcesAfterMatrix(tiers: [.inventory, .scan]), [])
+        XCTAssertEqual(
+            ReportEngine.sourcesAfterMatrix(tiers: [.inventory, .scan], collectSkip: []), [])
 
         let plan = ReportEngine.planCollect(
             commands: matrix, inputs: inputs(tiers: [.refresh]), lastRun: { _ in nil })
