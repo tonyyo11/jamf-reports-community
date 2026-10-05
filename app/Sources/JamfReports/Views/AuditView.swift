@@ -40,6 +40,18 @@ struct AuditFinding: Identifiable, Codable {
     enum CodingKeys: String, CodingKey {
         case name, affected, category, recommendation, severity
     }
+
+    /// The findings as CSV. Finding text comes from jamf-cli, so each cell goes through
+    /// `StaleDeviceService.csvField` (formula sign neutralised, CR/LF/comma/quote quoted).
+    static func csv(_ findings: [AuditFinding]) -> String {
+        let header = "Severity,Name,Category,Affected,Recommendation\n"
+        let body = findings.map { f in
+            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
+                .map(StaleDeviceService.csvField)
+                .joined(separator: ",")
+        }.joined(separator: "\n")
+        return header + body
+    }
 }
 
 struct UnusedGroup: Identifiable, Codable {
@@ -994,14 +1006,8 @@ struct AuditView: View {
         // "Export Findings" appeared to do nothing on network shares and
         // custom folders.)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let header = "Severity,Name,Category,Affected,Recommendation\n"
-        let body = findings.map { f in
-            [f.severity, f.name, f.category, f.affectedDisplay, f.recommendation]
-                .map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
-                .joined(separator: ",")
-        }.joined(separator: "\n")
         do {
-            try (header + body).write(to: url, atomically: true, encoding: .utf8)
+            try AuditFinding.csv(findings).write(to: url, atomically: true, encoding: .utf8)
         } catch {
             exportError = "Could not write \(url.lastPathComponent): \(error.localizedDescription)"
             showExportError = true

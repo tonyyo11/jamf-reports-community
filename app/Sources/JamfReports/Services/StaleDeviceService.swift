@@ -220,13 +220,18 @@ struct StaleDeviceService: Sendable {
 
     /// Escape a value for CSV output. Neutralizes spreadsheet formula injection
     /// (leading `=`, `+`, `-`, `@`, tab or carriage return get a tab prefix) and applies
-    /// RFC 4180 quoting — matches `PatchStatusService.csvField` exactly.
+    /// RFC 4180 quoting. The one implementation every CSV writer uses.
+    ///
+    /// Tests unicode scalars, not `Character`s: Swift reads "\r\n" as one Character equal
+    /// to neither "\r" nor "\n", and a sign plus a combining mark as one Character that is
+    /// not the sign.
     static func csvField(_ value: String) -> String {
         var field = value
-        if let first = field.first, "=+-@\t\r".contains(first) {
+        if let first = field.unicodeScalars.first, "=+-@\t\r".unicodeScalars.contains(first) {
             field = "\t" + field
         }
-        guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
+        guard field.unicodeScalars.contains(where: { ",\"\n\r".unicodeScalars.contains($0) })
+        else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }
