@@ -262,9 +262,10 @@ Consumed by `ReportEngine.coordinationGate` — one decision covering freshness
 AND the claim, deliberately placed **above** the `jamf-cli` binary check in
 `collect`: "should I collect" belongs ahead of "can I collect", since a peer
 mid-collect is a reason to stand down regardless of whether this Mac has the
-binary. That ordering is also the only thing that makes the decision
-reachable in tests (a stub named `jamf-cli` is rejected by `CLIBridge`'s
-codesign gate). It returns `.standDown(reason)` or `.proceed(state, notes:)`;
+binary. The ordering also lets a test reach the decision without a jamf-cli,
+which the default locator does not find under XCTest; the `locateJamfCLI` seam
+below covers the rest of `collect`. It returns `.standDown(reason)` or
+`.proceed(state, notes:)`;
 `holdsClaim` is false for a forced run proceeding alongside a live peer, which
 is what stops that run releasing someone else's lease via `collect`'s `defer`.
 Also consumed by the Config Doctor's cloud family, and by `main.swift`'s
