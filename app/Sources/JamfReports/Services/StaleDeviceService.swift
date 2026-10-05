@@ -218,15 +218,55 @@ struct StaleDeviceService: Sendable {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// The addresses to copy for a mail client's recipient line, joined with "; ".
+    struct RecipientList: Equatable {
+        let list: String
+        let count: Int
+        /// Entries left out because they hold more than one address or a display name.
+        let skipped: Int
+
+        /// What the Outreach screen shows after the copy.
+        var confirmation: String {
+            let copied = "Copied \(count) email\(count == 1 ? "" : "s")"
+            guard skipped > 0 else { return copied }
+            return copied + ", skipped \(skipped) that are not a single address"
+        }
+    }
+
+    /// An Email field comes from Jamf, so `a@corp.gov; attacker@evil.com` would add a
+    /// recipient when pasted. An entry with `;`, `,`, `<`, `>` or whitespace inside is
+    /// skipped and counted; a blank entry is no entry.
+    static func recipientList(from emails: [String]) -> RecipientList {
+        let separators = CharacterSet(charactersIn: ";,<>").union(.whitespacesAndNewlines)
+        var kept: [String] = []
+        var skipped = 0
+        for email in emails {
+            let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed.unicodeScalars.contains(where: separators.contains) {
+                skipped += 1
+            } else {
+                kept.append(trimmed)
+            }
+        }
+        return RecipientList(
+            list: kept.joined(separator: "; "), count: kept.count, skipped: skipped)
+    }
+
     /// Escape a value for CSV output. Neutralizes spreadsheet formula injection
     /// (leading `=`, `+`, `-`, `@`, tab or carriage return get a tab prefix) and applies
-    /// RFC 4180 quoting — matches `PatchStatusService.csvField` exactly.
+    /// RFC 4180 quoting. The one implementation every CSV writer uses.
+    ///
+    /// Tests unicode scalars, not `Character`s: Swift reads "\r\n" as one Character equal
+    /// to neither "\r" nor "\n", and a sign plus a combining mark as one Character that is
+    /// not the sign.
     static func csvField(_ value: String) -> String {
         var field = value
-        if let first = field.first, "=+-@\t\r".contains(first) {
+        if let first = field.unicodeScalars.first, "=+-@\t\r".unicodeScalars.contains(first) {
             field = "\t" + field
         }
-        guard field.contains(where: { ",\"\n\r".contains($0) }) else { return field }
+        guard field.unicodeScalars.contains(where: { ",\"\n\r".unicodeScalars.contains($0) })
+        else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }

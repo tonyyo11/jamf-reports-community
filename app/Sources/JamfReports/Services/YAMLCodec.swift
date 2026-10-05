@@ -362,7 +362,8 @@ enum YAMLCodec {
             || value.rangeOfCharacter(from: special) != nil
             || value.first?.isWhitespace == true
             || value.last?.isWhitespace == true
-            || value.contains("\n") || value.contains("\r")
+            // Scalars, not Characters: "\r\n" is one Character equal to neither.
+            || value.unicodeScalars.contains(where: { $0 == "\n" || $0 == "\r" })
             || ["true", "false", "null", "~"].contains(value.lowercased())
             || Int(value) != nil
             // A string that LOOKS like flow/block syntax must stay quoted, or the

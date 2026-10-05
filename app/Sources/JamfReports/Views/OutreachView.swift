@@ -274,12 +274,8 @@ struct OutreachView: View {
 
     private func copyEmailList() {
         guard let devices = snapshot.devicesByTier[selectedTier] else { return }
-        let emails = devices.compactMap { device -> String? in
-            let trimmed = device.email.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : trimmed
-        }
-        let emailString = emails.joined(separator: "; ")
-        copy(text: emailString, then: "Copied \(emails.count) emails")
+        let recipients = StaleDeviceService.recipientList(from: devices.map(\.email))
+        copy(text: recipients.list, then: recipients.confirmation)
     }
 
     private func copyTableCSV() {
