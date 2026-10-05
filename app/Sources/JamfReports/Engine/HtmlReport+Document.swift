@@ -316,8 +316,27 @@ extension HtmlReport {
           .cohort-bar-bg, .cohort-bar-fill, .sev-pill {
             -webkit-print-color-adjust: exact; print-color-adjust: exact;
           }
-          details.group > summary::before { content: ""; margin: 0; }
-          details > summary { page-break-after: avoid; }
+          /* No disclosure markers: print opens every group. The [open] selector is needed,
+             since it is more specific than the screen's own marker rule. */
+          details > summary { list-style: none; }
+          details > summary::-webkit-details-marker { display: none; }
+          details.group > summary::before, details.group[open] > summary::before {
+            content: ""; margin: 0;
+          }
+          /* A heading stays with what it introduces, and a box shorter than a page is not
+             cut by a page break. The engine leaves a longer one to break where it must. */
+          h2, h3, h4, details > summary { break-after: avoid; page-break-after: avoid; }
+          .glance-tile, .tile, .count-card, .compliance-hero, .attention-list li, .block {
+            break-inside: avoid; page-break-inside: avoid;
+          }
+          /* A group runs past a page, so a card border would be cut at every break; it prints
+             as a ruled section instead. */
+          details.group { border: 0; border-top: 1px solid var(--border); border-radius: 0; }
+          /* The five security tiles share one row; wrapped, they printed as three over two. */
+          .tiles-row { flex-wrap: nowrap; gap: 0.6rem; }
+          .tiles-row .tile { flex: 1 1 0; min-width: 0; padding: 0.8rem 0.4rem; }
+          .tiles-row .tile-value { font-size: 1.5rem; }
+          .count-card { flex: 1 1 8rem; min-width: 0; }
           a { color: #000 !important; text-decoration: none; }
           /* Its bottom padding alone could start an empty last page. */
           footer { padding-bottom: 0; }

@@ -156,6 +156,31 @@ final class PDFExporterTests: XCTestCase {
         XCTAssertTrue(doc.page(at: 2)?.string?.contains("Patching group body") == true)
     }
 
+    /// With the report's print CSS, a block shorter than a page is not split by a page break:
+    /// whichever height the spacer puts the heading at, it stays on a page with its table's
+    /// header and first row. (Without the rule the heading fell alone, or with only the
+    /// header row, at the foot of a page for spacers of about 800 to 840 points.)
+    func testAShortBlockKeepsItsHeadingWithItsTable() async throws {
+        let css = HtmlReport(config: ReportConfig().withDefaults(), dataDir: outputDir)
+            .buildCSS(accentColor: "#2D5EA2")
+        let rows = (1...12).map { "<tr><td>row-\($0)</td><td>cell</td></tr>" }.joined()
+        for spacer in stride(from: 760, through: 880, by: 8) {
+            let html = """
+            <html><head>\(css)</head><body><main>
+            <div style="height:\(spacer)px"></div>
+            <div class="block"><h3>BLOCK-HEADING</h3>
+            <table class="data-table"><thead><tr><th>HEAD-CELL</th><th>x</th></tr></thead>
+            <tbody>\(rows)</tbody></table></div></main></body></html>
+            """
+            let doc = try await exportedDocument(html, name: "heading-\(spacer).pdf")
+            let page = try XCTUnwrap(
+                (0..<doc.pageCount).compactMap { doc.page(at: $0)?.string }
+                    .first { $0.contains("BLOCK-HEADING") })
+            XCTAssertTrue(page.contains("HEAD-CELL") && page.contains("row-1"),
+                          "the block was split after its heading (spacer \(spacer))")
+        }
+    }
+
     /// Backgrounds print: the report's bars and severity pills are background colours.
     func testBackgroundColoursPrint() async throws {
         let html = """
