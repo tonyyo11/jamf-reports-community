@@ -280,7 +280,7 @@ final class CLIBridge {
                     }
                     guard let s = String(data: data, encoding: .utf8) else { return }
                     for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
+                        onLine(Self.stderrLine(String(line)))
                     }
                 }
 
@@ -506,7 +506,7 @@ final class CLIBridge {
                     }
                     guard let s = String(data: data, encoding: .utf8) else { return }
                     for line in s.split(separator: "\n", omittingEmptySubsequences: false) where !line.isEmpty {
-                        onLine(.init(timestamp: Date(), level: .warn, text: String(line)))
+                        onLine(Self.stderrLine(String(line)))
                     }
                 }
 

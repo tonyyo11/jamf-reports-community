@@ -146,3 +146,34 @@ final class ReportNamingProfileTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Workbook stamp
+
+final class WorkbookTimestampTests: XCTestCase {
+
+    /// 2026-10-05 15:15:06 UTC.
+    private let sample = Date(timeIntervalSince1970: 1_791_213_306)
+
+    func testStampIsDateUnderscoreTimeInUTC() {
+        XCTAssertEqual(ReportEngine.workbookTimestamp(sample), "2026-10-05_151506")
+    }
+
+    func testWorkbookNameEndsInTheStampTheConfigExampleShows() throws {
+        var config = ReportConfig()
+        config.output = OutputConfig()
+        config.output?.outputDir = "/tmp/reports"
+        config.output?.timestampOutputs = true
+        let engine = ReportEngine(config: config, dataDir: URL(fileURLWithPath: "/tmp"))
+
+        let name = engine.resolveOutputURL(stem: "report").deletingPathExtension().lastPathComponent
+        let stamp = String(name.dropFirst("report_".count))
+
+        // Read back as UTC, the stamp is now: the example and the file agree on the zone.
+        let reader = DateFormatter()
+        reader.locale = Locale(identifier: "en_US_POSIX")
+        reader.timeZone = TimeZone(identifier: "UTC")
+        reader.dateFormat = "yyyy-MM-dd_HHmmss"
+        let written = try XCTUnwrap(reader.date(from: stamp), stamp)
+        XCTAssertLessThan(abs(written.timeIntervalSinceNow), 5)
+    }
+}

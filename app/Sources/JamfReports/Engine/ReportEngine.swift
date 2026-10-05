@@ -3394,16 +3394,21 @@ struct ReportEngine: Sendable {
 
         let shouldTimestamp = config.output?.timestampOutputs ?? true
         if shouldTimestamp {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
-            let ts = formatter.string(from: Date())
-                .replacingOccurrences(of: ":", with: "")
-                .replacingOccurrences(of: "-", with: "-")
-                .replacingOccurrences(of: "T", with: "_")
-            return outDir.appendingPathComponent("\(namedStem)_\(ts).xlsx")
+            return outDir.appendingPathComponent("\(namedStem)_\(Self.workbookTimestamp()).xlsx")
         } else {
             return outDir.appendingPathComponent("\(namedStem).xlsx")
         }
+    }
+
+    /// The stamp a workbook's file name ends in: `yyyy-MM-dd_HHmmss`. It is UTC, the
+    /// ISO 8601 formatter's default zone, which is why a workbook's name can read hours
+    /// ahead of the Generated column beside it. The Config screen's example comes from here.
+    static func workbookTimestamp(_ date: Date = Date()) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
+        return formatter.string(from: date)
+            .replacingOccurrences(of: ":", with: "")
+            .replacingOccurrences(of: "T", with: "_")
     }
 
     /// The report folder from `WorkspacePaths.reportsDir`, so every report writer agrees on it.

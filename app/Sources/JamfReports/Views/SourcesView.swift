@@ -166,7 +166,7 @@ struct SourcesView: View {
                 pendingScopeProfile = nil
             }
         } message: {
-            Text("Full Admin unlocks destructive app operations for this profile (stored locally). Limited is recommended unless a task requires them.")
+            Text(Self.scopeExplanation(.fullAdmin))
         }
     }
 
@@ -217,6 +217,7 @@ struct SourcesView: View {
                 }
                 .font(Theme.Fonts.mono(11.5))
                 .foregroundStyle(Theme.Text.tertiary(contrast))
+                scopeCaption
 
                 VStack(spacing: 0) {
                     ForEach(Array(cliCommands.enumerated()), id: \.element.id) { idx, c in
@@ -252,6 +253,27 @@ struct SourcesView: View {
             scopeChip(for: workspace.profile)
                 .disabled(workspace.demoMode)
         }
+    }
+
+    /// Says what the Limited / Full Admin chip beside the profile name means, so the badge
+    /// does not stand unexplained.
+    @ViewBuilder
+    private var scopeCaption: some View {
+        let _ = scopeRefreshTrigger
+        let scope: APIScope = workspace.demoMode
+            ? .limited : ProfileService.scope(for: workspace.profile)
+        Text(Self.scopeExplanation(scope))
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.tertiary(contrast))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// `ProfileService.scope(for:)` is read only by this screen: nothing in the app checks it
+    /// before running an operation, and it never reaches jamf-cli, so it cannot widen or
+    /// narrow the API client's rights. The text says so rather than promising a gate.
+    static func scopeExplanation(_ scope: APIScope) -> String {
+        "\(scope.displayName) is a label kept on this Mac for this profile. It does not change "
+            + "what the jamf-cli credentials can do, and nothing in the app is gated on it yet."
     }
 
     private var cliCacheLine: some View {
@@ -827,11 +849,7 @@ struct SourcesView: View {
 
     private func scopeHelp(_ scope: APIScope) -> String {
         if workspace.demoMode { return DemoData.liveOnlyHelp }
-        return scope == .fullAdmin
-            ? "Full Admin — destructive app operations enabled for this profile (local setting). "
-                + "Click to change."
-            : "Limited — destructive app operations gated for this profile (local setting). "
-                + "Click to change."
+        return Self.scopeExplanation(scope) + " Click to change."
     }
 
     private func tone(for status: InboxFileStatus) -> Pill.Tone {

@@ -286,10 +286,13 @@ struct Report: Identifiable, Sendable, Equatable {
     let name: String
     let size: String
     let date: String
+    /// What the file is ("Workbook"), then " · " and the schedule that wrote it when a
+    /// schedule's status file names this file (`ReportLibrary.sourceLabel`).
     let source: String
     let sheets: Int
-    /// Device count sourced from the matching summary.json. Nil when the summary
-    /// is absent, the filename carries no date, or totalDevices is non-numeric.
+    /// Device count from the matching summary.json. Nil when the summary is absent, the
+    /// filename carries no date, totalDevices is non-numeric, or a later collect rewrote the
+    /// summary after the workbook (`ReportLibrary.deviceCount`).
     let devices: Int?
 
     /// Only a workbook has sheets; html, pdf and csv reports carry a 0 that is not a count.

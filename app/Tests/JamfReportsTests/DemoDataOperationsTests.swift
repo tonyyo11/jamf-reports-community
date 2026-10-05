@@ -338,8 +338,10 @@ final class DemoDataOperationsTests: XCTestCase {
 
         for report in DemoData.generatedReports {
             let ext = URL(fileURLWithPath: report.name).pathExtension
-            XCTAssertTrue(schedules[report.source]?.artifacts.contains(ext) ?? false,
-                          report.name)
+            // The Type column reads "<kind> · <schedule>" where a schedule is known.
+            let schedule = report.source.components(separatedBy: " \u{00B7} ").last ?? ""
+            XCTAssertTrue(report.source.contains(" \u{00B7} "), report.name)
+            XCTAssertTrue(schedules[schedule]?.artifacts.contains(ext) ?? false, report.name)
             if ext == "xlsx" {
                 XCTAssertGreaterThan(report.sheets, 0, report.name)
                 XCTAssertLessThanOrEqual(report.devices ?? .max, DemoData.totalDevices,
