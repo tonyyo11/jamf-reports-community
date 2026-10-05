@@ -452,6 +452,9 @@ final class JamfCLIInstaller {
         case .tickLockHeld:
             return "jamf-cli was not updated: a scheduled run is in progress. "
                 + "Update it again when the run finishes."
+        case .generateInProgress:
+            return "jamf-cli was not updated: a report is being generated. "
+                + "Update it again when the report finishes."
         default:
             return "jamf-cli was not updated: a refresh is running. "
                 + "Update it again when the refresh finishes."

@@ -10,6 +10,12 @@ final class CollectThenGenerateNarrativeTests: XCTestCase {
 
     private struct Boom: Error {}
 
+    /// The flow holds the tick lock; keep it off the real one.
+    override func setUp() async throws {
+        try await super.setUp()
+        _ = useTemporaryTickLock()
+    }
+
     private final class Events {
         var log: [String] = []
     }

@@ -668,14 +668,20 @@ struct OverviewView: View {
                 await MainActor.run { workspace.globalStatus = skipMessage }
                 AppLogger.cli.info("\(skipMessage, privacy: .public)")
 
-                let narrative = await makeNarrative()
-                exit = try await bridge.generate(profile: profile, csvPath: nil, aiNarrative: narrative) { [weak workspace] line in
-                    Task { @MainActor in
-                        guard let workspace, self.isRunning else { return }
-                        if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
-                            self.generatedHashes[parsed.filename] = parsed.hash
+                // The report is built from snapshots a collect would replace, so it holds
+                // the lock from the narrative on, as `collectThenGenerate` does.
+                exit = try await CLIBridge.holdingGenerate {
+                    let narrative = await makeNarrative()
+                    return try await bridge.generate(
+                        profile: profile, csvPath: nil, aiNarrative: narrative
+                    ) { [weak workspace] line in
+                        Task { @MainActor in
+                            guard let workspace, self.isRunning else { return }
+                            if let parsed = GenerateSheetState.parseSHA256LogLine(line.text) {
+                                self.generatedHashes[parsed.filename] = parsed.hash
+                            }
+                            workspace.globalStatus = line.text
                         }
-                        workspace.globalStatus = line.text
                     }
                 }
             } else {

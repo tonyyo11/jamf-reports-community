@@ -1191,8 +1191,8 @@ final class WorkspaceStore {
 
     /// True while any collect runs in this process, for any profile: one this store marked
     /// (`beginCollect`, including the automatic ones) or one holding the bridge's lock, as a
-    /// jamf-cli update does too. A manual collect does not start while it is true; a generate
-    /// run that has not reached its collect does not count.
+    /// jamf-cli update and a report run do too. A manual collect does not start while it is
+    /// true.
     var isAnyCollectInFlight: Bool {
         collectsInFlight.values.contains { $0 > 0 } || CLIBridge.holdPurpose != nil
     }
