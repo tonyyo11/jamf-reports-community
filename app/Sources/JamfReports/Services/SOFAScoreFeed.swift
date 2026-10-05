@@ -24,8 +24,8 @@ struct SOFAScoreFeed: Sendable, Equatable {
     static func decode(_ data: Data) -> SOFAScoreFeed? {
         guard let feed = try? JSONDecoder().decode(Feed.self, from: data) else { return nil }
         var byMajor: [Int: [Release]] = [:]
-        for entry in feed.osVersions ?? [] {
-            let listed = (entry.securityReleases ?? []) + [entry.latest].compactMap { $0 }
+        for entry in feed.osVersions {
+            let listed = entry.securityReleases + [entry.latest].compactMap { $0 }
             for item in listed {
                 guard let version = item.productVersion?.trimmingCharacters(in: .whitespaces),
                       let major = SOFAFeedService.versionTuple(version).first,
@@ -82,13 +82,31 @@ struct SOFAScoreFeed: Sendable, Equatable {
         return iso.date(from: String(raw.prefix(10)))
     }
 
+    /// Every field is read on its own: a value of another type costs that field, a release
+    /// that lacks what a factor needs is skipped by `decode`, and the rest of the feed stands.
     private struct Feed: Decodable {
-        let osVersions: [Entry]?
+        let osVersions: [Entry]
         let xprotectConfig: XProtectConfig?
 
         enum CodingKeys: String, CodingKey {
             case osVersions = "OSVersions"
             case xprotectConfig = "XProtectPlistConfigData"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            osVersions = (try? c.decodeIfPresent([Lossy<Entry>].self, forKey: .osVersions))?
+                .compactMap(\.value) ?? []
+            xprotectConfig = try? c.decodeIfPresent(XProtectConfig.self, forKey: .xprotectConfig)
+        }
+    }
+
+    /// A list element that fails to decode is nil, not a failure of the whole list.
+    private struct Lossy<Value: Decodable>: Decodable {
+        let value: Value?
+
+        init(from decoder: Decoder) throws {
+            value = try? Value(from: decoder)
         }
     }
 
@@ -111,11 +129,18 @@ struct SOFAScoreFeed: Sendable, Equatable {
 
     private struct Entry: Decodable {
         let latest: Item?
-        let securityReleases: [Item]?
+        let securityReleases: [Item]
 
         enum CodingKeys: String, CodingKey {
             case latest = "Latest"
             case securityReleases = "SecurityReleases"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            latest = try? c.decodeIfPresent(Item.self, forKey: .latest)
+            securityReleases = (try? c.decodeIfPresent(
+                [Lossy<Item>].self, forKey: .securityReleases))?.compactMap(\.value) ?? []
         }
     }
 
@@ -126,6 +151,12 @@ struct SOFAScoreFeed: Sendable, Equatable {
         enum CodingKeys: String, CodingKey {
             case productVersion = "ProductVersion"
             case releaseDate = "ReleaseDate"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            productVersion = try? c.decodeIfPresent(String.self, forKey: .productVersion)
+            releaseDate = try? c.decodeIfPresent(String.self, forKey: .releaseDate)
         }
     }
 }
