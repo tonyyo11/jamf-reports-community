@@ -284,7 +284,7 @@ struct TickLock: Sendable {
     /// Nil, without running `body`, when another live process holds the lock. A lock file that
     /// cannot be written runs `body` without it, as a GUI collect does: refusing would turn a
     /// broken Application Support into a dead command, and a tick needs the same file.
-    func holdingForRun<T>(
+    func holdingForRun<T: Sendable>(
         beatEvery interval: Duration = TickLock.heartbeatInterval,
         isolation: isolated (any Actor)? = #isolation,
         _ body: () async throws -> T

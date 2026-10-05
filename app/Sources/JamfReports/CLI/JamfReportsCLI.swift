@@ -69,7 +69,7 @@ enum CLIRun {
     /// it, nothing runs: one line on stderr and exit `TickRunner.queuedExitCode`, the code a
     /// tick turned away by the lock exits with. `fail` exits without unwinding, so a command
     /// that ends with a failure exit returns what it would have exited with and fails after.
-    static func exclusively<T>(
+    static func exclusively<T: Sendable>(
         lock: TickLock = TickLock(url: TickLock.defaultURL),
         _ body: () async throws -> T
     ) async throws -> T {
