@@ -1197,11 +1197,13 @@ final class CLIBridge {
         return !trimmed.isEmpty && !trimmed.hasPrefix("-")
     }
 
-    nonisolated private func singleDeviceDetail(
+    /// `locateJamfCLI` is a test seam: the default locator finds no jamf-cli under XCTest.
+    nonisolated func singleDeviceDetail(
         profile: String,
         deviceID: String,
         cacheSubdir: String,
-        jamfCLIArgs: (String) -> [String],
+        jamfCLIArgs: @Sendable (String) -> [String],
+        locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
         onLine: (@Sendable (CLIBridge.LogLine) -> Void)? = nil
     ) async -> DeviceDetailResult? {
         let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1218,21 +1220,26 @@ final class CLIBridge {
             .appendingPathComponent("jamf-cli-data", isDirectory: true)
             .appendingPathComponent(cacheSubdir, isDirectory: true)
         let cache = devicesDir.appendingPathComponent(deviceCacheFilename(trimmedID))
-        if let bin = ExecutableLocator.locate("jamf-cli") {
-            let partial = devicesDir.appendingPathComponent(".\(cache.lastPathComponent).partial")
+        if let bin = locateJamfCLI() {
+            // Staged in the per-user temp directory, not beside the cache: a predictable name
+            // in a shared workspace can be a symlink someone planted, and jamf-cli would write
+            // through it.
+            let staging = FileManager.default.temporaryDirectory
+                .appendingPathComponent("jrc-device-\(UUID().uuidString).json")
+            defer { try? FileManager.default.removeItem(at: staging) }
             let baseArgs = ["-p", profile] + jamfCLIArgs(trimmedID)
             let exit = await runDeviceDetailProcess(
                 executable: bin,
                 arguments: baseArgs + [
-                    "--output", "json", "--no-input", "--out-file", partial.path,
+                    "--output", "json", "--no-input", "--out-file", staging.path,
                 ],
                 outputDirectory: devicesDir,
-                stdoutFallbackFile: partial,
+                stdoutFallbackFile: staging,
                 onLine: onLine
             )
             if exit == 0 {
                 do {
-                    let data = try Data(contentsOf: partial)
+                    let data = try Data(contentsOf: staging)
                     if !data.isEmpty {
                         // Remove both the stale cache and its freshness sidecar so a
                         // forged-old-timestamp sidecar can't survive a live refresh.
@@ -1240,32 +1247,38 @@ final class CLIBridge {
                         try? FileManager.default.removeItem(
                             at: cache.appendingPathExtension("meta")
                         )
-                        do {
-                            try FileManager.default.moveItem(at: partial, to: cache)
-                            if let cached = try? Data(contentsOf: cache) {
-                                CLIBridge.writeDeviceDetailFreshnessSidecar(for: cache)
-                                return DeviceDetailResult(
-                                    data: cached, fromCache: false, cacheURL: cache
-                                )
-                            }
-                        } catch {
-                            try? data.write(to: cache, options: .atomic)
-                            CLIBridge.writeDeviceDetailFreshnessSidecar(for: cache)
-                            return DeviceDetailResult(
-                                data: data, fromCache: false, cacheURL: cache
-                            )
-                        }
+                        // Atomic, so it replaces whatever sits at `cache` instead of following it.
+                        let cached = Self.writeDeviceDetailCache(data, to: cache)
+                        if cached { CLIBridge.writeDeviceDetailFreshnessSidecar(for: cache) }
+                        return DeviceDetailResult(
+                            data: data, fromCache: false, cacheURL: cached ? cache : nil
+                        )
                     }
                 } catch {
                     AppLogger.cli.warning(
-                        "deviceDetail: could not read partial output: \(error.localizedDescription, privacy: .private)"
+                        "deviceDetail: could not read staged output: \(error.localizedDescription, privacy: .private)"
                     )
                 }
             }
-            try? FileManager.default.removeItem(at: partial)
         }
         guard let data = try? Data(contentsOf: cache) else { return nil }
         return DeviceDetailResult(data: data, fromCache: true, cacheURL: cache)
+    }
+
+    /// Writes `data` to `cache` through a temp file and rename, then restricts it to the owner.
+    /// False (and a warning) when the write failed; the caller still has the live data.
+    nonisolated private static func writeDeviceDetailCache(_ data: Data, to cache: URL) -> Bool {
+        do {
+            try data.write(to: cache, options: .atomic)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: cache.path)
+            return true
+        } catch {
+            AppLogger.cli.warning(
+                "deviceDetail: could not cache \(cache.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)"
+            )
+            return false
+        }
     }
 
     /// Writes a freshness sidecar at `cache.appendingPathExtension("meta")` holding
@@ -2337,46 +2350,20 @@ func runDeviceDetailProcess(
             process.standardOutput = stdoutPipe
             let stderrPipe = Pipe()
             process.standardError = stderrPipe
-            // Drain both pipes via readabilityHandler before waitUntilExit to prevent
-            // a pipe-buffer deadlock when the child writes >~64 KB before exiting.
-            // NSLock.lock()/unlock() is @available(*, noasync) — it cannot be called
-            // directly in an async function body. Wrapping all lock/unlock pairs inside
-            // synchronous methods on the class is the standard workaround used throughout
-            // this file (DataBox, RunCompletion, ProcessBox) and is safe because
-            // the `@available(*, noasync)` restriction does not propagate through a
-            // synchronous call boundary.
-            final class ByteBuffer: @unchecked Sendable {
-                private let lock = NSLock()
-                private var data = Data()
-                func append(_ chunk: Data) { lock.lock(); data.append(chunk); lock.unlock() }
-                func snapshot() -> Data { lock.lock(); defer { lock.unlock() }; return data }
-            }
-            let outBuf = ByteBuffer()
-            stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                guard !chunk.isEmpty else {
-                    handle.readabilityHandler = nil
-                    return
-                }
-                outBuf.append(chunk)
-            }
-            let buf = ByteBuffer()
-            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-                let chunk = handle.availableData
-                guard !chunk.isEmpty else {
-                    handle.readabilityHandler = nil
-                    return
-                }
-                buf.append(chunk)
-            }
             try process.run()
+            // Drain both pipes while the child runs, so output past the pipe buffer cannot block
+            // it, and read each to EOF after the exit: clearing the handlers right after
+            // waitUntilExit dropped whatever the handler had not yet delivered.
+            let stdoutDrainer = ProcessPipeDrainer(pipe: stdoutPipe)
+            let stderrDrainer = ProcessPipeDrainer(pipe: stderrPipe)
+            stdoutDrainer.start()
+            stderrDrainer.start()
             process.waitUntilExit()
-            stdoutPipe.fileHandleForReading.readabilityHandler = nil
-            stderrPipe.fileHandleForReading.readabilityHandler = nil
+            let capturedOut = stdoutDrainer.finish()
+            let capturedErr = stderrDrainer.finish()
             let code = process.terminationStatus
             if code != 0 {
-                let errData = buf.snapshot()
-                if let msg = String(data: errData, encoding: .utf8),
+                if let msg = String(data: capturedErr, encoding: .utf8),
                    !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     AppLogger.cli.warning(
                         "runDeviceDetailProcess exit \(code): \(msg, privacy: .private)"
@@ -2385,9 +2372,8 @@ func runDeviceDetailProcess(
             }
             if code == 0, let dest = stdoutFallbackFile {
                 let cliWroteFile = ((try? Data(contentsOf: dest))?.isEmpty == false)
-                let captured = outBuf.snapshot()
-                if !cliWroteFile && !captured.isEmpty {
-                    try? captured.write(to: dest, options: .atomic)
+                if !cliWroteFile && !capturedOut.isEmpty {
+                    try? capturedOut.write(to: dest, options: .atomic)
                 }
             }
             return code
