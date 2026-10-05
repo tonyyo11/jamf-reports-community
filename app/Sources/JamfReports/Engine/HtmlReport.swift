@@ -513,17 +513,12 @@ struct HtmlReport: Sendable {
     // MARK: - History tracking + inline SVG trend
 
     /// Append a metric snapshot to the history file (when `html.track_history: true`)
-    /// and render an inline SVG trend chart from recent history entries. `historyURL` is the
-    /// file a caller already resolved, so a refused path is warned about once.
-    func buildHistorySection(
-        security: [[String: Any]],
-        outputURL: URL,
-        historyURL: URL? = nil
-    ) -> String {
+    /// and render an inline SVG trend chart from recent history entries.
+    func buildHistorySection(security: [[String: Any]], outputURL: URL) -> String {
         let cfg = htmlConfig()
         guard cfg.trackHistory else { return "" }
 
-        let histPath = historyURL ?? resolvedHistoryPath(cfg.historyFile, outputURL: outputURL)
+        let histPath = resolvedHistoryPath(cfg.historyFile, outputURL: outputURL)
         appendHistoryEntry(security: security, path: histPath)
 
         let history = loadHistory(path: histPath)
