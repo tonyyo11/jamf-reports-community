@@ -506,9 +506,11 @@ extension DeviceInventoryService {
     ) -> DeviceInventoryRecord {
         let name = cell(row, ["Computer Name", "Device Name", "Name"])
         let serial = cell(row, ["Serial Number", "Serial"])
-        let jamfID = cell(row, ["Jamf ID", "Computer ID", "ID"])
+        let jamfID = cell(row, ["Jamf ID", "Computer ID", "JSS Computer ID", "ID"])
         var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
         record.jamfID = jamfID
+        record.managementID = nilIfEmpty(cell(row, ["Management ID", "Jamf Management ID"]))
+        record.udid = nilIfEmpty(cell(row, ["UDID"]))
         record.name = name
         record.serial = serial
         record.osVersion = cell(row, ["Operating System", "Operating System Version", "OS Version", "macOS"])
@@ -554,6 +556,9 @@ extension DeviceInventoryService {
         )
         var record = DeviceInventoryRecord.empty(id: recordID(name: name, serial: serial, jamfID: jamfID), source: source)
         record.jamfID = jamfID
+        record.managementID = nilIfEmpty(first(flat, ["general.managementId", "managementId"]))
+        // The MDM UDID, not `hardware.provisioningUdid`, which is a different identifier.
+        record.udid = nilIfEmpty(first(flat, ["udid", "general.udid", "hardware.udid"]))
         record.name = name
         record.serial = serial
         record.osVersion = first(flat, ["operatingSystem.version", "operatingSystemVersion", "general.osVersion"])
@@ -1035,6 +1040,10 @@ fileprivate extension DeviceInventoryService {
 
     static func normalizedKey(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    static func nilIfEmpty(_ value: String) -> String? {
+        value.isEmpty ? nil : value
     }
 
     static func percentLabel(_ numerator: Int, _ denominator: Int) -> String {

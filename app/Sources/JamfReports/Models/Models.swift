@@ -473,6 +473,12 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
     var source: String
     /// Whether the internal volume is hardware-encrypted (`HardwareEncryption`); nil unknown.
     var hardwareEncrypted: Bool? = nil
+    /// Identifiers that, with `jamfID` and `serial`, say two rows are one Mac
+    /// (`DeviceRecordMerger`). Nil when no source carried one. Nothing fills
+    /// `platformID` yet: no Devices source reads the Platform API's device ID.
+    var managementID: String? = nil
+    var udid: String? = nil
+    var platformID: String? = nil
 
     var displayName: String { name.isEmpty ? "Unknown device" : name }
     var displaySerial: String { serial.isEmpty ? "No serial" : serial }
@@ -510,6 +516,9 @@ struct DeviceInventoryRecord: Identifiable, Sendable, Hashable {
 
     mutating func merge(_ other: DeviceInventoryRecord) {
         jamfID = firstNonEmpty(jamfID, other.jamfID)
+        managementID = firstNonEmpty(managementID, other.managementID)
+        udid = firstNonEmpty(udid, other.udid)
+        platformID = firstNonEmpty(platformID, other.platformID)
         name = firstNonEmpty(name, other.name)
         serial = firstNonEmpty(serial, other.serial)
         osVersion = firstNonEmpty(osVersion, other.osVersion)
