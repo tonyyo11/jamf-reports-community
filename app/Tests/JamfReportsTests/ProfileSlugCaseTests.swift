@@ -274,6 +274,38 @@ final class ProfileSlugCaseTests: XCTestCase {
         XCTAssertTrue(lines.value.contains { $0.contains(copy) }, "\(lines.value)")
     }
 
+    /// A workspace seeded from the shipped example is written with the profile recorded, so
+    /// binding it writes nothing and no backup of a file the app just made is kept.
+    func testBindingASeededWorkspaceKeepsNoBackupOfTheSeed() async throws {
+        var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        while !FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("config.example.yaml").path) {
+            guard dir.pathComponents.count > 1 else { throw XCTSkip("no config.example.yaml") }
+            dir = dir.deletingLastPathComponent()
+        }
+        try ReportEngine.initializeWorkspace(
+            profile: "Seeded", workspacesRoot: tempRoot,
+            seedConfigURL: dir.appendingPathComponent("config.example.yaml"), onLine: { _ in })
+        let lines = CaseTestBox<[String]>([])
+
+        _ = try await CLIBridge().initializeWorkspace(profile: "Seeded") { line in
+            lines.value.append(line.text)
+        }
+
+        let workspace = tempRoot.appendingPathComponent("Seeded", isDirectory: true)
+        let text = try String(
+            contentsOf: workspace.appendingPathComponent("config.yaml"), encoding: .utf8)
+        let loaded = try ConfigService.load(profile: "Seeded", workspaceRoot: tempRoot)
+        XCTAssertEqual(loaded.document.root.mapping?.value(for: "jamf_cli")?.mapping?
+            .value(for: "profile")?.stringValue, "Seeded")
+        XCTAssertTrue(text.contains("# jamf-reports community edition — example configuration"))
+        let copies = try FileManager.default.contentsOfDirectory(atPath: workspace.path)
+            .filter { $0.hasPrefix("config.yaml.bak-") }
+        XCTAssertEqual(copies, [])
+        XCTAssertFalse(lines.value.contains { $0.contains("a copy of config.yaml") },
+                       "\(lines.value)")
+    }
+
     // MARK: - Case variants never share a workspace
 
     #if DEBUG

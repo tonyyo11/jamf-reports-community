@@ -396,6 +396,14 @@ enum ConfigService {
         return (try replace(url, with: encoded), report)
     }
 
+    /// Sets `jamf_cli.profile` on `root` and keeps every other key in the block: the binding's
+    /// write and the seeded config of a new workspace.
+    static func setJamfCLIProfile(_ profile: String, in root: inout YAMLCodec.YAMLMapping) {
+        var jamfCLI = root.value(for: "jamf_cli")?.mapping ?? YAMLCodec.YAMLMapping(entries: [])
+        jamfCLI.set("profile", value: .scalar(.string(profile)))
+        root.set("jamf_cli", value: .mapping(jamfCLI))
+    }
+
     /// Records what rewriting `keys` drops from the file `document` was read from (comments,
     /// lines the reader did not read), and copies the file first when it drops any.
     private static func backUpDropped(

@@ -3468,7 +3468,8 @@ struct ReportEngine: Sendable {
         let configURL = workspace.appendingPathComponent("config.yaml")
         if !fm.fileExists(atPath: configURL.path) {
             if let seed = seedConfigURL, fm.fileExists(atPath: seed.path) {
-                try fm.copyItem(at: seed, to: configURL)
+                try seededConfigYAML(seed, profile: profile)
+                    .write(to: configURL, atomically: true, encoding: .utf8)
             } else {
                 let minimal = defaultConfigYAML(profile: profile)
                 try minimal.write(to: configURL, atomically: true, encoding: .utf8)
@@ -3476,6 +3477,18 @@ struct ReportEngine: Sendable {
         }
         onLine(.init(timestamp: Date(), level: .ok,
                      text: "[ok] workspace initialized at \(workspace.path)"))
+    }
+
+    /// The seed with `jamf_cli.profile` already set, so binding the new workspace finds it
+    /// recorded and writes nothing (a write there would keep a backup of the seed).
+    private static func seededConfigYAML(_ seed: URL, profile: String) throws -> String {
+        var document = try YAMLCodec.decode(String(contentsOf: seed, encoding: .utf8))
+        guard case .mapping(var root) = document.root else {
+            throw ConfigService.ConfigError.invalidTopLevel
+        }
+        ConfigService.setJamfCLIProfile(profile, in: &root)
+        document.root = .mapping(root)
+        return try YAMLCodec.encode(document, replacingTopLevelKeys: ["jamf_cli"])
     }
 
     // MARK: - Private helpers

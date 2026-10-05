@@ -2201,12 +2201,7 @@ final class CLIBridge {
             let report = try ConfigService.saveBlock(
                 key: "jamf_cli", profile: profile,
                 workspaceRoot: config.deletingLastPathComponent().deletingLastPathComponent()
-            ) { root in
-                var jamfCLI = root.value(for: "jamf_cli")?.mapping
-                    ?? YAMLCodec.YAMLMapping(entries: [])
-                jamfCLI.set("profile", value: .scalar(.string(profile)))
-                root.set("jamf_cli", value: .mapping(jamfCLI))
-            }.report
+            ) { ConfigService.setJamfCLIProfile(profile, in: &$0) }.report
             onLine(.init(
                 timestamp: Date(),
                 level: .info,
