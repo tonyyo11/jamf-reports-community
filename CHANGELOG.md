@@ -230,6 +230,33 @@ compliance is now one figure everywhere.
 - A Health Audit run from the app was saved with a UTC time in its name, which the app reads as
   local time, so the HTML report's "Data collected" showed a time hours after the report was
   made, and that audit was taken as newer than later ones. It is now saved in local time.
+- PDF exports: a long compliance baseline name wraps inside its tile, the disclosure arrows no
+  longer print, the five security tiles share one row, a heading stays with a block that fits on
+  the next page, and each section prints as a ruled section rather than a card split across
+  pages. The HTML report's AI summary no longer crowds the heading under it.
+- The Generate Reports sheet keeps "Done" on its close button while a run goes (only Generate
+  says Running…), logs the Health Audit's result, and lists a SHA-256 for every file it writes,
+  the PDF and the CSV included.
+- The Reports list's "Source schedule" column guessed from file names and called manual reports
+  "Weekly Executive". It is now "Type" (workbook, HTML report, PDF report, inventory CSV, patch
+  compliance CSV, period report) and names a schedule only when that schedule's last run wrote the
+  file. A workbook's device count shows only when the day's summary still matches it.
+- jamf-cli's page progress reads "fetched 147 of 147 records" as an info line in the Logging
+  viewer and Run History, not raw JSON in warning colour.
+- Trends' 26- and 52-week charts label each month once (one month showed twice); the All range
+  labels by year once.
+- Extension Attributes' value bars fill their row with the labels beside them, on screen and in
+  the PNG export; they were hairlines.
+- The Health Audit findings table no longer draws an empty striped row under its last finding.
+- Top failing rules on the Overview keep a long rule ID on one line, cut in the middle, with the
+  whole ID on hover.
+- Backups › Diff shows each changed value as before → after, with the field name when a change
+  touched more than one field; long values are shortened in the middle with the full value on
+  hover.
+- Data Sources explains the Limited / Full Admin label beside the profile name: a note kept on
+  this Mac that changes nothing about the credentials.
+- Config: the Security Agents header lines up with its fields, and the timestamp example under
+  Output shows the current date and time.
 - PDF exports held only the first page of the report. They now hold the whole report, the
   bars and severity labels keep their colours, and the Compliance and Security Posture
   templates keep the summary on the first page and start each section on a new one.
