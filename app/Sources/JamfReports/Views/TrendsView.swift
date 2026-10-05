@@ -106,6 +106,14 @@ struct TrendsView: View {
         return lo...hi
     }
 
+    /// A pill's line: the whole range, as the pill's change and the chart cover it, thinned to
+    /// at most `limit` evenly spaced points with the first and last kept.
+    nonisolated static func sparklineValues(_ series: [Double], limit: Int = 24) -> [Double] {
+        guard limit >= 2, series.count > limit else { return series }
+        let step = Double(series.count - 1) / Double(limit - 1)
+        return (0..<limit).map { series[Int((Double($0) * step).rounded())] }
+    }
+
     /// About a tenth of headroom over the largest count, rounded up to a fifth of its order of
     /// magnitude (524 → 580, 1,100 → 1,400), and never under 10.
     nonisolated static func deviceCountAxisTop(_ dataMax: Double) -> Double {
@@ -438,7 +446,7 @@ struct TrendsView: View {
         let sparkValues: [Double]
 
         series = points(for: m).map(\.value)
-        sparkValues = Array(series.suffix(8))
+        sparkValues = Self.sparklineValues(series)
 
         let change = Self.trendChange(metric: m, series: series)
         let verdict = change?.verdict ?? .neutral
@@ -461,7 +469,8 @@ struct TrendsView: View {
                 if sparkValues.count >= 2 {
                     Sparkline(
                         values: sparkValues,
-                        color: verdict == .neutral ? Theme.Colors.gold : verdictColor(verdict)
+                        color: verdict == .neutral ? Theme.Colors.gold : verdictColor(verdict),
+                        domain: Self.chartYDomain(metric: m, values: series)
                     )
                     .frame(width: 40, height: 18)
                     .opacity(0.85)
