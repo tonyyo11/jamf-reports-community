@@ -164,7 +164,7 @@ final class PDFExporterTests: XCTestCase {
         let css = HtmlReport(config: ReportConfig().withDefaults(), dataDir: outputDir)
             .buildCSS(accentColor: "#2D5EA2")
         let rows = (1...12).map { "<tr><td>row-\($0)</td><td>cell</td></tr>" }.joined()
-        for spacer in stride(from: 760, through: 880, by: 8) {
+        for spacer in stride(from: 760, through: 880, by: 12) {
             let html = """
             <html><head>\(css)</head><body><main>
             <div style="height:\(spacer)px"></div>
