@@ -430,6 +430,27 @@ final class HtmlReportTests: XCTestCase {
                       "Print CSS must force white background")
     }
 
+    /// The CSS rule for `selector` (its declarations), or nil.
+    private func declarations(of selector: String, in css: String) -> String? {
+        guard let start = css.range(of: "\n        \(selector) {")
+                ?? css.range(of: "\n\(selector) {"),
+              let end = css[start.upperBound...].firstIndex(of: "}") else { return nil }
+        return String(css[start.upperBound..<end])
+    }
+
+    /// A compliance label can be a reverse-DNS name with no space to wrap at; the tiles break
+    /// it inside the card, and the AI caption sits in a spaced block.
+    func testScreenCSSWrapsLongTileLabelsAndSpacesTheAICaption() throws {
+        let css = makeReport().buildCSS(accentColor: "#2D5EA2")
+        for selector in [".glance-label", ".tile-label", ".count-label"] {
+            let rule = try XCTUnwrap(declarations(of: selector, in: css), selector)
+            XCTAssertTrue(rule.contains("overflow-wrap: anywhere"), "\(selector): \(rule)")
+        }
+        XCTAssertNotNil(declarations(of: ".ai-note", in: css))
+        let block = try XCTUnwrap(declarations(of: ".summary-block", in: css))
+        XCTAssertTrue(block.contains("margin-bottom"), "the AI summary needs room below it")
+    }
+
     func testLocalStorageThemePersistenceInScript() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }

@@ -190,11 +190,12 @@ extension HtmlReport {
         h4 { font-size: 0.9rem; margin: 0.8rem 0 0.4rem; color: var(--subtext); }
         .summary-block { margin-bottom: 1.5rem; }
         .glance-note { color: var(--subtext); font-size: 0.8rem; margin: -0.4rem 0 0.8rem; }
+        .ai-note { color: var(--subtext); font-size: 0.75rem; margin-top: 0.4rem; }
         .glance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
                        gap: 0.8rem; }
         .glance-tile { background: var(--card); border: 1px solid var(--border);
                        border-radius: 10px; padding: 0.9rem 1rem; }
-        .glance-label { font-size: 0.8rem; color: var(--subtext); }
+        .glance-label { font-size: 0.8rem; color: var(--subtext); overflow-wrap: anywhere; }
         .glance-value { font-size: 1.9rem; font-weight: 700; line-height: 1.2; margin: 0.15rem 0; }
         .glance-change { font-size: 0.78rem; }
         .glance-change.better { color: var(--green); }
@@ -236,7 +237,8 @@ extension HtmlReport {
         .tile.warn { border-color: var(--yellow); }
         .tile.bad { border-color: var(--red); }
         .tile-value { font-size: 2rem; font-weight: 700; }
-        .tile-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.3rem; }
+        .tile-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.3rem;
+                      overflow-wrap: anywhere; }
         table th, table td { padding: 0.6rem 1rem; text-align: left;
                              border-bottom: 1px solid var(--border); }
         table th { background: var(--bg2); font-weight: 600; }
@@ -248,7 +250,8 @@ extension HtmlReport {
         .count-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
                       padding: 1rem 1.5rem; min-width: 160px; text-align: center; }
         .count-value { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
-        .count-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.25rem; }
+        .count-label { font-size: 0.8rem; color: var(--subtext); margin-top: 0.25rem;
+                       overflow-wrap: anywhere; }
         .theme-toggle, .ctl { background: none; border: 1px solid var(--border);
                               border-radius: 6px; padding: 0.4rem 0.8rem; color: var(--text);
                               cursor: pointer; }

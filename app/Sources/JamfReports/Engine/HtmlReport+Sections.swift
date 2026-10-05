@@ -18,10 +18,10 @@ extension HtmlReport {
     func buildAINarrativeSection(_ narrative: String) -> String {
         let f = HtmlSectionFormatters.self
         return """
-        <section class="content-section" id="ai-narrative">
+        <section class="summary-block" id="ai-narrative">
           <h2>AI Fleet Summary</h2>
           <p>\(f.escapeHTML(narrative))</p>
-          <p style="font-size:12px;opacity:0.7">AI-generated summary — verify against the metrics below.</p>
+          <p class="ai-note">AI-generated summary — verify against the metrics below.</p>
         </section>
         """
     }

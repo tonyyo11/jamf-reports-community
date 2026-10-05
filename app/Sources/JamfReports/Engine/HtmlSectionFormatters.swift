@@ -59,6 +59,22 @@ enum HtmlSectionFormatters {
             .replacingOccurrences(of: "'", with: "&#39;")
     }
 
+    /// `raw` escaped, with a line-break opportunity after each `.`, `_` and `/` that has more
+    /// text after it, so a long reverse-DNS or file-style name wraps at a separator instead of
+    /// running out of its box or breaking mid-word.
+    nonisolated static func escapeHTMLBreakable(_ raw: String) -> String {
+        let characters = Array(escapeHTML(raw))
+        var out = ""
+        for (index, character) in characters.enumerated() {
+            out.append(character)
+            guard "._/".contains(character), index + 1 < characters.count,
+                  characters[index + 1].isLetter || characters[index + 1].isNumber
+            else { continue }
+            out += "<wbr>"
+        }
+        return out
+    }
+
     // MARK: - Counts
 
     /// "1 title", "2 titles": a count with its noun, regular plural.
