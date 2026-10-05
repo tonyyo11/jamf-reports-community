@@ -249,6 +249,59 @@ final class LogRedactorTests: XCTestCase {
         XCTAssertEqual(LogRedactor.redact(input), input)
     }
 
+    // MARK: - Teams Workflows and Power Automate webhooks
+
+    /// A Workflows (Logic Apps / Power Automate) trigger URL carries its credential as a `sig=`
+    /// query value, so the whole URL goes; none of these hosts is `webhook.office.com`.
+    private static let workflowWebhooks: [(host: String, url: String)] = [
+        ("logic.azure.com",
+         "https://prod-12.westus.logic.azure.com:443/workflows/0a1b2c3d/triggers/manual/paths/"
+         + "invoke?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=Zm9vYmFyU0lH"),
+        ("logic.azure.us",
+         "https://prod-03.usgovvirginia.logic.azure.us/workflows/9f8e7d/triggers/manual/paths/"
+         + "invoke?api-version=2016-06-01&sig=Zm9vYmFyU0lH"),
+        ("api.powerplatform.com",
+         "https://env0123.4.environment.api.powerplatform.com/powerautomate/automations/direct/"
+         + "workflows/abc123/triggers/manual/paths/invoke?api-version=1&sv=1.0&sig=Zm9vYmFyU0lH"),
+        ("api.powerplatform.us",
+         "https://env0123.4.environment.api.powerplatform.us/powerautomate/automations/direct/"
+         + "workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9vYmFyU0lH"),
+    ]
+
+    func testRedactsWorkflowWebhookHostsInAnyContext() {
+        for (host, url) in Self.workflowWebhooks {
+            let redacted = LogRedactor.redact("POST to \(url) returned 202")
+            XCTAssertEqual(redacted, "POST to REDACTED_WEBHOOK_URL returned 202", host)
+        }
+    }
+
+    func testRedactsWorkflowWebhookAtNotifyURL() {
+        for (host, url) in Self.workflowWebhooks {
+            let redacted = LogRedactor.redact("  url: \"\(url)\"")
+            XCTAssertFalse(redacted.contains("sig="), host)
+            XCTAssertFalse(redacted.contains(host), host)
+        }
+    }
+
+    func testRedactsSignatureQueryValueOnAnyHost() {
+        let redacted = LogRedactor.redact(
+            "retry https://flows.example.com/invoke?api-version=1&sig=Zm9vYmFyU0lH&x=1 later")
+        XCTAssertFalse(redacted.contains("Zm9vYmFyU0lH"), "a sig= value is a credential")
+        XCTAssertTrue(redacted.contains("sig=REDACTED_SIG"))
+        XCTAssertTrue(redacted.contains("&x=1 later"), "text after the value stays")
+    }
+
+    func testSignatureRuleLeavesUnrelatedWordsAlone() {
+        let input = "assigned design=sig-less; sigma=1"
+        XCTAssertEqual(LogRedactor.redact(input), input)
+    }
+
+    func testOtherAzureAndPowerPlatformURLsPassThrough() {
+        let input = "see https://learn.microsoft.com/azure/logic-apps and "
+            + "https://api.powerplatform.com/health"
+        XCTAssertEqual(LogRedactor.redact(input), input)
+    }
+
     // MARK: - redactedForSharing
 
     /// The fixture line from `FailureCauseTests`: jamf-cli names the host and the environment ID.

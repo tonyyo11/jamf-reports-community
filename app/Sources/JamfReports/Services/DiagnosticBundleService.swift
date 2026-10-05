@@ -375,11 +375,9 @@ final class DiagnosticRedactor {
         // host. This app stores it at `notify.url` (NotifyConfig), which the
         // `webhook_url` pattern above never matches, so match on the endpoint
         // shape and replace the whole value. These run before hostname masking.
-        add(#"https?://hooks\.slack\.com/services/[^\s"',}]+"#, "REDACTED_WEBHOOK_URL")
-        add(#"https?://[A-Za-z0-9.\-]+\.webhook\.office\.com/[^\s"',}]+"#,
-            "REDACTED_WEBHOOK_URL")
-        add(#"https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/[^\s"',}]+"#,
-            "REDACTED_WEBHOOK_URL")
+        // The host list is LogRedactor's, so the two redactors stay in step.
+        for pattern in LogRedactor.webhookURLPatterns { add(pattern, "REDACTED_WEBHOOK_URL") }
+        add(LogRedactor.signatureQueryPattern, LogRedactor.signatureQueryTemplate)
         // Any other endpoint an operator configures: a bare `url` key holding an
         // https value. `\b` keeps this off `webhook_url`/`base_url` (no word
         // boundary after an underscore), so it lands on `notify.url` and peers.

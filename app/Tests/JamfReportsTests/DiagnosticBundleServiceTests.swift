@@ -699,4 +699,31 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         let out = r.redactText(yaml)
         XCTAssertFalse(out.contains(secret))
     }
+
+    // MARK: - Teams Workflows and Power Automate webhooks
+
+    func testWorkflowWebhookURLsAreRedactedWhateverTheContext() {
+        let r = DiagnosticRedactor()
+        let urls = [
+            "https://prod-12.westus.logic.azure.com:443/workflows/0a1b/triggers/manual/paths/"
+                + "invoke?api-version=2016-06-01&sig=Zm9vYmFyU0lH",
+            "https://prod-03.usgovvirginia.logic.azure.us/workflows/9f8e/triggers/manual/paths/"
+                + "invoke?api-version=2016-06-01&sig=Zm9vYmFyU0lH",
+            "https://env0123.4.environment.api.powerplatform.com/powerautomate/automations/"
+                + "direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9v",
+            "https://env0123.4.environment.api.powerplatform.us/powerautomate/automations/"
+                + "direct/workflows/abc123/triggers/manual/paths/invoke?api-version=1&sig=Zm9v",
+        ]
+        for url in urls {
+            XCTAssertEqual(
+                r.redactText("POST to \(url) returned 202"),
+                "POST to REDACTED_WEBHOOK_URL returned 202", url)
+        }
+    }
+
+    func testSignatureQueryValueIsRedactedOnAnyHost() {
+        let out = DiagnosticRedactor().redactText("GET /invoke?api-version=1&sig=Zm9vYmFyU0lH&x=1")
+        XCTAssertFalse(out.contains("Zm9vYmFyU0lH"))
+        XCTAssertTrue(out.contains("sig=REDACTED_SIG&x=1"))
+    }
 }
