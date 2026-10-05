@@ -514,6 +514,8 @@ final class WorkspaceStore {
     }
 
     /// The installed jamf-cli. A test never runs it; one that needs an installation injects it.
+    /// `currentInstallation` also asks Homebrew (`brew --prefix jamf-cli`), which the locator's
+    /// test guard does not cover.
     nonisolated static func liveJamfCLIInstallation() -> JamfCLIInstaller.Installation? {
         #if DEBUG
         if NSClassFromString("XCTestCase") != nil { return nil }

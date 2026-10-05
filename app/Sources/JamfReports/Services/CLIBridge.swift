@@ -14,6 +14,11 @@ enum ExecutableLocator {
     ]
 
     static func locate(_ binary: String) -> URL? {
+        #if DEBUG
+        // Tests never launch the jamf-cli installed on this Mac; CI has none, and a test that
+        // needs one injects a stub.
+        if binary == "jamf-cli", NSClassFromString("XCTestCase") != nil { return nil }
+        #endif
         for dir in candidatePaths {
             let url = URL(fileURLWithPath: dir).appendingPathComponent(binary)
             if FileManager.default.isExecutableFile(atPath: url.path) {

@@ -74,6 +74,13 @@ final class ProfileServiceCodesignGateTests: XCTestCase {
         )
     }
 
+    /// Under XCTest the locator finds no jamf-cli, as on CI, so no test can launch the one
+    /// installed on this Mac; other tools still resolve.
+    func testTheLocatorFindsNoJamfCLIUnderTests() {
+        XCTAssertNil(ExecutableLocator.locate("jamf-cli"))
+        XCTAssertNotNil(ExecutableLocator.locate("ls"))
+    }
+
     /// A test that injects no binary runs no jamf-cli and reads no jamf-cli config, so the
     /// developer's real profiles and install never reach a `WorkspaceStore()` built by a test.
     func testDiscoveryUnderTestsWithoutABinaryFindsNoProfiles() {
