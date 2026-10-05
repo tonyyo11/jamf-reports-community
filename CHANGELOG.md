@@ -182,6 +182,9 @@ shorter and carries jamf-cli's fleet dashboard, and patch compliance is one figu
   same Jamf server. Automatic collects wait for the running one, and a scheduled run that comes due
   meanwhile waits for the next wake instead of being reported overdue. jamf-cli is not updated
   while a collect runs, and no collect starts while it is being updated.
+- `jamf-reports collect`, `generate`, `html` and `backup`, and `--scheduled-run`, take the same
+  lock as the app. When a collect, a report or a scheduled run holds it, they print one line and
+  exit 75 instead of running alongside it.
 - A collect you start from a button appears in Run History as "Manual collect": Refresh, the
   Overview prompt, Collect now and the first collect. The last 20 are kept so they do not push
   scheduled runs out of the list, and a collect turned away leaves no entry. One that finishes
@@ -266,10 +269,12 @@ shorter and carries jamf-cli's fleet dashboard, and patch compliance is one figu
   serial number, and never by name alone; a row that names more than one Mac and carries no
   identifier is left out and counted in a Devices warning. The CSV import also reads the
   `JSS Computer ID`, `UDID` and `Management ID` columns.
-- Generating a report while a refresh or a scheduled run collects data is refused, from the
-  Generate Reports sheet and from the Overview's Generate Report, with a note to try again when it
-  finishes. A report made mid-collect read the morning's summary beside newer snapshots, so its
-  tiles and its text disagreed.
+- A report and a collect no longer overlap. Generate (the Overview and the Generate Reports
+  sheet), Export PDF, Export Inventory CSV and Trends' archive are refused while a refresh or a
+  scheduled run collects data, and a Refresh, an automatic collect or a scheduled run asked for
+  while a report is being written waits ("A report is being generated — try again when it
+  finishes"). A report made mid-collect read the morning's summary beside newer snapshots, so
+  its tiles and its text disagreed.
 - PDF exports hold the whole report, not only its first page. Bars and severity labels keep their
   colours, each section prints as a ruled section, a heading stays with a block that fits on the
   next page, the five security tiles share one row, a long compliance baseline name wraps inside
@@ -560,11 +565,59 @@ shorter and carries jamf-cli's fleet dashboard, and patch compliance is one figu
 - The status bar shows a running collect for as long as it runs, including the automatic ones. It
   no longer goes back to "Ready" when you open Fleet Overview, and Fleet Overview no longer says
   "Fleet data refreshed" when it only reloads from disk.
+- CSV files saved with Windows line endings import their rows. Before, a csv-assisted report
+  came out with empty CSV sheets and Devices showed no rows from the CSV.
+- A malformed value no longer crashes the app or a scheduled run: an alert threshold or a
+  summary number far out of range, a huge disk-use or failed-rules cell in a CSV, or a
+  config.yaml nested more than 64 levels deep (Config Doctor lists that line). An alert
+  threshold above 1,000,000,000 is ignored and Config Doctor says so, a summary holding an
+  out-of-range number is skipped as corrupt, and a config.yaml over 4 MB is refused with a
+  message naming it.
+- `output.archive_dir` set to the same folder as `output_dir` no longer deletes older reports:
+  the run log warns and nothing is archived.
+- One malformed release in the SOFA feed no longer drops the macOS-current and XProtect-current
+  factors from the Security Score; only that release is skipped.
+- The app no longer hangs at launch or in a scheduled run when jamf-cli prints a long profile
+  list, or when `jamf-cli --version` never answers (it is stopped after 60 seconds).
+- Compliance Benchmark reports work for a profile whose name starts with `-`.
+- Re-scaffold no longer hides a config.yaml edit made after the Config screen opened: Save asks
+  you to reload, as it does after any outside edit.
+- A tick-lock file naming process 0 or 1 no longer holds off scheduled runs, and the health
+  banner ignores a check that finished after you switched profile.
 
 ### Security
 
-- The jamf-cli dashboard embedded in the HTML report cannot make network requests of its own: its
-  frame allows only its own inline styles and scripts and `data:` images.
+- Snapshot retention archives or deletes only files named like the app's own snapshots and daily
+  summaries. A `jamf_cli.data_dir` pointed at another folder could have had its files moved into
+  the workspace archive, or deleted.
+- The HTML report and its PDF list at most 100 stale Macs, 25 recent failures and 10
+  least-compliant Macs, as 2.8.3 did; the rest are in the workbook. A shortened list reads
+  "Show 100 of 150". The report is forwarded, and these lists name Macs, serials and users.
+- `html.history_file` must be a `.json` file, and the app adds to it only when it already holds
+  report history. It no longer overwrites any other file it is pointed at, config.yaml included.
+- With `output.allow_absolute_paths` on, report, archive and history paths can no longer reach
+  `/Applications` or a file or folder directly in your home folder whose name starts with a dot
+  (`~/.zshrc`, `~/.netrc`, `~/.docker`), however the path is capitalised and whether or not it
+  exists yet. A workspace root keeps the 2.8.3 rule.
+- jamf-cli must be signed with Jamf's Developer ID certificate. A binary that only carries
+  Jamf's team identifier in an ad-hoc signature is refused.
+- A backup always uses the workspace's own jamf-cli profile. A different `jamf_cli.profile` in
+  config.yaml, which another Mac sharing the folder could set, is ignored with a warning.
+- Copied and exported logs (Run History, Settings › Logging) remove the Jamf server address and
+  the profile's tenant and environment IDs, as diagnostic bundles do. Teams Workflows and Power
+  Automate webhook URLs are masked in logs and bundles. A bundle's config.yaml replaces exception
+  approvers and descriptions with placeholders.
+- `jamf_cli.collect_skip: [sofa]` stops the SOFA feed request, the only one the app makes to a
+  host other than your Jamf servers. The last feed fetched stays in use.
+- CSV exports quote and guard a value holding a Windows line break, so it cannot start a formula
+  row, and the Health Audit CSV gets the formula guard the other exports have. Commands the app
+  shows for copying quote every value.
+- Device detail from jamf-cli is staged in a private temporary file, not a predictable name in
+  the workspace, and jamf-cli never reads from your terminal.
+- The copied email list in Offline Outreach skips an entry that holds more than one address.
+- The jamf-cli dashboard embedded in the HTML report cannot make network requests of its own,
+  change its base address or submit a form: its frame allows only its own inline styles and
+  scripts and `data:` images.
 - With `jamf_cli.require_manifest` on, report generation also checks the saved jamf-cli
   dashboard page against its manifest, and stops if the page was changed after collect. The
   page runs in the HTML report, so it gets the same check as every other snapshot.
