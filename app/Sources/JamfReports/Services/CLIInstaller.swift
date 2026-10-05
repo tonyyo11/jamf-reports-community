@@ -31,6 +31,15 @@ enum CLIInstaller {
         Bundle.main.executableURL?.resolvingSymlinksInPath()
     }
 
+    /// The command to run in a terminal when the app cannot write `targetDir` itself. Each
+    /// path is single-quoted: inside double quotes a shell still runs `$(…)` and backticks.
+    static func manualCommand(source: URL, targetDir: URL) -> String {
+        let dest = targetDir.appendingPathComponent(linkName)
+        return "sudo mkdir -p \(ProfileName.shellWord(targetDir.path))"
+            + " && sudo ln -sf \(ProfileName.shellWord(source.path))"
+            + " \(ProfileName.shellWord(dest.path))"
+    }
+
     /// Create (or verify) the symlink. `source`/`targetDir`/`fileManager` are
     /// injectable for tests; production calls use the defaults.
     static func install(
@@ -42,8 +51,7 @@ enum CLIInstaller {
             return .failed(reason: "could not locate the app executable")
         }
         let dest = targetDir.appendingPathComponent(linkName)
-        let manual =
-            "sudo mkdir -p \"\(targetDir.path)\" && sudo ln -sf \"\(source.path)\" \"\(dest.path)\""
+        let manual = manualCommand(source: source, targetDir: targetDir)
 
         // Inspect what's already at the destination before touching it.
         if let existing = try? fm.destinationOfSymbolicLink(atPath: dest.path) {
