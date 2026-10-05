@@ -186,7 +186,13 @@ final class ConfigDoctorValueRowsTests: XCTestCase {
                 + "guard does not apply to it.")
         XCTAssertTrue(found.first?.hint?.contains("patch-device-failures") == true,
                       "the hint lists what can be skipped")
+        XCTAssertTrue(found.first?.hint?.contains("sofa") == true, "sofa can be skipped")
         XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [update_status, Profile-Status]\n"), [])
+    }
+
+    /// `sofa` was reported as "not a kind collect can skip" until it became skippable.
+    func testSOFAInCollectSkipIsNotWarnedAbout() throws {
+        XCTAssertEqual(try rows("jamf_cli:\n  collect_skip: [sofa, SOFA]\n"), [])
     }
 
     func testAKeepLatestRunsBelowOneIsStatedAsOne() throws {

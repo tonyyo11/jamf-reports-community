@@ -302,9 +302,10 @@ struct JamfCLIConfig: Decodable, Sendable {
     /// ABSENT rather than silently served as current. `nil` → default 168h
     /// (7 days). `0` or negative → unlimited (legacy keep-forever behavior).
     var maxCacheAgeHours: Int?
-    /// Report kinds `collect` never runs — the on-prem stall guard. Only the four
-    /// per-device-heavy kinds count (`ReportEngine.collectSkipKinds`); the GUI does
-    /// not write this key, and a Config screen save keeps it.
+    /// Report kinds `collect` never runs — the on-prem stall guard, and `sofa` for a network
+    /// that must not reach the SOFA host. Only `ReportEngine.skippableKinds` count
+    /// (`ReportEngine.collectSkipKinds`); the GUI does not write this key, and a Config
+    /// screen save keeps it.
     var collectSkip: [String]?
 
     enum CodingKeys: String, CodingKey, CaseIterable {

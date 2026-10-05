@@ -288,6 +288,7 @@ jamf_cli:
   # section; underscores and hyphens are interchangeable. Anything else is
   # ignored, so core inventory always runs. A listed source is skipped even by a
   # manual collect and is left out of the data freshness strip.
+  # sofa stops the fetch from sofafeed.macadmins.io; a cached feed stays in use.
   # Example: collect_skip: [update-status, update-device-failures]
   collect_skip: []
 

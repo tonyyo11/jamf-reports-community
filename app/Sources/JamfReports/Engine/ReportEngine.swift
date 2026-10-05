@@ -1862,6 +1862,7 @@ struct ReportEngine: Sendable {
         force: Bool = false,
         authConfirmationProbe: @escaping AuthConfirmationProbe = defaultAuthConfirmationProbe,
         locateJamfCLI: @Sendable () -> URL? = { ExecutableLocator.locate("jamf-cli") },
+        refreshSOFA: @escaping SOFARefresh = defaultSOFARefresh,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
     ) async throws -> CollectDisposition {
         guard ProfileService.isValid(profile) else {
@@ -2010,10 +2011,11 @@ struct ReportEngine: Sendable {
         let scanPlan = Self.planDeviceScan(
             tiers: tiers, skipExpensive: skipExpensive, force: force,
             stateStore: stateStore, now: collectStart)
-        let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers)
+        let afterMatrix = Self.sourcesAfterMatrix(tiers: tiers, collectSkip: collectSkip)
         Self.logCollectPlan(
-            profile: profile, plan: plan, afterMatrix: afterMatrix, deviceScan: scanPlan,
-            onLine: onLine)
+            profile: profile, plan: plan, afterMatrix: afterMatrix,
+            afterMatrixSkipped: Self.skippedAfterMatrix(tiers: tiers, collectSkip: collectSkip),
+            deviceScan: scanPlan, onLine: onLine)
 
         let bridge = CLIBridge()
         var outcomes: [CollectOutcome] = []
@@ -2102,7 +2104,7 @@ struct ReportEngine: Sendable {
         await Self.finalizeCollect(
             profile: profile, afterMatrix: afterMatrix, bin: bin, dataDir: dataDir,
             savedKinds: savedKinds, nothingLanded: matrixLandedNothing,
-            loadedConfig: loadedConfig,
+            loadedConfig: loadedConfig, refreshSOFA: refreshSOFA,
             workspacePaths: workspacePaths, stateStore: stateStore, onLine: onLine
         )
 
@@ -2222,6 +2224,7 @@ struct ReportEngine: Sendable {
         savedKinds: Set<String>,
         nothingLanded: Bool,
         loadedConfig: ReportConfig?,
+        refreshSOFA: SOFARefresh,
         workspacePaths: WorkspacePaths.Type,
         stateStore: StateFileStore?,
         onLine: @Sendable @escaping (CLIBridge.LogLine) -> Void
@@ -2239,7 +2242,7 @@ struct ReportEngine: Sendable {
         if afterMatrix.contains(Self.sofaKind) {
             onLine(.init(timestamp: Date(), level: .info,
                          text: "[info] collecting sofa for \(profile)"))
-            let (sofaSnapshot, sofaWarnings) = await SOFAFeedService.refresh(dataDir: dataDir)
+            let (sofaSnapshot, sofaWarnings) = await refreshSOFA(dataDir)
             for w in sofaWarnings {
                 onLine(.init(timestamp: Date(), level: .warn, text: "[warn] \(w)"))
             }
