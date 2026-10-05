@@ -64,8 +64,10 @@ profile has a workspace, for example after the workspace folder is emptied.
 ## The onboarding flow
 
 1. **Welcome** — a short intro to what onboarding will do.
-2. **Install CLI** — the app checks that `jamf-cli` is installed and on `PATH`, and shows
-   the `brew install Jamf-Concepts/tap/jamf-cli` command if it is not. See
+2. **Install CLI** — the app looks for `jamf-cli` in `/opt/homebrew/bin`, `/usr/local/bin`
+   and the system binary folders, then where Homebrew installed it, and shows the
+   `brew install Jamf-Concepts/tap/jamf-cli` command if it finds none. It does not search
+   your shell's `PATH`, so a copy anywhere else, such as `~/go/bin`, is not found. See
    [Installation](https://github.com/tonyyo11/jamf-reports-community/wiki/01-Installation) for details.
 3. **Workspace** — choose a profile name. The name becomes a folder under
    `~/Jamf-Reports/<profile>/`. Any name works except one with a line break or a space at
@@ -176,9 +178,9 @@ those EAs in Jamf Pro, a CSV cannot add them either. Drop a CSV in any time from
 ## Running without jamf-cli credentials
 
 Real Jamf Pro credentials are not required to get through onboarding. `jamf-cli` itself
-must be **installed** — the Install CLI step won't let you continue until the app detects
-it on `PATH` — but installing it is a free Homebrew download that needs no Jamf Pro
-server access.
+must be **installed** — the Install CLI step won't let you continue until the app finds it
+in one of the places that step checks (above) — but installing it is a free Homebrew
+download that needs no Jamf Pro server access.
 
 The Authenticate step only checks that the fields are well-formed (a URL plus a client ID
 and secret); it does not contact your Jamf Pro server, and registering the profile is a
