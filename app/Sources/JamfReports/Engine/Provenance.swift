@@ -93,12 +93,13 @@ extension Provenance {
             proc.environment = CLIBridge.environmentForJamfCLI()
             let pipe = Pipe()
             proc.standardOutput = pipe
-            proc.standardError = Pipe()   // discard stderr
+            proc.standardError = FileHandle.nullDevice
 
             do {
                 try proc.run()
-                proc.waitUntilExit()
+                // Read to EOF before waiting, or output past the pipe buffer deadlocks the pair.
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                proc.waitUntilExit()
                 let output = String(data: data, encoding: .utf8) ?? ""
                 let version = output
                     .components(separatedBy: .newlines)

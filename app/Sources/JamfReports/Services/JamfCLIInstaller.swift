@@ -373,20 +373,20 @@ final class JamfCLIInstaller {
         process.environment = CLIBridge.environmentForJamfCLI()
 
         let stdout = Pipe()
-        let stderr = Pipe()
         process.standardOutput = stdout
-        process.standardError = stderr
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return nil
         }
 
-        guard process.terminationStatus == 0 else { return nil }
-
+        // Read to EOF before waiting, or output past the pipe buffer deadlocks the pair.
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else { return nil }
         guard !data.isEmpty else { return nil }
 
         // `jamf-cli version -o json` shape (v1.18.0+):

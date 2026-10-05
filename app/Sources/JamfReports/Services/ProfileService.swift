@@ -348,22 +348,24 @@ enum ProfileService {
         process.environment = CLIBridge.environmentForJamfCLI()
 
         let stdout = Pipe()
-        let stderr = Pipe()
         process.standardOutput = stdout
-        process.standardError = stderr
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
+
+        // Read to EOF before waiting: a list longer than the pipe buffer blocks the child on
+        // write, and a parent already waiting for it to exit would never read.
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
 
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
         guard let decoded = try? JSONDecoder().decode([JamfCLIConfigProfile].self, from: data) else {
             return fallbackConfigProfiles(scheduleCounts: scheduleCounts)
         }
