@@ -11,16 +11,14 @@ final class CollectThenGenerateNarrativeTests: XCTestCase {
     private struct Boom: Error {}
 
     /// The flow holds the tick lock; keep it off the real one.
-    override func setUp() async throws {
-        try await super.setUp()
-        _ = useTemporaryTickLock()
-    }
+    private func holdingATemporaryLock() { _ = useTemporaryTickLock() }
 
     private final class Events {
         var log: [String] = []
     }
 
     func testNarrativeIsAskedForAfterTheCollectAndHandedToGenerate() async throws {
+        holdingATemporaryLock()
         let events = Events()
         let exit = try await CLIBridge.runCollectThenGenerate(
             collect: { events.log.append("collect"); return 0 },
@@ -32,6 +30,7 @@ final class CollectThenGenerateNarrativeTests: XCTestCase {
     }
 
     func testNarrativeIsNotAskedForWhenTheCollectFails() async throws {
+        holdingATemporaryLock()
         let events = Events()
         let exit = try await CLIBridge.runCollectThenGenerate(
             collect: { events.log.append("collect"); return CLIBridge.exitCodeUnauthorized },
@@ -43,6 +42,7 @@ final class CollectThenGenerateNarrativeTests: XCTestCase {
     }
 
     func testNarrativeIsNotAskedForWhenTheCollectThrows() async {
+        holdingATemporaryLock()
         let events = Events()
         do {
             _ = try await CLIBridge.runCollectThenGenerate(
@@ -59,6 +59,7 @@ final class CollectThenGenerateNarrativeTests: XCTestCase {
 
     /// AI off, no data, a timeout: `makeForGUIGenerate` answers nil and the report goes ahead.
     func testAMissingNarrativeStillGenerates() async throws {
+        holdingATemporaryLock()
         let events = Events()
         let exit = try await CLIBridge.runCollectThenGenerate(
             collect: { events.log.append("collect"); return 0 },
@@ -71,6 +72,7 @@ final class CollectThenGenerateNarrativeTests: XCTestCase {
 
     /// The callers that never ask for a narrative (the scheduler, the Trends button).
     func testNoNarrativeSourceGeneratesWithNil() async throws {
+        holdingATemporaryLock()
         let events = Events()
         let exit = try await CLIBridge.runCollectThenGenerate(
             collect: { events.log.append("collect"); return 0 },
