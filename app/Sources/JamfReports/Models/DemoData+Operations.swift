@@ -343,7 +343,8 @@ extension DemoData {
     /// The demo's Generated Reports list. The sidebar's badge counts it.
     static let generatedReports: [Report] = reportFiles.map { file in
         Report(name: file.name, size: FileDisplay.size(file.bytes), date: file.date,
-               source: file.source, sheets: file.sheets, devices: file.devices)
+               source: ReportLibrary.sourceLabel(forFilename: file.name, schedule: file.source),
+               sheets: file.sheets, devices: file.devices)
     }
 
     /// Totals for the Generated Reports tiles. The files come from seven runs,

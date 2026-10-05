@@ -126,10 +126,10 @@ struct ReportsView: View {
                             .accessibilityLabel(r.accessibilityLabel)
                         }
                         .width(min: 220, ideal: 360)
-                        TableColumn("Source schedule") { r in
-                            Text(r.source).font(.footnote).lineLimit(1)
+                        TableColumn("Type") { r in
+                            Text(r.source).font(.footnote).lineLimit(1).help(r.source)
                         }
-                        .width(min: 110, ideal: 150)
+                        .width(min: 110, ideal: 170)
                         TableColumn("Sheets") { r in Mono(text: r.sheetsLabel) }
                             .width(min: 44, ideal: 56, max: 72)
                         TableColumn("Devices") { r in Mono(text: r.devices.map { "\($0)" } ?? "—") }
