@@ -170,7 +170,8 @@ compliance is now one figure everywhere.
   screen opened it; the screen says so and offers Reload.
 - Before onboarding or `jamf-reports scaffold --out` replaces an existing config.yaml, and on any
   save that drops comments or unreadable lines inside the blocks it edits, the app keeps a copy as
-  `config.yaml.bak-<date-time>` (the newest five), and says where it is.
+  `config.yaml.bak-<date-time>` (the newest five), and says where it is: on the Config screen,
+  and on the Customize screen, the Notifications card, the AI panel and the Scoring tab.
 - config.yaml indented by 3 or 4 spaces, or a mix, reads as a 2-space file does. A key typed twice
   is read as its last value everywhere, and a Config screen save changes only that copy. A
   security policy level can be written `warn`, `failure`, `gap`, `ignored`, `skip` or

@@ -12,6 +12,8 @@ struct SecurityPolicyCard: View {
     @Environment(WorkspaceStore.self) private var workspace
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var saveFailure: SaveFailure?
+    /// What a save did not keep (a backup was made), shown until the card goes away.
+    @State private var saveNote: String?
 
     /// Each failure is its own value, so a second identical failure still redraws the pickers
     /// back onto the saved policy.
@@ -41,16 +43,22 @@ struct SecurityPolicyCard: View {
                 }
                 .disabled(workspace.demoMode)
                 .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
-                if let saveFailure {
-                    Text(saveFailure.message)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                statusLines
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Security policy configuration")
+    }
+
+    @ViewBuilder
+    private var statusLines: some View {
+        if let saveFailure {
+            Text(saveFailure.message)
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.danger)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let saveNote { warnNote(saveNote) }
     }
 
     private func controlRow(_ control: SecurityControl, issue: SecurityPolicyIssue?) -> some View {
@@ -61,7 +69,7 @@ struct SecurityPolicyCard: View {
                     .foregroundStyle(Theme.Colors.fg)
                 Spacer(minLength: 12)
                 Picker(control.displayName, selection: Self.levelBinding(
-                    control, in: workspace, failure: $saveFailure)
+                    control, in: workspace, failure: $saveFailure, note: $saveNote)
                 ) {
                     ForEach(SecurityControlLevel.allCases, id: \.self) { level in
                         Text(level.displayName).tag(level)
@@ -75,7 +83,8 @@ struct SecurityPolicyCard: View {
             if let issue {
                 writeNote(issue, level: workspace.securityPolicy.level(for: control),
                           for: control.displayName) {
-                    Self.writeAppliedLevel(control, in: workspace, failure: $saveFailure)
+                    Self.writeAppliedLevel(control, in: workspace,
+                        failure: $saveFailure, note: $saveNote)
                 }
             }
         }
@@ -109,7 +118,8 @@ struct SecurityPolicyCard: View {
             if let issue {
                 writeNote(issue, level: workspace.securityPolicy.fileVaultOffHardwareEncrypted,
                           for: "FileVault off on a hardware-encrypted Mac") {
-                    Self.writeAppliedHardwareLevel(in: workspace, failure: $saveFailure)
+                    Self.writeAppliedHardwareLevel(in: workspace,
+                        failure: $saveFailure, note: $saveNote)
                 }
             }
         }
@@ -117,7 +127,7 @@ struct SecurityPolicyCard: View {
 
     private func hardwarePicker(fileVaultIgnored: Bool) -> some View {
         Picker("FileVault off on a hardware-encrypted Mac", selection: Self.hardwareBinding(
-            in: workspace, failure: $saveFailure)
+            in: workspace, failure: $saveFailure, note: $saveNote)
         ) {
             Text("Same as FileVault").tag(SecurityControlLevel?.none)
             ForEach(SecurityControlLevel.allCases, id: \.self) { level in
@@ -170,50 +180,59 @@ struct SecurityPolicyCard: View {
     /// that one key.
     static func levelBinding(
         _ control: SecurityControl, in workspace: WorkspaceStore,
-        failure: Binding<SaveFailure?>
+        failure: Binding<SaveFailure?>, note: Binding<String?>
     ) -> Binding<SecurityControlLevel> {
         Binding(
             get: { workspace.securityPolicy.level(for: control) },
             set: { level in
-                persist(failure) { try workspace.saveSecurityLevel(level, for: control) }
+                persist(failure, note: note) {
+                    try workspace.saveSecurityLevel(level, for: control)
+                }
             })
     }
 
     static func hardwareBinding(
-        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>
+        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>, note: Binding<String?>
     ) -> Binding<SecurityControlLevel?> {
         Binding(
             get: { workspace.securityPolicy.fileVaultOffHardwareEncrypted },
-            set: { level in persist(failure) { try workspace.saveHardwareLevel(level) } })
+            set: { level in
+                persist(failure, note: note) { try workspace.saveHardwareLevel(level) }
+            })
     }
 
     /// The "Write fail" button: writes the level the app applied for this control over what
     /// the file holds, so the typed value that did not read as a level goes.
     static func writeAppliedLevel(
         _ control: SecurityControl, in workspace: WorkspaceStore,
-        failure: Binding<SaveFailure?>
+        failure: Binding<SaveFailure?>, note: Binding<String?>
     ) {
         let level = workspace.securityPolicy.level(for: control)
-        persist(failure) { try workspace.saveSecurityLevel(level, for: control) }
+        persist(failure, note: note) { try workspace.saveSecurityLevel(level, for: control) }
     }
 
     /// Applied nil (FileVault's own level) removes the entry.
     static func writeAppliedHardwareLevel(
-        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>
+        in workspace: WorkspaceStore, failure: Binding<SaveFailure?>, note: Binding<String?>
     ) {
         let level = workspace.securityPolicy.fileVaultOffHardwareEncrypted
-        persist(failure) { try workspace.saveHardwareLevel(level) }
+        persist(failure, note: note) { try workspace.saveHardwareLevel(level) }
     }
 
     static func writeTitle(for level: SecurityControlLevel?) -> String {
         level.map { "Write \($0.rawValue)" } ?? "Remove the entry"
     }
 
-    /// A successful write clears the failure, a failed one becomes the card's message.
-    static func persist(_ failure: Binding<SaveFailure?>, _ write: () throws -> Void) {
+    /// A successful write clears the failure and keeps what it did not keep as the card's note
+    /// (a later write with nothing to say leaves it); a failed one becomes the card's message.
+    static func persist(
+        _ failure: Binding<SaveFailure?>, note: Binding<String?>,
+        _ write: () throws -> ConfigSaveReport
+    ) {
         do {
-            try write()
+            let report = try write()
             failure.wrappedValue = nil
+            if let line = report.statusLine { note.wrappedValue = line }
         } catch {
             failure.wrappedValue = SaveFailure(
                 message: "Couldn't save the security policy: \(error.localizedDescription)")
@@ -305,6 +324,8 @@ struct ScoringTab: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(WorkspaceStore.self) private var workspace
     @State private var saveFailure: String?
+    /// What a save did not keep (a backup was made), shown until the tab goes away.
+    @State private var saveNote: String?
 
     /// Demo mode shows the defaults the demo's own score uses, not this Mac's preference.
     private var displayed: (weights: SecurityScoreWeights, fromLegacyPreference: Bool) {
@@ -325,8 +346,7 @@ struct ScoringTab: View {
     private func save(_ weights: SecurityScoreWeights?) {
         guard !workspace.demoMode else { return }
         do {
-            try workspace.saveScoreWeights(weights)
-            saveFailure = nil
+            noting(try workspace.saveScoreWeights(weights))
         } catch {
             saveFailure = "Couldn't save the score weights: \(error.localizedDescription)"
         }
@@ -349,11 +369,7 @@ struct ScoringTab: View {
                 Text(Self.intro(fromLegacyPreference: shown.fromLegacyPreference))
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary(contrast))
-                if let saveFailure {
-                    Text(saveFailure)
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.danger)
-                }
+                statusLines
                 weightRows(shown.weights)
                     .disabled(workspace.demoMode)
                     .help(workspace.demoMode ? DemoData.liveOnlyHelp : "")
@@ -361,6 +377,27 @@ struct ScoringTab: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Security score weight configuration")
+    }
+
+    /// A successful save clears the failure and keeps what it did not keep as the note.
+    private func noting(_ report: ConfigSaveReport) {
+        saveFailure = nil
+        if let line = report.statusLine { saveNote = line }
+    }
+
+    @ViewBuilder
+    private var statusLines: some View {
+        if let saveFailure {
+            Text(saveFailure)
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.danger)
+        }
+        if let saveNote {
+            Text(saveNote)
+                .font(.caption)
+                .foregroundStyle(Theme.Colors.warn)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func weightsHeader(totalWeight: Double) -> some View {
@@ -424,8 +461,7 @@ struct ScoringTab: View {
             get: { workspace.edrAgentName },
             set: { name in
                 do {
-                    try workspace.saveEDRAgent(name)
-                    saveFailure = nil
+                    noting(try workspace.saveEDRAgent(name))
                 } catch {
                     saveFailure = "Couldn't save the EDR agent: \(error.localizedDescription)"
                 }

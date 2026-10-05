@@ -811,35 +811,42 @@ final class WorkspaceStore {
     /// issues: a saved level clears its own issue and nothing else's. The write is built from
     /// the file, not from `securityPolicy`, so a stale or fallen-back copy cannot overwrite
     /// another key. A failed write throws and leaves the loaded policy as it was. Demo mode
-    /// returns without writing; the cards' controls are disabled there too.
-    func saveSecurityLevel(_ level: SecurityControlLevel, for control: SecurityControl) throws {
+    /// returns without writing; the cards' controls are disabled there too. Each returns what
+    /// the write did not keep, for the card's status line.
+    @discardableResult
+    func saveSecurityLevel(
+        _ level: SecurityControlLevel, for control: SecurityControl
+    ) throws -> ConfigSaveReport {
         try saveSecuritySetting(.level(level, for: control)) {
             $0 = $0.setting(level, for: control)
         }
     }
 
     /// Nil removes the key, so FileVault's own level applies.
-    func saveHardwareLevel(_ level: SecurityControlLevel?) throws {
+    @discardableResult
+    func saveHardwareLevel(_ level: SecurityControlLevel?) throws -> ConfigSaveReport {
         try saveSecuritySetting(.hardwareLevel(level)) { $0.fileVaultOffHardwareEncrypted = level }
     }
 
     /// Nil removes the block, so the default weights apply.
-    func saveScoreWeights(_ weights: SecurityScoreWeights?) throws {
+    @discardableResult
+    func saveScoreWeights(_ weights: SecurityScoreWeights?) throws -> ConfigSaveReport {
         try saveSecuritySetting(.scoreWeights(weights)) { $0.scoreWeights = weights }
     }
 
     /// The agent the score counts as EDR; nil removes the key, so the first agent counts.
-    func saveEDRAgent(_ name: String?) throws {
+    @discardableResult
+    func saveEDRAgent(_ name: String?) throws -> ConfigSaveReport {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let chosen = trimmed?.isEmpty == false ? trimmed : nil
-        try saveSecuritySetting(.edrAgent(chosen)) { $0.edrAgent = chosen }
+        return try saveSecuritySetting(.edrAgent(chosen)) { $0.edrAgent = chosen }
     }
 
     private func saveSecuritySetting(
         _ setting: SecurityPolicyConfigWriter.Setting,
         adopt: (inout SecurityControlPolicy) -> Void
-    ) throws {
-        guard !demoMode else { return }
+    ) throws -> ConfigSaveReport {
+        guard !demoMode else { return ConfigSaveReport() }
         // The Scoring tab is on the Config screen, whose Save compares config.yaml with the
         // stamp it loaded: this write is the screen's own, so the stamp moves with it. A file
         // that had already changed on disk keeps the old stamp, so that Save still refuses.
@@ -849,6 +856,7 @@ final class WorkspaceStore {
         if loadedWasCurrent { _loadedStamp = written.stamp }
         adopt(&securityPolicy)
         securityPolicyIssues = SecurityPolicyConfigLoader.issues(profile: profile)
+        return written.report
     }
 
     /// The demo workspace's config in place of whatever was loaded before, with

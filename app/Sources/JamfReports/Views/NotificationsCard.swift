@@ -20,6 +20,8 @@ struct NotificationsCard: View {
     @State private var notifyURL = ""
     @State private var notifyDetail: NotifyConfig.Detail = .full
     @State private var notifySaveMessage: String?
+    /// What a save did not keep (a backup was made), shown until the form reloads.
+    @State private var notifySaveNote: String?
     @State private var notifyTestResult: String?
     @State private var notifyTesting = false
     @State private var notifyURLSaveTask: Task<Void, Never>?
@@ -93,10 +95,7 @@ struct NotificationsCard: View {
                     }
                 }
 
-                if let notifySaveMessage {
-                    Text(notifySaveMessage)
-                        .font(.caption).foregroundStyle(Theme.Colors.warn)
-                }
+                saveStatus
             }
         }
         // Load the active profile's `notify:` block into the form (and reset on a
@@ -105,6 +104,19 @@ struct NotificationsCard: View {
         // A pending debounced save (in-flight keystroke, not yet flushed) must
         // not be lost if the operator navigates away before it fires.
         .onDisappear { flushNotifySave() }
+    }
+
+    @ViewBuilder
+    private var saveStatus: some View {
+        if let notifySaveMessage {
+            Text(notifySaveMessage)
+                .font(.caption).foregroundStyle(Theme.Colors.warn)
+        }
+        if let notifySaveNote {
+            Text(notifySaveNote)
+                .font(.caption).foregroundStyle(Theme.Colors.warn)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     /// A `NotifyConfig` built from the CURRENT form values, so the test-send uses
@@ -125,6 +137,7 @@ struct NotificationsCard: View {
         notifyURL = config.resolvedURL
         notifyDetail = config.resolvedDetail
         notifySaveMessage = nil
+        notifySaveNote = nil
         notifyTestResult = nil
     }
 
@@ -141,7 +154,7 @@ struct NotificationsCard: View {
 
     private func save(_ edit: PendingNotifySave) {
         do {
-            try NotifyConfigWriter.save(
+            let written = try NotifyConfigWriter.save(
                 enabled: edit.enabled,
                 provider: edit.provider,
                 url: edit.url,
@@ -149,6 +162,10 @@ struct NotificationsCard: View {
                 profile: edit.profile
             )
             notifySaveMessage = nil
+            // A debounced save can land after a profile switch; its note is the other profile's.
+            if edit.profile == profile, let line = written.report.statusLine {
+                notifySaveNote = line
+            }
         } catch {
             notifySaveMessage = "Couldn't save notification settings: \(error.localizedDescription)"
         }

@@ -215,6 +215,9 @@ struct ConfigSaveReport: Equatable, Sendable {
         }
         return lines
     }
+
+    /// The notes as the one status line a scoped-write card shows; nil when there are none.
+    var statusLine: String? { notes.isEmpty ? nil : notes.joined(separator: " ") }
 }
 
 /// A config file's modification date and size (both nil when there is no file), and the
