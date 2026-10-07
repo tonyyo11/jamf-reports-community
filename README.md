@@ -1,5 +1,17 @@
 # jamf-reports-community
 
+[![Latest release](https://img.shields.io/github/v/release/tonyyo11/jamf-reports-community?style=for-the-badge&labelColor=1f2328&logo=github&label=release)](https://github.com/tonyyo11/jamf-reports-community/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/tonyyo11/jamf-reports-community/total?style=for-the-badge&labelColor=1f2328)](https://github.com/tonyyo11/jamf-reports-community/releases)
+[![Tests](https://img.shields.io/github/actions/workflow/status/tonyyo11/jamf-reports-community/ci.yml?branch=main&style=for-the-badge&labelColor=1f2328&logo=githubactions&logoColor=white&label=tests)](https://github.com/tonyyo11/jamf-reports-community/actions/workflows/ci.yml)
+[![Last commit](https://img.shields.io/github/last-commit/tonyyo11/jamf-reports-community?style=for-the-badge&labelColor=1f2328)](https://github.com/tonyyo11/jamf-reports-community/commits/main)
+[![Stars](https://img.shields.io/github/stars/tonyyo11/jamf-reports-community?style=for-the-badge&labelColor=1f2328&logo=github&color=e3b341)](https://github.com/tonyyo11/jamf-reports-community/stargazers)
+[![License: MIT](https://img.shields.io/github/license/tonyyo11/jamf-reports-community?style=for-the-badge&labelColor=1f2328&color=3fb950)](LICENSE)
+
+[![macOS 15+ on Apple silicon](https://img.shields.io/badge/macOS_15%2B-Apple_silicon-0071e3?style=for-the-badge&labelColor=1f2328&logo=apple)](#requirements-and-install)
+[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=for-the-badge&labelColor=1f2328&logo=swift&logoColor=white)](app/Package.swift)
+[![Built with jamf-cli](https://img.shields.io/badge/built_with-jamf--cli-2d5ea2?style=for-the-badge&labelColor=1f2328)](https://github.com/Jamf-Concepts/jamf-cli)
+[![Discussions](https://img.shields.io/badge/Discussions-8250df?style=for-the-badge&labelColor=1f2328&logo=github)](https://github.com/tonyyo11/jamf-reports-community/discussions)
+
 Fleet reporting for Jamf Pro and Jamf School — a native macOS app. Turn Jamf inventory into
 formatted Excel workbooks, self-contained HTML reports, and historical trend dashboards. No
 Power BI, no custom infrastructure, no hardcoded credentials.
