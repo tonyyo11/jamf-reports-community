@@ -21,8 +21,6 @@ final class DiagnosticBundleServiceTests: XCTestCase {
 
     func testCredentialsRedactedEvenWithAllPIIOff() {
         let r = secretsOnlyRedactor()
-        // Config/YAML form is the `client_secret` regex's target; the JSON
-        // quoted-key form is handled by `redactJSON`'s exact-key match instead.
         let text = r.redactText(#"client_secret: "mustnotleak1234567""#)
         XCTAssertFalse(text.contains("mustnotleak1234567"))
         XCTAssertTrue(text.contains("REDACTED_CLIENT_SECRET"))
@@ -48,6 +46,45 @@ final class DiagnosticBundleServiceTests: XCTestCase {
         ]
         for (input, expected) in cases {
             XCTAssertTrue(r.redactText(input).contains(expected), "expected \(expected) for \(input)")
+        }
+    }
+
+    /// The patterns once needed the key name followed straight by the colon, so a log line
+    /// holding JSON text (a quoted key) passed through untouched.
+    func testQuotedJSONKeysAreRedactedInFreeText() {
+        let r = secretsOnlyRedactor()
+        let cases: [(String, String, String)] = [
+            (#"{"client_secret": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+            (#"{"client_secret":"abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+            (#"{"client_id": "ABCDEF0123456789ABCD"}"#, "ABCDEF0123456789ABCD",
+             "REDACTED_CLIENT_ID"),
+            (#"{"password": "hunter2x"}"#, "hunter2x", "REDACTED_PASSWORD"),
+            (#"{"api_key": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_API_KEY"),
+            (#"{"apikey":"abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_API_KEY"),
+            (#"{"token": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_TOKEN"),
+            (#"{"session_token": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_TOKEN"),
+            (#"{"private_key": "abcdefgh1234"}"#, "abcdefgh1234", "REDACTED_TOKEN"),
+            (#"{'client_secret': 'abcdefgh1234'}"#, "abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+        ]
+        for (input, secret, marker) in cases {
+            let out = r.redactText(input)
+            XCTAssertFalse(out.contains(secret), "leaked in \(input): \(out)")
+            XCTAssertTrue(out.contains(marker), "expected \(marker) for \(input): \(out)")
+        }
+    }
+
+    func testUnquotedKeyFormsAreStillRedacted() {
+        let r = secretsOnlyRedactor()
+        let cases: [(String, String)] = [
+            ("client_secret: abcdefgh1234", "REDACTED_CLIENT_SECRET"),
+            ("client_id=ABCDEF0123456789ABCD", "REDACTED_CLIENT_ID"),
+            ("password = hunter2x", "REDACTED_PASSWORD"),
+            ("api_key: abcdefgh1234", "REDACTED_API_KEY"),
+            ("token: abcdefgh1234", "REDACTED_TOKEN"),
+            ("private_key: abcdefgh1234", "REDACTED_TOKEN"),
+        ]
+        for (input, marker) in cases {
+            XCTAssertTrue(r.redactText(input).contains(marker), "expected \(marker): \(input)")
         }
     }
 

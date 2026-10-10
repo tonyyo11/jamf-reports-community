@@ -359,20 +359,20 @@ final class DiagnosticRedactor {
         func add(_ pattern: String, _ template: String, ci: Bool = true) {
             patterns.append((mustCompile(pattern, ci ? [.caseInsensitive] : []), template))
         }
-        add(#"(client_secret\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#,
+        add(#"(client_secret["']?\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#,
             "$1REDACTED_CLIENT_SECRET$3")
-        add(#"(client_id\s*[:=]\s*["']?)([A-Fa-f0-9\-]{20,}|[A-Za-z0-9_\-]{16,64})(["']?)"#,
+        add(#"(client_id["']?\s*[:=]\s*["']?)([A-Fa-f0-9\-]{20,}|[A-Za-z0-9_\-]{16,64})(["']?)"#,
             "$1REDACTED_CLIENT_ID$3")
         add(#"(Bearer\s+)[A-Za-z0-9._\-+/=]{20,}"#, "$1REDACTED_BEARER")
         add(#"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"#,
             "REDACTED_JWT", ci: false)
         add(#"("access_token"\s*:\s*")[^"]+(")"#, "$1REDACTED_ACCESS_TOKEN$2", ci: false)
         add(#"("refresh_token"\s*:\s*")[^"]+(")"#, "$1REDACTED_REFRESH_TOKEN$2", ci: false)
-        add(#"(password\s*[:=]\s*["']?)([^"'\s,}]{1,})(["']?)"#, "$1REDACTED_PASSWORD$3")
-        add(#"(api_?key\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#, "$1REDACTED_API_KEY$3")
+        add(#"(password["']?\s*[:=]\s*["']?)([^"'\s,}]{1,})(["']?)"#, "$1REDACTED_PASSWORD$3")
+        add(#"(api_?key["']?\s*[:=]\s*["']?)([^"'\s,}]{8,})(["']?)"#, "$1REDACTED_API_KEY$3")
         // Single regex token; splitting the literal would obscure the pattern.
         // swiftlint:disable:next line_length
-        add(#"((?:\w*token\w*|\bpat|\w*private_key\w*)\s*[:=]\s*["']?)(?!REDACTED)([^"'\s,}]{8,})(["']?)"#,
+        add(#"((?:\w*token\w*|\bpat|\w*private_key\w*)["']?\s*[:=]\s*["']?)(?!REDACTED)([^"'\s,}]{8,})(["']?)"#,
             "$1REDACTED_TOKEN$3")
         add(#"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]{8,}"#, "$1REDACTED_BASIC_CREDENTIAL")
         add(#"(webhook_url\s*[:=]\s*["']?)(https?://[^\s"',}]+)(["']?)"#,
