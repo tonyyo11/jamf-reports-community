@@ -7,6 +7,11 @@ versions in this repository map to git tags.
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation refresh: the threat model is updated to 2.9.0, the architecture notes match the
+  current code, and the third-party notices now list swift-argument-parser and IBM Plex Mono.
+
 ### Dependencies
 
 - Reviewed jamf-cli 1.33.0 (2026-10-09). Its bulk-operation, setup-scope, blueprint-import and
