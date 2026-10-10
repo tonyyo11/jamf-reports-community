@@ -48,8 +48,7 @@ enum JamfCLIIdentity {
         /// unsigned, the signature is invalid, or the Team ID does not
         /// match the pinned `expectedTeamID`.
         case untrusted(path: String, teamID: String)
-        /// `FileManager.attributesOfItem` failed — the file does not
-        /// exist, is unreadable, or has no size/mtime attributes.
+        /// `stat()` failed — the file does not exist or is unreadable.
         case probeFailed(path: String)
     }
 
@@ -64,7 +63,8 @@ enum JamfCLIIdentity {
     struct Fingerprint: Hashable {
         let path: String
         let size: Int64
-        let mtime: TimeInterval
+        let mtimeSeconds: Int64
+        let mtimeNanoseconds: Int
         let ctimeSeconds: Int64
         let ctimeNanoseconds: Int
         let inode: UInt64
@@ -134,32 +134,18 @@ enum JamfCLIIdentity {
     // MARK: - Cache primitives
 
     private static func makeFingerprint(executable: URL) -> Fingerprint? {
-        // attributesOfItem on a symlink describes the link, not its target.
+        // stat() follows the symlink, but the path is resolved first so the fingerprint names
+        // the file it describes. One stat() call supplies every field, so they describe one file.
         let resolved = executable.resolvingSymlinksInPath().path
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: resolved) else {
-            return nil
-        }
-        // attributesOfItem has no ctime key, so read it with stat().
         var info = stat()
         guard stat(resolved, &info) == 0 else { return nil }
-        let size: Int64
-        if let n = attrs[.size] as? Int64 {
-            size = n
-        } else if let n = attrs[.size] as? NSNumber {
-            size = n.int64Value
-        } else {
-            return nil
-        }
-        guard let mtime = attrs[.modificationDate] as? Date,
-              let inode = (attrs[.systemFileNumber] as? NSNumber)?.uint64Value else {
-            return nil
-        }
         return Fingerprint(
-            path: resolved, size: size,
-            mtime: mtime.timeIntervalSinceReferenceDate,
+            path: resolved, size: Int64(info.st_size),
+            mtimeSeconds: Int64(info.st_mtimespec.tv_sec),
+            mtimeNanoseconds: Int(info.st_mtimespec.tv_nsec),
             ctimeSeconds: Int64(info.st_ctimespec.tv_sec),
             ctimeNanoseconds: Int(info.st_ctimespec.tv_nsec),
-            inode: inode)
+            inode: UInt64(info.st_ino))
     }
 
     private static func cacheContains(_ fp: Fingerprint) -> Bool {
