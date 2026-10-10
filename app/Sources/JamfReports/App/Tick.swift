@@ -1,11 +1,15 @@
 import Foundation
 
 /// The bundled agent's entry: `JamfReports --tick [--now <label>]`.
-/// Exit 0 unless the lock or a tick-state stamp cannot be written; each
-/// schedule's own outcome lands in its Run History record, not in this code,
-/// and a stamp failure in a "Background item" record (`TickFailureLog`).
+/// Exit 0 unless the lock or a tick-state stamp cannot be written, 75 when another run holds
+/// the lock. Each schedule's own outcome lands in its Run History record, not in this code,
+/// and a lock or stamp failure in a "Background item" record (`TickFailureLog`).
 @Sendable
-func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
+func runTick(
+    arguments: [String],
+    now: Date = Date(),
+    lock: TickLock = TickLock(url: TickLock.defaultURL)
+) async -> Int32 {
     if let idx = arguments.firstIndex(of: "--now"), idx + 1 < arguments.count,
        !arguments[idx + 1].hasPrefix("--") {
         do { try TickRunner.requestRunNow(label: arguments[idx + 1]) } catch {
@@ -13,8 +17,10 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
             return 1
         }
     }
-    let lock = TickLock(url: TickLock.defaultURL)
-    guard lock.acquire() else {
+    switch lock.claim() {
+    case .acquired:
+        break
+    case .heldElsewhere:
         // Stamp the refusal before returning: the non-catch-up window for the
         // wake that eventually gets in is measured from here, not from that
         // wake's own clock.
@@ -22,6 +28,15 @@ func runTick(arguments: [String], now: Date = Date()) async -> Int32 {
         fputs("[info] tick: another run holds the lock — queued markers run on the next wake\n",
               stderr)
         return TickRunner.queuedExitCode
+    case .writeFailed:
+        // Not a queue: nobody holds the lock. Running without it is pointless, since
+        // `TickState.save` writes beside it, and a blocked stamp would hide the overdue warning.
+        let message = "lock file not writable (\(lock.url.path))"
+        fputs("[error] tick: \(message)\n", stderr)
+        let failures = TickFailureLog(profiles: ProfileService.discoverLocal())
+        failures.recordInEveryWorkspace(message)
+        failures.finish()
+        return 1
     }
     defer { lock.release() }
     let blockedSince = TickLock.takeBlockedSince()
@@ -183,6 +198,14 @@ final class TickFailureLog {
             : [schedule.profile]
         for name in names {
             recorder(for: name)?.record("[error] tick: \(message)")
+        }
+    }
+
+    /// A failure that belongs to no schedule (the tick could not take its lock): the record
+    /// goes to every runnable workspace, since any of them may be the one an operator opens.
+    func recordInEveryWorkspace(_ message: String) {
+        for profile in ProfileService.runnableProfiles(profiles, excluding: []) {
+            recorder(for: profile.name)?.record("[error] tick: \(message)")
         }
     }
 

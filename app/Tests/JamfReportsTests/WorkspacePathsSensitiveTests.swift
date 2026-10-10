@@ -59,6 +59,32 @@ final class WorkspacePathsSensitiveTests: XCTestCase {
         }
     }
 
+    /// The shared folders are a report-folder rule (`isWorldReadableSharedFolder`), not part of
+    /// this deny-list: a workspace root, `data_dir`, a save panel and a CLI path still pass.
+    func testSharedFoldersAreNotInTheGeneralDenyList() {
+        func root(_ path: String) -> Bool {
+            WorkspacePaths.isSensitiveAbsolutePath(URL(fileURLWithPath: path), workspaceRoot: true)
+        }
+        for path in ["/Users/Shared/reports", "/Users/Shared", "\(home)/Public/x"] {
+            XCTAssertFalse(sensitive(path), path)
+            XCTAssertFalse(root(path), path)
+        }
+    }
+
+    /// Every local account can read these, so a report written there is readable by all of them.
+    func testWorldReadableSharedFolderMatchesBothFoldersInAnyCase() {
+        func shared(_ path: String) -> Bool {
+            WorkspacePaths.isWorldReadableSharedFolder(URL(fileURLWithPath: path))
+        }
+        for path in ["/Users/Shared/reports", "/users/shared/reports", "/Users/Shared",
+                     "\(home)/Public/x", "\(home)/public/x", "\(home)/Public"] {
+            XCTAssertTrue(shared(path), path)
+        }
+        XCTAssertFalse(shared("/Users/SharedBy/x"))
+        XCTAssertFalse(shared("\(home)/PublicNotes/x"))
+        XCTAssertFalse(shared("\(home)/Documents/Public"))
+    }
+
     func testOrdinaryFoldersUnderHomeAreAllowed() {
         for path in ["Documents/Reports", "Jamf-Reports/prod", "Desktop/new-folder/x"] {
             XCTAssertFalse(sensitive("\(home)/\(path)"), path)

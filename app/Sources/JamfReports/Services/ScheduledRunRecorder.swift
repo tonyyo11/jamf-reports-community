@@ -98,7 +98,9 @@ final class ScheduledRunRecorder: @unchecked Sendable {
         // One record is one line: jamf-cli error text rides in some lines, and a
         // newline inside it would forge a second entry for the reversed tail scan.
         let flat = text.replacingOccurrences(of: #"\p{Cc}"#, with: " ", options: .regularExpression)
-        guard let data = (flat + "\n").data(using: .utf8) else { return }
+        // The log syncs on a shared workspace and may be tailed into a SIEM, so credentials
+        // are scrubbed at write time, not only when Run History displays the line.
+        guard let data = (LogRedactor.redact(flat) + "\n").data(using: .utf8) else { return }
         Self.appendOrDrop(data, to: handle, label: label, warned: &hasWarnedWriteFailed)
     }
 

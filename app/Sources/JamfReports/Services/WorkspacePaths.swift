@@ -24,7 +24,8 @@ enum WorkspacePaths {
             rawValue: try configValue(workspace: workspace, section: "output", key: "output_dir")
                 as? String,
             fallback: "Generated Reports",
-            workspace: workspace
+            workspace: workspace,
+            reportsFolder: true
         )
     }
 
@@ -67,6 +68,8 @@ enum WorkspacePaths {
         switch error {
         case PathError.disallowedAbsolutePath(let url) where isSensitiveAbsolutePath(url):
             "that folder is reserved by macOS or holds credentials"
+        case PathError.worldReadableFolder:
+            "every account on this Mac can read it"
         case PathError.disallowedAbsolutePath:
             "it is outside the workspace and output.allow_absolute_paths is not true"
         case PathError.resolutionEscaped:
@@ -99,7 +102,7 @@ enum WorkspacePaths {
             rawValue: trimmed,
             fallback: "archive",
             workspace: workspace,
-            isArchive: true
+            reportsFolder: true
         )
     }
 
@@ -188,6 +191,9 @@ enum WorkspacePaths {
         /// `~/.ssh`, `/etc`, `/var`, `/private`, `/System`). Refused even
         /// when `allow_absolute_paths: true` is set in workspace config.
         case disallowedAbsolutePath(URL)
+        /// A report or archive folder in `/Users/Shared` or `~/Public`, which every local
+        /// account can read. Refused even with the opt-in.
+        case worldReadableFolder(URL)
 
         var errorDescription: String? {
             switch self {
@@ -195,6 +201,7 @@ enum WorkspacePaths {
             case .configReadError(let u, let e): "Could not read config at \(u.lastPathComponent): \(e.localizedDescription)"
             case .resolutionEscaped(let val, let root): "Path '\(val)' escapes workspace root \(root.lastPathComponent)"
             case .disallowedAbsolutePath(let u): "Disallowed absolute path: \(u.path)"
+            case .worldReadableFolder(let u): "World-readable folder: \(u.path)"
             }
         }
     }
@@ -238,6 +245,17 @@ enum WorkspacePaths {
             let first = relative.split(separator: "/").first.map(String.init) ?? relative
             return !workspaceRoot || credentialFolders.contains(first)
         }
+    }
+
+    /// True for a folder every local account can read: `/Users/Shared` and `~/Public`.
+    /// Applied only to the folders the engine writes reports into (`output.output_dir`,
+    /// `output.archive_dir`, `retention.archive_dir`). A workspace root, `jamf_cli.data_dir`,
+    /// a save panel or an explicit CLI path is a deliberate choice, and refusing one that
+    /// already holds data would orphan it. Same matching as `isSensitiveAbsolutePath`.
+    static func isWorldReadableSharedFolder(_ url: URL) -> Bool {
+        let path = folded(resolvedForPolicy(url))
+        if relative(path, under: "/users/shared") != nil { return true }
+        return homeFolds().contains { relative(path, under: $0 + "/public") != nil }
     }
 
     /// Dot-folders refused even as a workspace root (the 2.8.3 list).
@@ -288,12 +306,14 @@ enum WorkspacePaths {
 
     /// Resolves a raw config value against the workspace (symlinks resolved): a relative path
     /// must stay inside it; an absolute path outside it needs `output.allow_absolute_paths`
-    /// and is never a system or credentials folder. `retention.archive_dir` follows it too.
+    /// and is never a system or credentials folder. `reportsFolder` marks a folder reports or
+    /// archives are written to, which also refuses `/Users/Shared` and `~/Public`.
+    /// `retention.archive_dir` follows it too.
     static func resolve(
         rawValue: String?,
         fallback: String,
         workspace: URL,
-        isArchive: Bool = false
+        reportsFolder: Bool = false
     ) throws -> URL {
         let trimmed = (rawValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let value = trimmed.isEmpty ? fallback : trimmed
@@ -317,6 +337,9 @@ enum WorkspacePaths {
             }
             if isInside(resolved, root: workspace) {
                 return resolved
+            }
+            if reportsFolder, isWorldReadableSharedFolder(resolved) {
+                throw PathError.worldReadableFolder(resolved)
             }
             let optedIn = optIn((try? configValue(
                 workspace: workspace, section: "output", key: "allow_absolute_paths"

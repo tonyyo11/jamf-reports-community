@@ -62,6 +62,31 @@ final class WebhookNotifierTests: XCTestCase {
         )
     }
 
+    /// A configured webhook whose URL does not parse is a failed send, not a no-op: the
+    /// callers stamp the day as sent on `true`.
+    func testUnparseableURLReportsFailureOnEverySender() async {
+        let bad = NotifyConfig(enabled: true, provider: "teams", url: "https://exa mple.com/x")
+        XCTAssertTrue(bad.isUsable)
+        XCTAssertEqual(WebhookNotifier.endpoint(for: bad), .invalidURL)
+
+        let sent = await WebhookNotifier.send(config: bad, title: "t", facts: facts)
+        let failed = await WebhookNotifier.sendFailed(config: bad, title: "t", facts: facts)
+        let alert = await WebhookNotifier.sendAlert(config: bad, title: "t", facts: facts)
+        XCTAssertFalse(sent)
+        XCTAssertFalse(failed)
+        XCTAssertFalse(alert)
+    }
+
+    func testNotConfiguredWebhookIsStillANoOpSuccess() async {
+        let off = NotifyConfig(enabled: false, provider: "teams", url: "https://exa mple.com/x")
+        XCTAssertEqual(WebhookNotifier.endpoint(for: off), .notConfigured)
+        let sent = await WebhookNotifier.send(config: off, title: "t", facts: facts)
+        let alert = await WebhookNotifier.sendAlert(
+            config: NotifyConfig(), title: "t", facts: facts)
+        XCTAssertTrue(sent)
+        XCTAssertTrue(alert)
+    }
+
     func testNotifyConfigProviderResolution() {
         XCTAssertEqual(NotifyConfig(provider: "SLACK").resolvedProvider, .slack)
         XCTAssertEqual(NotifyConfig(provider: "teams").resolvedProvider, .teams)

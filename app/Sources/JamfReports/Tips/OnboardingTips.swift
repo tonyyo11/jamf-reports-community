@@ -26,8 +26,8 @@ struct SecretFieldTip: Tip {
     var title: Text { Text("Your secret stays local") }
 
     var message: Text? {
-        Text("Credentials are passed to jamf-cli over stdin and kept in the "
-            + "system keychain — they are never written to the app's files.")
+        Text("The app passes credentials to jamf-cli over stdin, and jamf-cli keeps "
+            + "them in the macOS keychain. The app never writes them to its files.")
     }
 
     var image: Image? { Image(systemName: "lock.shield") }
