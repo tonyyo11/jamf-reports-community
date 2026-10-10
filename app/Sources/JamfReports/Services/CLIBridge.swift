@@ -472,6 +472,9 @@ final class CLIBridge {
                         // A timed-out call returns what it has; a grandchild holding a pipe
                         // open must not keep it waiting for EOF.
                         processBox.clearReadHandlers()
+                        // The stderr handler will not see EOF now; keep an unterminated last
+                        // line. stdout is captured whole, with no line reader to flush.
+                        for line in stderrLines.finish() { onLine(Self.stderrLine(line)) }
                         completion.forceResume(proc.terminationStatus)
                     } else {
                         completion.markTerminated(proc.terminationStatus)
