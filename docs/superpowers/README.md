@@ -24,7 +24,7 @@ Pairing: four spec and plan pairs (DDM, ticker, connection access, security poli
 | [specs/2026-10-04-model-providers-and-app-intents-design.md](specs/2026-10-04-model-providers-and-app-intents-design.md) | Remote model providers and App Intents | Not built; non-binding (see below) |
 | [specs/2026-10-05-security-score-factors-design.md](specs/2026-10-05-security-score-factors-design.md) | `security_policy.score_factors` list | Shipped in 2.9.0 |
 | [specs/2026-10-05-stale-basis-and-contact-gap-design.md](specs/2026-10-05-stale-basis-and-contact-gap-design.md) | `thresholds.stale_basis`, `contact_gap_days`, the contact-gap card | Shipped in 2.9.0 |
-| [plans/2026-10-10-monocle-review-plan.md](plans/2026-10-10-monocle-review-plan.md) | Follow-up to an external security review (Monocle), docs audit and epic triage | In progress |
+| [plans/2026-10-10-monocle-review-plan.md](plans/2026-10-10-monocle-review-plan.md) | Follow-up to an external security review (Monocle), docs audit and epic triage | Shipped after 2.9.0 (PRs #250 to #260, 2026-10-10); re-score 70/100 unchanged, raw 59 to 66 |
 
 ## Known divergences
 

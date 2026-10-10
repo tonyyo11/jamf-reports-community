@@ -7,6 +7,20 @@ before it was assigned FIX / DOCUMENT / ACCEPT. Prior coverage: the 2.9.0 securi
 
 Branch: `monocle-review`. Work is split into PRs so each can be reviewed on its own.
 
+## Outcome (2026-10-10)
+
+All eight PRs merged the same day as #250 to #260 (the sweep and the four M-sized items
+each got their own PR). A Monocle re-score on main @ 194606fc with the same skill content
+reads 70/100, the same headline as before, because the Low-range floor pins both runs at 70:
+the raw score moved from 59 to 66 and the alternate from 54 to 61. Six of the nine prior
+security findings closed; the five remaining Lows are narrower (shared-folder residuals that
+need an operator action, the triage bot's posting tool, the dashboard frame) and two were
+introduced by the fix wave itself: the drift Confirm row shows a truncated, unresolved path,
+and the flock design's read-only probe can misread a reused pid. The re-score's action items
+are the next pass: remove the model's `gh issue comment` tool, show resolved paths in the
+Confirm row, confine the bundle's fixed subfolders, apply the folder overrides to manual GUI
+runs, and give the report its own CSP.
+
 ## Summary
 
 Monocle's findings hold up: of 9 security items, 7 are confirmed or partly confirmed in
