@@ -104,7 +104,8 @@ enum ScheduledRunSignals {
         sheetFailures: Int = 0,
         recorder: ScheduledRunRecorder?
     ) async {
-        guard let notify = config?.notify, notify.isUsable else { return }
+        guard let notify = config?.notify, notify.isUsable,
+              SharedConfigPin.webhookAllowed(profile: profile) else { return }
         let facts = successFacts(
             detail: notify.resolvedDetail, profile: profile, mode: mode,
             artifact: artifact, sheetFailures: sheetFailures
@@ -132,7 +133,8 @@ enum ScheduledRunSignals {
         errorDescription: String,
         recorder: ScheduledRunRecorder?
     ) async {
-        guard let notify = config?.notify, notify.isUsable else { return }
+        guard let notify = config?.notify, notify.isUsable,
+              SharedConfigPin.webhookAllowed(profile: profile) else { return }
         let facts = failureFacts(
             detail: notify.resolvedDetail, profile: profile, mode: mode,
             errorDescription: errorDescription
@@ -222,7 +224,7 @@ enum ScheduledRunSignals {
             recorder?.record(message)
             return
         }
-        guard !rules.isEmpty else { return }
+        guard !rules.isEmpty, SharedConfigPin.webhookAllowed(profile: profile) else { return }
         let summaries = TrendStore.readSummaries(profile: profile)
         guard let current = summaries.last else { return }
         // Only evaluate a summary this run actually wrote today. A day that

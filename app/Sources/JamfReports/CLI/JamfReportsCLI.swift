@@ -104,6 +104,9 @@ enum CLIRun {
             fail("no workspace for profile '\(profile)'")
         }
         let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        // Before the first folder is resolved, so a drifted shared-config folder reads as its
+        // safe value from here on.
+        SharedConfigPin.checkpoint(profile: profile, onLine: printLogLine)
         let dataDir = try WorkspacePaths.dataDir(for: profile)
         return (config, dataDir)
     }

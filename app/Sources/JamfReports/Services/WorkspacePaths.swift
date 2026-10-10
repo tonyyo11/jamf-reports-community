@@ -398,6 +398,10 @@ enum WorkspacePaths {
     /// type the decoder would give it (a path is a `String`, the opt-in a `Bool`) and a key set
     /// twice reads as its last value. Nil only when the section/key isn't present.
     private static func configValue(workspace: URL, section: String, key: String) throws -> Any? {
+        // A headless run on a shared workspace reads a drifted key as its safe value.
+        if let safe = SharedConfigPin.safePathValue(workspace: workspace, section: section, key: key) {
+            return safe
+        }
         let configURL = workspace.appendingPathComponent("config.yaml")
         guard FileManager.default.fileExists(atPath: configURL.path) else { return nil }
 

@@ -23,7 +23,7 @@ final class SharedConfigPinTests: XCTestCase {
         root = fileManager.temporaryDirectory
             .appendingPathComponent("jrc-pin-\(UUID().uuidString)", isDirectory: true)
         workspace = root.appendingPathComponent(profile, isDirectory: true)
-        appSupport = root.appendingPathComponent("support", isDirectory: true)
+        appSupport = root.appendingPathComponent(".app-support", isDirectory: true)
         try fileManager.createDirectory(at: workspace, withIntermediateDirectories: true)
         try fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
         setenv("JRC_TEST_WORKSPACES_ROOT", root.path, 1)
@@ -49,6 +49,7 @@ final class SharedConfigPinTests: XCTestCase {
         retention:
           enabled: true
           mode: \(retentionMode)
+          snapshot_keep_days: 30
         notify:
           enabled: true
           url: "\(webhook)"
@@ -179,5 +180,96 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(SharedWorkspace.isEffectivelyShared(workspace: synced, config: nil))
         forced.enabled = false
         XCTAssertFalse(SharedWorkspace.isEffectivelyShared(workspace: synced, config: forced))
+    }
+
+    // MARK: - Headless folders
+
+    func testHeadlessChangedOutputDirFallsBackToTheWorkspaceWithOneWarn() throws {
+        try writeConfig(outputDir: outside, allowAbsolute: true)
+        _ = check()
+        XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside)
+
+        try writeConfig(outputDir: outside + "-peer", allowAbsolute: true)
+        SharedConfigPin.markHeadless()
+        let lines = LineBox()
+        for _ in 0..<2 {
+            SharedConfigPin.checkpoint(
+                profile: profile, appSupport: appSupport, onLine: { lines.add($0.text) })
+        }
+        XCTAssertEqual(lines.all, [
+            "[warn] shared config changed output.output_dir: confirm on this Mac (Config Doctor)",
+        ])
+        let dir = WorkspacePaths.reportsDir(for: profile, onLine: { lines.add($0.text) })
+        XCTAssertEqual(dir?.lastPathComponent, WorkspacePaths.generatedReportsDirName)
+        XCTAssertEqual(dir?.deletingLastPathComponent().resolvingSymlinksInPath().path,
+                       workspace.resolvingSymlinksInPath().path)
+        XCTAssertEqual(lines.all.count, 1, "the fallback adds no second warning")
+    }
+
+    func testAChangedOptInAndDataDirAreReadAsSafeValues() throws {
+        try writeConfig()
+        _ = check()
+        let body = try String(contentsOf: workspace.appendingPathComponent("config.yaml"),
+                              encoding: .utf8)
+        try (body + "\njamf_cli:\n  data_dir: \"\(outside!)-data\"\n").replacingOccurrences(
+            of: "allow_absolute_paths: false", with: "allow_absolute_paths: true")
+            .write(to: workspace.appendingPathComponent("config.yaml"),
+                   atomically: true, encoding: .utf8)
+        SharedConfigPin.markHeadless()
+        let drifted = SharedConfigPin.checkpoint(
+            profile: profile, appSupport: appSupport, onLine: nil)
+        XCTAssertEqual(drifted.drifts.map(\.key), [.allowAbsolutePaths, .dataDir])
+        XCTAssertEqual(try WorkspacePaths.dataDir(for: profile).lastPathComponent, "jamf-cli-data")
+    }
+
+    func testTheGUIKeepsReadingConfigYamlAsTyped() throws {
+        try writeConfig(outputDir: outside, allowAbsolute: true)
+        _ = check()
+        try writeConfig(outputDir: outside + "-peer", allowAbsolute: true)
+        SharedConfigPin.checkpoint(profile: profile, appSupport: appSupport, onLine: nil)
+        XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside + "-peer")
+    }
+
+    func testConfirmingEndsTheFallback() throws {
+        try writeConfig(outputDir: outside, allowAbsolute: true)
+        _ = check()
+        try writeConfig(outputDir: outside + "-peer", allowAbsolute: true)
+        SharedConfigPin.markHeadless()
+        SharedConfigPin.checkpoint(profile: profile, appSupport: appSupport, onLine: nil)
+        XCTAssertNotEqual(try WorkspacePaths.outputDir(for: profile).path, outside + "-peer")
+        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        XCTAssertEqual(try WorkspacePaths.outputDir(for: profile).path, outside + "-peer")
+    }
+
+    // MARK: - Retention sweep and collect
+
+    func testSweepArchivesRatherThanDeletesAfterTheModeChanges() throws {
+        try writeConfig(retentionMode: "archive")
+        _ = check()
+        try writeConfig(retentionMode: "delete")
+        let dir = workspace.appendingPathComponent("jamf-cli-data/computers", isDirectory: true)
+        try fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
+        let old = dir.appendingPathComponent("computers_20250101T000000.json")
+        try "[]".write(to: old, atomically: true, encoding: .utf8)
+        try fileManager.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -400 * 86_400)], ofItemAtPath: old.path)
+
+        XCTAssertEqual(SnapshotRetentionService.sweepIfDue(profile: profile), 1)
+
+        XCTAssertFalse(fileManager.fileExists(atPath: old.path))
+        XCTAssertTrue(fileManager.fileExists(atPath: workspace.appendingPathComponent(
+            "_archive/jamf-cli-data/computers/\(old.lastPathComponent)").path))
+    }
+
+    func testCollectLogsTheDriftBeforeAnythingElse() async throws {
+        try writeConfig()
+        _ = check()
+        try writeConfig(retentionMode: "delete")
+        let lines = LineBox()
+        _ = try? await ReportEngine.collect(
+            profile: profile, workspacePaths: WorkspacePaths.self, tiers: [.refresh],
+            force: true, locateJamfCLI: { nil }, onLine: { lines.add($0.text) })
+        XCTAssertEqual(lines.all.first,
+                       "[warn] shared config changed retention.mode: confirm on this Mac (Config Doctor)")
     }
 }
