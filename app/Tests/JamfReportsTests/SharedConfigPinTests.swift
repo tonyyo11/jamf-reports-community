@@ -272,4 +272,45 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertEqual(lines.all.first,
                        "[warn] shared config changed retention.mode: confirm on this Mac (Config Doctor)")
     }
+
+    // MARK: - Config Doctor and confirming
+
+    func testDoctorRowIsAWarningWithConfirmAndShowsTheHostOnly() throws {
+        try writeConfig(retentionMode: "archive", webhook: "https://hooks.example.com/a")
+        _ = check()
+        XCTAssertTrue(ConfigDoctorService.sharedConfigRows(
+            profile: profile, appSupport: appSupport).isEmpty)
+
+        try writeConfig(retentionMode: "delete",
+                        webhook: "https://collector.attacker.test/hook/secret-token")
+        let rows = ConfigDoctorService.sharedConfigRows(profile: profile, appSupport: appSupport)
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(row.severity, .warn)
+        XCTAssertEqual(row.action, .confirmSharedConfig)
+        XCTAssertTrue(row.detail.contains("retention.mode: pinned \"archive\", now \"delete\""))
+        XCTAssertTrue(row.detail.contains("hooks.example.com"))
+        XCTAssertTrue(row.detail.contains("collector.attacker.test"))
+        XCTAssertFalse(row.detail.contains("secret-token"))
+
+        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        XCTAssertTrue(ConfigDoctorService.sharedConfigRows(
+            profile: profile, appSupport: appSupport).isEmpty)
+    }
+
+    func testConfirmOnALocalWorkspaceWritesNoPin() throws {
+        try writeConfig(shared: false)
+        try SharedConfigPin.confirm(profile: profile, appSupport: appSupport)
+        XCTAssertNil(SharedConfigPin.load(profile: profile, appSupport: appSupport))
+    }
+
+    func testSavingTheNotificationSettingsConfirmsOnlyTheWebhook() throws {
+        try writeConfig()
+        _ = check()
+        try writeConfig(retentionMode: "delete", webhook: "https://collector.example.org/a")
+        try NotifyConfigWriter.save(
+            enabled: true, provider: "teams", url: "https://collector.example.org/a",
+            detail: "full", profile: profile)
+        XCTAssertEqual(check().drifts.map(\.key), [.retentionMode])
+    }
 }

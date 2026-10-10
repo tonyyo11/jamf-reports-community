@@ -789,6 +789,8 @@ final class WorkspaceStore {
         )
         _loadedDoc = saved.document
         _loadedStamp = saved.stamp
+        // The output folders on screen are what the operator just saved on this Mac.
+        confirmSharedConfig([.outputDir, .archiveDir])
         // A block left as typed was not written: the screen goes back to what the file holds
         // for it, rather than calling its own entries saved.
         if saved.report.keptBlocks.contains("custom_eas") {
@@ -803,6 +805,16 @@ final class WorkspaceStore {
         // Re-saving drops the orphaned sequence items, so the healed-keys note clears.
         configRepairedKeys = saved.document.repairedKeys.sorted()
         return saved.report
+    }
+
+    /// A save on this Mac confirms the shared-config keys it wrote, and only those.
+    private func confirmSharedConfig(_ keys: Set<SharedConfigPin.Key>) {
+        do {
+            try SharedConfigPin.confirm(profile: profile, keys: keys)
+        } catch {
+            AppLogger.collect.warning(
+                "SharedConfigPin: could not confirm after save: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Each of these writes one setting to config.yaml, then adopts it and re-reads the file's

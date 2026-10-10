@@ -144,10 +144,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             return Check(workspace: nil, pinned: nil, drifts: [])
         }
-        let sharedConfig = (try? ConfigLoader.load(
-            from: workspace.appendingPathComponent("config.yaml")))?.sharedWorkspace
-        guard SharedWorkspace.isEffectivelyShared(workspace: workspace, config: sharedConfig),
-              let current = current(workspace: workspace) else {
+        guard let current = sharedCurrent(workspace: workspace) else {
             return Check(workspace: workspace, pinned: nil, drifts: [])
         }
         guard let pinned = load(profile: profile, appSupport: appSupport) else {
@@ -163,14 +160,24 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                      drifts: diff(pinned: pinned, current: current))
     }
 
-    /// Re-pins `keys` (all of them when nil) to what config.yaml holds now. Other drifted keys
+    /// `current(workspace:)` for a workspace that is effectively shared; nil for a local one.
+    private static func sharedCurrent(workspace: URL) -> SharedConfigPin? {
+        let sharedConfig = (try? ConfigLoader.load(
+            from: workspace.appendingPathComponent("config.yaml")))?.sharedWorkspace
+        guard SharedWorkspace.isEffectivelyShared(workspace: workspace, config: sharedConfig)
+        else { return nil }
+        return current(workspace: workspace)
+    }
+
+    /// Re-pins `keys` (all of them when nil) to what config.yaml holds now; a local workspace
+    /// has no pin and is left alone. Other drifted keys
     /// stay drifted: a Config screen save that only writes the output folders must not
     /// confirm a peer's retention change.
     static func confirm(
         profile: String, keys: Set<Key>? = nil, appSupport: URL = AppSupport.directory()
     ) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile),
-              let current = current(workspace: workspace) else { return }
+              let current = sharedCurrent(workspace: workspace) else { return }
         var pin = load(profile: profile, appSupport: appSupport) ?? current
         for key in keys ?? Set(Key.allCases) { key.copy(from: current, into: &pin) }
         try save(pin, profile: profile, appSupport: appSupport)

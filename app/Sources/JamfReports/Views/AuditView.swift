@@ -353,6 +353,25 @@ struct AuditView: View {
         }
     }
 
+    private func runDoctorAction(_ action: DoctorAction) {
+        switch action {
+        case .confirmSharedConfig:
+            let profile = workspace.profile
+            Task {
+                do {
+                    try await Task.detached { try SharedConfigPin.confirm(profile: profile) }.value
+                    workspace.toast = Toast(
+                        message: "Shared config confirmed on this Mac", style: .success)
+                } catch {
+                    workspace.toast = Toast(
+                        message: "Could not confirm · \(error.localizedDescription)",
+                        style: .danger)
+                }
+                loadDoctorReport()
+            }
+        }
+    }
+
     @ViewBuilder
     private var configSection: some View {
         if workspace.demoMode {
@@ -409,7 +428,7 @@ struct AuditView: View {
                 Divider().background(Theme.Colors.hairline)
                 VStack(spacing: 0) {
                     ForEach(Array(report.rows.enumerated()), id: \.element.id) { idx, row in
-                        DoctorRowView(row: row)
+                        DoctorRowView(row: row, onAction: runDoctorAction)
                         if idx < report.rows.count - 1 {
                             Divider().background(Theme.Colors.hairline)
                         }
@@ -1639,6 +1658,7 @@ private func toneColor(_ tone: Pill.Tone) -> Color {
 
 private struct DoctorRowView: View {
     let row: DoctorRow
+    let onAction: (DoctorAction) -> Void
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
@@ -1659,12 +1679,17 @@ private struct DoctorRowView: View {
                         .foregroundStyle(Theme.Colors.fgMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if let action = row.action {
+                    Button("Confirm") { onAction(action) }
+                        .controlSize(.small)
+                        .padding(.top, 2)
+                }
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: row.action == nil ? .combine : .contain)
     }
 
     private var severityLabel: String {
