@@ -24,12 +24,17 @@ struct DDMBlueprintService: Sendable {
         struct Blueprint: Sendable, Equatable, Identifiable {
             let name: String
             let state: String
-            let scope: Int
-            let steps: Int
-            let succeeded: Int
+            /// Nil when jamf-cli left the figure out: `scope` and `steps` when its detail fetch
+            /// failed, `succeeded`, `failed` and `pending` for a blueprint that is not
+            /// deployed. Not the same fact as 0.
+            let scope: Int?
+            let steps: Int?
+            let succeeded: Int?
             let failed: Int?
             let pending: Int?
-            var id: String { name.isEmpty ? "(unnamed)-\(state)-\(scope)" : name }
+            var id: String {
+                name.isEmpty ? "(unnamed)-\(state)-\(scope.map(String.init) ?? "none")" : name
+            }
         }
 
         struct Declaration: Sendable, Equatable, Identifiable {
@@ -148,9 +153,9 @@ struct DDMBlueprintService: Sendable {
             Snapshot.Blueprint(
                 name: raw.name ?? "",
                 state: raw.state ?? "",
-                scope: raw.scope ?? 0,
-                steps: raw.steps ?? 0,
-                succeeded: raw.succeeded ?? 0,
+                scope: raw.scope,
+                steps: raw.steps,
+                succeeded: raw.succeeded,
                 failed: raw.failed,
                 pending: raw.pending
             )
