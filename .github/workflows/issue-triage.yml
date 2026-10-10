@@ -44,6 +44,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The action holds its own token; a copy left in .git/config would be
+          # readable with the Read tool the model already has.
+          persist-credentials: false
 
       - name: Triage
         uses: anthropics/claude-code-action@c96dd0a84e0232ab86947fca5fe34f1caae8792f  # v1
@@ -58,9 +62,16 @@ jobs:
           allowed_non_write_users: "*"
           # Tool allow-list, the layer that actually constrains the model rather
           # than asking it nicely. Read-only code access plus exactly one write
-          # verb: posting an issue comment. No Edit, no Write, no general Bash,
-          # no git, no gh commands that mutate anything else. Even a fully
-          # successful prompt injection has no tool with which to change code.
+          # verb: posting a comment on THIS issue (the number is an integer the
+          # event supplies, so the interpolation is safe). No Edit, no Write, no
+          # general Bash, no git, no gh commands that mutate anything else, no
+          # reading the runner's process environment (`//` is an absolute path
+          # in a permission rule; a single `/` is relative to the checkout),
+          # and no posting a FILE as the comment body, which would carry any
+          # readable file into a public issue. Even a fully successful prompt
+          # injection has no tool with which to change code or to post
+          # anywhere else; the issues-write token is the residual exposure,
+          # and it expires with the job.
           #
           # Model + turn cap are the cost controls. This runs on the maintainer's
           # subscription and is triggered by members of the public, so it is
@@ -69,7 +80,8 @@ jobs:
           # starts truncating mid-investigation; drop the model to
           # claude-haiku-4-5-20251001 if volume ever outweighs depth.
           claude_args: |
-            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue comment:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue comment ${{ github.event.issue.number }}:*)"
+            --disallowedTools "Read(//proc/**),Bash(gh issue comment ${{ github.event.issue.number }} --body-file:*),Bash(gh issue comment ${{ github.event.issue.number }} -F:*)"
             --model claude-sonnet-5
             --max-turns 25
           prompt: |
@@ -111,7 +123,9 @@ jobs:
                - WORKS AS DESIGNED — the behavior is intentional. Explain why
                  and what the reporter probably wants instead.
 
-            4. Post ONE comment on the issue with your findings. Structure it:
+            4. Post ONE comment on the issue with your findings, using
+               `gh issue comment <number> --body "<text>"` with the text
+               inline (never --body-file). Structure it:
                what you understand the problem to be, what you found in the
                code (with file:line), your verdict, and any specific next step
                for the reporter. Be direct and concise. No emoji.
