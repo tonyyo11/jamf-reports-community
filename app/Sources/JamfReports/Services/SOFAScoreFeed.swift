@@ -56,12 +56,15 @@ struct SOFAScoreFeed: Sendable, Equatable {
     /// Whether `version` counts as current with `graceDays`: at least the newest release of
     /// its major that came out `graceDays` or more before `now`. True when every release of
     /// that major is newer than that (nothing is required yet); nil for a major the feed does
-    /// not list or a version that does not parse.
+    /// not list, a version that does not parse, or a major whose releases are all dated in the
+    /// future (a feed cannot be trusted to say nothing is required).
     func isCurrent(_ version: String, graceDays: Int, now: Date) -> Bool? {
         let tuple = SOFAFeedService.versionTuple(version)
         guard let major = tuple.first, let releases = releasesByMajor[major] else { return nil }
+        let dated = releases.filter { !Self.isFutureDated($0.date, now: now) }
+        guard !dated.isEmpty else { return nil }
         let cutoff = now.addingTimeInterval(-Double(graceDays) * 86_400)
-        guard let required = releases.first(where: { $0.date <= cutoff }) else { return true }
+        guard let required = dated.first(where: { $0.date <= cutoff }) else { return true }
         return SOFAFeedService.compareTuples(
             tuple, SOFAFeedService.versionTuple(required.version)) >= 0
     }
@@ -72,7 +75,14 @@ struct SOFAScoreFeed: Sendable, Equatable {
         guard let latest = xprotectVersion else { return nil }
         if version >= latest { return true }
         guard let released = xprotectReleased else { return false }
+        guard !Self.isFutureDated(released, now: now) else { return false }
         return now.timeIntervalSince(released) < Double(graceDays) * 86_400
+    }
+
+    /// The feed is trusted on TLS alone, so a release dated ahead of now would otherwise stretch
+    /// the grace period without bound. A day of allowance covers time zones on release day.
+    private static func isFutureDated(_ date: Date, now: Date) -> Bool {
+        date > now.addingTimeInterval(86_400)
     }
 
     private static func date(from raw: String) -> Date? {

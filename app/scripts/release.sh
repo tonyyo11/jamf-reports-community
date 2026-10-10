@@ -25,6 +25,9 @@ source "${PWD}/scripts/lib/versioning.zsh"
 : "${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE env var not set (notarytool keychain profile name)}"
 
 export DEVELOPER_ID_APP NOTARY_KEYCHAIN_PROFILE RELEASE_VERSION
+# package-dmg.sh reads the profile under its own name; without this bridge the DMG
+# notarizes only when the profile happens to be called JamfReports-Notary.
+export NOTARY_PROFILE="${NOTARY_KEYCHAIN_PROFILE}"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "JamfReports Release Pipeline"
