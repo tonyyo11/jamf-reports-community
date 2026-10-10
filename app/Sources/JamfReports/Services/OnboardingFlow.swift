@@ -507,7 +507,7 @@ final class OnboardingFlow {
 
     private func registerOAuth2Profile() async throws {
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
-        try verifyJamfCLISignatureGate(binary: binary)
+        try Self.signatureGate(binary: binary)
         guard let url = normalizedJamfURL else { throw FlowError.invalidJamfURL }
         guard isProfileNameValid else { throw FlowError.invalidProfile }
 
@@ -549,7 +549,7 @@ final class OnboardingFlow {
 
     private func registerPlatformGatewayProfile() async throws {
         guard let binary = CLIBridge().locate("jamf-cli") else { throw FlowError.missingJamfCLI }
-        try verifyJamfCLISignatureGate(binary: binary)
+        try Self.signatureGate(binary: binary)
         guard isProfileNameValid else { throw FlowError.invalidProfile }
         guard isGatewayURLValid else { throw FlowError.invalidJamfURL }
 
@@ -610,7 +610,7 @@ final class OnboardingFlow {
         // The client secret goes to this binary, so it passes the same signature gate as
         // the Jamf Pro paths.
         do {
-            try verifyJamfCLISignatureGate(binary: binary)
+            try Self.signatureGate(binary: binary)
         } catch {
             protectConnectionError = error.localizedDescription
             return
@@ -685,7 +685,7 @@ final class OnboardingFlow {
         // The API key goes to this binary, so it passes the same signature gate as the
         // Jamf Pro paths.
         do {
-            try verifyJamfCLISignatureGate(binary: binary)
+            try Self.signatureGate(binary: binary)
         } catch {
             schoolConnectionError = error.localizedDescription
             return
@@ -1170,7 +1170,9 @@ final class OnboardingFlow {
     ///   - verify: Closure that performs the actual signature check. Defaults to
     ///     `CodeSignVerifier.verify(url:expectedTeamID:)`.
     /// - Throws: `FlowError.processFailed` when enforcement is on and verification fails.
-    internal func verifyJamfCLISignatureGate(
+    ///
+    /// `nonisolated`, so `runWithPTY` can repeat the gate at launch off the main actor.
+    nonisolated static func signatureGate(
         binary: URL,
         enforce: Bool = JamfCLIIdentity.enforceSignatureCheck,
         expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
@@ -1378,7 +1380,7 @@ final class OnboardingFlow {
         return redacted
     }
 
-    private struct PTYResult: Sendable {
+    struct PTYResult: Sendable {
         let exitCode: Int32
         let combined: String
     }
@@ -1387,10 +1389,19 @@ final class OnboardingFlow {
     /// that probe for a controlling terminal (e.g. `jamf-cli config add-profile`,
     /// which reads credentials via `golang.org/x/term`) work without launching a
     /// separate Terminal window.
-    private nonisolated static func runWithPTY(
+    ///
+    /// The signature gate runs again here, on the symlink-resolved path that is then launched,
+    /// immediately before `process.run()`: the registration-time gate is followed by a
+    /// version probe of up to 60 s and the PTY setup, which is long enough to swap the binary.
+    nonisolated static func runWithPTY(
         executable: URL,
         arguments: [String],
-        stdin: Data
+        stdin: Data,
+        enforce: Bool = JamfCLIIdentity.enforceSignatureCheck,
+        expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
+        verify: @escaping @Sendable (URL, String) -> Bool = {
+            CodeSignVerifier.verify(url: $0, expectedTeamID: $1)
+        }
     ) async throws -> PTYResult {
         try await Task.detached(priority: .userInitiated) {
             let master = Darwin.posix_openpt(O_RDWR | O_NOCTTY)
@@ -1429,7 +1440,8 @@ final class OnboardingFlow {
             let slaveHandle = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
 
             let process = Process()
-            process.executableURL = executable
+            let launchURL = executable.resolvingSymlinksInPath()
+            process.executableURL = launchURL
             process.arguments = arguments
             // SF-10/B-13: this is the most security-sensitive Process site —
             // it streams the user's client secret over the PTY into jamf-cli.
@@ -1441,6 +1453,14 @@ final class OnboardingFlow {
             process.standardOutput = slaveHandle
             process.standardError = slaveHandle
 
+            do {
+                try signatureGate(
+                    binary: launchURL, enforce: enforce,
+                    expectedTeamID: expectedTeamID, verify: verify)
+            } catch {
+                Darwin.close(slave)
+                throw error
+            }
             do {
                 try process.run()
             } catch {
@@ -1454,13 +1474,20 @@ final class OnboardingFlow {
 
             // Drain the master in a background task; jamf-cli writes prompts
             // before consuming stdin, so we cannot block on a single sequential
-            // read/write pairing.
+            // read/write pairing. read(2) rather than FileHandle.availableData: the
+            // loop must end on its own when the child is gone (EOF, or EIO once no
+            // slave end is open), because closing the handle under a blocked
+            // reader raises NSFileHandleOperationException on macOS 26.
             let collector = PTYOutputCollector()
             let drain = Task.detached(priority: .userInitiated) {
+                var buffer = [UInt8](repeating: 0, count: 4096)
                 while true {
-                    let chunk = masterHandle.availableData
-                    if chunk.isEmpty { break }
-                    await collector.append(chunk)
+                    let count = buffer.withUnsafeMutableBytes {
+                        Darwin.read(master, $0.baseAddress, $0.count)
+                    }
+                    if count < 0 && errno == EINTR { continue }
+                    guard count > 0 else { break }
+                    await collector.append(Data(buffer[0..<count]))
                 }
             }
 
@@ -1473,9 +1500,9 @@ final class OnboardingFlow {
             }
 
             process.waitUntilExit()
-            // Closing the master ends the read loop in the drain task.
-            try? masterHandle.close()
+            // The child's exit closes the last slave end, which ends the drain.
             await drain.value
+            try? masterHandle.close()
 
             let combined = await collector.snapshot()
             return PTYResult(exitCode: process.terminationStatus, combined: combined)

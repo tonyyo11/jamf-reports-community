@@ -132,6 +132,22 @@ final class CLIBridgeStreamingTests: XCTestCase {
                           "returned at the timeout, not at the child's exit")
     }
 
+    func testTimeoutKeepsAnUnterminatedLastStderrLine() async throws {
+        let collector = LineCollector()
+        let (exit, _) = try await CLIBridge().runAndCapture(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            // A grandchild keeps the pipes open past the shell's SIGTERM, so stderr never
+            // reaches EOF and only the timeout path can flush the partial line.
+            arguments: ["-c", "printf 'no newline' 1>&2; (trap '' TERM; exec /bin/sleep 2) & wait"],
+            timeout: 0.5,
+            onLine: { line in collector.append(line) }
+        )
+
+        XCTAssertEqual(exit, CLIBridge.exitCodeTimedOut)
+        XCTAssertTrue(collector.snapshot().map(\.text).contains("no newline"),
+                      "a partial stderr line read before the timeout must reach onLine")
+    }
+
     func testTimedOutChildIsGoneWhenTheCallReturns() async throws {
         let pidFile = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("JRC-Timeout-\(UUID().uuidString).pid")

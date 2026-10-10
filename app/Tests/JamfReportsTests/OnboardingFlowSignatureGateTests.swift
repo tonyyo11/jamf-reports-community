@@ -8,7 +8,7 @@ import XCTest
 /// 2. enforcement-disabled: enforce=false → no throw, verifier not called
 /// 3. redacted output: failure message must not leak the team ID value
 ///
-/// Tests target `verifyJamfCLISignatureGate(binary:enforce:expectedTeamID:verify:)`
+/// Tests target `OnboardingFlow.signatureGate(binary:enforce:expectedTeamID:verify:)`
 /// directly — the seam added to make the gate testable without spawning a PTY or
 /// requiring a live signed binary.
 @MainActor
@@ -23,10 +23,8 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// When enforcement is active and the verifier returns false, the gate must
     /// throw FlowError.processFailed with a generic, non-sensitive message.
     func test_rejectUntrusted_throwsWhenVerifierReturnsFalse() throws {
-        let flow = OnboardingFlow()
-
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: "483DWKW443",
@@ -52,11 +50,10 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// rather than silently skipping — nil team ID with enforce=true is a
     /// misconfiguration, not a skip path.
     func test_rejectUntrusted_throwsWhenTeamIDIsNil() throws {
-        let flow = OnboardingFlow()
         var verifierCalled = false
 
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: nil,
@@ -73,11 +70,10 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
 
     /// When enforce=false the gate must not call the verifier and must not throw.
     func test_enforcementDisabled_doesNotCallVerifierAndDoesNotThrow() throws {
-        let flow = OnboardingFlow()
         var verifierCallCount = 0
 
         XCTAssertNoThrow(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: false,
                 expectedTeamID: "483DWKW443",
@@ -96,10 +92,8 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// When enforce=false and teamID is nil the gate must still not throw —
     /// the skip path is the same regardless of team ID presence.
     func test_enforcementDisabled_nilTeamIDDoesNotThrow() throws {
-        let flow = OnboardingFlow()
-
         XCTAssertNoThrow(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: false,
                 expectedTeamID: nil,
@@ -114,12 +108,11 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// value. The message is a hardcoded generic string; the team ID must stay
     /// internal to the gate's log output only, never leaked to the UI.
     func test_redactedOutput_errorMessageDoesNotLeakTeamID() throws {
-        let flow = OnboardingFlow()
         let sensitiveTeamID = "SENSITIVE-TEAM-ID-123"
 
         var capturedMessage: String?
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: sensitiveTeamID,
@@ -147,13 +140,11 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
     /// verify closure must not cause that token to appear in the thrown error —
     /// confirming the gate always throws its own generic string, not verifier output.
     func test_redactedOutput_genericMessageIsIndependentOfVerifierOutput() throws {
-        let flow = OnboardingFlow()
-
         // The verifier is a black box; whatever "internal" string it might
         // associate with failure must not leak. The gate synthesizes its own message.
         var capturedMessage: String?
         XCTAssertThrowsError(
-            try flow.verifyJamfCLISignatureGate(
+            try OnboardingFlow.signatureGate(
                 binary: dummyBinary,
                 enforce: true,
                 expectedTeamID: "AnyTeamID",
@@ -176,4 +167,69 @@ final class OnboardingFlowSignatureGateTests: XCTestCase {
             "Error message must be the hardcoded generic string, not interpolated"
         )
     }
+
+    // MARK: - gate at launch
+
+    /// The gate at registration time is followed by a version probe of up to 60 s, so the check
+    /// that matters is the one immediately before the child is spawned.
+    func test_runWithPTY_failingVerifierStopsTheLaunch() async throws {
+        let dir = try makeStubDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (stub, marker) = try makeMarkerStub(in: dir)
+
+        do {
+            _ = try await OnboardingFlow.runWithPTY(
+                executable: stub, arguments: [marker.path], stdin: Data(),
+                enforce: true, expectedTeamID: "TEAM", verify: { _, _ in false }
+            )
+            XCTFail("An untrusted binary must not launch")
+        } catch let OnboardingFlow.FlowError.processFailed(message) {
+            XCTAssertTrue(message.contains("signature verification failed"), message)
+        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: marker.path),
+            "The child must not have run")
+    }
+
+    /// The verified path and the launched path are the same symlink-resolved file.
+    func test_runWithPTY_verifiesAndLaunchesTheResolvedPath() async throws {
+        let dir = try makeStubDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let (stub, marker) = try makeMarkerStub(in: dir)
+        let link = dir.appendingPathComponent("link-to-stub")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: stub)
+
+        let seen = PathRecorder()
+        let result = try await OnboardingFlow.runWithPTY(
+            executable: link, arguments: [marker.path], stdin: Data(),
+            enforce: true, expectedTeamID: "TEAM",
+            verify: { url, _ in seen.record(url.path); return true }
+        )
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(seen.paths, [stub.resolvingSymlinksInPath().path])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path))
+    }
+
+    private func makeStubDir() throws -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("OnboardingGate-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// A script that creates the file named by its first argument. Not named `jamf-cli`, which
+    /// `CLIBridge.codesignGate` keys on.
+    private func makeMarkerStub(in dir: URL) throws -> (stub: URL, marker: URL) {
+        let stub = dir.appendingPathComponent("onboarding-stub")
+        try Data("#!/bin/sh\ntouch \"$1\"\n".utf8).write(to: stub)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        return (stub, dir.appendingPathComponent("launched"))
+    }
+}
+
+private final class PathRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+    func record(_ path: String) { lock.lock(); stored.append(path); lock.unlock() }
+    var paths: [String] { lock.lock(); defer { lock.unlock() }; return stored }
 }

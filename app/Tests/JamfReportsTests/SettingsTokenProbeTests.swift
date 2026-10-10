@@ -17,7 +17,7 @@ final class SettingsTokenProbeTests: XCTestCase {
     }
 
     private static func status(_ name: String) -> TokenStatus {
-        TokenStatus.make(profile: name, token: "token", expiresAt: nil, raw: "")
+        TokenStatus.make(profile: name, token: "token", expiresAt: nil)
     }
 
     func testProbesEveryProfileAndRecordsNonNilStatuses() async {
