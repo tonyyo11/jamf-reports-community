@@ -68,6 +68,14 @@ final class JamfCLIInstallerCodesignGateTests: XCTestCase {
     }
 
     @MainActor
+    func testCheckForUpdateReportsNotInstalledWhenJamfCLIAbsent() async {
+        guard JamfCLIInstaller.currentInstallation() == nil else { return }
+        let result = await JamfCLIInstaller().checkForUpdate()
+        XCTAssertFalse(result.succeeded)
+        XCTAssertEqual(result.message, "jamf-cli is not installed.")
+    }
+
+    @MainActor
     func testCodesignVerifiedFieldExists() {
         // Structural test: verify that the Installation value type exposes
         // codesignVerified. Compiles only when the field exists; the assertion

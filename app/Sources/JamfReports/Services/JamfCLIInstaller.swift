@@ -327,7 +327,11 @@ final class JamfCLIInstaller {
     }
 
     func checkForUpdate() async -> UpdateResult {
-        guard let installation = Self.currentInstallation() else {
+        // The probe blocks on up to two 60 s version launches and `brew --prefix`.
+        let probed = await Task.detached(priority: .userInitiated) {
+            JamfCLIInstaller.currentInstallation()
+        }.value
+        guard let installation = probed else {
             return UpdateResult(succeeded: false, message: "jamf-cli is not installed.")
         }
 
