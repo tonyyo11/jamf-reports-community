@@ -1387,6 +1387,22 @@ final class OnboardingFlow {
         let combined: String
     }
 
+    /// Seconds `runWithPTY` waits for output before it writes the next line anyway.
+    nonisolated static let ptyPromptGrace: TimeInterval = 2
+
+    /// `data` cut after each newline, so each value can go in on its own; a last value with no
+    /// newline is kept as is.
+    nonisolated static func ptyLines(_ data: Data) -> [Data] {
+        var lines: [Data] = []
+        var start = data.startIndex
+        for index in data.indices where data[index] == 0x0A {
+            lines.append(data[start...index])
+            start = data.index(after: index)
+        }
+        if start < data.endIndex { lines.append(data[start...]) }
+        return lines
+    }
+
     /// Run a child process with stdin/stdout/stderr attached to a pty so commands
     /// that probe for a controlling terminal (e.g. `jamf-cli config add-profile`,
     /// which reads credentials via `golang.org/x/term`) work without launching a
@@ -1395,6 +1411,13 @@ final class OnboardingFlow {
     /// The signature gate runs again here, on the symlink-resolved path that is then launched,
     /// immediately before `process.run()`: the registration-time gate is followed by a
     /// version probe of up to 60 s and the PTY setup, which is long enough to swap the binary.
+    ///
+    /// `timeout` bounds the whole run: a child still running then is terminated and the call
+    /// throws `FlowError.processFailed("jamf-cli did not finish within N s")`. `stdin` is written
+    /// one line at a time, in the order given: a line goes in once the child has printed
+    /// something since the previous line, or `ptyPromptGrace` seconds after the previous line
+    /// for a child that prints no prompt. The order is the caller's; it is not matched to prompt
+    /// text.
     nonisolated static func runWithPTY(
         executable: URL,
         arguments: [String],
@@ -1403,7 +1426,8 @@ final class OnboardingFlow {
         expectedTeamID: String? = JamfCLIIdentity.expectedTeamID,
         verify: @escaping @Sendable (URL, String) -> Bool = {
             CodeSignVerifier.verify(url: $0, expectedTeamID: $1)
-        }
+        },
+        timeout: TimeInterval = 120
     ) async throws -> PTYResult {
         try await Task.detached(priority: .userInitiated) {
             let master = Darwin.posix_openpt(O_RDWR | O_NOCTTY)
@@ -1454,6 +1478,9 @@ final class OnboardingFlow {
             process.standardInput = slaveHandle
             process.standardOutput = slaveHandle
             process.standardError = slaveHandle
+            let box = TimedProcessBox()
+            box.set(process)
+            process.terminationHandler = { [box] _ in box.disarmTimeout() }
 
             do {
                 try signatureGate(
@@ -1469,6 +1496,8 @@ final class OnboardingFlow {
                 Darwin.close(slave)
                 throw FlowError.processFailed("launch failed: \(error.localizedDescription)")
             }
+
+            box.armTimeout(timeout)
 
             // Close the slave end in the parent so reads on master see EOF when
             // the child exits.
@@ -1493,18 +1522,33 @@ final class OnboardingFlow {
                 }
             }
 
-            // Push credentials in. The child's term reader expects "\n" between
-            // values. If the write end has already closed (process exited
-            // early), suppress EPIPE.
-            stdin.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
-                guard let base = bytes.baseAddress, !bytes.isEmpty else { return }
-                _ = Darwin.write(master, base, bytes.count)
+            // Push credentials in, one line per prompt. The child's term reader expects "\n"
+            // between values. If the write end has already closed (process exited early),
+            // suppress EPIPE.
+            var seenBytes = 0
+            for line in ptyLines(stdin) {
+                let deadline = Date().addingTimeInterval(ptyPromptGrace)
+                while process.isRunning, !box.didTimeOut, Date() < deadline,
+                    await collector.byteCount() <= seenBytes {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                }
+                guard process.isRunning, !box.didTimeOut else { break }
+                // Counted before the write, so a prompt that arrives during it still counts.
+                seenBytes = await collector.byteCount()
+                line.withUnsafeBytes { (bytes: UnsafeRawBufferPointer) in
+                    guard let base = bytes.baseAddress, !bytes.isEmpty else { return }
+                    _ = Darwin.write(master, base, bytes.count)
+                }
             }
 
             process.waitUntilExit()
             // The child's exit closes the last slave end, which ends the drain.
             await drain.value
             try? masterHandle.close()
+            if box.didTimeOut {
+                throw FlowError.processFailed(
+                    "jamf-cli did not finish within \(Int(timeout.rounded())) s")
+            }
 
             let combined = await collector.snapshot()
             return PTYResult(exitCode: process.terminationStatus, combined: combined)
@@ -1517,6 +1561,10 @@ private actor PTYOutputCollector {
 
     func append(_ data: Data) {
         buffer.append(data)
+    }
+
+    func byteCount() -> Int {
+        buffer.count
     }
 
     func snapshot() -> String {
