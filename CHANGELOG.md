@@ -15,6 +15,13 @@ versions in this repository map to git tags.
   changes in place.
 - A jamf-cli download that is redirected off GitHub's hosts is refused.
 - The raw token JSON is no longer kept in memory.
+- The Security Score no longer trusts a macOS SOFA feed with future-dated releases: a release
+  dated more than a day ahead is ignored, a macOS version with only such releases scores as
+  unknown rather than current, and a future-dated XProtect release gives older XProtect
+  versions no grace period.
+- The issue-triage workflow can comment only on the issue that triggered it, cannot post a file
+  as the comment body, cannot read the runner's process environment, and no longer leaves the
+  checkout token on disk.
 
 ### Fixed
 
@@ -25,6 +32,10 @@ versions in this repository map to git tags.
 - Check for update no longer blocks the window.
 - A pre-release jamf-cli now counts as older than its release, and the dashboard and the newer
   command-name behaviour treat a release candidate of their minimum version as below it.
+- Release tooling: the notary profile named for the app now also reaches the DMG step (it
+  worked only when the profile was called JamfReports-Notary), every release signature asks
+  for a secure timestamp, and a public release build stops instead of falling back to an
+  ad-hoc signature that would fail at notarization.
 
 ### Dependencies
 
