@@ -28,8 +28,7 @@ final class TokenStatusTests: XCTestCase {
         let bridge = makeBridge()
         let status = bridge.parseTokenStatus(
             profile: "test",
-            data: data,
-            raw: String(decoding: data, as: UTF8.self)
+            data: data
         )
 
         XCTAssertTrue(status.isValid, "token field must not be empty")
@@ -41,8 +40,7 @@ final class TokenStatusTests: XCTestCase {
         let bridge = makeBridge()
         let status = bridge.parseTokenStatus(
             profile: "test",
-            data: data,
-            raw: String(decoding: data, as: UTF8.self)
+            data: data
         )
 
         XCTAssertTrue(status.isValid, "token field must not be empty")
@@ -56,7 +54,7 @@ final class TokenStatusTests: XCTestCase {
         let data = json.data(using: .utf8)!
         let bridge = makeBridge()
 
-        let status = bridge.parseTokenStatus(profile: "p", data: data, raw: json)
+        let status = bridge.parseTokenStatus(profile: "p", data: data)
 
         XCTAssertTrue(status.isValid)
         XCTAssertEqual(status.profile, "p")
@@ -67,7 +65,7 @@ final class TokenStatusTests: XCTestCase {
         let data = json.data(using: .utf8)!
         let bridge = makeBridge()
 
-        let status = bridge.parseTokenStatus(profile: "p", data: data, raw: json)
+        let status = bridge.parseTokenStatus(profile: "p", data: data)
 
         XCTAssertFalse(status.isValid)
     }
@@ -77,7 +75,7 @@ final class TokenStatusTests: XCTestCase {
         let data = json.data(using: .utf8)!
         let bridge = makeBridge()
 
-        let status = bridge.parseTokenStatus(profile: "p", data: data, raw: json)
+        let status = bridge.parseTokenStatus(profile: "p", data: data)
 
         XCTAssertFalse(status.isValid)
     }
@@ -87,7 +85,7 @@ final class TokenStatusTests: XCTestCase {
         let data = json.data(using: .utf8)!
         let bridge = makeBridge()
 
-        let status = bridge.parseTokenStatus(profile: "p", data: data, raw: json)
+        let status = bridge.parseTokenStatus(profile: "p", data: data)
 
         XCTAssertNotNil(status.expiresAt)
         // Verify the year parsed correctly.
@@ -99,7 +97,7 @@ final class TokenStatusTests: XCTestCase {
         let data = "not json at all".data(using: .utf8)!
         let bridge = makeBridge()
 
-        let status = bridge.parseTokenStatus(profile: "p", data: data, raw: "not json at all")
+        let status = bridge.parseTokenStatus(profile: "p", data: data)
 
         XCTAssertFalse(status.isValid)
         XCTAssertNil(status.expiresAt)
@@ -112,8 +110,7 @@ final class TokenStatusTests: XCTestCase {
         let status = TokenStatus.make(
             profile: "p",
             token: "tok",
-            expiresAt: past,
-            raw: ""
+            expiresAt: past
         )
 
         XCTAssertTrue(status.isExpired)
@@ -124,15 +121,14 @@ final class TokenStatusTests: XCTestCase {
         let status = TokenStatus.make(
             profile: "p",
             token: "tok",
-            expiresAt: future,
-            raw: ""
+            expiresAt: future
         )
 
         XCTAssertFalse(status.isExpired)
     }
 
     func testIsExpired_nilExpiresAt_returnsFalse() {
-        let status = TokenStatus.make(profile: "p", token: "tok", expiresAt: nil, raw: "")
+        let status = TokenStatus.make(profile: "p", token: "tok", expiresAt: nil)
 
         XCTAssertFalse(status.isExpired)
     }
@@ -140,17 +136,17 @@ final class TokenStatusTests: XCTestCase {
     // MARK: - make() factory tests
 
     func testMake_emptyToken_isValidFalse() {
-        let status = TokenStatus.make(profile: "p", token: "", expiresAt: nil, raw: "{}")
+        let status = TokenStatus.make(profile: "p", token: "", expiresAt: nil)
         XCTAssertFalse(status.isValid)
     }
 
     func testMake_nilToken_isValidFalse() {
-        let status = TokenStatus.make(profile: "p", token: nil, expiresAt: nil, raw: "{}")
+        let status = TokenStatus.make(profile: "p", token: nil, expiresAt: nil)
         XCTAssertFalse(status.isValid)
     }
 
     func testMake_nonEmptyToken_isValidTrue() {
-        let status = TokenStatus.make(profile: "p", token: "abc", expiresAt: nil, raw: "{}")
+        let status = TokenStatus.make(profile: "p", token: "abc", expiresAt: nil)
         XCTAssertTrue(status.isValid)
         XCTAssertEqual(status.profile, "p")
     }
@@ -162,8 +158,7 @@ final class TokenStatusTests: XCTestCase {
         let status = TokenStatus.make(
             profile: "test-profile",
             token: "abc",
-            expiresAt: now,
-            raw: "{\"token\":\"abc\",\"expires_at\":\"2026-05-04T13:38:38Z\"}"
+            expiresAt: now
         )
         XCTAssertEqual(status.profile, "test-profile")
         XCTAssertEqual(status.isValid, true)
@@ -171,41 +166,49 @@ final class TokenStatusTests: XCTestCase {
     }
 
     func testTokenStatusInvalidOnEmptyToken() {
-        let status = TokenStatus.make(profile: "p", token: nil, expiresAt: nil, raw: "{}")
+        let status = TokenStatus.make(profile: "p", token: nil, expiresAt: nil)
         XCTAssertFalse(status.isValid)
         XCTAssertNil(status.expiresAt)
     }
 
     // MARK: - Codable round-trip tests
 
-    func testCodable_rawIsExcludedFromEncodedJSON() throws {
+    func testCodable_tokenIsNotEncoded() throws {
         let status = TokenStatus.make(
             profile: "test-profile",
             token: "secret-token",
-            expiresAt: nil,
-            raw: "sensitive-raw-data"
+            expiresAt: nil
         )
         let data = try JSONEncoder().encode(status)
         let json = String(decoding: data, as: UTF8.self)
-        XCTAssertFalse(json.contains("raw"), "key 'raw' must not appear in encoded JSON")
-        XCTAssertFalse(json.contains("sensitive-raw-data"), "raw value must not appear in encoded JSON")
+        XCTAssertFalse(json.contains("secret-token"), "the token must not appear in encoded JSON")
     }
 
-    func testCodable_decodeRestoresRawAsEmpty() throws {
+    func testCodable_decodesThePersistedFields() throws {
         let json = #"{"profile":"test-profile","isValid":true}"#
         let decoded = try JSONDecoder().decode(
             TokenStatus.self,
             from: json.data(using: .utf8)!
         )
-        XCTAssertEqual(decoded.raw, "", "decoded TokenStatus.raw must be empty string")
         XCTAssertTrue(decoded.isValid)
         XCTAssertEqual(decoded.profile, "test-profile")
+    }
+
+    func testParsedStatusHoldsNoCopyOfTheToken() {
+        let json = #"{"token":"eyJ.secret.jwt","expires_at":"2026-05-04T13:38:38Z"}"#
+        let status = CLIBridge().parseTokenStatus(profile: "p", data: Data(json.utf8))
+        // The status outlives the probe in `WorkspaceStore.authStatus`; nothing in it may
+        // keep the bearer token.
+        XCTAssertFalse(String(reflecting: status).contains("eyJ.secret.jwt"))
+        XCTAssertFalse(
+            Mirror(reflecting: status).children.contains { "\($0.value)".contains("eyJ") }
+        )
     }
 
     // MARK: - Empty profile guard
 
     func testMake_emptyProfile_isValidFalse() {
-        let status = TokenStatus.make(profile: "", token: "valid-token", expiresAt: nil, raw: "{}")
+        let status = TokenStatus.make(profile: "", token: "valid-token", expiresAt: nil)
         XCTAssertFalse(status.isValid, "empty profile must produce isValid false")
         XCTAssertEqual(status.profile, "")
     }

@@ -1051,20 +1051,15 @@ final class CLIBridge {
             AppLogger.auth.warning(
                 "tokenStatus: runAndCapture threw for \(profile, privacy: .public): \(error.localizedDescription, privacy: .private)"
             )
-            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: "")
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
         }
-        let raw = String(data: data, encoding: .utf8) ?? ""
         guard exitCode == 0, !data.isEmpty else {
-            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: raw)
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
         }
-        return parseTokenStatus(profile: profile, data: data, raw: raw)
+        return parseTokenStatus(profile: profile, data: data)
     }
 
-    nonisolated func parseTokenStatus(
-        profile: String,
-        data: Data,
-        raw: String
-    ) -> TokenStatus {
+    nonisolated func parseTokenStatus(profile: String, data: Data) -> TokenStatus {
         // Defensive decode struct — every field optional so malformed JSON never throws.
         struct TokenPayload: Decodable {
             let token: String?
@@ -1072,7 +1067,7 @@ final class CLIBridge {
         }
         let decoder = JSONDecoder()
         guard let payload = try? decoder.decode(TokenPayload.self, from: data) else {
-            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil, raw: raw)
+            return TokenStatus.make(profile: profile, token: nil, expiresAt: nil)
         }
         let expiresAt: Date?
         if let rawDate = payload.expires_at {
@@ -1085,8 +1080,7 @@ final class CLIBridge {
         return TokenStatus.make(
             profile: profile,
             token: payload.token,
-            expiresAt: expiresAt,
-            raw: raw
+            expiresAt: expiresAt
         )
     }
 
