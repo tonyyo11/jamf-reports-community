@@ -191,12 +191,17 @@ final class GenerateSheetState {
                 }
             )
             if let result { return summarize(result) }
-            return (0, CLIBridge.explainExit(exit, operation: "Collect")
-                + " Uncheck Collect fresh data first to generate from cached snapshots.")
+            return (0, CLIBridge.explainExit(exit, operation: "Collect") + Self.cachedSnapshotsHint)
         } catch {
-            return (0, CLIBridge.explainOperationError(error, operation: "Collect"))
+            let reason = CLIBridge.explainOperationError(error, operation: "Collect")
+            // A refusal never started a collect; the cached-snapshot hint applies to failures.
+            guard !CLIBridgeError.isCollectRefusal(error) else { return (0, reason) }
+            return (0, reason + Self.cachedSnapshotsHint)
         }
     }
+
+    private static let cachedSnapshotsHint =
+        " Uncheck Collect fresh data first to generate from cached snapshots."
 
     /// Resolved output directory for display: the chosen folder, else the configured one,
     /// else the profile default.
