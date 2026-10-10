@@ -80,6 +80,25 @@ final class JamfCLIProbeTests: XCTestCase {
         XCTAssertLessThan(took, 8)
     }
 
+    /// The child answers and exits while a background process keeps the pipes open; the probe
+    /// returns the answer without waiting for that process.
+    func testProbeDoesNotWaitForAGrandchildAfterTheChildExits() throws {
+        let pidFile = dir.appendingPathComponent("grandchild.pid")
+        let stub = try makeStub("sleep 30 &\necho $! > '\(pidFile.path)'\necho answer")
+        defer {
+            if let text = try? String(contentsOf: pidFile, encoding: .utf8),
+               let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                kill(pid, SIGKILL)
+            }
+        }
+        var output: JamfCLIProbe.Output?
+        let took = elapsed {
+            output = JamfCLIProbe.run(executable: stub, arguments: [], timeout: 20)
+        }
+        XCTAssertEqual(output.map { String(decoding: $0.stdout, as: UTF8.self) }, "answer\n")
+        XCTAssertLessThan(took, 15)
+    }
+
     func testProbeReturnsTheOutputOfAChildThatAnswers() throws {
         let stub = try makeStub("echo 'jamf-cli version 1.31.1'\necho warn >&2\nexit 3")
         let output = try XCTUnwrap(JamfCLIProbe.run(executable: stub, arguments: []))
