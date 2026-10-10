@@ -1463,9 +1463,7 @@ final class CLIBridge {
                 throw CLIBridgeError.directoryOperationFailed(path: candidate.path)
             }
         }
-        guard await authGuard(profile: profile, onLine: onLine) else {
-            return Self.exitCodeUnauthorized
-        }
+        // No authGuard: this reads cached snapshots only, so a 401 must not block it.
         try await ensureWorkspace(profile: profile, onLine: onLine)
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             let msg = "error: workspace URL unexpectedly nil for profile '\(profile)' after ensureWorkspace — this is a programmer error"

@@ -114,4 +114,31 @@ final class CLIBridgePDFTests: XCTestCase {
             XCTFail("unexpected error type: \(error)")
         }
     }
+
+    /// The CSV export reads cached snapshots only, so a missing or rejected token must not
+    /// stop it (J7). Under XCTest no jamf-cli exists, so the auth probe would always fail.
+    func testExportInventoryCSVDoesNotRequireAuth() async throws {
+        let slug = "csv-test-noauth-\(UUID().uuidString.prefix(8))".lowercased()
+        guard let root = ProfileService.workspaceURL(for: slug) else {
+            throw XCTSkip("workspace root unavailable for test profile")
+        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let lines = LineCollector()
+
+        let code = try await bridge.exportInventoryCSV(
+            profile: slug,
+            outFile: nil,
+            onLine: { lines.append($0.text) }
+        )
+
+        XCTAssertNotEqual(code, CLIBridge.exitCodeUnauthorized)
+        XCTAssertFalse(lines.all.contains { $0.contains("auth check failed") })
+    }
+}
+
+private final class LineCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+    func append(_ line: String) { lock.lock(); storage.append(line); lock.unlock() }
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return storage }
 }
