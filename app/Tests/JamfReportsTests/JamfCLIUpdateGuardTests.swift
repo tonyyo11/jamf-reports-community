@@ -96,7 +96,7 @@ final class JamfCLIUpdateGuardTests: XCTestCase {
         XCTAssertTrue(result.succeeded)
         XCTAssertFalse(result.refused)
         XCTAssertEqual(result.message, String(getpid()), "a tick queues behind the update")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        XCTAssertTrue(lock.namesNoHolder)
         XCTAssertNil(CLIBridge.holdPurpose)
     }
 

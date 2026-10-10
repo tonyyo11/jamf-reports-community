@@ -39,10 +39,37 @@ extension XCTestCase {
             tick.terminate()
             tick.waitUntilExit()
         }
-        XCTAssertTrue(lock.acquire(pid: tick.processIdentifier))
+        // A second descriptor in this process conflicts with the claimer's, as a second
+        // process would; the file names the spawned process, which the probe finds alive.
+        let hold = try XCTUnwrap(lock.claimedHold(pid: tick.processIdentifier))
         try await body()
         XCTAssertEqual(try String(contentsOf: lock.url, encoding: .utf8),
                        String(tick.processIdentifier), "another process's lock is left alone")
-        lock.release(pid: tick.processIdentifier)
+        hold.release()
+    }
+}
+
+extension TickLock.Claim {
+    /// `acquired`, `heldElsewhere` or `writeFailed`, for comparing in an assertion.
+    var kind: String {
+        switch self {
+        case .acquired: "acquired"
+        case .heldElsewhere: "heldElsewhere"
+        case .writeFailed: "writeFailed"
+        }
+    }
+}
+
+extension TickLock {
+    /// The hold from a `claim` for `pid`; nil unless it was acquired.
+    func claimedHold(pid: Int32 = getpid()) -> TickLockHold? {
+        if case .acquired(let hold) = claim(pid: pid) { return hold }
+        return nil
+    }
+
+    /// No holder is named: a released lock leaves its file in place, empty.
+    var namesNoHolder: Bool {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return true }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

@@ -21,6 +21,11 @@ struct DayMarker: Sendable {
         try? day.write(to: markerURL(in: workspace), atomically: true, encoding: .utf8)
     }
 
+    /// Gives the stamp back, so the day or hour counts as unclaimed. Best-effort.
+    func clear(in workspace: URL) {
+        try? FileManager.default.removeItem(at: markerURL(in: workspace))
+    }
+
     private func markerURL(in workspace: URL) -> URL {
         workspace
             .appendingPathComponent("automation", isDirectory: true)

@@ -93,11 +93,11 @@ final class GenerateHoldsTickLockTests: XCTestCase {
         let (_, lock) = try makeStore()
         try await duringAReport {
             XCTAssertEqual(holderPid(lock), String(getpid()))
-            XCTAssertFalse(lock.acquire(pid: 4242, isAlive: { _ in true }),
+            XCTAssertEqual(lock.claim(pid: 4242).kind, "heldElsewhere",
                            "a wake finds the lock held and waits for the next one")
         }
         XCTAssertNil(holderPid(lock))
-        XCTAssertTrue(lock.acquire(pid: 4242, isAlive: { _ in true }))
+        XCTAssertNotNil(lock.claimedHold(pid: 4242))
     }
 
     func testAutomaticCollectsStandDownDuringAReport() async throws {
@@ -309,9 +309,9 @@ final class GenerateHoldsTickLockTests: XCTestCase {
     }
 }
 
-/// The pid the lock file names, nil when there is no file.
+/// The pid the lock file names, nil when there is no file or it names nobody.
 private func holderPid(_ lock: TickLock) -> String? {
-    try? String(contentsOf: lock.url, encoding: .utf8)
+    lock.namesNoHolder ? nil : try? String(contentsOf: lock.url, encoding: .utf8)
 }
 
 private final class Recorder: @unchecked Sendable {

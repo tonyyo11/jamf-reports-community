@@ -47,6 +47,8 @@ versions in this repository map to git tags.
 
 ### Fixed
 
+- Two scheduled runs can no longer start together, and a Mac that slept in the middle of a run no
+  longer has that run taken over when it wakes.
 - A hung Homebrew or archive step during a jamf-cli install or update now times out with a message
   naming the step, instead of blocking collects for hours.
 - Onboarding gives up with a clear message if jamf-cli stops responding, and sends its answers to

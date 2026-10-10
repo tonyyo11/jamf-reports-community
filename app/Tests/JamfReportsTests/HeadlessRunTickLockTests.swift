@@ -79,8 +79,7 @@ final class HeadlessRunTickLockTests: XCTestCase {
         let lock = TickLock(url: TickLock.defaultURL)
         try await Generate.parse(["--profile", profile]).run()
         XCTAssertEqual(workspace.reportFiles().filter { $0.hasSuffix(".xlsx") }.count, 1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path),
-                       "released when the command ends")
+        XCTAssertTrue(lock.namesNoHolder, "released when the command ends")
     }
 
     /// Reading and listing do not write snapshots or reports, so they never wait for the lock.
@@ -120,7 +119,7 @@ final class HeadlessRunTickLockTests: XCTestCase {
         let outcome = await runScheduleExclusively(schedule(), verbose: false, lock: lock)
         XCTAssertEqual(outcome?.exitCode, 0)
         XCTAssertEqual(workspace.reportFiles().filter { $0.hasSuffix(".xlsx") }.count, 1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        XCTAssertTrue(lock.namesNoHolder)
     }
 
     // MARK: - TickLock.holdingForRun
@@ -138,7 +137,7 @@ final class HeadlessRunTickLockTests: XCTestCase {
             try? String(contentsOf: lock.url, encoding: .utf8)
         }
         XCTAssertEqual(seen, String(getpid()))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        XCTAssertTrue(lock.namesNoHolder)
     }
 
     /// A long collect must not let the lock go stale, or a wake takes it over mid-run.
@@ -183,7 +182,7 @@ final class HeadlessRunTickLockTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? CLIBridgeError, .executableNotFound)
         }
-        XCTAssertFalse(FileManager.default.fileExists(atPath: lock.url.path))
+        XCTAssertTrue(lock.namesNoHolder)
     }
 
     /// The tick needs the same file, so a broken Application Support must not make the command

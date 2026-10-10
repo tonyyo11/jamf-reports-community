@@ -84,6 +84,41 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         XCTAssertEqual(spy.profiles, [profile])
     }
 
+    /// The probe can read "not held" (a stale mtime after a sleep) while the claim finds the
+    /// lock held. The collector then throws a refusal: that is standing down, so the hour is
+    /// given back and the next pass collects.
+    func testARefusalFromTheCollectorKeepsTheHour() async throws {
+        let (store, workspace) = try makeStore()
+        AutomationHealthModel.shared.freshnessIssues = [staleIssue()]
+        defer { AutomationHealthModel.shared.freshnessIssues = [] }
+        let spy = CollectSpy()
+
+        let refused: WorkspaceStore.RemediationCollector = { _, _, _ in
+            throw CLIBridgeError.tickLockHeld
+        }
+        let first = await store.remediateStaleDataIfNeeded(collect: refused)
+        XCTAssertFalse(first, "nothing ran")
+        XCTAssertNil(remediationMarker.lastStampedDay(in: workspace),
+                     "a refused collect must not claim the hour")
+
+        let retried = await store.remediateStaleDataIfNeeded(collect: spy.remediation)
+        XCTAssertTrue(retried)
+        XCTAssertEqual(spy.profiles, [profile])
+        XCTAssertNotNil(remediationMarker.lastStampedDay(in: workspace))
+    }
+
+    /// Any other failure still counts as an attempt: the hour stays claimed.
+    func testAFailedCollectStillClaimsTheHour() async throws {
+        let (store, workspace) = try makeStore()
+        AutomationHealthModel.shared.freshnessIssues = [staleIssue()]
+        defer { AutomationHealthModel.shared.freshnessIssues = [] }
+        struct Boom: Error {}
+
+        let attempted = await store.remediateStaleDataIfNeeded(collect: { _, _, _ in throw Boom() })
+        XCTAssertTrue(attempted)
+        XCTAssertNotNil(remediationMarker.lastStampedDay(in: workspace))
+    }
+
     /// A generate run holds the older run flag rather than the collect count;
     /// it may collect first, so it counts as in flight too.
     func testAGenerateRunInProgressAlsoDefersRemediation() async throws {
@@ -140,6 +175,22 @@ final class GroupCAutomaticCollectOverlapTests: XCTestCase {
         let repeated = await store.catchUpCollectIfNeeded(
             policy: managedFreshness, now: now, collect: spy.catchUp)
         XCTAssertFalse(repeated, "an attempted catch-up claims its day")
+    }
+
+    func testACatchUpRefusalKeepsTheDay() async throws {
+        let (store, _) = try makeStore()
+        let spy = CollectSpy()
+        let now = day(27)
+
+        let refused: WorkspaceStore.CatchUpCollector = { _, _ in throw CLIBridgeError.tickLockHeld }
+        let first = await store.catchUpCollectIfNeeded(
+            policy: managedFreshness, now: now, collect: refused)
+        XCTAssertFalse(first, "nothing ran")
+
+        let retried = await store.catchUpCollectIfNeeded(
+            policy: managedFreshness, now: now, collect: spy.catchUp)
+        XCTAssertTrue(retried, "a refusal must not have claimed the day")
+        XCTAssertTrue(spy.profiles.contains(profile))
     }
 
     func testCatchUpStandsDownWhileTheTickHoldsItsLock() async throws {

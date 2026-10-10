@@ -71,6 +71,30 @@ final class TickLoopTests: XCTestCase {
         ], "a calendar fire has no marker to clear")
     }
 
+    // MARK: - Lock given up mid-wake
+
+    /// A run that outlasts the lock's time limit gives the lock up; the schedules after it
+    /// stay unstamped and unrun, still due at the next wake, and the digest still goes out.
+    func testSchedulesAfterAGivenUpLockWaitForTheNextWake() async {
+        let recorder = TickLoopRecorder()
+        let held = HoldFlag()
+        let code = await TickLoop.runDue(
+            [due("first"), due("second")], state: TickState(),
+            save: { try recorder.save($0) },
+            clearRunNowMarker: { _ in },
+            perform: { run in
+                recorder.ran(run.schedule.launchAgentLabel ?? "", markerOnDisk: false)
+                held.lose()
+                return ScheduleRunOutcome(exitCode: 0, incomplete: false)
+            },
+            recordFailure: { _, _ in },
+            holdsLock: { held.holds },
+            notifyOverdue: { recorder.digest() })
+
+        XCTAssertEqual(code, 0)
+        XCTAssertEqual(recorder.events, [.saved, .ran(label("first")), .saved, .digest])
+    }
+
     // MARK: - Stamp failures
 
     func testAFailedStartStampSkipsOnlyThatScheduleAndIsNeverPersisted() async {
@@ -201,6 +225,13 @@ final class TickLoopTests: XCTestCase {
                        "a run that crashes the process must not leave a marker to re-run it")
         XCTAssertTrue(TickRunner.pendingRunNowLabels(dir: dir).isEmpty)
     }
+}
+
+private final class HoldFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = true
+    var holds: Bool { lock.withLock { value } }
+    func lose() { lock.withLock { value = false } }
 }
 
 /// Stands in for the state file, the runs and the digest, recording the order they
