@@ -177,16 +177,17 @@ for the shortest path to a first report.
 
 ### Diagnostic bundles
 
-The app's Settings → "Generate diagnostic bundle now" packages recent logs, snapshots, and
-a redacted `config.yaml` into a shareable zip. Credentials are always redacted; PII
-(hostnames, serials, emails, device names) is redacted by default. Two redaction limits are
-worth knowing before you share a bundle:
+The app's Settings → "Generate diagnostic bundle now" packages recent logs, recent daily
+summaries, a redacted `config.yaml`, a workspace tree listing, version details and the
+output of `jamf-cli doctor` into a shareable zip. It does not include the raw
+`jamf-cli-data/` snapshots. Credentials are always redacted; PII (hostnames, serials,
+emails, device names) is redacted by default. Two redaction limits are worth knowing before
+you share a bundle:
 
-- **Jamf reached by IP address is not redacted.** The hostname redactor matches URLs with
-  an alphabetic TLD (`https://acme.jamfcloud.com/…`), so an on-prem instance addressed by
-  IP (`https://10.0.0.5/…`) passes through un-redacted. If your Jamf Pro is reachable by IP,
-  generate the bundle for local debugging only — do not share it externally — or scrub the
-  IP by hand first.
+- **Only IPv4 addresses are redacted.** IPv4 addresses and the last-reported-IP fields are
+  removed, including a Jamf Pro addressed by IP (`https://10.0.0.5/…`). The IP rule matches
+  IPv4 only, and the paths in the workspace tree listing stay visible. Review the bundle
+  before sharing it outside your organization.
 - **Profile slugs and schedule labels are not redacted.** They appear verbatim in the
   bundle's manifest, file names, and workspace tree listing. Keep profile slugs and
   schedule labels non-identifying (avoid org names, site codes, or personal
