@@ -103,11 +103,39 @@ final class SharedConfigPinTests: XCTestCase {
         XCTAssertTrue(check().drifts.isEmpty)
     }
 
+    func testAnOptOutWrittenIntoTheSharedFileDoesNotSwitchPinningOff() throws {
+        try writeConfig(shared: true, retentionMode: "archive")
+        _ = check()
+        try writeConfig(shared: false, retentionMode: "delete")
+        let result = check()
+        XCTAssertEqual(result.drifts.map(\.key), [.retentionMode, .sharedEnabled])
+        let drift = try XCTUnwrap(result.drifts.last)
+        XCTAssertEqual(drift.pinned, "true")
+        XCTAssertEqual(drift.current, "false")
+        let config = try ConfigLoader.load(from: workspace.appendingPathComponent("config.yaml"))
+        XCTAssertEqual(
+            SharedConfigPin.effectiveRetention(config.retention, check: result)?.resolvedMode,
+            .archive)
+    }
+
+    func testPinningAppliesOnOptInProviderOrExistingPinNeverOnAnOptOutAlone() {
+        XCTAssertTrue(SharedConfigPin.appliesTo(
+            sharedEnabled: true, onSyncProvider: false, pinExists: false))
+        XCTAssertTrue(SharedConfigPin.appliesTo(
+            sharedEnabled: false, onSyncProvider: true, pinExists: false))
+        XCTAssertTrue(SharedConfigPin.appliesTo(
+            sharedEnabled: false, onSyncProvider: false, pinExists: true))
+        XCTAssertFalse(SharedConfigPin.appliesTo(
+            sharedEnabled: false, onSyncProvider: false, pinExists: false))
+        XCTAssertFalse(SharedConfigPin.appliesTo(
+            sharedEnabled: nil, onSyncProvider: false, pinExists: false))
+    }
+
     func testDiffNamesEachChangedKeyInConfigYamlSpelling() {
         let base = SharedConfigPin(
             allowAbsolutePaths: false, outputDir: "", archiveDir: "", dataDir: "",
             retentionEnabled: true, retentionMode: "archive", retentionArchiveDir: "",
-            notifyURLHost: "a.example.com")
+            sharedEnabled: "true", notifyURLHost: "a.example.com")
         var changed = base
         changed.outputDir = "/Volumes/x"
         changed.retentionMode = "delete"

@@ -10,7 +10,9 @@ import os
 /// every Mac sharing the folder must agree on them, but each Mac pins the values it was set up
 /// with in `AppSupport` and does not follow a later change until its operator confirms it.
 ///
-/// A local workspace is never pinned. "Shared" is `SharedWorkspace.isEffectivelyShared`.
+/// A local workspace is never pinned. Pinning applies when `shared_workspace.enabled` is true, the
+/// folder is on a sync provider or `/Volumes`, or a pin already exists; an opt-out written into
+/// the shared file never turns an existing pin off, since a peer could write it.
 struct SharedConfigPin: Codable, Sendable, Equatable {
     var allowAbsolutePaths: Bool
     var outputDir: String
@@ -19,6 +21,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
     var retentionEnabled: Bool
     var retentionMode: String
     var retentionArchiveDir: String
+    /// `shared_workspace.enabled` as typed: "true", "false" or "" when absent.
+    var sharedEnabled: String
     /// Host only. The webhook URL itself is a credential and never leaves config.yaml.
     var notifyURLHost: String
 
@@ -31,6 +35,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         case retentionEnabled = "retention.enabled"
         case retentionMode = "retention.mode"
         case retentionArchiveDir = "retention.archive_dir"
+        case sharedEnabled = "shared_workspace.enabled"
         case notifyURL = "notify.url"
 
         fileprivate func text(of pin: SharedConfigPin) -> String {
@@ -42,6 +47,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .retentionEnabled: String(pin.retentionEnabled)
             case .retentionMode: pin.retentionMode
             case .retentionArchiveDir: pin.retentionArchiveDir
+            case .sharedEnabled: pin.sharedEnabled
             case .notifyURL: pin.notifyURLHost
             }
         }
@@ -55,6 +61,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             case .retentionEnabled: pin.retentionEnabled = source.retentionEnabled
             case .retentionMode: pin.retentionMode = source.retentionMode
             case .retentionArchiveDir: pin.retentionArchiveDir = source.retentionArchiveDir
+            case .sharedEnabled: pin.sharedEnabled = source.sharedEnabled
             case .notifyURL: pin.notifyURLHost = source.notifyURLHost
             }
         }
@@ -102,6 +109,7 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
             retentionEnabled: (raw("retention", "enabled") as? Bool) ?? false,
             retentionMode: RetentionConfig.Mode(rawValue: mode)?.rawValue ?? "archive",
             retentionArchiveDir: path("retention", "archive_dir"),
+            sharedEnabled: (raw("shared_workspace", "enabled") as? Bool).map { String($0) } ?? "",
             notifyURLHost: URL(string: typedURL)?.host?.lowercased() ?? ""
         )
     }
@@ -151,7 +159,8 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         guard let workspace = ProfileService.workspaceURL(for: profile) else {
             return Check(workspace: nil, pinned: nil, drifts: [])
         }
-        guard let current = sharedCurrent(workspace: workspace) else {
+        guard let current = sharedCurrent(
+            profile: profile, workspace: workspace, appSupport: appSupport) else {
             return Check(workspace: workspace, pinned: nil, drifts: [])
         }
         guard let pinned = load(profile: profile, appSupport: appSupport) else {
@@ -168,11 +177,24 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
                      drifts: diff(pinned: pinned, current: current))
     }
 
-    /// `current(workspace:)` for a workspace that is effectively shared; nil for a local one.
-    private static func sharedCurrent(workspace: URL) -> SharedConfigPin? {
+    /// Whether a workspace is pinned. Unlike `SharedWorkspace.isEffectivelyShared`, which
+    /// coordination uses, `shared_workspace.enabled: false` does not opt out: the file is
+    /// writable by every peer, so an opt-out beside hostile values would switch pinning off.
+    static func appliesTo(sharedEnabled: Bool?, onSyncProvider: Bool, pinExists: Bool) -> Bool {
+        sharedEnabled == true || onSyncProvider || pinExists
+    }
+
+    /// `current(workspace:)` for a workspace that is pinned; nil for a local one.
+    private static func sharedCurrent(
+        profile: String, workspace: URL, appSupport: URL
+    ) -> SharedConfigPin? {
         let sharedConfig = (try? ConfigLoader.load(
             from: workspace.appendingPathComponent("config.yaml")))?.sharedWorkspace
-        guard SharedWorkspace.isEffectivelyShared(workspace: workspace, config: sharedConfig)
+        guard appliesTo(
+            sharedEnabled: sharedConfig?.enabled,
+            onSyncProvider: CloudStorage.provider(for: workspace) != nil,
+            pinExists: FileManager.default.fileExists(
+                atPath: storeURL(profile: profile, appSupport: appSupport).path))
         else { return nil }
         return current(workspace: workspace)
     }
@@ -185,7 +207,9 @@ struct SharedConfigPin: Codable, Sendable, Equatable {
         profile: String, keys: Set<Key>? = nil, appSupport: URL = AppSupport.directory()
     ) throws {
         guard let workspace = ProfileService.workspaceURL(for: profile),
-              let current = sharedCurrent(workspace: workspace) else { return }
+              let current = sharedCurrent(
+                profile: profile, workspace: workspace, appSupport: appSupport)
+        else { return }
         var pin = load(profile: profile, appSupport: appSupport) ?? current
         for key in keys ?? Set(Key.allCases) { key.copy(from: current, into: &pin) }
         try save(pin, profile: profile, appSupport: appSupport)
